@@ -28,18 +28,16 @@ export default function DataConsoleCompanies() {
   const fetchCompanies = async () => {
     setLoading(true)
     try {
-      // Get companies with user counts
-      const { data: companiesData } = await supabase
+      const { data: companiesData, error: companiesErr } = await supabase
         .from('companies')
         .select('*')
-        .order('name')
+        .order('company_name')
+      if (companiesErr) throw companiesErr
 
-      // Get employee counts per company
       const { data: employeeCounts } = await supabase
         .from('employees')
         .select('company_id')
 
-      // Get agent recruitments per company
       const { data: agentCounts } = await supabase
         .from('company_agents')
         .select('company_id')
@@ -66,11 +64,11 @@ export default function DataConsoleCompanies() {
       const { error } = await supabase
         .from('companies')
         .update({
-          name: editingCompany.name,
+          company_name: editingCompany.company_name,
           owner_email: editingCompany.owner_email,
-          plan_type: editingCompany.plan_type,
-          status: editingCompany.status,
-          notes: editingCompany.notes
+          subscription_tier: editingCompany.subscription_tier,
+          billing_status: editingCompany.billing_status,
+          active: editingCompany.active,
         })
         .eq('id', editingCompany.id)
 
@@ -86,29 +84,31 @@ export default function DataConsoleCompanies() {
   }
 
   const handleImpersonate = async (company) => {
-    if (!confirm(`Impersonate ${company.name}? This will switch your session to that company.`)) return
+    if (!confirm(`Impersonate ${company.company_name}? This will switch your session to that company.`)) return
 
     setCompany(company)
     navigate('/dashboard')
   }
 
   const filtered = companies.filter(c =>
-    c.name?.toLowerCase().includes(search.toLowerCase()) ||
+    c.company_name?.toLowerCase().includes(search.toLowerCase()) ||
     c.owner_email?.toLowerCase().includes(search.toLowerCase())
   )
 
   const stats = [
     { icon: Building2, label: 'Total Companies', value: companies.length },
-    { icon: Building2, label: 'Active', value: companies.filter(c => c.status === 'active').length, color: adminTheme.success },
-    { icon: Building2, label: 'Trial', value: companies.filter(c => c.status === 'trial').length, color: adminTheme.warning },
+    { icon: Building2, label: 'Active', value: companies.filter(c => c.billing_status === 'active').length, color: adminTheme.success },
+    { icon: Building2, label: 'Trial', value: companies.filter(c => c.billing_status === 'trialing').length, color: adminTheme.warning },
     { icon: Users, label: 'Total Users', value: companies.reduce((sum, c) => sum + (c.user_count || 0), 0) }
   ]
 
   const getStatusColor = (status) => {
     switch (status) {
       case 'active': return 'success'
-      case 'trial': return 'warning'
-      case 'suspended': return 'error'
+      case 'trialing': return 'warning'
+      case 'past_due':
+      case 'unpaid':
+      case 'canceled': return 'error'
       default: return 'default'
     }
   }
@@ -206,16 +206,17 @@ export default function DataConsoleCompanies() {
                       </span>
                     </td>
                     <td style={{ padding: '12px 16px', color: adminTheme.text, fontSize: '14px', fontWeight: '500' }}>
-                      {company.name}
+                      {company.company_name}
+                      {!company.active ? <span style={{ marginLeft: 6, color: adminTheme.textMuted, fontSize: '11px' }}>[inactive]</span> : null}
                     </td>
                     <td style={{ padding: '12px 16px', color: adminTheme.textMuted, fontSize: '13px' }}>
                       {company.owner_email || '-'}
                     </td>
                     <td style={{ padding: '12px 16px' }}>
-                      <Badge color="accent">{company.plan_type || 'Free'}</Badge>
+                      <Badge color="accent">{company.subscription_tier || 'free'}</Badge>
                     </td>
                     <td style={{ padding: '12px 16px' }}>
-                      <Badge color={getStatusColor(company.status)}>{company.status || 'active'}</Badge>
+                      <Badge color={getStatusColor(company.billing_status)}>{company.billing_status || '—'}</Badge>
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'center', color: adminTheme.text, fontSize: '14px' }}>
                       {company.user_count}
@@ -279,9 +280,9 @@ export default function DataConsoleCompanies() {
                             </div>
                           </div>
                           <div>
-                            <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginBottom: '4px' }}>Notes</div>
+                            <div style={{ color: adminTheme.textMuted, fontSize: '11px', marginBottom: '4px' }}>Billing Notes</div>
                             <div style={{ color: adminTheme.text, fontSize: '13px' }}>
-                              {company.notes || '-'}
+                              {company.billing_notes || '-'}
                             </div>
                           </div>
                         </div>
@@ -306,50 +307,55 @@ export default function DataConsoleCompanies() {
           <>
             <FormField label="Company Name" required>
               <FormInput
-                value={editingCompany.name}
-                onChange={(v) => setEditingCompany({ ...editingCompany, name: v })}
+                value={editingCompany.company_name || ''}
+                onChange={(v) => setEditingCompany({ ...editingCompany, company_name: v })}
               />
             </FormField>
 
             <FormField label="Owner Email">
               <FormInput
                 type="email"
-                value={editingCompany.owner_email}
+                value={editingCompany.owner_email || ''}
                 onChange={(v) => setEditingCompany({ ...editingCompany, owner_email: v })}
               />
             </FormField>
 
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
-              <FormField label="Plan Type">
+              <FormField label="Plan (subscription_tier)">
                 <FormSelect
-                  value={editingCompany.plan_type}
-                  onChange={(v) => setEditingCompany({ ...editingCompany, plan_type: v })}
+                  value={editingCompany.subscription_tier || ''}
+                  onChange={(v) => setEditingCompany({ ...editingCompany, subscription_tier: v })}
                   options={[
-                    { value: 'free', label: 'Free' },
-                    { value: 'pro', label: 'Pro' },
-                    { value: 'enterprise', label: 'Enterprise' }
+                    { value: 'field_crew', label: 'Field Crew' },
+                    { value: 'field_pro', label: 'Field Pro' },
+                    { value: 'field_boss', label: 'Field Boss' }
                   ]}
                 />
               </FormField>
 
-              <FormField label="Status">
+              <FormField label="Billing Status">
                 <FormSelect
-                  value={editingCompany.status}
-                  onChange={(v) => setEditingCompany({ ...editingCompany, status: v })}
+                  value={editingCompany.billing_status || ''}
+                  onChange={(v) => setEditingCompany({ ...editingCompany, billing_status: v })}
                   options={[
+                    { value: 'trialing', label: 'Trialing' },
                     { value: 'active', label: 'Active' },
-                    { value: 'trial', label: 'Trial' },
-                    { value: 'suspended', label: 'Suspended' }
+                    { value: 'past_due', label: 'Past Due' },
+                    { value: 'unpaid', label: 'Unpaid' },
+                    { value: 'canceled', label: 'Canceled' }
                   ]}
                 />
               </FormField>
             </div>
 
-            <FormField label="Notes">
-              <FormTextarea
-                value={editingCompany.notes}
-                onChange={(v) => setEditingCompany({ ...editingCompany, notes: v })}
-                rows={3}
+            <FormField label="Active (account enabled)">
+              <FormSelect
+                value={editingCompany.active ? 'true' : 'false'}
+                onChange={(v) => setEditingCompany({ ...editingCompany, active: v === 'true' })}
+                options={[
+                  { value: 'true', label: 'Active' },
+                  { value: 'false', label: 'Inactive' }
+                ]}
               />
             </FormField>
 

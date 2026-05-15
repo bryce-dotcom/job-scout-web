@@ -5,6 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Search, FileText, X, ChevronRight, DollarSign, User, Calendar, Upload, Download } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import SearchableSelect from '../components/SearchableSelect'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { estimatesFields, quoteLinesFields } from '../lib/importExportFields'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
@@ -587,21 +588,42 @@ export default function Estimates() {
                   </div>
                 </div>
 
-                {/* Existing Lead picker */}
+                {/* Existing Lead picker — searchable, surfaces appointment
+                    leads first so reps don't miss Tracy's set meetings and
+                    create a duplicate New Lead (which orphans the setter
+                    commission). Tracy's #10 feedback. */}
                 {associationType === 'lead' && (
                   <div>
                     <label style={labelStyle}>Lead</label>
-                    <select
-                      name="lead_id"
-                      value={formData.lead_id}
-                      onChange={handleChange}
-                      style={inputStyle}
-                    >
-                      <option value="">-- Select Lead --</option>
-                      {leads.filter(l => l.status !== 'Lost' && l.status !== 'Not Qualified').map(lead => (
-                        <option key={lead.id} value={lead.id}>{lead.customer_name}{lead.service_type ? ` — ${lead.service_type}` : ''}</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      value={formData.lead_id || ''}
+                      onChange={(val) => handleChange({ target: { name: 'lead_id', value: val, type: 'text' } })}
+                      placeholder="Search leads by name, business, phone, address..."
+                      theme={theme}
+                      options={[
+                        // Appointment Set + scheduled leads first, then everything else
+                        ...leads
+                          .filter(l => l.status !== 'Lost' && l.status !== 'Not Qualified')
+                          .sort((a, b) => {
+                            const aPri = a.status === 'Appointment Set' ? 0 : 1
+                            const bPri = b.status === 'Appointment Set' ? 0 : 1
+                            if (aPri !== bPri) return aPri - bPri
+                            return new Date(b.appointment_time || b.created_at || 0) - new Date(a.appointment_time || a.created_at || 0)
+                          })
+                          .map(lead => {
+                            const apptStr = lead.appointment_time
+                              ? new Date(lead.appointment_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                              : null
+                            const label = [
+                              lead.customer_name || lead.business_name || `Lead #${lead.id}`,
+                              lead.service_type ? `· ${lead.service_type}` : null,
+                              apptStr ? `· ${apptStr}` : null,
+                              lead.status && lead.status !== 'New' ? `[${lead.status}]` : null,
+                            ].filter(Boolean).join(' ')
+                            return { value: lead.id, label }
+                          })
+                      ]}
+                    />
                   </div>
                 )}
 
@@ -624,12 +646,52 @@ export default function Estimates() {
                 )}
 
                 {/* New Lead inline fields */}
-                {associationType === 'newLead' && (
+                {associationType === 'newLead' && (() => {
+                  // Match by phone (digits only) first — most reliable.
+                  // Then name substring. Show ONE suggestion at a time so
+                  // the rep has a clear path to switch instead of creating
+                  // a duplicate (Tracy's #10).
+                  const phoneDigits = (newLeadData.phone || '').replace(/\D/g, '')
+                  const name = (newLeadData.customer_name || '').trim().toLowerCase()
+                  let suggestion = null
+                  if (phoneDigits.length >= 7) {
+                    suggestion = leads.find(l => l.phone && l.phone.replace(/\D/g, '').includes(phoneDigits.slice(-7)))
+                  }
+                  if (!suggestion && name.length >= 3) {
+                    suggestion = leads.find(l =>
+                      (l.customer_name && l.customer_name.toLowerCase().includes(name)) ||
+                      (l.business_name && l.business_name.toLowerCase().includes(name))
+                    )
+                  }
+                  return (
                   <div style={{
                     display: 'flex', flexDirection: 'column', gap: '12px',
                     padding: '14px', borderRadius: '8px',
                     backgroundColor: theme.accentBg, border: `1px solid ${theme.border}`
                   }}>
+                    {suggestion && (
+                      <div style={{ padding: '10px 12px', backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: '8px', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ color: '#92400e', fontWeight: '600' }}>
+                          ⚠ A matching lead already exists:
+                        </div>
+                        <div style={{ color: '#451a03', fontSize: '13px' }}>
+                          <b>{suggestion.customer_name || suggestion.business_name}</b>
+                          {suggestion.phone && <> · {suggestion.phone}</>}
+                          {suggestion.status && <> · {suggestion.status}</>}
+                          {suggestion.appointment_time && <> · meeting {new Date(suggestion.appointment_time).toLocaleDateString()}</>}
+                        </div>
+                        <div style={{ color: '#78350f', fontSize: '12px' }}>
+                          Using this existing lead preserves the setter commission. Otherwise the lead-setter won't get credit when this estimate is paid.
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setAssociationType('lead'); setFormData(prev => ({ ...prev, lead_id: suggestion.id })) }}
+                          style={{ padding: '8px 14px', backgroundColor: '#f59e0b', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', alignSelf: 'flex-start' }}
+                        >
+                          Use existing lead
+                        </button>
+                      </div>
+                    )}
                     <div>
                       <label style={labelStyle}>Customer Name *</label>
                       <input
@@ -673,7 +735,8 @@ export default function Estimates() {
                       />
                     </div>
                   </div>
-                )}
+                  )
+                })()}
 
                 <div>
                   <label style={labelStyle}>Salesperson</label>
