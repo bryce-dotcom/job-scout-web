@@ -1715,10 +1715,25 @@ export default function Payroll() {
               <Users size={18} style={{ color: '#3b82f6' }} />
               Lead Commissions
             </h3>
-            <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
               {data.leadCommissions.apptCount > 0 && (
-                <div style={{ padding: '8px 16px', backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: '8px', fontSize: '13px', color: '#3b82f6' }}>
-                  {data.leadCommissions.apptCount} appointments set
+                <div
+                  style={{ padding: '8px 16px', backgroundColor: 'rgba(34,197,94,0.1)', borderRadius: '8px', fontSize: '13px', color: '#16a34a' }}
+                  title={setterRule === 'quote_created' ? 'Qualified meetings — appointment set AND an estimate was created on that lead. These are the ones included in payable commission.' : 'All appointments set in this period.'}
+                >
+                  <span style={{ fontWeight: 700 }}>{data.leadCommissions.apptCount}</span> {setterRule === 'quote_created' ? 'qualified meetings' : 'appointments set'}
+                </div>
+              )}
+              {/* Alayda asked: how many meetings were set but didn't lead
+                  to an estimate yet? Show those as "pending" so she can see
+                  the funnel. Without this only the qualified count showed
+                  and she thought commissions were under-counting. */}
+              {data.leadCommissions.pendingCount > 0 && setterRule === 'quote_created' && (
+                <div
+                  style={{ padding: '8px 16px', backgroundColor: 'rgba(245,158,11,0.1)', borderRadius: '8px', fontSize: '13px', color: '#b45309' }}
+                  title="Appointments set this period that don't yet have an estimate on the lead. They'll move to qualified when an estimate is created."
+                >
+                  <span style={{ fontWeight: 700 }}>{data.leadCommissions.pendingCount}</span> pending (no estimate yet)
                 </div>
               )}
               {data.leadCommissions.sourceCount > 0 && (

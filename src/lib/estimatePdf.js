@@ -480,6 +480,38 @@ function drawTotals(doc, estimate, lineItems, startY, m, pw, ph) {
     y += 8
   }
 
+  // Annual energy savings — Noah flagged that the PDF was missing
+  // the savings line. Pulled from manual override (estimate.manual_annual_savings)
+  // first, falling back to the linked audit's annual_savings_dollars
+  // (passed through from EstimateDetail). If neither is set, the line
+  // is hidden.
+  const annualSavings = parseFloat(estimate.manual_annual_savings || estimate.annual_savings_dollars || estimate.audit?.annual_savings_dollars) || 0
+  if (annualSavings > 0) {
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...C.green)
+    doc.text('Estimated Annual Energy Savings', boxX, y)
+    doc.setFont('helvetica', 'bold')
+    doc.text(`${fmt(annualSavings)}/yr`, pw - m, y, { align: 'right' })
+    y += 6
+    // Payback period if we can compute it
+    const netCost = incentive > 0 ? outOfPocket : total
+    if (netCost > 0) {
+      const payback = netCost / annualSavings
+      if (payback > 0 && payback < 30) {
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(...C.muted)
+        const paybackStr = payback < 1
+          ? `${Math.round(payback * 12)} months`
+          : `${payback.toFixed(1)} years`
+        doc.text(`Payback: ${paybackStr}`, boxX, y)
+        y += 6
+      }
+    }
+    y += 2
+  }
+
   // Deposit paid
   if (parseFloat(estimate.deposit_amount) > 0) {
     doc.setFontSize(9)

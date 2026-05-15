@@ -41,9 +41,12 @@ serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } },
     );
 
-    const { company_id, kind, year } = await req.json().catch(() => ({}));
+    const { company_id, kind, year, quarter } = await req.json().catch(() => ({}));
     if (!company_id || !kind || !year) {
       return json({ error: 'company_id, kind, year required' }, 400);
+    }
+    if (kind === '941' && (!quarter || quarter < 1 || quarter > 4)) {
+      return json({ error: '941 requires quarter (1-4)' }, 400);
     }
 
     // Load company once — used by every form for header + EIN.
@@ -61,6 +64,14 @@ serve(async (req) => {
     }
     if (kind === '1099_nec') {
       const result = await generate1099Set({ supabase, company_id, company, year });
+      return json(result);
+    }
+    if (kind === '941') {
+      const result = await generate941({ supabase, company_id, company, year, quarter });
+      return json(result);
+    }
+    if (kind === '940') {
+      const result = await generate940({ supabase, company_id, company, year });
       return json(result);
     }
 
@@ -275,6 +286,162 @@ async function generate1099Set({ supabase, company_id, company, year }: any) {
 
   return { ok: true, generated: generated.length, contractors: contractors.length, items: generated, transmittal_path: f1096Path };
 }
+
+// =====================================================================
+// Form 941 — Quarterly federal return
+// =====================================================================
+async function generate941({ supabase, company_id, company, year, quarter }: any) {
+  // Quarter ranges: Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec
+  const startMonth = (quarter - 1) * 3;             // 0, 3, 6, 9
+  const periodStart = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`;
+  const periodEndDate = new Date(year, startMonth + 3, 0); // last day of last quarter month
+  const periodEnd = periodEndDate.toISOString().slice(0, 10);
+
+  // Aggregate paystubs in this quarter — only W-2 employees count.
+  const { data: emps } = await supabase
+    .from('employees')
+    .select('id, tax_classification')
+    .eq('company_id', company_id);
+  const w2Ids = (emps || []).filter((e: any) => e.tax_classification !== '1099').map((e: any) => e.id);
+  if (w2Ids.length === 0) return { ok: true, generated: 0, note: 'No W-2 employees' };
+
+  const { data: paystubs } = await supabase
+    .from('paystubs')
+    .select('employee_id, gross_pay, taxable_wages, federal_income_tax, social_security_employee, social_security_employer, medicare_employee, medicare_employer, additional_medicare')
+    .eq('company_id', company_id)
+    .in('employee_id', w2Ids)
+    .gte('pay_date', periodStart)
+    .lte('pay_date', periodEnd);
+
+  const totals = {
+    employee_count: new Set((paystubs || []).map((p: any) => p.employee_id)).size,
+    wages: 0, fit: 0,
+    ss_wages: 0, ss_tax: 0,
+    med_wages: 0, med_tax: 0,
+    addl_med: 0,
+  };
+  for (const ps of paystubs || []) {
+    const wages = Number(ps.taxable_wages || ps.gross_pay) || 0;
+    totals.wages    += wages;
+    totals.fit      += Number(ps.federal_income_tax) || 0;
+    totals.ss_wages += wages;
+    totals.ss_tax   += (Number(ps.social_security_employee) || 0) + (Number(ps.social_security_employer) || 0);
+    totals.med_wages += wages;
+    totals.med_tax  += (Number(ps.medicare_employee) || 0) + (Number(ps.medicare_employer) || 0);
+    totals.addl_med += Number(ps.additional_medicare) || 0;
+  }
+
+  // Pull deposits actually paid in this quarter from the liability ledger
+  const { data: paidLiabs } = await supabase
+    .from('payroll_tax_liabilities')
+    .select('amount_total, kind, paid_at')
+    .eq('company_id', company_id)
+    .eq('jurisdiction', 'federal')
+    .gte('period_start', periodStart)
+    .lte('period_end', periodEnd)
+    .not('paid_at', 'is', null);
+  const totalDeposits = (paidLiabs || []).reduce((s: number, l: any) => s + (Number(l.amount_total) || 0), 0);
+
+  const totalTaxLiability = round2(totals.fit + totals.ss_tax + totals.med_tax + totals.addl_med);
+  const balanceDue = round2(totalTaxLiability - totalDeposits);
+
+  const pdfBytes = await render941Pdf({ company, year, quarter, totals, totalTaxLiability, totalDeposits, balanceDue });
+  const path = `tax-filings/${company_id}/${year}/941-Q${quarter}-${year}-${Date.now()}.pdf`;
+  await supabase.storage.from('project-documents').upload(path, pdfBytes, { contentType: 'application/pdf', upsert: true });
+
+  // Supersede prior draft for this same period
+  await supabase
+    .from('payroll_tax_filings')
+    .update({ status: 'superseded' })
+    .eq('company_id', company_id)
+    .eq('form_kind', '941')
+    .eq('period_start', periodStart)
+    .neq('status', 'superseded');
+
+  const { data: filing } = await supabase
+    .from('payroll_tax_filings')
+    .insert({
+      company_id, form_kind: '941', jurisdiction: 'federal',
+      period_start: periodStart, period_end: periodEnd,
+      pdf_storage_path: path,
+      values_snapshot: { totals, totalTaxLiability, totalDeposits, balanceDue },
+      status: 'draft',
+    })
+    .select('id')
+    .single();
+  return { ok: true, filing_id: filing?.id, path, totals, totalTaxLiability, totalDeposits, balanceDue };
+}
+
+// =====================================================================
+// Form 940 — Annual FUTA return
+// =====================================================================
+async function generate940({ supabase, company_id, company, year }: any) {
+  const yearStart = `${year}-01-01`;
+  const yearEnd   = `${year}-12-31`;
+
+  const { data: emps } = await supabase
+    .from('employees')
+    .select('id, name, tax_classification')
+    .eq('company_id', company_id);
+  const w2Ids = (emps || []).filter((e: any) => e.tax_classification !== '1099').map((e: any) => e.id);
+  if (w2Ids.length === 0) return { ok: true, generated: 0, note: 'No W-2 employees' };
+
+  const { data: paystubs } = await supabase
+    .from('paystubs')
+    .select('employee_id, gross_pay, taxable_wages, futa')
+    .eq('company_id', company_id)
+    .in('employee_id', w2Ids)
+    .gte('pay_date', yearStart)
+    .lte('pay_date', yearEnd);
+
+  // Per-employee YTD wages so we can apply the $7,000 cap
+  const FUTA_BASE = 7000;
+  const empWages: Record<number, number> = {};
+  let totalPayments = 0;
+  let futaPaid = 0;
+  for (const ps of paystubs || []) {
+    const w = Number(ps.taxable_wages || ps.gross_pay) || 0;
+    empWages[ps.employee_id] = (empWages[ps.employee_id] || 0) + w;
+    totalPayments += w;
+    futaPaid += Number(ps.futa) || 0;
+  }
+  // Taxable FUTA wages = sum of min($7K, ytd) per employee
+  let taxableFutaWages = 0;
+  for (const id in empWages) {
+    taxableFutaWages += Math.min(FUTA_BASE, empWages[id]);
+  }
+
+  const futaRatePct = Number(company.futa_rate_pct ?? 0.6);
+  const totalFutaDue = round2(taxableFutaWages * futaRatePct / 100);
+  const balanceDue   = round2(totalFutaDue - futaPaid);
+
+  const pdfBytes = await render940Pdf({ company, year, totalPayments, taxableFutaWages, futaRatePct, totalFutaDue, futaPaid, balanceDue });
+  const path = `tax-filings/${company_id}/${year}/940-${year}-${Date.now()}.pdf`;
+  await supabase.storage.from('project-documents').upload(path, pdfBytes, { contentType: 'application/pdf', upsert: true });
+
+  await supabase
+    .from('payroll_tax_filings')
+    .update({ status: 'superseded' })
+    .eq('company_id', company_id)
+    .eq('form_kind', '940')
+    .eq('period_start', yearStart)
+    .neq('status', 'superseded');
+
+  const { data: filing } = await supabase
+    .from('payroll_tax_filings')
+    .insert({
+      company_id, form_kind: '940', jurisdiction: 'federal',
+      period_start: yearStart, period_end: yearEnd,
+      pdf_storage_path: path,
+      values_snapshot: { totalPayments, taxableFutaWages, futaRatePct, totalFutaDue, futaPaid, balanceDue },
+      status: 'draft',
+    })
+    .select('id')
+    .single();
+  return { ok: true, filing_id: filing?.id, path, totalPayments, taxableFutaWages, futaRatePct, totalFutaDue, futaPaid, balanceDue };
+}
+
+function round2(n: number) { return Math.round(n * 100) / 100; }
 
 // ======================== PDF renderers ===============================
 
@@ -494,6 +661,120 @@ async function render1096Pdf({ company, year, totals }: any): Promise<Uint8Array
 
   drawWrapped(page, margin, 80,
     `Mail this 1096 with Copy A of the attached 1099-NECs to: Internal Revenue Service Center (use the address listed in the 1099 instructions for your state). Due Jan 31. Or e-file via FIRE/IRIS to skip the paper.`,
+    font, muted, 612 - 2 * margin, 8);
+  return pdf.save();
+}
+
+async function render941Pdf({ company, year, quarter, totals, totalTaxLiability, totalDeposits, balanceDue }: any): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([612, 792]);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const fontB = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const ink = rgb(0.1, 0.12, 0.13);
+  const muted = rgb(0.45, 0.5, 0.45);
+  const accent = rgb(0.35, 0.39, 0.29);
+  const margin = 40;
+  let y = 792 - margin;
+
+  page.drawText(`Form 941 — Employer's Quarterly Federal Tax Return`, { x: margin, y, size: 15, font: fontB, color: ink });
+  y -= 16;
+  page.drawText(`Quarter ${quarter} of ${year}`, { x: margin, y, size: 11, font, color: muted });
+  page.drawText(`OMB No. 1545-0029`, { x: 612 - margin - 110, y, size: 9, font, color: muted });
+  y -= 8;
+  page.drawLine({ start: { x: margin, y }, end: { x: 612 - margin, y }, thickness: 1.5, color: accent });
+  y -= 18;
+
+  // Filer block
+  const filer = company.legal_name || company.company_name || '';
+  drawBox(page, margin, y, 250, 36, 'Employer ID number (EIN)', company.ein || '—', font, fontB, ink, muted);
+  drawBox(page, margin + 270, y, 260, 36, 'Quarter', `Q${quarter} ${year}`, font, fontB, ink, muted);
+  y -= 46;
+  drawBox(page, margin, y, 530, 50, 'Name + address', `${filer}\n${company.address || ''}`, font, fontB, ink, muted);
+  y -= 60;
+
+  // Part 1 — Numbers in plain English
+  page.drawText('Part 1: Answer these questions for this quarter', { x: margin, y, size: 11, font: fontB, color: ink });
+  y -= 14;
+  drawBox(page, margin, y, 530, 28, '1  Number of employees who received wages this quarter', String(totals.employee_count), font, fontB, ink, muted);
+  y -= 32;
+  drawBox(page, margin, y, 530, 28, '2  Wages, tips, and other compensation', money(totals.wages), font, fontB, ink, muted);
+  y -= 32;
+  drawBox(page, margin, y, 530, 28, '3  Federal income tax withheld from wages', money(totals.fit), font, fontB, ink, muted);
+  y -= 32;
+  drawBox(page, margin, y, 260, 28, '5a Taxable social security wages', money(totals.ss_wages), font, fontB, ink, muted);
+  drawBox(page, margin + 270, y, 260, 28, '5a Tax @ 12.4%', money(totals.ss_tax), font, fontB, ink, muted);
+  y -= 32;
+  drawBox(page, margin, y, 260, 28, '5c Taxable Medicare wages', money(totals.med_wages), font, fontB, ink, muted);
+  drawBox(page, margin + 270, y, 260, 28, '5c Tax @ 2.9%', money(totals.med_tax), font, fontB, ink, muted);
+  y -= 32;
+  if (totals.addl_med > 0) {
+    drawBox(page, margin, y, 530, 28, '5d Additional Medicare (employee, 0.9% over $200k YTD)', money(totals.addl_med), font, fontB, ink, muted);
+    y -= 32;
+  }
+  drawBox(page, margin, y, 530, 32, '10 Total taxes after adjustments and credits', money(totalTaxLiability), font, fontB, ink, muted);
+  y -= 36;
+  drawBox(page, margin, y, 530, 32, '13a Total deposits made for this quarter (EFTPS / etc.)', money(totalDeposits), font, fontB, ink, muted);
+  y -= 36;
+
+  // Balance due / overpayment
+  const balanceLabel = balanceDue >= 0 ? '14 Balance due (mail with this return OR pay via EFTPS)' : '15 Overpayment';
+  const balanceVal   = balanceDue >= 0 ? money(balanceDue) : money(Math.abs(balanceDue));
+  const balanceColor = balanceDue > 0 ? rgb(0.86, 0.15, 0.15) : ink;
+  drawBox(page, margin, y, 530, 38, balanceLabel, balanceVal, font, fontB, balanceColor, muted);
+  y -= 50;
+
+  drawWrapped(page, margin, 80,
+    `Filing path: most employers file 941 quarterly via paper to the IRS service center for your state, OR e-file via Modernized e-File (MeF). Due last day of the month after the quarter ends. Balance due CAN be mailed with the form by check (under $2,500) — anything more goes via EFTPS. Verify deposits + numbers above match your bank/EFTPS records before mailing.`,
+    font, muted, 612 - 2 * margin, 8);
+  return pdf.save();
+}
+
+async function render940Pdf({ company, year, totalPayments, taxableFutaWages, futaRatePct, totalFutaDue, futaPaid, balanceDue }: any): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([612, 792]);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const fontB = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const ink = rgb(0.1, 0.12, 0.13);
+  const muted = rgb(0.45, 0.5, 0.45);
+  const accent = rgb(0.35, 0.39, 0.29);
+  const margin = 40;
+  let y = 792 - margin;
+
+  page.drawText(`Form 940 — Employer's Annual FUTA Tax Return`, { x: margin, y, size: 15, font: fontB, color: ink });
+  y -= 16;
+  page.drawText(`Tax year ${year}`, { x: margin, y, size: 11, font, color: muted });
+  page.drawText(`OMB No. 1545-0028`, { x: 612 - margin - 110, y, size: 9, font, color: muted });
+  y -= 8;
+  page.drawLine({ start: { x: margin, y }, end: { x: 612 - margin, y }, thickness: 1.5, color: accent });
+  y -= 18;
+
+  const filer = company.legal_name || company.company_name || '';
+  drawBox(page, margin, y, 250, 36, 'EIN', company.ein || '—', font, fontB, ink, muted);
+  drawBox(page, margin + 270, y, 260, 36, 'Tax year', String(year), font, fontB, ink, muted);
+  y -= 46;
+  drawBox(page, margin, y, 530, 50, 'Name + address', `${filer}\n${company.address || ''}`, font, fontB, ink, muted);
+  y -= 60;
+
+  // Part 2 — FUTA tax
+  page.drawText('Part 2: Determine your FUTA tax', { x: margin, y, size: 11, font: fontB, color: ink });
+  y -= 14;
+  drawBox(page, margin, y, 530, 28, '3  Total payments to all employees', money(totalPayments), font, fontB, ink, muted);
+  y -= 32;
+  drawBox(page, margin, y, 530, 28, '7  Total taxable FUTA wages (first $7,000 per employee)', money(taxableFutaWages), font, fontB, ink, muted);
+  y -= 32;
+  drawBox(page, margin, y, 530, 32, `8  FUTA tax @ ${futaRatePct.toFixed(2)}%`, money(totalFutaDue), font, fontB, ink, muted);
+  y -= 36;
+  drawBox(page, margin, y, 530, 32, '13 FUTA tax deposited for the year (from quarterly deposits)', money(futaPaid), font, fontB, ink, muted);
+  y -= 36;
+
+  const balanceLabel = balanceDue >= 0 ? '14 Balance due (mail with this return OR pay via EFTPS)' : '15 Overpayment';
+  const balanceVal   = balanceDue >= 0 ? money(balanceDue) : money(Math.abs(balanceDue));
+  const balanceColor = balanceDue > 0 ? rgb(0.86, 0.15, 0.15) : ink;
+  drawBox(page, margin, y, 530, 38, balanceLabel, balanceVal, font, fontB, balanceColor, muted);
+  y -= 50;
+
+  drawWrapped(page, margin, 80,
+    `Filing path: due Jan 31 for the prior tax year. Mail to the IRS service center for your state OR e-file via MeF. Balance due of $500 or less can be mailed with the form by check; anything over $500 must be deposited quarterly via EFTPS as you accrue it. Verify the per-employee $7,000 cap math + your state credit reduction status (currently 0% for Utah) before mailing.`,
     font, muted, 612 - 2 * margin, 8);
   return pdf.save();
 }

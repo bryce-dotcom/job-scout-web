@@ -68,11 +68,14 @@ export default function PayrollInbox() {
   const [generating, setGenerating] = useState(null) // 'w2' | '1099_nec' | null
   const [genError, setGenError]     = useState('')
 
-  const generateForms = async (kind, year) => {
-    setGenerating(kind); setGenError('')
+  const generateForms = async (kind, year, quarter) => {
+    const key = quarter ? `${kind}-Q${quarter}` : kind
+    setGenerating(key); setGenError('')
     try {
       const { data: session } = await supabase.auth.getSession()
       const tok = session?.session?.access_token
+      const body = { company_id: companyId, kind, year }
+      if (quarter) body.quarter = quarter
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/render-tax-forms`, {
         method: 'POST',
         headers: {
@@ -80,13 +83,13 @@ export default function PayrollInbox() {
           Authorization: `Bearer ${tok || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ company_id: companyId, kind, year }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`)
       await refresh()
     } catch (err) {
-      setGenError(`${kind}: ${err.message}`)
+      setGenError(`${key}: ${err.message}`)
     } finally {
       setGenerating(null)
     }
@@ -407,6 +410,112 @@ export default function PayrollInbox() {
               </Section>
             )}
           </>
+        )
+      })()}
+
+      {/* Quarterly federal forms — 941 (filed within ~30 days after each
+          quarter ends). Show CURRENT QUARTER + last 3 prior so HR can
+          regenerate. Each row knows its own period_start so we can
+          look up an existing draft.
+      */}
+      {(() => {
+        const now = new Date()
+        const ymdNow = now
+        const quarters = []
+        // Build last 4 quarters (current + 3 prior)
+        for (let i = 0; i < 4; i++) {
+          const refDate = new Date(ymdNow.getFullYear(), ymdNow.getMonth() - i * 3, 15)
+          const q = Math.floor(refDate.getMonth() / 3) + 1
+          const year = refDate.getFullYear()
+          const startMonth = (q - 1) * 3
+          const periodStart = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`
+          const periodEndDate = new Date(year, startMonth + 3, 0)
+          const dueDate = new Date(periodEndDate)
+          dueDate.setMonth(dueDate.getMonth() + 1)  // last day of month after quarter
+          const filing = filings.find(f => f.form_kind === '941' && f.period_start === periodStart && f.status !== 'superseded')
+          const overdue = !filing && now > dueDate
+          quarters.push({ year, quarter: q, periodStart, dueDate, filing, overdue })
+        }
+        return (
+          <Section title="Quarterly federal returns (Form 941)" theme={theme}>
+            {quarters.map(q => {
+              const tone = q.overdue ? TONE.red : (q.filing ? TONE.green : TONE.gray)
+              const key = `941-Q${q.quarter}`
+              return (
+                <div key={key} style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 999, backgroundColor: tone.dot, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>
+                      Q{q.quarter} {q.year}
+                    </div>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                      {q.filing
+                        ? `Generated ${fmtDate(q.filing.created_at)} · status ${q.filing.status}`
+                        : (q.overdue ? `Overdue — was due ${fmtDate(q.dueDate)}` : `Due ${fmtDate(q.dueDate)}`)}
+                    </div>
+                  </div>
+                  {q.filing?.pdf_storage_path && (
+                    <button onClick={() => downloadFiling(q.filing.pdf_storage_path)} style={pillBtn(theme)}>
+                      <Download size={12} /> Download
+                    </button>
+                  )}
+                  <button
+                    onClick={() => generateForms('941', q.year, q.quarter)}
+                    disabled={generating === `941-Q${q.quarter}`}
+                    style={btn(theme)}
+                  >
+                    <Sparkles size={14} />
+                    {generating === `941-Q${q.quarter}` ? '…' : (q.filing ? 'Regenerate' : 'Generate')}
+                  </button>
+                </div>
+              )
+            })}
+          </Section>
+        )
+      })()}
+
+      {/* Annual FUTA — Form 940. Same pattern, one-per-year. */}
+      {(() => {
+        const now = new Date()
+        const month = now.getMonth()
+        // Show prior year (always due Jan 31 next) + current year as in-progress
+        const years = [now.getFullYear() - 1, now.getFullYear()]
+        return (
+          <Section title="Annual FUTA returns (Form 940)" theme={theme}>
+            {years.map(year => {
+              const periodStart = `${year}-01-01`
+              const dueDate = new Date(year + 1, 0, 31)  // Jan 31 of next year
+              const filing = filings.find(f => f.form_kind === '940' && f.period_start === periodStart && f.status !== 'superseded')
+              const overdue = !filing && now > dueDate
+              const tone = overdue ? TONE.red : (filing ? TONE.green : TONE.gray)
+              return (
+                <div key={year} style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 999, backgroundColor: tone.dot, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>{year}</div>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                      {filing
+                        ? `Generated ${fmtDate(filing.created_at)} · status ${filing.status}`
+                        : (overdue ? `Overdue — was due ${fmtDate(dueDate)}` : `Due ${fmtDate(dueDate)}`)}
+                    </div>
+                  </div>
+                  {filing?.pdf_storage_path && (
+                    <button onClick={() => downloadFiling(filing.pdf_storage_path)} style={pillBtn(theme)}>
+                      <Download size={12} /> Download
+                    </button>
+                  )}
+                  <button
+                    onClick={() => generateForms('940', year)}
+                    disabled={generating === '940'}
+                    style={btn(theme)}
+                  >
+                    <Sparkles size={14} />
+                    {generating === '940' ? '…' : (filing ? 'Regenerate' : 'Generate')}
+                  </button>
+                </div>
+              )
+            })}
+          </Section>
         )
       })()}
 

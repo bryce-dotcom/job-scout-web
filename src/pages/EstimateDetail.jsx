@@ -1482,8 +1482,21 @@ function EstimateDetailInner() {
     try {
       const effectiveSettings = getEffectiveSettings()
       const buObject = getBusinessUnitObject()
+      // Pull the linked audit so the PDF can render annual savings +
+      // payback (Noah's complaint: missing on the proposal).
+      let auditExtras = {}
+      if (estimate.audit_id) {
+        try {
+          const { data: aud } = await supabase
+            .from('lighting_audits')
+            .select('id,annual_savings_kwh,annual_savings_dollars,estimated_rebate,total_existing_watts,total_proposed_watts,watts_reduced,payback_months,est_project_cost,net_cost')
+            .eq('id', estimate.audit_id)
+            .single()
+          if (aud) auditExtras = { audit: aud, annual_savings_dollars: aud.annual_savings_dollars, annual_savings_kwh: aud.annual_savings_kwh }
+        } catch { /* non-fatal */ }
+      }
       const pdfBlob = await generateEstimatePdf({
-        estimate,
+        estimate: { ...estimate, ...auditExtras },
         lineItems,
         company,
         settings: effectiveSettings,
@@ -1610,8 +1623,22 @@ function EstimateDetailInner() {
       let snapshotPdfPath = null
       try {
         const effectiveSettings = getEffectiveSettings()
+        // Same audit fetch as handleGeneratePdf — so the saved email
+        // snapshot includes annual savings if the estimate is from an
+        // audit.
+        let auditExtrasForSnap = {}
+        if (estimate.audit_id) {
+          try {
+            const { data: aud } = await supabase
+              .from('lighting_audits')
+              .select('id,annual_savings_kwh,annual_savings_dollars,estimated_rebate,total_existing_watts,total_proposed_watts,watts_reduced,payback_months,est_project_cost,net_cost')
+              .eq('id', estimate.audit_id)
+              .single()
+            if (aud) auditExtrasForSnap = { audit: aud, annual_savings_dollars: aud.annual_savings_dollars, annual_savings_kwh: aud.annual_savings_kwh }
+          } catch { /* non-fatal */ }
+        }
         const pdfBlob = await generateEstimatePdf({
-          estimate,
+          estimate: { ...estimate, ...auditExtrasForSnap },
           lineItems,
           company,
           settings: effectiveSettings,
