@@ -2352,6 +2352,14 @@ export default function InvoiceDetail() {
 
             <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Partial-payment hint — Tracy was editing the invoice
+                    amount to make partial payments, which corrupted the
+                    balance. The Amount input below already supports any
+                    amount up to (or over, for tip) the balance. */}
+                <div style={{ padding: '10px 12px', backgroundColor: 'rgba(59,130,246,0.08)', border: '1px solid #3b82f6', borderRadius: '8px', fontSize: '13px', color: '#1e40af' }}>
+                  Enter any amount below to record a partial payment.
+                  The invoice keeps its original total ({formatCurrency(invoice.amount)}); the balance auto-updates. Want recurring auto-charges? Use <b>Set Up Plan</b> on the Payment Plan card.
+                </div>
                 <div>
                   <label style={labelStyle}>Amount</label>
                   <input
@@ -2362,6 +2370,27 @@ export default function InvoiceDetail() {
                     placeholder={formatCurrency(balanceDue)}
                     style={inputStyle}
                   />
+                  {/* Quick-fill chips for common installment splits */}
+                  {Number(invoice.amount) > 0 && (
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '11px', color: theme.textMuted }}>Quick:</span>
+                      {[
+                        { label: 'Full balance', amt: balanceDue.toFixed(2) },
+                        { label: '½', amt: (balanceDue / 2).toFixed(2) },
+                        { label: '⅓', amt: (balanceDue / 3).toFixed(2) },
+                        { label: '6-mo', amt: (Number(invoice.amount) / 6).toFixed(2) },
+                      ].map(opt => (
+                        <button
+                          key={opt.label}
+                          type="button"
+                          onClick={() => setPaymentData(prev => ({ ...prev, amount: opt.amt }))}
+                          style={{ padding: '2px 8px', fontSize: '11px', fontWeight: '500', backgroundColor: theme.bg, color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '4px', cursor: 'pointer' }}
+                        >
+                          {opt.label} (${opt.amt})
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
