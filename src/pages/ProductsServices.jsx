@@ -208,24 +208,24 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
         )}
         {/* Utility-scope badges — fast visual cue when scrolling the catalog. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
+          {product.suggest_in_lenard && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '3px',
+              padding: '2px 6px', borderRadius: '4px',
+              fontSize: '10px', fontWeight: '600',
+              backgroundColor: 'rgba(234,179,8,0.12)', color: '#a16207',
+            }} title="Suggested as upsell on estimates + Lenard">
+              💡 Upsell
+            </span>
+          )}
           {product.in_utility_scope === false && (
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: '3px',
               padding: '2px 6px', borderRadius: '4px',
               fontSize: '10px', fontWeight: '600',
               backgroundColor: 'rgba(249,115,22,0.10)', color: '#c2410c',
-            }} title="Customer-paid only · doesn't count toward utility incentive base">
-              Customer add-on
-            </span>
-          )}
-          {product.suggest_in_lenard && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: '3px',
-              padding: '2px 6px', borderRadius: '4px',
-              fontSize: '10px', fontWeight: '600',
-              backgroundColor: 'rgba(59,130,246,0.10)', color: '#3b82f6',
-            }} title="Suggested in Lenard Give-Me + estimate builder">
-              Auto-suggest
+            }} title="Doesn't count toward utility incentive base · only relevant if your business runs utility rebate programs">
+              Customer-only
             </span>
           )}
         </div>
@@ -2317,6 +2317,113 @@ export default function ProductsServices() {
                   <label style={labelStyle}>Description</label>
                   <textarea name="description" value={productForm.description} onChange={handleProductChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
                 </div>
+
+                {/* ── Upsell Settings ──
+                    Universal across all businesses (lighting, lawn, cleaning,
+                    fleet, etc.). When checked, this product/service shows up
+                    as a one-click suggestion when reps build estimates or
+                    proposals. The optional price range gives reps room to
+                    adjust without going off-script. */}
+                <div style={{ padding: '14px 16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '10px' }}>
+                    <Lightbulb size={14} style={{ color: '#eab308' }} />
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>Upsell Settings</div>
+                  </div>
+
+                  <label style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 10,
+                    cursor: 'pointer', padding: '10px 12px',
+                    backgroundColor: theme.bgCard,
+                    border: `1.5px solid ${productForm.suggest_in_lenard ? theme.accent : theme.border}`,
+                    borderRadius: 8, marginBottom: 12,
+                  }}>
+                    <input
+                      type="checkbox"
+                      name="suggest_in_lenard"
+                      checked={!!productForm.suggest_in_lenard}
+                      onChange={handleProductChange}
+                      style={{ marginTop: 3 }}
+                    />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+                        Suggest as upsell
+                      </div>
+                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2, lineHeight: 1.5 }}>
+                        When checked, this product shows up as a one-click suggestion when reps build estimates or proposals (and in Lenard for energy projects). Use for warranties, premium tiers, add-on services, travel fees, processing fees, etc.
+                      </div>
+                    </div>
+                  </label>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <label style={labelStyle}>Floor price (optional)</label>
+                      <input
+                        type="number"
+                        name="floor_price"
+                        value={productForm.floor_price}
+                        onChange={handleProductChange}
+                        placeholder="—"
+                        step="0.01"
+                        style={inputStyle}
+                      />
+                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                        Lower bound. Below this fires a confirm dialog so reps don't undersell.
+                      </div>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Ceiling price (optional)</label>
+                      <input
+                        type="number"
+                        name="ceiling_price"
+                        value={productForm.ceiling_price}
+                        onChange={handleProductChange}
+                        placeholder="—"
+                        step="0.01"
+                        style={inputStyle}
+                      />
+                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                        Upper bound. Above fires a confirm dialog. Both blank = unlimited.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Advanced — only relevant for businesses that participate in
+                      utility incentive programs (HHH/energy contractors). Hidden
+                      under a collapsible section so cleaning + lawn + fleet
+                      companies don't get confused by it. */}
+                  <details style={{ marginTop: 4 }}>
+                    <summary style={{
+                      cursor: 'pointer', fontSize: 12, color: theme.textMuted,
+                      padding: '6px 0', userSelect: 'none',
+                    }}>
+                      ⚡ Advanced — utility incentive programs (lighting / energy only)
+                    </summary>
+                    <label style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 10,
+                      cursor: 'pointer', padding: '10px 12px', marginTop: 8,
+                      backgroundColor: theme.bgCard,
+                      border: `1.5px solid ${productForm.in_utility_scope ? '#22c55e' : '#f97316'}`,
+                      borderRadius: 8,
+                    }}>
+                      <input
+                        type="checkbox"
+                        name="in_utility_scope"
+                        checked={!!productForm.in_utility_scope}
+                        onChange={handleProductChange}
+                        style={{ marginTop: 3 }}
+                      />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+                          Counts toward utility incentive scope
+                        </div>
+                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2, lineHeight: 1.5 }}>
+                          Default ON. Skip this if your business doesn't deal with utility rebate programs (SRP / RMP / Pacific Power, etc). Uncheck for warranties, fees, travel, and other items that don't qualify for the utility's incentive base — those will show in a separate "customer add-ons" section on utility invoices.
+                        </div>
+                      </div>
+                    </label>
+                  </details>
+                </div>
+
                 {/* ── Pricing Section ── */}
                 <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
                   <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Pricing</div>
@@ -2487,82 +2594,6 @@ export default function ProductsServices() {
                   </div>
                 </div>
 
-                {/* Utility incentive scope — controls whether this item
-                    counts toward the utility's incentive base + appears
-                    in the utility-invoice's in-scope section. SMBE
-                    fixtures = true; warranties / fees / travel / M&V = false. */}
-                <div style={{ padding: '14px 16px', backgroundColor: theme.bg, borderRadius: '8px', borderLeft: `3px solid ${productForm.in_utility_scope ? '#22c55e' : '#f97316'}` }}>
-                  <div style={{ fontSize: '12px', fontWeight: '600', color: theme.accent, textTransform: 'uppercase', marginBottom: '12px' }}>Utility Incentive Scope</div>
-                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1.5px solid ${productForm.in_utility_scope ? '#22c55e' : theme.border}`, borderRadius: 8, marginBottom: 8 }}>
-                    <input
-                      type="checkbox"
-                      name="in_utility_scope"
-                      checked={!!productForm.in_utility_scope}
-                      onChange={handleProductChange}
-                      style={{ marginTop: 3 }}
-                    />
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
-                        Counts toward utility incentive scope
-                      </div>
-                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2, lineHeight: 1.5 }}>
-                        Check ON for items the utility (SRP / RMP / etc.) reimburses — typically only SMBE-qualified fixtures and labor.
-                        Check OFF for warranties, fees, travel, project management, M&V reports, and other "customer-paid only" services. Setting affects how this item shows on utility invoices.
-                      </div>
-                    </div>
-                  </label>
-
-                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', backgroundColor: theme.bgCard, border: `1.5px solid ${theme.border}`, borderRadius: 8, marginBottom: 12 }}>
-                    <input
-                      type="checkbox"
-                      name="suggest_in_lenard"
-                      checked={!!productForm.suggest_in_lenard}
-                      onChange={handleProductChange}
-                      style={{ marginTop: 3 }}
-                    />
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
-                        Suggest in Lenard Give-Me + Estimate builder
-                      </div>
-                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2, lineHeight: 1.5 }}>
-                        When ON, this item shows up as a suggested add-on when reps build estimates or work the Lenard Give-Me engine. Use for the add-on services HHH offers (utility processing, audits, warranties, etc.).
-                      </div>
-                    </div>
-                  </label>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <div>
-                      <label style={labelStyle}>Floor price (optional)</label>
-                      <input
-                        type="number"
-                        name="floor_price"
-                        value={productForm.floor_price}
-                        onChange={handleProductChange}
-                        placeholder="—"
-                        step="0.01"
-                        style={inputStyle}
-                      />
-                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
-                        Lower bound rep can adjust to. Below this fires a confirm dialog.
-                      </div>
-                    </div>
-                    <div>
-                      <label style={labelStyle}>Ceiling price (optional)</label>
-                      <input
-                        type="number"
-                        name="ceiling_price"
-                        value={productForm.ceiling_price}
-                        onChange={handleProductChange}
-                        placeholder="—"
-                        step="0.01"
-                        style={inputStyle}
-                      />
-                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
-                        Upper bound. Above fires a confirm dialog. Both blank = unlimited.
-                      </div>
-                    </div>
-                  </div>
-                </div>
                 {/* Spec Sheet Upload */}
                 <div style={{ padding: '12px 16px', backgroundColor: theme.bg, borderRadius: '8px', borderLeft: `3px solid ${theme.accent}` }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
