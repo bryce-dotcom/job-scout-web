@@ -212,6 +212,46 @@ export default function Onboarding() {
           })),
           { onConflict: 'company_id,agent_id', ignoreDuplicates: true }
         )
+
+        // Mirror to ai_modules so the agents actually appear in the
+        // sidebar's AI CREW section. Without this the recruit is
+        // invisible — see scripts/backfill-ai-modules.cjs for the
+        // template that matches this map.
+        const MODULE_TEMPLATES = {
+          'lenard-lighting':  { module_name: 'lenard',         display_name: 'Lenard - Lighting AI',         icon: 'Lightbulb',   default_menu_section: 'SALES_FLOW', route_path: '/agents/lenard',         sort_order: 10, description: 'AI lighting auditor + utility-rebate specialist' },
+          'freddy-fleet':     { module_name: 'freddy',         display_name: 'Freddy - Fleet AI',            icon: 'Truck',       default_menu_section: 'OPERATIONS', route_path: '/agents/freddy',         sort_order: 20, description: 'AI fleet manager for vehicles equipment and maintenance' },
+          'zach-yard-yeti':   { module_name: 'zach-yard-yeti', display_name: 'Zach - Lawn Care AI',          icon: 'Sprout',      default_menu_section: 'OPERATIONS', route_path: '/agents/zach',           sort_order: 25, description: 'AI lawn-care specialist — properties, visits, treatments, pricing' },
+          'conrad-connect':   { module_name: 'conrad-connect', display_name: 'Conrad - Email Marketing AI', icon: 'Mail',         default_menu_section: 'SALES_FLOW', route_path: '/agents/conrad-connect', sort_order: 30, description: 'AI email marketing agent powered by Constant Contact' },
+          'victor-verify':    { module_name: 'victor-verify',  display_name: 'Victor - Verification AI',     icon: 'ShieldCheck', default_menu_section: 'OPERATIONS', route_path: '/agents/victor',         sort_order: 35, description: 'AI quality verification for completed work' },
+          'arnie-og':         { module_name: 'arnie',          display_name: 'OG Arnie',                     icon: 'Bot',         default_menu_section: 'OPERATIONS', route_path: '/agents/arnie',          sort_order: 40, description: 'General-purpose AI assistant' },
+          'frankie-finance':  { module_name: 'frankie-finance',display_name: 'Frankie - Finance AI',         icon: 'DollarSign',  default_menu_section: 'OPERATIONS', route_path: '/agents/frankie',        sort_order: 45, description: 'AI bookkeeper + finance assistant' },
+          'walter-windows':   { module_name: 'walter-windows', display_name: 'Walter - Windows AI',          icon: 'Bot',         default_menu_section: 'OPERATIONS', route_path: '/agents/walter',         sort_order: 50, description: 'AI window-cleaning specialist' },
+        }
+        const moduleRows = agentRows
+          .map(a => ({ slug: a.slug, tpl: MODULE_TEMPLATES[a.slug] }))
+          .filter(x => x.tpl)
+          .map(({ tpl }) => ({
+            company_id: company.id,
+            module_name: tpl.module_name,
+            display_name: tpl.display_name,
+            description: tpl.description,
+            icon: tpl.icon,
+            status: 'active',
+            default_menu_section: tpl.default_menu_section,
+            default_menu_parent: null,
+            user_menu_section: null,
+            user_menu_parent: null,
+            sort_order: tpl.sort_order,
+            capabilities_json: {},
+            config_json: {},
+            route_path: tpl.route_path,
+          }))
+        if (moduleRows.length) {
+          await supabase.from('ai_modules').upsert(moduleRows, {
+            onConflict: 'company_id,module_name',
+            ignoreDuplicates: true,
+          })
+        }
       }
     } catch (e) {
       console.warn('[Onboarding] agent auto-enable failed:', e.message)

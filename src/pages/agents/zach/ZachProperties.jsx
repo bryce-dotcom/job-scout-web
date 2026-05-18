@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
@@ -57,6 +58,9 @@ export default function ZachProperties() {
   const [estimating, setEstimating] = useState(null) // property being estimated
   const addressInputRef = useRef(null)
   const autocompleteRef = useRef(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const deepLinkPropertyId = searchParams.get('property')
+  const deepLinkHandledRef = useRef(false)
 
   useEffect(() => {
     if (!companyId) return
@@ -132,6 +136,20 @@ export default function ZachProperties() {
     setNewLead(emptyNewLead)
     setEditingId(p.id); setShowForm(true); setError(null)
   }
+
+  // Deep-link handler: CustomerDetail's "Open in Zach" button passes
+  // ?property=<id>. Open the edit form for that property once, then drop
+  // the param so a manual refresh doesn't re-open it.
+  useEffect(() => {
+    if (deepLinkHandledRef.current) return
+    if (!deepLinkPropertyId || !lawnProperties?.length) return
+    const target = lawnProperties.find(p => String(p.id) === String(deepLinkPropertyId))
+    if (!target) return
+    deepLinkHandledRef.current = true
+    openEdit(target)
+    const next = new URLSearchParams(searchParams); next.delete('property')
+    setSearchParams(next, { replace: true })
+  }, [deepLinkPropertyId, lawnProperties, searchParams, setSearchParams])
 
   const save = async () => {
     if (!form.property_name?.trim() && !form.address?.trim()) {

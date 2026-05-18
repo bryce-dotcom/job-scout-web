@@ -903,25 +903,23 @@ export default function Layout() {
                         <Bot size={12} />
                         AI CREW
                       </div>
-                    {aiModules.length > 0 && (
-                      <button
-                        onClick={() => setShowAgentSettings(true)}
-                        title="Configure AI agent menu placement"
-                        style={{
-                          padding: '4px',
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          color: '#a855f7',
-                          cursor: 'pointer',
-                          borderRadius: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        <SettingsIcon size={12} />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setShowAgentSettings(true)}
+                      title="Configure AI agent menu placement"
+                      style={{
+                        padding: '4px',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        color: '#a855f7',
+                        cursor: 'pointer',
+                        borderRadius: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <SettingsIcon size={12} />
+                    </button>
                     </div>
                     <div style={{
                       fontSize: '10px',
@@ -1372,25 +1370,23 @@ export default function Layout() {
                             <Bot size={12} />
                             AI CREW
                           </div>
-                          {aiModules.length > 0 && (
-                            <button
-                              onClick={() => setShowAgentSettings(true)}
-                              title="Configure AI agent menu placement"
-                              style={{
-                                padding: '4px',
-                                backgroundColor: 'transparent',
-                                border: 'none',
-                                color: '#a855f7',
-                                cursor: 'pointer',
-                                borderRadius: '4px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                              }}
-                            >
-                              <SettingsIcon size={12} />
-                            </button>
-                          )}
+                          <button
+                            onClick={() => setShowAgentSettings(true)}
+                            title="Configure AI agent menu placement"
+                            style={{
+                              padding: '4px',
+                              backgroundColor: 'transparent',
+                              border: 'none',
+                              color: '#a855f7',
+                              cursor: 'pointer',
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <SettingsIcon size={12} />
+                          </button>
                         </div>
                         <div style={{
                           fontSize: '10px',
@@ -1763,7 +1759,26 @@ export default function Layout() {
                   color: theme.textMuted
                 }}>
                   <Bot size={32} style={{ opacity: 0.5, marginBottom: '8px' }} />
-                  <p>No AI agents installed yet.</p>
+                  <p style={{ marginBottom: '12px' }}>No AI agents installed yet.</p>
+                  <button
+                    onClick={() => {
+                      setShowAgentSettings(false)
+                      setEditingAgent(null)
+                      navigate('/base-camp')
+                    }}
+                    style={{
+                      padding: '8px 14px',
+                      backgroundColor: '#a855f7',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Recruit agents at Base Camp
+                  </button>
                 </div>
               )}
             </div>

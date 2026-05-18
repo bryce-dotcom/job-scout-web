@@ -7,7 +7,8 @@ import { toast } from '../lib/toast'
 import {
   ArrowLeft, FileText, Briefcase, Plus, Send, Phone, Mail,
   MapPin, Building2, User, X, Save, Trash2, Package, UserPlus, Grid3X3,
-  DollarSign, TrendingUp, MessageCircle, CreditCard, ExternalLink, Edit2, Zap
+  DollarSign, TrendingUp, MessageCircle, CreditCard, ExternalLink, Edit2, Zap,
+  Sprout, Calendar, ClipboardCheck
 } from 'lucide-react'
 import ProductPickerModal from '../components/ProductPickerModal'
 import Tooltip from '../components/Tooltip'
@@ -48,6 +49,9 @@ export default function CustomerDetail() {
   const [payments, setPayments] = useState([])
   const [invoicePayments, setInvoicePayments] = useState([])
   const [communications, setCommunications] = useState([])
+  const [lawnProperty, setLawnProperty] = useState(null)
+  const [lawnVisits, setLawnVisits] = useState([])
+  const [lawnTreatments, setLawnTreatments] = useState([])
   const [savedCards, setSavedCards] = useState([])
   const [loadingCards, setLoadingCards] = useState(false)
   const [removingCardId, setRemovingCardId] = useState(null)
@@ -199,6 +203,39 @@ export default function CustomerDetail() {
       .eq('customer_id', id)
       .order('created_at', { ascending: false })
     setCommunications(commData || [])
+
+    // Fetch Zach the Yard Yeti's lawn-care record for this customer (if any).
+    // Most service customers won't have one — the tab only renders when a
+    // property row exists.
+    const { data: propData } = await supabase
+      .from('lawn_properties')
+      .select('*')
+      .eq('customer_id', id)
+      .eq('company_id', companyId)
+      .maybeSingle()
+    setLawnProperty(propData || null)
+
+    if (propData?.id) {
+      const [{ data: visitsData }, { data: treatmentsData }] = await Promise.all([
+        supabase
+          .from('lawn_visits')
+          .select('*')
+          .eq('property_id', propData.id)
+          .order('visit_date', { ascending: false })
+          .limit(20),
+        supabase
+          .from('lawn_treatments')
+          .select('*')
+          .eq('property_id', propData.id)
+          .order('scheduled_date', { ascending: false })
+          .limit(20),
+      ])
+      setLawnVisits(visitsData || [])
+      setLawnTreatments(treatmentsData || [])
+    } else {
+      setLawnVisits([])
+      setLawnTreatments([])
+    }
 
     setLoading(false)
   }
@@ -759,6 +796,7 @@ export default function CustomerDetail() {
     { id: 'jobs', label: `Jobs (${jobs.length})`, icon: Briefcase, hint: 'Work orders for this customer' },
     { id: 'invoices', label: `Invoices (${invoices.length + utilityInvoices.length})`, icon: DollarSign, hint: 'Invoices for this customer' },
     { id: 'payments', label: `Payments (${payments.length + invoicePayments.length})`, icon: CreditCard, hint: 'Payments received from this customer' },
+    ...(lawnProperty ? [{ id: 'yard-yeti', label: 'Yard Yeti', icon: Sprout, hint: 'Lawn-care property file, visits, and treatments' }] : []),
     ...(communications.length > 0 ? [{ id: 'comms', label: `Comms (${communications.length})`, icon: MessageCircle, hint: 'Communication history' }] : []),
   ]
 
@@ -2280,6 +2318,135 @@ export default function CustomerDetail() {
             )}
           </div>
         )}
+
+        {/* YARD YETI (Zach) TAB */}
+        {activeTab === 'yard-yeti' && lawnProperty && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h3 style={{ margin: 0, color: theme.text, fontSize: isMobile ? '16px' : '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Sprout size={18} style={{ color: '#22c55e' }} /> Yard Yeti — Lawn Care
+                </h3>
+                <p style={{ margin: '4px 0 0', color: theme.textMuted, fontSize: '13px' }}>
+                  Zach's lawn-care file for this customer
+                </p>
+              </div>
+              <button
+                onClick={() => navigate(`/agents/zach?property=${lawnProperty.id}`)}
+                style={{
+                  padding: '8px 14px',
+                  backgroundColor: theme.accentBg,
+                  color: theme.accent,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                Open in Zach <ExternalLink size={13} />
+              </button>
+            </div>
+
+            {/* Property summary card */}
+            <div style={{
+              padding: isMobile ? '14px 16px' : '16px 20px',
+              backgroundColor: theme.bg,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '10px',
+              marginBottom: '20px',
+            }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
+                gap: '12px',
+              }}>
+                <YardField theme={theme} label="Mow Day"     value={lawnProperty.mow_day} />
+                <YardField theme={theme} label="Frequency"   value={lawnProperty.mow_frequency} />
+                <YardField theme={theme} label="Turf Size"   value={lawnProperty.turf_size_sqft ? `${lawnProperty.turf_size_sqft.toLocaleString()} sq ft` : null} />
+                <YardField theme={theme} label="Turf Type"   value={lawnProperty.turf_type} />
+                <YardField theme={theme} label="Mow Height"  value={lawnProperty.mow_height_inches ? `${lawnProperty.mow_height_inches}"` : null} />
+                <YardField theme={theme} label="Season"      value={(lawnProperty.service_start_month && lawnProperty.service_end_month)
+                  ? `${monthName(lawnProperty.service_start_month)}–${monthName(lawnProperty.service_end_month)}`
+                  : null} />
+                <YardField theme={theme} label="Gate Code"   value={lawnProperty.gate_code} />
+                <YardField theme={theme} label="Dog"         value={lawnProperty.dog_on_premises ? (lawnProperty.dog_notes || 'Yes') : null} />
+              </div>
+              {(lawnProperty.irrigation_notes || lawnProperty.obstacles || lawnProperty.hazards || lawnProperty.notes) && (
+                <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {lawnProperty.irrigation_notes && <YardField theme={theme} label="Irrigation" value={lawnProperty.irrigation_notes} wide />}
+                  {lawnProperty.obstacles      && <YardField theme={theme} label="Obstacles"  value={lawnProperty.obstacles}        wide />}
+                  {lawnProperty.hazards        && <YardField theme={theme} label="Hazards"    value={lawnProperty.hazards}          wide />}
+                  {lawnProperty.notes          && <YardField theme={theme} label="Notes"      value={lawnProperty.notes}            wide />}
+                </div>
+              )}
+            </div>
+
+            {/* Recent visits */}
+            <div style={{ marginBottom: '20px' }}>
+              <h4 style={{ margin: '0 0 10px', color: theme.text, fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <ClipboardCheck size={14} style={{ color: theme.accent }} /> Recent Visits ({lawnVisits.length})
+              </h4>
+              {lawnVisits.length === 0 ? (
+                <div style={{ padding: '14px 16px', color: theme.textMuted, fontSize: '13px', backgroundColor: theme.bg, border: `1px dashed ${theme.border}`, borderRadius: '8px' }}>
+                  No visits logged yet.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {lawnVisits.map(v => (
+                    <div key={v.id} style={{ padding: '10px 14px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: theme.text }}>
+                        <Calendar size={13} style={{ color: theme.textMuted }} />
+                        {v.visit_date ? new Date(v.visit_date).toLocaleDateString() : '—'}
+                        <span style={{ color: theme.textMuted }}>·</span>
+                        <span style={{ textTransform: 'capitalize' }}>{v.service_type || 'mow'}</span>
+                        {v.duration_minutes ? <span style={{ color: theme.textMuted }}>· {v.duration_minutes}m</span> : null}
+                        {v.crew ? <span style={{ color: theme.textMuted }}>· {v.crew}</span> : null}
+                      </div>
+                      <div style={{ fontSize: '12px', color: v.billed ? '#22c55e' : theme.textMuted }}>
+                        {v.billed ? 'Billed' : 'Unbilled'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Treatments */}
+            <div>
+              <h4 style={{ margin: '0 0 10px', color: theme.text, fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sprout size={14} style={{ color: '#22c55e' }} /> Treatments ({lawnTreatments.length})
+              </h4>
+              {lawnTreatments.length === 0 ? (
+                <div style={{ padding: '14px 16px', color: theme.textMuted, fontSize: '13px', backgroundColor: theme.bg, border: `1px dashed ${theme.border}`, borderRadius: '8px' }}>
+                  No treatments scheduled.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {lawnTreatments.map(t => (
+                    <div key={t.id} style={{ padding: '10px 14px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: '13px', color: theme.text }}>
+                        {t.round_number ? <span style={{ fontWeight: 600 }}>R{t.round_number}</span> : null}
+                        {' '}{t.treatment_type}
+                        {t.product_name ? <span style={{ color: theme.textMuted }}> · {t.product_name}</span> : null}
+                      </div>
+                      <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                        {t.completed_date
+                          ? <span style={{ color: '#22c55e' }}>Done {new Date(t.completed_date).toLocaleDateString()}</span>
+                          : t.scheduled_date
+                            ? <>Scheduled {new Date(t.scheduled_date).toLocaleDateString()}</>
+                            : t.status}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Quote Creation Modal */}
@@ -2755,4 +2922,30 @@ export default function CustomerDetail() {
       )}
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Yard Yeti tab helpers
+// ---------------------------------------------------------------------------
+// Theme-aware key/value display used in the Yard Yeti tab. Theme is passed
+// from the parent so this is a pure presentational component.
+function YardField({ label, value, wide = false, theme = { text: '#2c3530', textMuted: '#7d8a7f' } }) {
+  if (!value) return wide ? null : (
+    <div>
+      <div style={{ fontSize: '10px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>{label}</div>
+      <div style={{ fontSize: '13px', color: theme.textMuted }}>—</div>
+    </div>
+  )
+  return (
+    <div style={wide ? { gridColumn: '1 / -1' } : undefined}>
+      <div style={{ fontSize: '10px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>{label}</div>
+      <div style={{ fontSize: '13px', color: theme.text }}>{value}</div>
+    </div>
+  )
+}
+
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+function monthName(m) {
+  if (!m || m < 1 || m > 12) return ''
+  return MONTH_NAMES[m - 1]
 }

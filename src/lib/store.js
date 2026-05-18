@@ -5,6 +5,20 @@ import { TABLES, QUERIES } from './schema';
 import { offlineDb } from './offlineDb';
 import { syncQueue } from './syncQueue';
 
+// Sidebar-menu templates for each agent slug. Recruiting an agent inserts
+// into company_agents (subscription record) AND ai_modules (sidebar entry),
+// so the new agent shows up in AI CREW immediately. Keep in sync with
+// scripts/backfill-ai-modules.cjs.
+const AGENT_MODULE_TEMPLATES = {
+  'lenard-lighting':  { module_name: 'lenard',         display_name: 'Lenard - Lighting AI',         icon: 'Lightbulb',   default_menu_section: 'SALES_FLOW', route_path: '/agents/lenard',         sort_order: 10, description: 'AI lighting auditor + utility-rebate specialist' },
+  'freddy-fleet':     { module_name: 'freddy',         display_name: 'Freddy - Fleet AI',            icon: 'Truck',       default_menu_section: 'OPERATIONS', route_path: '/agents/freddy',         sort_order: 20, description: 'AI fleet manager for vehicles equipment and maintenance' },
+  'zach-yard-yeti':   { module_name: 'zach-yard-yeti', display_name: 'Zach - Lawn Care AI',          icon: 'Sprout',      default_menu_section: 'OPERATIONS', route_path: '/agents/zach',           sort_order: 25, description: 'AI lawn-care specialist — properties, visits, treatments, pricing' },
+  'conrad-connect':   { module_name: 'conrad-connect', display_name: 'Conrad - Email Marketing AI', icon: 'Mail',         default_menu_section: 'SALES_FLOW', route_path: '/agents/conrad-connect', sort_order: 30, description: 'AI email marketing agent powered by Constant Contact' },
+  'victor-verify':    { module_name: 'victor-verify',  display_name: 'Victor - Verification AI',     icon: 'ShieldCheck', default_menu_section: 'OPERATIONS', route_path: '/agents/victor',         sort_order: 35, description: 'AI quality verification for completed work' },
+  'arnie-og':         { module_name: 'arnie',          display_name: 'OG Arnie',                     icon: 'Bot',         default_menu_section: 'OPERATIONS', route_path: '/agents/arnie',          sort_order: 40, description: 'General-purpose AI assistant' },
+  'frankie-finance':  { module_name: 'frankie-finance',display_name: 'Frankie - Finance AI',         icon: 'DollarSign',  default_menu_section: 'OPERATIONS', route_path: '/agents/frankie',        sort_order: 45, description: 'AI bookkeeper + finance assistant' },
+};
+
 export const useStore = create(
   persist(
     (set, get) => ({
@@ -1381,7 +1395,7 @@ export const useStore = create(
       },
 
       recruitAgent: async (agentId) => {
-        const { companyId, fetchCompanyAgents } = get();
+        const { companyId, fetchCompanyAgents, fetchAiModules } = get();
         if (!companyId) return { error: 'No company selected' };
 
         const { data, error } = await supabase
@@ -1395,6 +1409,39 @@ export const useStore = create(
           .single();
 
         if (!error) {
+          // Mirror to ai_modules so the agent shows up in the AI CREW
+          // section of the sidebar. Without this row the recruit is
+          // invisible until the user opens the agent's URL directly.
+          const slug = data?.agent?.slug;
+          const tpl = slug ? AGENT_MODULE_TEMPLATES[slug] : null;
+          if (tpl) {
+            const { error: modErr } = await supabase
+              .from('ai_modules')
+              .upsert(
+                {
+                  company_id: companyId,
+                  module_name: tpl.module_name,
+                  display_name: tpl.display_name,
+                  description: tpl.description,
+                  icon: tpl.icon,
+                  status: 'active',
+                  default_menu_section: tpl.default_menu_section,
+                  default_menu_parent: null,
+                  user_menu_section: null,
+                  user_menu_parent: null,
+                  sort_order: tpl.sort_order,
+                  capabilities_json: {},
+                  config_json: {},
+                  route_path: tpl.route_path,
+                },
+                { onConflict: 'company_id,module_name', ignoreDuplicates: true }
+              );
+            if (modErr) {
+              console.warn('[recruitAgent] ai_modules upsert failed:', modErr.message);
+            } else {
+              await fetchAiModules();
+            }
+          }
           await fetchCompanyAgents();
         }
 
