@@ -3617,7 +3617,11 @@ function EstimateDetailInner() {
                 </button>
               )}
 
-              {/* Send / Proposal */}
+              {/* Send / Proposal — label adapts so reps know they CAN
+                  resend a sent estimate (Alayda + Christopher + Natasha
+                  all reported "can't re-send" because the button just
+                  said "Create Proposal" and they didn't realize it was
+                  also the resend path). */}
               <button
                 onClick={() => setShowSendModal(true)}
                 disabled={saving}
@@ -3636,9 +3640,12 @@ function EstimateDetailInner() {
                   cursor: saving ? 'not-allowed' : 'pointer',
                   opacity: saving ? 0.6 : 1
                 }}
+                title={estimate.status === 'Sent'
+                  ? 'Re-send this proposal with the latest line items / changes'
+                  : 'Send proposal to customer for the first time'}
               >
                 <Send size={18} />
-                Create Proposal
+                {estimate.last_sent_at || estimate.status === 'Sent' ? 'Resend Proposal' : 'Send Proposal'}
               </button>
 
               {/* Formal Legal Proposal — reuses the Create Proposal preview+send modal
