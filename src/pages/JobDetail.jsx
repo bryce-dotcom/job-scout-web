@@ -2446,8 +2446,8 @@ function JobDetailInner() {
     pdfDoc.text('Customer:', m, py); py += 6
     pdfDoc.setFont('helvetica', 'normal'); pdfDoc.setFontSize(10)
     pdfDoc.text(inv.customer_name || getCustomerPrimary(job.customer) || '-', m, py); py += 5
-    if (job.customer?.address) { pdfDoc.text(job.customer.address, m, py); py += 5 }
-    if (job.customer?.phone) { pdfDoc.text(job.customer.phone, m, py); py += 5 }
+    if (job.customer?.address) { pdfDoc.text(job.customer?.address, m, py); py += 5 }
+    if (job.customer?.phone) { pdfDoc.text(job.customer?.phone, m, py); py += 5 }
     py += 3
 
     // Job
@@ -3700,8 +3700,8 @@ function JobDetailInner() {
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Phone</p>
                   {job.customer?.phone ? (
-                    <a href={`tel:${job.customer.phone}`} style={{ fontSize: '14px', fontWeight: '500', color: theme.accent, textDecoration: 'none' }}>
-                      {job.customer.phone}
+                    <a href={`tel:${job.customer?.phone}`} style={{ fontSize: '14px', fontWeight: '500', color: theme.accent, textDecoration: 'none' }}>
+                      {job.customer?.phone}
                     </a>
                   ) : (
                     <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>-</p>
@@ -3711,12 +3711,12 @@ function JobDetailInner() {
                       loading but only phone + business name were displayed.) */}
                   {job.customer?.secondary_contact_name && (
                     <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
-                      Contact: <span style={{ color: theme.text }}>{job.customer.secondary_contact_name}</span>
+                      Contact: <span style={{ color: theme.text }}>{job.customer?.secondary_contact_name}</span>
                     </p>
                   )}
-                  {job.customer?.secondary_contact_phone && job.customer.secondary_contact_phone !== job.customer.phone && (
-                    <a href={`tel:${job.customer.secondary_contact_phone}`} style={{ fontSize: '12px', color: theme.accent, textDecoration: 'none', display: 'block', marginTop: '2px' }}>
-                      {job.customer.secondary_contact_phone}
+                  {job.customer?.secondary_contact_phone && job.customer?.secondary_contact_phone !== job.customer?.phone && (
+                    <a href={`tel:${job.customer?.secondary_contact_phone}`} style={{ fontSize: '12px', color: theme.accent, textDecoration: 'none', display: 'block', marginTop: '2px' }}>
+                      {job.customer?.secondary_contact_phone}
                     </a>
                   )}
                 </div>

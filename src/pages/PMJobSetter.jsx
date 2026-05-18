@@ -3323,7 +3323,7 @@ export default function PMJobSetter() {
                                         }}
                                         title={`${job.customer?.name || ''}${job.customer?.name ? ' — ' : ''}${job.job_title || 'Untitled'}`}
                                       >
-                                        {job.customer?.name ? `${job.customer.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                                        {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
                                       </div>
                                     )
                                   })}
@@ -3440,7 +3440,7 @@ export default function PMJobSetter() {
                               }}
                             >
                               {span.continuesLeft && <span style={{ marginRight: 4, opacity: 0.6 }}>‹</span>}
-                              {job.customer?.name ? `${job.customer.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                              {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
                               {span.continuesRight && <span style={{ marginLeft: 'auto', opacity: 0.6 }}>›</span>}
                             </div>
                           )
@@ -3554,7 +3554,7 @@ export default function PMJobSetter() {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                   <Briefcase size={9} style={{ flexShrink: 0, opacity: 0.7 }} />
                                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {job.customer?.name ? `${job.customer.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                                    {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
                                   </span>
                                 </div>
                               </div>
@@ -3609,7 +3609,7 @@ export default function PMJobSetter() {
                                       }} />
                                     )}
                                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {job?.customer?.name ? `${job.customer.name} — ${job?.job_title || sectionNames}` : (job?.job_title || sectionNames)}
+                                      {job?.customer?.name ? `${job.customer?.name} — ${job?.job_title || sectionNames}` : (job?.job_title || sectionNames)}
                                     </span>
                                   </div>
                                   {uniqueNames.length > 0 && (
@@ -4117,7 +4117,7 @@ export default function PMJobSetter() {
                           overflow: 'hidden',
                           textOverflow: 'ellipsis'
                         }}>
-                          {job.customer?.name ? `${job.customer.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                          {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
                         </span>
                       </div>
                     ))}
@@ -4393,21 +4393,21 @@ export default function PMJobSetter() {
                     {detailJob.customer?.name || detailJob.customer_name}
                   </div>
                   {detailJob.customer?.business_name && (
-                    <div style={{ fontSize: '13px', color: theme.textSecondary }}>{detailJob.customer.business_name}</div>
+                    <div style={{ fontSize: '13px', color: theme.textSecondary }}>{detailJob.customer?.business_name}</div>
                   )}
                   {detailJob.customer?.address && (
                     <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <MapPin size={12} /> {detailJob.customer.address}
+                      <MapPin size={12} /> {detailJob.customer?.address}
                     </div>
                   )}
                   {detailJob.customer?.phone && (
                     <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Phone size={12} /> <a href={`tel:${detailJob.customer.phone}`} style={{ color: theme.accent }}>{detailJob.customer.phone}</a>
+                      <Phone size={12} /> <a href={`tel:${detailJob.customer?.phone}`} style={{ color: theme.accent }}>{detailJob.customer?.phone}</a>
                     </div>
                   )}
                   {detailJob.customer?.email && (
                     <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Mail size={12} /> <a href={`mailto:${detailJob.customer.email}`} style={{ color: theme.accent }}>{detailJob.customer.email}</a>
+                      <Mail size={12} /> <a href={`mailto:${detailJob.customer?.email}`} style={{ color: theme.accent }}>{detailJob.customer?.email}</a>
                     </div>
                   )}
                 </div>
@@ -4799,7 +4799,7 @@ export default function PMJobSetter() {
                     }}
                   >
                     <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text }}>
-                      {job.customer?.name ? `${job.customer.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                      {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
                     </div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: 2 }}>
                       {job.business_unit || '—'}
@@ -4874,7 +4874,7 @@ export default function PMJobSetter() {
                 </h2>
                 <p style={{ fontSize: '13px', color: theme.textMuted, marginTop: '2px' }}>
                   {scheduleJob.job_title || `Job #${scheduleJob.id}`}
-                  {scheduleJob.customer?.name && ` — ${scheduleJob.customer.name}`}
+                  {scheduleJob.customer?.name && ` — ${scheduleJob.customer?.name}`}
                 </p>
               </div>
               <button

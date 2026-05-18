@@ -1143,7 +1143,7 @@ export default function FieldScout() {
     if (navigator.share) {
       navigator.share({ title: 'Leave us a review!', text: msg, url: googleReviewUrl }).catch(() => {})
     } else if (job.customer?.phone) {
-      window.open(`sms:${job.customer.phone}?body=${encodeURIComponent(msg)}`, '_blank')
+      window.open(`sms:${job.customer?.phone}?body=${encodeURIComponent(msg)}`, '_blank')
     } else {
       window.open(googleReviewUrl, '_blank')
     }
@@ -2674,7 +2674,7 @@ export default function FieldScout() {
                       {/* Job details */}
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                         {job.customer?.phone && (
-                          <a href={`tel:${job.customer.phone}`} style={{
+                          <a href={`tel:${job.customer?.phone}`} style={{
                             fontSize: '12px',
                             color: '#3b82f6',
                             textDecoration: 'none',
@@ -3475,13 +3475,13 @@ export default function FieldScout() {
                     <div style={{ display: 'flex', gap: '8px' }}>
                       {paymentJob?.customer?.phone && (
                         <a
-                          href={`sms:${paymentJob.customer.phone.replace(/\D/g, '')}?body=${encodeURIComponent(`Hi ${paymentJob.customer.name || ''} — please pay your invoice here: ${portalLink}`)}`}
+                          href={`sms:${paymentJob.customer?.phone.replace(/\D/g, '')}?body=${encodeURIComponent(`Hi ${paymentJob.customer?.name || ''} — please pay your invoice here: ${portalLink}`)}`}
                           style={{ flex: 1, padding: '10px', backgroundColor: '#3b82f6', color: '#fff', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '13px', fontWeight: '600' }}
                         >Text to Customer</a>
                       )}
                       {paymentJob?.customer?.email && (
                         <a
-                          href={`mailto:${paymentJob.customer.email}?subject=${encodeURIComponent('Invoice payment link')}&body=${encodeURIComponent(`Please pay your invoice here:\n${portalLink}`)}`}
+                          href={`mailto:${paymentJob.customer?.email}?subject=${encodeURIComponent('Invoice payment link')}&body=${encodeURIComponent(`Please pay your invoice here:\n${portalLink}`)}`}
                           style={{ flex: 1, padding: '10px', backgroundColor: '#16a34a', color: '#fff', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '13px', fontWeight: '600' }}
                         >Email to Customer</a>
                       )}

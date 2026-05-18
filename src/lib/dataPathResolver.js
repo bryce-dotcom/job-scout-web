@@ -2,7 +2,7 @@
  * Resolve a dot-notation data path against loaded quote/audit data.
  *
  * Supports:
- *   - Simple paths: "customer.name" → data.customer.name
+ *   - Simple paths: "customer.name" → data.customer?.name
  *   - Aggregations: "audit_areas.fixture_count.sum" → sum of all audit_areas[].fixture_count
  *   - Computed: "today" → today's date as MM/DD/YYYY
  *

@@ -771,14 +771,14 @@ export default function InvoiceDetail() {
     y += 6
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(10)
-    if (invoice.customer?.name) { doc.text(invoice.customer.name, margin, y); y += 5 }
+    if (invoice.customer?.name) { doc.text(invoice.customer?.name, margin, y); y += 5 }
     if (invoice.customer?.address) {
       // Wrap long addresses
-      const addrLines = doc.splitTextToSize(invoice.customer.address, contentWidth / 2)
+      const addrLines = doc.splitTextToSize(invoice.customer?.address, contentWidth / 2)
       for (const line of addrLines) { doc.text(line, margin, y); y += 5 }
     }
-    if (invoice.customer?.email) { doc.text(invoice.customer.email, margin, y); y += 5 }
-    if (invoice.customer?.phone) { doc.text(invoice.customer.phone, margin, y); y += 5 }
+    if (invoice.customer?.email) { doc.text(invoice.customer?.email, margin, y); y += 5 }
+    if (invoice.customer?.phone) { doc.text(invoice.customer?.phone, margin, y); y += 5 }
     y += 8
 
     // ── Line items table ──
@@ -1408,8 +1408,8 @@ export default function InvoiceDetail() {
               <div>
                 <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Customer</p>
                 {invoice.customer?.id ? (
-                  <button onClick={() => navigate(`/customers/${invoice.customer.id}`)} style={{ fontSize: '14px', fontWeight: '500', color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
-                    {invoice.customer.name}
+                  <button onClick={() => navigate(`/customers/${invoice.customer?.id}`)} style={{ fontSize: '14px', fontWeight: '500', color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                    {invoice.customer?.name}
                   </button>
                 ) : (
                   <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{invoice.customer?.name || '-'}</p>

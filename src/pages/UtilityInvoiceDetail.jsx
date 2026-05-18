@@ -459,21 +459,21 @@ export default function UtilityInvoiceDetail() {
     y += 6
     doc.setFont('helvetica', 'normal')
     const custPrimary = invoice.customer_name || jobData?.customer?.business_name || jobData?.customer?.name || '-'
-    const custContact = jobData?.customer?.business_name && jobData?.customer?.name ? jobData.customer.name : null
+    const custContact = jobData?.customer?.business_name && jobData?.customer?.name ? jobData.customer?.name : null
     doc.setFontSize(11)
     doc.text(custPrimary, margin, y); y += 6
     doc.setFontSize(10)
     if (custContact) { doc.text(`Attn: ${custContact}`, margin, y); y += 5 }
     if (jobData?.customer?.address) {
-      const addrLines = doc.splitTextToSize(jobData.customer.address, contentWidth * 0.6)
+      const addrLines = doc.splitTextToSize(jobData.customer?.address, contentWidth * 0.6)
       for (const line of addrLines) { doc.text(line, margin, y); y += 5 }
     }
     if (!jobData?.customer?.address && jobData?.job_address) {
       const addrLines = doc.splitTextToSize(jobData.job_address, contentWidth * 0.6)
       for (const line of addrLines) { doc.text(line, margin, y); y += 5 }
     }
-    if (jobData?.customer?.phone) { y += 1; doc.text(jobData.customer.phone, margin, y); y += 5 }
-    if (jobData?.customer?.email) { doc.text(jobData.customer.email, margin, y); y += 5 }
+    if (jobData?.customer?.phone) { y += 1; doc.text(jobData.customer?.phone, margin, y); y += 5 }
+    if (jobData?.customer?.email) { doc.text(jobData.customer?.email, margin, y); y += 5 }
     y += 8
 
     // ---- Line items (Phase-5: split into in-scope + customer add-ons) ----

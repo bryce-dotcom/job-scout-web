@@ -83,8 +83,8 @@ export default function CustomerPortal() {
 
       // Pre-fill approver info from customer
       if (result.customer) {
-        setApproverName(result.customer.name || '')
-        setApproverEmail(result.customer.email || '')
+        setApproverName(result.customer?.name || '')
+        setApproverEmail(result.customer?.email || '')
       }
     } catch (err) {
       setError(err.message)

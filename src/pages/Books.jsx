@@ -3050,7 +3050,7 @@ export default function Books() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
                           {inv.invoice_id || `Invoice #${inv.id}`}
-                          {inv.customer?.name && ` — ${inv.customer.name}`}
+                          {inv.customer?.name && ` — ${inv.customer?.name}`}
                           {exact && <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: '700', color: '#22c55e', backgroundColor: 'rgba(34,197,94,0.12)', padding: '1px 6px', borderRadius: '8px' }}>EXACT MATCH</span>}
                         </div>
                         <div style={{ fontSize: '11px', color: theme.textMuted }}>
