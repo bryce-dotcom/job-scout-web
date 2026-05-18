@@ -9,7 +9,7 @@ import {
   Upload, Download, Clock, DollarSign, Pencil, ChevronRight, Archive, Search,
   FileSpreadsheet, CheckCircle, AlertCircle, ArrowRight, Loader,
   ExternalLink, FileText, ShieldCheck, Award, PlusCircle, MinusCircle,
-  Wrench, GripHorizontal, GripVertical, Eye
+  Wrench, GripHorizontal, GripVertical, Eye, Lightbulb
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
