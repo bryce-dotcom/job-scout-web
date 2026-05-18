@@ -421,7 +421,7 @@ export default function FrankieCollections() {
                     <MessageSquare size={16} style={{ color: theme.accent }} />
                   </button>
                   <button
-                    onClick={() => navigate(`/invoices/${inv.id}`)}
+                    onClick={() => navigate(`/invoices/${inv.id}`, { state: { from: window.location.pathname } })}
                     title="View invoice"
                     style={{
                       width: '36px', height: '36px', borderRadius: '8px',

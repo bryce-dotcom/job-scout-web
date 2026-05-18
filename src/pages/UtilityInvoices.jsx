@@ -326,7 +326,7 @@ export default function UtilityInvoices() {
             {filteredInvoices.map((invoice) => (
               <div
                 key={invoice.id}
-                onClick={() => navigate(`/utility-invoices/${invoice.id}`)}
+                onClick={() => navigate(`/utility-invoices/${invoice.id}`, { state: { from: window.location.pathname } })}
                 style={{
                   backgroundColor: theme.bgCard,
                   borderRadius: '12px',
@@ -403,7 +403,7 @@ export default function UtilityInvoices() {
             {filteredInvoices.map((invoice) => (
               <div
                 key={invoice.id}
-                onClick={() => navigate(`/utility-invoices/${invoice.id}`)}
+                onClick={() => navigate(`/utility-invoices/${invoice.id}`, { state: { from: window.location.pathname } })}
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',

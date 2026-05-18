@@ -309,7 +309,7 @@ export default function Invoices() {
       notes: ''
     })
     await fetchInvoices()
-    navigate(`/invoices/${data.id}`)
+    navigate(`/invoices/${data.id}`, { state: { from: window.location.pathname } })
     setLoading(false)
   }
 
@@ -1210,7 +1210,7 @@ export default function Invoices() {
                     key={invoice.id}
                     name={invoice.customer?.name}
                     businessName={invoice.customer?.business_name}
-                    onClick={() => navigate(`/invoices/${invoice.id}`)}
+                    onClick={() => navigate(`/invoices/${invoice.id}`, { state: { from: window.location.pathname } })}
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1335,7 +1335,7 @@ export default function Invoices() {
                     key={invoice.id}
                     name={invoice.customer_name}
                     businessName={invoice.utility_name}
-                    onClick={() => navigate(`/utility-invoices/${invoice.id}`)}
+                    onClick={() => navigate(`/utility-invoices/${invoice.id}`, { state: { from: window.location.pathname } })}
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

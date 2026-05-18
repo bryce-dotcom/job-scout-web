@@ -1770,7 +1770,7 @@ export default function CustomerDetail() {
                           </button>
                         )}
                         <button
-                          onClick={() => navigate(`/invoices/${inv.id}`)}
+                          onClick={() => navigate(`/invoices/${inv.id}`, { state: { from: window.location.pathname } })}
                           style={{
                             padding: isMobile ? '10px 14px' : '8px 14px',
                             minHeight: isMobile ? '44px' : 'auto',
@@ -1847,7 +1847,7 @@ export default function CustomerDetail() {
                           </div>
                         </div>
                         <button
-                          onClick={() => navigate(`/utility-invoices/${uInv.id}`)}
+                          onClick={() => navigate(`/utility-invoices/${uInv.id}`, { state: { from: window.location.pathname } })}
                           style={{
                             padding: isMobile ? '10px 14px' : '8px 14px',
                             minHeight: isMobile ? '44px' : 'auto',
@@ -2143,7 +2143,7 @@ export default function CustomerDetail() {
                               {pmt.date && <span>{new Date(pmt.date).toLocaleDateString()}</span>}
                               {matchingInvoice && (
                                 <span
-                                  onClick={() => navigate(`/invoices/${matchingInvoice.id}`)}
+                                  onClick={() => navigate(`/invoices/${matchingInvoice.id}`, { state: { from: window.location.pathname } })}
                                   style={{ color: theme.accent, cursor: 'pointer', textDecoration: 'underline' }}
                                 >
                                   {matchingInvoice.invoice_id || `Invoice #${matchingInvoice.id}`}
@@ -2168,7 +2168,7 @@ export default function CustomerDetail() {
                           </div>
                           {matchingInvoice && (
                             <button
-                              onClick={() => navigate(`/invoices/${matchingInvoice.id}`)}
+                              onClick={() => navigate(`/invoices/${matchingInvoice.id}`, { state: { from: window.location.pathname } })}
                               style={{
                                 padding: isMobile ? '10px 14px' : '8px 14px',
                                 minHeight: isMobile ? '44px' : 'auto',

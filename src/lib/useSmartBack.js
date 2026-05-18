@@ -1,13 +1,17 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 
 /**
- * useSmartBack — returns a function that navigates back to the previous page
- * in history when possible, falling back to a sensible default route.
+ * useSmartBack — returns a function that navigates back to wherever the
+ * user came from.
  *
- * This fixes back-button confusion when a user enters a detail page from
- * somewhere other than the canonical list (e.g. Pipeline -> LeadDetail,
- * CustomerDetail -> InvoiceDetail). Hard-coding navigate('/leads') always
- * dropped them on the wrong page.
+ * Resolution order:
+ *   1. location.state.from — set by the navigating page (most reliable;
+ *      survives refresh + PWA cold-launch)
+ *   2. window.history.length > 1 — browser back via navigate(-1)
+ *   3. fallbackPath — last resort
+ *
+ * For (1) to work, the callsite that navigates TO the detail page must do:
+ *   navigate(`/invoices/${id}`, { state: { from: location.pathname } })
  *
  * Usage:
  *   const goBack = useSmartBack('/customers')
@@ -15,10 +19,17 @@ import { useNavigate } from 'react-router-dom'
  */
 export default function useSmartBack(fallbackPath = '/') {
   const navigate = useNavigate()
+  const location = useLocation()
   return () => {
-    // window.history.length > 1 means there IS a prior entry in this tab.
-    // We also guard against the user opening the detail page directly
-    // (e.g. via a deep link / refresh) where history length is 1.
+    const from = location.state?.from
+    if (from && typeof from === 'string') {
+      // Preserve any sub-state the caller set (selectedTab etc.) but drop
+      // the from-marker so a further-back doesn't loop.
+      const passState = { ...(location.state || {}) }
+      delete passState.from
+      navigate(from, { state: Object.keys(passState).length ? passState : undefined })
+      return
+    }
     if (typeof window !== 'undefined' && window.history.length > 1) {
       navigate(-1)
     } else {

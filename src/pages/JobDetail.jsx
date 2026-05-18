@@ -1203,7 +1203,7 @@ function JobDetailInner() {
       }
 
       await fetchJobData()
-      navigate(`/invoices/${invoice.id}`)
+      navigate(`/invoices/${invoice.id}`, { state: { from: window.location.pathname } })
     }
 
     setSaving(false)
@@ -4770,7 +4770,7 @@ function JobDetailInner() {
                 if (lineItems.length === 0) return null
                 if (existingInvoice) {
                   return (
-                    <button onClick={() => navigate(`/invoices/${existingInvoice.id}`)} style={{
+                    <button onClick={() => navigate(`/invoices/${existingInvoice.id}`, { state: { from: window.location.pathname } })} style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                       padding: '12px 16px', backgroundColor: theme.accent, color: '#ffffff',
                       border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
@@ -5063,7 +5063,7 @@ function JobDetailInner() {
                     border: `1px solid ${theme.border}`
                   }}>
                     <div>
-                      <button onClick={() => navigate(`/invoices/${inv.id}`)} style={{
+                      <button onClick={() => navigate(`/invoices/${inv.id}`, { state: { from: window.location.pathname } })} style={{
                         color: theme.accent, background: 'none', border: 'none', cursor: 'pointer',
                         fontSize: '14px', fontWeight: '500', textDecoration: 'underline', padding: 0
                       }}>
@@ -5088,7 +5088,7 @@ function JobDetailInner() {
                   </div>
                 ))}
                 {jobUtilityInvoices.map(inv => (
-                  <div key={'u-' + inv.id} onClick={() => navigate(`/utility-invoices/${inv.id}`)} style={{
+                  <div key={'u-' + inv.id} onClick={() => navigate(`/utility-invoices/${inv.id}`, { state: { from: window.location.pathname } })} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
                     border: `1px solid ${theme.border}`, cursor: 'pointer'

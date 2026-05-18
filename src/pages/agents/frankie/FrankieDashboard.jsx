@@ -475,7 +475,7 @@ export default function FrankieDashboard() {
                   return (
                     <tr
                       key={inv.id}
-                      onClick={() => navigate(`/invoices/${inv.id}`)}
+                      onClick={() => navigate(`/invoices/${inv.id}`, { state: { from: window.location.pathname } })}
                       style={{ cursor: 'pointer' }}
                       onMouseOver={e => e.currentTarget.style.backgroundColor = theme.accentBg}
                       onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}

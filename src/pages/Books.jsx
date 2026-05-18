@@ -1301,7 +1301,7 @@ export default function Books() {
               {pendingIncentives.length > 0 && (
                 <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {pendingIncentives.slice(0, 5).map(inv => (
-                    <div key={inv.id} onClick={() => navigate(`/utility-invoices/${inv.id}`)} style={{
+                    <div key={inv.id} onClick={() => navigate(`/utility-invoices/${inv.id}`, { state: { from: window.location.pathname } })} style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '8px 12px', backgroundColor: theme.bgCard, borderRadius: '6px',
                       border: `1px solid ${theme.border}`, cursor: 'pointer', fontSize: '13px'

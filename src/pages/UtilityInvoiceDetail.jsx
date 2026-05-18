@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import useSmartBack from '../lib/useSmartBack'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
@@ -24,6 +25,7 @@ const defaultTheme = {
 export default function UtilityInvoiceDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const goBack = useSmartBack('/invoices?type=utility')
   const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
@@ -736,7 +738,7 @@ export default function UtilityInvoiceDetail() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <button
-          onClick={() => navigate('/invoices?type=utility')}
+          onClick={goBack}
           style={{
             padding: '10px',
             backgroundColor: theme.bgCard,
