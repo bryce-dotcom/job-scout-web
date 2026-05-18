@@ -2121,31 +2121,69 @@ function JobDetailInner() {
   }
 
   const handleDeleteJob = async () => {
-    if (!confirm('Permanently delete this job and all its line items, sections, appointments, and invoices?')) return
     setSaving(true)
-    // Delete or nullify related records before deleting the job (no CASCADE)
-    //
-    // Christopher reported that deleting a job leaves the assigned-team
-    // appointments on the calendar — the calendar reads from the
-    // `appointments` table, which had job_id but no cascade. Same
-    // problem for job_sections (sub-tasks) and verification_reports.
-    // Now wiping all of them.
+    const { toast } = await import('../lib/toast')
+
+    // ── Guard: hard-delete only when there's no real history attached ──
+    // If the job has any time punches, time-log entries, expenses, or
+    // recorded payments, hard-delete is destructive — payroll + books
+    // both lose their context. In that case, ARCHIVE instead (status =
+    // 'Archived' hides it from the job board while preserving every
+    // related record). Only truly-empty jobs can be hard-deleted.
+    const [tcRes, tlRes, expRes, pmtRes, invRes] = await Promise.all([
+      supabase.from('time_clock').select('id', { count: 'exact', head: true }).eq('job_id', id),
+      supabase.from('time_log').select('id', { count: 'exact', head: true }).eq('job_id', id),
+      supabase.from('expenses').select('id', { count: 'exact', head: true }).eq('job_id', id),
+      supabase.from('payments').select('id', { count: 'exact', head: true }).eq('job_id', id),
+      supabase.from('invoices').select('id, payment_status', { count: 'exact' }).eq('job_id', id),
+    ])
+    const tcCount = tcRes.count || 0
+    const tlCount = tlRes.count || 0
+    const expCount = expRes.count || 0
+    const pmtCount = pmtRes.count || 0
+    const paidInvoiceCount = (invRes.data || []).filter(i => i.payment_status === 'Paid' || i.payment_status === 'Partially Paid').length
+    const hasHistory = tcCount > 0 || tlCount > 0 || expCount > 0 || pmtCount > 0 || paidInvoiceCount > 0
+
+    if (hasHistory) {
+      // ── Path A: ARCHIVE ──
+      const bits = []
+      if (tcCount + tlCount > 0) bits.push(`${tcCount + tlCount} time entr${tcCount + tlCount === 1 ? 'y' : 'ies'}`)
+      if (expCount > 0)  bits.push(`${expCount} expense${expCount === 1 ? '' : 's'}`)
+      if (pmtCount > 0)  bits.push(`${pmtCount} payment${pmtCount === 1 ? '' : 's'}`)
+      if (paidInvoiceCount > 0) bits.push(`${paidInvoiceCount} paid invoice${paidInvoiceCount === 1 ? '' : 's'}`)
+      const msg = `This job has ${bits.join(', ')} attached. Deleting would corrupt payroll + books.\n\nArchive it instead? (Status set to Archived, hidden from the job board, but every record stays intact.)`
+      if (!confirm(msg)) { setSaving(false); return }
+      const { error } = await supabase.from('jobs').update({
+        status: 'Archived',
+        updated_at: new Date().toISOString(),
+      }).eq('id', id)
+      setSaving(false)
+      if (error) { toast.error('Failed to archive job: ' + error.message); return }
+      toast.success('Job archived — every record preserved')
+      await fetchJobs()
+      navigate('/jobs')
+      return
+    }
+
+    // ── Path B: HARD DELETE ──
+    if (!confirm('This job has no time, expenses, or payments. Permanently delete it along with its line items, sections, appointments, and unpaid invoices?')) {
+      setSaving(false)
+      return
+    }
     await Promise.all([
-      supabase.from('time_log').update({ job_id: null }).eq('job_id', id),
-      supabase.from('expenses').update({ job_id: null }).eq('job_id', id),
-      supabase.from('invoices').delete().eq('job_id', id),
+      supabase.from('invoices').delete().eq('job_id', id),          // safe — only unpaid reach here
       supabase.from('utility_invoices').delete().eq('job_id', id),
-      supabase.from('appointments').delete().eq('job_id', id),         // calendar cleanup — Christopher's fix
+      supabase.from('appointments').delete().eq('job_id', id),       // calendar cleanup (Christopher)
       supabase.from('job_sections').delete().eq('job_id', id),
       supabase.from('verification_reports').delete().eq('job_id', id),
+      // Clean up orphan job_lines that would otherwise sit in the DB
+      // with a null job_id after the cascade.
+      supabase.from('job_lines').delete().eq('job_id', id),
     ])
     const { error } = await supabase.from('jobs').delete().eq('id', id)
     setSaving(false)
-    if (error) {
-      const { toast } = await import('../lib/toast')
-      toast.error('Failed to delete job: ' + error.message)
-      return
-    }
+    if (error) { toast.error('Failed to delete job: ' + error.message); return }
+    toast.success('Job deleted')
     await fetchJobs()
     navigate('/jobs')
   }
