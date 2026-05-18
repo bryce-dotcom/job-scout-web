@@ -547,14 +547,22 @@ export function calculateEfficiencyBonus({
 
     if (!passes) {
       // Compute what they WOULD have earned so the admin can override.
-      // Approximate crew share by even split across employees with time_log
-      // on this job (skill-weighting happens below in the paid path; we
-      // mirror it roughly here but don't apply coverageRatio since the
-      // strict gate already blocks).
-      const crew = [...new Set(allJobTimeLogs.map(tl => tl.employee_id))]
-      const myHours = jobMap[jobId] || 0
-      const totalLoggedHours = allJobTimeLogs.reduce((s, tl) => s + (tl.hours||0), 0)
-      const myShareBase = totalLoggedHours > 0 ? myHours / totalLoggedHours : (crew.length ? 1/crew.length : 0)
+      // Mirror the skill × time formula used in the paid path so the
+      // "would have earned" preview matches actual payout.
+      const hoursByEmpBlocked = {}
+      for (const tl of allJobTimeLogs) {
+        if (!tl.employee_id) continue
+        hoursByEmpBlocked[tl.employee_id] = (hoursByEmpBlocked[tl.employee_id] || 0) + (tl.hours || 0)
+      }
+      const crew = Object.keys(hoursByEmpBlocked).map(Number)
+      const myHours = hoursByEmpBlocked[employeeId] || 0
+      const myWeightBlocked = getSkillWeight(employeeId, employees, skillLevels)
+      const totalWeightedHoursBlocked = crew.reduce(
+        (s, id) => s + getSkillWeight(id, employees, skillLevels) * (hoursByEmpBlocked[id] || 0),
+        0
+      )
+      const myEffectiveWeightBlocked = myWeightBlocked * myHours
+      const myShareBase = totalWeightedHoursBlocked > 0 ? (myEffectiveWeightBlocked / totalWeightedHoursBlocked) : 0
       const rawPool = savedHours * rate
       const companyPortion = rawPool * (companyCut / 100)
       const crewPortion = rawPool - companyPortion
@@ -604,16 +612,37 @@ export function calculateEfficiencyBonus({
     const companyShare = totalPool * (companyCut / 100)
     const crewPool = totalPool - companyShare
 
-    const crewMemberIds = [...new Set(allJobTimeLogs.map(tl => tl.employee_id))]
+    // ── Crew share: skill weight × hours-on-job ─────────────────────
+    // Older logic split the crew pool by skill weight alone, which
+    // over-paid a senior who clocked in for 5 minutes and under-paid a
+    // junior who carried the job. We now weight each member's share by
+    // (skill weight) × (actual hours on this job) — so contribution
+    // AND seniority both move the needle.
+    //
+    // Worked example, $4,927 crew pool:
+    //   - Mike   First Class (2.5×) × 148h  = 370 wpts → $1,724
+    //   - London Eagle       (5×)   ×  73h  = 365 wpts → $1,696
+    //   - Derrick Scout      (1×)   × 175h  = 175 wpts → $813
+    //   - Kayden  Scout      (1×)   × 179h  = 179 wpts → $831
+    //   - Bryce   Scout      (1×)   ×   1h  =   1 wpts → $3   (was $447!)
+    const hoursByEmp = {}
+    for (const tl of allJobTimeLogs) {
+      if (!tl.employee_id) continue
+      hoursByEmp[tl.employee_id] = (hoursByEmp[tl.employee_id] || 0) + (tl.hours || 0)
+    }
+    const crewMemberIds = Object.keys(hoursByEmp).map(Number)
     const crewWeights = crewMemberIds.map(id => ({
-      id, weight: getSkillWeight(id, employees, skillLevels),
+      id,
+      weight: getSkillWeight(id, employees, skillLevels),
+      hours: hoursByEmp[id] || 0,
     }))
-    const participatingCrew = crewWeights.filter(c => c.weight > 0)
-    const totalWeight = participatingCrew.reduce((s, c) => s + c.weight, 0)
-    if (totalWeight <= 0) return
+    const participatingCrew = crewWeights.filter(c => c.weight > 0 && c.hours > 0)
+    const totalWeightedHours = participatingCrew.reduce((s, c) => s + c.weight * c.hours, 0)
+    if (totalWeightedHours <= 0) return
 
     const myWeight = getSkillWeight(employeeId, employees, skillLevels)
-    if (myWeight <= 0) {
+    const myHours = hoursByEmp[employeeId] || 0
+    if (myWeight <= 0 || myHours <= 0) {
       details.push({
         jobId: job.job_id || job.id,
         jobTitle: job.job_title || job.customer_name || 'Job',
@@ -628,7 +657,9 @@ export function calculateEfficiencyBonus({
       return
     }
 
-    const rawBonusAmount = crewPool * (myWeight / totalWeight)
+    const myEffectiveWeight = myWeight * myHours
+    const myShareFrac = myEffectiveWeight / totalWeightedHours
+    const rawBonusAmount = crewPool * myShareFrac
     const bonusAmount = rawBonusAmount * coverageRatio
     totalBonus += bonusAmount
     details.push({
@@ -638,7 +669,10 @@ export function calculateEfficiencyBonus({
       actualHours: totalActualHours,
       savedHours,
       crewSize: crewMemberIds.length,
-      employeeShare: savedHours * (myWeight / totalWeight) * coverageRatio,
+      myHoursOnJob: +myHours.toFixed(2),
+      myTimeSharePct: totalActualHours > 0 ? +((myHours / totalActualHours) * 100).toFixed(1) : 0,
+      myWeight,
+      employeeShare: savedHours * myShareFrac * coverageRatio,
       bonusAmount,
       companyCut: companyShare,
       totalPool,

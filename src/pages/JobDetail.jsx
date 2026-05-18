@@ -4351,22 +4351,33 @@ function JobDetailInner() {
             const companyShare = totalPool * (companyCut / 100)
             const crewPool = totalPool - companyShare
 
-            // Build crew from time logs
-            const crewMemberIds = [...new Set(jobTimeLogs.map(t => t.employee_id))]
+            // Build crew from time logs, summing hours per employee.
+            // Bonus split = (skill weight × hours on this job) for each
+            // crew member, so a senior who only worked an hour gets a
+            // proportionally small share. Mirrors bonusCalc.js.
+            const hoursByEmp = {}
+            for (const t of jobTimeLogs) {
+              if (!t.employee_id) continue
+              hoursByEmp[t.employee_id] = (hoursByEmp[t.employee_id] || 0) + (Number(t.hours) || 0)
+            }
+            const crewMemberIds = Object.keys(hoursByEmp).map(Number)
             const crewMembers = crewMemberIds.map(empId => {
               const emp = employees.find(e => e.id === empId)
               const skillLevel = emp?.skill_level || ''
               const found = skillLevelSettings.find(s => s.name === skillLevel)
               const weight = found ? found.weight : 1
-              return { id: empId, name: emp?.name || 'Unknown', skillLevel, weight }
+              const hours = hoursByEmp[empId] || 0
+              return { id: empId, name: emp?.name || 'Unknown', skillLevel, weight, hours, effectiveWeight: weight * hours }
             })
-            const participating = crewMembers.filter(c => c.weight > 0)
-            const totalWeight = participating.reduce((sum, c) => sum + c.weight, 0)
+            const participating = crewMembers.filter(c => c.weight > 0 && c.hours > 0)
+            const totalWeightedHours = participating.reduce((sum, c) => sum + c.effectiveWeight, 0)
 
             // Current user's share
             const currentEmp = employees.find(e => e.email === currentUser?.email)
             const myMember = currentEmp ? crewMembers.find(c => c.id === currentEmp.id) : null
-            const myShare = myMember && totalWeight > 0 ? crewPool * (myMember.weight / totalWeight) : null
+            const myShare = myMember && totalWeightedHours > 0
+              ? crewPool * (myMember.effectiveWeight / totalWeightedHours)
+              : null
 
             const progressPct = allottedHours > 0 ? Math.min(100, (totalHoursWorked / allottedHours) * 100) : 0
             const barColor = progressPct >= 100 ? '#ef4444' : progressPct >= 80 ? '#eab308' : '#22c55e'
@@ -4481,10 +4492,10 @@ function JobDetailInner() {
                       <div>
                         <div style={{ fontSize: '15px', fontWeight: '700', color: theme.text }}>Your Bonus</div>
                         <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
-                          {myMember.skillLevel || 'Unassigned'} — weight {myMember.weight} of {totalWeight} total
+                          {myMember.skillLevel || 'Unassigned'} — weight {myMember.weight} × {myMember.hours.toFixed(1)}h on job
                         </div>
                         <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '3px' }}>
-                          ${crewPool.toFixed(0)} x {myMember.weight}/{totalWeight} = ${myShare.toFixed(2)}
+                          ${crewPool.toFixed(0)} × ({(myMember.effectiveWeight).toFixed(1)} / {totalWeightedHours.toFixed(1)}) = ${myShare.toFixed(2)}
                         </div>
                       </div>
                       <div style={{ fontSize: '26px', fontWeight: '700', color: '#22c55e' }}>
@@ -4511,8 +4522,8 @@ function JobDetailInner() {
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {crewMembers.map(member => {
-                          const share = totalWeight > 0 && member.weight > 0
-                            ? crewPool * (member.weight / totalWeight)
+                          const share = totalWeightedHours > 0 && member.effectiveWeight > 0
+                            ? crewPool * (member.effectiveWeight / totalWeightedHours)
                             : 0
                           return (
                             <div key={member.id} style={{
@@ -4523,25 +4534,25 @@ function JobDetailInner() {
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
                                 <div style={{
                                   width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0,
-                                  backgroundColor: member.weight > 0 ? '#a855f7' : theme.textMuted
+                                  backgroundColor: member.effectiveWeight > 0 ? '#a855f7' : theme.textMuted
                                 }} />
                                 <span style={{ color: theme.text, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{member.name}</span>
                                 <span style={{ color: theme.textMuted, fontSize: '12px', flexShrink: 0, padding: '2px 6px', backgroundColor: 'rgba(168,85,247,0.08)', borderRadius: '4px' }}>
-                                  wt {member.weight}
+                                  wt {member.weight} × {member.hours.toFixed(1)}h
                                 </span>
                               </div>
                               <span style={{
                                 fontWeight: '700', flexShrink: 0, marginLeft: '8px', fontSize: '15px',
-                                color: member.weight > 0 ? '#22c55e' : theme.textMuted
+                                color: member.effectiveWeight > 0 ? '#22c55e' : theme.textMuted
                               }}>
-                                {member.weight > 0 ? `$${share.toFixed(2)}` : 'Not eligible'}
+                                {member.effectiveWeight > 0 ? `$${share.toFixed(2)}` : 'Not eligible'}
                               </span>
                             </div>
                           )
                         })}
                       </div>
                       <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '10px', textAlign: 'center', fontStyle: 'italic' }}>
-                        Share = crew pool x (your weight / total weight). Higher skill level = higher weight = bigger share.
+                        Share = crew pool × (your skill weight × your hours on this job) / (sum across crew). Senior + more hours = bigger share.
                       </div>
                     </div>
                   )}
