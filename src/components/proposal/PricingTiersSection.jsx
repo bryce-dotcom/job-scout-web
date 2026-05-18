@@ -230,7 +230,11 @@ export default function PricingTiersSection({ section, onTierSelect }) {
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: tiers.length <= 3 ? `repeat(${tiers.length}, 1fr)` : 'repeat(auto-fit, minmax(280px, 1fr))',
+        // Use auto-fit so 3 wide cards stack to 1 column on phones,
+        // 2 on tablets, 3 on desktop. The old "always 3 columns when
+        // tiers ≤ 3" rule crushed the cards on iPhones — customer
+        // couldn't read Good/Better/Best on mobile (Bryce reported).
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))',
         gap: '20px',
         alignItems: 'start',
       }}>
