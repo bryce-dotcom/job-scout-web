@@ -31,6 +31,13 @@ export default function UtilityInvoiceDetail() {
 
   const [invoice, setInvoice] = useState(null)
   const [jobLines, setJobLines] = useState([])
+  // When this utility invoice is linked to a customer invoice (the new
+  // Phase-5 flow), we load that invoice's locked-at-creation line items
+  // here. They carry the in_utility_scope flag so the PDF renderer can
+  // split rows into "in-scope" vs "customer add-ons (not in utility
+  // scope)" without recomputing anything.
+  const [invoiceLines, setInvoiceLines] = useState([])
+  const [linkedInvoice, setLinkedInvoice] = useState(null)
   const [jobData, setJobData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -87,10 +94,27 @@ export default function UtilityInvoiceDetail() {
 
         const { data: lines } = await supabase
           .from('job_lines')
-          .select('*, item:products_services(id, name, description, unit_price, cost)')
+          .select('*, item:products_services(id, name, description, unit_price, cost, in_utility_scope)')
           .eq('job_id', data.job_id)
           .order('id')
         setJobLines(lines || [])
+      }
+
+      // When this utility invoice is linked to a customer invoice
+      // (Phase-5 flow), pull the customer's locked invoice + its lines.
+      // Those become the source of truth — line items have the
+      // in_utility_scope flag set at insert time so the PDF can split
+      // them into in-scope vs add-on without recomputing.
+      if (data.invoice_id) {
+        const [{ data: inv }, { data: ilines }] = await Promise.all([
+          supabase.from('invoices').select('id, invoice_id, amount, discount_applied, created_at, job_description').eq('id', data.invoice_id).single(),
+          supabase.from('invoice_lines').select('*').eq('invoice_id', data.invoice_id).order('sort_order').order('line_number'),
+        ])
+        setLinkedInvoice(inv || null)
+        setInvoiceLines(ilines || [])
+      } else {
+        setLinkedInvoice(null)
+        setInvoiceLines([])
       }
     }
     setLoading(false)
@@ -384,8 +408,7 @@ export default function UtilityInvoiceDetail() {
     const contentWidth = pageWidth - margin * 2
     let y = 20
 
-    // Company header — business unit first, fall back to company name.
-    // The companies table uses `company_name` (not `name`).
+    // ---- Header ----
     const displayCompanyName = invoice.business_unit || jobData?.business_unit || company?.company_name || company?.name || 'Company'
     doc.setFontSize(20)
     doc.setFont('helvetica', 'bold')
@@ -403,9 +426,11 @@ export default function UtilityInvoiceDetail() {
     if (company?.owner_email || company?.email) { doc.text(company.owner_email || company.email, margin, y); y += 5 }
     y += 5
 
-    // Title — matches the customer invoice template. The utility is sent
-    // a copy of the same invoice the customer sees, with the incentive
-    // shown as a deduction from the project total (per Alison @ utility).
+    // Title — INVOICE big, "Utility Copy of INV-XXXX" subtitle. The
+    // utility sees the same number the customer received so their
+    // records reconcile to ours. The "-U" only exists in our system
+    // for filtering.
+    const displayInvoiceNumber = invoice.linked_invoice_number || linkedInvoice?.invoice_id || `UTL-${invoice.id}`
     doc.setTextColor(90, 99, 73)
     doc.setFontSize(18)
     doc.setFont('helvetica', 'bold')
@@ -414,34 +439,35 @@ export default function UtilityInvoiceDetail() {
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     let iy = 30
-    doc.text(`Invoice #: ${invoice.id}`, rightEdge, iy, { align: 'right' }); iy += 5
+    doc.text(`Invoice #: ${displayInvoiceNumber}`, rightEdge, iy, { align: 'right' }); iy += 5
+    if (invoice.linked_invoice_number) {
+      doc.setFontSize(8); doc.setTextColor(140)
+      doc.text('(Utility copy — matches customer invoice)', rightEdge, iy, { align: 'right' }); iy += 4
+      doc.setFontSize(10); doc.setTextColor(80)
+    }
     doc.text(`Date: ${formatDate(invoice.created_at)}`, rightEdge, iy, { align: 'right' })
 
-    // Divider
     doc.setDrawColor(214, 205, 184)
     doc.line(margin, y, rightEdge, y)
     y += 10
 
-    // Customer info — business_name wins over contact name
+    // ---- Customer info ----
     doc.setTextColor(0)
     doc.setFontSize(11)
     doc.setFont('helvetica', 'bold')
     doc.text('Customer:', margin, y)
     y += 6
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(10)
     const custPrimary = invoice.customer_name || jobData?.customer?.business_name || jobData?.customer?.name || '-'
     const custContact = jobData?.customer?.business_name && jobData?.customer?.name ? jobData.customer.name : null
     doc.setFontSize(11)
     doc.text(custPrimary, margin, y); y += 6
     doc.setFontSize(10)
     if (custContact) { doc.text(`Attn: ${custContact}`, margin, y); y += 5 }
-    // Split address into lines so street and city/state/zip don't smash together
     if (jobData?.customer?.address) {
       const addrLines = doc.splitTextToSize(jobData.customer.address, contentWidth * 0.6)
       for (const line of addrLines) { doc.text(line, margin, y); y += 5 }
     }
-    // Job address as fallback if no customer address
     if (!jobData?.customer?.address && jobData?.job_address) {
       const addrLines = doc.splitTextToSize(jobData.job_address, contentWidth * 0.6)
       for (const line of addrLines) { doc.text(line, margin, y); y += 5 }
@@ -450,39 +476,139 @@ export default function UtilityInvoiceDetail() {
     if (jobData?.customer?.email) { doc.text(jobData.customer.email, margin, y); y += 5 }
     y += 8
 
-    // Cost breakdown table — Material and Labor only
-    doc.setFontSize(11)
-    doc.setFont('helvetica', 'bold')
-    doc.text('Cost Breakdown', margin, y)
-    y += 8
+    // ---- Line items (Phase-5: split into in-scope + customer add-ons) ----
+    // Source of truth: invoice_lines from the linked customer invoice
+    // when present (carries the locked in_utility_scope flag). Falls
+    // back to job_lines for legacy utility invoices that pre-date the
+    // linkage. For very old invoices with neither, falls back to the
+    // material/labor split.
+    const allLines = invoiceLines.length > 0 ? invoiceLines : jobLines
+    const useLineItems = allLines.length > 0
+    let inScopeLines = []
+    let addOnLines   = []
+    if (useLineItems) {
+      // For job_lines fall back to the product's catalog flag if the line
+      // itself doesn't have in_utility_scope set yet (transition period).
+      for (const l of allLines) {
+        const lineScope = l.in_utility_scope ?? l.item?.in_utility_scope ?? true
+        if (lineScope === false) addOnLines.push(l)
+        else                     inScopeLines.push(l)
+      }
+    }
 
-    // Table header
-    doc.setFillColor(247, 245, 239)
-    doc.rect(margin, y - 4, contentWidth, 8, 'F')
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(80)
-    doc.text('Description', margin + 2, y)
-    doc.text('Amount', rightEdge - 2, y, { align: 'right' })
-    y += 8
+    const drawLineRow = (label, qty, amount) => {
+      const lineHeight = 6
+      // Wrap long labels
+      const labelLines = doc.splitTextToSize(label, contentWidth * 0.55)
+      const rowHeight = Math.max(lineHeight, labelLines.length * 5 + 1)
+      for (let i = 0; i < labelLines.length; i++) {
+        doc.text(labelLines[i], margin + 2, y + (i * 5))
+      }
+      if (qty != null) doc.text(String(qty), margin + contentWidth * 0.65, y, { align: 'right' })
+      doc.text(formatCurrency(amount), rightEdge - 2, y, { align: 'right' })
+      y += rowHeight + 1
+    }
 
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(0)
-    doc.setFontSize(10)
-    doc.text('Material', margin + 2, y)
-    doc.text(formatCurrency(materialTotal), rightEdge - 2, y, { align: 'right' })
-    y += 7
-    doc.text('Labor', margin + 2, y)
-    doc.text(formatCurrency(laborTotal), rightEdge - 2, y, { align: 'right' })
-    y += 4
+    if (useLineItems) {
+      // SECTION 1: In-utility-scope items
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(0)
+      doc.text('In-utility-scope items (eligible for incentive)', margin, y)
+      y += 7
 
-    // Divider
-    doc.setDrawColor(214, 205, 184)
-    doc.line(margin, y, rightEdge, y)
-    y += 10
+      // Table header
+      doc.setFillColor(247, 245, 239)
+      doc.rect(margin, y - 4, contentWidth, 7, 'F')
+      doc.setFontSize(9)
+      doc.setTextColor(80)
+      doc.text('Description', margin + 2, y)
+      doc.text('Qty', margin + contentWidth * 0.65, y, { align: 'right' })
+      doc.text('Amount', rightEdge - 2, y, { align: 'right' })
+      y += 8
 
-    // Financial summary — shows full project context for the utility,
-    // bottom-line "Utility Incentive" = what the utility owes us.
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(10)
+      doc.setTextColor(0)
+      let inScopeSubtotal = 0
+      if (inScopeLines.length === 0) {
+        doc.setTextColor(140)
+        doc.text('(no in-scope line items)', margin + 2, y); y += 7
+        doc.setTextColor(0)
+      }
+      for (const l of inScopeLines) {
+        const label = l.description || l.item?.name || l.item_name || 'Item'
+        const qty   = l.quantity || 1
+        const amt   = parseFloat(l.line_total ?? l.total) || 0
+        drawLineRow(label, qty, amt); inScopeSubtotal += amt
+      }
+      doc.setDrawColor(214, 205, 184)
+      doc.line(margin, y, rightEdge, y); y += 4
+      doc.setFont('helvetica', 'bold')
+      doc.text('In-scope subtotal:', margin + contentWidth * 0.55, y, { align: 'right' })
+      doc.text(formatCurrency(inScopeSubtotal), rightEdge - 2, y, { align: 'right' })
+      y += 10
+
+      // SECTION 2: Customer add-ons
+      if (addOnLines.length > 0) {
+        doc.setFontSize(11)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(0)
+        doc.text('Customer add-ons (NOT part of utility scope)', margin, y)
+        y += 7
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'italic')
+        doc.setTextColor(140)
+        doc.text('These items are paid in full by the customer and are not eligible for utility incentive.', margin, y); y += 7
+        doc.setFont('helvetica', 'normal')
+
+        doc.setFillColor(252, 240, 230)
+        doc.rect(margin, y - 4, contentWidth, 7, 'F')
+        doc.setFontSize(9)
+        doc.setTextColor(80)
+        doc.text('Description', margin + 2, y)
+        doc.text('Qty', margin + contentWidth * 0.65, y, { align: 'right' })
+        doc.text('Amount', rightEdge - 2, y, { align: 'right' })
+        y += 8
+
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(10)
+        doc.setTextColor(0)
+        let addOnSubtotal = 0
+        for (const l of addOnLines) {
+          const label = l.description || l.item?.name || l.item_name || 'Item'
+          const qty   = l.quantity || 1
+          const amt   = parseFloat(l.line_total ?? l.total) || 0
+          drawLineRow(label, qty, amt); addOnSubtotal += amt
+        }
+        doc.setDrawColor(214, 205, 184)
+        doc.line(margin, y, rightEdge, y); y += 4
+        doc.setFont('helvetica', 'bold')
+        doc.text('Customer add-ons subtotal:', margin + contentWidth * 0.55, y, { align: 'right' })
+        doc.text(formatCurrency(addOnSubtotal), rightEdge - 2, y, { align: 'right' })
+        y += 10
+      }
+    } else {
+      // Legacy fallback: no line items at all → original material/labor split
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(0)
+      doc.text('Cost Breakdown', margin, y); y += 8
+      doc.setFillColor(247, 245, 239)
+      doc.rect(margin, y - 4, contentWidth, 7, 'F')
+      doc.setFontSize(9); doc.setTextColor(80)
+      doc.text('Description', margin + 2, y); doc.text('Amount', rightEdge - 2, y, { align: 'right' })
+      y += 8
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(0); doc.setFontSize(10)
+      doc.text('Material', margin + 2, y); doc.text(formatCurrency(materialTotal), rightEdge - 2, y, { align: 'right' }); y += 7
+      doc.text('Labor', margin + 2, y); doc.text(formatCurrency(laborTotal), rightEdge - 2, y, { align: 'right' }); y += 4
+      doc.setDrawColor(214, 205, 184); doc.line(margin, y, rightEdge, y); y += 10
+    }
+
+    // ---- Financial summary (footer) ----
+    // Reconciliation lines for the utility's auditor. The "in-scope
+    // subtotal" line above sums to what we claimed for incentive; the
+    // utility incentive applied here equals what they owe us. Customer
+    // add-ons (when present) are a separate line that doesn't touch
+    // the incentive math.
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0)
@@ -494,31 +620,23 @@ export default function UtilityInvoiceDetail() {
     doc.text('Total Project Cost:', summaryX, y)
     doc.text(formatCurrency(invoice.project_cost || invoice.amount || (materialTotal + laborTotal)), valX, y, { align: 'right' }); y += 6
 
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(100)
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(100)
     doc.text('Customer Portion:', summaryX, y)
     doc.text(formatCurrency(invoice.net_cost), valX, y, { align: 'right' }); y += 8
 
-    doc.setDrawColor(214, 205, 184)
-    doc.line(summaryX, y - 2, rightEdge, y - 2)
+    doc.setDrawColor(214, 205, 184); doc.line(summaryX, y - 2, rightEdge, y - 2)
 
-    doc.setTextColor(212, 148, 10)
-    doc.setFontSize(14)
-    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(212, 148, 10); doc.setFontSize(14); doc.setFont('helvetica', 'bold')
     doc.text('Utility Incentive:', summaryX, y + 5)
     doc.text(formatCurrency(invoice.incentive_amount || invoice.amount), valX, y + 5, { align: 'right' })
     y += 18
 
     // Notes
     if (invoice.notes) {
-      doc.setFontSize(10)
-      doc.setFont('helvetica', 'normal')
-      doc.setTextColor(100)
+      doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(100)
       doc.text('Notes:', margin, y); y += 5
       const noteLines = doc.splitTextToSize(invoice.notes, contentWidth)
-      for (const line of noteLines) {
-        doc.text(line, margin, y); y += 5
-      }
+      for (const line of noteLines) { doc.text(line, margin, y); y += 5 }
     }
 
     return doc
@@ -632,8 +750,13 @@ export default function UtilityInvoiceDetail() {
         </button>
         <div style={{ flex: 1 }}>
           <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600' }}>
-            CUSTOMER INVOICE · UTL-{invoice.id}
+            UTILITY COPY · {invoice.linked_invoice_number || linkedInvoice?.invoice_id || `UTL-${invoice.id}`}{invoice.linked_invoice_number ? '-U' : ''}
           </p>
+          {invoice.linked_invoice_number && (
+            <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+              Mirrors customer invoice {invoice.linked_invoice_number}
+            </p>
+          )}
           <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
             {invoice.customer_name || 'Customer Invoice'}
           </h1>

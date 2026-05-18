@@ -393,7 +393,7 @@ function JobDetailInner() {
 
     const { data: jobData } = await supabase
       .from('jobs')
-      .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name, secondary_contact_name, secondary_contact_email, secondary_contact_phone, secondary_contact_role), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id, audit_id, customer_id), pm:employees!jobs_pm_id_fkey(id, name), job_lead:employees!jobs_job_lead_id_fkey(id, name)')
+      .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name, secondary_contact_name, secondary_contact_email, secondary_contact_phone, secondary_contact_role, utility_invoicing_enabled), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id, audit_id, customer_id), pm:employees!jobs_pm_id_fkey(id, name), job_lead:employees!jobs_job_lead_id_fkey(id, name)')
       .eq('id', id)
       .single()
 
@@ -1324,8 +1324,18 @@ function JobDetailInner() {
     }
   }
 
-  const createCustomerInvoice = async () => {
+  // Shared invoice number — when both customer + utility invoices are
+  // created together (the common case via "Create Both"), they share
+  // the SAME base number so the utility's records reconcile to the
+  // customer's. Utility version carries -U suffix in our system for
+  // filtering, but the PDF header always shows the base INV-XXXX so
+  // the utility's auditor sees one number that matches the customer's.
+  // When createCustomerInvoice runs alone, it returns the generated
+  // number so callers (createBothInvoices) can pass it into
+  // createUtilityInvoice as linkedInvoiceNumber.
+  const createCustomerInvoice = async (opts = {}) => {
     setSaving(true)
+    const sharedNumber = opts.sharedNumber || null
 
     try {
       // Try to find a lighting audit through multiple paths:
@@ -1409,7 +1419,10 @@ function JobDetailInner() {
 
       const resolvedCustomerId = job.customer_id || job.quote?.customer_id || audit?.customer_id || null
 
-      const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+      // Use the shared number when one was passed in by createBothInvoices,
+      // otherwise generate a fresh one. Caller can read invoice.invoice_id
+      // from our return value to pass into createUtilityInvoice.
+      const invoiceNumber = sharedNumber || `INV-${Date.now().toString(36).toUpperCase()}`
 
       // Invoice carries the FULL project cost as `amount`. Both the
       // utility rebate and any pre-paid deposit are rolled into
@@ -1444,6 +1457,31 @@ function JobDetailInner() {
       if (error) {
         toast.error('Failed to create customer invoice: ' + error.message)
       } else {
+        // Copy line items into invoice_lines so the invoice has its own
+        // record of what was billed (immune to future job edits) — and
+        // critically preserves the in_utility_scope flag on each line so
+        // the utility-copy PDF can split items into "in-scope" vs
+        // "customer add-ons" without re-querying anything.
+        if (lineItems.length > 0) {
+          const invoiceLineRows = lineItems.map((l, idx) => ({
+            company_id: companyId,
+            invoice_id: invoice.id,
+            item_id: l.item_id || null,
+            line_number: idx + 1,
+            description: l.description || l.item?.name || 'Item',
+            quantity: l.quantity || 1,
+            unit_price: parseFloat(l.price) || 0,
+            discount: parseFloat(l.discount) || 0,
+            line_total: parseFloat(l.total) || ((l.quantity || 1) * (parseFloat(l.price) || 0)),
+            sort_order: idx,
+            // Default true unless explicitly marked false (matches the
+            // products_services default + the line-table column default).
+            in_utility_scope: l.in_utility_scope !== false,
+          }))
+          const { error: linesErr } = await supabase.from('invoice_lines').insert(invoiceLineRows)
+          if (linesErr) console.error('Failed to copy line items into invoice_lines:', linesErr)
+        }
+
         await supabase.from('jobs').update({
           invoice_status: 'Invoiced',
           updated_at: new Date().toISOString()
@@ -1455,6 +1493,8 @@ function JobDetailInner() {
 
         await fetchJobData()
         toast.success('Customer invoice created')
+        setSaving(false)
+        return { invoiceId: invoice.id, invoiceNumber }
       }
     } catch (err) {
       const { toast } = await import('../lib/toast')
@@ -1462,9 +1502,12 @@ function JobDetailInner() {
     }
 
     setSaving(false)
+    return null
   }
 
-  const createUtilityInvoice = async () => {
+  const createUtilityInvoice = async (opts = {}) => {
+    const linkedInvoiceId     = opts.linkedInvoiceId || null
+    const linkedInvoiceNumber = opts.linkedInvoiceNumber || null
     setSaving(true)
     const { toast } = await import('../lib/toast')
 
@@ -1521,7 +1564,12 @@ function JobDetailInner() {
           incentive_amount: incentiveAmount,
           net_cost: netCost,
           payment_status: 'Pending',
-          notes
+          notes,
+          // Link to the customer invoice this utility-copy mirrors.
+          // Populated when called via createBothInvoices; null on
+          // standalone Create-Utility-Invoice (legacy / orphan rows).
+          invoice_id: linkedInvoiceId,
+          linked_invoice_number: linkedInvoiceNumber,
         }])
 
       if (error) {
@@ -1535,6 +1583,35 @@ function JobDetailInner() {
     }
 
     setSaving(false)
+  }
+
+  // Customer opt-in for utility invoicing. Single source of truth:
+  // - explicit customer.utility_invoicing_enabled (true/false) wins
+  // - otherwise falls back to "smart default" — if a utility incentive
+  //   value is set on the job, treat as opted-in. Keeps the existing
+  //   energy-contractor flow working out of the box while hiding the
+  //   utility buttons for service businesses (lawn, cleaning, fleet).
+  const utilityInvoicingEnabled = (() => {
+    const explicit = job.customer?.utility_invoicing_enabled
+    if (explicit === true)  return true
+    if (explicit === false) return false
+    return (parseFloat(job.utility_incentive) || 0) > 0
+  })()
+
+  // Shared "Create Both" — guarantees matching invoice numbers.
+  // Customer invoice generates the number; utility invoice consumes
+  // it + appends "-U" in its own invoice_id slot (denormalized in
+  // linked_invoice_number for the PDF header). One click = two
+  // invoices that reconcile to the same INV-XXXX line on the
+  // utility's books.
+  const createBothInvoices = async () => {
+    const sharedNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+    const result = await createCustomerInvoice({ sharedNumber })
+    if (!result) return  // customer invoice failed; abort utility side
+    await createUtilityInvoice({
+      linkedInvoiceId: result.invoiceId,
+      linkedInvoiceNumber: result.invoiceNumber,
+    })
   }
 
   const formatCurrency = (amount) => {
@@ -4780,7 +4857,7 @@ function JobDetailInner() {
                   })()}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {!hasCustomerInvoice && (
-                      <button onClick={createCustomerInvoice} disabled={saving} style={{
+                      <button onClick={() => createCustomerInvoice()} disabled={saving} style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                         padding: '10px 14px', backgroundColor: theme.accentBg, color: theme.accent,
                         border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
@@ -4789,8 +4866,11 @@ function JobDetailInner() {
                         Customer {depositTotal > 0 ? 'Balance' : 'Copayment'} Invoice
                       </button>
                     )}
-                    {!hasUtilityInvoice && (
-                      <button onClick={createUtilityInvoice} disabled={saving} style={{
+                    {/* Utility-invoice buttons only when the customer is
+                        opted into utility-incentive billing. Cleaning / lawn /
+                        fleet customers won't see these. */}
+                    {utilityInvoicingEnabled && !hasUtilityInvoice && (
+                      <button onClick={() => createUtilityInvoice()} disabled={saving} style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                         padding: '10px 14px', backgroundColor: 'rgba(212,148,10,0.12)', color: '#d4940a',
                         border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
@@ -4799,8 +4879,8 @@ function JobDetailInner() {
                         Utility Incentive Invoice
                       </button>
                     )}
-                    {!hasCustomerInvoice && !hasUtilityInvoice && (
-                      <button onClick={async () => { await createCustomerInvoice(); await createUtilityInvoice(); }} disabled={saving} style={{
+                    {utilityInvoicingEnabled && !hasCustomerInvoice && !hasUtilityInvoice && (
+                      <button onClick={createBothInvoices} disabled={saving} style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                         padding: '10px 14px', backgroundColor: '#d4940a', color: '#ffffff',
                         border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer'

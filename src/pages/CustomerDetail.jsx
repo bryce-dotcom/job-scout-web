@@ -515,6 +515,7 @@ export default function CustomerDetail() {
       salesperson_id: customer?.salesperson_id || '',
       marketing_opt_in: customer?.marketing_opt_in || false,
       calendar_display: customer?.calendar_display || 'person',
+      utility_invoicing_enabled: customer?.utility_invoicing_enabled,
       secondary_contact_name: customer?.secondary_contact_name || '',
       secondary_contact_role: customer?.secondary_contact_role || '',
       secondary_contact_phone: customer?.secondary_contact_phone || '',
@@ -1195,6 +1196,23 @@ export default function CustomerDetail() {
                         <option value="person">Person Name</option>
                         <option value="business">Business Name</option>
                       </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>
+                        Utility Incentive Programs
+                      </label>
+                      <select
+                        style={selectStyle}
+                        value={editForm.utility_invoicing_enabled === true ? 'yes' : editForm.utility_invoicing_enabled === false ? 'no' : ''}
+                        onChange={e => editField('utility_invoicing_enabled', e.target.value === 'yes' ? true : e.target.value === 'no' ? false : null)}
+                      >
+                        <option value="">Auto (based on incentive on job)</option>
+                        <option value="yes">Yes — show utility invoice options</option>
+                        <option value="no">No — customer-only billing</option>
+                      </select>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px', lineHeight: 1.4 }}>
+                        "Yes" if this customer is enrolled in a utility rebate program (SRP, RMP, etc.). "No" hides utility-invoice buttons on this customer's jobs.
+                      </div>
                     </div>
                   </div>
                 ) : (
