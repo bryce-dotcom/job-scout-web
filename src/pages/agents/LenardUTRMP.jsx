@@ -861,12 +861,30 @@ export default function LenardUTRMP() {
   const rawIncentive = totals.totalIncentive;
   const capPct = program === 'smbe' ? SMBE.cap : program === 'express' ? EXPRESS.cap : LARGE.cap;
   const linesCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * getProductQty(l)), 0);
-  const giveMeQuoteTotal = giveMeQuoteItems.reduce((s, item) => s + (item.amount || 0), 0);
+  // Split give-me upsells into in-utility-scope (LED upgrades, tier
+  // bumps, premium fixtures — count toward incentive base) vs
+  // out-of-utility-scope (warranties, processing fees, travel, M&V —
+  // customer-paid only; cannot inflate the utility's cap calc).
+  // Without this split, adding a $1k warranty would raise the cap and
+  // capture extra incentive the utility didn't actually qualify the
+  // project for — bad math + reportable fraud risk.
+  const giveMeInScopeTotal = giveMeQuoteItems
+    .filter(q => q.in_utility_scope !== false)
+    .reduce((s, item) => s + (item.amount || 0), 0);
+  const giveMeOutOfScopeTotal = giveMeQuoteItems
+    .filter(q => q.in_utility_scope === false)
+    .reduce((s, item) => s + (item.amount || 0), 0);
+  const giveMeQuoteTotal = giveMeInScopeTotal + giveMeOutOfScopeTotal;
   const baselineProjectCost = linesCost;
+  // Utility-facing project cost — only in-scope items count toward the
+  // incentive cap. This is what shows on the utility submittal.
+  const utilityScopeCost = baselineProjectCost + giveMeInScopeTotal;
+  // Customer-facing total — everything they pay for.
   const effectiveProjectCost = baselineProjectCost + giveMeQuoteTotal;
-  const capAmount = effectiveProjectCost > 0 ? +(effectiveProjectCost * capPct).toFixed(2) : Infinity;
+  // Cap math: ALWAYS use utility-scope cost only.
+  const capAmount = utilityScopeCost > 0 ? +(utilityScopeCost * capPct).toFixed(2) : Infinity;
   const estimatedRebate = +Math.min(rawIncentive, capAmount).toFixed(2);
-  const capApplied = effectiveProjectCost > 0 && rawIncentive > capAmount;
+  const capApplied = utilityScopeCost > 0 && rawIncentive > capAmount;
   const reductionPct = totals.existWatts > 0 ? ((totals.wattsReduced / totals.existWatts) * 100).toFixed(0) : 0;
 
   // Cross-program comparison (SMBE vs Express only)
@@ -876,7 +894,9 @@ export default function LenardUTRMP() {
     const altResults = lines.map(l => altCalcFn(l, rateMap));
     const altRawTotal = altResults.reduce((s, r) => s + r.totalIncentive, 0);
     const altCapPct = program === 'smbe' ? EXPRESS.cap : SMBE.cap;
-    const altCapAmount = effectiveProjectCost > 0 ? +(effectiveProjectCost * altCapPct).toFixed(2) : Infinity;
+    // Alt-program cap also uses utility-scope cost only — same reasoning
+    // as the main cap calc above.
+    const altCapAmount = utilityScopeCost > 0 ? +(utilityScopeCost * altCapPct).toFixed(2) : Infinity;
     const altEstimated = +Math.min(altRawTotal, altCapAmount).toFixed(2);
     const altName = program === 'smbe' ? 'Express' : 'SMBE';
     const diff = estimatedRebate - altEstimated;
@@ -3671,20 +3691,27 @@ export default function LenardUTRMP() {
                 </div>
               </div>
               <div style={{ borderTop: '1px solid #ddd', paddingTop: '10px' }}>
+                {/* Lighting Scope of Work — only utility-eligible line items.
+                    These are what the utility's incentive program is
+                    calculated against. Out-of-scope add-ons (warranties,
+                    fees) are listed in their own section below so the
+                    customer sees exactly what the utility is paying for
+                    vs what they're paying directly. */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
-                  <span style={{ color: '#666' }}>{giveMeQuoteItems.length > 0 ? 'Base Project Cost' : 'Project Total'}</span>
-                  <span style={{ fontWeight: '700', color: '#1e1e22' }}>${Math.round(giveMeQuoteItems.length > 0 ? baselineProjectCost : effectiveProjectCost).toLocaleString()}</span>
+                  <span style={{ color: '#666' }}>Lighting Scope of Work</span>
+                  <span style={{ fontWeight: '700', color: '#1e1e22' }}>${Math.round(baselineProjectCost).toLocaleString()}</span>
                 </div>
-                {giveMeQuoteItems.map(q => (
+                {/* In-utility-scope upsells (tier bumps, premium fixtures) */}
+                {giveMeQuoteItems.filter(q => q.in_utility_scope !== false).map(q => (
                   <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '3px', color: '#888' }}>
                     <span>+ {q.label}</span>
                     <span>${Math.round(q.amount).toLocaleString()}</span>
                   </div>
                 ))}
-                {giveMeQuoteItems.length > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px', fontWeight: '700', color: '#1e1e22' }}>
-                    <span>Total Project Cost</span>
-                    <span>${Math.round(effectiveProjectCost).toLocaleString()}</span>
+                {giveMeInScopeTotal > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px', paddingTop: '3px', borderTop: '1px dashed #ddd', fontWeight: '600', color: '#1e1e22' }}>
+                    <span>Utility-Eligible Total</span>
+                    <span>${Math.round(utilityScopeCost).toLocaleString()}</span>
                   </div>
                 )}
                 {estimatedRebate > 0 && (
@@ -3692,6 +3719,26 @@ export default function LenardUTRMP() {
                     <span style={{ color: T.green }}>RMP Incentive</span>
                     <span style={{ fontWeight: '700', color: T.green }}>-${Math.round(estimatedRebate - repAdditionalOOP).toLocaleString()}</span>
                   </div>
+                )}
+                {/* Out-of-scope add-ons — paid by customer, no utility
+                    incentive applies. Visually separated + labeled so
+                    nobody confuses which dollars the utility is matching. */}
+                {giveMeOutOfScopeTotal > 0 && (
+                  <>
+                    <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #ddd', fontSize: '11px', fontWeight: '700', color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '4px' }}>
+                      Customer Add-Ons <span style={{ fontWeight: '500', textTransform: 'none', color: '#7a7a7a', letterSpacing: 0 }}>(not utility-eligible)</span>
+                    </div>
+                    {giveMeQuoteItems.filter(q => q.in_utility_scope === false).map(q => (
+                      <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '3px', color: '#7a4818' }}>
+                        <span>+ {q.label}</span>
+                        <span>${Math.round(q.amount).toLocaleString()}</span>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px', fontStyle: 'italic', color: '#888' }}>
+                      <span>Customer pays directly · no rebate</span>
+                      <span style={{ fontWeight: '600' }}>${Math.round(giveMeOutOfScopeTotal).toLocaleString()}</span>
+                    </div>
+                  </>
                 )}
                 <div style={{ borderTop: '2px solid #1e1e22', paddingTop: '6px', marginTop: '4px', display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
                   <span style={{ fontWeight: '800', color: '#1e1e22' }}>Customer Out-of-Pocket</span>
