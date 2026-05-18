@@ -1592,10 +1592,14 @@ function JobDetailInner() {
   //   energy-contractor flow working out of the box while hiding the
   //   utility buttons for service businesses (lawn, cleaning, fleet).
   const utilityInvoicingEnabled = (() => {
-    const explicit = job.customer?.utility_invoicing_enabled
+    // Top-level IIFE — runs on every render, including the first one
+    // before `job` is fetched (still null). Optional-chain on job itself,
+    // not just job.customer, or the initial render throws "Cannot read
+    // properties of null (reading 'customer')" before the loading guard.
+    const explicit = job?.customer?.utility_invoicing_enabled
     if (explicit === true)  return true
     if (explicit === false) return false
-    return (parseFloat(job.utility_incentive) || 0) > 0
+    return (parseFloat(job?.utility_incentive) || 0) > 0
   })()
 
   // Shared "Create Both" — guarantees matching invoice numbers.
