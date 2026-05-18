@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { jsPDF } from "jspdf";
 import SignaturePad from 'signature_pad';
+import { supabase } from '../../lib/supabase';
 
 // ============================================================
 // LENARD AZ SRP — SRP Lighting Rebate Calculator
@@ -392,6 +393,19 @@ export default function LenardAZSRP() {
   const sigCanvasRef = useRef(null);
   const sigPadRef = useRef(null);
 
+  // ── Upsell engine ──
+  // Same model as LenardUTRMP. Add-on services (warranties, processing
+  // fees, M&V, travel, premium tier bumps, etc.) live in a per-tenant
+  // catalog tagged with in_utility_scope. We keep two sums:
+  //   - in-utility-scope items roll into the customer's *eligible*
+  //     project cost (would affect a cap if SRP had one; matters for
+  //     payback / ROI / customer-facing math)
+  //   - out-of-utility-scope items are listed separately so the
+  //     customer sees the utility never paid against them
+  const [addOnServices, setAddOnServices] = useState([]);
+  const [upsellItems, setUpsellItems] = useState([]); // [{ id, type, label, amount, in_utility_scope, addonId? }]
+  const [showUpsellPicker, setShowUpsellPicker] = useState(false);
+
   // Toast helper
   const showToast = useCallback((message, icon = '\u2713') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -442,6 +456,39 @@ export default function LenardAZSRP() {
       } catch (_) { /* SMBE products optional */ }
     };
     fetchProducts();
+  }, []);
+
+  // Fetch the tenant's Add-On Service catalog (warranties, M&V, travel,
+  // processing fees, etc.). Mirrors the LenardUTRMP fetch so a single
+  // products_services row tagged suggest_in_lenard=true +
+  // product_category='Add-On Service' shows up in BOTH programs.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: u } = await supabase.auth.getUser();
+        const email = u?.user?.email;
+        if (!email) return;
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('company_id')
+          .ilike('email', email)
+          .limit(1)
+          .maybeSingle();
+        const cid = emp?.company_id;
+        if (!cid) return;
+        const { data: addons } = await supabase
+          .from('products_services')
+          .select('id, name, description, unit_price, floor_price, ceiling_price, in_utility_scope')
+          .eq('company_id', cid)
+          .eq('product_category', 'Add-On Service')
+          .eq('suggest_in_lenard', true)
+          .eq('active', true)
+          .order('name');
+        if (!cancelled) setAddOnServices(addons || []);
+      } catch (_) { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // Fetch employees on mount (for lead owner picker)
@@ -833,6 +880,16 @@ export default function LenardAZSRP() {
   }), { existWatts: 0, newWatts: 0, wattsReduced: 0, fixtureRebate: 0, controlsRebate: 0, totalIncentive: 0 });
   const reductionPct = totals.existWatts > 0 ? ((totals.wattsReduced / totals.existWatts) * 100).toFixed(0) : 0;
 
+  // Upsell scope split — see LenardUTRMP for full rationale.
+  //   - in_utility_scope: true  → counts toward the project the utility funded
+  //   - in_utility_scope: false → customer pays directly, never goes to SRP
+  const upsellInScopeTotal = upsellItems
+    .filter(q => q.in_utility_scope !== false)
+    .reduce((s, item) => s + (Number(item.amount) || 0), 0);
+  const upsellOutOfScopeTotal = upsellItems
+    .filter(q => q.in_utility_scope === false)
+    .reduce((s, item) => s + (Number(item.amount) || 0), 0);
+
   // ---- FINANCIAL ANALYSIS (comprehensive) ----
   const financials = useMemo(() => {
     const annualHours = operatingHours * daysPerYear;
@@ -842,7 +899,12 @@ export default function LenardAZSRP() {
     const annualEnergySavings = annualKwhSaved * energyRate;
     const existAnnualCost = existKwh * energyRate;
     const proposedAnnualCost = proposedKwh * energyRate;
-    const projectCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * getProductQty(l)), 0);
+    const baselineProjectCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * getProductQty(l)), 0);
+    // Utility-eligible total — what shows on the SRP submittal. Out-of-
+    // scope upsells (warranties, fees) are explicitly excluded.
+    const utilityScopeCost = baselineProjectCost + upsellInScopeTotal;
+    // Customer-facing total — everything they actually pay.
+    const projectCost = baselineProjectCost + upsellInScopeTotal + upsellOutOfScopeTotal;
     const netProjectCost = Math.max(0, projectCost - totals.totalIncentive);
     const simplePayback = annualEnergySavings > 0 ? netProjectCost / annualEnergySavings : 0;
     const roi = netProjectCost > 0 ? (annualEnergySavings / netProjectCost) * 100 : 0;
@@ -887,11 +949,12 @@ export default function LenardAZSRP() {
     return {
       annualHours, existKwh, proposedKwh, annualKwhSaved, annualEnergySavings,
       existAnnualCost, proposedAnnualCost, monthlyEnergySavings,
-      projectCost, netProjectCost, simplePayback, roi,
+      projectCost, baselineProjectCost, utilityScopeCost,
+      netProjectCost, simplePayback, roi,
       cashFlow, npv, irr,
       tenYearSavings, fiveYearSavings, lifetimeSavings, co2Saved,
     };
-  }, [operatingHours, daysPerYear, energyRate, totals, lines]);
+  }, [operatingHours, daysPerYear, energyRate, totals, lines, upsellInScopeTotal, upsellOutOfScopeTotal]);
 
   // ---- SAVE PROJECT ----
   const saveProject = async () => {
@@ -2210,12 +2273,135 @@ export default function LenardAZSRP() {
             <div><div style={{ fontSize: '11px', color: T.textMuted }}>ANNUAL kWh SAVED</div><div style={{ fontSize: '14px', fontWeight: '600' }}>{Math.round(financials.annualKwhSaved).toLocaleString()}</div></div>
             <div><div style={{ fontSize: '11px', color: T.textMuted }}>ANNUAL $ SAVED</div><div style={{ fontSize: '14px', fontWeight: '600', color: T.green }}>${Math.round(financials.annualEnergySavings).toLocaleString()}</div></div>
           </div>
-          {/* Cost row */}
-          {financials.projectCost > 0 && (
+          {/* Cost row — when there are upsells, expand into a scope-aware
+              breakdown so the customer can see exactly what the utility
+              is paying vs what they're paying directly. */}
+          {financials.projectCost > 0 && upsellItems.length === 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', textAlign: 'center', marginBottom: '8px', paddingTop: '8px', borderTop: `1px solid ${T.border}` }}>
               <div><div style={{ fontSize: '11px', color: T.textMuted }}>PROJECT COST</div><div style={{ fontSize: '13px', fontWeight: '600' }}>${financials.projectCost.toLocaleString()}</div></div>
               <div><div style={{ fontSize: '11px', color: T.textMuted }}>INCENTIVE</div><div style={{ fontSize: '13px', fontWeight: '600', color: T.green }}>${totals.totalIncentive.toLocaleString()}</div></div>
               <div><div style={{ fontSize: '11px', color: T.textMuted }}>NET COST</div><div style={{ fontSize: '13px', fontWeight: '600' }}>${Math.round(financials.netProjectCost).toLocaleString()}</div></div>
+            </div>
+          )}
+          {financials.projectCost > 0 && upsellItems.length > 0 && (
+            <div style={{ paddingTop: '8px', borderTop: `1px solid ${T.border}`, marginBottom: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                <span style={{ color: T.textMuted }}>Lighting Scope</span>
+                <span style={{ fontWeight: '600' }}>${financials.baselineProjectCost.toLocaleString()}</span>
+              </div>
+              {upsellItems.filter(q => q.in_utility_scope !== false).map(q => (
+                <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '2px', color: T.textSec }}>
+                  <span>+ {q.label}</span>
+                  <span>${Math.round(q.amount).toLocaleString()}</span>
+                </div>
+              ))}
+              {upsellInScopeTotal > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px', fontWeight: '600', borderTop: `1px dashed ${T.border}`, paddingTop: '3px' }}>
+                  <span>Utility-Eligible Total</span>
+                  <span>${financials.utilityScopeCost.toLocaleString()}</span>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px', color: T.green, fontWeight: '600' }}>
+                <span>SRP Incentive</span>
+                <span>-${totals.totalIncentive.toLocaleString()}</span>
+              </div>
+              {upsellOutOfScopeTotal > 0 && (
+                <>
+                  <div style={{ fontSize: '10px', fontWeight: '700', color: '#c2410c', textTransform: 'uppercase', letterSpacing: '0.4px', marginTop: '6px', marginBottom: '3px' }}>
+                    Customer Add-Ons <span style={{ fontWeight: '500', textTransform: 'none', color: T.textMuted, letterSpacing: 0 }}>(not utility-eligible)</span>
+                  </div>
+                  {upsellItems.filter(q => q.in_utility_scope === false).map(q => (
+                    <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '2px', color: '#7a4818' }}>
+                      <span>+ {q.label}</span>
+                      <span>${Math.round(q.amount).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '6px', paddingTop: '6px', borderTop: `2px solid ${T.text}`, fontWeight: '800' }}>
+                <span>Customer Out-of-Pocket</span>
+                <span>${Math.round(financials.netProjectCost).toLocaleString()}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Add-Ons picker — shows for any rep with a populated Add-On
+              Service catalog. Each click appends to upsellItems with the
+              catalog item's in_utility_scope flag preserved. */}
+          {addOnServices.length > 0 && (
+            <div style={{ paddingTop: '8px', borderTop: `1px solid ${T.border}`, marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  Add-Ons & Services
+                </div>
+                <button
+                  onClick={() => setShowUpsellPicker(v => !v)}
+                  style={{ ...S.btnGhost, fontSize: '11px', padding: '4px 10px' }}
+                >
+                  {showUpsellPicker ? 'Done' : `+ Add (${addOnServices.length} available)`}
+                </button>
+              </div>
+              {showUpsellPicker && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
+                  {addOnServices
+                    .filter(svc => svc && !upsellItems.some(q => q.addonId === svc.id))
+                    .map(svc => (
+                      <button
+                        key={svc.id}
+                        onClick={() => {
+                          const def = Number(svc.unit_price) || 0;
+                          const promptDefault = def > 0 ? String(def) : '';
+                          const v = window.prompt(`Price for "${svc.name}":${svc.floor_price || svc.ceiling_price ? `\nRange: $${svc.floor_price || 0} – $${svc.ceiling_price || '∞'}` : ''}`, promptDefault);
+                          if (v === null) return;
+                          const amount = Math.max(0, parseFloat(v) || 0);
+                          if (amount <= 0) return;
+                          if (svc.floor_price && amount < Number(svc.floor_price)) {
+                            if (!window.confirm(`$${amount.toFixed(2)} is below the floor of $${svc.floor_price}. Confirm anyway?`)) return;
+                          }
+                          if (svc.ceiling_price && amount > Number(svc.ceiling_price)) {
+                            if (!window.confirm(`$${amount.toFixed(2)} is above the ceiling of $${svc.ceiling_price}. Confirm anyway?`)) return;
+                          }
+                          setUpsellItems(prev => [...prev, {
+                            id: Date.now() + Math.random(),
+                            type: 'addon_' + svc.id,
+                            addonId: svc.id,
+                            label: svc.name,
+                            amount,
+                            in_utility_scope: !!svc.in_utility_scope,
+                          }]);
+                          setIsDirty(true);
+                          showToast(`Added ${svc.name}`, '✓');
+                        }}
+                        style={{
+                          padding: '6px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: '600',
+                          border: `1px solid ${svc.in_utility_scope ? T.green : '#f97316'}`,
+                          background: 'transparent',
+                          color: svc.in_utility_scope ? T.green : '#c2410c',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        + {svc.name}
+                      </button>
+                    ))}
+                </div>
+              )}
+              {/* Applied chips with remove */}
+              {upsellItems.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {upsellItems.map(q => (
+                    <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: '600', background: q.in_utility_scope === false ? 'rgba(249,115,22,0.1)' : 'rgba(34,197,94,0.1)', color: q.in_utility_scope === false ? '#c2410c' : T.green }}>
+                      <span>{q.label} · ${Math.round(q.amount).toLocaleString()}</span>
+                      <button
+                        onClick={() => { setUpsellItems(prev => prev.filter(x => x.id !== q.id)); setIsDirty(true); }}
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0, fontSize: '14px', lineHeight: 1 }}
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {/* Payback row */}
