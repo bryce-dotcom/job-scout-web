@@ -1378,7 +1378,7 @@ function EstimateDetailInner() {
       // a $ total but ZERO job_lines (Pacific Steel, bitter creek, etc.).
       const { data: freshQuoteLines, error: qlErr } = await supabase
         .from('quote_lines')
-        .select('id, item_id, quantity, price, line_total, notes, photos')
+        .select('id, item_id, quantity, price, line_total, notes, photos, in_utility_scope, description, item_name, labor_cost')
         .eq('quote_id', estimateRow.id)
       if (qlErr) {
         console.error('[convertToJob] failed to fetch quote_lines for copy:', qlErr)
@@ -1393,7 +1393,17 @@ function EstimateDetailInner() {
           price: line.price || 0,
           total: line.line_total || 0,
           notes: line.notes || null,
-          photos: line.photos || []
+          photos: line.photos || [],
+          // Carry forward in_utility_scope so out-of-scope items tagged
+          // at the estimate stage stay tagged when they reach the job
+          // and then the invoice. Without this, all add-on services
+          // (warranties, M&V, processing fees) silently default back to
+          // in-scope when an estimate is accepted.
+          in_utility_scope: line.in_utility_scope !== false,
+          // Carry description + labor_cost too — without these the
+          // customer invoice falls back to "Item" or $0 labor.
+          description: line.description || line.item_name || null,
+          labor_cost: line.labor_cost || 0,
         }))
         const { data: createdJobLines, error: jlErr } = await supabase
           .from('job_lines')
