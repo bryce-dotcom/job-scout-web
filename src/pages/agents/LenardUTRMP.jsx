@@ -393,7 +393,7 @@ export default function LenardUTRMP() {
       } catch (e) { /* non-critical */ }
     })();
     return () => { cancelled = true; };
-  }, [isRep]);
+  }, []);
 
   const [showFinancials, setShowFinancials] = useState(false);
   const [operatingHours, setOperatingHours] = useState(10);
