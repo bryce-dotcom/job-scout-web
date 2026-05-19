@@ -2174,6 +2174,55 @@ function EstimateDetailInner() {
           <p style={{ fontSize: '14px', color: theme.textSecondary }}>
             {estimate.estimate_name || customerInfo?.name || customerInfo?.customer_name || 'No customer'}
           </p>
+          {/* Email delivery indicator — Tracy + Christopher flagged
+              "Natasha didn't get the estimate; we need to see if it was
+              delivered." Pulls from email_status / email_opened_at /
+              email_clicked_at which the send flow already captures via
+              the Resend webhook. Falls back to last_sent_at when no
+              email_id was returned (older sends). */}
+          {(estimate.last_sent_at || estimate.email_status) && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px', fontSize: '11px' }}>
+              {/* Sent */}
+              {estimate.last_sent_at && (
+                <span style={{ padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(59,130,246,0.1)', color: '#1e40af', fontWeight: '600' }}>
+                  ✉ Sent {new Date(estimate.last_sent_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                  {estimate.sent_to_email ? ` → ${estimate.sent_to_email}` : ''}
+                </span>
+              )}
+              {/* Delivered / Bounced */}
+              {estimate.email_bounce_reason ? (
+                <span title={estimate.email_bounce_reason} style={{ padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(220,38,38,0.1)', color: '#b91c1c', fontWeight: '600' }}>
+                  ✗ Bounced
+                </span>
+              ) : estimate.email_status === 'delivered' || estimate.email_opened_at || estimate.email_clicked_at ? (
+                <span style={{ padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(34,197,94,0.1)', color: '#15803d', fontWeight: '600' }}>
+                  ✓ Delivered
+                </span>
+              ) : estimate.email_status === 'sent' ? (
+                <span style={{ padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(245,158,11,0.1)', color: '#92400e', fontWeight: '600' }}>
+                  ⌛ Awaiting delivery
+                </span>
+              ) : null}
+              {/* Opened */}
+              {estimate.email_opened_at && (
+                <span style={{ padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(34,197,94,0.15)', color: '#15803d', fontWeight: '600' }}>
+                  👁 Opened {new Date(estimate.email_opened_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                </span>
+              )}
+              {/* Link clicked */}
+              {estimate.email_clicked_at && (
+                <span style={{ padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(168,85,247,0.1)', color: '#7e22ce', fontWeight: '600' }}>
+                  🔗 Link clicked {new Date(estimate.email_clicked_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                </span>
+              )}
+              {/* Portal view count (separate signal from email open) */}
+              {portalTokenStats?.access_count > 0 && (
+                <span style={{ padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(245,158,11,0.15)', color: '#92400e', fontWeight: '600' }}>
+                  📄 Viewed portal {portalTokenStats.access_count}× {portalTokenStats.accessed_at && `· last ${new Date(portalTokenStats.accessed_at).toLocaleString('en-US', { month: 'short', day: 'numeric' })}`}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <select
