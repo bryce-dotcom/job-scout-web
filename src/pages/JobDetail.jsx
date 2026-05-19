@@ -4224,6 +4224,33 @@ function JobDetailInner() {
                 })}
                 </div>{/* close minWidth wrapper (job line items) */}
                 </div>{/* close overflowX wrapper */}
+                {/* Christopher's feedback: when the line list grows past the
+                    viewport, the Add Item button at the top scrolls off screen.
+                    Mirror the button at the bottom of the list so it's reachable
+                    no matter how long the list gets. Additive only — doesn't
+                    touch existing handlers or state. */}
+                <div style={{
+                  display: 'flex', gap: '8px', flexWrap: 'wrap',
+                  padding: '12px 20px', borderBottom: `1px solid ${theme.border}`,
+                  backgroundColor: theme.bgCard
+                }}>
+                  <button onClick={() => setShowAddLine(true)} style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 12px', backgroundColor: theme.accent, color: '#ffffff',
+                    border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
+                  }}>
+                    <Plus size={16} />
+                    Add Item
+                  </button>
+                  <button onClick={addCustomLineItem} disabled={saving} style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 12px', backgroundColor: 'transparent', color: theme.accent,
+                    border: `1px solid ${theme.accent}`, borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer'
+                  }}>
+                    <Plus size={16} />
+                    Custom Line
+                  </button>
+                </div>
                 <div style={{ padding: '16px 20px', backgroundColor: theme.accentBg }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <span style={{ color: theme.textSecondary }}>Subtotal</span>
