@@ -23,6 +23,16 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
+// Always return HTTP 200 with the error in the body so the supabase-js
+// client doesn't swallow the message as a generic FunctionsHttpError.
+// Zack hit a 5xx that showed no actionable reason because the frontend
+// couldn't read a non-2xx body. Surfacing as 200+error keeps the message
+// usable end-to-end.
+function errResponse(message: string) {
+  console.log('[stripe-create-payment-link] error:', message);
+  return jsonResponse({ error: message }, 200);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -36,7 +46,7 @@ serve(async (req) => {
 
     const { company_id, invoice_id } = await req.json();
     if (!company_id || !invoice_id) {
-      return jsonResponse({ error: 'company_id and invoice_id are required' }, 400);
+      return errResponse('company_id and invoice_id are required');
     }
 
     // Fetch invoice + customer
@@ -46,8 +56,8 @@ serve(async (req) => {
       .eq('id', invoice_id)
       .eq('company_id', company_id)
       .single();
-    if (invErr || !invoice) return jsonResponse({ error: 'Invoice not found' }, 404);
-    if (invoice.payment_status === 'Paid') return jsonResponse({ error: 'Invoice is already paid' }, 400);
+    if (invErr || !invoice) return errResponse(`Invoice ${invoice_id} not found (or wrong company)`);
+    if (invoice.payment_status === 'Paid') return errResponse('Invoice is already paid');
 
     const { data: customer } = await supabase
       .from('customers')
@@ -67,7 +77,7 @@ serve(async (req) => {
     if (configRow?.value) {
       try { stripeKey = JSON.parse(configRow.value).stripe_secret_key; } catch { /* ignore */ }
     }
-    if (!stripeKey) return jsonResponse({ error: 'Stripe is not configured for this tenant' }, 400);
+    if (!stripeKey) return errResponse('Stripe is not configured for this tenant. Add your Stripe secret key in Settings → Payments.');
 
     // Tenant company name for the line item description
     const { data: company } = await supabase
@@ -78,7 +88,7 @@ serve(async (req) => {
 
     const totalDollars = parseFloat(String(invoice.amount)) + (parseFloat(String(invoice.credit_card_fee || 0)) || 0);
     const totalCents = Math.round(totalDollars * 100);
-    if (totalCents <= 0) return jsonResponse({ error: 'Invoice has no amount due' }, 400);
+    if (totalCents <= 0) return errResponse('Invoice has no amount due');
 
     const customerLabel = customer?.business_name || customer?.name || 'Customer';
     const productName = `Invoice ${invoice.invoice_id || `#${invoice.id}`} — ${company?.company_name || 'Service'}`;
@@ -97,7 +107,7 @@ serve(async (req) => {
       }).toString(),
     });
     const product = await productRes.json();
-    if (!productRes.ok) return jsonResponse({ error: `Stripe product: ${product.error?.message || 'unknown'}` }, 500);
+    if (!productRes.ok) return errResponse(`Stripe product: ${product.error?.message || 'unknown'}`);
 
     // Step 2: create a Price for that product
     const priceRes = await fetch('https://api.stripe.com/v1/prices', {
@@ -113,7 +123,7 @@ serve(async (req) => {
       }).toString(),
     });
     const price = await priceRes.json();
-    if (!priceRes.ok) return jsonResponse({ error: `Stripe price: ${price.error?.message || 'unknown'}` }, 500);
+    if (!priceRes.ok) return errResponse(`Stripe price: ${price.error?.message || 'unknown'}`);
 
     // Step 3: create a Payment Link with metadata that the webhook reads
     const linkParams = new URLSearchParams();
@@ -138,7 +148,7 @@ serve(async (req) => {
       body: linkParams.toString(),
     });
     const link = await linkRes.json();
-    if (!linkRes.ok) return jsonResponse({ error: `Stripe link: ${link.error?.message || 'unknown'}` }, 500);
+    if (!linkRes.ok) return errResponse(`Stripe link: ${link.error?.message || 'unknown'}`);
 
     // Persist on the invoice for re-use
     await supabase
@@ -156,6 +166,6 @@ serve(async (req) => {
       amount: totalDollars,
     });
   } catch (err) {
-    return jsonResponse({ error: (err as Error).message }, 500);
+    return errResponse((err as Error).message || 'Unexpected error generating payment link');
   }
 });
