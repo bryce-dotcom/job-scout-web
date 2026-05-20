@@ -295,6 +295,40 @@ export default function Invoices() {
       return
     }
 
+    // If the manually-created invoice is tied to a job, copy that job's
+    // line items into invoice_lines so the detail page + customer
+    // portal show real line detail instead of a bare total. Reps have
+    // been filing "line items missing" feedback because the quick-
+    // create flow used to skip this step. Best-effort — invoice is
+    // already saved if the copy fails.
+    if (data?.id && formData.job_id) {
+      try {
+        const { data: jobLines } = await supabase
+          .from('job_lines')
+          .select('item_id, description, quantity, price, discount, line_total, in_utility_scope')
+          .eq('job_id', formData.job_id)
+          .order('id', { ascending: true })
+        if (jobLines && jobLines.length > 0) {
+          const invoiceLineRows = jobLines.map((l, idx) => ({
+            company_id: companyId,
+            invoice_id: data.id,
+            item_id: l.item_id || null,
+            line_number: idx + 1,
+            description: l.description || 'Item',
+            quantity: l.quantity || 1,
+            unit_price: parseFloat(l.price) || 0,
+            discount: parseFloat(l.discount) || 0,
+            line_total: parseFloat(l.line_total) || ((l.quantity || 1) * (parseFloat(l.price) || 0)),
+            sort_order: idx,
+            in_utility_scope: l.in_utility_scope !== false,
+          }))
+          await supabase.from('invoice_lines').insert(invoiceLineRows)
+        }
+      } catch (err) {
+        console.error('Invoices.jsx: failed to copy job lines into invoice_lines', err)
+      }
+    }
+
     setShowModal(false)
     setFormData({
       business_unit: businessUnits.length === 1 ? businessUnits[0].name : '',

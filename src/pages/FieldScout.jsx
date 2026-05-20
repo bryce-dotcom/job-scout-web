@@ -995,6 +995,43 @@ export default function FieldScout() {
           .select()
           .single()
         invoice = newInv
+
+        // Copy the job's line items into invoice_lines so the invoice
+        // has its own immutable record of what was billed. Without this
+        // the field-tech payment flow was creating bare invoices (just
+        // a total, no detail) and the InvoiceDetail page / customer
+        // portal had nothing to show under "Line Items". That's the
+        // recurring "missing line items" complaint reps have been
+        // filing. The copy is best-effort — if it fails, the invoice
+        // still exists and payment can still be collected.
+        if (invoice?.id) {
+          try {
+            const { data: jobLines } = await supabase
+              .from('job_lines')
+              .select('item_id, description, quantity, price, discount, line_total, in_utility_scope')
+              .eq('job_id', job.id)
+              .order('id', { ascending: true })
+            if (jobLines && jobLines.length > 0) {
+              const invoiceLineRows = jobLines.map((l, idx) => ({
+                company_id: companyId,
+                invoice_id: invoice.id,
+                item_id: l.item_id || null,
+                line_number: idx + 1,
+                description: l.description || 'Item',
+                quantity: l.quantity || 1,
+                unit_price: parseFloat(l.price) || 0,
+                discount: parseFloat(l.discount) || 0,
+                line_total: parseFloat(l.line_total) || ((l.quantity || 1) * (parseFloat(l.price) || 0)),
+                sort_order: idx,
+                in_utility_scope: l.in_utility_scope !== false,
+              }))
+              await supabase.from('invoice_lines').insert(invoiceLineRows)
+            }
+          } catch (err) {
+            // Non-fatal — invoice still gets created.
+            console.error('FieldScout: failed to copy job lines into invoice_lines', err)
+          }
+        }
       }
 
       if (invoice) {
