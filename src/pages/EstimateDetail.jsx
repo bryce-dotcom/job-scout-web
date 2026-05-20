@@ -2494,7 +2494,14 @@ function EstimateDetailInner() {
         // On mobile stack vertically — the old fixed 360px right column
         // stole all the horizontal space on phone widths ("can only see
         // the left half", "squishy screen" from Cole & Noah).
-        gridTemplateColumns: isMobile ? '1fr' : '1fr 360px',
+        //
+        // Desktop uses minmax(0, 1fr) — NOT plain 1fr — for the left
+        // column. Plain 1fr resolves to minmax(auto, 1fr), so any wide
+        // child (e.g. a long item description with white-space: nowrap)
+        // would push the whole grid past the viewport and shove the
+        // right-rail cards ~800 px off-screen. minmax(0, 1fr) lets the
+        // column shrink to fit so the right rail stays visible.
+        gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 360px',
         gap: isMobile ? '16px' : '24px'
       }}>
         {/* Main Content */}
