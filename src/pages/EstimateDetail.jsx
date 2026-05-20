@@ -206,8 +206,10 @@ function EstimateDetailInner() {
   useEffect(() => {
     if (!estimate?.id || !companyId) return
     if (!lineItems.length || !addOnSuggestions.length) {
-      // No lines or no catalog — nothing to recommend.
-      setArnieAddonRecs([])
+      // Lines or catalog still loading — do NOT clear the seeded
+      // recommendations here. The seed runs from the estimate row on
+      // initial load; we just defer the freshness check until both
+      // arrays are populated.
       return
     }
     const currentHash = hashLineItems(lineItems)

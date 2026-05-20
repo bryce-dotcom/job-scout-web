@@ -60,7 +60,10 @@ async function sb(path: string, init: RequestInit = {}) {
     },
   });
   if (!res.ok) throw new Error(`supabase ${path}: ${res.status} ${await res.text()}`);
-  return res.json();
+  // 204 No Content (return=minimal PATCHes) has empty body — don't try to parse.
+  if (res.status === 204) return null;
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 Deno.serve(async (req) => {
@@ -74,7 +77,7 @@ Deno.serve(async (req) => {
 
     // Pull estimate + lines + catalog in parallel.
     const [quoteRows, lineRows, catalogRows] = await Promise.all([
-      sb(`quotes?id=eq.${estimate_id}&company_id=eq.${company_id}&select=id,subtotal,total,arnie_addon_recommendations,arnie_addon_recs_hash`),
+      sb(`quotes?id=eq.${estimate_id}&company_id=eq.${company_id}&select=id,quote_amount,calculated_quote_amount,job_total,arnie_addon_recommendations,arnie_addon_recs_hash`),
       sb(`quote_lines?quote_id=eq.${estimate_id}&select=id,item_id,item_name,line_total,quantity,price,description`),
       sb(`products_services?company_id=eq.${company_id}&suggest_in_lenard=eq.true&active=eq.true&select=id,name,description,unit_price,in_utility_scope`),
     ]);
@@ -100,7 +103,7 @@ Deno.serve(async (req) => {
     }
 
     // Compose a tight prompt. Haiku doesn't need much priming.
-    const total = Number(quote.subtotal || quote.total || 0);
+    const total = Number(quote.calculated_quote_amount || quote.quote_amount || quote.job_total || 0);
     const linesText = lines
       .map((l: any) => `- ${l.item_name || "Line " + l.id}${l.description ? " (" + l.description.slice(0, 100) + ")" : ""}: qty ${l.quantity} × $${l.price} = $${l.line_total}`)
       .join("\n");
