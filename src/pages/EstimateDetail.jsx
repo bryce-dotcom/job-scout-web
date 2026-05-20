@@ -85,6 +85,19 @@ class EstimateDetailErrorBoundary extends Component {
   }
 }
 
+// Bucket an add-on into a presentation group based on its name. Inference
+// only — no schema change. If a tenant later wants explicit control we
+// can add an `addon_group` column to products_services and prefer it
+// here. Keep the bucket order stable; reps memorize where things live.
+const ADDON_GROUP_ORDER = ['Reports & Documents', 'Compliance & Permits', 'Services & Labor', 'Warranty']
+function classifyAddOn(svc) {
+  const n = (svc.name || '').toLowerCase()
+  if (/\bwarranty\b|extended\s+coverage/.test(n)) return 'Warranty'
+  if (/report|projection|documentation|payback|\broi\b|spec\s*&|sustainability|\besg\b|photometric|cut\s+sheet/.test(n)) return 'Reports & Documents'
+  if (/permit|compliance|title\s*24|iecc|hazmat|\bpcb\b|audit|incentive\s+processing|tax\s+deduction|179d/.test(n)) return 'Compliance & Permits'
+  return 'Services & Labor'
+}
+
 function EstimateDetailInner() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -2897,44 +2910,66 @@ function EstimateDetailInner() {
                 etc.). One-click add with price prompt + floor/ceiling
                 guardrails. Same catalog Lenard's Give-Me uses, so estimate
                 builds in the office and audits in the field stay in sync. */}
-            {addOnSuggestions.length > 0 && (
-              <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.border}`, backgroundColor: theme.bg }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    Suggested add-ons ({addOnSuggestions.length})
+            {addOnSuggestions.length > 0 && (() => {
+              // Group the catalog into a handful of buckets so a wall of
+              // 20+ chips becomes scannable. Order is stable across
+              // estimates — reps learn where each kind of add-on lives.
+              const buckets = {}
+              for (const svc of addOnSuggestions) {
+                const g = classifyAddOn(svc)
+                if (!buckets[g]) buckets[g] = []
+                buckets[g].push(svc)
+              }
+              Object.values(buckets).forEach(arr => arr.sort((a, b) => (a.name || '').localeCompare(b.name || '')))
+              const orderedGroups = ADDON_GROUP_ORDER.filter(g => buckets[g]?.length)
+              return (
+                <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.border}`, backgroundColor: theme.bg }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                      Suggested add-ons ({addOnSuggestions.length})
+                    </div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, fontStyle: 'italic' }}>
+                      Out-of-utility-scope · raises customer OOP without affecting incentive base
+                    </div>
                   </div>
-                  <div style={{ fontSize: 11, color: theme.textMuted, fontStyle: 'italic' }}>
-                    Out-of-utility-scope · raises customer OOP without affecting incentive base
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {orderedGroups.map(group => (
+                      <div key={group}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+                          {group} <span style={{ color: theme.textMuted, opacity: 0.6, fontWeight: 500 }}>· {buckets[group].length}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {buckets[group].map(svc => {
+                            const alreadyAdded = lineItems.some(l => String(l.item_id) === String(svc.id))
+                            return (
+                              <button
+                                key={svc.id}
+                                onClick={() => !alreadyAdded && addSuggestedAddOn(svc)}
+                                disabled={alreadyAdded || saving}
+                                title={svc.description || svc.name}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                                  padding: '6px 10px',
+                                  backgroundColor: alreadyAdded ? 'rgba(34,197,94,0.10)' : theme.bgCard,
+                                  color: alreadyAdded ? '#16a34a' : theme.text,
+                                  border: `1px solid ${alreadyAdded ? 'rgba(34,197,94,0.30)' : theme.border}`,
+                                  borderRadius: 16,
+                                  fontSize: 12, fontWeight: 500,
+                                  cursor: alreadyAdded ? 'default' : 'pointer',
+                                  opacity: alreadyAdded ? 0.7 : 1,
+                                }}
+                              >
+                                {alreadyAdded ? '✓ ' : '+ '}{svc.name} <span style={{ color: theme.textMuted, marginLeft: 2 }}>${svc.unit_price}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {addOnSuggestions.map(svc => {
-                    const alreadyAdded = lineItems.some(l => String(l.item_id) === String(svc.id))
-                    return (
-                      <button
-                        key={svc.id}
-                        onClick={() => !alreadyAdded && addSuggestedAddOn(svc)}
-                        disabled={alreadyAdded || saving}
-                        title={svc.description || svc.name}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
-                          padding: '6px 10px',
-                          backgroundColor: alreadyAdded ? 'rgba(34,197,94,0.10)' : theme.bgCard,
-                          color: alreadyAdded ? '#16a34a' : theme.text,
-                          border: `1px solid ${alreadyAdded ? 'rgba(34,197,94,0.30)' : theme.border}`,
-                          borderRadius: 16,
-                          fontSize: 12, fontWeight: 500,
-                          cursor: alreadyAdded ? 'default' : 'pointer',
-                          opacity: alreadyAdded ? 0.7 : 1,
-                        }}
-                      >
-                        {alreadyAdded ? '✓ ' : '+ '}{svc.name} <span style={{ color: theme.textMuted, marginLeft: 2 }}>${svc.unit_price}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+              )
+            })()}
 
             {lineItems.length === 0 ? (
               <div style={{
