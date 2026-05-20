@@ -42,6 +42,32 @@ async function fetchImageAsBase64(url) {
   } catch { return null }
 }
 
+// Load + downscale a line photo for embedding. Phone photos are
+// 2–4 MB raw; the PDF needs them small enough not to balloon the file
+// without going so small that detail is lost. 600 px on the long side
+// at JPEG-70% gives ~50–80 KB per image and stays crisp in the PDF.
+async function loadPhotoForPdf(url, maxSide = 600) {
+  try {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    await new Promise((res, rej) => {
+      img.onload = res
+      img.onerror = rej
+      img.src = url
+    })
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight))
+    const w = Math.max(1, Math.round(img.naturalWidth * scale))
+    const h = Math.max(1, Math.round(img.naturalHeight * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+    return { dataUrl: canvas.toDataURL('image/jpeg', 0.7), w, h }
+  } catch {
+    return null
+  }
+}
+
 // ─── Public API ─────────────────────────────────────────────────
 /**
  * Generate a beautiful estimate PDF.
@@ -74,12 +100,26 @@ export async function generateEstimatePdf({ estimate, lineItems, company, settin
   let logo = null
   if (logoUrl) logo = await fetchImageAsBase64(logoUrl)
 
+  // Pre-resolve Before/After photos for every line item that has them.
+  // Doing it up-front keeps the table-rendering code synchronous and
+  // also lets jsPDF receive a dataURL per photo (it can't load from a
+  // URL on its own). The caller passes line_photos = [{ url, photo_context }, …].
+  const enrichedLines = await Promise.all((lineItems || []).map(async (l) => {
+    const photos = Array.isArray(l.line_photos) ? l.line_photos : []
+    if (!photos.length) return l
+    const loaded = await Promise.all(photos.map(async (p) => {
+      const data = await loadPhotoForPdf(p.url, 600)
+      return data ? { ...p, ...data } : null
+    }))
+    return { ...l, _pdfPhotos: loaded.filter(Boolean) }
+  }))
+
   if (layout === 'envelope') {
     drawEnvelopePage(doc, { estimate, company, brand, logo, settings, m, pw, ph, cw })
     doc.addPage()
   }
 
-  drawEstimate(doc, { estimate, lineItems, company, brand, logo, settings, m, pw, ph, cw })
+  drawEstimate(doc, { estimate, lineItems: enrichedLines, company, brand, logo, settings, m, pw, ph, cw })
 
   return doc.output('blob')
 }
@@ -399,6 +439,55 @@ function drawTable(doc, lineItems, settings, startY, m, cw, pw, ph) {
     doc.setFont('helvetica', 'normal')
 
     y += dynamicRowH
+
+    // Embed Before / After photos under the row, if the rep captured
+    // any for this line. Without this the customer never sees the
+    // condition photos that justify the work — Christopher specifically
+    // flagged this on estimate 4429.
+    const linePhotos = Array.isArray(line._pdfPhotos) ? line._pdfPhotos : []
+    if (linePhotos.length > 0) {
+      const before = linePhotos.filter(p => p.photo_context === 'line_before')
+      const after  = linePhotos.filter(p => p.photo_context === 'line_after')
+      const photoSize = 28  // mm — fits 5 across with margin
+      const photoGap  = 3
+      const photoLabelH = 5
+
+      const renderRow = (label, photos) => {
+        if (!photos.length) return
+        // Estimate height of this row group (label + photo grid)
+        const perRow = Math.floor((cw - 5) / (photoSize + photoGap))
+        const rows = Math.ceil(photos.length / Math.max(1, perRow))
+        const rowH = photoLabelH + rows * (photoSize + photoGap) + 2
+        if (y + rowH > ph - 30) { doc.addPage(); y = m }
+
+        doc.setFontSize(7)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(...C.muted)
+        doc.text(label.toUpperCase(), m + 3, y + 3.5)
+        let px = m + 3
+        let py = y + photoLabelH
+        for (let i = 0; i < photos.length; i++) {
+          if (i > 0 && i % perRow === 0) { px = m + 3; py += photoSize + photoGap }
+          try {
+            // Preserve aspect ratio inside the photoSize square
+            const ar = photos[i].w && photos[i].h ? photos[i].w / photos[i].h : 1
+            const drawW = ar >= 1 ? photoSize : photoSize * ar
+            const drawH = ar >= 1 ? photoSize / ar : photoSize
+            const ox = (photoSize - drawW) / 2
+            const oy = (photoSize - drawH) / 2
+            doc.setFillColor(...C.border)
+            doc.rect(px, py, photoSize, photoSize, 'F')
+            doc.addImage(photos[i].dataUrl, 'JPEG', px + ox, py + oy, drawW, drawH)
+          } catch { /* skip broken image, keep going */ }
+          px += photoSize + photoGap
+        }
+        y = py + photoSize + 4
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'normal')
+      }
+      renderRow('Before', before)
+      renderRow('After', after)
+    }
   })
 
   // Bottom border of table

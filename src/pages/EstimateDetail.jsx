@@ -1723,9 +1723,28 @@ function EstimateDetailInner() {
           if (aud) auditExtras = { audit: aud, annual_savings_dollars: aud.annual_savings_dollars, annual_savings_kwh: aud.annual_savings_kwh }
         } catch { /* non-fatal */ }
       }
+      // Enrich each line with signed photo URLs so the PDF generator
+      // can embed Before/After thumbnails. Photos live in file_attachments
+      // (private bucket), so we have to mint short-lived signed URLs
+      // here before handing them off. Generation is sequential per line
+      // to keep the code simple — totals are tiny for typical estimates.
+      const linesWithPhotos = await Promise.all((lineItems || []).map(async (l) => {
+        const photos = linePhotos[l.id] || []
+        if (!photos.length) return l
+        const signed = await Promise.all(photos
+          .filter(p => p.photo_context === 'line_before' || p.photo_context === 'line_after')
+          .map(async (p) => {
+            try {
+              const { data } = await supabase.storage.from(p.storage_bucket || 'project-documents').createSignedUrl(p.file_path, 60 * 60)
+              return data?.signedUrl ? { url: data.signedUrl, photo_context: p.photo_context } : null
+            } catch { return null }
+          }))
+        return { ...l, line_photos: signed.filter(Boolean) }
+      }))
+
       const pdfBlob = await generateEstimatePdf({
         estimate: { ...estimate, ...auditExtras },
-        lineItems,
+        lineItems: linesWithPhotos,
         company,
         settings: effectiveSettings,
         layout: effectiveSettings.pdf_layout || 'email',
@@ -1865,9 +1884,27 @@ function EstimateDetailInner() {
             if (aud) auditExtrasForSnap = { audit: aud, annual_savings_dollars: aud.annual_savings_dollars, annual_savings_kwh: aud.annual_savings_kwh }
           } catch { /* non-fatal */ }
         }
+        // Same Before/After photo enrichment as the preview path. The
+        // snapshot PDF the customer actually receives must include the
+        // photos the rep captured on each line — without this, photos
+        // were live on the page and on the portal but absent from the
+        // attached PDF.
+        const linesWithPhotosForSnap = await Promise.all((lineItems || []).map(async (l) => {
+          const photos = linePhotos[l.id] || []
+          if (!photos.length) return l
+          const signed = await Promise.all(photos
+            .filter(p => p.photo_context === 'line_before' || p.photo_context === 'line_after')
+            .map(async (p) => {
+              try {
+                const { data } = await supabase.storage.from(p.storage_bucket || 'project-documents').createSignedUrl(p.file_path, 60 * 60)
+                return data?.signedUrl ? { url: data.signedUrl, photo_context: p.photo_context } : null
+              } catch { return null }
+            }))
+          return { ...l, line_photos: signed.filter(Boolean) }
+        }))
         const pdfBlob = await generateEstimatePdf({
           estimate: { ...estimate, ...auditExtrasForSnap },
-          lineItems,
+          lineItems: linesWithPhotosForSnap,
           company,
           settings: effectiveSettings,
           layout: effectiveSettings.pdf_layout || 'email',
