@@ -414,22 +414,58 @@ export default function CustomerPortal() {
                   const lineTotal = parseFloat(li.total ?? li.line_total) || 0
                   const qty = parseFloat(li.quantity) || 1
                   const unit = parseFloat(li.unit_price ?? li.price) || (qty > 0 ? lineTotal / qty : 0)
+                  // Photos uploaded by the rep on this line — Before /
+                  // After galleries. Edge function attaches them as
+                  // li.line_photos with signed URLs already minted.
+                  const photos = Array.isArray(li.line_photos) ? li.line_photos : []
+                  const beforePhotos = photos.filter(p => p.photo_context === 'line_before')
+                  const afterPhotos = photos.filter(p => p.photo_context === 'line_after')
                   return (
-                    <div key={li.id || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '12px 0', borderBottom: `1px solid ${theme.border}` }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontWeight: '500', color: theme.text, margin: '0 0 2px', fontSize: '14px' }}>
-                          {li.item_name || li.item?.name || li.description || 'Item'}
-                        </p>
-                        {li.description && li.item_name && (
-                          <p style={{ color: theme.textMuted, fontSize: '13px', margin: 0 }}>{li.description}</p>
-                        )}
-                        <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0' }}>
-                          {qty} x {formatCurrency(unit)}
+                    <div key={li.id || i} style={{ padding: '12px 0', borderBottom: `1px solid ${theme.border}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontWeight: '500', color: theme.text, margin: '0 0 2px', fontSize: '14px' }}>
+                            {li.item_name || li.item?.name || li.description || 'Item'}
+                          </p>
+                          {li.description && li.item_name && (
+                            <p style={{ color: theme.textMuted, fontSize: '13px', margin: 0 }}>{li.description}</p>
+                          )}
+                          <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0' }}>
+                            {qty} x {formatCurrency(unit)}
+                          </p>
+                        </div>
+                        <p style={{ fontWeight: '600', color: theme.text, margin: 0, fontSize: '14px', whiteSpace: 'nowrap', marginLeft: '16px' }}>
+                          {formatCurrency(lineTotal)}
                         </p>
                       </div>
-                      <p style={{ fontWeight: '600', color: theme.text, margin: 0, fontSize: '14px', whiteSpace: 'nowrap', marginLeft: '16px' }}>
-                        {formatCurrency(lineTotal)}
-                      </p>
+                      {(beforePhotos.length > 0 || afterPhotos.length > 0) && (
+                        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {beforePhotos.length > 0 && (
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Before</div>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                {beforePhotos.map(p => (
+                                  <a key={p.id} href={p.url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', lineHeight: 0 }}>
+                                    <img src={p.url} alt="Before" style={{ width: 88, height: 88, objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.border}` }} />
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {afterPhotos.length > 0 && (
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>After</div>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                {afterPhotos.map(p => (
+                                  <a key={p.id} href={p.url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', lineHeight: 0 }}>
+                                    <img src={p.url} alt="After" style={{ width: 88, height: 88, objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.border}` }} />
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}

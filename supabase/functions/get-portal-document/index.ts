@@ -94,6 +94,37 @@ serve(async (req) => {
           .order('sort_order', { ascending: true });
         lineItems = lines || [];
 
+        // Attach before/after photos per line. Christopher uploaded site
+        // photos from the estimate page but the customer portal never
+        // fetched them — the customer saw only line text. Pulls from
+        // file_attachments matched on quote_line_id, then mints 7-day
+        // signed URLs (bucket is private). Pre-sorted by created_at so
+        // the order matches what the rep saw on the estimate page.
+        if (lineItems.length > 0) {
+          const lineIds = lineItems.map((l: any) => l.id);
+          const { data: attRows } = await supabase
+            .from('file_attachments')
+            .select('id, quote_line_id, photo_context, file_path, file_name, storage_bucket, created_at')
+            .in('quote_line_id', lineIds)
+            .in('photo_context', ['line_before', 'line_after'])
+            .order('created_at', { ascending: true });
+
+          const byLine: Record<number, any[]> = {};
+          for (const att of attRows || []) {
+            const bucket = att.storage_bucket || 'project-documents';
+            const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(att.file_path, 60 * 60 * 24 * 7);
+            if (!signed?.signedUrl) continue;
+            const arr = byLine[att.quote_line_id] || (byLine[att.quote_line_id] = []);
+            arr.push({
+              id: att.id,
+              url: signed.signedUrl,
+              photo_context: att.photo_context,
+              file_name: att.file_name,
+            });
+          }
+          lineItems = lineItems.map((l: any) => ({ ...l, line_photos: byLine[l.id] || [] }));
+        }
+
         // Check for existing approval
         const { data: approvalData } = await supabase
           .from('document_approvals')
