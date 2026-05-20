@@ -2139,7 +2139,16 @@ function EstimateDetailInner() {
   const statusStyle = statusColors[estimate.status] || statusColors['Draft']
 
   return (
-    <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+    <div style={{
+      padding: isMobile ? '16px' : '24px',
+      // Extra bottom padding on mobile so the sticky action bar at the
+      // bottom of the viewport never covers real content. Reps kept
+      // losing the Add Product / Send buttons inside long estimates —
+      // those are now always one tap away regardless of scroll position.
+      paddingBottom: isMobile ? 'calc(96px + env(safe-area-inset-bottom, 0px))' : '24px',
+      maxWidth: '100%',
+      overflowX: 'hidden'
+    }}>
       {/* Hidden photo input for before/after/notes uploads */}
       <input type="file" ref={photoInputRef} accept="image/*" multiple style={{ display: 'none' }} onChange={handleUploadPhoto} />
 
@@ -4830,6 +4839,76 @@ function EstimateDetailInner() {
           </div>
         </div>
       )}
+      {/* Mobile sticky action bar — the field crew complaint that won't
+          die: "I lose access to the Add Line Items button" / "I can't
+          find Resend". Both are now pinned to the bottom of the
+          viewport on mobile, so the rep never has to scroll the entire
+          estimate to reach them. Hidden when a modal is open so it
+          doesn't double-stack over modal action rows. */}
+      {isMobile && !showSendModal && !showProductPicker && !viewingPhoto && (
+        <div
+          style={{
+            position: 'fixed',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 900,
+            display: 'flex',
+            gap: '8px',
+            padding: '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))',
+            backgroundColor: theme.bgCard,
+            borderTop: `1px solid ${theme.border}`,
+            boxShadow: '0 -4px 16px rgba(0,0,0,0.08)'
+          }}
+        >
+          <button
+            onClick={() => setShowProductPicker(true)}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '12px 14px',
+              backgroundColor: theme.accent,
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              minHeight: '44px'
+            }}
+          >
+            <Plus size={18} />
+            Add Product
+          </button>
+          <button
+            onClick={() => (estimate.last_sent_at || estimate.status !== 'Draft') ? setShowSendModal(true) : sendEstimate()}
+            disabled={saving}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '12px 14px',
+              backgroundColor: 'transparent',
+              color: theme.accent,
+              border: `1.5px solid ${theme.accent}`,
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.6 : 1,
+              minHeight: '44px'
+            }}
+          >
+            {estimate.last_sent_at || estimate.status !== 'Draft' ? 'Resend' : 'Send'}
+          </button>
+        </div>
+      )}
+
       {/* Photo Lightbox */}
       {viewingPhoto && (
         <div onClick={() => setViewingPhoto(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
