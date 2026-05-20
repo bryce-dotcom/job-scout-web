@@ -85,6 +85,22 @@ class EstimateDetailErrorBoundary extends Component {
   }
 }
 
+// Stable hash of an estimate's line items for the Arnie picks cache.
+// Must match the algorithm in supabase/functions/arnie-suggest-addons
+// or the cache will look stale on every reload. FNV-1a-ish.
+function hashLineItems(lines) {
+  const norm = (lines || [])
+    .map((l) => `${l.item_id ?? 'x'}:${Math.round(Number(l.line_total) || 0)}`)
+    .sort()
+    .join('|')
+  let h = 2166136261
+  for (let i = 0; i < norm.length; i++) {
+    h ^= norm.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0).toString(16)
+}
+
 // Bucket an add-on into a presentation group based on its name. Inference
 // only — no schema change. If a tenant later wants explicit control we
 // can add an `addon_group` column to products_services and prefer it
@@ -125,6 +141,11 @@ function EstimateDetailInner() {
   const [estimate, setEstimate] = useState(null)
   const [portalTokenStats, setPortalTokenStats] = useState(null) // { access_count, accessed_at, expires_at, is_revoked }
   const [lineItems, setLineItems] = useState([])
+  // Arnie's top-3 picks from the add-on catalog for THIS specific
+  // estimate. Refreshes when the line items change materially (see
+  // useEffect below). Each entry: { addon_id, reason }
+  const [arnieAddonRecs, setArnieAddonRecs] = useState([])
+  const [arnieRecsLoading, setArnieRecsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showProductPicker, setShowProductPicker] = useState(false)
@@ -176,6 +197,56 @@ function EstimateDetailInner() {
     })()
     return () => { cancelled = true }
   }, [companyId])
+
+  // Arnie's add-on picks — call the edge function when the line items
+  // change materially. The cache check is keyed by a hash of line items;
+  // if the row already has fresh recs for this hash, the edge function
+  // short-circuits and returns the cached list. We debounce 600ms so
+  // rapid edits (typing qty/price) don't fire N requests.
+  useEffect(() => {
+    if (!estimate?.id || !companyId) return
+    if (!lineItems.length || !addOnSuggestions.length) {
+      // No lines or no catalog — nothing to recommend.
+      setArnieAddonRecs([])
+      return
+    }
+    const currentHash = hashLineItems(lineItems)
+    // If the cached hash already matches and we have recs, nothing to do.
+    if (estimate.arnie_addon_recs_hash === currentHash && Array.isArray(estimate.arnie_addon_recommendations) && estimate.arnie_addon_recommendations.length > 0) {
+      return
+    }
+    let cancelled = false
+    const t = setTimeout(async () => {
+      setArnieRecsLoading(true)
+      try {
+        const { data, error } = await supabase.functions.invoke('arnie-suggest-addons', {
+          body: { estimate_id: estimate.id, company_id: companyId },
+        })
+        if (cancelled) return
+        if (error || data?.error) {
+          // Silent fail — the grouped catalog below still works.
+          console.warn('[arnie-suggest-addons]', error?.message || data?.error)
+        } else if (Array.isArray(data?.recommendations)) {
+          setArnieAddonRecs(data.recommendations)
+          // Mirror the cache fields onto local estimate state so
+          // subsequent hashLineItems checks skip the network call.
+          setEstimate(prev => prev ? {
+            ...prev,
+            arnie_addon_recommendations: data.recommendations,
+            arnie_addon_recs_hash: data.hash || currentHash,
+          } : prev)
+        }
+      } finally {
+        if (!cancelled) setArnieRecsLoading(false)
+      }
+    }, 600)
+    return () => { cancelled = true; clearTimeout(t) }
+  // hashLineItems is stable, estimate.id covers the estimate identity,
+  // and we re-check whenever lineItems / addOnSuggestions change. The
+  // arnie_addon_recs_hash on estimate is read inside the effect so we
+  // also re-run when it gets updated.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimate?.id, companyId, lineItems, addOnSuggestions.length, estimate?.arnie_addon_recs_hash])
 
   const applyPackage = async (pkg) => {
     if (!pkg?.addonIds?.length) {
@@ -380,6 +451,12 @@ function EstimateDetailInner() {
 
     if (estimateData) {
       setEstimate(estimateData)
+      // Seed Arnie's cached add-on picks from the row so we render
+      // instantly on page load. The line-item useEffect below will
+      // refresh if the cache is stale.
+      if (Array.isArray(estimateData.arnie_addon_recommendations)) {
+        setArnieAddonRecs(estimateData.arnie_addon_recommendations)
+      }
 
       // Pull portal-token access stats so we can show the customer's
       // actual view count on the page. Noah filed feedback that a
@@ -2910,6 +2987,68 @@ function EstimateDetailInner() {
                 etc.). One-click add with price prompt + floor/ceiling
                 guardrails. Same catalog Lenard's Give-Me uses, so estimate
                 builds in the office and audits in the field stay in sync. */}
+            {/* Arnie's top picks — surfaces 3 catalog items most likely
+                to apply to THIS estimate, with a one-line reason. The
+                full grouped catalog still renders below; this is an
+                accelerator, not a replacement. Hidden when no picks
+                yet (or while the model is thinking on first load). */}
+            {addOnSuggestions.length > 0 && arnieAddonRecs.length > 0 && (() => {
+              const recItems = arnieAddonRecs
+                .map(r => ({ rec: r, svc: addOnSuggestions.find(s => Number(s.id) === Number(r.addon_id)) }))
+                .filter(x => x.svc)
+              if (!recItems.length) return null
+              return (
+                <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.border}`, backgroundColor: 'rgba(168,85,247,0.06)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                      <span aria-hidden style={{ fontSize: 12 }}>{'✨'}</span>
+                      Arnie's picks for this estimate
+                      {arnieRecsLoading && <span style={{ fontWeight: 500, color: theme.textMuted, textTransform: 'none', letterSpacing: 0, fontSize: 11, marginLeft: 4 }}>· refreshing…</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, fontStyle: 'italic' }}>
+                      Based on this estimate's line items
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {recItems.map(({ rec, svc }) => {
+                      const alreadyAdded = lineItems.some(l => String(l.item_id) === String(svc.id))
+                      return (
+                        <div key={svc.id} style={{
+                          display: 'flex', alignItems: 'flex-start', gap: 10,
+                          padding: '8px 10px',
+                          backgroundColor: alreadyAdded ? 'rgba(34,197,94,0.08)' : theme.bgCard,
+                          border: `1px solid ${alreadyAdded ? 'rgba(34,197,94,0.25)' : 'rgba(168,85,247,0.18)'}`,
+                          borderRadius: 8,
+                        }}>
+                          <button
+                            onClick={() => !alreadyAdded && addSuggestedAddOn(svc)}
+                            disabled={alreadyAdded || saving}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                              padding: '6px 10px',
+                              backgroundColor: alreadyAdded ? 'rgba(34,197,94,0.10)' : '#7c3aed',
+                              color: alreadyAdded ? '#16a34a' : '#ffffff',
+                              border: 'none',
+                              borderRadius: 16,
+                              fontSize: 12, fontWeight: 600,
+                              cursor: alreadyAdded ? 'default' : 'pointer',
+                              opacity: alreadyAdded ? 0.7 : 1,
+                              whiteSpace: 'nowrap', flexShrink: 0,
+                            }}
+                          >
+                            {alreadyAdded ? '✓ ' : '+ '}{svc.name} <span style={{ opacity: 0.85, marginLeft: 2 }}>${svc.unit_price}</span>
+                          </button>
+                          <div style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.4, flex: 1, minWidth: 0 }}>
+                            {rec.reason}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
+
             {addOnSuggestions.length > 0 && (() => {
               // Group the catalog into a handful of buckets so a wall of
               // 20+ chips becomes scannable. Order is stable across
