@@ -310,6 +310,19 @@ const T = {
   green: '#22c55e', red: '#ef4444', blue: '#3b82f6', blueDim: 'rgba(59,130,246,0.12)',
 };
 
+// Same add-on bucketing rule the EstimateDetail page uses. Reps see
+// the catalog in identical groups whether they're building from
+// Lenard or the office estimate page. Pure keyword inference — no
+// schema change. Order stable so muscle memory holds.
+const LENARD_ADDON_GROUP_ORDER = ['Reports & Documents', 'Compliance & Permits', 'Services & Labor', 'Warranty']
+function classifyLenardAddOn(svc) {
+  const n = (svc?.name || '').toLowerCase()
+  if (/\bwarranty\b|extended\s+coverage/.test(n)) return 'Warranty'
+  if (/report|projection|documentation|payback|\broi\b|spec\s*&|sustainability|\besg\b|photometric|cut\s+sheet/.test(n)) return 'Reports & Documents'
+  if (/permit|compliance|title\s*24|iecc|hazmat|\bpcb\b|audit|incentive\s+processing|tax\s+deduction|179d/.test(n)) return 'Compliance & Permits'
+  return 'Services & Labor'
+}
+
 // ==================== MAIN COMPONENT ====================
 
 export default function LenardAZSRP() {
@@ -2341,50 +2354,69 @@ export default function LenardAZSRP() {
                   {showUpsellPicker ? 'Done' : `+ Add (${addOnServices.length} available)`}
                 </button>
               </div>
-              {showUpsellPicker && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
-                  {addOnServices
-                    .filter(svc => svc && !upsellItems.some(q => q.addonId === svc.id))
-                    .map(svc => (
-                      <button
-                        key={svc.id}
-                        onClick={() => {
-                          const def = Number(svc.unit_price) || 0;
-                          const promptDefault = def > 0 ? String(def) : '';
-                          const v = window.prompt(`Price for "${svc.name}":${svc.floor_price || svc.ceiling_price ? `\nRange: $${svc.floor_price || 0} – $${svc.ceiling_price || '∞'}` : ''}`, promptDefault);
-                          if (v === null) return;
-                          const amount = Math.max(0, parseFloat(v) || 0);
-                          if (amount <= 0) return;
-                          if (svc.floor_price && amount < Number(svc.floor_price)) {
-                            if (!window.confirm(`$${amount.toFixed(2)} is below the floor of $${svc.floor_price}. Confirm anyway?`)) return;
-                          }
-                          if (svc.ceiling_price && amount > Number(svc.ceiling_price)) {
-                            if (!window.confirm(`$${amount.toFixed(2)} is above the ceiling of $${svc.ceiling_price}. Confirm anyway?`)) return;
-                          }
-                          setUpsellItems(prev => [...prev, {
-                            id: Date.now() + Math.random(),
-                            type: 'addon_' + svc.id,
-                            addonId: svc.id,
-                            label: svc.name,
-                            amount,
-                            in_utility_scope: !!svc.in_utility_scope,
-                          }]);
-                          setIsDirty(true);
-                          showToast(`Added ${svc.name}`, '✓');
-                        }}
-                        style={{
-                          padding: '6px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: '600',
-                          border: `1px solid ${svc.in_utility_scope ? T.green : '#f97316'}`,
-                          background: 'transparent',
-                          color: svc.in_utility_scope ? T.green : '#c2410c',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        + {svc.name}
-                      </button>
+              {showUpsellPicker && (() => {
+                const available = addOnServices.filter(svc => svc && !upsellItems.some(q => q.addonId === svc.id))
+                const buckets = {}
+                for (const svc of available) {
+                  const g = classifyLenardAddOn(svc)
+                  if (!buckets[g]) buckets[g] = []
+                  buckets[g].push(svc)
+                }
+                Object.values(buckets).forEach(arr => arr.sort((a, b) => (a.name || '').localeCompare(b.name || '')))
+                const orderedGroups = LENARD_ADDON_GROUP_ORDER.filter(g => buckets[g]?.length)
+                const handleClick = (svc) => {
+                  const def = Number(svc.unit_price) || 0
+                  const promptDefault = def > 0 ? String(def) : ''
+                  const v = window.prompt(`Price for "${svc.name}":${svc.floor_price || svc.ceiling_price ? `\nRange: $${svc.floor_price || 0} – $${svc.ceiling_price || '∞'}` : ''}`, promptDefault)
+                  if (v === null) return
+                  const amount = Math.max(0, parseFloat(v) || 0)
+                  if (amount <= 0) return
+                  if (svc.floor_price && amount < Number(svc.floor_price)) {
+                    if (!window.confirm(`$${amount.toFixed(2)} is below the floor of $${svc.floor_price}. Confirm anyway?`)) return
+                  }
+                  if (svc.ceiling_price && amount > Number(svc.ceiling_price)) {
+                    if (!window.confirm(`$${amount.toFixed(2)} is above the ceiling of $${svc.ceiling_price}. Confirm anyway?`)) return
+                  }
+                  setUpsellItems(prev => [...prev, {
+                    id: Date.now() + Math.random(),
+                    type: 'addon_' + svc.id,
+                    addonId: svc.id,
+                    label: svc.name,
+                    amount,
+                    in_utility_scope: !!svc.in_utility_scope,
+                  }])
+                  setIsDirty(true)
+                  showToast(`Added ${svc.name}`, '✓')
+                }
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '6px' }}>
+                    {orderedGroups.map(group => (
+                      <div key={group}>
+                        <div style={{ fontSize: '10px', fontWeight: '700', color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>
+                          {group} <span style={{ opacity: 0.6, fontWeight: 500 }}>· {buckets[group].length}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {buckets[group].map(svc => (
+                            <button
+                              key={svc.id}
+                              onClick={() => handleClick(svc)}
+                              style={{
+                                padding: '6px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: '600',
+                                border: `1px solid ${svc.in_utility_scope ? T.green : '#f97316'}`,
+                                background: 'transparent',
+                                color: svc.in_utility_scope ? T.green : '#c2410c',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              + {svc.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ))}
-                </div>
-              )}
+                  </div>
+                )
+              })()}
               {/* Applied chips with remove */}
               {upsellItems.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
