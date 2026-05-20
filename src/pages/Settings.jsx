@@ -644,7 +644,7 @@ export default function Settings() {
         return <NotificationsTab theme={theme} settings={settings} saveSetting={saveSetting} user={user} />
 
       case 'my_money':
-        return <PaymentSettingsTab theme={theme} settings={settings} saveSetting={saveSetting} />
+        return <PaymentSettingsTab theme={theme} settings={settings} saveSetting={saveSetting} companyId={companyId} />
 
       case 'tax':
         return <PayrollTaxSettingsTab theme={theme} companyId={companyId} />
@@ -2039,7 +2039,7 @@ function EstimateDefaultsTab({ theme, settings, saveSetting }) {
 }
 
 // ---- Payment Settings ("My Money") Tab ----
-function PaymentSettingsTab({ theme, settings, saveSetting }) {
+function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
   const existing = settings.find(s => s.key === 'payment_config')
   let defaults = {
     stripe_enabled: false,
@@ -2081,6 +2081,34 @@ function PaymentSettingsTab({ theme, settings, saveSetting }) {
   const [form, setForm] = useState(defaults)
   const [saving, setSaving] = useState(false)
   const [expandedSection, setExpandedSection] = useState(null)
+  // Stripe Account health check — hits stripe-account-status edge fn to
+  // surface "Charges enabled / Payouts enabled" + requirements.
+  // Lets reps self-diagnose "I charge customers but the bank account is
+  // empty" — almost always payouts_enabled=false on the Stripe side.
+  const [stripeHealth, setStripeHealth] = useState(null)
+  const [checkingStripe, setCheckingStripe] = useState(false)
+  const runStripeHealthCheck = async () => {
+    if (!companyId) return
+    setCheckingStripe(true)
+    setStripeHealth(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('stripe-account-status', { body: { company_id: companyId } })
+      if (error) setStripeHealth({ ok: false, error: error.message || 'Network error' })
+      else setStripeHealth(data || { ok: false, error: 'No response' })
+    } catch (e) {
+      setStripeHealth({ ok: false, error: e.message || 'Unexpected error' })
+    } finally {
+      setCheckingStripe(false)
+    }
+  }
+  // Auto-run once when the tab is opened with a saved Stripe key, so
+  // the rep sees the live status without having to click Verify first.
+  useEffect(() => {
+    if (form.stripe_enabled && existing && companyId && !stripeHealth && !checkingStripe) {
+      runStripeHealthCheck()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId])
 
   const existingReviewUrl = settings.find(s => s.key === 'google_review_url')
   const [googleReviewUrl, setGoogleReviewUrl] = useState(existingReviewUrl ? existingReviewUrl.value : '')
@@ -2385,6 +2413,115 @@ function PaymentSettingsTab({ theme, settings, saveSetting }) {
                     placeholder="whsec_..."
                     style={inputStyle}
                   />
+                </div>
+
+                {/* Stripe Account Health — pulls account state directly
+                    from Stripe so reps see whether Charges + Payouts
+                    are both turned on. If payouts are off, lists the
+                    exact `currently_due` items so they know what to
+                    finish in the Stripe dashboard. */}
+                <div style={{
+                  padding: '14px',
+                  borderRadius: '8px',
+                  border: `1px solid ${theme.border}`,
+                  backgroundColor: theme.bgCard
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>Stripe Connection Status</div>
+                    <button
+                      type="button"
+                      onClick={runStripeHealthCheck}
+                      disabled={checkingStripe || !companyId}
+                      style={{
+                        padding: '6px 12px', fontSize: 12, fontWeight: 600,
+                        backgroundColor: theme.bg, color: theme.text,
+                        border: `1px solid ${theme.border}`, borderRadius: 6,
+                        cursor: checkingStripe ? 'wait' : 'pointer',
+                        opacity: checkingStripe ? 0.6 : 1,
+                      }}
+                    >
+                      {checkingStripe ? 'Checking…' : (stripeHealth ? 'Re-check' : 'Check Connection')}
+                    </button>
+                  </div>
+                  {!stripeHealth && !checkingStripe && (
+                    <div style={{ fontSize: 12, color: theme.textMuted }}>
+                      Click <strong>Check Connection</strong> to see whether Stripe is set up to actually deposit funds into your bank.
+                    </div>
+                  )}
+                  {stripeHealth && !stripeHealth.ok && (
+                    <div style={{ fontSize: 13, color: '#dc2626', backgroundColor: 'rgba(220,38,38,0.06)', padding: '8px 10px', borderRadius: 6 }}>
+                      <strong>Can't reach Stripe:</strong> {stripeHealth.error}
+                    </div>
+                  )}
+                  {stripeHealth && stripeHealth.ok && (() => {
+                    const badge = (ok, label) => (
+                      <div style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '4px 10px', borderRadius: 999,
+                        fontSize: 12, fontWeight: 600,
+                        backgroundColor: ok ? 'rgba(34,197,94,0.1)' : 'rgba(220,38,38,0.1)',
+                        color: ok ? '#16a34a' : '#dc2626',
+                        border: `1px solid ${ok ? 'rgba(34,197,94,0.3)' : 'rgba(220,38,38,0.3)'}`,
+                      }}>
+                        <span aria-hidden>{ok ? '✓' : '✗'}</span>
+                        {label}
+                      </div>
+                    )
+                    const reqs = stripeHealth.requirements
+                    const dueList = [
+                      ...(reqs?.past_due || []),
+                      ...(reqs?.currently_due || []),
+                    ]
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {badge(stripeHealth.charges_enabled, 'Charges enabled')}
+                          {badge(stripeHealth.payouts_enabled, 'Payouts enabled')}
+                          {stripeHealth.livemode
+                            ? <span style={{ padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, backgroundColor: 'rgba(34,197,94,0.1)', color: '#16a34a', border: '1px solid rgba(34,197,94,0.3)' }}>Live mode</span>
+                            : <span style={{ padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, backgroundColor: 'rgba(245,158,11,0.1)', color: '#b45309', border: '1px solid rgba(245,158,11,0.3)' }}>Test mode</span>}
+                        </div>
+                        {stripeHealth.business_name && (
+                          <div style={{ fontSize: 12, color: theme.textMuted }}>
+                            Connected to: <strong style={{ color: theme.text }}>{stripeHealth.business_name}</strong>
+                            {stripeHealth.email ? ` · ${stripeHealth.email}` : ''}
+                          </div>
+                        )}
+                        {stripeHealth.charges_enabled && stripeHealth.payouts_enabled && (
+                          <div style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.5 }}>
+                            Everything looks good. Payments collected here deposit to the bank on file in Stripe on your account's payout schedule. New accounts have a 7–14 day rolling hold on the first payout — that's Stripe-side and not something we control.
+                          </div>
+                        )}
+                        {(!stripeHealth.payouts_enabled || dueList.length > 0) && (
+                          <div style={{ padding: '10px 12px', borderRadius: 6, backgroundColor: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#b45309', marginBottom: 6 }}>
+                              {stripeHealth.payouts_enabled ? 'Stripe needs a few more details' : 'Payouts are paused until Stripe verifies your account'}
+                            </div>
+                            {dueList.length > 0 && (
+                              <ul style={{ margin: '0 0 8px 16px', padding: 0, fontSize: 12, color: theme.textSecondary, lineHeight: 1.6 }}>
+                                {dueList.slice(0, 12).map(req => (
+                                  <li key={req}>{req.replace(/_/g, ' ').replace(/\./g, ' → ')}</li>
+                                ))}
+                              </ul>
+                            )}
+                            {reqs?.disabled_reason && (
+                              <div style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 6 }}>
+                                Reason from Stripe: <em>{reqs.disabled_reason.replace(/[._]/g, ' ')}</em>
+                              </div>
+                            )}
+                            <a
+                              href="https://dashboard.stripe.com/settings/payouts"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ display: 'inline-block', marginTop: 4, fontSize: 12, color: theme.accent, textDecoration: 'underline' }}
+                            >
+                              Open Stripe Dashboard → Payouts
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 <div style={{
