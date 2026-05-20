@@ -684,7 +684,11 @@ export default function Layout() {
         backgroundColor: theme.bg,
         width: '100%',
         maxWidth: '100vw',
-        overflow: 'hidden'
+        // CRITICAL: overflowX only. `overflow: hidden` was clipping the
+        // entire page vertically too, so anything below the first
+        // viewport got eaten — desktop users saw ~1/4 of the page.
+        // Mobile still gets horizontal-clip protection.
+        overflowX: 'hidden'
       }}>
         {/* Desktop Sidebar */}
         <aside style={{
