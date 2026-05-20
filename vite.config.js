@@ -18,7 +18,7 @@ export default defineConfig({
         clientsClaim: true,
         navigationPreload: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024, // 8 MB — main bundle is ~6.3 MB
+        maximumFileSizeToCacheInBytes: 16 * 1024 * 1024, // 16 MB — bundle has crossed 9 MB; bumping ceiling so PWA precache doesn't block deploys until we code-split
         runtimeCaching: [
           {
             // Cache Supabase REST API calls — network first, fall back to cache
