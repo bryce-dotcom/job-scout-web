@@ -474,7 +474,7 @@ export default function QuoteDetail() {
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: isMobile ? '1fr' : '1fr 360px',
+        gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 360px',
         gap: isMobile ? '16px' : '24px'
       }}>
         {/* Main Content */}
