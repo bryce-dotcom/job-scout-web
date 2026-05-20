@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { offlineDb } from '../lib/offlineDb'
-import { canEditPipelineStages } from '../lib/accessControl'
+import { canEditPipelineStages, isFieldTech } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../lib/jobMetrics'
 import {
   Plus, X, DollarSign, User, Calendar, Phone, Mail, Building2,
@@ -139,17 +139,22 @@ export default function SalesPipeline() {
   const [isPulling, setIsPulling] = useState(false)
   const [touchedCardId, setTouchedCardId] = useState(null)
 
-  // Owner filter — default to "All" for everyone, admin or not. The
-  // pipeline is a shared view of company activity; the team wanted the
-  // whole company's deals visible by default and the ability to filter
-  // down to "Mine" or a specific rep when needed. Previously this
-  // defaulted to the logged-in user's id and non-admins were locked to
-  // their own scope (couldn't even see other reps in the dropdown).
-  const [ownerFilter, setOwnerFilter] = useState('all')
-  // Treat every user as able to view the full pipeline. Editing other
-  // reps' deals is still gated separately; this just opens up the
-  // read/filter side of the dropdown and the query path.
-  const canViewAll = true
+  // Owner filter — default to "All" for everyone EXCEPT field techs.
+  // The pipeline is a shared view of company activity for admins,
+  // sales, and managers; field techs should still only see their own
+  // scope so they don't see other reps' deal sizes and pipeline data.
+  const fieldTech = isFieldTech(user)
+  const [ownerFilter, setOwnerFilter] = useState(() => fieldTech && user?.id ? String(user.id) : 'all')
+  // Field techs are locked to their own scope (numbers hidden from
+  // them). Everyone else — admins, sales, managers, team leads,
+  // owners — gets the full company pipeline.
+  const canViewAll = !fieldTech
+
+  // Re-pin field techs to themselves if the user object hydrates after
+  // mount (initializer may run before user is ready).
+  useEffect(() => {
+    if (fieldTech && user?.id) setOwnerFilter(String(user.id))
+  }, [fieldTech, user?.id])
 
   // Business Unit filter
   const [buFilter, setBuFilter] = useState('all')
