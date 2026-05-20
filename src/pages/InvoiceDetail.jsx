@@ -900,14 +900,26 @@ export default function InvoiceDetail() {
       y += 6
     }
 
-    drawTotalLine('Subtotal:', formatCurrency(invoice.amount))
+    // Mirror the same legacy-vs-new detection used by the page summary
+    // so PDF balance math matches what the customer sees on screen.
+    const pdfGross = parseFloat(invoice.amount) || 0
+    const pdfDiscount = parseFloat(invoice.discount_applied) || 0
+    const pdfCcFee = parseFloat(invoice.credit_card_fee) || 0
+    const pdfLegacyNet = pdfDiscount > 0 && pdfDiscount >= pdfGross
+    const pdfCustomerTotal = pdfLegacyNet ? pdfGross : (pdfGross - pdfDiscount)
 
-    if (parseFloat(invoice.discount_applied) > 0) {
-      drawTotalLine('Discount:', `-${formatCurrency(invoice.discount_applied)}`, { color: [200, 0, 0] })
+    drawTotalLine('Subtotal:', formatCurrency(pdfGross))
+
+    if (pdfDiscount > 0) {
+      if (pdfLegacyNet) {
+        drawTotalLine('Utility Incentive (applied):', formatCurrency(pdfDiscount), { color: [120, 120, 120] })
+      } else {
+        drawTotalLine('Discount:', `-${formatCurrency(pdfDiscount)}`, { color: [200, 0, 0] })
+      }
     }
 
-    if (parseFloat(invoice.credit_card_fee) > 0) {
-      drawTotalLine('CC Processing Fee:', formatCurrency(invoice.credit_card_fee))
+    if (pdfCcFee > 0) {
+      drawTotalLine('CC Processing Fee:', formatCurrency(pdfCcFee))
     }
 
     const totalPaidAmt = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
@@ -922,7 +934,7 @@ export default function InvoiceDetail() {
     doc.setLineWidth(0.2)
     y += 7
 
-    const balDue = (parseFloat(invoice.amount) || 0) - (parseFloat(invoice.discount_applied) || 0) + (parseFloat(invoice.credit_card_fee) || 0) - totalPaidAmt
+    const balDue = pdfCustomerTotal + pdfCcFee - totalPaidAmt
     drawTotalLine('Balance Due:', formatCurrency(Math.max(0, balDue)), { bold: true, fontSize: 13 })
     y += 10
 
@@ -1308,7 +1320,20 @@ export default function InvoiceDetail() {
   const totalPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const ccFeeOnInvoice = parseFloat(invoice.credit_card_fee) || 0
   const discountApplied = parseFloat(invoice.discount_applied) || 0
-  const balanceDue = (parseFloat(invoice.amount) || 0) - discountApplied + ccFeeOnInvoice - totalPaid
+  const grossAmount = parseFloat(invoice.amount) || 0
+  // Two storage shapes exist in production for invoices with a utility
+  // rebate, and the page has to handle both:
+  //   NEW: amount = gross project total, discount = rebate amount, so
+  //        customer total = amount - discount
+  //   LEGACY: amount = net customer portion (already after incentive),
+  //        discount = incentive amount (informational), so customer
+  //        total = amount and discount must NOT be subtracted again
+  // If discount >= amount, the row was saved under the legacy shape —
+  // double-subtracting would produce a phantom negative balance (e.g.
+  // Redman INV-MNRW9RBU, Tracy INV-MNJD9UQN).
+  const isLegacyNetInvoice = discountApplied > 0 && discountApplied >= grossAmount
+  const customerTotal = isLegacyNetInvoice ? grossAmount : (grossAmount - discountApplied)
+  const balanceDue = customerTotal + ccFeeOnInvoice - totalPaid
   const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
 
   return (
@@ -2044,7 +2069,9 @@ export default function InvoiceDetail() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
-                <span style={{ color: theme.textSecondary }}>Discount</span>
+                <span style={{ color: theme.textSecondary }}>
+                  {isLegacyNetInvoice ? 'Utility Incentive (already applied)' : 'Discount'}
+                </span>
                 {isEditing ? (
                   <input
                     type="number"
@@ -2055,7 +2082,15 @@ export default function InvoiceDetail() {
                   />
                 ) : (
                   invoice.discount_applied > 0 ? (
-                    <span style={{ color: '#dc2626' }}>-{formatCurrency(invoice.discount_applied)}</span>
+                    // In the legacy shape the incentive is already
+                    // reflected in `amount`, so we show it as
+                    // informational instead of as a minus-line that
+                    // would double-count against the balance.
+                    isLegacyNetInvoice ? (
+                      <span style={{ color: theme.textMuted }}>{formatCurrency(invoice.discount_applied)}</span>
+                    ) : (
+                      <span style={{ color: '#dc2626' }}>-{formatCurrency(invoice.discount_applied)}</span>
+                    )
                   ) : (
                     <span style={{ color: theme.textMuted }}>$0.00</span>
                   )

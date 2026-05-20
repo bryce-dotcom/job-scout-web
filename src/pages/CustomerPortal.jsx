@@ -239,12 +239,18 @@ export default function CustomerPortal() {
   const depositRequired = isEstimate && doc.deposit_required && parseFloat(doc.deposit_required) > 0
   const depositPaid = isEstimate && doc.deposit_amount && parseFloat(doc.deposit_amount) > 0
 
-  // Invoice state
+  // Invoice state — see InvoiceDetail for the legacy-vs-new shape note.
+  // Older invoices stored amount as the NET customer portion and put
+  // the rebate in discount_applied (informational). Newer invoices
+  // store the gross project as amount and the rebate in discount_applied
+  // (a real deduction). Detect by discount >= amount.
   const invoiceAmount = isInvoice ? parseFloat(doc.amount) || 0 : 0
   const invoiceDiscount = isInvoice ? parseFloat(doc.discount_applied) || 0 : 0
+  const invoiceLegacyNet = invoiceDiscount > 0 && invoiceDiscount >= invoiceAmount
   const totalPaid = isInvoice ? (payments || []).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) : 0
   const existingCcFee = isInvoice ? (parseFloat(doc.credit_card_fee) || 0) : 0
-  const balanceDue = invoiceAmount - invoiceDiscount - totalPaid + existingCcFee
+  const invoiceCustomerTotal = invoiceLegacyNet ? invoiceAmount : (invoiceAmount - invoiceDiscount)
+  const balanceDue = invoiceCustomerTotal + existingCcFee - totalPaid
   const isFullyPaid = isInvoice && (doc.payment_status === 'Paid' || balanceDue <= 0)
 
   // CC fee settings from invoice_settings (passed by edge function)
@@ -497,8 +503,12 @@ export default function CustomerPortal() {
                 </div>
                 {invoiceDiscount > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: theme.textMuted, fontSize: '13px' }}>Discount</span>
-                    <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(invoiceDiscount)}</span>
+                    <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+                      {invoiceLegacyNet ? 'Utility Incentive (applied)' : 'Discount'}
+                    </span>
+                    <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>
+                      {invoiceLegacyNet ? formatCurrency(invoiceDiscount) : `-${formatCurrency(invoiceDiscount)}`}
+                    </span>
                   </div>
                 )}
                 {totalPaid > 0 && (
