@@ -139,21 +139,17 @@ export default function SalesPipeline() {
   const [isPulling, setIsPulling] = useState(false)
   const [touchedCardId, setTouchedCardId] = useState(null)
 
-  // Owner filter — default to logged-in user
-  const [ownerFilter, setOwnerFilter] = useState(() => user?.id ? String(user.id) : 'all')
-  const canViewAll = isAdmin || isDeveloper
-
-  // Sync owner filter once user loads (initializer runs before user is hydrated).
-  // Non-admins are locked to their own scope; admins default to "Mine" but can switch.
-  useEffect(() => {
-    if (!user?.id) return
-    setOwnerFilter(prev => {
-      if (!canViewAll) return String(user.id)
-      // Admin: only override the initial "all" fallback so we don't undo their selection.
-      if (prev === 'all') return String(user.id)
-      return prev
-    })
-  }, [user?.id, canViewAll])
+  // Owner filter — default to "All" for everyone, admin or not. The
+  // pipeline is a shared view of company activity; the team wanted the
+  // whole company's deals visible by default and the ability to filter
+  // down to "Mine" or a specific rep when needed. Previously this
+  // defaulted to the logged-in user's id and non-admins were locked to
+  // their own scope (couldn't even see other reps in the dropdown).
+  const [ownerFilter, setOwnerFilter] = useState('all')
+  // Treat every user as able to view the full pipeline. Editing other
+  // reps' deals is still gated separately; this just opens up the
+  // read/filter side of the dropdown and the query path.
+  const canViewAll = true
 
   // Business Unit filter
   const [buFilter, setBuFilter] = useState('all')
