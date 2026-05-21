@@ -1001,6 +1001,12 @@ export default function Settings() {
 function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, saving, handleSaveCompany, theme }) {
   const [expandedSections, setExpandedSections] = useState({ basic: true, entity: false, insurance: false, docs: false })
   const [uploadingDoc, setUploadingDoc] = useState(null)
+  // Place ID auto-detect state (used by the "Search Google for our
+  // business" button below). Lives at the tab level so the search
+  // results survive small re-renders.
+  const [placeSearching, setPlaceSearching] = useState(false)
+  const [placeSearchError, setPlaceSearchError] = useState(null)
+  const [placeCandidates, setPlaceCandidates] = useState(null)
 
   const toggleSection = (key) => setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }))
 
@@ -1205,14 +1211,51 @@ function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, sa
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={labelStyle}>Google Place ID</label>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexWrap: 'wrap' }}>
                 <input
                   type="text"
                   value={companyForm.google_place_id}
                   onChange={(e) => setCompanyForm(prev => ({ ...prev, google_place_id: e.target.value.trim() }))}
                   placeholder="ChIJ…"
-                  style={{ ...inputStyle, flex: 1 }}
+                  style={{ ...inputStyle, flex: 1, minWidth: '200px' }}
                 />
+                {/* In-app Google search — uses the saved company name +
+                    address, hits the Places Text Search via our edge
+                    function (key stays server-side), shows the top
+                    matches. One click on a match fills the field. */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const query = `${companyForm.company_name || ''} ${companyForm.address || ''}`.trim()
+                    if (!query) { toast.error('Add your company name + address above first.'); return }
+                    setPlaceSearching(true)
+                    setPlaceSearchError(null)
+                    setPlaceCandidates(null)
+                    try {
+                      const { data, error } = await supabase.functions.invoke('google-place-search', { body: { query } })
+                      if (error || data?.ok === false) {
+                        setPlaceSearchError(error?.message || data?.error || 'Search failed')
+                      } else {
+                        setPlaceCandidates(data?.candidates || [])
+                      }
+                    } catch (e) {
+                      setPlaceSearchError(e.message || 'Search failed')
+                    } finally {
+                      setPlaceSearching(false)
+                    }
+                  }}
+                  disabled={placeSearching}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    padding: '10px 14px',
+                    backgroundColor: theme.accent, color: '#fff',
+                    border: 'none', borderRadius: '8px',
+                    fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap',
+                    cursor: placeSearching ? 'wait' : 'pointer', opacity: placeSearching ? 0.7 : 1,
+                  }}
+                >
+                  {placeSearching ? 'Searching…' : '🔍 Search Google for our business'}
+                </button>
                 {companyForm.google_place_id ? (
                   <a
                     href={`https://search.google.com/local/writereview?placeid=${encodeURIComponent(companyForm.google_place_id)}`}
@@ -1230,6 +1273,52 @@ function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, sa
                   </a>
                 ) : null}
               </div>
+              {/* Auto-detect results / errors */}
+              {placeSearchError && (
+                <div style={{ marginTop: '8px', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.25)', fontSize: '12px', color: '#b91c1c' }}>
+                  {placeSearchError}
+                </div>
+              )}
+              {placeCandidates && placeCandidates.length === 0 && !placeSearchError && (
+                <div style={{ marginTop: '8px', padding: '10px 12px', borderRadius: '8px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, fontSize: '12px', color: theme.textSecondary }}>
+                  No matches found. Try simplifying the query — sometimes just the business name (without "LLC", suite numbers, etc.) returns better results. You can also paste the Place ID manually using the steps below.
+                </div>
+              )}
+              {placeCandidates && placeCandidates.length > 0 && (
+                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '600' }}>
+                    {placeCandidates.length} match{placeCandidates.length === 1 ? '' : 'es'} — click the one that's yours:
+                  </div>
+                  {placeCandidates.map((c) => (
+                    <button
+                      key={c.place_id}
+                      type="button"
+                      onClick={() => {
+                        setCompanyForm(prev => ({ ...prev, google_place_id: c.place_id }))
+                        toast.success(`Place ID set — remember to click Save All Changes`)
+                      }}
+                      style={{
+                        textAlign: 'left',
+                        padding: '10px 12px',
+                        backgroundColor: companyForm.google_place_id === c.place_id ? theme.accentBg : theme.bgCard,
+                        border: `1px solid ${companyForm.google_place_id === c.place_id ? theme.accent : theme.border}`,
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
+                        {companyForm.google_place_id === c.place_id ? '✓ ' : ''}{c.name}
+                      </div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                        {c.formatted_address || <em>No public address (service-area business)</em>}
+                      </div>
+                      <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px', fontFamily: 'monospace' }}>
+                        {c.place_id}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
               <p style={{ fontSize: '11px', color: theme.textMuted, margin: '6px 0 0' }}>
                 Sends customers to your Google review page from invoices, the customer portal,
                 and Field Scout's "Get Review" button. Without it, those review prompts stay
