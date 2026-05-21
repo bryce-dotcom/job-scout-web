@@ -440,6 +440,7 @@ function JobDetailInner() {
         jobTotal: jobData.job_total,
         businessUnit: jobData.business_unit,
         settings: useStore.getState().settings || [],
+        laborRates: useStore.getState().laborRates || [],
       })
 
       if (calcRounded > 0) {
