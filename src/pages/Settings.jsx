@@ -1243,20 +1243,27 @@ function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, sa
                   <ol style={{ margin: '8px 0 0 20px', padding: 0, fontSize: '12px', color: theme.textSecondary, lineHeight: 1.7 }}>
                     <li>
                       Open <a
-                        href="https://developers.google.com/maps/documentation/places/web-service/place-id"
+                        href="https://geo-devrel-javascript-samples.web.app/samples/places-placeid-finder/app/dist/"
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{ color: theme.accent, textDecoration: 'underline' }}
-                      >Google's Place ID Finder</a> in a new tab.
-                    </li>
-                    <li>Type your <strong>business name</strong> into the search box at the top of the map.</li>
-                    <li>
-                      Click your listing in the autocomplete suggestions that appear below the
-                      search box. (For service-area businesses that hide their physical address,
-                      this is the only step you need — there won't be a map marker to click.)
+                      >Google's Place ID Finder</a> in a new tab. (Heads-up: the
+                      docs page that Google links to this finder from has TWO search
+                      boxes — "Search" and "Filter" — that are for the docs site, not
+                      the finder. The link above skips that page and goes straight to
+                      the finder.)
                     </li>
                     <li>
-                      A popup card appears with your business name and the Place ID — it starts
+                      In the only input on the page (labeled <strong>"Enter a location"</strong>),
+                      start typing your business name.
+                    </li>
+                    <li>
+                      Pick your listing from the autocomplete dropdown that appears as you type.
+                      (For service-area businesses that hide their physical address, this is the
+                      only step you need — there won't be a map marker to click.)
+                    </li>
+                    <li>
+                      A panel appears showing your business name and the Place ID — it starts
                       with <code style={{ background: theme.bg, padding: '0 4px', borderRadius: '4px' }}>ChIJ</code>.
                       Copy the entire ID.
                     </li>

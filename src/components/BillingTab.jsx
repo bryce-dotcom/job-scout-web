@@ -203,6 +203,176 @@ export default function BillingTab({ theme, companyId }) {
           onSuccess={() => { setCardModalOpen(false); fetchStatus() }}
         />
       )}
+
+      {/* AI Prospecting subscription — sub-section under main billing.
+          Anchored at #subscription so the drawer's "Upgrade" button can
+          deep-link straight to it. */}
+      <div id="subscription" style={{ marginTop: 28 }}>
+        <ProspectingPlanSection theme={theme} companyId={companyId} />
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
+// AI Prospecting plan card — shows current tier + monthly usage with
+// progress bars + upgrade buttons. Stripe checkout for Pro/Unlimited
+// wires up in a follow-on commit; for now the "Upgrade" buttons open
+// a "contact sales" modal so we can manually flip companies.
+// prospecting_tier while the Stripe products are being built.
+function ProspectingPlanSection({ theme, companyId }) {
+  const [tier, setTier] = useState('free')
+  const [quota, setQuota] = useState(null)
+  const [usage, setUsage] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: session } = await supabase.auth.getSession()
+        const tok = session?.session?.access_token
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/prospect-research`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${tok}`,
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ action: 'usage_status', company_id: companyId }),
+        })
+        const data = await res.json()
+        if (cancelled || !res.ok) return
+        setTier(data.tier)
+        setQuota(data.quota)
+        setUsage(data.usage)
+      } catch (_) { /* best-effort */ }
+      finally { if (!cancelled) setLoading(false) }
+    })()
+    return () => { cancelled = true }
+  }, [companyId])
+
+  const requestUpgrade = (target) => {
+    alert(`Stripe checkout for ${target} is coming soon. In the meantime, email bryce@hhh.services to enable ${target} on your account.`)
+  }
+
+  const PLAN_DEFS = [
+    { id: 'free',      name: 'Free',                 price: '$0',    searches: 3,   enrichments: 10,   features: ['Built into every JobScout account', '3 searches + 10 enrichments per month', 'Tap-to-text mobile reveal'] },
+    { id: 'pro',       name: 'Prospecting Pro',      price: '$39/mo', searches: 50,  enrichments: 200,  features: ['50 searches + 200 enrichments per month', 'All seats share the pool', 'Tap-to-text mobile reveal', 'Imported leads auto-tag with source + notes'] },
+    { id: 'unlimited', name: 'Prospecting Unlimited',price: '$99/mo', searches: 250, enrichments: 1000, features: ['250 searches + 1000 enrichments per month', 'Saved lists + auto-refresh (coming)', 'Email sequences (coming)', 'CSV export', 'Priority Claude when search rate-limits'] },
+  ]
+
+  return (
+    <div>
+      <h3 style={{ fontSize: 16, fontWeight: 700, color: theme.text, margin: '0 0 4px' }}>
+        AI Prospecting
+      </h3>
+      <p style={{ fontSize: 13, color: theme.textMuted, margin: '0 0 16px' }}>
+        Claude-powered prospect search + decision-maker contact reveal from the Lead Setter page. Three-tier per-company pricing — all your seats share one pool.
+      </p>
+
+      {loading ? (
+        <div style={{ color: theme.textMuted, fontSize: 13 }}>Loading…</div>
+      ) : (
+        <>
+          {/* Current usage card */}
+          {quota && usage && (
+            <div style={{
+              padding: 14, marginBottom: 16,
+              backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+              borderRadius: 10,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current plan</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: theme.text }}>
+                    {PLAN_DEFS.find(p => p.id === tier)?.name || tier}
+                  </div>
+                </div>
+                <span style={{
+                  padding: '4px 10px', borderRadius: 12,
+                  fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+                  backgroundColor: tier === 'free' ? 'rgba(156,163,175,0.18)' : tier === 'pro' ? 'rgba(124,58,237,0.15)' : 'rgba(34,197,94,0.15)',
+                  color: tier === 'free' ? '#6b7280' : tier === 'pro' ? '#7c3aed' : '#16a34a',
+                }}>{tier}</span>
+              </div>
+              <UsageBar label="Searches this month" used={usage.searches} limit={quota.searches} theme={theme} />
+              <UsageBar label="Enrichments this month" used={usage.enrichments} limit={quota.enrichments} theme={theme} />
+              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 8 }}>
+                Resets on the 1st of next month (UTC).
+              </div>
+            </div>
+          )}
+
+          {/* Plan picker */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+            {PLAN_DEFS.map(plan => {
+              const isCurrent = plan.id === tier
+              return (
+                <div key={plan.id} style={{
+                  padding: 14,
+                  backgroundColor: isCurrent ? 'rgba(124,58,237,0.06)' : theme.bgCard,
+                  border: `2px solid ${isCurrent ? '#7c3aed' : theme.border}`,
+                  borderRadius: 10,
+                  display: 'flex', flexDirection: 'column',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>{plan.name}</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#7c3aed' }}>{plan.price}</div>
+                  </div>
+                  <ul style={{ margin: '8px 0 12px', paddingLeft: 16, fontSize: 12, color: theme.textSecondary, flex: 1 }}>
+                    {plan.features.map(f => <li key={f} style={{ marginBottom: 3 }}>{f}</li>)}
+                  </ul>
+                  {isCurrent ? (
+                    <button disabled style={{
+                      padding: '10px', minHeight: 38,
+                      backgroundColor: 'transparent', color: theme.textMuted,
+                      border: `1px solid ${theme.border}`, borderRadius: 6,
+                      fontSize: 13, fontWeight: 600, cursor: 'default',
+                    }}>Current plan</button>
+                  ) : plan.id === 'free' ? (
+                    <button disabled style={{
+                      padding: '10px', minHeight: 38,
+                      backgroundColor: 'transparent', color: theme.textMuted,
+                      border: `1px solid ${theme.border}`, borderRadius: 6,
+                      fontSize: 13, fontWeight: 600, cursor: 'default',
+                    }}>Free tier</button>
+                  ) : (
+                    <button onClick={() => requestUpgrade(plan.name)} style={{
+                      padding: '10px', minHeight: 38,
+                      backgroundColor: '#7c3aed', color: '#fff',
+                      border: 'none', borderRadius: 6,
+                      fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    }}>
+                      Upgrade to {plan.name.replace('Prospecting ', '')}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 10, textAlign: 'center' }}>
+            Save 20% with annual billing · Cancel anytime · Per-company pricing (all seats included)
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function UsageBar({ label, used, limit, theme }) {
+  const pct = Math.min(100, Math.round((used / limit) * 100))
+  const color = pct >= 100 ? '#dc2626' : pct >= 70 ? '#eab308' : '#7c3aed'
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: theme.textSecondary, marginBottom: 4 }}>
+        <span>{label}</span>
+        <strong>{used} / {limit}</strong>
+      </div>
+      <div style={{ width: '100%', height: 6, backgroundColor: theme.border, borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', backgroundColor: color, transition: 'width .3s' }} />
+      </div>
     </div>
   )
 }

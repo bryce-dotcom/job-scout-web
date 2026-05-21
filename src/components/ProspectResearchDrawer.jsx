@@ -17,11 +17,13 @@
 //   3. Multi-select → "Add N to leads" sticky bottom bar →
 //      assignee dropdown → import
 // =====================================================================
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { Search, X, ExternalLink, Sparkles, MapPin, Users, Briefcase, CheckCircle2, Loader2, UserPlus } from 'lucide-react'
+import { Search, X, ExternalLink, Sparkles, MapPin, Users, Briefcase, CheckCircle2, Loader2, UserPlus, Zap, AlertCircle } from 'lucide-react'
 
 export default function ProspectResearchDrawer({ companyId, employees = [], onClose, onImported, theme, isMobile }) {
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState([])
@@ -31,6 +33,13 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
   const [enrichments, setEnrichments] = useState({})  // candidate_id → enriched data
   const [importing, setImporting] = useState(false)
   const [assigneeId, setAssigneeId] = useState('')
+  // Tier + monthly quota state. Loaded on mount via usage_status action.
+  // Updated automatically from any search/enrich response. When the
+  // server returns 402 we surface the upgrade modal instead of a banner.
+  const [tier, setTier] = useState('free')
+  const [quota, setQuota] = useState(null)  // { searches, enrichments }
+  const [usage, setUsage] = useState(null)  // { searches, enrichments }
+  const [blocked, setBlocked] = useState(null)  // { kind, used, limit, tier, message }
 
   const call = async (action, body) => {
     const { data: session } = await supabase.auth.getSession()
@@ -45,9 +54,35 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
       body: JSON.stringify({ action, company_id: companyId, ...body }),
     })
     const data = await res.json()
+    // 402 = quota exhausted. Surface as a structured block, not an error.
+    if (res.status === 402 && data?.upgrade_required) {
+      setBlocked(data)
+      throw new Error(data.message || 'Monthly quota reached — upgrade to continue')
+    }
     if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`)
+    // Successful response often carries updated usage — keep state in sync
+    if (data.usage) setUsage(data.usage)
+    if (data.quota) setQuota(data.quota)
+    if (data.tier)  setTier(data.tier)
     return data
   }
+
+  // Load current period usage + tier on mount so the drawer can show
+  // the quota bar before the user does anything.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const data = await call('usage_status', {})
+        if (cancelled) return
+        setTier(data.tier)
+        setQuota(data.quota)
+        setUsage(data.usage)
+      } catch (_) { /* best-effort */ }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const runSearch = async (e) => {
     e?.preventDefault?.()
@@ -145,7 +180,17 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
           <Sparkles size={20} color="#7c3aed" />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>Find Prospects</div>
-            <div style={{ fontSize: 11, color: theme.textMuted }}>AI-researched · live web search</div>
+            <div style={{ fontSize: 11, color: theme.textMuted }}>
+              AI-researched · live web search
+              {tier && (
+                <span style={{
+                  marginLeft: 6, padding: '1px 6px', borderRadius: 8,
+                  fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                  backgroundColor: tier === 'free' ? 'rgba(156,163,175,0.18)' : tier === 'pro' ? 'rgba(124,58,237,0.15)' : 'rgba(34,197,94,0.15)',
+                  color: tier === 'free' ? '#6b7280' : tier === 'pro' ? '#7c3aed' : '#16a34a',
+                }}>{tier}</span>
+              )}
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -159,6 +204,53 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
             <X size={20} />
           </button>
         </div>
+
+        {/* Quota strip — shows how much of this month's plan is used */}
+        {quota && usage && (() => {
+          const sPct = Math.min(100, Math.round((usage.searches / quota.searches) * 100))
+          const ePct = Math.min(100, Math.round((usage.enrichments / quota.enrichments) * 100))
+          const high = sPct >= 70 || ePct >= 70
+          const tone = high ? '#a16207' : theme.textMuted
+          return (
+            <div style={{
+              flexShrink: 0,
+              padding: '8px 16px',
+              backgroundColor: high ? 'rgba(234,179,8,0.08)' : theme.bgCard,
+              borderBottom: `1px solid ${theme.border}`,
+              fontSize: 11, color: tone,
+              display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span>Searches:</span>
+                <strong>{usage.searches}/{quota.searches}</strong>
+                <div style={{ width: 40, height: 4, backgroundColor: theme.border, borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ width: `${sPct}%`, height: '100%', backgroundColor: sPct >= 100 ? '#dc2626' : sPct >= 70 ? '#eab308' : '#7c3aed' }} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span>Enrichments:</span>
+                <strong>{usage.enrichments}/{quota.enrichments}</strong>
+                <div style={{ width: 40, height: 4, backgroundColor: theme.border, borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ width: `${ePct}%`, height: '100%', backgroundColor: ePct >= 100 ? '#dc2626' : ePct >= 70 ? '#eab308' : '#7c3aed' }} />
+                </div>
+              </div>
+              {high && tier !== 'unlimited' && (
+                <button
+                  onClick={() => { onClose?.(); navigate('/settings#subscription') }}
+                  style={{
+                    marginLeft: 'auto', padding: '4px 10px',
+                    backgroundColor: '#7c3aed', color: '#fff',
+                    border: 'none', borderRadius: 5,
+                    fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                  }}
+                >
+                  <Zap size={11} /> Upgrade
+                </button>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Search bar */}
         <form onSubmit={runSearch} style={{
@@ -433,7 +525,116 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
           </div>
         )}
       </div>
+      {/* Upgrade modal — pops when the server returns 402 / limit_reached */}
+      {blocked && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setBlocked(null) }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100,
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div style={{
+            maxWidth: 480, width: '100%',
+            backgroundColor: theme.bgCard, borderRadius: 14,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              padding: '18px 20px',
+              background: 'linear-gradient(135deg,#7c3aed,#a855f7)',
+              color: '#fff',
+              display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              <Zap size={24} />
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 700 }}>Monthly limit reached</div>
+                <div style={{ fontSize: 12, opacity: 0.85 }}>You're on the {blocked.tier} plan</div>
+              </div>
+            </div>
+            <div style={{ padding: 20 }}>
+              <div style={{
+                padding: '10px 12px', marginBottom: 14,
+                backgroundColor: 'rgba(239,68,68,0.08)',
+                border: '1px solid rgba(239,68,68,0.25)',
+                borderRadius: 8, fontSize: 13, color: '#dc2626',
+              }}>
+                <AlertCircle size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
+                You've used {blocked.used} / {blocked.limit} {blocked.kind === 'search' ? 'searches' : 'enrichments'} this month. Limit resets on the 1st.
+              </div>
+
+              <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
+                <PlanCard
+                  name="Prospecting Pro"
+                  price="$39/mo"
+                  features={['50 searches/mo', '200 enrichments/mo', 'Tap-to-text mobile reveal', 'All seats share the pool']}
+                  highlight={blocked.tier === 'free'}
+                />
+                <PlanCard
+                  name="Prospecting Unlimited"
+                  price="$99/mo"
+                  features={['250 searches/mo', '1000 enrichments/mo', 'Saved lists + auto-refresh', 'Email sequences (coming soon)']}
+                  highlight={blocked.tier === 'pro'}
+                />
+              </div>
+              <div style={{ fontSize: 11, color: theme.textMuted, textAlign: 'center', marginBottom: 14 }}>
+                Save 20% with annual billing
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => setBlocked(null)}
+                  style={{
+                    flex: 1, padding: '12px', minHeight: 44,
+                    background: 'transparent', color: theme.textSecondary,
+                    border: `1px solid ${theme.border}`, borderRadius: 8,
+                    fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  Maybe later
+                </button>
+                <button
+                  onClick={() => { setBlocked(null); onClose?.(); navigate('/settings#subscription') }}
+                  style={{
+                    flex: 2, padding: '12px', minHeight: 44,
+                    background: '#7c3aed', color: '#fff',
+                    border: 'none', borderRadius: 8,
+                    fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                  }}
+                >
+                  See plans →
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
+    </div>
+  )
+}
+
+function PlanCard({ name, price, features, highlight }) {
+  return (
+    <div style={{
+      padding: 14,
+      backgroundColor: highlight ? 'rgba(124,58,237,0.06)' : '#fafafa',
+      border: `2px solid ${highlight ? '#7c3aed' : '#e5e7eb'}`,
+      borderRadius: 10,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{name}</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#7c3aed' }}>{price}</div>
+      </div>
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none', fontSize: 12, color: '#4b5563' }}>
+        {features.map(f => (
+          <li key={f} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+            <CheckCircle2 size={11} color="#16a34a" /> {f}
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

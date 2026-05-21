@@ -32,6 +32,19 @@ const json = (b: unknown, s = 200) =>
 const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages';
 const CLAUDE_MODEL   = 'claude-sonnet-4-5-20250929';
 
+// Tier quotas — monthly per-company. Stays in lockstep with the
+// pricing copy in Settings/Subscription and the drawer's quota UI.
+const TIER_QUOTAS: Record<string, { searches: number; enrichments: number }> = {
+  free:      { searches: 3,   enrichments: 10 },
+  pro:       { searches: 50,  enrichments: 200 },
+  unlimited: { searches: 250, enrichments: 1000 },
+};
+
+function currentPeriod(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   try {
@@ -62,8 +75,59 @@ serve(async (req) => {
       .maybeSingle();
     if (!callerEmp) return json({ error: 'Not a member of that company' }, 403);
 
+    // Load tier + current period usage once. Reused by quota checks
+    // in both search + enrich actions. Returns null for usage row if
+    // the company has zero usage this month (treat as zero).
+    const period = currentPeriod();
+    const { data: tierRow } = await supabase
+      .from('companies')
+      .select('prospecting_tier')
+      .eq('id', company_id)
+      .single();
+    const tier = (tierRow?.prospecting_tier as keyof typeof TIER_QUOTAS) || 'free';
+    const quota = TIER_QUOTAS[tier] || TIER_QUOTAS.free;
+    const { data: usageRow } = await supabase
+      .from('prospecting_usage')
+      .select('searches, enrichments')
+      .eq('company_id', company_id)
+      .eq('period', period)
+      .maybeSingle();
+    const usage = { searches: usageRow?.searches || 0, enrichments: usageRow?.enrichments || 0 };
+
+    // Helper to format a structured 402-style block response
+    const blockedResponse = (kind: 'search' | 'enrich') => {
+      const limit = kind === 'search' ? quota.searches : quota.enrichments;
+      const used  = kind === 'search' ? usage.searches : usage.enrichments;
+      return json({
+        error: 'limit_reached',
+        message: `You've used ${used}/${limit} ${kind === 'search' ? 'searches' : 'enrichments'} this month on the ${tier} plan. Upgrade in Settings → Subscription to keep going.`,
+        kind,
+        used,
+        limit,
+        tier,
+        period,
+        upgrade_required: true,
+      }, 402);
+    };
+
+    // ── ACTION: usage_status (cheap read for UI) ────────────────────
+    if (action === 'usage_status') {
+      return json({
+        ok: true,
+        tier,
+        period,
+        quota,
+        usage,
+        remaining: {
+          searches:    Math.max(0, quota.searches - usage.searches),
+          enrichments: Math.max(0, quota.enrichments - usage.enrichments),
+        },
+      });
+    }
+
     // ── ACTION: search ─────────────────────────────────────────────
     if (action === 'search') {
+      if (usage.searches >= quota.searches) return blockedResponse('search');
       const { query, limit = 10 } = body;
       if (!query?.trim()) return json({ error: 'query required' }, 400);
 
@@ -143,11 +207,28 @@ Rules:
         out.push({ ...p, candidate_id: externalId });
       }
 
-      return json({ ok: true, query, prospects: out, count: out.length });
+      // Successful search — bump usage atomically
+      await supabase.rpc('bump_prospecting_usage', {
+        p_company_id: company_id,
+        p_period: period,
+        p_searches: 1,
+        p_enrichments: 0,
+      });
+
+      return json({
+        ok: true,
+        query,
+        prospects: out,
+        count: out.length,
+        usage: { ...usage, searches: usage.searches + 1 },
+        quota,
+        tier,
+      });
     }
 
     // ── ACTION: enrich ─────────────────────────────────────────────
     if (action === 'enrich') {
+      if (usage.enrichments >= quota.enrichments) return blockedResponse('enrich');
       const { candidate_id } = body;
       if (!candidate_id) return json({ error: 'candidate_id required' }, 400);
 
@@ -247,7 +328,23 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
         .eq('id', cached.id);
       if (upErr) return json({ error: upErr.message }, 500);
 
-      return json({ ok: true, candidate_id, enrichment: enriched });
+      // Bump usage atomically — only after a successful Claude response
+      // landed in the cache. Failures don't count toward the quota.
+      await supabase.rpc('bump_prospecting_usage', {
+        p_company_id: company_id,
+        p_period: period,
+        p_searches: 0,
+        p_enrichments: 1,
+      });
+
+      return json({
+        ok: true,
+        candidate_id,
+        enrichment: enriched,
+        usage: { ...usage, enrichments: usage.enrichments + 1 },
+        quota,
+        tier,
+      });
     }
 
     // ── ACTION: import ─────────────────────────────────────────────
