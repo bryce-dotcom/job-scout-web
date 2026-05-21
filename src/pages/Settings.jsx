@@ -1205,8 +1205,76 @@ function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, sa
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={labelStyle}>Google Place ID</label>
-              <input type="text" value={companyForm.google_place_id} onChange={(e) => setCompanyForm(prev => ({ ...prev, google_place_id: e.target.value }))} placeholder="ChIJ..." style={inputStyle} />
-              <p style={{ fontSize: '11px', color: theme.textMuted, margin: '4px 0 0' }}>Used for the Google Review link in the customer portal. Find yours at Google Places API.</p>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
+                <input
+                  type="text"
+                  value={companyForm.google_place_id}
+                  onChange={(e) => setCompanyForm(prev => ({ ...prev, google_place_id: e.target.value.trim() }))}
+                  placeholder="ChIJ…"
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                {companyForm.google_place_id ? (
+                  <a
+                    href={`https://search.google.com/local/writereview?placeid=${encodeURIComponent(companyForm.google_place_id)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '10px 14px',
+                      backgroundColor: theme.bg, color: theme.accent,
+                      border: `1px solid ${theme.border}`, borderRadius: '8px',
+                      fontSize: '12px', fontWeight: '600', textDecoration: 'none', whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Test review link →
+                  </a>
+                ) : null}
+              </div>
+              <p style={{ fontSize: '11px', color: theme.textMuted, margin: '6px 0 0' }}>
+                Sends customers to your Google review page from invoices, the customer portal,
+                and Field Scout's "Get Review" button. Without it, those review prompts stay
+                hidden.
+              </p>
+              {!companyForm.google_place_id && (
+                <details style={{ marginTop: '8px' }}>
+                  <summary style={{ cursor: 'pointer', fontSize: '12px', color: theme.accent, fontWeight: '600' }}>
+                    Don't have one? Here's how to find it →
+                  </summary>
+                  <ol style={{ margin: '8px 0 0 20px', padding: 0, fontSize: '12px', color: theme.textSecondary, lineHeight: 1.7 }}>
+                    <li>
+                      Open <a
+                        href="https://developers.google.com/maps/documentation/places/web-service/place-id"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: theme.accent, textDecoration: 'underline' }}
+                      >Google's Place ID Finder</a> in a new tab.
+                    </li>
+                    <li>In the map's search box at the top, type your business name and address (or just the address).</li>
+                    <li>Click the marker for your business on the map.</li>
+                    <li>
+                      A popup appears showing your business name and the Place ID — it starts
+                      with <code style={{ background: theme.bg, padding: '0 4px', borderRadius: '4px' }}>ChIJ</code>.
+                      Copy the entire ID.
+                    </li>
+                    <li>Paste it into the field above and click <strong>Save</strong>.</li>
+                    <li>
+                      Hit <strong>Test review link</strong> (appears once you've saved a Place ID)
+                      to confirm it lands customers on your Google review page.
+                    </li>
+                  </ol>
+                  <p style={{ fontSize: '11px', color: theme.textMuted, margin: '8px 0 0 20px', fontStyle: 'italic' }}>
+                    No Google Business Profile yet? You'll need one before you can collect
+                    Google reviews — claim or create yours at{' '}
+                    <a
+                      href="https://www.google.com/business/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: theme.accent, textDecoration: 'underline' }}
+                    >google.com/business</a>{' '}
+                    first, then come back here for the Place ID.
+                  </p>
+                </details>
+              )}
             </div>
           </div>
         </div>
