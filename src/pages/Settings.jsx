@@ -1924,6 +1924,18 @@ function EstimateDefaultsTab({ theme, settings, saveSetting }) {
   })()
   const [targetRates, setTargetRates] = useState(initialRates)
   const [savingTargets, setSavingTargets] = useState(false)
+  // Settings can arrive AFTER the tab mounts (network fetch races
+  // against the initial render), so useState's initial value snapshot
+  // can be empty even when the row exists in the DB. Re-sync whenever
+  // the underlying settings row changes — but only if the user hasn't
+  // started editing in this session (avoids clobbering unsaved input).
+  const initialRatesKey = JSON.stringify(initialRates)
+  useEffect(() => {
+    if (Object.keys(targetRates).length === 0 && Object.keys(initialRates).length > 0) {
+      setTargetRates(initialRates)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialRatesKey])
   const saveTargetRates = async () => {
     setSavingTargets(true)
     const clean = {}
