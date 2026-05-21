@@ -686,7 +686,10 @@ function StoryMode({ theme, onClose }) {
     if (!window.speechSynthesis) return
     window.speechSynthesis.cancel()
     const utter = new SpeechSynthesisUtterance(text)
-    utter.rate = 1.05
+    // Slightly slower than browser default — 1.0 (vs 1.05) gives the
+    // speech engine a touch more headroom and reduces the chance of
+    // the last word getting clipped when we cancel + advance.
+    utter.rate = 1.0
     utter.pitch = 1.0
     // Pick a male, natural-sounding voice (Arnie is a guy)
     const voices = window.speechSynthesis.getVoices()
@@ -730,13 +733,18 @@ function StoryMode({ theme, onClose }) {
       return
     }
     if (narrationOn) {
-      // Wait for speech to start AND finish before advancing
+      // Wait for speech to start AND finish before advancing.
+      // Bump from 800 → 1500ms so the tail of the last word always
+      // finishes rendering. Browsers fire utter.onend slightly before
+      // the audio buffer is fully done on slower CPUs, and the
+      // window.speechSynthesis.cancel() in speak() was clipping the
+      // tail. The longer pause also lets the viewer absorb the scene.
       if (!isSpeaking && speechStartedRef.current) {
         autoTimerRef.current = setTimeout(() => {
           setDirection(1)
           setTextVisible(false)
           setCurrentScene(prev => prev + 1)
-        }, 800)
+        }, 1500)
         return () => clearTimeout(autoTimerRef.current)
       }
     } else {
