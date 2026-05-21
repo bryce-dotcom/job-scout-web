@@ -258,9 +258,8 @@ function ProspectingPlanSection({ theme, companyId }) {
   }
 
   const PLAN_DEFS = [
-    { id: 'free',      name: 'Free',                 price: '$0',    searches: 3,   enrichments: 10,   features: ['Built into every JobScout account', '3 searches + 10 enrichments per month', 'Tap-to-text mobile reveal'] },
-    { id: 'pro',       name: 'Prospecting Pro',      price: '$39/mo', searches: 50,  enrichments: 200,  features: ['50 searches + 200 enrichments per month', 'All seats share the pool', 'Tap-to-text mobile reveal', 'Imported leads auto-tag with source + notes'] },
-    { id: 'unlimited', name: 'Prospecting Unlimited',price: '$99/mo', searches: 250, enrichments: 1000, features: ['250 searches + 1000 enrichments per month', 'Saved lists + auto-refresh (coming)', 'Email sequences (coming)', 'CSV export', 'Priority Claude when search rate-limits'] },
+    { id: 'free', name: 'Free', price: '$0',     features: ['Built into every JobScout account', '3 searches + 10 enrichments per month', 'Tap-to-text mobile reveal', 'AI decision-maker discovery'] },
+    { id: 'pro',  name: 'Prospecting Pro', price: '$49/mo', features: ['50 searches + 200 enrichments per month', 'All your seats share one pool', 'Tap-to-text mobile reveal', 'Imported leads auto-tag with source + notes', 'Save 20% with annual billing'] },
   ]
 
   return (
@@ -276,8 +275,26 @@ function ProspectingPlanSection({ theme, companyId }) {
         <div style={{ color: theme.textMuted, fontSize: 13 }}>Loading…</div>
       ) : (
         <>
-          {/* Current usage card */}
-          {quota && usage && (
+          {/* Field Boss perk banner — visible only for FB subscribers */}
+          {tier === 'field_boss' && (
+            <div style={{
+              padding: '14px 16px', marginBottom: 16,
+              background: 'linear-gradient(135deg, rgba(234,179,8,0.10), rgba(234,179,8,0.04))',
+              border: '1px solid rgba(234,179,8,0.35)',
+              borderRadius: 10,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 18 }}>⭐</span>
+                <strong style={{ color: '#a16207', fontSize: 14 }}>You're on Field Boss</strong>
+              </div>
+              <div style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.5 }}>
+                AI Prospecting is bundled in free for life on your plan. No upgrades, no monthly caps to worry about. Use it as much as you want.
+              </div>
+            </div>
+          )}
+
+          {/* Current usage card — hidden for Field Boss (no caps to show) */}
+          {quota && usage && tier !== 'field_boss' && (
             <div style={{
               padding: 14, marginBottom: 16,
               backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
@@ -293,8 +310,8 @@ function ProspectingPlanSection({ theme, companyId }) {
                 <span style={{
                   padding: '4px 10px', borderRadius: 12,
                   fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                  backgroundColor: tier === 'free' ? 'rgba(156,163,175,0.18)' : tier === 'pro' ? 'rgba(124,58,237,0.15)' : 'rgba(34,197,94,0.15)',
-                  color: tier === 'free' ? '#6b7280' : tier === 'pro' ? '#7c3aed' : '#16a34a',
+                  backgroundColor: tier === 'free' ? 'rgba(156,163,175,0.18)' : 'rgba(124,58,237,0.15)',
+                  color: tier === 'free' ? '#6b7280' : '#7c3aed',
                 }}>{tier}</span>
               </div>
               <UsageBar label="Searches this month" used={usage.searches} limit={quota.searches} theme={theme} />
@@ -305,7 +322,8 @@ function ProspectingPlanSection({ theme, companyId }) {
             </div>
           )}
 
-          {/* Plan picker */}
+          {/* Plan picker — hidden for Field Boss (they already get everything) */}
+          {tier !== 'field_boss' && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
             {PLAN_DEFS.map(plan => {
               const isCurrent = plan.id === tier
@@ -352,9 +370,12 @@ function ProspectingPlanSection({ theme, companyId }) {
               )
             })}
           </div>
-          <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 10, textAlign: 'center' }}>
-            Save 20% with annual billing · Cancel anytime · Per-company pricing (all seats included)
-          </div>
+          )}
+          {tier !== 'field_boss' && (
+            <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 10, textAlign: 'center' }}>
+              Save 20% with annual billing · Cancel anytime · Per-company pricing (all your seats included)
+            </div>
+          )}
         </>
       )}
     </div>

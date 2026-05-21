@@ -34,10 +34,12 @@ const CLAUDE_MODEL   = 'claude-sonnet-4-5-20250929';
 
 // Tier quotas — monthly per-company. Stays in lockstep with the
 // pricing copy in Settings/Subscription and the drawer's quota UI.
+// Two real tiers + one comp tier (field_boss is bundled-in for the
+// top JobScout subscription plan, no extra charge).
 const TIER_QUOTAS: Record<string, { searches: number; enrichments: number }> = {
-  free:      { searches: 3,   enrichments: 10 },
-  pro:       { searches: 50,  enrichments: 200 },
-  unlimited: { searches: 250, enrichments: 1000 },
+  free:       { searches: 3,    enrichments: 10 },
+  pro:        { searches: 50,   enrichments: 200 },
+  field_boss: { searches: 9999, enrichments: 9999 },  // effectively unlimited
 };
 
 function currentPeriod(): string {
@@ -81,10 +83,14 @@ serve(async (req) => {
     const period = currentPeriod();
     const { data: tierRow } = await supabase
       .from('companies')
-      .select('prospecting_tier')
+      .select('prospecting_tier, subscription_tier')
       .eq('id', company_id)
       .single();
-    const tier = (tierRow?.prospecting_tier as keyof typeof TIER_QUOTAS) || 'free';
+    // Field Boss subscribers get prospecting bundled in for free, even
+    // if the prospecting_tier flag wasn't backfilled to 'field_boss'.
+    // Belt + suspenders behind the migration's UPDATE.
+    let tier: keyof typeof TIER_QUOTAS = (tierRow?.prospecting_tier as keyof typeof TIER_QUOTAS) || 'free';
+    if (tierRow?.subscription_tier === 'field_boss') tier = 'field_boss';
     const quota = TIER_QUOTAS[tier] || TIER_QUOTAS.free;
     const { data: usageRow } = await supabase
       .from('prospecting_usage')

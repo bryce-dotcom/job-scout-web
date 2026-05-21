@@ -186,9 +186,9 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
                 <span style={{
                   marginLeft: 6, padding: '1px 6px', borderRadius: 8,
                   fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
-                  backgroundColor: tier === 'free' ? 'rgba(156,163,175,0.18)' : tier === 'pro' ? 'rgba(124,58,237,0.15)' : 'rgba(34,197,94,0.15)',
-                  color: tier === 'free' ? '#6b7280' : tier === 'pro' ? '#7c3aed' : '#16a34a',
-                }}>{tier}</span>
+                  backgroundColor: tier === 'free' ? 'rgba(156,163,175,0.18)' : tier === 'pro' ? 'rgba(124,58,237,0.15)' : 'rgba(234,179,8,0.15)',
+                  color:           tier === 'free' ? '#6b7280'                : tier === 'pro' ? '#7c3aed'                 : '#a16207',
+                }}>{tier === 'field_boss' ? '⭐ Field Boss' : tier}</span>
               )}
             </div>
           </div>
@@ -234,7 +234,7 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
                   <div style={{ width: `${ePct}%`, height: '100%', backgroundColor: ePct >= 100 ? '#dc2626' : ePct >= 70 ? '#eab308' : '#7c3aed' }} />
                 </div>
               </div>
-              {high && tier !== 'unlimited' && (
+              {high && tier === 'free' && (
                 <button
                   onClick={() => { onClose?.(); navigate('/settings#subscription') }}
                   style={{
@@ -568,19 +568,22 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
               <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
                 <PlanCard
                   name="Prospecting Pro"
-                  price="$39/mo"
-                  features={['50 searches/mo', '200 enrichments/mo', 'Tap-to-text mobile reveal', 'All seats share the pool']}
-                  highlight={blocked.tier === 'free'}
+                  price="$49/mo"
+                  features={['50 searches per month', '200 enrichments per month', 'Tap-to-text mobile reveal', 'All your seats share the pool']}
+                  highlight={true}
                 />
-                <PlanCard
-                  name="Prospecting Unlimited"
-                  price="$99/mo"
-                  features={['250 searches/mo', '1000 enrichments/mo', 'Saved lists + auto-refresh', 'Email sequences (coming soon)']}
-                  highlight={blocked.tier === 'pro'}
-                />
+                <div style={{
+                  padding: 12,
+                  backgroundColor: 'rgba(234,179,8,0.08)',
+                  border: '1px solid rgba(234,179,8,0.30)',
+                  borderRadius: 10,
+                  fontSize: 12, color: theme.textSecondary, lineHeight: 1.5,
+                }}>
+                  ⭐ <strong style={{ color: '#a16207' }}>On JobScout Field Boss?</strong> Prospecting is bundled in free for life — no upgrade needed.
+                </div>
               </div>
               <div style={{ fontSize: 11, color: theme.textMuted, textAlign: 'center', marginBottom: 14 }}>
-                Save 20% with annual billing
+                Save 20% with annual billing · Cancel anytime
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
