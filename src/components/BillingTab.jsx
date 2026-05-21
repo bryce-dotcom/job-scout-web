@@ -225,6 +225,10 @@ function ProspectingPlanSection({ theme, companyId }) {
   const [quota, setQuota] = useState(null)
   const [usage, setUsage] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [upgrading, setUpgrading] = useState(false)
+  const [billingInterval, setBillingInterval] = useState('month')  // 'month' | 'year'
+  const [error, setError] = useState('')
+  const [hasSub, setHasSub] = useState(false)
 
   useEffect(() => {
     if (!companyId) return
@@ -233,28 +237,108 @@ function ProspectingPlanSection({ theme, companyId }) {
       try {
         const { data: session } = await supabase.auth.getSession()
         const tok = session?.session?.access_token
-        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/prospect-research`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${tok}`,
-            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ action: 'usage_status', company_id: companyId }),
-        })
-        const data = await res.json()
-        if (cancelled || !res.ok) return
-        setTier(data.tier)
-        setQuota(data.quota)
-        setUsage(data.usage)
+        const [usageRes, subRes] = await Promise.all([
+          fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/prospect-research`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${tok}`,
+              apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({ action: 'usage_status', company_id: companyId }),
+          }),
+          // Quick subscription-presence check so we know whether to
+          // show "Upgrade" or "Manage subscription".
+          supabase.from('companies').select('prospecting_stripe_sub_id').eq('id', companyId).single(),
+        ])
+        const data = await usageRes.json()
+        if (cancelled) return
+        if (usageRes.ok) {
+          setTier(data.tier)
+          setQuota(data.quota)
+          setUsage(data.usage)
+        }
+        setHasSub(!!subRes?.data?.prospecting_stripe_sub_id)
       } catch (_) { /* best-effort */ }
       finally { if (!cancelled) setLoading(false) }
     })()
     return () => { cancelled = true }
+    // re-fetch when URL hash changes (e.g. after Checkout success redirect
+    // appends ?prospecting_upgraded=1#subscription)
   }, [companyId])
 
-  const requestUpgrade = (target) => {
-    alert(`Stripe checkout for ${target} is coming soon. In the meantime, email bryce@hhh.services to enable ${target} on your account.`)
+  // After a successful Checkout redirect back to /settings?prospecting_upgraded=1
+  // the page may still show stale "free" tier until the webhook lands. Poll
+  // briefly to surface the new state when the user lands here.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (!params.get('prospecting_upgraded')) return
+    let attempts = 0
+    const id = setInterval(async () => {
+      attempts++
+      try {
+        const { data: session } = await supabase.auth.getSession()
+        const tok = session?.session?.access_token
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/prospect-research`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+          body: JSON.stringify({ action: 'usage_status', company_id: companyId }),
+        })
+        const data = await res.json()
+        if (res.ok && data.tier !== 'free') {
+          setTier(data.tier); setQuota(data.quota); setUsage(data.usage); setHasSub(true)
+          clearInterval(id)
+        }
+      } catch (_) { /* keep trying */ }
+      if (attempts >= 12) clearInterval(id)  // ~36s max
+    }, 3000)
+    return () => clearInterval(id)
+  }, [companyId])
+
+  const requestUpgrade = async () => {
+    if (upgrading) return
+    setUpgrading(true); setError('')
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      const tok = session?.session?.access_token
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tenant-prospecting-checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tok}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ company_id: companyId, interval: billingInterval }),
+      })
+      const data = await res.json()
+      if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`)
+      if (data.url) { window.location.href = data.url; return }
+      setError('Could not create checkout session — no URL returned.')
+    } catch (err) {
+      setError(err.message)
+    } finally { setUpgrading(false) }
+  }
+
+  const openPortal = async () => {
+    setError('')
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      const tok = session?.session?.access_token
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tenant-prospecting-portal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tok}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ company_id: companyId }),
+      })
+      const data = await res.json()
+      if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`)
+      if (data.url) { window.location.href = data.url }
+    } catch (err) {
+      setError(err.message)
+    }
   }
 
   const PLAN_DEFS = [
@@ -342,7 +426,14 @@ function ProspectingPlanSection({ theme, companyId }) {
                   <ul style={{ margin: '8px 0 12px', paddingLeft: 16, fontSize: 12, color: theme.textSecondary, flex: 1 }}>
                     {plan.features.map(f => <li key={f} style={{ marginBottom: 3 }}>{f}</li>)}
                   </ul>
-                  {isCurrent ? (
+                  {isCurrent && hasSub ? (
+                    <button onClick={openPortal} style={{
+                      padding: '10px', minHeight: 38,
+                      backgroundColor: 'transparent', color: theme.accent,
+                      border: `1px solid ${theme.accent}`, borderRadius: 6,
+                      fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    }}>Manage subscription</button>
+                  ) : isCurrent ? (
                     <button disabled style={{
                       padding: '10px', minHeight: 38,
                       backgroundColor: 'transparent', color: theme.textMuted,
@@ -357,14 +448,37 @@ function ProspectingPlanSection({ theme, companyId }) {
                       fontSize: 13, fontWeight: 600, cursor: 'default',
                     }}>Free tier</button>
                   ) : (
-                    <button onClick={() => requestUpgrade(plan.name)} style={{
-                      padding: '10px', minHeight: 38,
-                      backgroundColor: '#7c3aed', color: '#fff',
-                      border: 'none', borderRadius: 6,
-                      fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                    }}>
-                      Upgrade to {plan.name.replace('Prospecting ', '')}
-                    </button>
+                    <>
+                      {/* Billing interval toggle */}
+                      <div style={{ display: 'flex', gap: 4, marginBottom: 6, padding: 3, backgroundColor: theme.bg, borderRadius: 6 }}>
+                        {['month', 'year'].map(iv => (
+                          <button
+                            key={iv}
+                            onClick={() => setBillingInterval(iv)}
+                            style={{
+                              flex: 1, padding: '5px 8px',
+                              backgroundColor: billingInterval === iv ? '#fff' : 'transparent',
+                              color: billingInterval === iv ? theme.text : theme.textMuted,
+                              border: 'none', borderRadius: 4,
+                              fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                              boxShadow: billingInterval === iv ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                            }}
+                          >
+                            {iv === 'month' ? 'Monthly · $49' : 'Annual · $470 (save 20%)'}
+                          </button>
+                        ))}
+                      </div>
+                      <button onClick={requestUpgrade} disabled={upgrading} style={{
+                        padding: '10px', minHeight: 38,
+                        backgroundColor: upgrading ? theme.border : '#7c3aed',
+                        color: '#fff', border: 'none', borderRadius: 6,
+                        fontSize: 13, fontWeight: 700,
+                        cursor: upgrading ? 'not-allowed' : 'pointer',
+                        opacity: upgrading ? 0.7 : 1,
+                      }}>
+                        {upgrading ? 'Opening Stripe…' : `Upgrade to ${plan.name.replace('Prospecting ', '')} →`}
+                      </button>
+                    </>
                   )}
                 </div>
               )
@@ -375,6 +489,14 @@ function ProspectingPlanSection({ theme, companyId }) {
             <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 10, textAlign: 'center' }}>
               Save 20% with annual billing · Cancel anytime · Per-company pricing (all your seats included)
             </div>
+          )}
+          {error && (
+            <div style={{
+              marginTop: 10, padding: 10,
+              backgroundColor: 'rgba(239,68,68,0.08)',
+              border: '1px solid rgba(239,68,68,0.25)',
+              borderRadius: 8, fontSize: 12, color: '#dc2626',
+            }}>{error}</div>
           )}
         </>
       )}

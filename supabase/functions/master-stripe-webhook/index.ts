@@ -35,8 +35,19 @@ interface StripeSubscription {
   customer: string;
   cancel_at_period_end: boolean;
   current_period_end: number;
-  items?: { data: { price: { id: string; product: string } }[] };
-  metadata?: { company_id?: string; plan_id?: string };
+  cancel_at?: number | null;
+  canceled_at?: number | null;
+  items?: { data: { price: { id: string; product: string; recurring?: { interval?: string } } }[] };
+  // Subscriptions for the main JobScout tier carry { company_id, plan_id }.
+  // Subscriptions for the Prospecting Pro add-on carry
+  // { jobscout_company_id, jobscout_product_id: 'prospecting_pro', interval }
+  metadata?: {
+    company_id?: string;
+    plan_id?: string;
+    jobscout_company_id?: string;
+    jobscout_product_id?: string;
+    interval?: string;
+  };
 }
 
 interface StripeInvoice {
@@ -85,6 +96,46 @@ serve(async (req) => {
         type === 'customer.subscription.updated' ||
         type === 'customer.subscription.deleted') {
       const sub = event.data.object as StripeSubscription;
+
+      // ── BRANCH: Prospecting Pro add-on subscription ──────────────
+      // Detected by metadata.jobscout_product_id. Routes to a separate
+      // set of columns so the customer can have BOTH a main JobScout
+      // subscription AND a prospecting add-on without one stomping
+      // the other.
+      if (sub.metadata?.jobscout_product_id === 'prospecting_pro') {
+        const companyId = sub.metadata.jobscout_company_id ? Number(sub.metadata.jobscout_company_id) : null;
+        if (!companyId) {
+          console.warn('[master-stripe-webhook] prospecting sub missing company metadata:', sub.id);
+        } else {
+          const interval = sub.items?.data?.[0]?.price?.recurring?.interval || sub.metadata?.interval || null;
+          const update: Record<string, unknown> = {
+            prospecting_stripe_sub_id:           type === 'customer.subscription.deleted' ? null : sub.id,
+            prospecting_tier:                    type === 'customer.subscription.deleted' ? 'free' : (sub.status === 'active' || sub.status === 'trialing' ? 'pro' : 'free'),
+            prospecting_subscription_interval:   interval,
+            prospecting_subscription_cancel_at:  sub.cancel_at  ? new Date(sub.cancel_at  * 1000).toISOString() : null,
+            prospecting_subscription_canceled_at:sub.canceled_at ? new Date(sub.canceled_at * 1000).toISOString() : null,
+            updated_at: new Date().toISOString(),
+          };
+          // Field Boss customers keep their comp tier on cancellation —
+          // never demote a Field Boss user to 'free'.
+          const { data: existing } = await supabase
+            .from('companies')
+            .select('subscription_tier')
+            .eq('id', companyId)
+            .maybeSingle();
+          if (existing?.subscription_tier === 'field_boss') {
+            update.prospecting_tier = 'field_boss';
+          }
+          const { error } = await supabase.from('companies').update(update).eq('id', companyId);
+          if (error) console.error('[master-stripe-webhook] prospecting update failed:', error.message);
+          else console.log('[master-stripe-webhook] prospecting tier set for company', companyId, '→', update.prospecting_tier);
+        }
+        return new Response(JSON.stringify({ received: true, type, route: 'prospecting' }), {
+          status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // ── Default branch: main JobScout subscription ──────────────
       companyMatch.master_stripe_subscription_id = sub.id;
       if (sub.metadata?.company_id) companyMatch.company_id = Number(sub.metadata.company_id);
       const newStatus = type === 'customer.subscription.deleted' ? 'canceled' : statusFromSub(sub.status);
