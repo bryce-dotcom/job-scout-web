@@ -1007,6 +1007,7 @@ function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, sa
   const [placeSearching, setPlaceSearching] = useState(false)
   const [placeSearchError, setPlaceSearchError] = useState(null)
   const [placeCandidates, setPlaceCandidates] = useState(null)
+  const [placeQuery, setPlaceQuery] = useState('')
 
   const toggleSection = (key) => setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }))
 
@@ -1211,54 +1212,23 @@ function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, sa
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={labelStyle}>Google Place ID</label>
+              {/* Place ID input + Test review link. Removed the
+                  per-keystroke .trim() that was eating spaces — Place
+                  IDs themselves don't contain spaces but reps might
+                  type/paste with whitespace, and we should trim only
+                  on save, not character-by-character. */}
               <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexWrap: 'wrap' }}>
                 <input
                   type="text"
                   value={companyForm.google_place_id}
-                  onChange={(e) => setCompanyForm(prev => ({ ...prev, google_place_id: e.target.value.trim() }))}
+                  onChange={(e) => setCompanyForm(prev => ({ ...prev, google_place_id: e.target.value }))}
+                  onBlur={(e) => setCompanyForm(prev => ({ ...prev, google_place_id: (e.target.value || '').trim() }))}
                   placeholder="ChIJ…"
                   style={{ ...inputStyle, flex: 1, minWidth: '200px' }}
                 />
-                {/* In-app Google search — uses the saved company name +
-                    address, hits the Places Text Search via our edge
-                    function (key stays server-side), shows the top
-                    matches. One click on a match fills the field. */}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const query = `${companyForm.company_name || ''} ${companyForm.address || ''}`.trim()
-                    if (!query) { toast.error('Add your company name + address above first.'); return }
-                    setPlaceSearching(true)
-                    setPlaceSearchError(null)
-                    setPlaceCandidates(null)
-                    try {
-                      const { data, error } = await supabase.functions.invoke('google-place-search', { body: { query } })
-                      if (error || data?.ok === false) {
-                        setPlaceSearchError(error?.message || data?.error || 'Search failed')
-                      } else {
-                        setPlaceCandidates(data?.candidates || [])
-                      }
-                    } catch (e) {
-                      setPlaceSearchError(e.message || 'Search failed')
-                    } finally {
-                      setPlaceSearching(false)
-                    }
-                  }}
-                  disabled={placeSearching}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    padding: '10px 14px',
-                    backgroundColor: theme.accent, color: '#fff',
-                    border: 'none', borderRadius: '8px',
-                    fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap',
-                    cursor: placeSearching ? 'wait' : 'pointer', opacity: placeSearching ? 0.7 : 1,
-                  }}
-                >
-                  {placeSearching ? 'Searching…' : '🔍 Search Google for our business'}
-                </button>
                 {companyForm.google_place_id ? (
                   <a
-                    href={`https://search.google.com/local/writereview?placeid=${encodeURIComponent(companyForm.google_place_id)}`}
+                    href={`https://search.google.com/local/writereview?placeid=${encodeURIComponent(companyForm.google_place_id.trim())}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
@@ -1272,6 +1242,69 @@ function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, sa
                     Test review link →
                   </a>
                 ) : null}
+              </div>
+              {/* Search Google via the edge function. Defaults to the
+                  saved company name + address, but the rep can edit
+                  the query (e.g. an old DBA, a brand name, or just
+                  the business name without "LLC") to find their
+                  actual Google listing. */}
+              <div style={{ marginTop: '8px', padding: '10px 12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px' }}>
+                <div style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Search Google for your business
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    value={placeQuery}
+                    onChange={(e) => setPlaceQuery(e.target.value)}
+                    onFocus={() => {
+                      if (!placeQuery) {
+                        const seed = `${companyForm.company_name || ''} ${companyForm.address || ''}`.trim()
+                        if (seed) setPlaceQuery(seed)
+                      }
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); document.getElementById('place-search-submit')?.click() } }}
+                    placeholder="e.g. HHH Building Services Lehi, or an old DBA"
+                    style={{ ...inputStyle, flex: 1, minWidth: '200px' }}
+                  />
+                  <button
+                    id="place-search-submit"
+                    type="button"
+                    onClick={async () => {
+                      const query = (placeQuery || `${companyForm.company_name || ''} ${companyForm.address || ''}`).trim()
+                      if (!query) { toast.error('Type something to search for, or fill in the company name + address above.'); return }
+                      setPlaceSearching(true)
+                      setPlaceSearchError(null)
+                      setPlaceCandidates(null)
+                      try {
+                        const { data, error } = await supabase.functions.invoke('google-place-search', { body: { query } })
+                        if (error || data?.ok === false) {
+                          setPlaceSearchError(error?.message || data?.error || 'Search failed')
+                        } else {
+                          setPlaceCandidates(data?.candidates || [])
+                        }
+                      } catch (e) {
+                        setPlaceSearchError(e.message || 'Search failed')
+                      } finally {
+                        setPlaceSearching(false)
+                      }
+                    }}
+                    disabled={placeSearching}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '10px 14px',
+                      backgroundColor: theme.accent, color: '#fff',
+                      border: 'none', borderRadius: '8px',
+                      fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap',
+                      cursor: placeSearching ? 'wait' : 'pointer', opacity: placeSearching ? 0.7 : 1,
+                    }}
+                  >
+                    {placeSearching ? 'Searching…' : '🔍 Search'}
+                  </button>
+                </div>
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '6px', fontStyle: 'italic' }}>
+                  Tip: try variations if the first try doesn't match — just the business name, an old DBA, or include your city. Spaces are fine.
+                </div>
               </div>
               {/* Auto-detect results / errors */}
               {placeSearchError && (
