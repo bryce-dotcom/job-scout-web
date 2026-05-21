@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
@@ -175,12 +176,28 @@ const AVATAR_COLORS = [
 export default function Payroll() {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
+  const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
   const fetchEmployees = useStore((state) => state.fetchEmployees)
   const refreshCompany = useStore((state) => state.fetchCompany)
+  const allSettings = useStore((state) => state.settings) || []
+
+  // Check whether the company has at least one positive Target Revenue
+  // per Hour configured. Required for efficiency_bonus math to produce
+  // accurate numbers when a product is missing install time — without
+  // it the bonus runs against $0 expected hours on every fallback line.
+  const targetRevenuePerHourSet = (() => {
+    const row = allSettings.find(s => s.key === 'default_hourly_rates')
+    if (!row?.value) return false
+    try {
+      const v = typeof row.value === 'string' ? JSON.parse(row.value) : row.value
+      if (!v || typeof v !== 'object') return false
+      return Object.values(v).some(n => parseFloat(n) > 0)
+    } catch { return false }
+  })()
 
   // Data state
   const [timeEntries, setTimeEntries] = useState([])
@@ -2598,6 +2615,49 @@ export default function Payroll() {
               </span>
             </label>
           </div>
+
+          {/* Onboarding gate: efficiency bonuses derive their "expected
+              hours" from line.total ÷ target revenue per hour whenever a
+              product doesn't have install time set. Without a target
+              configured, those lines contribute 0 expected hours and
+              the bonus math silently undercounts. Surface a warning
+              banner that links straight to the editor. */}
+          {payrollConfig.efficiency_bonus_enabled && !targetRevenuePerHourSet && (
+            <div style={{
+              padding: '12px 14px',
+              backgroundColor: 'rgba(245,158,11,0.08)',
+              border: '1px solid rgba(245,158,11,0.3)',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+              marginBottom: '4px'
+            }}>
+              <div style={{ fontSize: '18px', lineHeight: 1 }} aria-hidden>⚠️</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#b45309', marginBottom: '4px' }}>
+                  Set your Target Revenue per Hour before running payroll
+                </div>
+                <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: 1.5, marginBottom: '8px' }}>
+                  Bonus math falls back to <code style={{ background: theme.bg, padding: '0 4px', borderRadius: '4px' }}>line total ÷ target</code> when a product is missing install time. Without a target set, those lines contribute 0 expected hours and the bonus will undercount.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/settings?tab=estimate_defaults#target-revenue-per-hour')}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    padding: '6px 12px',
+                    backgroundColor: '#b45309', color: '#fff',
+                    border: 'none', borderRadius: '6px',
+                    fontSize: '12px', fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Set Target Revenue per Hour →
+                </button>
+              </div>
+            </div>
+          )}
 
           {payrollConfig.efficiency_bonus_enabled && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
