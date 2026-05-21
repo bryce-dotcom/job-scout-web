@@ -2455,23 +2455,7 @@ export default function ProductsServices() {
                 {/* ── Labor / Install Section ── */}
                 <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
                   <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Labor / Install</div>
-                  <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>Set install time and rate. When added to a job, user can choose product only or product + install.</div>
-                  {/* Findability hint: the per-business-unit fallback rate (used
-                      when a job line has no product hours) lives on a different
-                      settings row that reps had no way to find. Send them
-                      there in one click. */}
-                  <div style={{ fontSize: '11px', color: theme.textSecondary, marginBottom: '12px', fontStyle: 'italic' }}>
-                    Lines without a product or install time fall back to the
-                    per-business-unit rate.
-                    {' '}
-                    <button
-                      type="button"
-                      onClick={() => navigate('/settings?tab=estimate_defaults#default-hourly-rates')}
-                      style={{ background: 'none', border: 'none', padding: 0, color: theme.accent, cursor: 'pointer', textDecoration: 'underline', font: 'inherit' }}
-                    >
-                      Set default hourly rates →
-                    </button>
-                  </div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '12px' }}>Set install time and rate. When added to a job, user can choose product only or product + install.</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
                       <label style={labelStyle}>Install Time (hours)</label>
