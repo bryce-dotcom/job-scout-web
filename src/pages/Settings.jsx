@@ -1888,6 +1888,62 @@ function EstimateDefaultsTab({ theme, settings, saveSetting }) {
   const [form, setForm] = useState(defaults)
   const [saving, setSaving] = useState(false)
 
+  // Default hourly rates by business unit — used by computeAllottedHours
+  // as the fallback when a job line has no product-level
+  // allotted_time_hours. Stored as `default_hourly_rates` (JSON map BU
+  // name → rate). Has its own save button so saving rates doesn't
+  // require also re-saving the rest of Estimate Defaults.
+  const ratesRow = settings.find(s => s.key === 'default_hourly_rates')
+  const legacyRateRow = settings.find(s => s.key === 'default_hourly_rate')
+  const initialRates = (() => {
+    if (ratesRow?.value) {
+      try {
+        const v = typeof ratesRow.value === 'string' ? JSON.parse(ratesRow.value) : ratesRow.value
+        if (v && typeof v === 'object') return v
+      } catch {}
+    }
+    return {}
+  })()
+  const legacyRate = (() => {
+    if (!legacyRateRow?.value) return null
+    try { return parseFloat(typeof legacyRateRow.value === 'string' ? JSON.parse(legacyRateRow.value) : legacyRateRow.value) } catch { return null }
+  })()
+  const buRow = settings.find(s => s.key === 'business_units')
+  const businessUnits = (() => {
+    if (!buRow?.value) return []
+    try {
+      const v = typeof buRow.value === 'string' ? JSON.parse(buRow.value) : buRow.value
+      return Array.isArray(v) ? v.map(u => (typeof u === 'string' ? u : u.name)).filter(Boolean) : []
+    } catch { return [] }
+  })()
+  const [hourlyRates, setHourlyRates] = useState(initialRates)
+  const [savingRates, setSavingRates] = useState(false)
+  // When linked here via #default-hourly-rates (from Products & Services),
+  // scroll the editor into view. The hash lands before this tab's
+  // content mounts, so native browser scroll-to-anchor misses it —
+  // do the scroll manually after the first paint.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (window.location.hash === '#default-hourly-rates') {
+      const t = setTimeout(() => {
+        document.getElementById('default-hourly-rates')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 120)
+      return () => clearTimeout(t)
+    }
+  }, [])
+  const saveHourlyRates = async () => {
+    setSavingRates(true)
+    // Strip empty / NaN entries before saving — keep the map clean.
+    const clean = {}
+    for (const [bu, val] of Object.entries(hourlyRates)) {
+      const n = parseFloat(val)
+      if (bu && Number.isFinite(n) && n > 0) clean[bu] = n
+    }
+    await saveSetting('default_hourly_rates', clean)
+    setSavingRates(false)
+    toast.success('Default hourly rates saved')
+  }
+
   const handleSave = async () => {
     setSaving(true)
     await saveSetting('estimate_defaults', form)
@@ -2033,6 +2089,68 @@ function EstimateDefaultsTab({ theme, settings, saveSetting }) {
           <Save size={16} />
           {saving ? 'Saving...' : 'Save Defaults'}
         </button>
+
+        {/* Default Labor Rate by Business Unit. Drives the fallback
+            on allotted_time_hours when a job line has no product-level
+            hours (i.e. line.total / rate). Products & Services has a
+            link that scrolls to this block so reps can find it from
+            the page where they're configuring per-product hours. */}
+        <div id="default-hourly-rates" style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '20px', marginTop: '8px' }}>
+          <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Default Labor Rate by Business Unit</h4>
+          <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px', lineHeight: 1.5 }}>
+            Used to estimate allotted hours on a job when a line item doesn't have
+            <strong> Allotted Hours </strong> set on the underlying product. The math is
+            <code style={{ background: theme.bg, padding: '0 4px', borderRadius: '4px' }}> line total ÷ rate</code>.
+            Per-product hours always win when set.
+            {legacyRate ? (
+              <span style={{ display: 'block', marginTop: '6px', color: theme.textSecondary }}>
+                Legacy single-rate fallback in DB: <strong>${legacyRate.toFixed(2)}/h</strong>. Used only when no business-unit-specific rate matches.
+              </span>
+            ) : null}
+          </p>
+          {businessUnits.length === 0 ? (
+            <p style={{ fontSize: '12px', color: theme.textMuted, fontStyle: 'italic' }}>
+              No business units configured yet — add one under Business Units first.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '480px' }}>
+              {businessUnits.map(bu => (
+                <div key={bu} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 140px', gap: '12px', alignItems: 'center' }}>
+                  <label style={{ fontSize: '13px', color: theme.text }}>{bu}</label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, fontSize: '13px' }}>$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={hourlyRates[bu] ?? ''}
+                      onChange={(e) => setHourlyRates(prev => ({ ...prev, [bu]: e.target.value }))}
+                      placeholder="0.00"
+                      style={{ ...inputStyle, paddingLeft: '24px', paddingRight: '36px', textAlign: 'right' }}
+                    />
+                    <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, fontSize: '12px' }}>/h</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={saveHourlyRates}
+            disabled={savingRates || businessUnits.length === 0}
+            style={{
+              marginTop: '12px',
+              display: 'inline-flex', alignItems: 'center', gap: '8px',
+              padding: '10px 18px',
+              backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px',
+              fontSize: '13px', fontWeight: '500',
+              cursor: (savingRates || businessUnits.length === 0) ? 'not-allowed' : 'pointer',
+              opacity: (savingRates || businessUnits.length === 0) ? 0.6 : 1,
+            }}
+          >
+            <Save size={14} />
+            {savingRates ? 'Saving…' : 'Save Hourly Rates'}
+          </button>
+        </div>
       </div>
     </div>
   )
