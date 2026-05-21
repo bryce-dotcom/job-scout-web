@@ -535,6 +535,8 @@ export default function Settings() {
           saving={saving}
           handleSaveCompany={handleSaveCompany}
           theme={theme}
+          settings={settings}
+          saveSetting={saveSetting}
         />
 
       case 'business_units':
@@ -998,7 +1000,7 @@ export default function Settings() {
 }
 
 // Company Profile Tab with admin-only Business Information section
-function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, saving, handleSaveCompany, theme }) {
+function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, saving, handleSaveCompany, theme, settings = [], saveSetting }) {
   const [expandedSections, setExpandedSections] = useState({ basic: true, entity: false, insurance: false, docs: false })
   const [uploadingDoc, setUploadingDoc] = useState(null)
   // Place ID auto-detect state (used by the "Search Google for our
@@ -1008,6 +1010,39 @@ function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, sa
   const [placeSearchError, setPlaceSearchError] = useState(null)
   const [placeCandidates, setPlaceCandidates] = useState(null)
   const [placeQuery, setPlaceQuery] = useState('')
+
+  // Google Review URL — easier/preferred path for collecting reviews.
+  // Stored as `google_review_url` setting (same key Field Scout reads).
+  // Pulled into Company Profile so reps see both review-setup options
+  // in one place; the My Money tab now points back here. Some legacy
+  // rows are double-JSON-encoded — unwrap defensively.
+  const reviewUrlRow = settings.find(s => s.key === 'google_review_url')
+  const initialReviewUrl = (() => {
+    if (!reviewUrlRow?.value) return ''
+    let v = reviewUrlRow.value
+    if (typeof v === 'string') {
+      try { v = JSON.parse(v) } catch {}
+    }
+    if (typeof v === 'string' && v.startsWith('"')) {
+      try { v = JSON.parse(v) } catch {}
+    }
+    return typeof v === 'string' ? v : ''
+  })()
+  const [reviewUrl, setReviewUrl] = useState(initialReviewUrl)
+  const [savingReviewUrl, setSavingReviewUrl] = useState(false)
+  // Re-hydrate when settings arrives (the row may not be in the array
+  // on first render mid-fetch).
+  useEffect(() => {
+    if (!reviewUrl && initialReviewUrl) setReviewUrl(initialReviewUrl)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewUrlRow?.value])
+  const saveReviewUrl = async () => {
+    if (!saveSetting) return
+    setSavingReviewUrl(true)
+    await saveSetting('google_review_url', (reviewUrl || '').trim())
+    setSavingReviewUrl(false)
+    toast.success('Google Review URL saved')
+  }
 
   const toggleSection = (key) => setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }))
 
@@ -1210,8 +1245,93 @@ function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, sa
                 )}
               </div>
             </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={labelStyle}>Google Place ID</label>
+            <div style={{ gridColumn: '1 / -1', padding: '16px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
+                  Google Reviews Setup
+                </div>
+                <div style={{ fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+                  Connect your Google Business Profile so JobScout can send customers to your
+                  review page from invoices, the customer portal, and Field Scout's "Get Review"
+                  button. Pick whichever option is easier — the URL is faster, the Place ID is
+                  the fallback.
+                </div>
+              </div>
+
+              {/* ── Option 1 (recommended): direct review URL ── */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: '700', backgroundColor: theme.accentBg, color: theme.accent, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Recommended
+                  </span>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>Google Review URL</label>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch', flexWrap: 'wrap' }}>
+                  <input
+                    type="url"
+                    value={reviewUrl}
+                    onChange={(e) => setReviewUrl(e.target.value)}
+                    placeholder="https://g.page/r/YOUR_ID/review"
+                    style={{ ...inputStyle, flex: 1, minWidth: '240px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={saveReviewUrl}
+                    disabled={savingReviewUrl || !saveSetting}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '10px 14px',
+                      backgroundColor: theme.accent, color: '#fff',
+                      border: 'none', borderRadius: '8px',
+                      fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap',
+                      cursor: (savingReviewUrl || !saveSetting) ? 'not-allowed' : 'pointer',
+                      opacity: (savingReviewUrl || !saveSetting) ? 0.7 : 1,
+                    }}
+                  >
+                    {savingReviewUrl ? 'Saving…' : 'Save URL'}
+                  </button>
+                  {reviewUrl ? (
+                    <a
+                      href={reviewUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        padding: '10px 14px',
+                        backgroundColor: theme.bg, color: theme.accent,
+                        border: `1px solid ${theme.border}`, borderRadius: '8px',
+                        fontSize: '12px', fontWeight: '600', textDecoration: 'none', whiteSpace: 'nowrap'
+                      }}
+                    >
+                      Test →
+                    </a>
+                  ) : null}
+                </div>
+                <details style={{ marginTop: '6px' }}>
+                  <summary style={{ cursor: 'pointer', fontSize: '12px', color: theme.accent, fontWeight: '600' }}>
+                    Where do I find this URL?
+                  </summary>
+                  <ol style={{ margin: '8px 0 0 20px', padding: 0, fontSize: '12px', color: theme.textSecondary, lineHeight: 1.7 }}>
+                    <li>Sign in to <a href="https://business.google.com" target="_blank" rel="noopener noreferrer" style={{ color: theme.accent, textDecoration: 'underline' }}>business.google.com</a> with the account that owns your profile.</li>
+                    <li>Open your business profile.</li>
+                    <li>Look for a <strong>Reviews</strong> card or "Ask for reviews" / "Share review link" button.</li>
+                    <li>
+                      Copy the short link it gives you — usually looks like
+                      <code style={{ background: theme.bg, padding: '0 4px', borderRadius: '4px', marginLeft: '4px' }}>https://g.page/r/.../review</code>.
+                    </li>
+                    <li>Paste it here and click <strong>Save URL</strong>.</li>
+                  </ol>
+                </details>
+              </div>
+
+              {/* Divider */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: theme.textMuted, fontSize: '11px', fontWeight: '600', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                <span style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
+                Or
+                <span style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
+              </div>
+
+              <label style={labelStyle}>Google Place ID <span style={{ fontWeight: '400', color: theme.textMuted }}>· fallback if you can't get the URL</span></label>
               {/* Place ID input + Test review link. Removed the
                   per-keystroke .trim() that was eating spaces — Place
                   IDs themselves don't contain spaces but reps might
@@ -2612,33 +2732,35 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
         </div>
 
         {/* ---- GOOGLE REVIEW URL ---- */}
+        {/* This setting moved to Company Profile so review setup lives
+            in one place with the Place ID fallback. Keep a thin pointer
+            here so reps who learned the old location aren't lost. */}
         <div style={{
-          padding: '16px',
+          padding: '12px 14px',
           borderRadius: '10px',
-          backgroundColor: theme.bgCard,
+          backgroundColor: theme.bg,
           border: `1px solid ${theme.border}`,
-          marginBottom: '12px'
+          marginBottom: '12px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap'
         }}>
-          <label style={labelStyle}>Google Review URL</label>
-          <input
-            type="url"
-            value={googleReviewUrl}
-            onChange={(e) => setGoogleReviewUrl(e.target.value)}
-            placeholder="https://g.page/r/YOUR_ID/review"
-            style={inputStyle}
-          />
-          <p style={{ fontSize: '11px', color: theme.textMuted, margin: '4px 0 0' }}>
-            Your Google Business review link. Field Scout will show a "Get Review" button so techs can request reviews on-site.
-          </p>
-          <button
-            onClick={async () => {
-              await saveSetting('google_review_url', googleReviewUrl)
-              toast.success('Google Review URL saved!')
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>Google Review URL</div>
+            <div style={{ fontSize: '12px', color: theme.textMuted }}>
+              Moved to <strong>Settings → Company Profile</strong> alongside the Place ID.
+            </div>
+          </div>
+          <a
+            href="/settings?tab=company"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              padding: '8px 12px',
+              backgroundColor: theme.bg, color: theme.accent,
+              border: `1px solid ${theme.border}`, borderRadius: '6px',
+              fontSize: '12px', fontWeight: '600', textDecoration: 'none', whiteSpace: 'nowrap'
             }}
-            style={{ marginTop: '8px', padding: '8px 16px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
           >
-            Save
-          </button>
+            Open Company Profile →
+          </a>
         </div>
 
         {/* ---- STRIPE ---- */}
