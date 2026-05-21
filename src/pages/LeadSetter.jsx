@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
+import ProspectResearchDrawer from '../components/ProspectResearchDrawer'
 import SearchableSelect from '../components/SearchableSelect'
 import SalespeopleMultiSelect from '../components/SalespeopleMultiSelect'
 
@@ -53,6 +54,9 @@ export default function LeadSetter() {
   const [appointments, setAppointments] = useState([])
   const [commissions, setCommissions] = useState([])
   const [loading, setLoading] = useState(true)
+
+  // Prospect research drawer (AI-powered web research → leads)
+  const [showResearch, setShowResearch] = useState(false)
 
   // Settings modal
   const [showSettingsModal, setShowSettingsModal] = useState(false)
@@ -889,6 +893,26 @@ export default function LeadSetter() {
           >
             <Plus size={14} />
             {!isMobile && 'Reactivate Customer'}
+          </button>
+          {/* AI prospect research — Claude does live web research,
+              returns ranked candidates the setter can import as leads.
+              Mobile-first drawer; works on phone or desktop. */}
+          <button
+            onClick={() => setShowResearch(true)}
+            title="Find new prospects via AI web research"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '10px 14px',
+              backgroundColor: '#7c3aed',
+              border: 'none',
+              color: '#fff',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '13px', fontWeight: 600,
+            }}
+          >
+            <Search size={14} />
+            {!isMobile && 'Find Prospects'}
           </button>
           <button
             onClick={fetchData}
@@ -2331,6 +2355,18 @@ export default function LeadSetter() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* AI prospect research drawer */}
+      {showResearch && (
+        <ProspectResearchDrawer
+          companyId={companyId}
+          employees={(employees || []).filter(e => e.active !== false)}
+          onClose={() => setShowResearch(false)}
+          onImported={async () => { await fetchData() }}
+          theme={theme}
+          isMobile={isMobile}
+        />
       )}
 
             {/* Settings Modal */}
