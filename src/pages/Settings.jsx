@@ -1249,10 +1249,14 @@ function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, sa
                         style={{ color: theme.accent, textDecoration: 'underline' }}
                       >Google's Place ID Finder</a> in a new tab.
                     </li>
-                    <li>In the map's search box at the top, type your business name and address (or just the address).</li>
-                    <li>Click the marker for your business on the map.</li>
+                    <li>Type your <strong>business name</strong> into the search box at the top of the map.</li>
                     <li>
-                      A popup appears showing your business name and the Place ID — it starts
+                      Click your listing in the autocomplete suggestions that appear below the
+                      search box. (For service-area businesses that hide their physical address,
+                      this is the only step you need — there won't be a map marker to click.)
+                    </li>
+                    <li>
+                      A popup card appears with your business name and the Place ID — it starts
                       with <code style={{ background: theme.bg, padding: '0 4px', borderRadius: '4px' }}>ChIJ</code>.
                       Copy the entire ID.
                     </li>
