@@ -511,7 +511,6 @@ export default function FieldScout() {
               jobTotal: effectiveJob.job_total,
               businessUnit: effectiveJob.business_unit,
               settings: useStore.getState().settings || [],
-              laborRates: useStore.getState().laborRates || [],
             })
             if (liveHours > 0) {
               effectiveJob = { ...effectiveJob, allotted_time_hours: liveHours }

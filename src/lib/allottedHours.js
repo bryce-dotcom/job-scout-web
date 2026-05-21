@@ -33,31 +33,15 @@
  */
 
 /**
- * Resolve the fallback hourly rate. Single source of truth: the row in
- * `labor_rates` flagged `is_default: true` (managed under Products &
- * Services → Labor Rates). The legacy settings keys
- * (default_hourly_rates / default_hourly_rate) are only consulted if
- * no default labor rate is configured, so existing tenants keep
- * working until they tag a default.
- *
- * @param {Array}  laborRates  Rows from the labor_rates table
- * @param {Array}  settings    Settings rows (legacy fallback only)
- * @param {string} businessUnit Reserved — only used for the legacy
- *                              per-business-unit map fallback
+ * Resolve the hourly rate for a business unit from settings rows.
+ * Accepts either the raw settings array (rows with {key, value}) or
+ * a pre-parsed map.
  */
-export function resolveHourlyRate(laborRates, settings, businessUnit) {
-  // Primary: the labor_rates row tagged is_default.
-  if (Array.isArray(laborRates) && laborRates.length) {
-    const def = laborRates.find(r => r.is_default && (r.active === undefined || r.active))
-    if (def) {
-      const rate = parseFloat(def.rate_per_hour) || 0
-      const mult = parseFloat(def.multiplier) || 1
-      if (rate > 0) return rate * mult
-    }
-  }
-
-  // Legacy fallbacks for tenants who haven't set a default labor rate yet.
+export function resolveHourlyRate(settings, businessUnit) {
+  if (!settings) return 0
   const rows = Array.isArray(settings) ? settings : []
+
+  // Primary: per-business-unit map
   const ratesSetting = rows.find(s => s.key === 'default_hourly_rates')
   if (ratesSetting) {
     try {
@@ -68,6 +52,8 @@ export function resolveHourlyRate(laborRates, settings, businessUnit) {
       if (rate > 0) return rate
     } catch {}
   }
+
+  // Legacy: single global rate
   const oldSetting = rows.find(s => s.key === 'default_hourly_rate')
   if (oldSetting) {
     try {
@@ -92,19 +78,19 @@ export function resolveHourlyRate(laborRates, settings, businessUnit) {
  * @param {Array|object} opts.settings Settings rows (or parsed map)
  * @returns {number} Allotted hours, rounded to 2 decimals
  */
-export function computeAllottedHours({ lines = [], jobTotal = 0, businessUnit = null, settings = [], laborRates = [] } = {}) {
+export function computeAllottedHours({ lines = [], jobTotal = 0, businessUnit = null, settings = [] } = {}) {
   const rows = Array.isArray(lines) ? lines : []
   if (rows.length === 0) {
     // No lines at all — last-resort full-job fallback so old records
     // still get a sensible value before any lines are attached.
     const total = parseFloat(jobTotal) || 0
     if (total <= 0) return 0
-    const rate = resolveHourlyRate(laborRates, settings, businessUnit)
+    const rate = resolveHourlyRate(settings, businessUnit)
     if (rate <= 0) return 0
     return Math.round((total / rate) * 100) / 100
   }
 
-  const rate = resolveHourlyRate(laborRates, settings, businessUnit)
+  const rate = resolveHourlyRate(settings, businessUnit)
 
   let sum = 0
   for (const line of rows) {
