@@ -226,7 +226,7 @@ export default function CustomerPortal() {
 
   if (!data) return null
 
-  const { document_type, document: doc, line_items, company, customer, business_unit, approval, payments, payment_config, google_place_id, invoice_settings } = data
+  const { document_type, document: doc, line_items, company, customer, business_unit, approval, payments, payment_config, google_place_id, google_review_url, invoice_settings } = data
   const isEstimate = document_type === 'estimate'
   const isInvoice = document_type === 'invoice'
 
@@ -840,7 +840,7 @@ export default function CustomerPortal() {
         </div>
 
         {/* Google Review card */}
-        {google_place_id && (isFullyPaid || isApproved || paymentResult === 'success') && (
+        {(google_review_url || google_place_id) && (isFullyPaid || isApproved || paymentResult === 'success') && (
           <div style={{ ...styles.card, marginBottom: '16px' }}>
             <div style={{ padding: '24px', textAlign: 'center' }}>
               <div style={{ fontSize: '32px', marginBottom: '8px' }}>&#9733;</div>
@@ -851,7 +851,7 @@ export default function CustomerPortal() {
                 We'd love to hear from you! Leave us a review on Google.
               </p>
               <a
-                href={`https://search.google.com/local/writereview?placeid=${google_place_id}`}
+                href={google_review_url || `https://search.google.com/local/writereview?placeid=${google_place_id}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{

@@ -223,6 +223,36 @@ serve(async (req) => {
       } catch { /* ignore */ }
     }
 
+    // Pull the company's Google Review URL setting if set. Tenants
+    // increasingly paste the short link from their Google Business
+    // Profile (g.page/r/.../review or share.google/...) which is the
+    // most reliable review-collection URL — preferred over building
+    // the link from a Place ID. CustomerPortal uses this verbatim
+    // when present, falling back to the Place ID construction.
+    let googleReviewUrl: string | null = null;
+    {
+      const { data: reviewRow } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('company_id', tokenRow.company_id)
+        .eq('key', 'google_review_url')
+        .maybeSingle();
+      if (reviewRow?.value) {
+        let v: unknown = reviewRow.value;
+        try { v = JSON.parse(v as string); } catch { /* keep raw */ }
+        // Some older rows were saved as a JSON-encoded string twice — unwrap.
+        if (typeof v === 'string') {
+          const trimmed = v.trim();
+          if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+            try { v = JSON.parse(trimmed); } catch { /* keep */ }
+          }
+          if (typeof v === 'string' && v.trim().startsWith('http')) {
+            googleReviewUrl = v.trim();
+          }
+        }
+      }
+    }
+
     // Fetch invoice-specific settings (CC fee, payment preferences).
     // Also returned for estimates so the formal legal proposal's payment
     // section can use the same Stripe configuration as invoices.
@@ -281,6 +311,7 @@ serve(async (req) => {
       payments: paymentsData,
       payment_config: paymentConfig,
       google_place_id: company?.google_place_id || null,
+      google_review_url: googleReviewUrl,
       invoice_settings: invoiceSettings,
       saved_payment_methods: savedPaymentMethods
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
