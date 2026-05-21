@@ -1706,6 +1706,13 @@ function EstimateDetailInner() {
       toast.error('Please select a Business Unit before generating a PDF.')
       return
     }
+    // Cole's complaint: project total comes through but the proposal
+    // PDF is empty because no quote_lines exist. Catch it here — rep
+    // can still proceed if they want to preview the empty shell, but
+    // they get a clear warning first instead of a "broken" PDF.
+    if ((!lineItems || lineItems.length === 0) && !window.confirm('This estimate has no line items. The proposal will show only the total with no products listed. Generate the PDF anyway?')) {
+      return
+    }
     setGeneratingPdf(true)
     try {
       const effectiveSettings = getEffectiveSettings()
@@ -2913,6 +2920,50 @@ function EstimateDetailInner() {
               </div>
             </div>
           </div>
+
+          {/* "Total set but no line items" banner — proactive warning
+              for the recurring complaint that a proposal renders with
+              the total visible but the products list empty. This
+              happens when a rep types/imports a quote_amount but never
+              adds quote_lines. Cole's lead 3688 is the canonical
+              example. Keeps the rep from sending a half-empty proposal
+              or trying to debug a "broken" PDF. */}
+          {lineItems.length === 0 && ((parseFloat(estimate.quote_amount) > 0) || (parseFloat(estimate.job_total) > 0)) && (
+            <div id="missing-lines-banner" style={{
+              backgroundColor: 'rgba(245,158,11,0.08)',
+              border: '1px solid rgba(245,158,11,0.3)',
+              borderRadius: '12px',
+              padding: '14px 16px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+              marginBottom: '16px',
+            }}>
+              <div style={{ fontSize: '20px', lineHeight: 1 }} aria-hidden>⚠️</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#b45309', marginBottom: '4px' }}>
+                  This estimate has a total of {formatCurrency(parseFloat(estimate.quote_amount) || parseFloat(estimate.job_total) || 0)} but no line items.
+                </div>
+                <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: 1.5, marginBottom: '8px' }}>
+                  Customers will see only the total — your proposal won't list what they're paying for. Add line items so the proposal reads like a real estimate.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowProductPicker(true)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 14px',
+                    backgroundColor: '#b45309', color: '#fff',
+                    border: 'none', borderRadius: '6px',
+                    fontSize: '12px', fontWeight: '600',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Plus size={14} /> Add Line Items
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Line Items */}
           <div style={{
