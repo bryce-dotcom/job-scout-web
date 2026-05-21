@@ -270,22 +270,81 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
                     {/* Enrichment result */}
                     {enriched && (
                       <div style={{
-                        marginTop: 8, padding: 8,
+                        marginTop: 8, padding: 10,
                         backgroundColor: 'rgba(124,58,237,0.05)',
                         border: '1px solid rgba(124,58,237,0.20)',
                         borderRadius: 6, fontSize: 12, color: theme.text,
                       }}>
                         {enriched.decision_maker_name && (
-                          <div><strong>{enriched.decision_maker_name}</strong>{enriched.decision_maker_title ? ` — ${enriched.decision_maker_title}` : ''}</div>
+                          <div style={{ marginBottom: 6 }}>
+                            <strong>{enriched.decision_maker_name}</strong>
+                            {enriched.decision_maker_title ? ` — ${enriched.decision_maker_title}` : ''}
+                          </div>
                         )}
+
+                        {/* Mobile / cell — most useful for cold outreach. Star it. */}
+                        {enriched.mobile_phone && (
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '6px 8px', marginBottom: 4,
+                            backgroundColor: 'rgba(34,197,94,0.10)',
+                            border: '1px solid rgba(34,197,94,0.30)',
+                            borderRadius: 5,
+                          }}>
+                            <span style={{ fontSize: 14 }}>📱</span>
+                            <a href={`tel:${enriched.mobile_phone}`} style={{ color: '#16a34a', fontWeight: 600, textDecoration: 'none' }}>
+                              {enriched.mobile_phone}
+                            </a>
+                            <span style={{ fontSize: 10, color: '#16a34a', fontWeight: 600, padding: '1px 5px', backgroundColor: 'rgba(34,197,94,0.15)', borderRadius: 3 }}>
+                              MOBILE · {enriched.mobile_phone_confidence || 'found'}
+                            </span>
+                            <a href={`sms:${enriched.mobile_phone}`} style={{ marginLeft: 'auto', fontSize: 10, color: '#16a34a', textDecoration: 'none', border: '1px solid #16a34a', padding: '2px 6px', borderRadius: 3 }}>
+                              Text
+                            </a>
+                          </div>
+                        )}
+                        {enriched.mobile_phone_confidence === 'not_found' && !enriched.mobile_phone && (
+                          <div style={{ fontSize: 11, color: theme.textMuted, fontStyle: 'italic', marginBottom: 4 }}>
+                            📱 Mobile number not publicly listed — try LinkedIn DM
+                          </div>
+                        )}
+
+                        {/* Business phone */}
+                        {(enriched.business_phone || enriched.phone) && (enriched.business_phone || enriched.phone) !== enriched.mobile_phone && (
+                          <div style={{ marginBottom: 3 }}>
+                            ☎ <a href={`tel:${enriched.business_phone || enriched.phone}`} style={{ color: theme.accent, textDecoration: 'none' }}>
+                              {enriched.business_phone || enriched.phone}
+                            </a>
+                            <span style={{ fontSize: 10, color: theme.textMuted, marginLeft: 4 }}>(business)</span>
+                          </div>
+                        )}
+
+                        {/* Email — work first, personal as a secondary line */}
                         {enriched.email && (
-                          <div>✉ <a href={`mailto:${enriched.email}`} style={{ color: theme.accent }}>{enriched.email}</a> {enriched.email_confidence && <span style={{ fontSize: 10, color: theme.textMuted }}>({enriched.email_confidence})</span>}</div>
+                          <div style={{ marginBottom: 3 }}>
+                            ✉ <a href={`mailto:${enriched.email}`} style={{ color: theme.accent, textDecoration: 'none' }}>{enriched.email}</a>
+                            {enriched.email_confidence && (
+                              <span style={{ fontSize: 10, color: theme.textMuted, marginLeft: 4 }}>({enriched.email_confidence})</span>
+                            )}
+                          </div>
                         )}
+                        {enriched.personal_email && enriched.personal_email !== enriched.email && (
+                          <div style={{ marginBottom: 3 }}>
+                            ✉ <a href={`mailto:${enriched.personal_email}`} style={{ color: theme.accent, textDecoration: 'none' }}>{enriched.personal_email}</a>
+                            <span style={{ fontSize: 10, color: theme.textMuted, marginLeft: 4 }}>(personal)</span>
+                          </div>
+                        )}
+
                         {enriched.linkedin_url && (
-                          <div><a href={enriched.linkedin_url} target="_blank" rel="noopener noreferrer" style={{ color: theme.accent }}>LinkedIn ↗</a></div>
+                          <div style={{ marginBottom: 3 }}>
+                            <a href={enriched.linkedin_url} target="_blank" rel="noopener noreferrer" style={{ color: theme.accent, textDecoration: 'none' }}>
+                              LinkedIn ↗
+                            </a>
+                          </div>
                         )}
+
                         {enriched.notes && (
-                          <div style={{ marginTop: 4, fontStyle: 'italic', color: theme.textMuted }}>{enriched.notes}</div>
+                          <div style={{ marginTop: 6, fontStyle: 'italic', color: theme.textMuted, lineHeight: 1.4 }}>{enriched.notes}</div>
                         )}
                       </div>
                     )}

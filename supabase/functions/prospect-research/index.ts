@@ -160,7 +160,7 @@ Rules:
       if (!cached) return json({ error: 'candidate not found in cache' }, 404);
 
       const c = cached.payload || {};
-      const system = `You are an expert B2B sales researcher. Find detailed contact info for the following business so a sales rep can reach out.
+      const system = `You are an expert B2B sales researcher. Find detailed contact info for the following business so a sales rep can call, text, and email the decision-maker.
 
 CRITICAL OUTPUT FORMAT: After you research, return a SINGLE JSON object — no markdown, no code fences, no preamble:
 {
@@ -168,17 +168,41 @@ CRITICAL OUTPUT FORMAT: After you research, return a SINGLE JSON object — no m
   "decision_maker_title": "",
   "email": "",
   "email_confidence": "verified" | "pattern" | "guessed" | "",
+  "personal_email": "",
   "linkedin_url": "",
-  "phone": "",
+  "business_phone": "",
+  "mobile_phone": "",
+  "mobile_phone_confidence": "verified" | "likely" | "guessed" | "not_found",
+  "mobile_phone_source": "",
   "address": "",
   "notes": "Extra context — recent expansion, hiring signals, news",
   "source_urls": []
 }
 
-Rules:
-- If you can't find a decision-maker, leave those fields empty rather than guessing
-- "email_confidence": "verified" if directly published on the company website / LinkedIn / press release; "pattern" if you applied a common company pattern (firstname@company.com); "guessed" if speculative
-- Decision-maker is the person who buys services for this kind of business (owner / facilities mgr / GM / operations / etc.)`;
+DIG HARD FOR MOBILE / CELL NUMBERS. The sales rep needs to text them. Try ALL of these in order:
+  1. The person's LinkedIn profile (sometimes lists phone)
+  2. Personal websites, portfolios, or blogs they own
+  3. Real-estate agent / insurance agent / broker profiles (these almost always show cell)
+  4. State business registry filings (e.g. Utah Division of Corporations) — owner phone is often filed
+  5. Court records, FCC license filings, professional license boards (chiropractic board, contractor board, etc.)
+  6. Press releases that quote them with contact info
+  7. Conference speaker pages or alumni directories
+  8. Old job postings they authored
+  9. Owner-listed properties on Zillow / Redfin / commercial real estate sites
+  10. Domain WHOIS records if the domain is registered to them personally
+
+How to tell business phone from mobile/cell:
+  - Mobile = personal phone, can text, typically not on the company's "Contact Us" page
+  - Business phone = main office line listed publicly on the website
+  - If you only find ONE number and it's on the company contact page, that's business_phone, NOT mobile_phone
+
+If you genuinely can't find a mobile, set mobile_phone_confidence to "not_found" and leave mobile_phone empty. NEVER guess a 10-digit number — only return real numbers you found in search results.
+
+Rules for other fields:
+  - "email_confidence": "verified" if directly published on the company website / LinkedIn / press release; "pattern" if you applied a common company pattern (firstname@company.com); "guessed" if speculative
+  - "personal_email": their non-work email if found (gmail / yahoo / etc. — these often answer cold outreach better than corp emails)
+  - Decision-maker = person who buys services for this kind of business (owner / facilities mgr / GM / operations / etc.)
+  - If you can't find a decision-maker, leave those fields empty rather than guessing names`;
 
       const userMsg = `Business to research:
 Name: ${c.company_name || cached.company_name || '(unknown)'}
@@ -206,6 +230,9 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
       }
 
       const mergedPayload = { ...c, enrichment: enriched };
+      // Phone preference order for the cache's `phone` column:
+      //   mobile_phone (rep can text) > business_phone (cold-call line) > existing
+      const bestPhone = enriched.mobile_phone || enriched.business_phone || enriched.phone || cached.phone;
       const { error: upErr } = await supabase
         .from('prospect_enrichments')
         .update({
@@ -213,7 +240,7 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
           full_name: enriched.decision_maker_name || cached.full_name,
           title: enriched.decision_maker_title || cached.title,
           email: enriched.email || cached.email,
-          phone: enriched.phone || cached.phone,
+          phone: bestPhone,
           linkedin_url: enriched.linkedin_url || cached.linkedin_url,
           revealed_at: new Date().toISOString(),
         })
@@ -242,11 +269,15 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
       const leadRows = toImport.map(c => {
         const p = c.payload || {};
         const enr = p.enrichment || {};
+        // Best phone for the lead's primary field: prefer mobile (textable),
+        // fall back to business line, then whatever we had cached.
+        const bestPhone = enr.mobile_phone || enr.business_phone || c.phone || p.phone || null;
+        const bestEmail = c.email || enr.email || enr.personal_email || null;
         return {
           company_id,
           customer_name: c.full_name || enr.decision_maker_name || c.company_name || 'AI Prospect',
-          email: c.email || enr.email || null,
-          phone: c.phone || enr.phone || null,
+          email: bestEmail,
+          phone: bestPhone,
           address: enr.address || (p.city ? `${p.city}, ${p.state || ''}`.trim() : null),
           business_name: c.company_name || p.company_name || null,
           status: default_status,
@@ -257,8 +288,13 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
           notes: [
             p.why_it_matches ? `Why this fits: ${p.why_it_matches}` : null,
             enr.notes ? `Notes: ${enr.notes}` : null,
+            // Surface BOTH numbers + email types in the notes so the rep
+            // can pick the right one for the right channel.
+            enr.mobile_phone ? `Mobile (textable): ${enr.mobile_phone}${enr.mobile_phone_confidence ? ` [${enr.mobile_phone_confidence}]` : ''}${enr.mobile_phone_source ? ` — ${enr.mobile_phone_source}` : ''}` : null,
+            enr.business_phone && enr.business_phone !== enr.mobile_phone ? `Business: ${enr.business_phone}` : null,
+            enr.personal_email && enr.personal_email !== enr.email ? `Personal email: ${enr.personal_email}` : null,
             c.linkedin_url || enr.linkedin_url ? `LinkedIn: ${c.linkedin_url || enr.linkedin_url}` : null,
-            ([...(p.source_urls || []), ...(enr.source_urls || [])]).slice(0, 3).map((u: string) => `Source: ${u}`).join('\n'),
+            ([...(p.source_urls || []), ...(enr.source_urls || [])]).slice(0, 4).map((u: string) => `Source: ${u}`).join('\n'),
           ].filter(Boolean).join('\n'),
         };
       });
