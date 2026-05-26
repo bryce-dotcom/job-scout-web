@@ -74,6 +74,18 @@ export default function UtilityInvoiceDetail() {
     fetchInvoiceData()
   }, [companyId, id, navigate])
 
+  // One canonical invoice document — customer + utility see the same PDF.
+  // When this utility AR row is linked to a customer invoice, route to it
+  // so the team only maintains a single template. The utility_invoices row
+  // continues to track utility-side AR (amount, payment_status, paid_at)
+  // in the background, but the visible page IS the customer invoice.
+  // Legacy utility invoices without a linked invoice_id keep the old view.
+  useEffect(() => {
+    if (invoice && invoice.invoice_id) {
+      navigate(`/invoices/${invoice.invoice_id}`, { replace: true })
+    }
+  }, [invoice, navigate])
+
   const fetchInvoiceData = async () => {
     setLoading(true)
     const { data } = await supabase
