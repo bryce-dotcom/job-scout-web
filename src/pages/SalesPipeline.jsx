@@ -52,12 +52,13 @@ const defaultStages = [
   { id: 'In Progress', name: 'In Progress', color: '#f97316', isDelivery: true },
   { id: 'Job Complete', name: 'Job Complete', color: '#22c55e', isDelivery: true },
   { id: 'Invoiced', name: 'Invoiced', color: '#8b5cf6', isDelivery: true },
+  { id: 'Paid', name: 'Paid', color: '#16a34a', isDelivery: true, isPaid: true },
   { id: 'Closed', name: 'Closed', color: '#6b7280', isClosed: true },
   // Lost (always last)
   { id: 'Lost', name: 'Lost', color: '#64748b', isLost: true }
 ]
 
-const PIPELINE_VERSION = 4
+const PIPELINE_VERSION = 5
 
 // Available stats to show in header
 const availableStats = [

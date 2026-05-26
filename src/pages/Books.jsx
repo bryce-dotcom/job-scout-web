@@ -407,7 +407,16 @@ export default function Books() {
     }).eq('id', deposit.id)
     if (txnErr) console.warn('Match tag failed (non-fatal):', txnErr)
     // If this payment closes out the invoice, flip status to Paid.
-    if (payAmount + (paymentsByInvoiceId.get(inv.id) || 0) >= (parseFloat(inv.amount) || 0) - 0.01) {
+    // Compare to customer balance (amount - discount_applied), not gross —
+    // utility incentive + deposit credit are netted out of what the
+    // customer actually owes. Without this, paying the real balance leaves
+    // the invoice stuck as "Partially Paid".
+    const grossAmt = parseFloat(inv.amount) || 0
+    const discApplied = parseFloat(inv.discount_applied) || 0
+    const isLegacyNet = discApplied > 0 && discApplied >= grossAmt
+    const customerBalance = isLegacyNet ? grossAmt : Math.max(0, grossAmt - discApplied)
+    const totalPaidAfter = payAmount + (paymentsByInvoiceId.get(inv.id) || 0)
+    if (totalPaidAfter >= customerBalance - 0.01) {
       await supabase.from('invoices').update({ payment_status: 'Paid', updated_at: new Date().toISOString() }).eq('id', inv.id)
     } else {
       await supabase.from('invoices').update({ payment_status: 'Partially Paid', updated_at: new Date().toISOString() }).eq('id', inv.id)
