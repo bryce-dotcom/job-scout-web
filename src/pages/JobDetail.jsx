@@ -1491,6 +1491,21 @@ function JobDetailInner() {
           await supabase.from('leads').update({ status: 'Invoiced', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
         }
 
+        // If a utility invoice already exists on this job (e.g., the user
+        // regenerated only the customer side), re-link it to this new
+        // invoice so /utility-invoices/:id still redirects to the same
+        // canonical document. Without this, the utility row sits with
+        // invoice_id pointing at the deleted predecessor and the two
+        // views drift apart again.
+        await supabase
+          .from('utility_invoices')
+          .update({
+            invoice_id: invoice.id,
+            linked_invoice_number: invoiceNumber,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('job_id', parseInt(id))
+
         await fetchJobData()
         toast.success('Customer invoice created')
         setSaving(false)
