@@ -253,6 +253,15 @@ export default function CustomerPortal() {
   const balanceDue = invoiceCustomerTotal + existingCcFee - totalPaid
   const isFullyPaid = isInvoice && (doc.payment_status === 'Paid' || balanceDue <= 0)
 
+  // Deposit breakout: when this invoice rolled a paid deposit into
+  // discount_applied (via parent_invoice_id pointing at a deposit invoice),
+  // show the deposit credit as its own line so the customer sees it.
+  const depositParent = isInvoice && doc.parent_invoice?.invoice_type === 'deposit' ? doc.parent_invoice : null
+  const depositCredit = depositParent ? (parseFloat(depositParent.amount) || 0) : 0
+  const incentivePortion = Math.max(0, invoiceDiscount - depositCredit)
+  const hasDepositBreakout = isInvoice && depositCredit > 0 && !invoiceLegacyNet && invoiceDiscount >= depositCredit
+  const depositPaidDate = depositParent?.updated_at || depositParent?.created_at
+
   // CC fee settings from invoice_settings (passed by edge function)
   const ccFeeEnabled = invoice_settings?.cc_fee_enabled && invoice_settings?.accept_credit_card
   const ccFeePercent = invoice_settings?.cc_fee_percent || 1.9
@@ -501,7 +510,7 @@ export default function CustomerPortal() {
                   <span style={{ color: theme.textMuted, fontSize: '13px' }}>Subtotal</span>
                   <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(invoiceAmount)}</span>
                 </div>
-                {invoiceDiscount > 0 && (
+                {invoiceDiscount > 0 && !hasDepositBreakout && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: theme.textMuted, fontSize: '13px' }}>
                       {invoiceLegacyNet ? 'Utility Incentive (applied)' : 'Discount'}
@@ -510,6 +519,27 @@ export default function CustomerPortal() {
                       {invoiceLegacyNet ? formatCurrency(invoiceDiscount) : `-${formatCurrency(invoiceDiscount)}`}
                     </span>
                   </div>
+                )}
+                {hasDepositBreakout && (
+                  <>
+                    {incentivePortion > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: theme.textMuted, fontSize: '13px' }}>Utility Incentive</span>
+                        <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(incentivePortion)}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+                        Deposit Applied
+                        {depositPaidDate && (
+                          <span style={{ color: theme.textMuted, marginLeft: '6px', fontSize: '12px', opacity: 0.8 }}>
+                            (paid {new Date(depositPaidDate).toLocaleDateString()})
+                          </span>
+                        )}
+                      </span>
+                      <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(depositCredit)}</span>
+                    </div>
+                  </>
                 )}
                 {totalPaid > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>

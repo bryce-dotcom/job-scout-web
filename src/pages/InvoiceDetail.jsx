@@ -48,6 +48,7 @@ export default function InvoiceDetail() {
   const fetchSettings = useStore((state) => state.fetchSettings)
 
   const [invoice, setInvoice] = useState(null)
+  const [parentInvoice, setParentInvoice] = useState(null)
   const [invoiceLines, setInvoiceLines] = useState([])
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -144,6 +145,20 @@ export default function InvoiceDetail() {
     if (invoiceData) {
       setInvoice(invoiceData)
       setSendEmail(invoiceData.sent_to_email || invoiceData.customer?.email || '')
+
+      // If this invoice rolls a deposit credit into discount_applied,
+      // load the parent so the discount block can show the deposit as
+      // its own line (instead of hiding it inside the bulk total).
+      if (invoiceData.parent_invoice_id) {
+        const { data: parent } = await supabase
+          .from('invoices')
+          .select('id, invoice_id, amount, invoice_type, payment_status, created_at, updated_at')
+          .eq('id', invoiceData.parent_invoice_id)
+          .single()
+        setParentInvoice(parent || null)
+      } else {
+        setParentInvoice(null)
+      }
 
       // Fetch payments for this invoice
       const { data: paymentsData } = await supabase
@@ -1334,6 +1349,17 @@ export default function InvoiceDetail() {
   const isLegacyNetInvoice = discountApplied > 0 && discountApplied >= grossAmount
   const customerTotal = isLegacyNetInvoice ? grossAmount : (grossAmount - discountApplied)
   const balanceDue = customerTotal + ccFeeOnInvoice - totalPaid
+
+  // If the invoice was generated from a job with a paid deposit, the deposit
+  // amount was rolled into discount_applied alongside the utility incentive
+  // (see JobDetail.jsx invoice-create flow). Split them back out for display
+  // so the customer can see their deposit was credited.
+  const depositCredit = (parentInvoice && parentInvoice.invoice_type === 'deposit')
+    ? (parseFloat(parentInvoice.amount) || 0)
+    : 0
+  const incentivePortion = Math.max(0, discountApplied - depositCredit)
+  const hasDepositBreakout = depositCredit > 0 && !isLegacyNetInvoice && discountApplied >= depositCredit
+  const depositPaidDate = parentInvoice?.updated_at || parentInvoice?.created_at
   const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
 
   return (
@@ -2068,34 +2094,53 @@ export default function InvoiceDetail() {
                 )}
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
-                <span style={{ color: theme.textSecondary }}>
-                  {isLegacyNetInvoice ? 'Utility Incentive (already applied)' : 'Discount'}
-                </span>
-                {isEditing ? (
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editForm.discount_applied}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, discount_applied: e.target.value }))}
-                    style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
-                  />
-                ) : (
-                  invoice.discount_applied > 0 ? (
-                    // In the legacy shape the incentive is already
-                    // reflected in `amount`, so we show it as
-                    // informational instead of as a minus-line that
-                    // would double-count against the balance.
-                    isLegacyNetInvoice ? (
-                      <span style={{ color: theme.textMuted }}>{formatCurrency(invoice.discount_applied)}</span>
-                    ) : (
-                      <span style={{ color: '#dc2626' }}>-{formatCurrency(invoice.discount_applied)}</span>
-                    )
+              {/* Discount block — when a deposit is rolled in, split it out so
+                  the customer sees their deposit credit separately from the
+                  utility incentive. Editing keeps the combined field. */}
+              {isEditing || !hasDepositBreakout ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                  <span style={{ color: theme.textSecondary }}>
+                    {isLegacyNetInvoice ? 'Utility Incentive (already applied)' : 'Discount'}
+                  </span>
+                  {isEditing ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.discount_applied}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, discount_applied: e.target.value }))}
+                      style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
+                    />
                   ) : (
-                    <span style={{ color: theme.textMuted }}>$0.00</span>
-                  )
-                )}
-              </div>
+                    invoice.discount_applied > 0 ? (
+                      isLegacyNetInvoice ? (
+                        <span style={{ color: theme.textMuted }}>{formatCurrency(invoice.discount_applied)}</span>
+                      ) : (
+                        <span style={{ color: '#dc2626' }}>-{formatCurrency(invoice.discount_applied)}</span>
+                      )
+                    ) : (
+                      <span style={{ color: theme.textMuted }}>$0.00</span>
+                    )
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                    <span style={{ color: theme.textSecondary }}>Utility Incentive</span>
+                    <span style={{ color: '#dc2626' }}>-{formatCurrency(incentivePortion)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                    <span style={{ color: theme.textSecondary }}>
+                      Deposit Applied
+                      {depositPaidDate && (
+                        <span style={{ color: theme.textMuted, marginLeft: '6px', fontSize: '12px' }}>
+                          (paid {new Date(depositPaidDate).toLocaleDateString()})
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ color: '#dc2626' }}>-{formatCurrency(depositCredit)}</span>
+                  </div>
+                </>
+              )}
 
               {(invoice.credit_card_fee > 0 || isEditing) && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px' }}>

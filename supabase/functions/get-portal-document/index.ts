@@ -164,6 +164,19 @@ serve(async (req) => {
         paymentsData = pays || [];
 
         if (!customer && inv.customer) customer = inv.customer;
+
+        // If this invoice has a parent (typically a deposit invoice rolled
+        // into the customer balance invoice via discount_applied), fetch the
+        // parent so the portal can show the deposit credit as its own line
+        // instead of hiding it inside the bulk "discount" total.
+        if (inv.parent_invoice_id) {
+          const { data: parent } = await supabase
+            .from('invoices')
+            .select('id, invoice_id, amount, invoice_type, payment_status, created_at, updated_at')
+            .eq('id', inv.parent_invoice_id)
+            .single();
+          if (parent) (document as Record<string, unknown>).parent_invoice = parent;
+        }
       }
     }
 
