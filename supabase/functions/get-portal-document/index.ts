@@ -1,6 +1,77 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// Same logic as src/lib/materialLaborSplit.js — duplicated here because edge
+// functions can't easily share modules with the React app.
+function computeMaterialLaborSplit(
+  lines: Array<{ item_id: number | null; line_total: number | null }>,
+  components: Array<{ parent_product_id: number; component_product_id: number; quantity: number }>,
+  products: Array<{ id: number; cost: number | null; material_or_labor: string | null }>,
+) {
+  const productMap = new Map(products.map((p) => [p.id, p]));
+  const componentsByParent = new Map<number, typeof components>();
+  for (const c of components) {
+    const arr = componentsByParent.get(c.parent_product_id) || [];
+    arr.push(c);
+    componentsByParent.set(c.parent_product_id, arr);
+  }
+
+  function classifyLine(itemId: number | null): { materialCost: number; laborCost: number; totalCost: number; unclassified: boolean } {
+    const result = { materialCost: 0, laborCost: 0, totalCost: 0, unclassified: false };
+    if (!itemId) { result.unclassified = true; return result; }
+    const product = productMap.get(itemId);
+    const children = componentsByParent.get(itemId) || [];
+    if (children.length === 0) {
+      if (!product) { result.unclassified = true; return result; }
+      const cost = Number(product.cost) || 0;
+      if (product.material_or_labor === 'material') result.materialCost = cost;
+      else if (product.material_or_labor === 'labor') result.laborCost = cost;
+      else result.unclassified = true;
+      result.totalCost = cost;
+      return result;
+    }
+    for (const c of children) {
+      const sub = productMap.get(c.component_product_id);
+      if (!sub) { result.unclassified = true; continue; }
+      const subCost = (Number(sub.cost) || 0) * (Number(c.quantity) || 1);
+      if (sub.material_or_labor === 'material') result.materialCost += subCost;
+      else if (sub.material_or_labor === 'labor') result.laborCost += subCost;
+      else {
+        const sub2 = classifyLine(c.component_product_id);
+        if (sub2.unclassified) result.unclassified = true;
+        result.materialCost += sub2.materialCost * (Number(c.quantity) || 1);
+        result.laborCost += sub2.laborCost * (Number(c.quantity) || 1);
+      }
+    }
+    result.totalCost = result.materialCost + result.laborCost;
+    return result;
+  }
+
+  let materials = 0, labor = 0, fallbackLineCount = 0;
+  for (const line of lines) {
+    const lineTotal = Number(line.line_total) || 0;
+    if (lineTotal === 0) continue;
+    const breakdown = classifyLine(line.item_id);
+    if (breakdown.unclassified || breakdown.totalCost === 0) {
+      materials += lineTotal * 0.7;
+      labor += lineTotal * 0.3;
+      fallbackLineCount++;
+    } else {
+      const matPct = breakdown.materialCost / breakdown.totalCost;
+      materials += lineTotal * matPct;
+      labor += lineTotal * (1 - matPct);
+    }
+  }
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  return {
+    materials: round2(materials),
+    labor: round2(labor),
+    total: round2(materials + labor),
+    fallbackLineCount,
+    totalLineCount: lines.length,
+  };
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -176,6 +247,47 @@ serve(async (req) => {
             .eq('id', inv.parent_invoice_id)
             .single();
           if (parent) (document as Record<string, unknown>).parent_invoice = parent;
+        }
+
+        // Mode B (incentive-bearing) — fetch linked utility invoice and
+        // precompute Materials / Labor split. Portal can't query
+        // products_services anonymously, so we do the walk server-side and
+        // return just the totals.
+        const { data: linkedU } = await supabase
+          .from('utility_invoices')
+          .select('id, utility_name, amount, payment_status')
+          .eq('invoice_id', inv.id)
+          .maybeSingle();
+        if (linkedU) {
+          (document as Record<string, unknown>).linked_utility_invoice = linkedU;
+          const { data: lines } = await supabase
+            .from('invoice_lines')
+            .select('item_id, line_total, quantity')
+            .eq('invoice_id', inv.id);
+          if (lines && lines.length > 0) {
+            const itemIds = [...new Set(lines.map((l) => l.item_id).filter(Boolean))];
+            if (itemIds.length > 0) {
+              const { data: comps } = await supabase
+                .from('product_components')
+                .select('parent_product_id, component_product_id, quantity')
+                .in('parent_product_id', itemIds);
+              const subIds = [
+                ...new Set([
+                  ...itemIds,
+                  ...(comps || []).map((c) => c.component_product_id),
+                ]),
+              ];
+              const { data: prods } = await supabase
+                .from('products_services')
+                .select('id, cost, material_or_labor')
+                .in('id', subIds);
+              (document as Record<string, unknown>).material_labor_split = computeMaterialLaborSplit(
+                lines as Array<{ item_id: number | null; line_total: number | null }>,
+                (comps || []) as Array<{ parent_product_id: number; component_product_id: number; quantity: number }>,
+                (prods || []) as Array<{ id: number; cost: number | null; material_or_labor: string | null }>,
+              );
+            }
+          }
         }
       }
     }

@@ -10,6 +10,7 @@ import { toast } from '../lib/toast'
 import { jsPDF } from 'jspdf'
 import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
+import { computeMaterialLaborSplit } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 
 // Light theme fallback
@@ -49,6 +50,8 @@ export default function InvoiceDetail() {
 
   const [invoice, setInvoice] = useState(null)
   const [parentInvoice, setParentInvoice] = useState(null)
+  const [linkedUtilityInvoice, setLinkedUtilityInvoice] = useState(null)
+  const [matLabSplit, setMatLabSplit] = useState(null)
   const [invoiceLines, setInvoiceLines] = useState([])
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -160,6 +163,15 @@ export default function InvoiceDetail() {
         setParentInvoice(null)
       }
 
+      // Check if this invoice is linked to a utility invoice (Mode B —
+      // incentive-bearing). Used to gate the Materials/Labor breakdown.
+      const { data: linkedU } = await supabase
+        .from('utility_invoices')
+        .select('id, utility_name, amount, payment_status, paid_at')
+        .eq('invoice_id', invoiceData.id)
+        .maybeSingle()
+      setLinkedUtilityInvoice(linkedU || null)
+
       // Fetch payments for this invoice
       const { data: paymentsData } = await supabase
         .from('payments')
@@ -177,6 +189,32 @@ export default function InvoiceDetail() {
         .order('sort_order', { ascending: true })
 
       setInvoiceLines(linesData || [])
+
+      // Materials/Labor split — only compute when there's a linked utility
+      // invoice (Mode B). Walks the lines' component trees and uses each
+      // product's material_or_labor classification.
+      if (linkedU && (linesData || []).length > 0) {
+        const itemIds = [...new Set((linesData || []).map(l => l.item_id).filter(Boolean))]
+        if (itemIds.length > 0) {
+          const { data: comps } = await supabase
+            .from('product_components')
+            .select('parent_product_id, component_product_id, quantity')
+            .in('parent_product_id', itemIds)
+          const subIds = [...new Set([
+            ...itemIds,
+            ...(comps || []).map(c => c.component_product_id),
+          ])]
+          const { data: prods } = await supabase
+            .from('products_services')
+            .select('id, cost, material_or_labor')
+            .in('id', subIds)
+          setMatLabSplit(computeMaterialLaborSplit(linesData || [], comps || [], prods || []))
+        } else {
+          setMatLabSplit(null)
+        }
+      } else {
+        setMatLabSplit(null)
+      }
 
       // Fetch payment plans for this invoice
       const { data: plansData } = await supabase
@@ -924,6 +962,12 @@ export default function InvoiceDetail() {
     const pdfCustomerTotal = pdfLegacyNet ? pdfGross : (pdfGross - pdfDiscount)
 
     drawTotalLine('Subtotal:', formatCurrency(pdfGross))
+
+    // Materials / Labor breakdown — Mode B invoices only
+    if (matLabSplit && matLabSplit.total > 0) {
+      drawTotalLine('  Materials:', formatCurrency(matLabSplit.materials), { color: [120, 120, 120] })
+      drawTotalLine('  Labor:', formatCurrency(matLabSplit.labor), { color: [120, 120, 120] })
+    }
 
     if (pdfDiscount > 0) {
       if (pdfLegacyNet) {
@@ -2093,6 +2137,30 @@ export default function InvoiceDetail() {
                   <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(invoice.amount)}</span>
                 )}
               </div>
+
+              {/* Materials / Labor breakdown — shown only on Mode B (incentive-
+                  bearing) invoices. Computed from each line's components +
+                  their material_or_labor classification. */}
+              {!isEditing && matLabSplit && matLabSplit.total > 0 && (
+                <div style={{ padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
+                    Project Total Breakdown
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                    <span style={{ color: theme.textSecondary }}>Materials</span>
+                    <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(matLabSplit.materials)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                    <span style={{ color: theme.textSecondary }}>Labor</span>
+                    <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(matLabSplit.labor)}</span>
+                  </div>
+                  {matLabSplit.fallbackLineCount > 0 && (
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                      {matLabSplit.fallbackLineCount} of {matLabSplit.totalLineCount} line{matLabSplit.totalLineCount !== 1 ? 's' : ''} using 70/30 estimate — classify components in Products & Services for real numbers.
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Discount block — when a deposit is rolled in, split it out so
                   the customer sees their deposit credit separately from the

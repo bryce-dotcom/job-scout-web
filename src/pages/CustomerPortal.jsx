@@ -262,6 +262,11 @@ export default function CustomerPortal() {
   const hasDepositBreakout = isInvoice && depositCredit > 0 && !invoiceLegacyNet && invoiceDiscount >= depositCredit
   const depositPaidDate = depositParent?.updated_at || depositParent?.created_at
 
+  // Materials / Labor split — precomputed by the edge function for Mode B
+  // (incentive-bearing) invoices. Null when the invoice is a standard
+  // non-incentive invoice (Mode A).
+  const matLabSplit = isInvoice ? doc.material_labor_split : null
+
   // CC fee settings from invoice_settings (passed by edge function)
   const ccFeeEnabled = invoice_settings?.cc_fee_enabled && invoice_settings?.accept_credit_card
   const ccFeePercent = invoice_settings?.cc_fee_percent || 1.9
@@ -510,6 +515,21 @@ export default function CustomerPortal() {
                   <span style={{ color: theme.textMuted, fontSize: '13px' }}>Subtotal</span>
                   <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(invoiceAmount)}</span>
                 </div>
+                {matLabSplit && matLabSplit.total > 0 && (
+                  <div style={{ padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px', marginBottom: '2px' }}>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Project Total Breakdown
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                      <span style={{ color: theme.textMuted }}>Materials</span>
+                      <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(matLabSplit.materials)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                      <span style={{ color: theme.textMuted }}>Labor</span>
+                      <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(matLabSplit.labor)}</span>
+                    </div>
+                  </div>
+                )}
                 {invoiceDiscount > 0 && !hasDepositBreakout && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: theme.textMuted, fontSize: '13px' }}>
