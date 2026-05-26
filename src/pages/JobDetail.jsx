@@ -1506,10 +1506,29 @@ function JobDetailInner() {
   }
 
   const createUtilityInvoice = async (opts = {}) => {
-    const linkedInvoiceId     = opts.linkedInvoiceId || null
-    const linkedInvoiceNumber = opts.linkedInvoiceNumber || null
+    let linkedInvoiceId     = opts.linkedInvoiceId || null
+    let linkedInvoiceNumber = opts.linkedInvoiceNumber || null
     setSaving(true)
     const { toast } = await import('../lib/toast')
+
+    // When called standalone (no link passed in by createBothInvoices),
+    // auto-link to the latest active customer invoice on this job so the
+    // utility view + the customer view stay in sync. Without this, a user
+    // who regenerates the customer invoice ends up with two orphaned
+    // records: same job, different invoice numbers, different addresses.
+    if (!linkedInvoiceId) {
+      const { data: existing } = await supabase
+        .from('invoices')
+        .select('id, invoice_id')
+        .eq('job_id', parseInt(id))
+        .eq('invoice_type', 'standard')
+        .order('created_at', { ascending: false })
+        .limit(1)
+      if (existing && existing[0]) {
+        linkedInvoiceId = existing[0].id
+        linkedInvoiceNumber = existing[0].invoice_id
+      }
+    }
 
     try {
       let utilityName = 'Utility'
