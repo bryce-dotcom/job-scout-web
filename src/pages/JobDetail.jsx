@@ -1449,6 +1449,10 @@ function JobDetailInner() {
           payment_status: 'Pending',
           parent_invoice_id: parentDepositId,
           job_description: description,
+          // Stamp the job's business unit so the PDF header pulls the right
+          // branding (Energy Scout vs HHH Building Services etc.) instead
+          // of falling back to the parent company name.
+          business_unit: job.business_unit || null,
         }])
         .select()
         .single()
