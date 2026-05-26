@@ -533,7 +533,9 @@ export default function CustomerPortal() {
                 {invoiceDiscount > 0 && !hasDepositBreakout && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: theme.textMuted, fontSize: '13px' }}>
-                      {invoiceLegacyNet ? 'Utility Incentive (applied)' : 'Discount'}
+                      {invoiceLegacyNet
+                        ? 'Utility Incentive (applied)'
+                        : (doc.linked_utility_invoice ? 'Utility Incentive' : 'Discount')}
                     </span>
                     <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>
                       {invoiceLegacyNet ? formatCurrency(invoiceDiscount) : `-${formatCurrency(invoiceDiscount)}`}

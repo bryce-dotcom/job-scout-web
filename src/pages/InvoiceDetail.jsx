@@ -972,8 +972,20 @@ export default function InvoiceDetail() {
     if (pdfDiscount > 0) {
       if (pdfLegacyNet) {
         drawTotalLine('Utility Incentive (applied):', formatCurrency(pdfDiscount), { color: [120, 120, 120] })
+      } else if (hasDepositBreakout) {
+        // Split deposit credit and utility incentive into separate lines so
+        // the customer (and utility, if they ask) can see exactly where the
+        // discount came from. Sum is unchanged.
+        if (incentivePortion > 0) {
+          drawTotalLine('Utility Incentive:', `-${formatCurrency(incentivePortion)}`, { color: [200, 0, 0] })
+        }
+        const depositLabel = depositPaidDate
+          ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
+          : 'Deposit Applied:'
+        drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
       } else {
-        drawTotalLine('Discount:', `-${formatCurrency(pdfDiscount)}`, { color: [200, 0, 0] })
+        const incentiveLabel = linkedUtilityInvoice ? 'Utility Incentive:' : 'Discount:'
+        drawTotalLine(incentiveLabel, `-${formatCurrency(pdfDiscount)}`, { color: [200, 0, 0] })
       }
     }
 
@@ -2168,7 +2180,9 @@ export default function InvoiceDetail() {
               {isEditing || !hasDepositBreakout ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
                   <span style={{ color: theme.textSecondary }}>
-                    {isLegacyNetInvoice ? 'Utility Incentive (already applied)' : 'Discount'}
+                    {isLegacyNetInvoice
+                      ? 'Utility Incentive (already applied)'
+                      : (linkedUtilityInvoice ? 'Utility Incentive' : 'Discount')}
                   </span>
                   {isEditing ? (
                     <input
