@@ -1020,6 +1020,7 @@ export default function Books() {
           {[
             { id: 'overview', label: 'Overview' },
             { id: 'transactions', label: 'Transactions', badge: unreviewedCount > 0 ? unreviewedCount : null },
+            { id: 'stripe', label: 'Stripe' },
             { id: 'accounts', label: 'Accounts' },
             { id: 'tax', label: 'Tax & Reports' },
             { id: 'booked', label: 'Booked' }
@@ -2061,6 +2062,11 @@ export default function Books() {
         </>
       )}
 
+      {/* ════════════════════ STRIPE TAB ════════════════════ */}
+      {activeTab === 'stripe' && (
+        <StripeTransactionsTab companyId={companyId} theme={theme} isMobile={isMobile} />
+      )}
+
       {/* ════════════════════ ACCOUNTS TAB ════════════════════ */}
       {activeTab === 'accounts' && (
         <>
@@ -3097,6 +3103,203 @@ export default function Books() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ════════════════════ Stripe Transactions Tab ════════════════════
+// Itemized list of Stripe charges so Tracy can verify individual
+// payments (e.g., Bart Strong's May 8 ACH). Searchable + CSV download.
+function StripeTransactionsTab({ companyId, theme, isMobile }) {
+  const [loading, setLoading] = useState(false)
+  const [data, setData] = useState(null)
+  const [error, setError] = useState(null)
+  const [days, setDays] = useState(90)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all') // all | succeeded | failed | refunded | unmatched
+
+  const load = async () => {
+    setLoading(true); setError(null)
+    try {
+      const { data: r, error: e } = await supabase.functions.invoke('stripe-transactions-list', {
+        body: { company_id: companyId, days, limit: 2000 },
+      })
+      if (e) setError(e.message || 'Failed to load')
+      else if (r?.error) setError(r.error)
+      else if (r?.configured === false) setError('Stripe is not configured for this company. Add a Stripe secret key in Settings → Payments.')
+      else setData(r)
+    } catch (e) {
+      setError(e.message || 'Unexpected error')
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { if (companyId) load() }, [companyId, days])
+
+  const filtered = (data?.transactions || []).filter(t => {
+    if (statusFilter === 'succeeded' && t.status !== 'succeeded') return false
+    if (statusFilter === 'failed' && t.status !== 'failed') return false
+    if (statusFilter === 'refunded' && !t.refunded) return false
+    if (statusFilter === 'unmatched' && t.matched_invoice_id) return false
+    if (!search) return true
+    const q = search.toLowerCase()
+    return (t.customer_name || '').toLowerCase().includes(q) ||
+           (t.customer_email || '').toLowerCase().includes(q) ||
+           (t.matched_invoice_number || '').toLowerCase().includes(q) ||
+           (t.description || '').toLowerCase().includes(q) ||
+           (t.id || '').toLowerCase().includes(q)
+  })
+
+  const downloadCsv = () => {
+    const headers = ['Date', 'Customer', 'Email', 'Amount', 'Status', 'Method', 'Refunded', 'Matched Invoice', 'Job ID', 'Stripe ID', 'Description']
+    const rows = filtered.map(t => [
+      new Date(t.created_iso).toLocaleString(),
+      t.customer_name || '',
+      t.customer_email || '',
+      t.amount?.toFixed(2) || '0.00',
+      t.status || '',
+      t.payment_method || '',
+      t.refund_amount > 0 ? t.refund_amount.toFixed(2) : '',
+      t.matched_invoice_number || '',
+      t.matched_job_id || '',
+      t.id,
+      (t.description || '').replace(/"/g, '""'),
+    ])
+    const csv = [headers, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `stripe-transactions-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const fmt = n => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* Header / controls */}
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '12px', alignItems: isMobile ? 'stretch' : 'center', flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: theme.text }}>Stripe Transactions</h2>
+          <p style={{ margin: '2px 0 0', fontSize: '12px', color: theme.textMuted }}>
+            Itemized list of charges from Stripe. Use to verify a specific payment landed.
+          </p>
+        </div>
+        <div style={{ flex: 1 }} />
+        <select value={days} onChange={e => setDays(Number(e.target.value))}
+          style={{ padding: '8px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.text, fontSize: '14px' }}>
+          <option value={30}>Last 30 days</option>
+          <option value={90}>Last 90 days</option>
+          <option value={180}>Last 180 days</option>
+          <option value={365}>Last 365 days</option>
+        </select>
+        <button onClick={load} disabled={loading}
+          style={{ padding: '8px 14px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.text, fontSize: '14px', cursor: loading ? 'wait' : 'pointer' }}>
+          {loading ? 'Loading…' : 'Refresh'}
+        </button>
+        <button onClick={downloadCsv} disabled={!filtered.length}
+          style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: '14px', fontWeight: '600', cursor: filtered.length ? 'pointer' : 'not-allowed', opacity: filtered.length ? 1 : 0.5 }}>
+          Download CSV ({filtered.length})
+        </button>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div style={{ padding: '14px 16px', borderRadius: '10px', backgroundColor: 'rgba(239, 68, 68, 0.08)', border: `1px solid rgba(239, 68, 68, 0.3)`, color: '#dc2626', fontSize: '14px' }}>
+          {error}
+        </div>
+      )}
+
+      {/* Totals */}
+      {data?.totals && (
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          {[
+            { label: 'Total Charges', value: data.totals.count },
+            { label: 'Gross Received', value: fmt(data.totals.gross) },
+            { label: 'Refunded', value: fmt(data.totals.refunded) },
+            { label: 'Net', value: fmt(data.totals.net) },
+          ].map(s => (
+            <div key={s.label} style={{ padding: '12px 16px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', minWidth: '120px' }}>
+              <p style={{ margin: 0, fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{s.label}</p>
+              <p style={{ margin: '4px 0 0', fontSize: '18px', fontWeight: '700', color: theme.text }}>{s.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Search + status filter */}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <input type="text" placeholder="Search customer, email, invoice, description…"
+          value={search} onChange={e => setSearch(e.target.value)}
+          style={{ flex: 1, minWidth: '240px', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.text, fontSize: '14px' }} />
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.text, fontSize: '14px' }}>
+          <option value="all">All statuses</option>
+          <option value="succeeded">Succeeded only</option>
+          <option value="failed">Failed only</option>
+          <option value="refunded">Refunded only</option>
+          <option value="unmatched">Unmatched (no DB record)</option>
+        </select>
+      </div>
+
+      {/* Table */}
+      <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ backgroundColor: theme.bg, borderBottom: `1px solid ${theme.border}` }}>
+                {['Date', 'Customer', 'Amount', 'Status', 'Method', 'Matched Invoice'].map(h => (
+                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: '600', color: theme.textSecondary, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>Loading…</td></tr>
+              )}
+              {!loading && filtered.length === 0 && (
+                <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>No transactions match.</td></tr>
+              )}
+              {!loading && filtered.map(t => (
+                <tr key={t.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '10px 14px', color: theme.text }}>{new Date(t.created_iso).toLocaleString()}</td>
+                  <td style={{ padding: '10px 14px', color: theme.text }}>
+                    <div style={{ fontWeight: '500' }}>{t.customer_name || '—'}</div>
+                    <div style={{ color: theme.textMuted, fontSize: '12px' }}>{t.customer_email || ''}</div>
+                  </td>
+                  <td style={{ padding: '10px 14px', color: theme.text, fontWeight: '500', whiteSpace: 'nowrap' }}>
+                    {fmt(t.amount)}
+                    {t.refund_amount > 0 && (
+                      <div style={{ fontSize: '11px', color: '#dc2626' }}>−{fmt(t.refund_amount)} refunded</div>
+                    )}
+                  </td>
+                  <td style={{ padding: '10px 14px' }}>
+                    <span style={{
+                      padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600',
+                      backgroundColor: t.status === 'succeeded' ? 'rgba(22, 163, 74, 0.12)' : t.status === 'failed' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(156, 163, 175, 0.12)',
+                      color: t.status === 'succeeded' ? '#16a34a' : t.status === 'failed' ? '#dc2626' : theme.textMuted,
+                    }}>{t.status}</span>
+                  </td>
+                  <td style={{ padding: '10px 14px', color: theme.textSecondary, textTransform: 'capitalize' }}>{t.payment_method || '—'}</td>
+                  <td style={{ padding: '10px 14px' }}>
+                    {t.matched_invoice_number ? (
+                      <a href={`/invoices/${t.matched_invoice_id}`} style={{ color: theme.accent, textDecoration: 'none', fontWeight: '500' }}>
+                        {t.matched_invoice_number}
+                      </a>
+                    ) : (
+                      <span style={{ color: theme.textMuted, fontSize: '12px', fontStyle: 'italic' }}>unmatched</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }
