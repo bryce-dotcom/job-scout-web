@@ -1311,6 +1311,25 @@ export default function InvoiceDetail() {
         updated_at: new Date().toISOString()
       }).eq('id', id)
 
+      // Move the job to 'Invoiced' pipeline stage now that the invoice is
+      // actually in the customer's hands. Pipeline view no longer auto-
+      // moves on invoice CREATION — only on this Send moment. Skip if job
+      // is already past Invoiced (e.g., Paid).
+      if (invoice.job_id) {
+        const { data: currentJob } = await supabase
+          .from('jobs')
+          .select('status')
+          .eq('id', invoice.job_id)
+          .single()
+        const status = currentJob?.status
+        if (status && !['Invoiced', 'Paid', 'Closed', 'Archived'].includes(status)) {
+          await supabase.from('jobs').update({
+            status: 'Invoiced',
+            updated_at: new Date().toISOString(),
+          }).eq('id', invoice.job_id)
+        }
+      }
+
       toast.success('Invoice sent successfully!')
       setShowSendModal(false)
       setSendSubject('')

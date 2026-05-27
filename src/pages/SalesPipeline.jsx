@@ -264,9 +264,19 @@ export default function SalesPipeline() {
     status: STATUS_MAP[lead.status] || lead.status
   })
 
-  // Map standalone job status to pipeline delivery stage
+  // Map standalone job status to pipeline delivery stage.
+  // Previously: invoice_status='Invoiced' forced the card into the
+  // Invoiced column the moment ANY invoice was created — before the
+  // sales team had actually sent it to the customer. Tracy's flow was
+  // "Doug marks job Completed → I generate invoice → I send it" but
+  // step 2 was moving the card to Invoiced before step 3, so she
+  // couldn't tell which jobs still needed sending.
+  //
+  // Now the card moves to Invoiced only when jobs.status is set to
+  // 'Invoiced' — which happens when the Send button is actually
+  // clicked on the invoice (see InvoiceDetail). Until then the card
+  // stays in whatever delivery stage Doug set (Completed, etc.).
   const mapJobToStage = (job) => {
-    if (job.invoice_status === 'Invoiced') return 'Invoiced'
     const status = job.status || 'Chillin'
     // Ensure the status maps to an existing delivery stage
     const hasStage = stages.some(s => s.id === status)
