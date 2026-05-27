@@ -54,7 +54,8 @@ import {
   RefreshCw,
   HelpCircle,
   Eye,
-  Inbox
+  Inbox,
+  PlayCircle as Play
 } from 'lucide-react'
 
 // Theme context
@@ -453,7 +454,8 @@ export default function Layout() {
     description: 'Guides & walkthroughs',
     sectionIcon: HelpCircle,
     items: [
-      { to: '/admin/help', icon: HelpCircle, label: 'Help', hint: 'How the app works — guides and diagrams' }
+      { to: '/admin/help', icon: HelpCircle, label: 'Help', hint: 'How the app works — guides and diagrams' },
+      { to: '/admin/videos', icon: Play, label: 'Video Library', hint: 'Feature videos + what Job Scout replaces' }
     ]
   }
 

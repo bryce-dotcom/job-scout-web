@@ -101,6 +101,7 @@ import LenardUTRMP from './pages/agents/LenardUTRMP'
 import ZachInstantQuote from './pages/agents/ZachInstantQuote'
 import DataConsole from './pages/admin/DataConsole'
 import Help from './pages/admin/Help'
+import VideoLibrary from './pages/admin/VideoLibrary'
 import EOS from './pages/admin/EOS'
 import Layout from './components/Layout'
 import AgentRequired from './components/AgentRequired'
@@ -471,6 +472,7 @@ function App() {
 
           {/* Admin */}
           <Route path="/admin/help" element={<Help />} />
+          <Route path="/admin/videos" element={<VideoLibrary />} />
           <Route path="/admin/eos" element={<EOS />} />
           <Route path="/admin/data-console/*" element={<DataConsole />} />
         </Route>
