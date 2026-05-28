@@ -59,6 +59,164 @@ export const TAX_CATEGORIES = [
 // Flat list for reverse lookup (value -> label).
 export const TAX_CATEGORY_OPTIONS = TAX_CATEGORIES.flatMap(g => g.options)
 
+// Build a CPA-handoff ZIP for the given date range. Bundles every report
+// an accountant typically asks for so the user doesn't have to assemble
+// it themselves. Plain-English filenames inside the ZIP so the accountant
+// can find what they need without guessing.
+async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency }) {
+  const [{ default: JSZip }, { saveAs }] = await Promise.all([
+    import('jszip'),
+    import('file-saver'),
+  ])
+  const zip = new JSZip()
+  const fromD = new Date(from), toD = new Date(to)
+  const inRange = (d) => { if (!d) return false; const x = new Date(d); return x >= fromD && x <= toD }
+  const fmt = (n) => formatCurrency(n)
+  const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const csv = (rows) => rows.map(r => r.map(csvCell).join(',')).join('\n')
+
+  // 1. Categorized transactions CSV
+  const taxTxns = (plaidTransactions || []).filter(t => t.confirmed && inRange(t.date))
+  const txnCsv = csv([
+    ['Date', 'Account', 'Merchant', 'Amount', 'Tax Category', 'Form Line', 'Notes'],
+    ...taxTxns.map(t => [
+      t.date,
+      t.account_name || '',
+      t.merchant_name || t.name || '',
+      t.amount,
+      t.user_tax_category || t.ai_tax_category || 'Uncategorized',
+      t.ai_form_1065_line || '',
+      t.notes || '',
+    ]),
+  ])
+  zip.file('1-categorized-transactions.csv', txnCsv)
+
+  // 2. AR aging (customer + utility, customer balance, not gross)
+  const customerBalance = (i) => {
+    const gross = parseFloat(i.amount) || 0
+    const disc = parseFloat(i.discount_applied) || 0
+    const isLegacyNet = disc > 0 && disc >= gross
+    return isLegacyNet ? gross : Math.max(0, gross - disc)
+  }
+  const today = new Date()
+  const ageBucket = (d) => {
+    const days = Math.floor((today - new Date(d)) / 86400000)
+    if (days < 30) return '0-30'
+    if (days < 60) return '30-60'
+    if (days < 90) return '60-90'
+    return '90+'
+  }
+  const arRows = [
+    ['Type', 'Invoice #', 'Customer', 'Date', 'Days Old', 'Bucket', 'Customer Balance'],
+    ...(invoices || []).filter(inv => inv.payment_status !== 'Paid' && inv.amount > 0).map(inv => [
+      'Customer',
+      inv.invoice_id || inv.id,
+      inv.customer?.name || '',
+      (inv.created_at || '').slice(0, 10),
+      Math.floor((today - new Date(inv.created_at || today)) / 86400000),
+      ageBucket(inv.created_at),
+      customerBalance(inv).toFixed(2),
+    ]),
+    ...(utilityInvoices || []).filter(i => i.payment_status !== 'Paid').map(inv => [
+      'Utility',
+      inv.utility_invoice_id || inv.id,
+      inv.customer_name || '',
+      (inv.created_at || '').slice(0, 10),
+      Math.floor((today - new Date(inv.created_at || today)) / 86400000),
+      ageBucket(inv.created_at),
+      (parseFloat(inv.amount) || 0).toFixed(2),
+    ]),
+  ]
+  zip.file('2-accounts-receivable-aging.csv', csv(arRows))
+
+  // 3. Payroll by employee
+  const isPayroll = (n) => !!n && n.toLowerCase().includes('payroll')
+  const empMap = new Map()
+  ;(expenses || []).forEach(e => {
+    if (!e.payee_employee_id || !inRange(e.expense_date)) return
+    const splits = (splitsByExpense || {})[e.id] || []
+    const parentIsPayroll = isPayroll(e.category?.name)
+    const splitIsPayroll = splits.some(s => isPayroll(s.category?.name))
+    if (!parentIsPayroll && !splitIsPayroll) return
+    const key = e.payee_employee_id
+    const name = e.payee_employee?.name || `Employee #${e.payee_employee_id}`
+    const cur = empMap.get(key) || { name, total: 0, count: 0 }
+    cur.total += parseFloat(e.amount) || 0
+    cur.count += 1
+    empMap.set(key, cur)
+  })
+  zip.file('3-payroll-by-employee.csv', csv([
+    ['Employee', 'Total Paid', 'Number of Payments'],
+    ...[...empMap.values()].sort((a, b) => b.total - a.total).map(r => [r.name, r.total.toFixed(2), r.count]),
+  ]))
+
+  // 4. Tax category summary
+  const catTotals = new Map()
+  taxTxns.forEach(t => {
+    const cat = t.user_tax_category || t.ai_tax_category || 'Uncategorized'
+    const cur = catTotals.get(cat) || { count: 0, total: 0 }
+    cur.count++; cur.total += parseFloat(t.amount) || 0
+    catTotals.set(cat, cur)
+  })
+  zip.file('4-tax-category-summary.csv', csv([
+    ['Category', 'Transactions', 'Total ($)'],
+    ...[...catTotals.entries()].sort((a, b) => Math.abs(b[1].total) - Math.abs(a[1].total)).map(([cat, d]) => [cat, d.count, Math.abs(d.total).toFixed(2)]),
+  ]))
+
+  // 5. Form line breakdown (entity-specific)
+  if (entityType === 'Partnership' || entityType === 'LLC') {
+    const lineTotals = new Map()
+    taxTxns.forEach(t => {
+      const line = t.ai_form_1065_line || 'Unassigned'
+      const cur = lineTotals.get(line) || { count: 0, total: 0 }
+      cur.count++; cur.total += parseFloat(t.amount) || 0
+      lineTotals.set(line, cur)
+    })
+    zip.file('5-form-1065-line-summary.csv', csv([
+      ['Form 1065 Line', 'Transactions', 'Total ($)'],
+      ...[...lineTotals.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([line, d]) => [line, d.count, Math.abs(d.total).toFixed(2)]),
+    ]))
+  }
+
+  // 6. P&L summary (plain text)
+  const income = taxTxns.filter(t => parseFloat(t.amount) < 0).reduce((s, t) => s + Math.abs(parseFloat(t.amount) || 0), 0)
+  const expensesTotal = taxTxns.filter(t => parseFloat(t.amount) > 0).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0)
+  const customerAR = (invoices || []).filter(i => i.payment_status !== 'Paid').reduce((s, i) => s + customerBalance(i), 0)
+  const utilityAR = (utilityInvoices || []).filter(i => i.payment_status !== 'Paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
+  const pl = [
+    `PROFIT & LOSS SUMMARY`,
+    `Period: ${from} to ${to}`,
+    `Entity Type: ${entityType || '(not set)'}`,
+    ``,
+    `INCOME (money in)`,
+    `  Confirmed bank deposits:  ${fmt(income)}`,
+    ``,
+    `EXPENSES (money out)`,
+    `  Confirmed expenses:       ${fmt(expensesTotal)}`,
+    ``,
+    `NET (income − expenses):    ${fmt(income - expensesTotal)}`,
+    ``,
+    `ACCOUNTS RECEIVABLE (as of ${new Date().toISOString().slice(0,10)})`,
+    `  Customer AR (open invoices, after discount/incentive/deposit):  ${fmt(customerAR)}`,
+    `  Utility AR (incentive invoices not yet paid):                   ${fmt(utilityAR)}`,
+    `  Combined AR:                                                    ${fmt(customerAR + utilityAR)}`,
+    ``,
+    `--`,
+    `Generated by JobScout on ${new Date().toLocaleString()}.`,
+    `Files in this package:`,
+    `  1-categorized-transactions.csv  — every confirmed bank transaction in the date range`,
+    `  2-accounts-receivable-aging.csv — open invoices grouped by age`,
+    `  3-payroll-by-employee.csv       — payroll-category expenses by employee`,
+    `  4-tax-category-summary.csv      — total per tax category`,
+    (entityType === 'Partnership' || entityType === 'LLC') ? `  5-form-1065-line-summary.csv    — totals per Form 1065 line (AI-assigned)` : null,
+    `  README.txt                      — this file`,
+  ].filter(Boolean).join('\n')
+  zip.file('README.txt', pl)
+
+  const blob = await zip.generateAsync({ type: 'blob' })
+  saveAs(blob, `cpa-package-${from}-to-${to}.zip`)
+}
+
 export default function Books() {
   const navigate = useNavigate()
   const user = useStore((state) => state.user)
@@ -105,6 +263,10 @@ export default function Books() {
   // Lives on companies.entity_type, set in Settings → Company Profile →
   // Entity & Tax Information. Null = section hidden with a CTA.
   const [entityType, setEntityType] = useState(null)
+
+  // Balance sheet expander — collapsed by default since most ops users
+  // don't enter assets/liabilities day-to-day. Year-end concern only.
+  const [showBalanceSheet, setShowBalanceSheet] = useState(false)
 
   const [bankAccounts, setBankAccounts] = useState([])
   const [expenses, setExpenses] = useState([])
@@ -1125,7 +1287,7 @@ export default function Books() {
         {/* Tab Navigation */}
         <div style={{ display: 'flex', gap: '4px', backgroundColor: theme.bg, padding: '4px', borderRadius: '10px', flexWrap: 'wrap' }}>
           {[
-            { id: 'overview', label: 'Overview' },
+            { id: 'overview', label: 'Money' },
             { id: 'transactions', label: 'Transactions', badge: unreviewedCount > 0 ? unreviewedCount : null },
             { id: 'stripe', label: 'Stripe' },
             { id: 'accounts', label: 'Accounts' },
@@ -1224,9 +1386,35 @@ export default function Books() {
         )
       })()}
 
-      {/* ════════════════════ OVERVIEW TAB ════════════════════ */}
+      {/* ════════════════════ MONEY TAB (formerly "Overview") ════════════════════ */}
       {activeTab === 'overview' && (
         <>
+          {/* "What's this page?" intro card. First thing every user sees. */}
+          <div style={{
+            marginBottom: '20px',
+            padding: '16px 20px',
+            backgroundColor: 'rgba(90, 99, 73, 0.06)',
+            border: `1px solid ${theme.border}`,
+            borderRadius: '12px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+              <Wallet size={18} style={{ color: theme.accent }} />
+              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: theme.text }}>
+                What this page is for
+              </h2>
+            </div>
+            <p style={{ margin: '0 0 6px', fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
+              <strong>Open this page every day.</strong> It shows money coming in, money going out, and anything that needs
+              your attention so your books stay clean.
+            </p>
+            <p style={{ margin: 0, fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+              The yellow "Income to reconcile" alert appears when there's a bank deposit that hasn't been matched to an
+              invoice yet, or an invoice marked Paid without a payment record. Click the actions there first — they block
+              commission tracking until they're resolved. After that, scan the activity feed below to confirm nothing
+              unexpected hit the bank.
+            </p>
+          </div>
+
           {/* Metric Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
             <div style={statCardStyle}>
@@ -1504,10 +1692,132 @@ export default function Books() {
               onAction={() => navigate('/settings?tab=integrations')}
             />
           )}
+
+          {/* Recent activity — one chronological feed combining bank
+              transactions, customer payments, and manual expenses. Lets
+              the user scan recent activity without bouncing between tabs. */}
+          {(() => {
+            const limit = 25
+            const items = []
+            // Bank deposits and debits (Plaid)
+            for (const t of plaidTransactions.slice(0, 200)) {
+              items.push({
+                key: 'plaid-' + t.id,
+                date: t.date,
+                source: 'Bank',
+                description: t.merchant_name || t.name || 'Bank transaction',
+                amount: t.amount < 0 ? Math.abs(parseFloat(t.amount) || 0) : -(parseFloat(t.amount) || 0),
+                status: t.matched_invoice_id ? 'Matched' : (t.confirmed ? 'Reviewed' : 'Needs review'),
+                statusColor: t.matched_invoice_id ? '#16a34a' : (t.confirmed ? theme.textMuted : '#eab308'),
+              })
+            }
+            // Customer / lead deposits (the only raw payment list in
+            // current state). Invoice payments roll up via paymentsByInvoiceId
+            // and aren't iterable as a flat list here — they show up
+            // through the Plaid matched_invoice_id status instead.
+            for (const p of (leadPayments || []).slice(0, 200)) {
+              items.push({
+                key: 'pay-' + p.id,
+                date: p.date_created || p.created_at,
+                source: 'Deposit',
+                description: 'Customer deposit',
+                amount: parseFloat(p.amount) || 0,
+                status: 'Received',
+                statusColor: '#16a34a',
+              })
+            }
+            // Manual expenses
+            for (const e of (storeExpenses || []).slice(0, 200)) {
+              items.push({
+                key: 'exp-' + e.id,
+                date: e.date || e.created_at?.slice(0, 10),
+                source: 'Expense',
+                description: e.description || e.category?.name || 'Manual expense',
+                amount: -(parseFloat(e.amount) || 0),
+                status: e.category?.name || 'Uncategorized',
+                statusColor: e.category?.name ? theme.textMuted : '#eab308',
+              })
+            }
+            items.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+            const recent = items.slice(0, limit)
+
+            return (
+              <div style={{ ...statCardStyle, marginTop: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: '700', color: theme.text, margin: 0 }}>Recent activity</h3>
+                  <HelpBadge text="Last 25 entries across bank transactions, customer payments, and manual expenses. Use this to spot-check that recent money movements look right. For full detail, click into the Transactions or Stripe tab." />
+                </div>
+                <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px' }}>
+                  Combined feed of bank activity, customer payments, and expenses — newest first. Click into a tab for the full list.
+                </p>
+                {recent.length === 0 ? (
+                  <p style={{ fontSize: '13px', color: theme.textMuted, padding: '20px 0', textAlign: 'center' }}>
+                    No recent activity. Once a bank account is connected or a customer pays an invoice, entries will show up here.
+                  </p>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                          <th style={{ padding: '8px 8px 8px 0', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Date</th>
+                          <th style={{ padding: '8px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Source</th>
+                          <th style={{ padding: '8px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</th>
+                          <th style={{ padding: '8px', textAlign: 'right', fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Amount</th>
+                          <th style={{ padding: '8px', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recent.map(it => (
+                          <tr key={it.key} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                            <td style={{ padding: '10px 8px 10px 0', color: theme.text, whiteSpace: 'nowrap' }}>{it.date ? new Date(it.date + (it.date.length === 10 ? 'T12:00' : '')).toLocaleDateString() : '—'}</td>
+                            <td style={{ padding: '10px 8px', color: theme.textSecondary }}>{it.source}</td>
+                            <td style={{ padding: '10px 8px', color: theme.text }}>{it.description}</td>
+                            <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 600, color: it.amount >= 0 ? '#16a34a' : '#dc2626' }}>
+                              {it.amount >= 0 ? '+' : '−'}{formatCurrency(Math.abs(it.amount))}
+                            </td>
+                            <td style={{ padding: '10px 8px' }}>
+                              <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px', backgroundColor: 'rgba(0,0,0,0.04)', color: it.statusColor, fontWeight: 600 }}>
+                                {it.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </>
       )}
 
       {/* ════════════════════ TRANSACTIONS TAB ════════════════════ */}
+      {activeTab === 'transactions' && (
+        <div style={{
+          marginBottom: '20px',
+          padding: '16px 20px',
+          backgroundColor: 'rgba(90, 99, 73, 0.06)',
+          border: `1px solid ${theme.border}`,
+          borderRadius: '12px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+            <CreditCard size={18} style={{ color: theme.accent }} />
+            <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: theme.text }}>
+              Categorize and confirm bank transactions
+            </h2>
+          </div>
+          <p style={{ margin: '0 0 6px', fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
+            Every bank transaction Plaid pulls in shows up here. The AI takes a first guess at the category — your job is to
+            <strong> review and confirm</strong> so your books stay clean. Click a row to edit its category or split it across
+            categories.
+          </p>
+          <p style={{ margin: 0, fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+            Look for the yellow <strong>Needs review</strong> badge at the top — that's the count of transactions waiting on you.
+            Match bank deposits to invoices from this tab so commissions calculate correctly on the Payroll page.
+          </p>
+        </div>
+      )}
       {activeTab === 'transactions' && (
         <>
           {/* Actions bar */}
@@ -2180,6 +2490,28 @@ export default function Books() {
       {/* ════════════════════ ACCOUNTS TAB ════════════════════ */}
       {activeTab === 'accounts' && (
         <>
+          {/* Intro card */}
+          <div style={{
+            marginBottom: '20px',
+            padding: '16px 20px',
+            backgroundColor: 'rgba(90, 99, 73, 0.06)',
+            border: `1px solid ${theme.border}`,
+            borderRadius: '12px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+              <Landmark size={18} style={{ color: theme.accent }} />
+              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: theme.text }}>
+                Where your money lives
+              </h2>
+            </div>
+            <p style={{ margin: 0, fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
+              Bank accounts, manual cash accounts, and payment processors (like Stripe). Connect a bank via Plaid to auto-import
+              transactions. Manual accounts are for cash on hand or accounts not supported by Plaid.
+              <strong> Assets and liabilities</strong> are accounting concepts your accountant cares about at year-end —
+              most days you can ignore them.
+            </p>
+          </div>
+
           {/* Connected accounts */}
           {activeConnected.length > 0 ? (
             <div style={{ ...statCardStyle, marginBottom: '24px' }}>
@@ -2250,6 +2582,36 @@ export default function Books() {
             </div>
           )}
 
+          {/* Balance sheet items — collapsed by default since most ops
+              users don't enter assets/liabilities day-to-day. Expander
+              labels what's inside in plain English. */}
+          <button
+            onClick={() => setShowBalanceSheet(v => !v)}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '14px 16px',
+              backgroundColor: theme.bgCard,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '10px',
+              cursor: 'pointer',
+              marginBottom: '12px',
+              color: theme.text,
+              fontSize: '14px',
+              fontWeight: '600',
+            }}
+            title="Click to expand. Assets are things you own (vehicles, equipment). Liabilities are debts (loans, credit lines). Net Worth = Assets − Liabilities. Your accountant uses these at year-end."
+          >
+            {showBalanceSheet ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            Balance sheet items (for accountants)
+            <span style={{ marginLeft: '8px', fontSize: '12px', color: theme.textMuted, fontWeight: '400' }}>
+              Assets, liabilities, and net worth — usually a year-end concern
+            </span>
+          </button>
+          {!showBalanceSheet && null}
+          {showBalanceSheet && (<>
           {/* Assets & Liabilities */}
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px', marginBottom: '24px' }}>
             <div style={{ ...statCardStyle }}>
@@ -2316,14 +2678,39 @@ export default function Books() {
               {formatCurrency(totalAssetValue - totalLiabilityValue)}
             </div>
           </div>
+          </>)}
         </>
       )}
 
       {/* ════════════════════ TAX & REPORTS TAB ════════════════════ */}
       {activeTab === 'tax' && (
         <>
-          {/* Date range */}
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', alignItems: isMobile ? 'stretch' : 'center', flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row' }}>
+          {/* "What's this page?" intro card. */}
+          <div style={{
+            marginBottom: '20px',
+            padding: '16px 20px',
+            backgroundColor: 'rgba(90, 99, 73, 0.06)',
+            border: `1px solid ${theme.border}`,
+            borderRadius: '12px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+              <FileText size={18} style={{ color: theme.accent }} />
+              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: theme.text }}>
+                Year-End — for your accountant
+              </h2>
+            </div>
+            <p style={{ margin: '0 0 6px', fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
+              Use this page <strong>quarterly + every March</strong>. Set the date range, then click <strong>Build CPA Package</strong>
+              to download a single ZIP with everything your accountant needs: categorized transactions, AR aging, payroll, P&L summary,
+              and a tax-form line breakdown for your entity type.
+            </p>
+            <p style={{ margin: 0, fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+              You don't need to understand the tax forms. Just send the ZIP to your accountant — they'll know what to do with it.
+            </p>
+          </div>
+
+          {/* Date range + actions */}
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', alignItems: isMobile ? 'stretch' : 'flex-end', flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row' }}>
             <div>
               <label style={{ ...labelStyle, fontSize: '12px' }}>From</label>
               <input type="date" value={taxDateFrom} onChange={(e) => setTaxDateFrom(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
@@ -2332,12 +2719,31 @@ export default function Books() {
               <label style={{ ...labelStyle, fontSize: '12px' }}>To</label>
               <input type="date" value={taxDateTo} onChange={(e) => setTaxDateTo(e.target.value)} style={{ ...inputStyle, width: 'auto' }} />
             </div>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
+              {[
+                { label: 'YTD', fn: () => { const y = new Date().getFullYear(); setTaxDateFrom(`${y}-01-01`); setTaxDateTo(new Date().toISOString().slice(0,10)) } },
+                { label: 'Last Q', fn: () => { const n=new Date(); const m=n.getMonth(); const qS=Math.floor((m-3)/3)*3; const y=n.getFullYear()-(qS<0?1:0); const ms=((qS+12)%12); const me=ms+2; setTaxDateFrom(new Date(y,ms,1).toISOString().slice(0,10)); setTaxDateTo(new Date(y,me+1,0).toISOString().slice(0,10)) } },
+                { label: 'Last Yr', fn: () => { const y = new Date().getFullYear()-1; setTaxDateFrom(`${y}-01-01`); setTaxDateTo(`${y}-12-31`) } },
+              ].map(b => (
+                <button key={b.label} onClick={b.fn} style={{
+                  padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.border}`,
+                  backgroundColor: theme.bgCard, color: theme.textSecondary, fontSize: '12px', cursor: 'pointer'
+                }}>{b.label}</button>
+              ))}
+            </div>
             <button onClick={handleExportCSV} style={{
               display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 16px',
+              backgroundColor: theme.bgCard, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '8px',
+              fontSize: '13px', fontWeight: '500', cursor: 'pointer', minHeight: '44px'
+            }} title="Export the confirmed-transaction list as a single CSV for the date range above.">
+              <Download size={14} /> Transactions CSV
+            </button>
+            <button onClick={() => buildCpaPackage({ from: taxDateFrom, to: taxDateTo, companyId, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency })} style={{
+              display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 16px',
               backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px',
-              fontSize: '13px', fontWeight: '500', cursor: 'pointer', alignSelf: 'flex-end', minHeight: '44px'
-            }}>
-              <Download size={14} /> Export CSV
+              fontSize: '13px', fontWeight: '600', cursor: 'pointer', minHeight: '44px'
+            }} title="Build a single ZIP containing every report your accountant needs for the date range above: categorized transactions, AR aging, payroll, P&L, tax form line summary.">
+              <Download size={14} /> Build CPA Package
             </button>
           </div>
 
@@ -2573,6 +2979,25 @@ export default function Books() {
       {/* ════════════════════ BOOKED TAB ════════════════════ */}
       {activeTab === 'booked' && (
         <>
+          <div style={{
+            marginBottom: '20px',
+            padding: '16px 20px',
+            backgroundColor: 'rgba(90, 99, 73, 0.06)',
+            border: `1px solid ${theme.border}`,
+            borderRadius: '12px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+              <CheckCircle size={18} style={{ color: theme.accent }} />
+              <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: theme.text }}>
+                Booked — confirmed transactions, ready for your accountant
+              </h2>
+            </div>
+            <p style={{ margin: 0, fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
+              Every transaction you've reviewed and confirmed shows up here, grouped by category. Treat this as a
+              <strong> read-only month-end view</strong>: glance through to spot anything categorized wrong, then head to the
+              Transactions tab to fix it. The Year-End tab uses this same data to build your CPA package.
+            </p>
+          </div>
           <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '24px' }}>Confirmed Transactions by Category</h2>
 
           {(() => {
@@ -3343,6 +3768,29 @@ function StripeTransactionsTab({ companyId, theme, isMobile }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* Intro card */}
+      <div style={{
+        padding: '16px 20px',
+        backgroundColor: 'rgba(90, 99, 73, 0.06)',
+        border: `1px solid ${theme.border}`,
+        borderRadius: '12px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+          <CreditCard size={18} style={{ color: theme.accent }} />
+          <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: theme.text }}>
+            Verify Stripe payments
+          </h2>
+        </div>
+        <p style={{ margin: '0 0 6px', fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
+          Every credit card / ACH charge Stripe has processed for your account. <strong>Search by customer name</strong> to
+          confirm a specific payment landed. Use the <strong>Unmatched</strong> filter to find Stripe charges that never got
+          recorded as a payment in JobScout — that's the most common source of "I paid but it still shows a balance" mystery.
+        </p>
+        <p style={{ margin: 0, fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+          Download the CSV to email the report to anyone — your accountant, the customer, or the team.
+        </p>
+      </div>
+
       {/* Header / controls */}
       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '12px', alignItems: isMobile ? 'stretch' : 'center', flexWrap: 'wrap' }}>
         <div>
