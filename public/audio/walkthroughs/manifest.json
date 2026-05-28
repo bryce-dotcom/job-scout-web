@@ -1,13 +1,13 @@
 {
-  "yard-measure": {
-    "voice": "Adam",
-    "voiceId": "pNInz6obpgDQGcFmaJgB",
+  "prospect-scout": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
     "lines": [
-      "address",
-      "zoom",
-      "trace",
-      "quote",
-      "delivered",
+      "empty",
+      "filter",
+      "results",
+      "reveal",
+      "import",
       "setup-intro",
       "setup-0",
       "setup-1",

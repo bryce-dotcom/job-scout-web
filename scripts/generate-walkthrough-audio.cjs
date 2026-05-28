@@ -36,15 +36,16 @@ if (!KEY) {
 // Voice id catalog. ElevenLabs default voices — names match the scripts'
 // `voice` field. Add more here as we want options.
 const VOICE_IDS = {
-  Adam:    'pNInz6obpgDQGcFmaJgB',
-  Rachel:  '21m00Tcm4TlvDq8ikWAM',
-  Sarah:   'EXAVITQu4vr4xnSDxMaL',
-  Drew:    '29vD33N1CtxCmqQRPOHJ',
-  Antoni:  'ErXwobaYiN019PkySvjV',
-  Brian:   'nPczCjzI2devNBz1zQrb',
-  Bill:    'pqHfZKP75CvOlQylNhV4',
-  Domi:    'AZnzlk1XvdvUeBnXmlld',
-  Charlie: 'IKne3meq5aSn9XLyUdCD',
+  Adam:       'pNInz6obpgDQGcFmaJgB',
+  Rachel:     '21m00Tcm4TlvDq8ikWAM',
+  Sarah:      'EXAVITQu4vr4xnSDxMaL',
+  Drew:       '29vD33N1CtxCmqQRPOHJ',
+  Antoni:     'ErXwobaYiN019PkySvjV',
+  Brian:      'nPczCjzI2devNBz1zQrb',
+  Bill:       'pqHfZKP75CvOlQylNhV4',
+  Domi:       'AZnzlk1XvdvUeBnXmlld',
+  Charlie:    'IKne3meq5aSn9XLyUdCD',
+  'Jay Wayne':'8Ln42OXYupYsag45MAUy',  // user-added voice
 }
 
 const MODEL = 'eleven_flash_v2_5'   // fast, natural; lower latency than v3

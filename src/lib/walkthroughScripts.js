@@ -14,7 +14,7 @@
 
 export const WALKTHROUGH_SCRIPTS = {
   'prospect-scout': {
-    voice: 'Adam',          // ElevenLabs default — confident male narrator
+    voice: 'Bill',          // Weathered, narrator-style male — pre-made (works on free tier)
     lines: {
       // Marketing reel
       empty:   "It's nine A.M. and your setter's lead board is empty. Let's fix that.",
