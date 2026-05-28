@@ -10,13 +10,13 @@
 // Narration scene ids are preserved (empty / filter / results / reveal
 // / import + setup) so the existing ElevenLabs MP3s map straight in.
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, Sparkles, Loader2, MapPin, Briefcase, Users, UserPlus,
   ExternalLink, X as XIcon, CheckCircle2, Coins, ArrowRight, Zap,
 } from 'lucide-react'
-import { useNarration, resetNarrationCache } from './useNarration'
+import { useNarration, resetNarrationCache, probeWalkthroughAudio } from './useNarration'
 import VoiceToggle from './VoiceToggle'
 import SetupChecklist from './SetupChecklist'
 import { WALKTHROUGH_SCRIPTS } from '../../lib/walkthroughScripts'
@@ -46,14 +46,19 @@ const T = {
 }
 
 // ─── Marketing reel ─────────────────────────────────────────────────────
-// Bill's narration runs ~15% longer than Adam's. Bumped scene durations.
-const SCENES = [
-  { id: 'empty',   dur: 6300 },
-  { id: 'filter',  dur: 8800 },
-  { id: 'results', dur: 6500 },
-  { id: 'reveal',  dur: 7500 },
-  { id: 'import',  dur: 8000 },
+// These are minimum visible durations per scene. At runtime the runner
+// probes each scene's MP3 duration and extends the scene to the larger
+// of (a) this base value and (b) audio length + AUDIO_TAIL_MS buffer.
+// That way the voice never gets cut off mid-sentence regardless of
+// which TTS voice is used.
+const BASE_SCENES = [
+  { id: 'empty',   dur: 4500 },
+  { id: 'filter',  dur: 7500 },
+  { id: 'results', dur: 5000 },
+  { id: 'reveal',  dur: 6000 },
+  { id: 'import',  dur: 6500 },
 ]
+const AUDIO_TAIL_MS = 600  // breathing room after audio ends
 
 // ─── Setup phase ────────────────────────────────────────────────────────
 const SETUP_STEPS = [
@@ -78,11 +83,16 @@ const SETUP_STEPS = [
     body: "Choose which setter owns the new leads — they show up in that rep's board with full source citation.",
   },
 ]
-const SETUP_INTRO_MS = 1600
-const SETUP_STEP_DUR = [5800, 7200, 6000, 6500]
-const TOTAL_MARKETING_MS = SCENES.reduce((s, x) => s + x.dur, 0)
-const TOTAL_SETUP_MS = SETUP_INTRO_MS + SETUP_STEP_DUR.reduce((s, x) => s + x, 0)
-const TOTAL_MS = TOTAL_MARKETING_MS + TOTAL_SETUP_MS
+const BASE_SETUP_INTRO_MS = 1200
+const BASE_SETUP_STEP_DUR = [4500, 6000, 5000, 5500]
+
+// All scene + setup keys in playback order — used to probe audio
+// durations on mount.
+const ALL_SCENE_KEYS = [
+  ...BASE_SCENES.map(s => s.id),
+  'setup-intro',
+  ...BASE_SETUP_STEP_DUR.map((_, i) => `setup-${i}`),
+]
 
 // ─── Mock data ──────────────────────────────────────────────────────────
 const TYPED_QUERY = 'warehouses in Salt Lake County over 50 employees'
@@ -140,16 +150,43 @@ export default function ProspectScoutWalkthrough() {
   const [elapsed, setElapsed] = useState(0)
   const [running, setRunning] = useState(true)
   const [voiceOn, setVoiceOn] = useState(true)
+  const [audioDurations, setAudioDurations] = useState({})
   const timerRef = useRef(null)
   const startedAt = useRef(Date.now())
+
+  // Probe each scene's MP3 duration on mount so we can extend any scene
+  // that's shorter than its audio. Doesn't block render — scenes use
+  // their base durations until the probe completes.
+  useEffect(() => {
+    let cancelled = false
+    probeWalkthroughAudio(WALKTHROUGH_ID, ALL_SCENE_KEYS).then((map) => {
+      if (!cancelled) setAudioDurations(map)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  // Effective durations = max(base, audio + tail buffer). Recomputed
+  // whenever audio durations land.
+  const { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs } = useMemo(() => {
+    const ext = (key, base) => {
+      const audio = audioDurations[key]
+      return audio ? Math.max(base, audio + AUDIO_TAIL_MS) : base
+    }
+    const scenes = BASE_SCENES.map(s => ({ ...s, dur: ext(s.id, s.dur) }))
+    const setupIntroMs = ext('setup-intro', BASE_SETUP_INTRO_MS)
+    const setupStepDur = BASE_SETUP_STEP_DUR.map((d, i) => ext(`setup-${i}`, d))
+    const totalMarketingMs = scenes.reduce((s, x) => s + x.dur, 0)
+    const totalSetupMs = setupIntroMs + setupStepDur.reduce((s, x) => s + x, 0)
+    return { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs: totalMarketingMs + totalSetupMs }
+  }, [audioDurations])
 
   useEffect(() => {
     if (!running) return
     startedAt.current = Date.now() - elapsed
     const tick = () => {
       const now = Date.now() - startedAt.current
-      if (now >= TOTAL_MS) {
-        setElapsed(TOTAL_MS)
+      if (now >= totalMs) {
+        setElapsed(totalMs)
         setRunning(false)
         return
       }
@@ -158,9 +195,10 @@ export default function ProspectScoutWalkthrough() {
     }
     timerRef.current = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(timerRef.current)
-  }, [running])
+  }, [running, totalMs])
 
-  const { phase, sceneKey, setupIdx, setupShowingIntro, sceneElapsed } = timelinePosition(elapsed)
+  const { phase, sceneKey, setupIdx, setupShowingIntro, sceneElapsed } =
+    timelinePosition(elapsed, { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs })
   useNarration({ walkthroughId: WALKTHROUGH_ID, scene: sceneKey, script: NARRATION, enabled: voiceOn })
 
   const replay = () => {
@@ -198,7 +236,7 @@ export default function ProspectScoutWalkthrough() {
 
       <VoiceToggle enabled={voiceOn} onToggle={() => setVoiceOn(v => !v)} theme={T} />
       <Caption phase={phase} sceneKey={sceneKey} setupIdx={setupIdx} setupShowingIntro={setupShowingIntro} />
-      <ProgressBar elapsed={elapsed} total={TOTAL_MS} phaseBoundary={TOTAL_MARKETING_MS} />
+      <ProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
     </div>
   )
 }
@@ -747,26 +785,28 @@ function CandidateCard({ candidate: c, index, expanded, selected, showActionButt
 }
 
 // ─── Timeline ───────────────────────────────────────────────────────────
-function timelinePosition(elapsed) {
-  if (elapsed >= TOTAL_MS) {
+// Takes the live (audio-aware) durations so scenes auto-extend to fit
+// narration that runs longer than the planned visual length.
+function timelinePosition(elapsed, { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs }) {
+  if (elapsed >= totalMs) {
     return { phase: 'done', sceneKey: null, setupIdx: SETUP_STEPS.length - 1, setupShowingIntro: false, sceneElapsed: 0 }
   }
-  if (elapsed < TOTAL_MARKETING_MS) {
+  if (elapsed < totalMarketingMs) {
     let acc = 0
-    for (let i = 0; i < SCENES.length; i++) {
+    for (let i = 0; i < scenes.length; i++) {
       const start = acc
-      acc += SCENES[i].dur
-      if (elapsed < acc) return { phase: 'marketing', sceneKey: SCENES[i].id, setupIdx: 0, setupShowingIntro: false, sceneElapsed: elapsed - start }
+      acc += scenes[i].dur
+      if (elapsed < acc) return { phase: 'marketing', sceneKey: scenes[i].id, setupIdx: 0, setupShowingIntro: false, sceneElapsed: elapsed - start }
     }
   }
-  const setupElapsed = elapsed - TOTAL_MARKETING_MS
-  if (setupElapsed < SETUP_INTRO_MS) {
+  const setupElapsed = elapsed - totalMarketingMs
+  if (setupElapsed < setupIntroMs) {
     return { phase: 'setup', sceneKey: 'setup-intro', setupIdx: 0, setupShowingIntro: true, sceneElapsed: setupElapsed }
   }
-  let acc = SETUP_INTRO_MS
-  for (let i = 0; i < SETUP_STEP_DUR.length; i++) {
+  let acc = setupIntroMs
+  for (let i = 0; i < setupStepDur.length; i++) {
     const start = acc
-    acc += SETUP_STEP_DUR[i]
+    acc += setupStepDur[i]
     if (setupElapsed < acc) return { phase: 'setup', sceneKey: `setup-${i}`, setupIdx: i, setupShowingIntro: false, sceneElapsed: setupElapsed - start }
   }
   return { phase: 'setup', sceneKey: `setup-${SETUP_STEPS.length - 1}`, setupIdx: SETUP_STEPS.length - 1, setupShowingIntro: false, sceneElapsed: 0 }

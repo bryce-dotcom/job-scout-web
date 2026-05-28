@@ -148,3 +148,45 @@ export function useNarration({ walkthroughId, scene, script, enabled = true }) {
 export function resetNarrationCache() {
   stopAll()
 }
+
+// Probe the actual playback duration of every MP3 for a walkthrough so
+// the runner can extend any scene that is shorter than its audio.
+// Returns a Promise<{ [sceneKey]: durationMs }>. Missing MP3s are
+// omitted (caller falls back to its planned scene duration).
+const durationCache = new Map() // url -> Promise<number|null>
+function probeDuration(url) {
+  if (durationCache.has(url)) return durationCache.get(url)
+  const p = new Promise((resolve) => {
+    if (typeof window === 'undefined' || typeof Audio === 'undefined') return resolve(null)
+    const audio = new Audio()
+    audio.preload = 'metadata'
+    const cleanup = () => {
+      audio.removeEventListener('loadedmetadata', onLoad)
+      audio.removeEventListener('error', onErr)
+    }
+    const onLoad = () => {
+      cleanup()
+      const ms = isFinite(audio.duration) ? Math.round(audio.duration * 1000) : null
+      resolve(ms)
+    }
+    const onErr = () => { cleanup(); resolve(null) }
+    audio.addEventListener('loadedmetadata', onLoad)
+    audio.addEventListener('error', onErr)
+    audio.src = url
+    setTimeout(() => { cleanup(); resolve(null) }, 5000)
+  })
+  durationCache.set(url, p)
+  return p
+}
+
+export async function probeWalkthroughAudio(walkthroughId, sceneKeys) {
+  const out = {}
+  await Promise.all(
+    sceneKeys.map(async (key) => {
+      const url = audioUrlFor(walkthroughId, key)
+      const ms = await probeDuration(url)
+      if (ms) out[key] = ms
+    }),
+  )
+  return out
+}
