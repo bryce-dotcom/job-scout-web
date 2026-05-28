@@ -84,6 +84,28 @@ export default function Books() {
   const isMobile = useIsMobile()
 
   const [activeTab, setActiveTab] = useState('overview')
+
+  // Business-unit filter — persists in localStorage so refresh / back-button
+  // doesn't reset. 'all' = aggregate every unit (default, matches legacy
+  // behavior). A specific name = filter invoice/employee-driven views to
+  // that unit. Things without a business_unit column (manual expenses,
+  // Plaid bank txns) stay company-wide and get labeled "(all units)".
+  const [selectedBu, setSelectedBu] = useState(() => {
+    try { return localStorage.getItem('books_selected_bu') || 'all' } catch { return 'all' }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('books_selected_bu', selectedBu) } catch { /* ignore */ }
+  }, [selectedBu])
+
+  // Pull configured business units from settings so the dropdown reflects
+  // whatever the company has set up.
+  const [businessUnits, setBusinessUnits] = useState([])
+
+  // Entity type drives which tax form section shows on the Year-End tab.
+  // Lives on companies.entity_type, set in Settings → Company Profile →
+  // Entity & Tax Information. Null = section hidden with a CTA.
+  const [entityType, setEntityType] = useState(null)
+
   const [bankAccounts, setBankAccounts] = useState([])
   const [expenses, setExpenses] = useState([])
   const [expenseCategories, setExpenseCategories] = useState([])
@@ -195,7 +217,7 @@ export default function Books() {
   }
 
   const fetchExpenses = async () => {
-    const { data } = await supabase.from('manual_expenses').select('*, category:expense_categories(id, name, icon, color), payee_employee:employees!manual_expenses_payee_employee_id_fkey(id, name)').eq('company_id', companyId).order('expense_date', { ascending: false })
+    const { data } = await supabase.from('manual_expenses').select('*, category:expense_categories(id, name, icon, color), payee_employee:employees!manual_expenses_payee_employee_id_fkey(id, name, business_unit)').eq('company_id', companyId).order('expense_date', { ascending: false })
     setExpenses(data || [])
     // Pull all splits for this company in one query and bucket by parent.
     // A split row has either expense_id (manual_expenses) OR plaid_transaction_id, never both.
@@ -461,18 +483,65 @@ export default function Books() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId])
 
+  // Load configured business units for the dropdown + entity type for
+  // the Year-End tax form gating.
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      const [{ data: buRow }, { data: companyRow }] = await Promise.all([
+        supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'business_units').maybeSingle(),
+        supabase.from('companies').select('entity_type').eq('id', companyId).maybeSingle(),
+      ])
+      if (cancelled) return
+      if (buRow?.value) {
+        let arr = buRow.value
+        if (typeof arr === 'string') {
+          try { arr = JSON.parse(arr) } catch { arr = [] }
+        }
+        if (Array.isArray(arr)) setBusinessUnits(arr)
+      }
+      setEntityType(companyRow?.entity_type || null)
+    })()
+    return () => { cancelled = true }
+  }, [companyId])
+
+  // Helper — true when a record's business_unit matches the current filter.
+  // 'all' passes everything; specific BU passes only exact matches.
+  // Records with null/undefined business_unit are EXCLUDED from a specific
+  // filter (so legacy untagged invoices don't sneak in).
+  const matchesBu = (recBu) => {
+    if (selectedBu === 'all') return true
+    return recBu === selectedBu
+  }
+  const isFilteredByBu = selectedBu !== 'all'
+
   // Lists derived from the raw store + payments map.
   const unmatchedDeposits = (plaidTransactions || [])
     .filter(t => t.amount < 0 && !t.is_transfer && !t.matched_invoice_id)
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
     .slice(0, 50) // cap UI; admin clears the queue from the top
 
+  // Helper — compute customer balance for an invoice, handling both the
+  // modern shape (amount=gross, discount_applied=incentive+deposit) and
+  // legacy net-shape (amount=net, discount=informational). Same logic
+  // mirrored in InvoiceDetail/CustomerPortal/Stripe webhook so every
+  // dollar number on this page agrees with the invoice itself.
+  const invoiceCustomerBalance = (inv) => {
+    const gross = parseFloat(inv.amount) || 0
+    const disc = parseFloat(inv.discount_applied) || 0
+    const isLegacyNet = disc > 0 && disc >= gross
+    return isLegacyNet ? gross : Math.max(0, gross - disc)
+  }
+
   const paidWithoutPayment = paymentsLoaded
     ? (invoices || []).filter(inv => {
         if (inv.payment_status !== 'Paid') return false
-        if ((parseFloat(inv.amount) || 0) <= 0) return false
+        if (!matchesBu(inv.business_unit)) return false
+        const balance = invoiceCustomerBalance(inv)
+        if (balance <= 0) return false
         const paid = paymentsByInvoiceId.get(inv.id) || 0
-        return paid < (parseFloat(inv.amount) || 0) * 0.99
+        return paid < balance * 0.99
       }).slice(0, 50)
     : []
 
@@ -492,8 +561,15 @@ export default function Books() {
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear
   }
 
-  // Money in: deposits + paid invoices + positive plaid transactions
-  const paidInvoicesMTD = (invoices || []).filter(inv => inv.payment_status === 'Paid' && isThisMonth(inv.created_at)).reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
+  // Money in: deposits + paid invoices + positive plaid transactions.
+  // Invoice contribution uses the CUSTOMER BALANCE (amount - discount),
+  // not gross — utility incentive + deposit credit are paid by the
+  // utility / counted earlier, not by the customer this month.
+  // BU filter applies to invoice + utility-invoice driven values; Plaid
+  // transactions stay company-wide (they aren't tagged with a BU).
+  const paidInvoicesMTD = (invoices || [])
+    .filter(inv => inv.payment_status === 'Paid' && isThisMonth(inv.created_at) && matchesBu(inv.business_unit))
+    .reduce((s, i) => s + invoiceCustomerBalance(i), 0)
   const depositsMTD = (leadPayments || []).filter(p => isThisMonth(p.date_created || p.created_at)).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
   const plaidInMTD = plaidTransactions.filter(t => t.amount < 0 && isThisMonth(t.date) && !t.is_transfer).reduce((s, t) => s + Math.abs(parseFloat(t.amount) || 0), 0) // Plaid: negative = money in
 
@@ -502,9 +578,17 @@ export default function Books() {
   const plaidOutMTD = plaidTransactions.filter(t => t.amount > 0 && isThisMonth(t.date) && !t.is_transfer).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0) // Plaid: positive = money out
   const moneyOut = expensesMTD + plaidOutMTD
 
-  // Utility incentives tracking
-  const pendingIncentives = (utilityInvoices || []).filter(i => i.payment_status !== 'Paid')
-  const collectedIncentives = (utilityInvoices || []).filter(i => i.payment_status === 'Paid')
+  // Utility incentives tracking — BU-filtered via the linked customer
+  // invoice's business_unit when available (utility_invoices doesn't
+  // carry a BU column itself).
+  const invoiceBuMap = new Map((invoices || []).map(i => [i.id, i.business_unit]))
+  const utilityMatchesBu = (uinv) => {
+    if (selectedBu === 'all') return true
+    const linkedBu = uinv.invoice_id ? invoiceBuMap.get(uinv.invoice_id) : null
+    return linkedBu === selectedBu
+  }
+  const pendingIncentives = (utilityInvoices || []).filter(i => i.payment_status !== 'Paid' && utilityMatchesBu(i))
+  const collectedIncentives = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && utilityMatchesBu(i))
   const pendingIncentiveTotal = pendingIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
   const collectedIncentiveTotal = collectedIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
   const collectedIncentiveMTD = collectedIncentives.filter(i => isThisMonth(i.updated_at || i.created_at)).reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
@@ -1010,9 +1094,32 @@ export default function Books() {
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px', flexDirection: isMobile ? 'column' : 'row' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <BookOpen size={28} style={{ color: theme.accent }} />
           <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0 }}>Books</h1>
+          {businessUnits.length > 1 && (
+            <select
+              value={selectedBu}
+              onChange={(e) => setSelectedBu(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: `1px solid ${theme.border}`,
+                backgroundColor: theme.bgCard,
+                color: theme.text,
+                fontSize: '13px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                marginLeft: '8px',
+              }}
+              title="Filter invoice / employee-driven views to a single business unit. Bank balances and untagged transactions stay company-wide."
+            >
+              <option value="all">All business units</option>
+              {businessUnits.map((b) => (
+                <option key={b.name} value={b.name}>{b.name}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Tab Navigation */}
@@ -1022,7 +1129,7 @@ export default function Books() {
             { id: 'transactions', label: 'Transactions', badge: unreviewedCount > 0 ? unreviewedCount : null },
             { id: 'stripe', label: 'Stripe' },
             { id: 'accounts', label: 'Accounts' },
-            { id: 'tax', label: 'Tax & Reports' },
+            { id: 'tax', label: 'Year-End' },
             { id: 'booked', label: 'Booked' }
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={tabStyle(activeTab === tab.id)}>
@@ -1127,8 +1234,11 @@ export default function Books() {
                 <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'rgba(34,197,94,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Wallet size={20} style={{ color: '#22c55e' }} />
                 </div>
-                <span style={{ fontSize: '13px', color: theme.textMuted }}>Cash Available</span>
-                <HelpBadge text="Total balance across all your connected bank accounts and manual bank entries." />
+                <span style={{ fontSize: '13px', color: theme.textMuted }}>
+                  Cash Available
+                  {isFilteredByBu && <span style={{ marginLeft: '6px', fontSize: '11px', fontStyle: 'italic' }}>(all units)</span>}
+                </span>
+                <HelpBadge text="Total balance across all your connected bank accounts and manual bank entries. Bank balances are not split by business unit." />
               </div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#22c55e' }}>{formatCurrency(totalCash)}</div>
             </div>
@@ -2243,6 +2353,12 @@ export default function Books() {
             const byEmp = {}
             expenses.forEach(e => {
               if (!e.payee_employee_id || !e.expense_date || !inRange(e.expense_date)) return
+              // BU filter — only include if the employee belongs to the
+              // selected unit (employees.business_unit). 'All' passes through.
+              if (isFilteredByBu) {
+                const empBu = e.payee_employee?.business_unit
+                if (empBu !== selectedBu) return
+              }
               const splits = splitsByExpense[e.id] || []
               // Determine if this expense touches payroll. Either:
               //  (a) parent category is payroll, or
@@ -2321,7 +2437,12 @@ export default function Books() {
                 <div style={statCardStyle}>
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>Tax Category Summary</h3>
                   {catEntries.length === 0 ? (
-                    <p style={{ color: theme.textMuted, fontSize: '14px' }}>No confirmed transactions in this date range.</p>
+                    <div>
+                      <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '8px' }}>No confirmed transactions in this date range.</p>
+                      <p style={{ color: theme.textMuted, fontSize: '12px', margin: 0 }}>
+                        Categorize and confirm transactions on the <button onClick={() => setActiveTab('transactions')} style={{ background: 'none', border: 'none', color: theme.accent, padding: 0, cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}>Transactions tab</button> to populate this summary.
+                      </p>
+                    </div>
                   ) : (
                     <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -2346,13 +2467,45 @@ export default function Books() {
                   )}
                 </div>
 
-                {/* 1065 Line Items */}
-                <div style={statCardStyle}>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Form 1065 Line Items</h3>
-                  <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '16px' }}>Partnership return breakdown (AI-assigned)</p>
-                  {lineEntries.length === 0 ? (
-                    <p style={{ color: theme.textMuted, fontSize: '14px' }}>No 1065 data yet.</p>
-                  ) : (
+                {/* Tax Form Line Items — gated by company's entity_type so
+                    Sole Props don't see partnership return data and vice
+                    versa. Currently only Form 1065 has AI line assignments;
+                    other forms show a placeholder until those mappings exist. */}
+                {(() => {
+                  const entityFormMap = {
+                    'Partnership': { form: '1065', desc: 'Partnership return breakdown (AI-assigned)' },
+                    'LLC': { form: '1065', desc: 'Multi-member LLCs typically file Form 1065 — partnership return breakdown (AI-assigned)' },
+                    'S-Corp': { form: '1120-S', desc: 'S-Corp return breakdown — not yet AI-assigned for this entity type' },
+                    'C-Corp': { form: '1120', desc: 'Corporate return breakdown — not yet AI-assigned for this entity type' },
+                    'Sole Proprietorship': { form: 'Schedule C', desc: 'Sole-proprietor return breakdown — not yet AI-assigned for this entity type' },
+                    'Non-Profit': { form: '990', desc: 'Non-profit return breakdown — not yet AI-assigned for this entity type' },
+                  }
+                  const formInfo = entityType ? entityFormMap[entityType] : null
+                  if (!entityType) {
+                    return (
+                      <div style={statCardStyle}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Tax Form Line Items</h3>
+                        <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>
+                          Set your <strong>Entity Type</strong> in <a href="/settings?tab=company" style={{ color: theme.accent, textDecoration: 'none', fontWeight: '500' }}>Settings → Company Profile</a> to see the right tax-form breakdown (Schedule C, 1065, 1120-S, 1120).
+                        </p>
+                      </div>
+                    )
+                  }
+                  // Only Partnership/LLC currently have AI-assigned line data.
+                  const hasLineData = ['Partnership', 'LLC'].includes(entityType) && lineEntries.length > 0
+                  return (
+                    <div style={statCardStyle}>
+                      <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>
+                        Form {formInfo.form} Line Items
+                      </h3>
+                      <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '16px' }}>{formInfo.desc}</p>
+                      {!hasLineData ? (
+                        <p style={{ color: theme.textMuted, fontSize: '14px' }}>
+                          {entityType === 'Partnership' || entityType === 'LLC'
+                            ? 'No 1065 data yet — confirm transactions on the Transactions tab to populate this.'
+                            : `AI line mapping for Form ${formInfo.form} is not yet built. Use the Tax Category Summary above and the CSV export to share with your accountant.`}
+                        </p>
+                      ) : (
                     <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
@@ -2375,14 +2528,23 @@ export default function Books() {
                     </div>
                   )}
                 </div>
+                  )
+                })()}
 
                 {/* AR Summary */}
                 <div style={statCardStyle}>
-                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>Accounts Receivable</h3>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>
+                    Accounts Receivable
+                    {isFilteredByBu && <span style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '400', marginLeft: '8px' }}>· {selectedBu}</span>}
+                  </h3>
                   {(() => {
-                    const unpaidInvoices = (invoices || []).filter(inv => inv.payment_status !== 'Paid')
-                    const customerAR = unpaidInvoices.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
-                    const unpaidUtility = (utilityInvoices || []).filter(inv => inv.payment_status !== 'Paid')
+                    // Customer AR = sum of customer balances on unpaid invoices,
+                    // not gross. Mirrors the same legacy/modern detection used
+                    // by InvoiceDetail so the AR number matches what the
+                    // customer actually owes after utility incentive + deposit.
+                    const unpaidInvoices = (invoices || []).filter(inv => inv.payment_status !== 'Paid' && matchesBu(inv.business_unit))
+                    const customerAR = unpaidInvoices.reduce((s, i) => s + invoiceCustomerBalance(i), 0)
+                    const unpaidUtility = (utilityInvoices || []).filter(inv => inv.payment_status !== 'Paid' && utilityMatchesBu(inv))
                     const utilityAR = unpaidUtility.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

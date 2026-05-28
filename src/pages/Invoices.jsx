@@ -456,12 +456,23 @@ export default function Invoices() {
   }
 
   // --- Stats ---
+  // Customer balance = gross - discount_applied (handles modern + legacy
+  // shapes). Mirrors InvoiceDetail/CustomerPortal/Books so the totals on
+  // this page match what customers actually owe after utility incentive
+  // and deposit credit. Pre-fix the page summed gross — a $217k project
+  // with $197k of credits looked like $217k receivable instead of $19k.
+  const customerBalance = (i) => {
+    const gross = parseFloat(i.amount) || 0
+    const disc = parseFloat(i.discount_applied) || 0
+    const isLegacyNet = disc > 0 && disc >= gross
+    return isLegacyNet ? gross : Math.max(0, gross - disc)
+  }
   const isUnpaid = (i) => i.payment_status !== 'Paid'
   const customerTotalCount = invoices.length
   const customerPendingCount = invoices.filter(isUnpaid).length
   const customerPaidCount = invoices.filter(i => i.payment_status === 'Paid').length
-  const customerTotalPending = invoices.filter(isUnpaid).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
-  const customerTotalAll = invoices.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
+  const customerTotalPending = invoices.filter(isUnpaid).reduce((sum, i) => sum + customerBalance(i), 0)
+  const customerTotalAll = invoices.reduce((sum, i) => sum + customerBalance(i), 0)
 
   const utilityPendingCount = utilityInvoices.filter(isUnpaid).length
   const utilityPaidCount = utilityInvoices.filter(i => i.payment_status === 'Paid').length
