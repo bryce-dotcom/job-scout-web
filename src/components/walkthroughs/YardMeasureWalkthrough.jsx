@@ -15,12 +15,12 @@
 // micro-interactions) so a prospect watching it actually understands
 // what the feature does in 15 seconds.
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MapPin, Sparkles, DollarSign, Mail, RotateCcw, Sprout, Check, Search,
 } from 'lucide-react'
-import { useNarration, resetNarrationCache } from './useNarration'
+import { useNarration, resetNarrationCache, probeWalkthroughAudio } from './useNarration'
 import VoiceToggle from './VoiceToggle'
 import SetupChecklist from './SetupChecklist'
 import { CheckCircle2, ArrowRight } from 'lucide-react'
@@ -50,17 +50,18 @@ const T = {
 }
 
 // ─── Marketing reel ─────────────────────────────────────────────────────
-// Scene durations are picked so each scene lasts a touch longer than
-// the narration line that plays during it (avoids the cut-off that
-// happens when speechSynthesis.cancel() fires at the next scene boundary).
-// Roughly 14 chars/sec of speech at rate=1.05, plus ~500ms breathing room.
-const SCENES = [
-  { id: 'address',  dur: 5000 },  // 62 chars  → ~4.4s spoken
-  { id: 'zoom',     dur: 3800 },  // 44 chars  → ~3.1s spoken
-  { id: 'trace',    dur: 6000 },  // 80 chars  → ~5.7s spoken
-  { id: 'quote',    dur: 4800 },  // 59 chars  → ~4.2s spoken
-  { id: 'delivered',dur: 7000 },  // 97 chars  → ~6.9s spoken
+// BASE_SCENES is the MINIMUM visible time per scene. At runtime the
+// runner probes each MP3 and extends the scene to the larger of (a)
+// this base value and (b) audio length + AUDIO_TAIL_MS buffer.
+// Works for any voice without needing to retune timings.
+const BASE_SCENES = [
+  { id: 'address',  dur: 3500 },
+  { id: 'zoom',     dur: 3000 },
+  { id: 'trace',    dur: 4500 },
+  { id: 'quote',    dur: 3500 },
+  { id: 'delivered',dur: 5000 },
 ]
+const AUDIO_TAIL_MS = 600  // breathing room after audio ends
 
 // ─── Setup phase ────────────────────────────────────────────────────────
 const SETUP_STEPS = [
@@ -85,11 +86,13 @@ const SETUP_STEPS = [
     body: 'Drop the URL in ads, on your website, in cold emails. Every quote drops a lead into your pipeline.',
   },
 ]
-const SETUP_INTRO_MS = 1400
-const SETUP_STEP_DUR = [3800, 5200, 3800, 7800]
-const TOTAL_MARKETING_MS = SCENES.reduce((s, x) => s + x.dur, 0)
-const TOTAL_SETUP_MS = SETUP_INTRO_MS + SETUP_STEP_DUR.reduce((s, x) => s + x, 0)
-const TOTAL_MS = TOTAL_MARKETING_MS + TOTAL_SETUP_MS
+const BASE_SETUP_INTRO_MS = 1000
+const BASE_SETUP_STEP_DUR = [2800, 3800, 2800, 5500]
+const ALL_SCENE_KEYS = [
+  ...BASE_SCENES.map(s => s.id),
+  'setup-intro',
+  ...BASE_SETUP_STEP_DUR.map((_, i) => `setup-${i}`),
+]
 
 // Narration imported from lib/walkthroughScripts.
 
@@ -97,16 +100,39 @@ export default function YardMeasureWalkthrough() {
   const [elapsed, setElapsed] = useState(0)
   const [running, setRunning] = useState(true)
   const [voiceOn, setVoiceOn] = useState(true)
+  const [audioDurations, setAudioDurations] = useState({})
   const timerRef = useRef(null)
   const startedAt = useRef(Date.now())
+
+  // Probe MP3 durations on mount so scenes auto-extend to fit narration.
+  useEffect(() => {
+    let cancelled = false
+    probeWalkthroughAudio(WALKTHROUGH_ID, ALL_SCENE_KEYS).then((map) => {
+      if (!cancelled) setAudioDurations(map)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  const { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs } = useMemo(() => {
+    const ext = (key, base) => {
+      const audio = audioDurations[key]
+      return audio ? Math.max(base, audio + AUDIO_TAIL_MS) : base
+    }
+    const scenes = BASE_SCENES.map(s => ({ ...s, dur: ext(s.id, s.dur) }))
+    const setupIntroMs = ext('setup-intro', BASE_SETUP_INTRO_MS)
+    const setupStepDur = BASE_SETUP_STEP_DUR.map((d, i) => ext(`setup-${i}`, d))
+    const totalMarketingMs = scenes.reduce((s, x) => s + x.dur, 0)
+    const totalSetupMs = setupIntroMs + setupStepDur.reduce((s, x) => s + x, 0)
+    return { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs: totalMarketingMs + totalSetupMs }
+  }, [audioDurations])
 
   useEffect(() => {
     if (!running) return
     startedAt.current = Date.now() - elapsed
     const tick = () => {
       const now = Date.now() - startedAt.current
-      if (now >= TOTAL_MS) {
-        setElapsed(TOTAL_MS)
+      if (now >= totalMs) {
+        setElapsed(totalMs)
         setRunning(false)
         return
       }
@@ -115,9 +141,10 @@ export default function YardMeasureWalkthrough() {
     }
     timerRef.current = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(timerRef.current)
-  }, [running])
+  }, [running, totalMs])
 
-  const { phase, sceneKey, setupIdx, setupShowingIntro } = timelinePosition(elapsed)
+  const { phase, sceneKey, setupIdx, setupShowingIntro } =
+    timelinePosition(elapsed, { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs })
   useNarration({ walkthroughId: WALKTHROUGH_ID, scene: sceneKey, script: NARRATION, enabled: voiceOn })
 
   const replay = () => {
@@ -161,30 +188,31 @@ export default function YardMeasureWalkthrough() {
       <VoiceToggle enabled={voiceOn} onToggle={() => setVoiceOn(v => !v)} theme={T} />
 
       <Caption phase={phase} sceneKey={sceneKey} setupIdx={setupIdx} setupShowingIntro={setupShowingIntro} />
-      <ProgressBar elapsed={elapsed} total={TOTAL_MS} phaseBoundary={TOTAL_MARKETING_MS} />
+      <ProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
     </div>
   )
 }
 
-// Compute where we are in the combined marketing + setup timeline.
-function timelinePosition(elapsed) {
-  if (elapsed >= TOTAL_MS) {
+// Audio-aware timeline. Takes live effective durations so scenes
+// auto-extend to fit narration that runs longer than the visual.
+function timelinePosition(elapsed, { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs }) {
+  if (elapsed >= totalMs) {
     return { phase: 'done', sceneKey: null, setupIdx: SETUP_STEPS.length - 1, setupShowingIntro: false }
   }
-  if (elapsed < TOTAL_MARKETING_MS) {
+  if (elapsed < totalMarketingMs) {
     let acc = 0
-    for (let i = 0; i < SCENES.length; i++) {
-      acc += SCENES[i].dur
-      if (elapsed < acc) return { phase: 'marketing', sceneKey: SCENES[i].id, setupIdx: 0, setupShowingIntro: false }
+    for (let i = 0; i < scenes.length; i++) {
+      acc += scenes[i].dur
+      if (elapsed < acc) return { phase: 'marketing', sceneKey: scenes[i].id, setupIdx: 0, setupShowingIntro: false }
     }
   }
-  const setupElapsed = elapsed - TOTAL_MARKETING_MS
-  if (setupElapsed < SETUP_INTRO_MS) {
+  const setupElapsed = elapsed - totalMarketingMs
+  if (setupElapsed < setupIntroMs) {
     return { phase: 'setup', sceneKey: 'setup-intro', setupIdx: 0, setupShowingIntro: true }
   }
-  let acc = SETUP_INTRO_MS
-  for (let i = 0; i < SETUP_STEP_DUR.length; i++) {
-    acc += SETUP_STEP_DUR[i]
+  let acc = setupIntroMs
+  for (let i = 0; i < setupStepDur.length; i++) {
+    acc += setupStepDur[i]
     if (setupElapsed < acc) return { phase: 'setup', sceneKey: `setup-${i}`, setupIdx: i, setupShowingIntro: false }
   }
   return { phase: 'setup', sceneKey: `setup-${SETUP_STEPS.length - 1}`, setupIdx: SETUP_STEPS.length - 1, setupShowingIntro: false }
