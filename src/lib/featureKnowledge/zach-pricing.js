@@ -22,8 +22,12 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'sections', baseDur: 5500, narration: 'Four sections — mowing, treatments, aeration & cleanup, tax & margin. One screen, every rate you charge.' },
-      { id: 'mow',      baseDur: 6500, narration: 'Set your dollar-per-sqft mow rate, your minimum charge, and your minutes-per-thousand-sqft. Zach learns the rest.' },
+      // TTS notes: "&" can read as "ampersand" with some voices — spell
+      // it out. "sqft" and "per-sqft" come out garbled — spell as
+      // "square foot" / "square feet" in narration only (visual text stays
+      // compact). "dollar-per-sqft" rephrased to a natural noun phrase.
+      { id: 'sections', baseDur: 5500, narration: 'Four sections — mowing, treatments, aeration and cleanup, tax and margin. One screen, every rate you charge.' },
+      { id: 'mow',      baseDur: 6500, narration: 'Set your dollars per square foot mow rate, your minimum charge, and your minutes per thousand square feet. Zach learns the rest.' },
       { id: 'treat',    baseDur: 6500, narration: 'Plug in your treatment rates per thousand square feet — pre-emergent, fert, weed, grub, iron, lime.' },
       { id: 'preview',  baseDur: 7500, narration: 'A live preview against a sample six-thousand-square-foot lawn shows per-visit, per-season, and annual program totals as you type.' },
       { id: 'save',     baseDur: 5000, narration: 'Hit save. Every Zach quote and every AI Yard Measure result uses the new numbers immediately.' },
@@ -40,7 +44,7 @@ export default {
         icon: 'Scissors',
         title: 'Set your mow rates',
         body: '$/sqft + minimum charge + minutes per 1,000 sqft. Edging and travel charges too.',
-        narration: 'Set your mow rates first — per-sqft, minimum charge, and minutes per thousand square feet.',
+        narration: 'Set your mow rates first — per square foot, minimum charge, and minutes per thousand square feet.',
         baseDur: 6000,
       },
       {

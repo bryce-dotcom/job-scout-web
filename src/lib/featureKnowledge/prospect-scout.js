@@ -29,7 +29,9 @@ export default {
       {
         id: 'empty',
         baseDur: 4500,
-        narration: "It's nine A.M. and your setter's lead board is empty. Let's fix that.",
+        // Bill mispronounces "lead board" as "led board". "pipeline" is
+        // both more accurate (the kanban IS a sales pipeline) and TTS-safe.
+        narration: "It's nine A.M. and your setter's pipeline is empty. Let's fix that.",
       },
       {
         id: 'filter',
@@ -69,7 +71,10 @@ export default {
         title: 'Open Lead Setter → Find Prospects',
         body:
           'No keys, no integrations, no monthly fees on top — it ships on. The Find Prospects button is in the Lead Setter toolbar.',
-        narration: 'There is no setup. Open Lead Setter and click Find Prospects.',
+        // Bill says "led stetter" for "Lead Setter". Phonetic respelling
+        // "Leed Setter" forces the right vowel; the "page" buffer prevents
+        // the words from running together. Visual body text is unchanged.
+        narration: 'There is no setup. Just open the Leed Setter page and click Find Prospects.',
         baseDur: 4500,
       },
       {
