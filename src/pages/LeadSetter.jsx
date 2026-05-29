@@ -58,6 +58,15 @@ export default function LeadSetter() {
   const [leads, setLeads] = useState([])
   const [appointments, setAppointments] = useState([])
   const [commissions, setCommissions] = useState([])
+  // All upcoming/recent lead appointments (broader than the visible
+  // calendar week) — used to populate the Scheduled kanban column so
+  // leads with appointments next month still show up even when the
+  // user is viewing this week. Shape: [{lead_id, start_time, salesperson_id, lead:{...}}, ...]
+  const [scheduledLeadAppts, setScheduledLeadAppts] = useState([])
+  // Lead IDs that have a linked lighting_audit — those belong in the
+  // sales pipeline, not the setter board. Kept in state so getLeadsByStage
+  // can exclude them when merging appointment-derived leads.
+  const [auditLinkedIds, setAuditLinkedIds] = useState(() => new Set())
   const [loading, setLoading] = useState(true)
 
   // Prospect research drawer (AI-powered web research → leads)
@@ -165,7 +174,17 @@ export default function LeadSetter() {
     weekEnd.setDate(weekEnd.getDate() + 6)
     weekEnd.setHours(23, 59, 59, 999)
 
-    const [{ data: leadsData }, { data: appointmentsData }, { data: commissionsData }, { data: auditLeadIds }] = await Promise.all([
+    // Wider window for the Scheduled column — anything from yesterday
+     // forward, capped to ~90 days. Without this, leads booked for next
+     // month don't appear in Scheduled when the user is viewing this
+     // week's calendar.
+    const scheduledFrom = new Date()
+    scheduledFrom.setDate(scheduledFrom.getDate() - 1)
+    scheduledFrom.setHours(0, 0, 0, 0)
+    const scheduledTo = new Date()
+    scheduledTo.setDate(scheduledTo.getDate() + 90)
+
+    const [{ data: leadsData }, { data: appointmentsData }, { data: commissionsData }, { data: auditLeadIds }, { data: scheduledApptsData }] = await Promise.all([
       leadsQuery,
 
       supabase
@@ -189,16 +208,31 @@ export default function LeadSetter() {
         .from('lighting_audits')
         .select('lead_id')
         .eq('company_id', companyId)
+        .not('lead_id', 'is', null),
+
+      // Wider appointment fetch (90 days out) — feeds the Scheduled
+      // column so it matches the calendar source-of-truth even when the
+      // visible week is different from when the lead is booked.
+      supabase
+        .from('appointments')
+        .select('id, lead_id, start_time, end_time, salesperson_id, salesperson_ids, status, lead:leads!lead_id(id, customer_name, phone, address, service_type, status, setter_owner_id, lead_owner_id, callback_date, created_at, contact_attempts, last_contact_at, notes)')
+        .eq('company_id', companyId)
         .not('lead_id', 'is', null)
+        .gte('start_time', scheduledFrom.toISOString())
+        .lte('start_time', scheduledTo.toISOString())
+        .neq('status', 'Cancelled')
+        .order('start_time')
     ])
 
     // Filter out leads that have linked audits
-    const auditLinkedIds = new Set((auditLeadIds || []).map(a => a.lead_id))
-    const filteredLeads = (leadsData || []).filter(l => !auditLinkedIds.has(l.id))
+    const auditLinkedIdsSet = new Set((auditLeadIds || []).map(a => a.lead_id))
+    const filteredLeads = (leadsData || []).filter(l => !auditLinkedIdsSet.has(l.id))
 
+    setAuditLinkedIds(auditLinkedIdsSet)
     setLeads(filteredLeads)
     setAppointments(appointmentsData || [])
     setCommissions(commissionsData || [])
+    setScheduledLeadAppts(scheduledApptsData || [])
 
     // Load company settings
     if (company) {
@@ -229,6 +263,52 @@ export default function LeadSetter() {
   // Get leads by stage
   const getLeadsByStage = (stageId) => {
     let filtered = leads.filter(l => (setterStatusMap[l.status] || l.status) === stageId)
+
+    // Scheduled column is special: the calendar is the source of truth
+    // for what's booked, so merge in every lead that has an upcoming
+    // appointment — even if its status drifted (rep moved it to
+    // Qualified, legacy data, manual SQL insert, etc.). Without this,
+    // the calendar shows the appointment but the column hides the lead,
+    // and the setter can't see who's actually on the books.
+    if (stageId === 'Appointment Set') {
+      const seen = new Set(filtered.map(l => l.id))
+      // Stamp known leads with their next appointment_time/id from the
+      // fresh appointments fetch so the card shows the right date even
+      // when the leads.appointment_time column wasn't kept in sync.
+      filtered = filtered.map(l => {
+        const apt = scheduledLeadAppts.find(a => a.lead_id === l.id)
+        if (apt) {
+          return {
+            ...l,
+            appointment_time: l.appointment_time || apt.start_time,
+            appointment_id:   l.appointment_id   || apt.id,
+            salesperson_id:   l.salesperson_id   || apt.salesperson_id,
+          }
+        }
+        return l
+      })
+      // Pull in leads we haven't seen yet from the wider appointment set.
+      scheduledLeadAppts.forEach(apt => {
+        if (!apt.lead || seen.has(apt.lead.id)) return
+        if (auditLinkedIds.has(apt.lead.id)) return // belongs in sales pipeline
+        seen.add(apt.lead.id)
+        filtered.push({
+          ...apt.lead,
+          status: 'Appointment Set',
+          appointment_time: apt.start_time,
+          appointment_id: apt.id,
+          salesperson_id: apt.salesperson_id,
+          salesperson_ids: apt.salesperson_ids,
+        })
+      })
+      // Sort by appointment_time so the next upcoming appointment is on top.
+      filtered.sort((a, b) => {
+        const at = a.appointment_time ? new Date(a.appointment_time).getTime() : Infinity
+        const bt = b.appointment_time ? new Date(b.appointment_time).getTime() : Infinity
+        return at - bt
+      })
+    }
+
     if (searchTerm) {
       filtered = filtered.filter(l =>
         l.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
