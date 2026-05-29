@@ -44,6 +44,7 @@ export const FEATURE_CATALOG = [
         replaces: ['HubSpot CRM', 'Pipedrive', 'HousecallPro lead intake'],
         highlights: ['Source attribution', 'Pay-per-lead tracking', 'Auto-convert to customer'],
         route: '/leads',
+        walkthrough: 'leads',
       },
       {
         name: 'Lead Setter',
@@ -52,6 +53,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Calendly', 'Acuity', 'Apollo Dialer', 'Salesloft'],
         highlights: ['Drag-to-schedule calendar', 'Contact-attempt counter', 'Qualification rule'],
         route: '/lead-setter',
+        walkthrough: 'lead-setter',
       },
       {
         name: 'Sales Pipeline',
@@ -60,6 +62,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Salesforce', 'HubSpot Deals', 'Pipedrive'],
         highlights: ['Lead = deal', 'Stage age tracking', 'Salesperson assignment'],
         route: '/pipeline',
+        walkthrough: 'sales-pipeline',
       },
       {
         name: 'Estimates & Quotes',
@@ -68,6 +71,7 @@ export const FEATURE_CATALOG = [
         replaces: ['DocuSign', 'PandaDoc', 'Jobber quotes', 'HousecallPro estimates'],
         highlights: ['E-signature with IP + UA audit', 'Photo per line', 'Formal proposal PDF', 'Email-tracking pixel'],
         route: '/estimates',
+        walkthrough: 'estimates',
       },
       {
         name: 'Quote Follow-ups',
@@ -76,6 +80,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Mailchimp drip', 'Constant Contact automations'],
         highlights: ['Cron-driven', 'Arnie add-on recs', 'Stop on signature'],
         route: '/estimates',
+        walkthrough: 'quote-followups',
       },
       {
         name: 'Customers',
@@ -84,6 +89,7 @@ export const FEATURE_CATALOG = [
         replaces: ['HousecallPro customers', 'Jobber clients', 'ServiceTitan customer hub'],
         highlights: ['Saved payment methods', 'Source-system traceability', 'Magic-link portal'],
         route: '/customers',
+        walkthrough: 'customers',
       },
       {
         name: 'Customer Portal',
@@ -92,6 +98,7 @@ export const FEATURE_CATALOG = [
         replaces: ['DocuSign', 'QuickBooks customer portal', 'HousecallPro portal'],
         highlights: ['No-login magic links', 'Document hash + IP audit', 'Stripe payment links'],
         route: null,
+        walkthrough: 'customer-portal',
       },
       {
         name: 'Public Quote Landing',
@@ -100,6 +107,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Service Autopilot online quoting', 'LawnPro instant quotes'],
         highlights: ['Per-company slug', 'Public, no auth', 'Auto-creates lead'],
         route: null,
+        walkthrough: 'public-quote',
       },
       {
         name: 'Communications Log',
@@ -107,7 +115,8 @@ export const FEATURE_CATALOG = [
         summary: 'A unified timeline of every email, SMS, signature event, and invoice-conversation thread tied to the customer or job.',
         replaces: ['HubSpot conversations', 'OpenPhone history'],
         highlights: ['Email tracking pixels', 'Per-invoice threads'],
-        route: null,
+        route: '/communications',
+        walkthrough: 'communications-log',
       },
     ],
   },

@@ -11,12 +11,21 @@
 // Adding a new walkthrough = drop a card here, run the audio gen, and
 // (optionally) build a custom <Stage /> component for the visuals.
 
-import prospectScout  from './prospect-scout.js'
-import yardMeasure    from './yard-measure.js'
-import zachProperties from './zach-properties.js'
-import zachVisits     from './zach-visits.js'
-import zachTreatments from './zach-treatments.js'
-import zachPricing    from './zach-pricing.js'
+import prospectScout      from './prospect-scout.js'
+import yardMeasure        from './yard-measure.js'
+import zachProperties     from './zach-properties.js'
+import zachVisits         from './zach-visits.js'
+import zachTreatments     from './zach-treatments.js'
+import zachPricing        from './zach-pricing.js'
+import customers          from './customers.js'
+import leads              from './leads.js'
+import salesPipeline      from './sales-pipeline.js'
+import leadSetter         from './lead-setter.js'
+import estimates          from './estimates.js'
+import quoteFollowups     from './quote-followups.js'
+import customerPortal     from './customer-portal.js'
+import publicQuote        from './public-quote.js'
+import communicationsLog  from './communications-log.js'
 
 const CARDS = [
   prospectScout,
@@ -25,6 +34,15 @@ const CARDS = [
   zachVisits,
   zachTreatments,
   zachPricing,
+  customers,
+  leads,
+  salesPipeline,
+  leadSetter,
+  estimates,
+  quoteFollowups,
+  customerPortal,
+  publicQuote,
+  communicationsLog,
 ]
 
 export const KNOWLEDGE_CARDS = Object.fromEntries(

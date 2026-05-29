@@ -96,5 +96,149 @@
       "setup-2",
       "setup-3"
     ]
+  },
+  "customers": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "form",
+      "card",
+      "detail",
+      "portal",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "leads": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "form",
+      "card",
+      "detail",
+      "convert",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "sales-pipeline": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "board",
+      "drag",
+      "quoted",
+      "forecast",
+      "won",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "lead-setter": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "board",
+      "attempt",
+      "callback",
+      "schedule",
+      "earnings",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "estimates": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "lines",
+      "photos",
+      "send",
+      "won",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "quote-followups": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "sent",
+      "nudge1",
+      "nudge2",
+      "nudge3",
+      "signed",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "customer-portal": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "send",
+      "open",
+      "sign",
+      "pay",
+      "statement",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "public-quote": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "visit",
+      "fill",
+      "submit",
+      "lead",
+      "route",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "communications-log": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "customer",
+      "email",
+      "sms",
+      "reply",
+      "search",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
   }
 }
