@@ -2925,47 +2925,107 @@ function JobDetailInner() {
     setSubmittalSending(true)
     setSubmittalProgress('Building package...')
     try {
-      const [{ default: JSZip }] = await Promise.all([import('jszip')])
-      const zip = new JSZip()
+      // Utilities reject ZIPs (Alayda's complaint — their intake portals
+      // and email gateways either strip them or won't open them). Build
+      // a single combined PDF instead: PDFs concat their pages, photos
+      // (jpg/png) get embedded as full-page images, non-PDF docs that
+      // aren't images get skipped (logged). One file, one attachment,
+      // utility-portal-friendly.
+      const [{ PDFDocument }] = await Promise.all([import('pdf-lib')])
+      const merged = await PDFDocument.create()
       const jobName = sanitizeFilename(job.job_title || job.job_id || 'job')
-      const _indexCustomer = getCustomerPrimary(job.customer) || ''
-      const _indexBU = job?.business_unit || company?.name || ''
-      zip.file(`${jobName}_submittal_package/CONTENTS.txt`, buildSubmittalIndex(manifest, job.job_title || job.job_id, _indexCustomer, _indexBU))
       let completed = 0
+      let pagesAdded = 0
+      let skipped = 0
+
+      const isImage = (name = '', mime = '') => {
+        const n = (name || '').toLowerCase()
+        const m = (mime || '').toLowerCase()
+        return n.endsWith('.jpg') || n.endsWith('.jpeg') || n.endsWith('.png')
+          || m.startsWith('image/jpeg') || m.startsWith('image/png')
+      }
+      const isPdf = (name = '', mime = '') => {
+        const n = (name || '').toLowerCase()
+        const m = (mime || '').toLowerCase()
+        return n.endsWith('.pdf') || m === 'application/pdf'
+      }
+
+      const addImagePage = async (bytes, mime, name = '') => {
+        const isPng = (mime || '').includes('png') || (name || '').toLowerCase().endsWith('.png')
+        const img = isPng ? await merged.embedPng(bytes) : await merged.embedJpg(bytes)
+        // Letter page, fit image preserving aspect
+        const pageW = 612, pageH = 792
+        const page = merged.addPage([pageW, pageH])
+        const m = 36
+        const maxW = pageW - m * 2
+        const maxH = pageH - m * 2
+        const scale = Math.min(maxW / img.width, maxH / img.height, 1)
+        const w = img.width * scale
+        const h = img.height * scale
+        page.drawImage(img, { x: (pageW - w) / 2, y: (pageH - h) / 2, width: w, height: h })
+      }
 
       for (const item of manifest) {
         try {
-          let data
-          if (item.type === 'text') {
-            data = item.content
-          } else if (item.type === 'public') {
-            const resp = await fetch(item.url)
-            if (resp.ok) data = await resp.blob()
+          // CONTENTS.txt manifest doesn't carry useful info into the PDF,
+          // skip it. The PDF itself is the index.
+          if (item.type === 'text') { skipped++; completed++; continue }
+
+          let bytes = null
+          let mime = ''
+          if (item.type === 'public') {
+            const resp = await fetch(item.url); if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || '' }
           } else if (item.type === 'signed') {
-            const { data: signedData } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
-            if (signedData?.signedUrl) { const resp = await fetch(signedData.signedUrl); if (resp.ok) data = await resp.blob() }
+            const { data: sd } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
+            if (sd?.signedUrl) { const resp = await fetch(sd.signedUrl); if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || item.att.file_type || '' } }
           } else if (item.type === 'signed_path') {
-            const { data: signedData } = await supabase.storage.from(item.bucket).createSignedUrl(item.path, 300)
-            if (signedData?.signedUrl) { const resp = await fetch(signedData.signedUrl); if (resp.ok) data = await resp.blob() }
+            const { data: sd } = await supabase.storage.from(item.bucket).createSignedUrl(item.path, 300)
+            if (sd?.signedUrl) { const resp = await fetch(sd.signedUrl); if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || '' } }
           } else if (item.type === 'doc' && item.att.storage_bucket) {
-            const { data: signedData } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
-            if (signedData?.signedUrl) { const resp = await fetch(signedData.signedUrl); if (resp.ok) data = await resp.blob() }
+            const { data: sd } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
+            if (sd?.signedUrl) { const resp = await fetch(sd.signedUrl); if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || item.att.file_type || '' } }
           } else if (item.type === 'utilpdf') {
-            data = await generateUtilityInvoicePDF(item.invoice)
+            const blob = await generateUtilityInvoicePDF(item.invoice)
+            bytes = await blob.arrayBuffer(); mime = 'application/pdf'
           }
-          if (data) zip.file(`${jobName}_submittal_package/${item.folder}/${item.filename}`, data)
-        } catch (err) { console.warn('Submittal email: skipping', item.filename, err.message) }
+
+          if (!bytes) { skipped++; completed++; continue }
+
+          if (isPdf(item.filename, mime)) {
+            const src = await PDFDocument.load(bytes, { ignoreEncryption: true })
+            const pages = await merged.copyPages(src, src.getPageIndices())
+            pages.forEach(p => merged.addPage(p))
+            pagesAdded += pages.length
+          } else if (isImage(item.filename, mime)) {
+            await addImagePage(bytes, mime, item.filename)
+            pagesAdded++
+          } else {
+            // Unknown binary type (e.g. .docx) — can't go into the PDF.
+            console.warn('Submittal: skipping non-PDF/non-image', item.filename, mime)
+            skipped++
+          }
+        } catch (err) {
+          console.warn('Submittal email: skipping', item.filename, err.message)
+          skipped++
+        }
         completed++
         setSubmittalProgress(`Preparing ${completed}/${manifest.length}...`)
       }
 
+      if (pagesAdded === 0) {
+        toast.error('No PDFs or photos available to combine. Use the ZIP button if you need other file types.')
+        setSubmittalSending(false); setSubmittalProgress('')
+        return
+      }
+
       setSubmittalProgress('Uploading...')
-      const blob = await zip.generateAsync({ type: 'blob' })
+      const pdfBytes = await merged.save()
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' })
 
       // Upload to storage
       const timestamp = Date.now()
-      const storagePath = `jobs/${id}/submittals/${timestamp}_submittal.zip`
-      await supabase.storage.from('project-documents').upload(storagePath, blob, { contentType: 'application/zip' })
+      const storagePath = `jobs/${id}/submittals/${timestamp}_submittal.pdf`
+      await supabase.storage.from('project-documents').upload(storagePath, blob, { contentType: 'application/pdf' })
 
       // Create signed URL for the email (7 days)
       const { data: signedData } = await supabase.storage.from('project-documents').createSignedUrl(storagePath, 7 * 24 * 3600)
@@ -2975,9 +3035,9 @@ function JobDetailInner() {
       await supabase.from('file_attachments').insert({
         company_id: companyId,
         job_id: parseInt(id),
-        file_name: `${jobName}_submittal_package.zip`,
+        file_name: `${jobName}_submittal_package.pdf`,
         file_path: storagePath,
-        file_type: 'application/zip',
+        file_type: 'application/pdf',
         file_size: blob.size,
         storage_bucket: 'project-documents',
         photo_context: 'submittal'
@@ -3043,7 +3103,7 @@ function JobDetailInner() {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
             <tr><td align="center">
               <a href="${downloadUrl}" style="display:inline-block;padding:16px 36px;background:linear-gradient(135deg,#5a6349 0%,#4a5239 100%);color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;font-size:15px;letter-spacing:0.3px;box-shadow:0 4px 12px rgba(90,99,73,0.25);">
-                &#x2B07; Download Submittal Package
+                &#x2B07; Download Submittal PDF
               </a>
               <div style="font-size:12px;color:#7d8a7f;margin-top:10px;">Link expires in 7 days &middot; ${today}</div>
             </td></tr>
@@ -3053,26 +3113,10 @@ function JobDetailInner() {
           <!-- What's inside -->
           <div style="border-top:1px solid #eef2eb;padding-top:20px;">
             <div style="font-size:12px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:10px;">What's Inside</div>
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td style="padding:8px 0;font-size:14px;color:#2c3530;">
-                  <span style="display:inline-block;width:24px;color:#5a6349;">&#128193;</span>
-                  <strong>Documents/</strong> <span style="color:#7d8a7f;">— spec sheets, install guides, certificates, invoices</span>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:8px 0;font-size:14px;color:#2c3530;">
-                  <span style="display:inline-block;width:24px;color:#5a6349;">&#128247;</span>
-                  <strong>Photos/</strong> <span style="color:#7d8a7f;">— before, after, and verification photos</span>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:8px 0;font-size:14px;color:#2c3530;">
-                  <span style="display:inline-block;width:24px;color:#5a6349;">&#128196;</span>
-                  <strong>CONTENTS.txt</strong> <span style="color:#7d8a7f;">— full index of every file included</span>
-                </td>
-              </tr>
-            </table>
+            <div style="font-size:14px;color:#2c3530;line-height:1.6;">
+              A single combined PDF with all selected documents, photos, and invoices &mdash;
+              no ZIP, no folders to extract, ready to upload directly to your utility portal.
+            </div>
           </div>
         </td></tr>
 
