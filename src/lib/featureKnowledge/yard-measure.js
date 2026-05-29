@@ -89,10 +89,10 @@ export default {
         icon: 'Share2',
         title: 'Share the link anywhere',
         body:
-          'Drop the URL in ads, on your website, in cold emails. Every quote drops a lead into your pipeline.',
+          'Find your URL in Settings → Public Quote — it looks like job-scout.app/quote/your-slug. Drop it in ads, on your website, in cold emails. Every quote drops a lead into your pipeline.',
         narration:
-          'Share your public URL on your website or ads. New quotes land in your pipeline automatically.',
-        baseDur: 5500,
+          'Find your public URL in Settings under Public Quote. Share it on your website, in ads, anywhere — every new quote lands in your pipeline automatically.',
+        baseDur: 6500,
       },
     ],
   },
