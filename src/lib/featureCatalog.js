@@ -131,6 +131,7 @@ export const FEATURE_CATALOG = [
         replaces: ['HousecallPro jobs', 'Jobber jobs', 'ServiceTitan jobs'],
         highlights: ['Auto-close on payment', 'Job costing rollup', 'Lead → quote → job chain'],
         route: '/jobs',
+        walkthrough: 'jobs',
       },
       {
         name: 'Job Sections',
@@ -139,6 +140,7 @@ export const FEATURE_CATALOG = [
         replaces: ['ServiceTitan project tracking', 'Buildertrend phases'],
         highlights: ['Per-section assignee', 'Estimated vs actual hours', 'Verified-by audit'],
         route: '/jobs',
+        walkthrough: 'job-sections',
       },
       {
         name: 'Job Board (PM Setter)',
@@ -147,6 +149,7 @@ export const FEATURE_CATALOG = [
         replaces: ['When I Work scheduling', 'ServiceTitan dispatch board'],
         highlights: ['Drag-to-schedule', 'Allotted-hours math', 'Per-PM workspace'],
         route: '/job-board',
+        walkthrough: 'job-board',
       },
       {
         name: 'Job Calendar',
@@ -163,6 +166,7 @@ export const FEATURE_CATALOG = [
         replaces: ['HousecallPro mobile', 'Jobber mobile', 'ServiceTitan Mobile'],
         highlights: ['Offline-first', 'Job-linked clock', 'Photo + signature capture'],
         route: '/field-scout',
+        walkthrough: 'field-scout',
       },
       {
         name: 'Routes & Route Calendar',
@@ -171,6 +175,7 @@ export const FEATURE_CATALOG = [
         replaces: ['OptimoRoute', 'Routific', 'ServiceTitan routing'],
         highlights: ['Multi-stop routes', 'Map + calendar view'],
         route: '/routes',
+        walkthrough: 'routes',
       },
       {
         name: 'Appointments',

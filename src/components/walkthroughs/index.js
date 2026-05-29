@@ -23,6 +23,11 @@ import QuoteFollowupsWalkthrough     from './QuoteFollowupsWalkthrough'
 import CustomerPortalWalkthrough     from './CustomerPortalWalkthrough'
 import PublicQuoteWalkthrough        from './PublicQuoteWalkthrough'
 import CommunicationsLogWalkthrough  from './CommunicationsLogWalkthrough'
+import JobsWalkthrough               from './JobsWalkthrough'
+import JobSectionsWalkthrough        from './JobSectionsWalkthrough'
+import JobBoardWalkthrough           from './JobBoardWalkthrough'
+import FieldScoutWalkthrough         from './FieldScoutWalkthrough'
+import RoutesWalkthrough             from './RoutesWalkthrough'
 
 export const WALKTHROUGHS = {
   'yard-measure':        YardMeasureWalkthrough,
@@ -40,6 +45,11 @@ export const WALKTHROUGHS = {
   'customer-portal':     CustomerPortalWalkthrough,
   'public-quote':        PublicQuoteWalkthrough,
   'communications-log':  CommunicationsLogWalkthrough,
+  'jobs':                JobsWalkthrough,
+  'job-sections':        JobSectionsWalkthrough,
+  'job-board':           JobBoardWalkthrough,
+  'field-scout':         FieldScoutWalkthrough,
+  'routes':              RoutesWalkthrough,
 }
 
 export function getWalkthrough(id) {

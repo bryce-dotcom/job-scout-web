@@ -26,6 +26,12 @@ import quoteFollowups     from './quote-followups.js'
 import customerPortal     from './customer-portal.js'
 import publicQuote        from './public-quote.js'
 import communicationsLog  from './communications-log.js'
+// — Project & Job Management —
+import jobs               from './jobs.js'
+import jobSections        from './job-sections.js'
+import jobBoard           from './job-board.js'
+import fieldScout         from './field-scout.js'
+import routes             from './routes.js'
 
 const CARDS = [
   prospectScout,
@@ -43,6 +49,11 @@ const CARDS = [
   customerPortal,
   publicQuote,
   communicationsLog,
+  jobs,
+  jobSections,
+  jobBoard,
+  fieldScout,
+  routes,
 ]
 
 export const KNOWLEDGE_CARDS = Object.fromEntries(
