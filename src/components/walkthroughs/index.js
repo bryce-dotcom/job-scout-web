@@ -32,6 +32,10 @@ import LightingAuditsWalkthrough     from './LightingAuditsWalkthrough'
 import LenardPublicPagesWalkthrough  from './LenardPublicPagesWalkthrough'
 import UtilityProgramsWalkthrough    from './UtilityProgramsWalkthrough'
 import RebateMeasuresWalkthrough     from './RebateMeasuresWalkthrough'
+import BooksWalkthrough              from './BooksWalkthrough'
+import PlaidSyncWalkthrough          from './PlaidSyncWalkthrough'
+import InvoicesWalkthrough           from './InvoicesWalkthrough'
+import FrankieWalkthrough            from './FrankieWalkthrough'
 
 export const WALKTHROUGHS = {
   'yard-measure':        YardMeasureWalkthrough,
@@ -58,6 +62,10 @@ export const WALKTHROUGHS = {
   'lenard-public-pages': LenardPublicPagesWalkthrough,
   'utility-programs':    UtilityProgramsWalkthrough,
   'rebate-measures':     RebateMeasuresWalkthrough,
+  'books':               BooksWalkthrough,
+  'plaid-sync':          PlaidSyncWalkthrough,
+  'invoices':            InvoicesWalkthrough,
+  'frankie':             FrankieWalkthrough,
 }
 
 export function getWalkthrough(id) {

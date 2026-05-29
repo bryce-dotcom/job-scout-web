@@ -37,6 +37,11 @@ import lightingAudits     from './lighting-audits.js'
 import lenardPublicPages  from './lenard-public-pages.js'
 import utilityPrograms    from './utility-programs.js'
 import rebateMeasures     from './rebate-measures.js'
+// — Books & Accounting —
+import books              from './books.js'
+import plaidSync          from './plaid-sync.js'
+import invoices           from './invoices.js'
+import frankie            from './frankie.js'
 
 const CARDS = [
   prospectScout,
@@ -63,6 +68,10 @@ const CARDS = [
   lenardPublicPages,
   utilityPrograms,
   rebateMeasures,
+  books,
+  plaidSync,
+  invoices,
+  frankie,
 ]
 
 export const KNOWLEDGE_CARDS = Object.fromEntries(

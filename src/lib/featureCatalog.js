@@ -455,6 +455,7 @@ export const FEATURE_CATALOG = [
         replaces: ['QuickBooks Online', 'Xero', 'Wave'],
         highlights: ['Form 1065 line mapping', 'Bank reconciliation', 'Job allocation'],
         route: '/books',
+        walkthrough: 'books',
       },
       {
         name: 'Plaid Bank Sync',
@@ -463,6 +464,7 @@ export const FEATURE_CATALOG = [
         replaces: ['QuickBooks bank feeds', 'Xero bank feeds'],
         highlights: ['Plaid OAuth', 'AI category + confidence', 'Learning rules'],
         route: '/books',
+        walkthrough: 'plaid-sync',
       },
       {
         name: 'Plaid Invoice Matching',
@@ -487,6 +489,7 @@ export const FEATURE_CATALOG = [
         replaces: ['QuickBooks Invoicing', 'Stripe Invoicing', 'FreshBooks'],
         highlights: ['Stripe payment links', 'Payment plans', 'Email open tracking', 'Conversation thread per invoice'],
         route: '/invoices',
+        walkthrough: 'invoices',
       },
       {
         name: 'Deposits & Lead Payments',
@@ -511,6 +514,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Pilot.com', 'Bench', 'fractional CFO'],
         highlights: ['Plain-English Q&A', 'Auto-collections', 'Job profitability'],
         route: '/agents/frankie',
+        walkthrough: 'frankie',
       },
       {
         name: 'Transaction Job Allocations',
