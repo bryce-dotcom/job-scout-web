@@ -1,777 +1,727 @@
-// Animated walkthrough for "AI Yard Measure" (Zach The Yard Yeti).
+// Yard Measure walkthrough — realistic UI version (mirrors the actual
+// /quote/:slug public landing page at near-pixel fidelity).
 //
-// This is a Framer Motion-driven explainer that plays inside the Video
-// Library modal — same place a real Loom embed would render. Five
-// scenes, ~15 seconds total, loops with a Replay button.
-//
-// Storyboard:
-//   1. Prospect types in their address on a phone-style form
-//   2. Camera zooms onto an aerial view of their lot
-//   3. AI traces the turf polygon; sqft counter ticks up
-//   4. Instant quote card slides up with breakdown
-//   5. Email-delivered toast + replay
-//
-// Designed to look real (theme colors, real font sizes, real-feeling
-// micro-interactions) so a prospect watching it actually understands
-// what the feature does in 15 seconds.
+// This walkthrough is now built on the shared useWalkthroughRunner +
+// WalkthroughChrome infrastructure. It serves as the worked example
+// for the knowledge-card-driven pattern: read the card, render a
+// scene-driven Stage component, the runner + chrome handle the rest.
 
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  MapPin, Sparkles, DollarSign, Mail, RotateCcw, Sprout, Check, Search,
+  Sparkles, MapPin, Loader, Check, Calculator, Mail, Globe, DollarSign,
+  Share2,
 } from 'lucide-react'
-import { useNarration, resetNarrationCache, probeWalkthroughAudio } from './useNarration'
+import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
 import SetupChecklist from './SetupChecklist'
-import { CheckCircle2, ArrowRight } from 'lucide-react'
-import { WALKTHROUGH_SCRIPTS } from '../../lib/walkthroughScripts'
+import {
+  CenteredOverlay, SetupIntro, DonePanel,
+  WalkthroughCaption, WalkthroughProgressBar,
+} from './WalkthroughChrome'
+import card from '../../lib/featureKnowledge/yard-measure.js'
 
-const WALKTHROUGH_ID = 'yard-measure'
-const NARRATION = WALKTHROUGH_SCRIPTS[WALKTHROUGH_ID].lines
-
-// Theme — keeps the walkthrough on-brand with the rest of the app.
+// Public quote page uses the JobScout earthy-green theme.
 const T = {
   bg: '#f7f5ef',
   bgCard: '#ffffff',
+  bgInput: '#f7f5ef',
   border: '#d6cdb8',
   text: '#2c3530',
   textSecondary: '#4d5a52',
   textMuted: '#7d8a7f',
   accent: '#5a6349',
-  accentBg: 'rgba(90,99,73,0.12)',
+  accentLight: '#7a8567',
   success: '#22c55e',
-  grass: '#7ea65a',
-  grassDeep: '#5a7e3f',
-  dirt: '#c4a878',
-  road: '#8b8a85',
-  roof: '#7a4d3a',
-  housePad: '#d8d2c1',
-  tree: '#4a6b3a',
+  successDark: '#15803d',
+  successBg: 'rgba(34,197,94,0.10)',
 }
 
-// ─── Marketing reel ─────────────────────────────────────────────────────
-// BASE_SCENES is the MINIMUM visible time per scene. At runtime the
-// runner probes each MP3 and extends the scene to the larger of (a)
-// this base value and (b) audio length + AUDIO_TAIL_MS buffer.
-// Works for any voice without needing to retune timings.
-const BASE_SCENES = [
-  { id: 'address',  dur: 3500 },
-  { id: 'zoom',     dur: 3000 },
-  { id: 'trace',    dur: 4500 },
-  { id: 'quote',    dur: 3500 },
-  { id: 'delivered',dur: 5000 },
-]
-const AUDIO_TAIL_MS = 600  // breathing room after audio ends
+const TYPED_ADDRESS = '1457 N 110 W, Orem UT 84057'
+const COMPANY_NAME = 'HHH Services'
 
-// ─── Setup phase ────────────────────────────────────────────────────────
-const SETUP_STEPS = [
-  {
-    icon: 'Globe',
-    title: 'Enable the public quote page',
-    body: 'Settings → Public Quote: flip on Yard Measure and pick your URL slug (job-scout.app/quote/your-slug).',
-  },
-  {
-    icon: 'DollarSign',
-    title: 'Set your pricing tiers',
-    body: 'Open Zach → Pricing. Define $/sq-ft for each tier and your seasonal window (typically April–October).',
-  },
-  {
-    icon: 'MapPin',
-    title: 'Define your service area',
-    body: 'Add the ZIP codes you cover. Out-of-area leads get a polite "not yet" instead of a runaway quote.',
-  },
-  {
-    icon: 'Share2',
-    title: 'Share the link anywhere',
-    body: 'Drop the URL in ads, on your website, in cold emails. Every quote drops a lead into your pipeline.',
-  },
-]
-const BASE_SETUP_INTRO_MS = 1000
-const BASE_SETUP_STEP_DUR = [2800, 3800, 2800, 5500]
-const ALL_SCENE_KEYS = [
-  ...BASE_SCENES.map(s => s.id),
-  'setup-intro',
-  ...BASE_SETUP_STEP_DUR.map((_, i) => `setup-${i}`),
-]
-
-// Narration imported from lib/walkthroughScripts.
-
+// ─── Main ───────────────────────────────────────────────────────────────
 export default function YardMeasureWalkthrough() {
-  const [elapsed, setElapsed] = useState(0)
-  const [running, setRunning] = useState(true)
-  const [voiceOn, setVoiceOn] = useState(true)
-  const [audioDurations, setAudioDurations] = useState({})
-  const timerRef = useRef(null)
-  const startedAt = useRef(Date.now())
+  const runner = useWalkthroughRunner(card)
+  const { phase, sceneKey, sceneElapsed, setupIdx, setupShowingIntro,
+    elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
 
-  // Probe MP3 durations on mount so scenes auto-extend to fit narration.
-  useEffect(() => {
-    let cancelled = false
-    probeWalkthroughAudio(WALKTHROUGH_ID, ALL_SCENE_KEYS).then((map) => {
-      if (!cancelled) setAudioDurations(map)
-    })
-    return () => { cancelled = true }
-  }, [])
-
-  const { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs } = useMemo(() => {
-    const ext = (key, base) => {
-      const audio = audioDurations[key]
-      return audio ? Math.max(base, audio + AUDIO_TAIL_MS) : base
-    }
-    const scenes = BASE_SCENES.map(s => ({ ...s, dur: ext(s.id, s.dur) }))
-    const setupIntroMs = ext('setup-intro', BASE_SETUP_INTRO_MS)
-    const setupStepDur = BASE_SETUP_STEP_DUR.map((d, i) => ext(`setup-${i}`, d))
-    const totalMarketingMs = scenes.reduce((s, x) => s + x.dur, 0)
-    const totalSetupMs = setupIntroMs + setupStepDur.reduce((s, x) => s + x, 0)
-    return { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs: totalMarketingMs + totalSetupMs }
-  }, [audioDurations])
-
-  useEffect(() => {
-    if (!running) return
-    startedAt.current = Date.now() - elapsed
-    const tick = () => {
-      const now = Date.now() - startedAt.current
-      if (now >= totalMs) {
-        setElapsed(totalMs)
-        setRunning(false)
-        return
-      }
-      setElapsed(now)
-      timerRef.current = requestAnimationFrame(tick)
-    }
-    timerRef.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(timerRef.current)
-  }, [running, totalMs])
-
-  const { phase, sceneKey, setupIdx, setupShowingIntro } =
-    timelinePosition(elapsed, { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs })
-  useNarration({ walkthroughId: WALKTHROUGH_ID, scene: sceneKey, script: NARRATION, enabled: voiceOn })
-
-  const replay = () => {
-    resetNarrationCache()
-    setElapsed(0)
-    setRunning(true)
-  }
+  const captionText = computeCaption(phase, sceneKey, setupIdx, setupShowingIntro, card)
 
   return (
     <div style={{
       position: 'relative',
       width: '100%',
-      paddingBottom: '56.25%',  // 16:9
+      paddingBottom: '56.25%', // 16:9
       background: `linear-gradient(135deg, ${T.bg} 0%, #ece6d4 100%)`,
       overflow: 'hidden',
     }}>
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <AnimatePresence mode="wait">
-          {/* Marketing reel */}
-          {phase === 'marketing' && sceneKey === 'address'   && <SceneAddress   key="s1" />}
-          {phase === 'marketing' && sceneKey === 'zoom'      && <SceneZoom      key="s2" />}
-          {phase === 'marketing' && sceneKey === 'trace'     && <SceneTrace     key="s3" />}
-          {phase === 'marketing' && sceneKey === 'quote'     && <SceneQuote     key="s4" />}
-          {phase === 'marketing' && sceneKey === 'delivered' && <SceneDelivered key="s5" />}
+      <div style={{ position: 'absolute', inset: 0 }}>
+        {phase === 'marketing' && (
+          <Stage scene={sceneKey} sceneElapsed={sceneElapsed} />
+        )}
 
-          {/* Setup phase */}
-          {phase === 'setup' && setupShowingIntro && <SetupIntro key="setup-intro" />}
+        <AnimatePresence mode="wait">
+          {phase === 'setup' && setupShowingIntro && <SetupIntro key="intro" />}
           {phase === 'setup' && !setupShowingIntro && (
-            <SetupChecklist
-              key="setup-checklist"
-              title="Set it up in 4 steps"
-              steps={SETUP_STEPS}
-              currentIdx={setupIdx}
+            <CenteredOverlay key="checklist">
+              <SetupChecklist
+                title={`Set it up in ${card.setup.steps.length} steps`}
+                steps={card.setup.steps}
+                currentIdx={setupIdx}
+              />
+            </CenteredOverlay>
+          )}
+          {phase === 'done' && (
+            <DonePanel
+              key="done"
+              onReplay={replay}
+              subtitle="Share your quote URL and watch leads roll in."
             />
           )}
-
-          {phase === 'done' && <DonePanel key="done" onReplay={replay} />}
         </AnimatePresence>
       </div>
 
       <VoiceToggle enabled={voiceOn} onToggle={() => setVoiceOn(v => !v)} theme={T} />
-
-      <Caption phase={phase} sceneKey={sceneKey} setupIdx={setupIdx} setupShowingIntro={setupShowingIntro} />
-      <ProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
+      <WalkthroughCaption text={captionText} />
+      <WalkthroughProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
     </div>
   )
 }
 
-// Audio-aware timeline. Takes live effective durations so scenes
-// auto-extend to fit narration that runs longer than the visual.
-function timelinePosition(elapsed, { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs }) {
-  if (elapsed >= totalMs) {
-    return { phase: 'done', sceneKey: null, setupIdx: SETUP_STEPS.length - 1, setupShowingIntro: false }
+// ─── Stage — switches between QuotePage and Delivered split-view ────────
+function Stage({ scene, sceneElapsed }) {
+  // Address scene: form with typewriter
+  // Zoom: form + satellite preview appearing
+  // Trace: satellite is large; polygon animates
+  // Quote: result card replaces form
+  // Delivered: email + Lead Setter split view
+
+  if (scene === 'delivered') {
+    return <DeliveredScene />
   }
-  if (elapsed < totalMarketingMs) {
-    let acc = 0
-    for (let i = 0; i < scenes.length; i++) {
-      acc += scenes[i].dur
-      if (elapsed < acc) return { phase: 'marketing', sceneKey: scenes[i].id, setupIdx: 0, setupShowingIntro: false }
-    }
-  }
-  const setupElapsed = elapsed - totalMarketingMs
-  if (setupElapsed < setupIntroMs) {
-    return { phase: 'setup', sceneKey: 'setup-intro', setupIdx: 0, setupShowingIntro: true }
-  }
-  let acc = setupIntroMs
-  for (let i = 0; i < setupStepDur.length; i++) {
-    acc += setupStepDur[i]
-    if (setupElapsed < acc) return { phase: 'setup', sceneKey: `setup-${i}`, setupIdx: i, setupShowingIntro: false }
-  }
-  return { phase: 'setup', sceneKey: `setup-${SETUP_STEPS.length - 1}`, setupIdx: SETUP_STEPS.length - 1, setupShowingIntro: false }
+
+  return <QuotePageMock scene={scene} sceneElapsed={sceneElapsed} />
 }
 
-function SetupIntro() {
+// ─── Main quote page mock (mirrors ZachInstantQuote.jsx) ────────────────
+function QuotePageMock({ scene, sceneElapsed }) {
+  // Typewriter
+  const typedLen = scene === 'address'
+    ? Math.min(TYPED_ADDRESS.length, Math.floor(sceneElapsed / 60))
+    : TYPED_ADDRESS.length
+  const typed = TYPED_ADDRESS.slice(0, typedLen)
+  const typingDone = typedLen >= TYPED_ADDRESS.length
+
+  const showSatellite = scene === 'zoom' || scene === 'trace'
+  const showResult = scene === 'quote'
+  const isSearching = scene === 'zoom' && sceneElapsed < 1500
+
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.94 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.94 }}
-      transition={{ duration: 0.35 }}
-      style={{ textAlign: 'center' }}
-    >
+    <div style={{ position: 'absolute', inset: 0, padding: 18, overflow: 'hidden' }}>
       <div style={{
-        fontSize: 11, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.12em',
-        fontWeight: 700, marginBottom: 6,
+        maxWidth: 600, margin: '0 auto',
+        height: '100%',
+        display: 'flex', flexDirection: 'column',
       }}>
-        Part 2
-      </div>
-      <div style={{ fontSize: 30, fontWeight: 800, color: T.text }}>Set it up</div>
-      <div style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>
-        Four steps. About a minute.
-      </div>
-    </motion.div>
-  )
-}
-
-function DonePanel({ onReplay }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.3 }}
-      style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}
-    >
-      <motion.div
-        initial={{ scale: 0.7 }}
-        animate={{ scale: 1 }}
-        transition={{ type: 'spring', bounce: 0.4 }}
-        style={{
-          width: 64, height: 64, borderRadius: '50%',
-          backgroundColor: T.success,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 6px 18px rgba(34,197,94,0.4)',
-        }}
-      >
-        <CheckCircle2 size={36} color="#fff" strokeWidth={2.5} />
-      </motion.div>
-      <div>
-        <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>You're ready</div>
-        <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>
-          Share your quote URL and watch leads roll in.
-        </div>
-      </div>
-      <button
-        onClick={onReplay}
-        style={{
-          padding: '8px 16px',
-          backgroundColor: T.accent,
-          color: '#fff',
-          border: 'none',
-          borderRadius: 999,
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: 'pointer',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          boxShadow: '0 4px 12px rgba(90,99,73,0.3)',
-        }}
-      >
-        Replay <ArrowRight size={12} />
-      </button>
-    </motion.div>
-  )
-}
-
-// ─── Scene 1: Address entry ─────────────────────────────────────────────
-function SceneAddress() {
-  const fullAddress = '1457 N 110 W, Orem UT 84057'
-  const [typed, setTyped] = useState('')
-  useEffect(() => {
-    let i = 0
-    const id = setInterval(() => {
-      i++
-      setTyped(fullAddress.slice(0, i))
-      if (i >= fullAddress.length) clearInterval(id)
-    }, 55)
-    return () => clearInterval(id)
-  }, [])
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.4 }}
-      style={{
-        width: '78%',
-        maxWidth: 460,
-        backgroundColor: T.bgCard,
-        border: `1px solid ${T.border}`,
-        borderRadius: 16,
-        boxShadow: '0 10px 30px rgba(0,0,0,0.08)',
-        padding: '24px 20px',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-        <Sprout size={18} style={{ color: T.success }} />
-        <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Zach The Yard Yeti</div>
-        <div style={{ marginLeft: 'auto', fontSize: 11, color: T.textMuted, padding: '2px 8px', borderRadius: 999, backgroundColor: T.accentBg }}>
-          Public quote
-        </div>
-      </div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 4 }}>
-        Get an instant lawn-care quote
-      </div>
-      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 18 }}>
-        We'll measure your yard from satellite — no visit needed.
-      </div>
-      <div style={{ position: 'relative' }}>
-        <MapPin size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: T.accent }} />
-        <div style={{
-          padding: '12px 14px 12px 36px',
-          backgroundColor: T.bg,
-          border: `2px solid ${T.accent}`,
-          borderRadius: 10,
-          fontSize: 14,
-          color: T.text,
-          fontFamily: 'monospace',
-          minHeight: 18,
-        }}>
-          {typed}
-          <motion.span
-            animate={{ opacity: [1, 0, 1] }}
-            transition={{ repeat: Infinity, duration: 0.8 }}
-            style={{ display: 'inline-block', width: 1.5, height: 14, backgroundColor: T.accent, marginLeft: 2, transform: 'translateY(2px)' }}
-          />
-        </div>
-      </div>
-      <motion.button
-        initial={{ scale: 1 }}
-        animate={{ scale: typed.length >= fullAddress.length - 4 ? [1, 1.04, 1] : 1 }}
-        transition={{ repeat: Infinity, duration: 1.6 }}
-        style={{
-          marginTop: 14,
-          width: '100%',
-          padding: '12px 16px',
-          backgroundColor: T.accent,
-          color: '#fff',
-          border: 'none',
-          borderRadius: 10,
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: 'pointer',
-        }}
-      >
-        Get my quote →
-      </motion.button>
-    </motion.div>
-  )
-}
-
-// ─── Scene 2: Map zooms in ──────────────────────────────────────────────
-function SceneZoom() {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <motion.div
-        initial={{ scale: 0.3, opacity: 0.5 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 1.8, ease: 'easeOut' }}
-        style={{
-          width: '78%',
-          maxWidth: 540,
-          aspectRatio: '4 / 3',
-          borderRadius: 14,
-          overflow: 'hidden',
-          boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
-          border: `1px solid ${T.border}`,
-        }}
-      >
-        <LotSatellite traced={false} />
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.9, duration: 0.4 }}
-        style={{
-          position: 'absolute',
-          top: '12%',
-          padding: '6px 14px',
-          backgroundColor: T.bgCard,
-          border: `1px solid ${T.border}`,
-          borderRadius: 999,
-          fontSize: 12,
-          fontWeight: 600,
-          color: T.text,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-        }}
-      >
-        <MapPin size={12} style={{ color: T.accent }} /> Found your property
-      </motion.div>
-    </motion.div>
-  )
-}
-
-// ─── Scene 3: AI traces polygon + sqft counter ──────────────────────────
-function SceneTrace() {
-  const [sqft, setSqft] = useState(0)
-  const target = 2850
-  useEffect(() => {
-    const start = Date.now()
-    const dur = 2400
-    const id = setInterval(() => {
-      const t = Math.min(1, (Date.now() - start) / dur)
-      setSqft(Math.floor(target * easeOutCubic(t)))
-      if (t >= 1) clearInterval(id)
-    }, 16)
-    return () => clearInterval(id)
-  }, [])
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.3 }}
-      style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-    >
-      <div style={{
-        width: '78%',
-        maxWidth: 540,
-        aspectRatio: '4 / 3',
-        borderRadius: 14,
-        overflow: 'hidden',
-        boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
-        border: `1px solid ${T.border}`,
-        position: 'relative',
-      }}>
-        <LotSatellite traced={true} />
-
-        {/* Sparkle particles to sell the "AI is working" beat */}
-        {[...Array(6)].map((_, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, scale: 0 }}
-            animate={{ opacity: [0, 1, 0], scale: [0, 1.4, 0] }}
-            transition={{ duration: 1.4, delay: 0.2 + i * 0.18, repeat: Infinity, repeatDelay: 2 }}
-            style={{
-              position: 'absolute',
-              top: `${25 + (i * 9)}%`,
-              left: `${35 + (i * 7)}%`,
-              pointerEvents: 'none',
-            }}
-          >
-            <Sparkles size={14} style={{ color: '#ffd84d', filter: 'drop-shadow(0 0 4px rgba(255,216,77,0.6))' }} />
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Sqft callout */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6, duration: 0.4 }}
-        style={{
-          position: 'absolute',
-          bottom: '18%',
-          padding: '10px 16px',
-          backgroundColor: T.bgCard,
-          border: `1px solid ${T.border}`,
-          borderRadius: 12,
-          boxShadow: '0 6px 16px rgba(0,0,0,0.12)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-        }}
-      >
-        <Sparkles size={16} style={{ color: T.success }} />
-        <div>
-          <div style={{ fontSize: 10, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Turf measured</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums' }}>
-            {sqft.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 500, color: T.textMuted }}>sq ft</span>
+        {/* Page header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 8,
+            background: T.accent,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <Sparkles size={20} style={{ color: '#fff' }} />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>
+              {showResult ? COMPANY_NAME : 'Get an instant lawn-care quote'}
+            </div>
+            <div style={{ fontSize: 11, color: T.textMuted }}>
+              Powered by Zach the Yard Yeti — satellite-AI estimate in seconds.
+            </div>
           </div>
         </div>
-      </motion.div>
-    </motion.div>
+
+        {/* Card */}
+        <AnimatePresence mode="wait">
+          {showResult ? (
+            <ResultCard key="result" />
+          ) : (
+            <FormCard
+              key="form"
+              typed={typed}
+              typingDone={typingDone}
+              showSatellite={showSatellite}
+              isSearching={isSearching}
+              isTracing={scene === 'trace'}
+              traceElapsed={scene === 'trace' ? sceneElapsed : 0}
+              addressActive={scene === 'address'}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
   )
 }
 
-// ─── Scene 4: Quote card ────────────────────────────────────────────────
-function SceneQuote() {
-  const [price, setPrice] = useState(0)
-  const target = 42
-  useEffect(() => {
-    const start = Date.now()
-    const dur = 1400
-    const id = setInterval(() => {
-      const t = Math.min(1, (Date.now() - start) / dur)
-      setPrice(Math.round(target * easeOutCubic(t)))
-      if (t >= 1) clearInterval(id)
-    }, 16)
-    return () => clearInterval(id)
-  }, [])
-
+// ─── Form card (address input + satellite + button) ─────────────────────
+function FormCard({ typed, typingDone, showSatellite, isSearching, isTracing, traceElapsed, addressActive }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 30 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.35 }}
       style={{
-        width: '70%',
-        maxWidth: 420,
-        backgroundColor: T.bgCard,
+        background: T.bgCard,
         border: `1px solid ${T.border}`,
-        borderRadius: 16,
-        boxShadow: '0 14px 40px rgba(0,0,0,0.12)',
-        padding: '20px 22px',
+        borderRadius: 14,
+        padding: 18,
+        boxShadow: '0 1px 3px rgba(44,53,48,0.06)',
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-        <Sprout size={16} style={{ color: T.success }} />
-        <div style={{ fontSize: 12, fontWeight: 600, color: T.textSecondary, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Your instant quote
+      {/* Address field */}
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: T.textSecondary, marginBottom: 5 }}>
+        Property address
+      </label>
+      <div style={{ position: 'relative', marginBottom: 12 }}>
+        <MapPin size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: T.textMuted }} />
+        <div style={{
+          width: '100%',
+          padding: '10px 12px 10px 32px',
+          border: `1.5px solid ${addressActive ? T.accent : T.border}`,
+          borderRadius: 9,
+          background: T.bgInput,
+          fontSize: 13,
+          color: T.text,
+          boxSizing: 'border-box',
+          minHeight: 16,
+          fontFamily: 'inherit',
+        }}>
+          {typed.length === 0 && addressActive ? (
+            <span style={{ color: T.textMuted, fontStyle: 'italic' }}>Start typing your address…</span>
+          ) : (
+            <>
+              {typed}
+              {addressActive && !typingDone && (
+                <motion.span
+                  animate={{ opacity: [1, 0, 1] }}
+                  transition={{ repeat: Infinity, duration: 0.8 }}
+                  style={{ display: 'inline-block', width: 1.5, height: 12, backgroundColor: T.accent, marginLeft: 2, transform: 'translateY(2px)' }}
+                />
+              )}
+            </>
+          )}
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 16 }}>
-        <DollarSign size={28} style={{ color: T.text, position: 'relative', top: 3 }} />
-        <div style={{ fontSize: 56, fontWeight: 700, color: T.text, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{price}</div>
-        <div style={{ fontSize: 16, color: T.textMuted, marginLeft: 4 }}>per mow</div>
-      </div>
+      {/* Satellite preview */}
+      <AnimatePresence>
+        {showSatellite && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.4 }}
+            style={{
+              marginBottom: 12,
+              borderRadius: 9,
+              overflow: 'hidden',
+              border: `1px solid ${T.border}`,
+              position: 'relative',
+            }}
+          >
+            <SatelliteTile traced={isTracing} traceElapsed={traceElapsed} />
+            {isTracing && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                style={{
+                  position: 'absolute', bottom: 8, left: 8,
+                  padding: '5px 9px',
+                  background: 'rgba(34,197,94,0.95)',
+                  color: '#fff',
+                  borderRadius: 6,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                <Sparkles size={12} />
+                <CounterText to={2850} elapsed={traceElapsed} /> sq ft measured
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: T.textSecondary }}>
-        <BreakdownRow label="Turf area"             value="2,850 sq ft" />
-        <BreakdownRow label="Rate"                  value="$0.0147 / sq ft" />
-        <BreakdownRow label="Frequency"             value="Weekly · Apr–Oct" />
-        <div style={{ height: 1, backgroundColor: T.border, margin: '6px 0' }} />
-        <BreakdownRow label="First mow included"    value={<Check size={14} style={{ color: T.success }} />} bold />
-      </div>
-    </motion.div>
-  )
-}
-
-function BreakdownRow({ label, value, bold }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: bold ? 600 : 400 }}>
-      <span style={{ color: T.textMuted }}>{label}</span>
-      <span style={{ color: T.text }}>{value}</span>
-    </div>
-  )
-}
-
-// ─── Scene 5: Delivered ─────────────────────────────────────────────────
-function SceneDelivered() {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-      style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18 }}
-    >
-      <motion.div
-        initial={{ scale: 0.6, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.5, type: 'spring', bounce: 0.4 }}
+      {/* Submit button */}
+      <motion.button
+        animate={typingDone && !isSearching && !isTracing ? { scale: [1, 1.03, 1] } : { scale: 1 }}
+        transition={{ repeat: typingDone && !isSearching && !isTracing ? Infinity : 0, duration: 1.4 }}
         style={{
-          width: 72,
-          height: 72,
-          borderRadius: '50%',
-          backgroundColor: T.success,
-          display: 'flex',
+          marginTop: 'auto',
+          width: '100%',
+          padding: '12px 16px',
+          background: T.accent,
+          color: '#fff',
+          border: 'none',
+          borderRadius: 9,
+          fontWeight: 700,
+          fontSize: 14,
+          cursor: 'pointer',
+          display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 8px 24px rgba(34,197,94,0.4)',
+          gap: 8,
         }}
       >
-        <Check size={40} color="#fff" strokeWidth={3} />
-      </motion.div>
-
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 22, fontWeight: 700, color: T.text, marginBottom: 4 }}>Quote sent!</div>
-        <div style={{ fontSize: 13, color: T.textMuted, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Mail size={13} /> sarah@example.com — &lt; 30 seconds total
-        </div>
+        {isSearching || isTracing ? (
+          <>
+            <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
+            Zach is measuring your yard…
+          </>
+        ) : (
+          <>
+            <Calculator size={16} />
+            Get my instant quote
+          </>
+        )}
+      </motion.button>
+      <div style={{ fontSize: 10, color: T.textMuted, marginTop: 8, textAlign: 'center' }}>
+        No obligation. We'll only use your contact info to follow up.
       </div>
     </motion.div>
   )
 }
 
-// ─── Aerial-view SVG (the "satellite") ──────────────────────────────────
-// Hand-drawn aerial of a typical suburban lot: lawn polygon, house pad,
-// driveway, trees. When `traced` is true, animates a green polygon
-// outline around the grass to sell the "AI measured your turf" beat.
-function LotSatellite({ traced }) {
-  const grassPoints = '40,60 230,30 380,80 460,180 430,310 360,360 200,380 90,330 30,220'
-
+// ─── Result card (price card after quote) ───────────────────────────────
+function ResultCard() {
   return (
-    <svg viewBox="0 0 500 400" preserveAspectRatio="xMidYMid slice" style={{ width: '100%', height: '100%', display: 'block' }}>
-      {/* Soil / dirt frame */}
-      <rect width="500" height="400" fill={T.dirt} />
-
-      {/* Subtle texture — diagonal lines */}
-      <defs>
-        <pattern id="dirt-grain" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-          <line x1="0" y1="0" x2="0" y2="14" stroke="#b09866" strokeWidth="0.5" opacity="0.4" />
-        </pattern>
-        <pattern id="grass-grain" width="6" height="6" patternUnits="userSpaceOnUse">
-          <circle cx="3" cy="3" r="0.8" fill={T.grassDeep} opacity="0.35" />
-        </pattern>
-      </defs>
-      <rect width="500" height="400" fill="url(#dirt-grain)" />
-
-      {/* Sidewalk strip */}
-      <rect x="0" y="380" width="500" height="20" fill="#bcb4a3" />
-
-      {/* Lawn polygon */}
-      <polygon points={grassPoints} fill={T.grass} />
-      <polygon points={grassPoints} fill="url(#grass-grain)" />
-
-      {/* House pad */}
-      <rect x="180" y="140" width="130" height="90" fill={T.housePad} stroke="#a89c80" strokeWidth="1" />
-      <polygon points="180,140 245,110 310,140" fill={T.roof} />
-      {/* Door */}
-      <rect x="235" y="200" width="20" height="30" fill="#5d3e2a" />
-
-      {/* Driveway */}
-      <polygon points="245,230 310,230 320,400 250,400" fill={T.road} />
-
-      {/* Trees */}
-      <circle cx="90"  cy="130" r="22" fill={T.tree} opacity="0.85" />
-      <circle cx="100" cy="120" r="14" fill={T.grass} opacity="0.6" />
-
-      <circle cx="400" cy="120" r="28" fill={T.tree} opacity="0.85" />
-      <circle cx="410" cy="110" r="18" fill={T.grass} opacity="0.6" />
-
-      <circle cx="370" cy="320" r="20" fill={T.tree} opacity="0.85" />
-
-      {/* AI-traced turf polygon — animated dasharray */}
-      {traced && (
-        <motion.polygon
-          points={grassPoints}
-          fill="none"
-          stroke="#22c55e"
-          strokeWidth="3.5"
-          strokeLinejoin="round"
-          strokeDasharray="1400"
-          initial={{ strokeDashoffset: 1400 }}
-          animate={{ strokeDashoffset: 0 }}
-          transition={{ duration: 2.4, ease: 'easeInOut' }}
-          style={{ filter: 'drop-shadow(0 0 6px rgba(34,197,94,0.5))' }}
-        />
-      )}
-    </svg>
-  )
-}
-
-// ─── Caption / progress bar ─────────────────────────────────────────────
-const MARKETING_CAPTIONS = {
-  address:   '1. Prospect enters their address on your public quote page',
-  zoom:      '2. We find their lot from satellite imagery',
-  trace:     '3. AI traces the turf and measures it — no visit needed',
-  quote:     '4. Instant per-mow quote with full breakdown',
-  delivered: '5. Quote emailed; lead lands in your pipeline',
-}
-const SETUP_CAPTIONS = [
-  'Setup 1/4 — Enable the public quote page',
-  'Setup 2/4 — Set your pricing tiers',
-  'Setup 3/4 — Define your service area',
-  'Setup 4/4 — Share the link',
-]
-
-function Caption({ phase, sceneKey, setupIdx, setupShowingIntro }) {
-  let text = ''
-  let key = phase + ':' + (sceneKey || setupIdx)
-  if (phase === 'marketing') text = MARKETING_CAPTIONS[sceneKey] || ''
-  else if (phase === 'setup' && setupShowingIntro) text = 'Now — how to set it up'
-  else if (phase === 'setup') text = SETUP_CAPTIONS[setupIdx] || ''
-  else if (phase === 'done')  text = "That's the loop. Replay anytime."
-
-  return (
-    <AnimatePresence mode="wait">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.4 }}
+      style={{
+        background: T.bgCard,
+        border: `1px solid ${T.border}`,
+        borderRadius: 14,
+        padding: 18,
+        boxShadow: '0 1px 3px rgba(44,53,48,0.06)',
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'auto',
+      }}
+    >
+      {/* Success banner */}
       <motion.div
-        key={key}
-        initial={{ opacity: 0, y: 6 }}
+        initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -6 }}
-        transition={{ duration: 0.3 }}
+        transition={{ delay: 0.1, duration: 0.3 }}
         style={{
-          position: 'absolute',
-          left: 18,
-          bottom: 30,
-          right: 18,
-          padding: '8px 14px',
-          backgroundColor: 'rgba(44,53,48,0.92)',
-          color: '#fff',
-          borderRadius: 10,
-          fontSize: 12,
-          fontWeight: 500,
-          textAlign: 'center',
-          backdropFilter: 'blur(4px)',
+          display: 'flex', gap: 8, padding: 10,
+          background: T.successBg,
+          border: `1px solid ${T.success}`,
+          borderRadius: 9,
+          marginBottom: 14,
         }}
       >
-        {text}
+        <Check size={16} style={{ color: T.successDark, flexShrink: 0 }} />
+        <div style={{ fontSize: 12, color: T.successDark, fontWeight: 600 }}>
+          Your quote is ready! We've also sent it to the {COMPANY_NAME} team.
+        </div>
       </motion.div>
-    </AnimatePresence>
+
+      {/* Satellite preview (smaller, with trace overlay still visible) */}
+      <div style={{
+        marginBottom: 10,
+        borderRadius: 9,
+        overflow: 'hidden',
+        border: `1px solid ${T.border}`,
+        maxHeight: 120,
+      }}>
+        <SatelliteTile traced={true} traceElapsed={2400} small />
+      </div>
+
+      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>
+        {TYPED_ADDRESS}
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <Stat label="Measured turf" value="2,850 sqft" hint="93% confidence" delay={0.3} />
+        <Stat label="Per visit"      value="$42.00"    hint="38 min"        delay={0.45} />
+        <Stat label="Mows / season"  value="26"        hint="$1,092 total"  delay={0.6} />
+      </div>
+
+      {/* Big total card */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.75, duration: 0.35 }}
+        style={{
+          padding: 14,
+          background: T.accent,
+          color: '#fff',
+          borderRadius: 11,
+        }}
+      >
+        <div style={{ fontSize: 10, opacity: 0.8, textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>
+          Annual program total
+        </div>
+        <div style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.1 }}>
+          $1,612.00
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.85 }}>
+          Includes weekly mowing + 6-round treatment program.
+        </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
-function ProgressBar({ elapsed, total, phaseBoundary }) {
-  const pct = Math.min(100, (elapsed / total) * 100)
-  const boundaryPct = phaseBoundary ? (phaseBoundary / total) * 100 : null
+function Stat({ label, value, hint, delay }) {
   return (
-    <div style={{
-      position: 'absolute',
-      left: 0, right: 0, bottom: 0,
-      height: 3,
-      backgroundColor: 'rgba(255,255,255,0.25)',
-    }}>
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.3 }}
+      style={{
+        flex: 1,
+        minWidth: 100,
+        padding: 10,
+        background: T.bgInput,
+        border: `1px solid ${T.border}`,
+        borderRadius: 9,
+      }}
+    >
+      <div style={{ fontSize: 9, color: T.textMuted, textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.04em' }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginTop: 2 }}>
+        {value}
+      </div>
+      {hint && (
+        <div style={{ fontSize: 10, color: T.textMuted, marginTop: 1 }}>
+          {hint}
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+// ─── Counter helper ─────────────────────────────────────────────────────
+function CounterText({ to, elapsed, durMs = 2200 }) {
+  const t = Math.min(1, elapsed / durMs)
+  const eased = 1 - Math.pow(1 - t, 3) // easeOutCubic
+  const val = Math.round(to * eased)
+  return val.toLocaleString()
+}
+
+// ─── Satellite tile — hand-drawn aerial styled like Google Maps ─────────
+function SatelliteTile({ traced, traceElapsed = 0, small }) {
+  // Lot polygon — drawn at higher zoom; mostly grass with a house pad,
+  // driveway, and trees. Matches the look-and-feel of the previous
+  // version but framed inside a Maps-style tile (controls + scale bar).
+  const grassPoints = '60,80 280,40 440,90 510,210 480,340 380,400 220,420 100,360 40,240'
+  const houseBox = { x: 200, y: 160, w: 140, h: 100 }
+
+  return (
+    <div style={{ position: 'relative', width: '100%', aspectRatio: small ? '16/8' : '16/9', background: '#c4a878' }}>
+      <svg viewBox="0 0 600 450" preserveAspectRatio="xMidYMid slice" style={{ width: '100%', height: '100%', display: 'block' }}>
+        {/* Dirt frame texture */}
+        <defs>
+          <pattern id="dirt" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+            <line x1="0" y1="0" x2="0" y2="14" stroke="#b09866" strokeWidth="0.5" opacity="0.4" />
+          </pattern>
+          <pattern id="grass" width="6" height="6" patternUnits="userSpaceOnUse">
+            <circle cx="3" cy="3" r="0.8" fill="#5a7e3f" opacity="0.35" />
+          </pattern>
+        </defs>
+        <rect width="600" height="450" fill="url(#dirt)" />
+        {/* Neighbor lot strips for realism */}
+        <rect x="0" y="0" width="600" height="14" fill="#a89060" />
+        <rect x="0" y="436" width="600" height="14" fill="#a89060" />
+        {/* Lawn */}
+        <polygon points={grassPoints} fill="#7ea65a" />
+        <polygon points={grassPoints} fill="url(#grass)" />
+        {/* House */}
+        <rect x={houseBox.x} y={houseBox.y} width={houseBox.w} height={houseBox.h} fill="#d8d2c1" stroke="#a89c80" strokeWidth="1" />
+        <polygon points={`${houseBox.x},${houseBox.y} ${houseBox.x + houseBox.w/2},${houseBox.y - 30} ${houseBox.x + houseBox.w},${houseBox.y}`} fill="#7a4d3a" />
+        <rect x={houseBox.x + houseBox.w/2 - 11} y={houseBox.y + houseBox.h - 32} width="22" height="32" fill="#5d3e2a" />
+        {/* Driveway */}
+        <polygon points={`${houseBox.x + houseBox.w/2 - 12},${houseBox.y + houseBox.h} ${houseBox.x + houseBox.w/2 + 12},${houseBox.y + houseBox.h} ${houseBox.x + houseBox.w/2 + 28},450 ${houseBox.x + houseBox.w/2 - 28},450`} fill="#8b8a85" />
+        {/* Trees */}
+        <circle cx="110" cy="160" r="22" fill="#4a6b3a" opacity="0.85" />
+        <circle cx="120" cy="150" r="14" fill="#7ea65a" opacity="0.6" />
+        <circle cx="450" cy="155" r="28" fill="#4a6b3a" opacity="0.85" />
+        <circle cx="460" cy="145" r="18" fill="#7ea65a" opacity="0.6" />
+        <circle cx="420" cy="360" r="20" fill="#4a6b3a" opacity="0.85" />
+
+        {/* AI-traced polygon — animated dasharray */}
+        {traced && (
+          <motion.polygon
+            points={grassPoints}
+            fill="none"
+            stroke="#22c55e"
+            strokeWidth="3.5"
+            strokeLinejoin="round"
+            strokeDasharray="1600"
+            initial={{ strokeDashoffset: 1600 }}
+            animate={{ strokeDashoffset: 0 }}
+            transition={{ duration: 2.4, ease: 'easeInOut' }}
+            style={{ filter: 'drop-shadow(0 0 6px rgba(34,197,94,0.5))' }}
+          />
+        )}
+      </svg>
+
+      {/* Map-tile-style chrome overlays */}
       <div style={{
-        width: `${pct}%`,
-        height: '100%',
-        backgroundColor: T.success,
-        transition: 'width 0.1s linear',
-      }} />
-      {boundaryPct != null && (
-        <div style={{
-          position: 'absolute',
-          left: `${boundaryPct}%`,
-          top: -2,
-          width: 2,
-          height: 7,
-          backgroundColor: T.accent,
-          transform: 'translateX(-50%)',
-        }} title="Setup begins here" />
+        position: 'absolute', top: 6, left: 6,
+        padding: '3px 7px', borderRadius: 4,
+        background: 'rgba(255,255,255,0.92)',
+        fontSize: 9, fontWeight: 600, color: '#3c4043',
+        letterSpacing: '0.04em',
+      }}>
+        Satellite
+      </div>
+      <div style={{
+        position: 'absolute', bottom: 6, right: 6,
+        padding: '2px 6px',
+        background: 'rgba(255,255,255,0.85)',
+        borderRadius: 3,
+        fontSize: 8, color: '#666',
+      }}>
+        Map data ©2026 Google
+      </div>
+
+      {/* Sparkles particles during trace */}
+      {traced && traceElapsed > 200 && (
+        <>
+          {[...Array(4)].map((_, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, scale: 0 }}
+              animate={{ opacity: [0, 1, 0], scale: [0, 1.4, 0] }}
+              transition={{ duration: 1.4, delay: 0.4 + i * 0.25, repeat: Infinity, repeatDelay: 1.2 }}
+              style={{
+                position: 'absolute',
+                top: `${30 + (i * 12)}%`,
+                left: `${30 + (i * 8)}%`,
+                pointerEvents: 'none',
+              }}
+            >
+              <Sparkles size={11} style={{ color: '#ffd84d', filter: 'drop-shadow(0 0 4px rgba(255,216,77,0.6))' }} />
+            </motion.div>
+          ))}
+        </>
       )}
     </div>
   )
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────
-function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3) }
+// ─── Delivered scene — email + Lead Setter split ────────────────────────
+function DeliveredScene() {
+  return (
+    <div style={{ position: 'absolute', inset: 0, padding: 18, display: 'flex', gap: 14 }}>
+      {/* Email preview */}
+      <motion.div
+        initial={{ opacity: 0, x: -12 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.4 }}
+        style={{
+          flex: 1,
+          background: T.bgCard,
+          border: `1px solid ${T.border}`,
+          borderRadius: 12,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+        }}
+      >
+        {/* Email client header */}
+        <div style={{
+          padding: '10px 14px',
+          borderBottom: `1px solid ${T.border}`,
+          background: T.bg,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontSize: 11,
+          color: T.textMuted,
+        }}>
+          <Mail size={14} style={{ color: T.accent }} />
+          <span style={{ fontWeight: 700, color: T.text }}>Inbox</span>
+          <span style={{ marginLeft: 'auto' }}>just now</span>
+        </div>
+
+        {/* Email row */}
+        <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: '50%',
+              background: T.accent,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 700, color: '#fff',
+            }}>
+              Z
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
+                {COMPANY_NAME} — Zach the Yard Yeti
+              </div>
+              <div style={{ fontSize: 10, color: T.textMuted }}>
+                quotes@hhh.services
+              </div>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginTop: 4 }}>
+            Your instant lawn-care quote — $1,612 / season
+          </div>
+
+          {/* Email body card */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            style={{
+              marginTop: 6,
+              padding: 12,
+              border: `1px solid ${T.border}`,
+              borderRadius: 8,
+              background: T.bg,
+            }}
+          >
+            <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 4 }}>
+              {TYPED_ADDRESS}
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+              <MiniStat label="Turf"     value="2,850 sqft" />
+              <MiniStat label="Per mow"  value="$42" />
+              <MiniStat label="Annual"   value="$1,612" />
+            </div>
+            <div style={{ fontSize: 10, color: T.textSecondary, lineHeight: 1.4 }}>
+              Includes weekly mowing + 6-round treatment program. We'll be in touch shortly to schedule your first visit.
+            </div>
+          </motion.div>
+        </div>
+      </motion.div>
+
+      {/* Lead Setter board — lead arrives */}
+      <motion.div
+        initial={{ opacity: 0, x: 12 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.4, delay: 0.15 }}
+        style={{
+          width: '42%',
+          maxWidth: 320,
+          background: T.bgCard,
+          border: `1px solid ${T.border}`,
+          borderRadius: 12,
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+        }}
+      >
+        <div style={{
+          padding: '10px 14px',
+          borderBottom: `1px solid ${T.border}`,
+          background: T.bg,
+          fontSize: 11, fontWeight: 700, color: T.text,
+        }}>
+          Lead Setter
+        </div>
+        <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            New
+          </div>
+          <motion.div
+            initial={{ opacity: 0, x: -8, background: 'rgba(34,197,94,0.3)' }}
+            animate={{ opacity: 1, x: 0, background: '#fff' }}
+            transition={{ delay: 0.8, duration: 0.5 }}
+            style={{
+              padding: 10,
+              border: `1px solid ${T.border}`,
+              borderRadius: 7,
+              boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <Sparkles size={11} style={{ color: T.accent }} />
+              <div style={{ fontSize: 9, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                From Yard Measure
+              </div>
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
+              Sarah Chen
+            </div>
+            <div style={{ fontSize: 10, color: T.textMuted }}>
+              {TYPED_ADDRESS}
+            </div>
+            <div style={{
+              marginTop: 6,
+              display: 'inline-block',
+              padding: '2px 7px',
+              background: T.successBg,
+              borderRadius: 99,
+              fontSize: 9, fontWeight: 700,
+              color: T.successDark,
+            }}>
+              $1,612 quote sent
+            </div>
+          </motion.div>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+function MiniStat({ label, value }) {
+  return (
+    <div style={{ flex: 1, padding: '6px 8px', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 6 }}>
+      <div style={{ fontSize: 8, color: T.textMuted, textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.04em' }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{value}</div>
+    </div>
+  )
+}
+
+// ─── Captions ───────────────────────────────────────────────────────────
+function computeCaption(phase, sceneKey, setupIdx, setupShowingIntro, card) {
+  const marketingCaptions = {
+    address:   '1. Prospect enters their address on your public quote page',
+    zoom:      '2. Satellite imagery loads at the property',
+    trace:     '3. AI traces the turf and measures it to the square foot',
+    quote:     '4. Instant per-mow + annual quote with full breakdown',
+    delivered: '5. Quote emailed · lead lands in your pipeline',
+  }
+  if (phase === 'marketing') return marketingCaptions[sceneKey] || ''
+  if (phase === 'setup' && setupShowingIntro) return 'Now — how to set it up'
+  if (phase === 'setup') {
+    const step = card.setup.steps[setupIdx]
+    return `Setup ${setupIdx + 1}/${card.setup.steps.length} — ${step?.title || ''}`
+  }
+  if (phase === 'done') return "That's the loop. Replay anytime."
+  return ''
+}
+
+// CSS keyframe used by the Loader spinner.
+if (typeof document !== 'undefined' && !document.getElementById('yard-measure-walkthrough-css')) {
+  const s = document.createElement('style')
+  s.id = 'yard-measure-walkthrough-css'
+  s.textContent = `@keyframes spin { to { transform: rotate(360deg); } }`
+  document.head.appendChild(s)
+}
