@@ -110,3 +110,47 @@ function classifyLine(itemId, productMap, componentsByParent) {
 function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100
 }
+
+// Per-line Parts/Labor split for the summary-format invoice PDF.
+// Hierarchy (highest priority first):
+//   1) line.labor_cost > 0 → real recorded split: parts = total - labor_cost
+//   2) item.type === Service|Labor → whole line is labor
+//   3) bundle/product component walk → split line_total by classified
+//      material vs labor cost ratio (this catches bundles where labor is
+//      priced into the bundle's component list rather than on the line)
+//   4) fallback: all parts
+//
+// `productMap` + `componentsByParent` come from the same source as
+// computeMaterialLaborSplit; pass empty Map()s when component data isn't
+// loaded and the function will skip the bundle branch.
+//
+//   line: { item_id, line_total, labor_cost, item: { type } }
+export function splitLinePartsLabor(line, productMap, componentsByParent) {
+  const total = Number(line.line_total ?? line.total) || 0
+  if (total === 0) return { parts: 0, labor: 0 }
+
+  const recordedLabor = Number(line.labor_cost) || 0
+  if (recordedLabor > 0) {
+    return { parts: Math.max(0, total - recordedLabor), labor: recordedLabor }
+  }
+
+  const type = (line.item?.type || '').toLowerCase()
+  if (type === 'service' || type === 'labor') {
+    return { parts: 0, labor: total }
+  }
+
+  // Bundle walk — catches the common case where a line is a bundle
+  // and the labor lives inside the bundle's components.
+  if (line.item_id && componentsByParent && componentsByParent.size > 0) {
+    const breakdown = classifyLine(line.item_id, productMap || new Map(), componentsByParent)
+    if (!breakdown.unclassified && breakdown.totalCost > 0) {
+      const matPct = breakdown.materialCost / breakdown.totalCost
+      return {
+        parts: round2(total * matPct),
+        labor: round2(total * (1 - matPct)),
+      }
+    }
+  }
+
+  return { parts: total, labor: 0 }
+}

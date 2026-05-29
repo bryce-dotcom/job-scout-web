@@ -9,6 +9,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { jsPDF } from 'jspdf'
 import { toast } from '../lib/toast'
+import { splitLinePartsLabor } from '../lib/materialLaborSplit'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -40,6 +41,10 @@ export default function UtilityInvoiceDetail() {
   // scope)" without recomputing anything.
   const [invoiceLines, setInvoiceLines] = useState([])
   const [linkedInvoice, setLinkedInvoice] = useState(null)
+  // Component graph for bundle-aware Parts/Labor splitting (see
+  // splitLinePartsLabor). Lets summary-mode PDFs split bundles where
+  // labor is priced into the bundle's components, not on the line.
+  const [componentMaps, setComponentMaps] = useState({ productMap: new Map(), componentsByParent: new Map() })
   const [jobData, setJobData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -132,6 +137,39 @@ export default function UtilityInvoiceDetail() {
       } else {
         setLinkedInvoice(null)
         setInvoiceLines([])
+      }
+
+      // Load product + bundle-component graph for the line items in
+      // play (whichever set we end up using). Drives the bundle-aware
+      // Parts/Labor split in summary-mode PDFs.
+      const allSourceLines = (data.invoice_id ? [] : []) // placeholder; recomputed below
+      const sourceLines = data.invoice_id
+        ? (await supabase.from('invoice_lines').select('item_id').eq('invoice_id', data.invoice_id)).data || []
+        : (await supabase.from('job_lines').select('item_id').eq('job_id', data.job_id || -1)).data || []
+      const itemIds = [...new Set(sourceLines.map(l => l.item_id).filter(Boolean))]
+      if (itemIds.length > 0) {
+        const { data: comps } = await supabase
+          .from('product_components')
+          .select('parent_product_id, component_product_id, quantity')
+          .in('parent_product_id', itemIds)
+        const subIds = [...new Set([
+          ...itemIds,
+          ...(comps || []).map(c => c.component_product_id),
+        ])]
+        const { data: prods } = await supabase
+          .from('products_services')
+          .select('id, cost, material_or_labor')
+          .in('id', subIds)
+        const productMap = new Map((prods || []).map(p => [p.id, p]))
+        const componentsByParent = new Map()
+        for (const c of comps || []) {
+          const arr = componentsByParent.get(c.parent_product_id) || []
+          arr.push(c)
+          componentsByParent.set(c.parent_product_id, arr)
+        }
+        setComponentMaps({ productMap, componentsByParent })
+      } else {
+        setComponentMaps({ productMap: new Map(), componentsByParent: new Map() })
       }
     }
     setLoading(false)
@@ -553,29 +591,18 @@ export default function UtilityInvoiceDetail() {
       let partsTotal = 0
       let laborTotal = 0
       const hasOverride = invoice.parts_total_override != null && invoice.labor_total_override != null
-      const hasLaborCostData = allLines.some(l => (parseFloat(l.labor_cost) || 0) > 0)
 
       if (hasOverride) {
         partsTotal = parseFloat(invoice.parts_total_override) || 0
         laborTotal = parseFloat(invoice.labor_total_override) || 0
-      } else if (hasLaborCostData) {
-        for (const l of allLines) {
-          const total = parseFloat(l.line_total ?? l.total) || 0
-          const labor = parseFloat(l.labor_cost) || 0
-          const type = (l.item?.type || '').toLowerCase()
-          if (type === 'service' || type === 'labor') {
-            laborTotal += total
-          } else {
-            laborTotal += labor
-            partsTotal += Math.max(0, total - labor)
-          }
-        }
       } else {
+        // Use the shared bundle-aware splitter — handles per-line
+        // labor_cost, Service/Labor types, and bundles with labor
+        // priced into their components.
         for (const l of allLines) {
-          const total = parseFloat(l.line_total ?? l.total) || 0
-          const type = (l.item?.type || '').toLowerCase()
-          if (type === 'service' || type === 'labor') laborTotal += total
-          else partsTotal += total
+          const { parts, labor } = splitLinePartsLabor(l, componentMaps.productMap, componentMaps.componentsByParent)
+          partsTotal += parts
+          laborTotal += labor
         }
       }
 

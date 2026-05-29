@@ -10,7 +10,7 @@ import { toast } from '../lib/toast'
 import { jsPDF } from 'jspdf'
 import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
-import { computeMaterialLaborSplit } from '../lib/materialLaborSplit'
+import { computeMaterialLaborSplit, splitLinePartsLabor } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 
 // Light theme fallback
@@ -53,6 +53,11 @@ export default function InvoiceDetail() {
   const [linkedUtilityInvoice, setLinkedUtilityInvoice] = useState(null)
   const [matLabSplit, setMatLabSplit] = useState(null)
   const [invoiceLines, setInvoiceLines] = useState([])
+  // Component graph + product index used by the bundle-aware
+  // splitLinePartsLabor() helper for Summary-format PDF rendering.
+  // Loaded for every invoice that has line items so bundles with labor
+  // priced into their components get split correctly.
+  const [componentMaps, setComponentMaps] = useState({ productMap: new Map(), componentsByParent: new Map() })
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -194,29 +199,42 @@ export default function InvoiceDetail() {
 
       setInvoiceLines(linesData || [])
 
-      // Materials/Labor split — only compute when there's a linked utility
-      // invoice (Mode B). Walks the lines' component trees and uses each
-      // product's material_or_labor classification.
-      if (linkedU && (linesData || []).length > 0) {
-        const itemIds = [...new Set((linesData || []).map(l => l.item_id).filter(Boolean))]
-        if (itemIds.length > 0) {
-          const { data: comps } = await supabase
-            .from('product_components')
-            .select('parent_product_id, component_product_id, quantity')
-            .in('parent_product_id', itemIds)
-          const subIds = [...new Set([
-            ...itemIds,
-            ...(comps || []).map(c => c.component_product_id),
-          ])]
-          const { data: prods } = await supabase
-            .from('products_services')
-            .select('id, cost, material_or_labor')
-            .in('id', subIds)
+      // Load the line items' product + bundle-component graph so the
+      // summary-format PDF can split bundles by their component
+      // classification (labor priced into the bundle, not on the line).
+      // Also feeds the Mode-B materials/labor split when there's a
+      // linked utility invoice.
+      const itemIds = [...new Set((linesData || []).map(l => l.item_id).filter(Boolean))]
+      if (itemIds.length > 0) {
+        const { data: comps } = await supabase
+          .from('product_components')
+          .select('parent_product_id, component_product_id, quantity')
+          .in('parent_product_id', itemIds)
+        const subIds = [...new Set([
+          ...itemIds,
+          ...(comps || []).map(c => c.component_product_id),
+        ])]
+        const { data: prods } = await supabase
+          .from('products_services')
+          .select('id, cost, material_or_labor')
+          .in('id', subIds)
+
+        const productMap = new Map((prods || []).map(p => [p.id, p]))
+        const componentsByParent = new Map()
+        for (const c of comps || []) {
+          const arr = componentsByParent.get(c.parent_product_id) || []
+          arr.push(c)
+          componentsByParent.set(c.parent_product_id, arr)
+        }
+        setComponentMaps({ productMap, componentsByParent })
+
+        if (linkedU) {
           setMatLabSplit(computeMaterialLaborSplit(linesData || [], comps || [], prods || []))
         } else {
           setMatLabSplit(null)
         }
       } else {
+        setComponentMaps({ productMap: new Map(), componentsByParent: new Map() })
         setMatLabSplit(null)
       }
 
@@ -881,40 +899,23 @@ export default function InvoiceDetail() {
       // Compute Parts vs Labor with this hierarchy (highest priority first):
       //   1) Manual override on invoice.parts_total_override +
       //      invoice.labor_total_override (when both set)
-      //   2) Sum of per-line labor_cost (split each line into parts +
-      //      labor — the legitimate split when job_lines carried
-      //      labor_cost through to invoice creation)
-      //   3) Fallback type-based heuristic for legacy invoice_lines
-      //      that have no labor_cost recorded
+      //   2) splitLinePartsLabor() per line, which itself prefers
+      //      labor_cost, falls back to Service/Labor product type, then
+      //      to the bundle-component classification (catches bundles
+      //      where the labor lives in the bundle's components rather
+      //      than on the line itself)
       let partsTotal = 0
       let laborTotal = 0
       const hasOverride = invoice.parts_total_override != null && invoice.labor_total_override != null
-      const hasLaborCostData = invoiceLines.some(l => (parseFloat(l.labor_cost) || 0) > 0)
 
       if (hasOverride) {
         partsTotal = parseFloat(invoice.parts_total_override) || 0
         laborTotal = parseFloat(invoice.labor_total_override) || 0
-      } else if (hasLaborCostData) {
-        for (const line of invoiceLines) {
-          const lineTotal = parseFloat(line.line_total) || 0
-          const labor     = parseFloat(line.labor_cost) || 0
-          const type = (line.item?.type || '').toLowerCase()
-          if (type === 'service' || type === 'labor') {
-            // Pure-labor line — whole thing is labor regardless of labor_cost
-            laborTotal += lineTotal
-          } else {
-            // Split: labor_cost = labor portion, rest = parts
-            laborTotal += labor
-            partsTotal += Math.max(0, lineTotal - labor)
-          }
-        }
       } else {
-        // Legacy fallback: type-based split
         for (const line of invoiceLines) {
-          const lineTotal = parseFloat(line.line_total) || 0
-          const type = (line.item?.type || '').toLowerCase()
-          if (type === 'service' || type === 'labor') laborTotal += lineTotal
-          else partsTotal += lineTotal
+          const { parts, labor } = splitLinePartsLabor(line, componentMaps.productMap, componentMaps.componentsByParent)
+          partsTotal += parts
+          laborTotal += labor
         }
       }
 
