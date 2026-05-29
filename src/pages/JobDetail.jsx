@@ -393,7 +393,7 @@ function JobDetailInner() {
 
     const { data: jobData } = await supabase
       .from('jobs')
-      .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name, secondary_contact_name, secondary_contact_email, secondary_contact_phone, secondary_contact_role, utility_invoicing_enabled), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id, audit_id, customer_id), pm:employees!jobs_pm_id_fkey(id, name), job_lead:employees!jobs_job_lead_id_fkey(id, name)')
+      .select('*, customer:customers!customer_id(id, name, email, phone, address, business_name, secondary_contact_name, secondary_contact_email, secondary_contact_phone, secondary_contact_role, utility_invoicing_enabled, preferred_invoice_format), salesperson:employees!salesperson_id(id, name), quote:quotes!quote_id(id, quote_id, audit_id, customer_id), pm:employees!jobs_pm_id_fkey(id, name), job_lead:employees!jobs_job_lead_id_fkey(id, name)')
       .eq('id', id)
       .single()
 
@@ -1453,6 +1453,9 @@ function JobDetailInner() {
           // branding (Energy Scout vs HHH Building Services etc.) instead
           // of falling back to the parent company name.
           business_unit: job.business_unit || null,
+          // Honor the customer's preferred format if they have one set
+          // ('summary' → Parts/Labor totals only on the PDF).
+          summary_format: job.customer?.preferred_invoice_format === 'summary',
         }])
         .select()
         .single()

@@ -122,7 +122,8 @@ export default function UtilityInvoiceDetail() {
       if (data.invoice_id) {
         const [{ data: inv }, { data: ilines }] = await Promise.all([
           supabase.from('invoices').select('id, invoice_id, amount, discount_applied, created_at, job_description').eq('id', data.invoice_id).single(),
-          supabase.from('invoice_lines').select('*').eq('invoice_id', data.invoice_id).order('sort_order').order('line_number'),
+          // Pull item.type for the Parts/Labor split in summary mode
+          supabase.from('invoice_lines').select('*, item:products_services(id, name, type)').eq('invoice_id', data.invoice_id).order('sort_order').order('line_number'),
         ])
         setLinkedInvoice(inv || null)
         setInvoiceLines(ilines || [])
@@ -523,7 +524,40 @@ export default function UtilityInvoiceDetail() {
       y += rowHeight + 1
     }
 
-    if (useLineItems) {
+    // Summary mode: collapse both sections into Parts + Labor totals.
+    // Same in-scope vs add-on math still drives the footer totals; the
+    // body just doesn't show per-line detail.
+    if (useLineItems && invoice.summary_format) {
+      // Compute Parts vs Labor across BOTH sections. Service/Labor
+      // product types route to Labor; everything else to Parts.
+      let partsTotal = 0
+      let laborTotal = 0
+      for (const l of allLines) {
+        const total = parseFloat(l.line_total ?? l.total) || 0
+        const type = (l.item?.type || '').toLowerCase()
+        if (type === 'service' || type === 'labor') laborTotal += total
+        else partsTotal += total
+      }
+
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(0)
+      doc.text('Cost Breakdown', margin, y); y += 7
+
+      doc.setFillColor(247, 245, 239)
+      doc.rect(margin, y - 4, contentWidth, 7, 'F')
+      doc.setFontSize(9); doc.setTextColor(80)
+      doc.text('Description', margin + 2, y)
+      doc.text('Amount', rightEdge - 2, y, { align: 'right' })
+      y += 8
+
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(0)
+      doc.text('Parts', margin + 2, y)
+      doc.text(formatCurrency(partsTotal), rightEdge - 2, y, { align: 'right' })
+      y += 7
+      doc.text('Labor', margin + 2, y)
+      doc.text(formatCurrency(laborTotal), rightEdge - 2, y, { align: 'right' })
+      y += 4
+      doc.setDrawColor(214, 205, 184); doc.line(margin, y, rightEdge, y); y += 10
+    } else if (useLineItems) {
       // SECTION 1: In-utility-scope items
       doc.setFontSize(11)
       doc.setFont('helvetica', 'bold')
@@ -1176,6 +1210,51 @@ export default function UtilityInvoiceDetail() {
                 <Download size={18} />
                 {generatingPdf ? 'Generating...' : 'Download PDF'}
               </button>
+
+              {/* Format toggle — Itemized (two-section line list) vs
+                  Summary (just Parts + Labor totals). Same pattern as
+                  the customer invoice. */}
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 0,
+                padding: 3,
+                backgroundColor: theme.bg,
+                border: `1px solid ${theme.border}`,
+                borderRadius: 8,
+                alignSelf: 'stretch',
+              }}>
+                {['itemized', 'summary'].map(mode => {
+                  const isActive = (mode === 'summary') === !!invoice.summary_format
+                  return (
+                    <button
+                      key={mode}
+                      onClick={async () => {
+                        if (isActive) return
+                        const nextValue = mode === 'summary'
+                        const { error } = await supabase
+                          .from('utility_invoices')
+                          .update({ summary_format: nextValue, updated_at: new Date().toISOString() })
+                          .eq('id', invoice.id)
+                        if (error) { toast.error('Could not save format: ' + error.message); return }
+                        setInvoice(prev => ({ ...prev, summary_format: nextValue }))
+                        toast.success(`Utility invoice: ${mode === 'summary' ? 'Parts & Labor summary' : 'Itemized'}`)
+                      }}
+                      title={mode === 'summary' ? 'Show one Parts + one Labor total instead of every line' : 'Show every line item with in-scope / customer-add-on split'}
+                      style={{
+                        flex: 1,
+                        padding: '6px 12px', minHeight: 32,
+                        backgroundColor: isActive ? '#fff' : 'transparent',
+                        color: isActive ? theme.text : theme.textMuted,
+                        border: 'none', borderRadius: 6,
+                        fontSize: 12, fontWeight: 600,
+                        cursor: isActive ? 'default' : 'pointer',
+                        boxShadow: isActive ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                      }}
+                    >
+                      {mode === 'summary' ? 'Summary' : 'Itemized'}
+                    </button>
+                  )
+                })}
+              </div>
 
               <div style={{ borderTop: `1px solid ${theme.border}`, margin: '2px 0' }} />
 

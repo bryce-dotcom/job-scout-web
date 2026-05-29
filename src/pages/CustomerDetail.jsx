@@ -516,6 +516,7 @@ export default function CustomerDetail() {
       marketing_opt_in: customer?.marketing_opt_in || false,
       calendar_display: customer?.calendar_display || 'person',
       utility_invoicing_enabled: customer?.utility_invoicing_enabled,
+      preferred_invoice_format: customer?.preferred_invoice_format || '',
       secondary_contact_name: customer?.secondary_contact_name || '',
       secondary_contact_role: customer?.secondary_contact_role || '',
       secondary_contact_phone: customer?.secondary_contact_phone || '',
@@ -1212,6 +1213,23 @@ export default function CustomerDetail() {
                       </select>
                       <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px', lineHeight: 1.4 }}>
                         "Yes" if this customer is enrolled in a utility rebate program (SRP, RMP, etc.). "No" hides utility-invoice buttons on this customer's jobs.
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>
+                        Preferred Invoice Format
+                      </label>
+                      <select
+                        style={selectStyle}
+                        value={editForm.preferred_invoice_format || ''}
+                        onChange={e => editField('preferred_invoice_format', e.target.value || null)}
+                      >
+                        <option value="">Itemized (default)</option>
+                        <option value="itemized">Itemized — every line item</option>
+                        <option value="summary">Summary — Parts + Labor totals only</option>
+                      </select>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px', lineHeight: 1.4 }}>
+                        Default for new invoices created for this customer. "Summary" collapses the line-by-line breakdown into clean Parts + Labor totals — useful for customers who want a clean bill.
                       </div>
                     </div>
                   </div>

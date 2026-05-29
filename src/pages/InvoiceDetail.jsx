@@ -181,10 +181,12 @@ export default function InvoiceDetail() {
 
       setPayments(paymentsData || [])
 
-      // Fetch invoice line items
+      // Fetch invoice line items + the product type so we can split
+      // Parts (Product) vs Labor (Service/Labor types) for the summary
+      // format toggle.
       const { data: linesData } = await supabase
         .from('invoice_lines')
-        .select('*')
+        .select('*, item:products_services(id, name, type)')
         .eq('invoice_id', id)
         .order('sort_order', { ascending: true })
 
@@ -835,7 +837,48 @@ export default function InvoiceDetail() {
     y += 8
 
     // ── Line items table ──
-    if (invoiceLines && invoiceLines.length > 0) {
+    // Branch: summary_format renders Parts/Labor totals instead of
+    // the per-line breakdown. Same total either way — just collapsed.
+    if (invoice.summary_format && invoiceLines && invoiceLines.length > 0) {
+      checkPage(30)
+
+      // Compute Parts vs Labor split. Service/Labor product types
+      // route to Labor; everything else to Parts. Lines with no
+      // linked product (raw custom items) go to Parts by default.
+      let partsTotal = 0
+      let laborTotal = 0
+      for (const line of invoiceLines) {
+        const lineTotal = parseFloat(line.line_total) || 0
+        const type = (line.item?.type || '').toLowerCase()
+        if (type === 'service' || type === 'labor') laborTotal += lineTotal
+        else partsTotal += lineTotal
+      }
+
+      // Header
+      doc.setFillColor(90, 99, 73)
+      doc.rect(margin, y - 4, contentWidth, 8, 'F')
+      doc.setTextColor(255)
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Description', margin + 4, y)
+      doc.text('Amount', rightEdge - 4, y, { align: 'right' })
+      y += 8
+
+      // Two rows: Parts + Labor
+      doc.setTextColor(0)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(11)
+      doc.text('Parts', margin + 4, y)
+      doc.text(formatCurrency(partsTotal), rightEdge - 4, y, { align: 'right' })
+      y += lineHeight + 2
+      doc.text('Labor', margin + 4, y)
+      doc.text(formatCurrency(laborTotal), rightEdge - 4, y, { align: 'right' })
+      y += 6
+
+      doc.setDrawColor(214, 205, 184)
+      doc.line(margin, y, rightEdge, y)
+      y += 8
+    } else if (invoiceLines && invoiceLines.length > 0) {
       checkPage(30)
 
       // Column layout: Description | Qty | Unit Price | Total
@@ -2397,6 +2440,52 @@ export default function InvoiceDetail() {
                   Lock / Finalize
                 </button>
               )}
+
+              {/* Format toggle: Itemized vs Summary (Parts/Labor totals).
+                  Persists to invoices.summary_format so the next preview
+                  + send + download all use the chosen format. Disabled
+                  when locked (would change the customer-facing invoice). */}
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 0,
+                padding: 3,
+                backgroundColor: theme.bg,
+                border: `1px solid ${theme.border}`,
+                borderRadius: 8,
+              }}>
+                {['itemized', 'summary'].map(mode => {
+                  const isActive = (mode === 'summary') === !!invoice.summary_format
+                  return (
+                    <button
+                      key={mode}
+                      onClick={async () => {
+                        if (isActive || invoice.is_locked) return
+                        const nextValue = mode === 'summary'
+                        const { error } = await supabase
+                          .from('invoices')
+                          .update({ summary_format: nextValue, updated_at: new Date().toISOString() })
+                          .eq('id', invoice.id)
+                        if (error) { toast.error('Could not save format: ' + error.message); return }
+                        setInvoice(prev => ({ ...prev, summary_format: nextValue }))
+                        toast.success(`Invoice format: ${mode === 'summary' ? 'Parts & Labor summary' : 'Itemized'}`)
+                      }}
+                      disabled={invoice.is_locked}
+                      title={invoice.is_locked ? 'Locked invoices cannot change format' : mode === 'summary' ? 'Show one Parts + one Labor total instead of every line' : 'Show every line item'}
+                      style={{
+                        padding: '6px 12px', minHeight: 32,
+                        backgroundColor: isActive ? '#fff' : 'transparent',
+                        color: isActive ? theme.text : theme.textMuted,
+                        border: 'none', borderRadius: 6,
+                        fontSize: 12, fontWeight: 600,
+                        cursor: (isActive || invoice.is_locked) ? 'default' : 'pointer',
+                        boxShadow: isActive ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                        opacity: invoice.is_locked && !isActive ? 0.5 : 1,
+                      }}
+                    >
+                      {mode === 'summary' ? 'Summary' : 'Itemized'}
+                    </button>
+                  )
+                })}
+              </div>
 
               {/* Send Invoice — same button is used for first send and resend */}
               <button
