@@ -222,6 +222,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Snugg Pro', 'Rifeline', 'manual Excel audits'],
         highlights: ['AI fixture ID', 'Per-area photos', 'Customer signature on completion'],
         route: null,
+        walkthrough: 'lighting-audits',
       },
       {
         name: 'Fixture Types',
@@ -246,6 +247,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Rifeline program lookup', 'manual rebate calculators'],
         highlights: ['Source-year tracking', 'Form auto-fill'],
         route: null,
+        walkthrough: 'utility-programs',
       },
       {
         name: 'Rebate / Incentive Measures',
@@ -254,6 +256,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Snugg Pro measure libraries', 'Rifeline rate tables'],
         highlights: ['Prescriptive + custom measures', 'RMP measure lookup', 'Cap math'],
         route: null,
+        walkthrough: 'rebate-measures',
       },
       {
         name: 'Utility Invoices',
@@ -270,6 +273,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Custom marketing landing pages', 'EnergySavvy widgets'],
         highlights: ['Public no-auth', 'Per-utility branding', 'Anon signature capture'],
         route: null,
+        walkthrough: 'lenard-public-pages',
       },
       {
         name: 'Dougie OCR Corrections',

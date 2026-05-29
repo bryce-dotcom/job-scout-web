@@ -32,6 +32,11 @@ import jobSections        from './job-sections.js'
 import jobBoard           from './job-board.js'
 import fieldScout         from './field-scout.js'
 import routes             from './routes.js'
+// — Lighting & Energy —
+import lightingAudits     from './lighting-audits.js'
+import lenardPublicPages  from './lenard-public-pages.js'
+import utilityPrograms    from './utility-programs.js'
+import rebateMeasures     from './rebate-measures.js'
 
 const CARDS = [
   prospectScout,
@@ -54,6 +59,10 @@ const CARDS = [
   jobBoard,
   fieldScout,
   routes,
+  lightingAudits,
+  lenardPublicPages,
+  utilityPrograms,
+  rebateMeasures,
 ]
 
 export const KNOWLEDGE_CARDS = Object.fromEntries(

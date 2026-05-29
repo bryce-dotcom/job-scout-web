@@ -28,6 +28,10 @@ import JobSectionsWalkthrough        from './JobSectionsWalkthrough'
 import JobBoardWalkthrough           from './JobBoardWalkthrough'
 import FieldScoutWalkthrough         from './FieldScoutWalkthrough'
 import RoutesWalkthrough             from './RoutesWalkthrough'
+import LightingAuditsWalkthrough     from './LightingAuditsWalkthrough'
+import LenardPublicPagesWalkthrough  from './LenardPublicPagesWalkthrough'
+import UtilityProgramsWalkthrough    from './UtilityProgramsWalkthrough'
+import RebateMeasuresWalkthrough     from './RebateMeasuresWalkthrough'
 
 export const WALKTHROUGHS = {
   'yard-measure':        YardMeasureWalkthrough,
@@ -50,6 +54,10 @@ export const WALKTHROUGHS = {
   'job-board':           JobBoardWalkthrough,
   'field-scout':         FieldScoutWalkthrough,
   'routes':              RoutesWalkthrough,
+  'lighting-audits':     LightingAuditsWalkthrough,
+  'lenard-public-pages': LenardPublicPagesWalkthrough,
+  'utility-programs':    UtilityProgramsWalkthrough,
+  'rebate-measures':     RebateMeasuresWalkthrough,
 }
 
 export function getWalkthrough(id) {
