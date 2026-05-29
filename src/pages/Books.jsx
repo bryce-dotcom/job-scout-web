@@ -1289,7 +1289,7 @@ export default function Books() {
           {[
             { id: 'overview', label: 'Money' },
             { id: 'transactions', label: 'Transactions', badge: unreviewedCount > 0 ? unreviewedCount : null },
-            { id: 'stripe', label: 'Stripe' },
+            { id: 'stripe', label: 'Payments' },
             { id: 'accounts', label: 'Accounts' },
             { id: 'tax', label: 'Year-End' },
             { id: 'booked', label: 'Booked' }
@@ -3698,12 +3698,32 @@ export default function Books() {
 // Itemized list of Stripe charges so Tracy can verify individual
 // payments (e.g., Bart Strong's May 8 ACH). Searchable + CSV download.
 function StripeTransactionsTab({ companyId, theme, isMobile }) {
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState(null)
+  const [stripeConfigured, setStripeConfigured] = useState(null) // null = unknown, true/false once probed
   const [error, setError] = useState(null)
   const [days, setDays] = useState(90)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all') // all | succeeded | failed | refunded | unmatched
+
+  // Recent manual payments (any source, not just Stripe). Shown as a
+  // fallback when no processor is configured, and as a bonus list under
+  // the Stripe table when configured.
+  const [manualPayments, setManualPayments] = useState([])
+  const [manualLoading, setManualLoading] = useState(false)
+
+  const loadManualPayments = async () => {
+    setManualLoading(true)
+    const { data: pays } = await supabase
+      .from('payments')
+      .select('id, date, amount, method, status, notes, invoice_id, invoice:invoices(invoice_id), customer_id, customer:customers(name)')
+      .eq('company_id', companyId)
+      .order('date', { ascending: false })
+      .limit(50)
+    setManualPayments(pays || [])
+    setManualLoading(false)
+  }
 
   const load = async () => {
     setLoading(true); setError(null)
@@ -3711,10 +3731,22 @@ function StripeTransactionsTab({ companyId, theme, isMobile }) {
       const { data: r, error: e } = await supabase.functions.invoke('stripe-transactions-list', {
         body: { company_id: companyId, days, limit: 2000 },
       })
-      if (e) setError(e.message || 'Failed to load')
-      else if (r?.error) setError(r.error)
-      else if (r?.configured === false) setError('Stripe is not configured for this company. Add a Stripe secret key in Settings → Payments.')
-      else setData(r)
+      if (e) {
+        setError(e.message || 'Failed to load')
+        setStripeConfigured(null)
+      } else if (r?.error) {
+        setError(r.error)
+        setStripeConfigured(null)
+      } else if (r?.configured === false) {
+        // No processor configured — switch to the manual-entry experience
+        // instead of showing a hard error.
+        setStripeConfigured(false)
+        setData(null)
+        await loadManualPayments()
+      } else {
+        setData(r)
+        setStripeConfigured(true)
+      }
     } catch (e) {
       setError(e.message || 'Unexpected error')
     }
@@ -3768,7 +3800,8 @@ function StripeTransactionsTab({ companyId, theme, isMobile }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {/* Intro card */}
+      {/* Intro card — processor-agnostic language so the page makes sense
+          whether the tenant uses Stripe, Square, Helcim, or manual entry. */}
       <div style={{
         padding: '16px 20px',
         backgroundColor: 'rgba(90, 99, 73, 0.06)',
@@ -3778,18 +3811,140 @@ function StripeTransactionsTab({ companyId, theme, isMobile }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
           <CreditCard size={18} style={{ color: theme.accent }} />
           <h2 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: theme.text }}>
-            Verify Stripe payments
+            Verify customer payments
           </h2>
         </div>
         <p style={{ margin: '0 0 6px', fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
-          Every credit card / ACH charge Stripe has processed for your account. <strong>Search by customer name</strong> to
-          confirm a specific payment landed. Use the <strong>Unmatched</strong> filter to find Stripe charges that never got
-          recorded as a payment in JobScout — that's the most common source of "I paid but it still shows a balance" mystery.
+          {stripeConfigured === true ? (
+            <>
+              Every credit card / ACH charge <strong>Stripe</strong> has processed for your account. Search by customer name to
+              confirm a specific payment landed. Use the <strong>Unmatched</strong> filter to find Stripe charges that never got
+              recorded as a payment in JobScout — that's the most common source of "I paid but it still shows a balance" mystery.
+            </>
+          ) : stripeConfigured === false ? (
+            <>
+              No payment processor is connected yet. Connect <strong>Stripe</strong> for automatic syncing of card / ACH charges,
+              or log payments manually from each invoice if you use a different processor (Square, Helcim, PayPal, etc.).
+              Recent payments recorded in JobScout — by any means — show up below.
+            </>
+          ) : (
+            <>Loading payment data…</>
+          )}
         </p>
-        <p style={{ margin: 0, fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
-          Download the CSV to email the report to anyone — your accountant, the customer, or the team.
-        </p>
+        {stripeConfigured === true && (
+          <p style={{ margin: 0, fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+            Download the CSV to email the report to anyone — your accountant, the customer, or the team.
+          </p>
+        )}
       </div>
+
+      {/* No-processor empty state — shows when Stripe (or any) isn't
+          configured. Two CTAs: connect Stripe, or accept manual entry. */}
+      {stripeConfigured === false && (
+        <>
+          <div style={{
+            padding: '24px',
+            border: `1px dashed ${theme.border}`,
+            borderRadius: '12px',
+            backgroundColor: theme.bgCard,
+            textAlign: 'center',
+          }}>
+            <div style={{ marginBottom: '12px' }}>
+              <CreditCard size={28} style={{ color: theme.textMuted, opacity: 0.6 }} />
+            </div>
+            <h3 style={{ margin: '0 0 6px', fontSize: '15px', fontWeight: '700', color: theme.text }}>
+              No payment processor connected
+            </h3>
+            <p style={{ margin: '0 auto 14px', fontSize: '13px', color: theme.textSecondary, maxWidth: '480px', lineHeight: 1.5 }}>
+              Stripe is the only auto-synced processor today. If you use Square, Helcim, PayPal, or another processor,
+              <strong> log each payment manually</strong> from the invoice page. We're tracking demand for direct integrations
+              with other processors — let us know what you use.
+            </p>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => navigate('/settings?tab=mymoney')}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: theme.accent,
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+                title="Open Settings → My Money to paste your Stripe secret key. After that, every Stripe charge auto-syncs here within seconds of the customer paying."
+              >
+                Connect Stripe
+              </button>
+              <button
+                onClick={() => navigate('/invoices')}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  border: `1px solid ${theme.border}`,
+                  backgroundColor: theme.bgCard,
+                  color: theme.text,
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+                title="Open any invoice and click 'Record Payment' to log a payment received outside JobScout (cash, check, Square, Helcim, etc.)."
+              >
+                Log a payment manually
+              </button>
+            </div>
+          </div>
+
+          {/* Recent manual / external payments */}
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: theme.text }}>Recent payments (any source)</h3>
+              <HelpBadge text="Every payment record in your books, regardless of how it was received. Includes Stripe (if connected), manual entries from invoices, and bank-deposit matches from the Money tab." />
+            </div>
+            {manualLoading ? (
+              <p style={{ color: theme.textMuted, fontSize: '13px', padding: '20px', textAlign: 'center' }}>Loading…</p>
+            ) : manualPayments.length === 0 ? (
+              <p style={{ color: theme.textMuted, fontSize: '13px', padding: '20px', textAlign: 'center' }}>
+                No payments recorded yet. Once you log one (from an invoice) or connect Stripe, payments will appear here.
+              </p>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                      {['Date', 'Customer', 'Invoice', 'Amount', 'Method', 'Notes'].map(h => (
+                        <th key={h} style={{ padding: '8px 8px 8px 0', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {manualPayments.map(p => (
+                      <tr key={p.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                        <td style={{ padding: '10px 8px 10px 0', color: theme.text, whiteSpace: 'nowrap' }}>{p.date}</td>
+                        <td style={{ padding: '10px 8px', color: theme.text }}>{p.customer?.name || '—'}</td>
+                        <td style={{ padding: '10px 8px' }}>
+                          {p.invoice?.invoice_id ? (
+                            <a href={`/invoices/${p.invoice_id}`} style={{ color: theme.accent, textDecoration: 'none', fontWeight: 500 }}>{p.invoice.invoice_id}</a>
+                          ) : <span style={{ color: theme.textMuted, fontStyle: 'italic' }}>unlinked</span>}
+                        </td>
+                        <td style={{ padding: '10px 8px', color: theme.text, fontWeight: 600, whiteSpace: 'nowrap' }}>{fmt(p.amount)}</td>
+                        <td style={{ padding: '10px 8px', color: theme.textSecondary }}>{p.method || '—'}</td>
+                        <td style={{ padding: '10px 8px', color: theme.textMuted, fontSize: '12px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.notes || ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* The rest of the Stripe-specific view only renders when configured. */}
+      {stripeConfigured === false ? null : (
+      <>
+
 
       {/* Header / controls */}
       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '12px', alignItems: isMobile ? 'stretch' : 'center', flexWrap: 'wrap' }}>
@@ -3910,6 +4065,8 @@ function StripeTransactionsTab({ companyId, theme, isMobile }) {
           </table>
         </div>
       </div>
+      </>
+      )}
     </div>
   )
 }
