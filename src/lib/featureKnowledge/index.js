@@ -42,6 +42,11 @@ import books              from './books.js'
 import plaidSync          from './plaid-sync.js'
 import invoices           from './invoices.js'
 import frankie            from './frankie.js'
+// — Payroll, HR & Onboarding —
+import onboardingPortal   from './onboarding-portal.js'
+import payroll            from './payroll.js'
+import timeClock          from './time-clock.js'
+import taxFilings         from './tax-filings.js'
 
 const CARDS = [
   prospectScout,
@@ -72,6 +77,10 @@ const CARDS = [
   plaidSync,
   invoices,
   frankie,
+  onboardingPortal,
+  payroll,
+  timeClock,
+  taxFilings,
 ]
 
 export const KNOWLEDGE_CARDS = Object.fromEntries(

@@ -537,6 +537,7 @@ export const FEATURE_CATALOG = [
         replaces: ['ADP RUN', 'When I Work', 'TimeClock Plus', 'Buddy Punch'],
         highlights: ['GPS on punch', 'Lunch breaks', 'Adjustment audit'],
         route: '/time-clock',
+        walkthrough: 'time-clock',
       },
       {
         name: 'Background Location Pings',
@@ -561,6 +562,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Gusto', 'ADP RUN', 'OnPay', 'Paychex'],
         highlights: ['IRS Pub 15-T math', 'Multi-state withholding', 'Overtime mode'],
         route: null,
+        walkthrough: 'payroll',
       },
       {
         name: 'Payroll Inbox',
@@ -577,6 +579,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Gusto tax filings', 'ADP year-end', 'TaxBandits'],
         highlights: ['W-2 / W-3 / 1099-NEC / 1096', 'Amendment tracking', 'PDF snapshots'],
         route: null,
+        walkthrough: 'tax-filings',
       },
       {
         name: 'Direct Deposit',
@@ -633,6 +636,7 @@ export const FEATURE_CATALOG = [
         replaces: ['BambooHR onboarding', 'Gusto onboarding', 'Rippling'],
         highlights: ['14-day magic link', 'Per-step audit', 'Phone-first'],
         route: null,
+        walkthrough: 'onboarding-portal',
       },
       {
         name: 'Signed Documents Vault',

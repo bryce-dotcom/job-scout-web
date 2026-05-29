@@ -36,6 +36,10 @@ import BooksWalkthrough              from './BooksWalkthrough'
 import PlaidSyncWalkthrough          from './PlaidSyncWalkthrough'
 import InvoicesWalkthrough           from './InvoicesWalkthrough'
 import FrankieWalkthrough            from './FrankieWalkthrough'
+import OnboardingPortalWalkthrough   from './OnboardingPortalWalkthrough'
+import PayrollWalkthrough            from './PayrollWalkthrough'
+import TimeClockWalkthrough          from './TimeClockWalkthrough'
+import TaxFilingsWalkthrough         from './TaxFilingsWalkthrough'
 
 export const WALKTHROUGHS = {
   'yard-measure':        YardMeasureWalkthrough,
@@ -66,6 +70,10 @@ export const WALKTHROUGHS = {
   'plaid-sync':          PlaidSyncWalkthrough,
   'invoices':            InvoicesWalkthrough,
   'frankie':             FrankieWalkthrough,
+  'onboarding-portal':   OnboardingPortalWalkthrough,
+  'payroll':             PayrollWalkthrough,
+  'time-clock':          TimeClockWalkthrough,
+  'tax-filings':         TaxFilingsWalkthrough,
 }
 
 export function getWalkthrough(id) {
