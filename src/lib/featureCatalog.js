@@ -348,6 +348,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Service Autopilot properties', 'LawnPro properties', 'Jobber'],
         highlights: ['Gate codes + dog notes', 'Per-property obstacles', 'Customer link'],
         route: '/agents/zach',
+        walkthrough: 'zach-properties',
       },
       {
         name: 'Visits Log',
@@ -356,6 +357,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Service Autopilot visit log', 'LawnPro work orders'],
         highlights: ['Crew + duration', 'Weather logged'],
         route: '/agents/zach/visits',
+        walkthrough: 'zach-visits',
       },
       {
         name: 'Treatments',
@@ -364,6 +366,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Service Autopilot chemical tracker', 'Real Green'],
         highlights: ['Round scheduling', 'Application records'],
         route: '/agents/zach/treatments',
+        walkthrough: 'zach-treatments',
       },
       {
         name: 'Lawn Pricing',
@@ -372,6 +375,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Service Autopilot price book', 'manual sqft pricing'],
         highlights: ['Sqft-tier pricing', 'Per-service rates'],
         route: '/agents/zach/pricing',
+        walkthrough: 'zach-pricing',
       },
       {
         name: 'AI Yard Measure',
