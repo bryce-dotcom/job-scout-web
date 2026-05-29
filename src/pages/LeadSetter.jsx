@@ -27,15 +27,20 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
-// Setter stages (what setter works with)
+// Setter stages — the active draggable kanban columns. Setters move
+// leads through these by dragging cards. Callback and Scheduled used
+// to be bundled (Callback → Contacted column; Scheduled was a top
+// stat). They're now first-class columns so the setter's workflow
+// (and the Video Library walkthrough) actually match.
 const setterStages = [
-  { id: 'New', label: 'New Leads', color: '#3b82f6' },
-  { id: 'Contacted', label: 'Contacted', color: '#8b5cf6' }
+  { id: 'New',             label: 'New Leads',  color: '#3b82f6' },
+  { id: 'Contacted',       label: 'Contacted',  color: '#8b5cf6' },
+  { id: 'Callback',        label: 'Callback',   color: '#eab308', icon: '📞' },
+  { id: 'Appointment Set', label: 'Scheduled',  color: '#10b981', icon: '📅' },
 ]
 
-// Win stages (read-only, shows setter's wins)
+// Win stages — read-only stat counters at the top of the board.
 const winStages = [
-  { id: 'Appointment Set', label: 'Scheduled', color: '#10b981', icon: '📅' },
   { id: 'Qualified', label: 'Qualified', color: '#059669', icon: '✅' }
 ]
 
@@ -142,7 +147,8 @@ export default function LeadSetter() {
       .from('leads')
       .select('*, lead_owner:employees!leads_lead_owner_id_fkey(id, name), setter_owner:employees!leads_setter_owner_id_fkey(id, name)')
       .eq('company_id', companyId)
-      .in('status', ['New', 'Assigned', 'Contacted', 'Callback'])
+      // Include 'Appointment Set' so the new Scheduled column renders.
+      .in('status', ['New', 'Assigned', 'Contacted', 'Callback', 'Appointment Set'])
       .order('created_at', { ascending: false })
 
     // Non-admins only see leads assigned to them (as setter or lead owner)
@@ -215,7 +221,10 @@ export default function LeadSetter() {
   }, [companyId, currentDate])
 
   // Legacy status mapping for display
-  const setterStatusMap = { 'Assigned': 'New', 'Callback': 'Contacted' }
+  // Statuses we re-bucket for display. 'Assigned' is treated the same
+  // as 'New' (legacy data). Callback is NO LONGER bundled — it has its
+  // own column now.
+  const setterStatusMap = { 'Assigned': 'New' }
 
   // Get leads by stage
   const getLeadsByStage = (stageId) => {
@@ -701,7 +710,9 @@ export default function LeadSetter() {
     if (outcome === 'contacted') {
       updates.status = 'Contacted'
     } else if (outcome === 'callback') {
-      updates.status = 'Contacted'
+      // Move to the Callback column (was bundled into Contacted before
+      // Callback became a real kanban column).
+      updates.status = 'Callback'
       updates.callback_date = callbackDateTime || null
       if (contactNotes) updates.callback_notes = contactNotes
     } else if (outcome === 'not_qualified') {
@@ -963,7 +974,7 @@ export default function LeadSetter() {
             overflowX: isMobile ? 'auto' : undefined,
             flexWrap: isMobile ? 'nowrap' : undefined
           }}>
-            {setterStages.slice(0, 3).map(stage => (
+            {setterStages.map(stage => (
               <div
                 key={stage.id}
                 style={{
