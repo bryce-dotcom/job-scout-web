@@ -415,7 +415,49 @@ export default function LeadSetter() {
 
     if (!draggedLead || draggedLead.status === stageId) return
 
-    // Update lead status
+    // Dragging into the Scheduled column has to actually SCHEDULE the
+    // lead — not just flip a status flag. Without this, the rep's
+    // calendar/My Projects stay empty because there's no appointments
+    // row, no salesperson_id, no start_time. Open the appointment modal
+    // pre-filled with tomorrow 10am; the user picks the rep + time and
+    // handleCreateAppointment writes the full row + updates the lead.
+    if (stageId === 'Appointment Set') {
+      const lead = draggedLead
+      setDraggedLead(null)
+      const tomorrow = new Date()
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      tomorrow.setHours(10, 0, 0, 0)
+      setSelectedLead(lead)
+      setAppointmentForm({
+        start_time: formatDateTimeLocal(tomorrow),
+        duration_minutes: 60,
+        salesperson_id: '',
+        salesperson_ids: [],
+        location: lead.address || '',
+        notes: ''
+      })
+      setAppointmentError(null)
+      setShowAppointmentModal(true)
+      return
+    }
+
+    // Dragging into Callback has to capture the callback date — without
+    // a date, the column is just a graveyard and the overdue/scheduled
+    // badges + sort on the column don't work. Open the lead contact
+    // modal so the user fills callback_date/time; logContact() then
+    // sets status='Callback' + callback_date together (one atomic write).
+    if (stageId === 'Callback') {
+      const lead = draggedLead
+      setDraggedLead(null)
+      setSelectedLead(lead)
+      setContactForm({ notes: '', callback_date: '', callback_time: '' })
+      setShowLeadModal(true)
+      return
+    }
+
+    // New / Contacted — plain status flip is fine. Stamp last_contact_at
+    // + bump contact_attempts only when moving INTO Contacted, matching
+    // the existing logContact() behavior.
     await supabase
       .from('leads')
       .update({
