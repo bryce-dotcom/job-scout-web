@@ -174,15 +174,17 @@ export default function LeadSetter() {
     weekEnd.setDate(weekEnd.getDate() + 6)
     weekEnd.setHours(23, 59, 59, 999)
 
-    // Wider window for the Scheduled column — anything from yesterday
-     // forward, capped to ~90 days. Without this, leads booked for next
-     // month don't appear in Scheduled when the user is viewing this
-     // week's calendar.
+    // Scheduled column "active horizon" — the column is a workflow
+    // surface, not an archive. Setters need: today's confirmation
+    // calls, no-show recovery (last few days), and the next ~2 weeks
+    // of booked work. A 90-day window was too noisy (hundreds of
+    // cards). 14 days forward + 3 days back covers what's actionable.
     const scheduledFrom = new Date()
-    scheduledFrom.setDate(scheduledFrom.getDate() - 1)
+    scheduledFrom.setDate(scheduledFrom.getDate() - 3)
     scheduledFrom.setHours(0, 0, 0, 0)
     const scheduledTo = new Date()
-    scheduledTo.setDate(scheduledTo.getDate() + 90)
+    scheduledTo.setDate(scheduledTo.getDate() + 14)
+    scheduledTo.setHours(23, 59, 59, 999)
 
     const [{ data: leadsData }, { data: appointmentsData }, { data: commissionsData }, { data: auditLeadIds }, { data: scheduledApptsData }] = await Promise.all([
       leadsQuery,
@@ -264,36 +266,27 @@ export default function LeadSetter() {
   const getLeadsByStage = (stageId) => {
     let filtered = leads.filter(l => (setterStatusMap[l.status] || l.status) === stageId)
 
-    // Scheduled column is special: the calendar is the source of truth
-    // for what's booked, so merge in every lead that has an upcoming
-    // appointment — even if its status drifted (rep moved it to
-    // Qualified, legacy data, manual SQL insert, etc.). Without this,
-    // the calendar shows the appointment but the column hides the lead,
-    // and the setter can't see who's actually on the books.
+    // Scheduled column is a WORKFLOW surface, not a full booking
+    // archive. Setters need: today's confirmation calls, no-show
+    // recovery (last few days), and the next two weeks of work.
+    // Source-of-truth is the appointments table — fetch already
+    // windowed to -3 / +14 days in fetchData.
     if (stageId === 'Appointment Set') {
-      const seen = new Set(filtered.map(l => l.id))
-      // Stamp known leads with their next appointment_time/id from the
-      // fresh appointments fetch so the card shows the right date even
-      // when the leads.appointment_time column wasn't kept in sync.
-      filtered = filtered.map(l => {
-        const apt = scheduledLeadAppts.find(a => a.lead_id === l.id)
-        if (apt) {
-          return {
-            ...l,
-            appointment_time: l.appointment_time || apt.start_time,
-            appointment_id:   l.appointment_id   || apt.id,
-            salesperson_id:   l.salesperson_id   || apt.salesperson_id,
-          }
-        }
-        return l
-      })
-      // Pull in leads we haven't seen yet from the wider appointment set.
+      const seen = new Set()
+      const merged = []
+
+      // Start from appointments (the source of truth). For each one,
+      // either use the matching lead from the leads list (preferred —
+      // has full data) or fall back to the lead joined onto the apt.
       scheduledLeadAppts.forEach(apt => {
-        if (!apt.lead || seen.has(apt.lead.id)) return
-        if (auditLinkedIds.has(apt.lead.id)) return // belongs in sales pipeline
+        if (!apt.lead) return
+        if (seen.has(apt.lead.id)) return            // dedup: take first/earliest apt
+        if (auditLinkedIds.has(apt.lead.id)) return  // belongs in sales pipeline
         seen.add(apt.lead.id)
-        filtered.push({
-          ...apt.lead,
+
+        const full = leads.find(l => l.id === apt.lead.id)
+        merged.push({
+          ...(full || apt.lead),
           status: 'Appointment Set',
           appointment_time: apt.start_time,
           appointment_id: apt.id,
@@ -301,7 +294,32 @@ export default function LeadSetter() {
           salesperson_ids: apt.salesperson_ids,
         })
       })
-      // Sort by appointment_time so the next upcoming appointment is on top.
+
+      // Also include leads whose status SAYS Appointment Set but whose
+      // appointment is outside the window — they shouldn't fall off the
+      // board entirely (no-show > 3 days, or distant booking).
+      filtered.forEach(l => {
+        if (seen.has(l.id)) return
+        seen.add(l.id)
+        merged.push(l)
+      })
+
+      filtered = merged
+
+      // "Only mine" — setter wants to see appointments THEY booked
+      // (setter_owner_id), reps want their assigned leads
+      // (lead_owner_id, salesperson_id, salesperson_ids).
+      if (onlyMine && user?.id) {
+        filtered = filtered.filter(l => {
+          const ids = Array.isArray(l.salesperson_ids) ? l.salesperson_ids : []
+          return l.setter_owner_id === user.id
+            || l.lead_owner_id === user.id
+            || l.salesperson_id === user.id
+            || ids.includes(user.id)
+        })
+      }
+
+      // Sort by appointment_time ascending — next-up first.
       filtered.sort((a, b) => {
         const at = a.appointment_time ? new Date(a.appointment_time).getTime() : Infinity
         const bt = b.appointment_time ? new Date(b.appointment_time).getTime() : Infinity
@@ -1187,22 +1205,35 @@ export default function LeadSetter() {
                   flexDirection: 'column',
                   gap: '6px'
                 }}>
-                  {getLeadsByStage(stage.id)
-                    .sort((a, b) => {
-                      // Overdue callbacks first, then upcoming callbacks, then by created
-                      const now = new Date()
-                      const aCb = a.callback_date ? new Date(a.callback_date) : null
-                      const bCb = b.callback_date ? new Date(b.callback_date) : null
-                      const aOverdue = aCb && aCb <= now
-                      const bOverdue = bCb && bCb <= now
-                      if (aOverdue && !bOverdue) return -1
-                      if (!aOverdue && bOverdue) return 1
-                      if (aCb && bCb) return aCb - bCb
-                      if (aCb) return -1
-                      if (bCb) return 1
-                      return new Date(b.created_at) - new Date(a.created_at)
-                    })
-                    .map(lead => {
+                  {(() => {
+                    const all = getLeadsByStage(stage.id)
+                    let rows, overflow
+                    if (stage.id === 'Appointment Set') {
+                      // Already sorted by appointment_time (nearest-up first)
+                      // inside getLeadsByStage. Cap visible cards so the column
+                      // stays scannable — overflow link sends them to the calendar.
+                      const CAP = 50
+                      rows = all.slice(0, CAP)
+                      overflow = all.length - rows.length
+                    } else {
+                      rows = all.slice().sort((a, b) => {
+                        // Overdue callbacks first, then upcoming callbacks, then by created
+                        const now = new Date()
+                        const aCb = a.callback_date ? new Date(a.callback_date) : null
+                        const bCb = b.callback_date ? new Date(b.callback_date) : null
+                        const aOverdue = aCb && aCb <= now
+                        const bOverdue = bCb && bCb <= now
+                        if (aOverdue && !bOverdue) return -1
+                        if (!aOverdue && bOverdue) return 1
+                        if (aCb && bCb) return aCb - bCb
+                        if (aCb) return -1
+                        if (bCb) return 1
+                        return new Date(b.created_at) - new Date(a.created_at)
+                      })
+                      overflow = 0
+                    }
+                    return (<>
+                    {rows.map(lead => {
                     const isOverdue = lead.callback_date && new Date(lead.callback_date) <= new Date()
                     const hasCallback = !!lead.callback_date
                     const lastNote = lead.notes ? lead.notes.split('\n')[0] : null
@@ -1288,17 +1319,27 @@ export default function LeadSetter() {
                     </div>
                     )
                   })}
-
-                  {getLeadsByStage(stage.id).length === 0 && (
+                  {overflow > 0 && (
+                    <div style={{
+                      textAlign: 'center', padding: '8px',
+                      fontSize: '11px', color: theme.textMuted, fontStyle: 'italic',
+                      borderTop: `1px dashed ${theme.border}`, marginTop: '4px'
+                    }}>
+                      +{overflow} more on the calendar →
+                    </div>
+                  )}
+                  {all.length === 0 && (
                     <div style={{
                       textAlign: 'center',
                       padding: '16px 8px',
                       color: theme.textMuted,
                       fontSize: '11px'
                     }}>
-                      No leads
+                      {stage.id === 'Appointment Set' ? 'Nothing booked' : 'No leads'}
                     </div>
                   )}
+                    </>)
+                  })()}
                 </div>
               </div>
             ))}
