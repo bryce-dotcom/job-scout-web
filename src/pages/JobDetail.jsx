@@ -2925,65 +2925,68 @@ function JobDetailInner() {
     setSubmittalSending(true)
     setSubmittalProgress('Building package...')
     try {
-      // Utilities reject ZIPs (Alayda's complaint — their intake portals
-      // and email gateways either strip them or won't open them). Build
-      // a single combined PDF instead: PDFs concat their pages, photos
-      // (jpg/png) get embedded as full-page images, non-PDF docs that
-      // aren't images get skipped (logged). One file, one attachment,
-      // utility-portal-friendly.
-      const [{ PDFDocument }] = await Promise.all([import('pdf-lib')])
-      const merged = await PDFDocument.create()
+      // Utilities want ORIGINAL files in their ORIGINAL formats — no ZIP
+      // (their intake portals strip them) and no merged-PDF (loses the
+      // original photo/PDF fidelity their reviewers expect).
+      //
+      // Strategy:
+      //   1. Fetch each manifest item's raw bytes, preserving original mime
+      //   2. If total payload fits Resend's ~40MB cap, attach every file
+      //      individually to the email so the recipient gets a real
+      //      multi-attachment email
+      //   3. Otherwise, upload each file to storage and email a list of
+      //      individual signed-URL links — still one-link-per-file, no ZIP
       const jobName = sanitizeFilename(job.job_title || job.job_id || 'job')
+      const timestamp = Date.now()
+      const fetched = []   // { name, bytes (ArrayBuffer), mime, folder }
       let completed = 0
-      let pagesAdded = 0
       let skipped = 0
 
-      const isImage = (name = '', mime = '') => {
-        const n = (name || '').toLowerCase()
-        const m = (mime || '').toLowerCase()
-        return n.endsWith('.jpg') || n.endsWith('.jpeg') || n.endsWith('.png')
-          || m.startsWith('image/jpeg') || m.startsWith('image/png')
-      }
-      const isPdf = (name = '', mime = '') => {
-        const n = (name || '').toLowerCase()
-        const m = (mime || '').toLowerCase()
-        return n.endsWith('.pdf') || m === 'application/pdf'
-      }
+      // Resend caps the whole email body at ~40MB. Base64 adds ~33%, so
+      // 28MB of raw bytes = ~38MB encoded. Stay safely under that.
+      const ATTACH_BUDGET_BYTES = 28 * 1024 * 1024
 
-      const addImagePage = async (bytes, mime, name = '') => {
-        const isPng = (mime || '').includes('png') || (name || '').toLowerCase().endsWith('.png')
-        const img = isPng ? await merged.embedPng(bytes) : await merged.embedJpg(bytes)
-        // Letter page, fit image preserving aspect
-        const pageW = 612, pageH = 792
-        const page = merged.addPage([pageW, pageH])
-        const m = 36
-        const maxW = pageW - m * 2
-        const maxH = pageH - m * 2
-        const scale = Math.min(maxW / img.width, maxH / img.height, 1)
-        const w = img.width * scale
-        const h = img.height * scale
-        page.drawImage(img, { x: (pageW - w) / 2, y: (pageH - h) / 2, width: w, height: h })
+      const guessMime = (name = '', fallback = '') => {
+        const n = (name || '').toLowerCase()
+        if (n.endsWith('.pdf')) return 'application/pdf'
+        if (n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'image/jpeg'
+        if (n.endsWith('.png')) return 'image/png'
+        if (n.endsWith('.heic')) return 'image/heic'
+        if (n.endsWith('.webp')) return 'image/webp'
+        if (n.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        if (n.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        return fallback || 'application/octet-stream'
       }
 
       for (const item of manifest) {
         try {
-          // CONTENTS.txt manifest doesn't carry useful info into the PDF,
-          // skip it. The PDF itself is the index.
+          // The CONTENTS.txt manifest only made sense inside a ZIP;
+          // utilities don't need it as a separate attachment.
           if (item.type === 'text') { skipped++; completed++; continue }
 
           let bytes = null
           let mime = ''
           if (item.type === 'public') {
-            const resp = await fetch(item.url); if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || '' }
+            const resp = await fetch(item.url)
+            if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || '' }
           } else if (item.type === 'signed') {
             const { data: sd } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
-            if (sd?.signedUrl) { const resp = await fetch(sd.signedUrl); if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || item.att.file_type || '' } }
+            if (sd?.signedUrl) {
+              const resp = await fetch(sd.signedUrl)
+              if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || item.att.file_type || '' }
+            }
           } else if (item.type === 'signed_path') {
             const { data: sd } = await supabase.storage.from(item.bucket).createSignedUrl(item.path, 300)
-            if (sd?.signedUrl) { const resp = await fetch(sd.signedUrl); if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || '' } }
+            if (sd?.signedUrl) {
+              const resp = await fetch(sd.signedUrl)
+              if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || '' }
+            }
           } else if (item.type === 'doc' && item.att.storage_bucket) {
             const { data: sd } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
-            if (sd?.signedUrl) { const resp = await fetch(sd.signedUrl); if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || item.att.file_type || '' } }
+            if (sd?.signedUrl) {
+              const resp = await fetch(sd.signedUrl)
+              if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || item.att.file_type || '' }
+            }
           } else if (item.type === 'utilpdf') {
             const blob = await generateUtilityInvoicePDF(item.invoice)
             bytes = await blob.arrayBuffer(); mime = 'application/pdf'
@@ -2991,19 +2994,12 @@ function JobDetailInner() {
 
           if (!bytes) { skipped++; completed++; continue }
 
-          if (isPdf(item.filename, mime)) {
-            const src = await PDFDocument.load(bytes, { ignoreEncryption: true })
-            const pages = await merged.copyPages(src, src.getPageIndices())
-            pages.forEach(p => merged.addPage(p))
-            pagesAdded += pages.length
-          } else if (isImage(item.filename, mime)) {
-            await addImagePage(bytes, mime, item.filename)
-            pagesAdded++
-          } else {
-            // Unknown binary type (e.g. .docx) — can't go into the PDF.
-            console.warn('Submittal: skipping non-PDF/non-image', item.filename, mime)
-            skipped++
-          }
+          fetched.push({
+            name: item.filename,
+            bytes,
+            mime: mime || guessMime(item.filename),
+            folder: item.folder || 'Documents',
+          })
         } catch (err) {
           console.warn('Submittal email: skipping', item.filename, err.message)
           skipped++
@@ -3012,33 +3008,84 @@ function JobDetailInner() {
         setSubmittalProgress(`Preparing ${completed}/${manifest.length}...`)
       }
 
-      if (pagesAdded === 0) {
-        toast.error('No PDFs or photos available to combine. Use the ZIP button if you need other file types.')
+      if (fetched.length === 0) {
+        toast.error('Nothing could be fetched for the selected items.')
         setSubmittalSending(false); setSubmittalProgress('')
         return
       }
 
-      setSubmittalProgress('Uploading...')
-      const pdfBytes = await merged.save()
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' })
+      const totalBytes = fetched.reduce((sum, f) => sum + f.bytes.byteLength, 0)
+      const fitsInEmail = totalBytes <= ATTACH_BUDGET_BYTES
 
-      // Upload to storage
-      const timestamp = Date.now()
-      const storagePath = `jobs/${id}/submittals/${timestamp}_submittal.pdf`
-      await supabase.storage.from('project-documents').upload(storagePath, blob, { contentType: 'application/pdf' })
+      // Names need to be unique across the attachment list — Documents/
+      // and Photos/ sub-folders disappear in a flat email attachment list,
+      // so prefix collisions become a real risk.
+      const usedNames = new Set()
+      const uniqueName = (base) => {
+        let n = base
+        let i = 2
+        while (usedNames.has(n.toLowerCase())) {
+          const dot = base.lastIndexOf('.')
+          n = dot > 0 ? `${base.slice(0, dot)}-${i}${base.slice(dot)}` : `${base}-${i}`
+          i++
+        }
+        usedNames.add(n.toLowerCase())
+        return n
+      }
 
-      // Create signed URL for the email (7 days)
-      const { data: signedData } = await supabase.storage.from('project-documents').createSignedUrl(storagePath, 7 * 24 * 3600)
-      const downloadUrl = signedData?.signedUrl
+      const bytesToBase64 = (buf) => {
+        const bytes = new Uint8Array(buf)
+        let binary = ''
+        const chunk = 0x8000
+        for (let i = 0; i < bytes.length; i += chunk) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
+        }
+        return btoa(binary)
+      }
 
-      // Save record
+      let attachments = []
+      let downloadUrl = ''
+      let fileLinkList = []  // for the fallback "list of links" email
+
+      if (fitsInEmail) {
+        // Build attachments preserving original format/extension. Recipient
+        // gets a real multi-attachment email — every file in its original
+        // form, no ZIP, no merge.
+        setSubmittalProgress('Encoding attachments...')
+        attachments = fetched.map(f => ({
+          filename: uniqueName(f.name || 'file'),
+          content: bytesToBase64(f.bytes),
+          content_type: f.mime,
+        }))
+      } else {
+        // Too big to attach — upload each individually and email a list of
+        // per-file signed URLs. Still no ZIP, still original formats.
+        setSubmittalProgress('Uploading files...')
+        for (let i = 0; i < fetched.length; i++) {
+          const f = fetched[i]
+          const safeName = uniqueName(f.name || `file-${i}`)
+          const storagePath = `jobs/${id}/submittals/${timestamp}/${safeName}`
+          await supabase.storage.from('project-documents').upload(
+            storagePath,
+            new Blob([f.bytes], { type: f.mime }),
+            { contentType: f.mime, upsert: false }
+          )
+          const { data: sd } = await supabase.storage.from('project-documents').createSignedUrl(storagePath, 7 * 24 * 3600)
+          if (sd?.signedUrl) fileLinkList.push({ name: safeName, url: sd.signedUrl, size: f.bytes.byteLength })
+        }
+      }
+
+      // Save a single record so the History list still shows the send,
+      // pointing at the manifest-style folder when we uploaded.
       await supabase.from('file_attachments').insert({
         company_id: companyId,
         job_id: parseInt(id),
-        file_name: `${jobName}_submittal_package.pdf`,
-        file_path: storagePath,
-        file_type: 'application/pdf',
-        file_size: blob.size,
+        file_name: fitsInEmail
+          ? `${jobName}_submittal (${fetched.length} files attached)`
+          : `${jobName}_submittal (${fetched.length} file links)`,
+        file_path: `jobs/${id}/submittals/${timestamp}/`,
+        file_type: 'multi/files',
+        file_size: totalBytes,
         storage_bucket: 'project-documents',
         photo_context: 'submittal'
       })
@@ -3050,8 +3097,8 @@ function JobDetailInner() {
       // Call via direct fetch with anon key to avoid expired-JWT 401s
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
       const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
-      const docCount = manifest.filter(m => m.folder === 'Documents').length
-      const photoCount = manifest.filter(m => m.folder === 'Photos').length
+      const docCount = fetched.filter(f => f.folder === 'Documents').length
+      const photoCount = fetched.filter(f => f.folder === 'Photos').length
       const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
       const escapedMsg = submittalMessage ? submittalMessage.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : ''
       const escapedJobTitle = (job.job_title || job.job_id || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -3077,7 +3124,7 @@ function JobDetailInner() {
         <tr><td style="padding:32px;">
           ${escapedMsg
             ? `<div style="font-size:15px;line-height:1.6;color:#2c3530;white-space:pre-line;margin-bottom:24px;">${escapedMsg}</div>`
-            : `<div style="font-size:15px;line-height:1.6;color:#2c3530;margin-bottom:24px;">Please find the submittal package for <strong>${escapedJobTitle}</strong> attached below. The download link is valid for 7 days.</div>`
+            : `<div style="font-size:15px;line-height:1.6;color:#2c3530;margin-bottom:24px;">Please find the submittal package for <strong>${escapedJobTitle}</strong> ${fitsInEmail ? 'attached to this email — each file in its original format.' : 'available below — each file is a separate download in its original format.'}</div>`
           }
 
           <!-- Summary card -->
@@ -3087,35 +3134,45 @@ function JobDetailInner() {
                 <tr>
                   <td style="font-size:11px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;padding-bottom:4px;">Documents</td>
                   <td style="font-size:11px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;padding-bottom:4px;">Photos</td>
-                  <td style="font-size:11px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;padding-bottom:4px;">Total Items</td>
+                  <td style="font-size:11px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;padding-bottom:4px;">Total Files</td>
                 </tr>
                 <tr>
                   <td style="font-size:24px;color:#5a6349;font-weight:700;">${docCount}</td>
                   <td style="font-size:24px;color:#5a6349;font-weight:700;">${photoCount}</td>
-                  <td style="font-size:24px;color:#5a6349;font-weight:700;">${manifest.length}</td>
+                  <td style="font-size:24px;color:#5a6349;font-weight:700;">${fetched.length}</td>
                 </tr>
               </table>
             </td></tr>
           </table>
 
-          <!-- CTA -->
-          ${downloadUrl ? `
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
-            <tr><td align="center">
-              <a href="${downloadUrl}" style="display:inline-block;padding:16px 36px;background:linear-gradient(135deg,#5a6349 0%,#4a5239 100%);color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;font-size:15px;letter-spacing:0.3px;box-shadow:0 4px 12px rgba(90,99,73,0.25);">
-                &#x2B07; Download Submittal PDF
-              </a>
-              <div style="font-size:12px;color:#7d8a7f;margin-top:10px;">Link expires in 7 days &middot; ${today}</div>
-            </td></tr>
-          </table>
-          ` : ''}
+          ${fitsInEmail ? `
+          <!-- Attached notice -->
+          <div style="margin-bottom:24px;padding:14px 16px;background-color:#eef2eb;border:1px solid #d6cdb8;border-radius:10px;font-size:14px;color:#2c3530;">
+            <strong>${fetched.length} file${fetched.length === 1 ? '' : 's'} attached</strong> &mdash; original PDFs and photos, ready to drop into your utility portal.
+          </div>
+          ` : `
+          <!-- Per-file link list (too large to attach) -->
+          <div style="margin-bottom:24px;">
+            <div style="font-size:12px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:10px;">Files (links valid 7 days)</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #d6cdb8;border-radius:10px;overflow:hidden;">
+              ${fileLinkList.map((f, i) => `
+                <tr>
+                  <td style="padding:12px 16px;background-color:${i % 2 === 0 ? '#ffffff' : '#f7f5ef'};border-top:${i === 0 ? '0' : '1px solid #eef2eb'};">
+                    <a href="${f.url}" style="color:#5a6349;font-weight:600;text-decoration:none;font-size:14px;word-break:break-all;">&#x2B07; ${f.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</a>
+                    <div style="font-size:11px;color:#7d8a7f;margin-top:2px;">${Math.max(1, Math.round(f.size / 1024))} KB</div>
+                  </td>
+                </tr>
+              `).join('')}
+            </table>
+            <div style="font-size:11px;color:#7d8a7f;margin-top:8px;">Each link downloads the original file in its native format.</div>
+          </div>
+          `}
 
           <!-- What's inside -->
           <div style="border-top:1px solid #eef2eb;padding-top:20px;">
-            <div style="font-size:12px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:10px;">What's Inside</div>
+            <div style="font-size:12px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:10px;">Format</div>
             <div style="font-size:14px;color:#2c3530;line-height:1.6;">
-              A single combined PDF with all selected documents, photos, and invoices &mdash;
-              no ZIP, no folders to extract, ready to upload directly to your utility portal.
+              Original files in their native format &mdash; no ZIP, no folders, no merged PDF. Each PDF stays a PDF, each photo stays a photo.
             </div>
           </div>
         </td></tr>
@@ -3127,7 +3184,7 @@ function JobDetailInner() {
         </td></tr>
 
       </table>
-      <div style="font-size:11px;color:#7d8a7f;margin-top:16px;text-align:center;">If the button doesn't work, copy this link into your browser:<br />${downloadUrl ? `<a href="${downloadUrl}" style="color:#5a6349;word-break:break-all;">${downloadUrl}</a>` : ''}</div>
+      <div style="font-size:11px;color:#7d8a7f;margin-top:16px;text-align:center;">${fitsInEmail ? 'Files are attached to this email.' : 'Each file above links to the original in its native format.'}</div>
     </td></tr>
   </table>
 </body>
@@ -3138,6 +3195,10 @@ function JobDetailInner() {
           from: `${companyName} <invoices@appsannex.com>`,
           subject: `Submittal Package — ${job.job_title || job.job_id}${customerName ? ` — ${customerName}` : ''}`,
           html: emailHtml,
+          // Real attachments — Resend forwards each as a native email
+          // attachment (.pdf stays .pdf, .jpg stays .jpg). Empty when
+          // we fell back to per-file signed-URL links instead.
+          ...(attachments.length > 0 ? { attachments } : {}),
       }
       const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
         method: 'POST',

@@ -31,12 +31,15 @@ Deno.serve(async (req) => {
       return json({ success: false, error: 'Invalid JSON body' })
     }
 
-    const { to, subject, html, from, reply_to } = payload as {
+    const { to, subject, html, from, reply_to, attachments } = payload as {
       to?: string | string[]
       subject?: string
       html?: string
       from?: string
       reply_to?: string
+      // Resend attachments — each { filename, content (base64-encoded string), content_type? }
+      // Resend accepts up to ~40MB combined; caller should check before sending.
+      attachments?: Array<{ filename: string; content: string; content_type?: string }>
     }
 
     if (!to || !subject) {
@@ -63,12 +66,23 @@ Deno.serve(async (req) => {
     }
     if (!safeFrom) safeFrom = 'JobScout <invoices@appsannex.com>'
 
-    const requestBody = {
+    const requestBody: Record<string, unknown> = {
       from: safeFrom,
       to: Array.isArray(to) ? to : [to],
       subject,
       html: html || '',
       reply_to: reply_to || undefined,
+    }
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      // Resend expects: { filename, content (base64 string) }. content_type
+      // is optional — Resend infers from filename.
+      requestBody.attachments = attachments
+        .filter(a => a && a.filename && a.content)
+        .map(a => ({
+          filename: a.filename,
+          content: a.content,
+          ...(a.content_type ? { content_type: a.content_type } : {}),
+        }))
     }
 
     console.log('[send-email] sending', { to: requestBody.to, from: requestBody.from, subjectLen: subject.length, htmlLen: (html || '').length })
