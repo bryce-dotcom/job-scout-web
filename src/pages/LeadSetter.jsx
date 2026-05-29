@@ -58,11 +58,6 @@ export default function LeadSetter() {
   const [leads, setLeads] = useState([])
   const [appointments, setAppointments] = useState([])
   const [commissions, setCommissions] = useState([])
-  // All upcoming/recent lead appointments (broader than the visible
-  // calendar week) — used to populate the Scheduled kanban column so
-  // leads with appointments next month still show up even when the
-  // user is viewing this week. Shape: [{lead_id, start_time, salesperson_id, lead:{...}}, ...]
-  const [scheduledLeadAppts, setScheduledLeadAppts] = useState([])
   // Lead IDs that have a linked lighting_audit — those belong in the
   // sales pipeline, not the setter board. Kept in state so getLeadsByStage
   // can exclude them when merging appointment-derived leads.
@@ -174,24 +169,16 @@ export default function LeadSetter() {
     weekEnd.setDate(weekEnd.getDate() + 6)
     weekEnd.setHours(23, 59, 59, 999)
 
-    // Scheduled column "active horizon" — the column is a workflow
-    // surface, not an archive. Setters need: today's confirmation
-    // calls, no-show recovery (last few days), and the next ~2 weeks
-    // of booked work. A 90-day window was too noisy (hundreds of
-    // cards). 14 days forward + 3 days back covers what's actionable.
-    const scheduledFrom = new Date()
-    scheduledFrom.setDate(scheduledFrom.getDate() - 3)
-    scheduledFrom.setHours(0, 0, 0, 0)
-    const scheduledTo = new Date()
-    scheduledTo.setDate(scheduledTo.getDate() + 14)
-    scheduledTo.setHours(23, 59, 59, 999)
-
-    const [{ data: leadsData }, { data: appointmentsData }, { data: commissionsData }, { data: auditLeadIds }, { data: scheduledApptsData }] = await Promise.all([
+    const [{ data: leadsData }, { data: appointmentsData }, { data: commissionsData }, { data: auditLeadIds }] = await Promise.all([
       leadsQuery,
 
+      // Pull the joined lead data alongside appointments so the
+      // Scheduled column can render a lead card directly from an
+      // appointment row (no extra fetch). 'status' and a few other
+      // fields are needed so the card has callback/contact info.
       supabase
         .from('appointments')
-        .select('*, lead:leads!lead_id(id, customer_name, phone, address, service_type), salesperson:employees!salesperson_id(id, name)')
+        .select('*, lead:leads!lead_id(id, customer_name, phone, address, service_type, status, setter_owner_id, lead_owner_id, callback_date, created_at, contact_attempts, last_contact_at, notes), salesperson:employees!salesperson_id(id, name)')
         .eq('company_id', companyId)
         .gte('start_time', weekStart.toISOString())
         .lte('start_time', weekEnd.toISOString())
@@ -210,20 +197,7 @@ export default function LeadSetter() {
         .from('lighting_audits')
         .select('lead_id')
         .eq('company_id', companyId)
-        .not('lead_id', 'is', null),
-
-      // Wider appointment fetch (90 days out) — feeds the Scheduled
-      // column so it matches the calendar source-of-truth even when the
-      // visible week is different from when the lead is booked.
-      supabase
-        .from('appointments')
-        .select('id, lead_id, start_time, end_time, salesperson_id, salesperson_ids, status, lead:leads!lead_id(id, customer_name, phone, address, service_type, status, setter_owner_id, lead_owner_id, callback_date, created_at, contact_attempts, last_contact_at, notes)')
-        .eq('company_id', companyId)
         .not('lead_id', 'is', null)
-        .gte('start_time', scheduledFrom.toISOString())
-        .lte('start_time', scheduledTo.toISOString())
-        .neq('status', 'Cancelled')
-        .order('start_time')
     ])
 
     // Filter out leads that have linked audits
@@ -234,7 +208,6 @@ export default function LeadSetter() {
     setLeads(filteredLeads)
     setAppointments(appointmentsData || [])
     setCommissions(commissionsData || [])
-    setScheduledLeadAppts(scheduledApptsData || [])
 
     // Load company settings
     if (company) {
@@ -266,24 +239,23 @@ export default function LeadSetter() {
   const getLeadsByStage = (stageId) => {
     let filtered = leads.filter(l => (setterStatusMap[l.status] || l.status) === stageId)
 
-    // Scheduled column is a WORKFLOW surface, not a full booking
-    // archive. Setters need: today's confirmation calls, no-show
-    // recovery (last few days), and the next two weeks of work.
-    // Source-of-truth is the appointments table — fetch already
-    // windowed to -3 / +14 days in fetchData.
+    // Scheduled column mirrors the visible calendar week. The
+    // appointments state is already the week's appointments — derive
+    // the column directly from it so navigating the calendar (week +/-)
+    // shifts the column in lockstep. Lead status is irrelevant here:
+    // if it's on the calendar this week, it's "scheduled" this week.
     if (stageId === 'Appointment Set') {
       const seen = new Set()
       const merged = []
 
-      // Start from appointments (the source of truth). For each one,
-      // either use the matching lead from the leads list (preferred —
-      // has full data) or fall back to the lead joined onto the apt.
-      scheduledLeadAppts.forEach(apt => {
-        if (!apt.lead) return
-        if (seen.has(apt.lead.id)) return            // dedup: take first/earliest apt
-        if (auditLinkedIds.has(apt.lead.id)) return  // belongs in sales pipeline
+      appointments.forEach(apt => {
+        if (!apt.lead_id || !apt.lead) return          // skip Blocks / unlinked
+        if (seen.has(apt.lead.id)) return              // dedup: take earliest apt
+        if (auditLinkedIds.has(apt.lead.id)) return    // belongs in sales pipeline
         seen.add(apt.lead.id)
 
+        // Prefer the full lead row from `leads` (richer) when present;
+        // fall back to the joined lead from the appointment.
         const full = leads.find(l => l.id === apt.lead.id)
         merged.push({
           ...(full || apt.lead),
@@ -293,15 +265,6 @@ export default function LeadSetter() {
           salesperson_id: apt.salesperson_id,
           salesperson_ids: apt.salesperson_ids,
         })
-      })
-
-      // Also include leads whose status SAYS Appointment Set but whose
-      // appointment is outside the window — they shouldn't fall off the
-      // board entirely (no-show > 3 days, or distant booking).
-      filtered.forEach(l => {
-        if (seen.has(l.id)) return
-        seen.add(l.id)
-        merged.push(l)
       })
 
       filtered = merged
@@ -319,7 +282,7 @@ export default function LeadSetter() {
         })
       }
 
-      // Sort by appointment_time ascending — next-up first.
+      // Sort by appointment_time ascending — earliest day-of-week first.
       filtered.sort((a, b) => {
         const at = a.appointment_time ? new Date(a.appointment_time).getTime() : Infinity
         const bt = b.appointment_time ? new Date(b.appointment_time).getTime() : Infinity
