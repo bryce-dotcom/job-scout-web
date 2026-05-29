@@ -429,64 +429,95 @@ function CounterText({ to, elapsed, durMs = 2200 }) {
   return val.toLocaleString()
 }
 
-// ─── Satellite tile — hand-drawn aerial styled like Google Maps ─────────
+// ─── Satellite tile — REAL Esri World Imagery of a Highland UT lot ──────
+// Tiles are pre-fetched (scripts/_tmp-fetch-satellite.cjs) and bundled
+// under /public/images/walkthroughs/yard-measure/. Renders as a 5×3 grid
+// of 256px tiles (1280×768 composite). The AI trace polygon is drawn
+// over the actual visible lawn around the central residence.
+
+const SATELLITE_TILES = {
+  cols: 5,
+  rows: 3,
+  tilePx: 256,
+}
+// SVG-space polygon (composite is 1280×768) traced around the lawn
+// surrounding the center-block residence. Hand-picked from the real
+// tile image. 8 organic-shaped vertices for natural curvature.
+const LAWN_POLYGON = '545,335 650,328 750,345 775,420 750,490 680,510 600,515 545,495 525,425'
+
 function SatelliteTile({ traced, traceElapsed = 0, small }) {
-  // Lot polygon — drawn at higher zoom; mostly grass with a house pad,
-  // driveway, and trees. Matches the look-and-feel of the previous
-  // version but framed inside a Maps-style tile (controls + scale bar).
-  const grassPoints = '60,80 280,40 440,90 510,210 480,340 380,400 220,420 100,360 40,240'
-  const houseBox = { x: 200, y: 160, w: 140, h: 100 }
+  const { cols, rows, tilePx } = SATELLITE_TILES
+  const compositeW = cols * tilePx
+  const compositeH = rows * tilePx
 
   return (
-    <div style={{ position: 'relative', width: '100%', aspectRatio: small ? '16/8' : '16/9', background: '#c4a878' }}>
-      <svg viewBox="0 0 600 450" preserveAspectRatio="xMidYMid slice" style={{ width: '100%', height: '100%', display: 'block' }}>
-        {/* Dirt frame texture */}
-        <defs>
-          <pattern id="dirt" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
-            <line x1="0" y1="0" x2="0" y2="14" stroke="#b09866" strokeWidth="0.5" opacity="0.4" />
-          </pattern>
-          <pattern id="grass" width="6" height="6" patternUnits="userSpaceOnUse">
-            <circle cx="3" cy="3" r="0.8" fill="#5a7e3f" opacity="0.35" />
-          </pattern>
-        </defs>
-        <rect width="600" height="450" fill="url(#dirt)" />
-        {/* Neighbor lot strips for realism */}
-        <rect x="0" y="0" width="600" height="14" fill="#a89060" />
-        <rect x="0" y="436" width="600" height="14" fill="#a89060" />
-        {/* Lawn */}
-        <polygon points={grassPoints} fill="#7ea65a" />
-        <polygon points={grassPoints} fill="url(#grass)" />
-        {/* House */}
-        <rect x={houseBox.x} y={houseBox.y} width={houseBox.w} height={houseBox.h} fill="#d8d2c1" stroke="#a89c80" strokeWidth="1" />
-        <polygon points={`${houseBox.x},${houseBox.y} ${houseBox.x + houseBox.w/2},${houseBox.y - 30} ${houseBox.x + houseBox.w},${houseBox.y}`} fill="#7a4d3a" />
-        <rect x={houseBox.x + houseBox.w/2 - 11} y={houseBox.y + houseBox.h - 32} width="22" height="32" fill="#5d3e2a" />
-        {/* Driveway */}
-        <polygon points={`${houseBox.x + houseBox.w/2 - 12},${houseBox.y + houseBox.h} ${houseBox.x + houseBox.w/2 + 12},${houseBox.y + houseBox.h} ${houseBox.x + houseBox.w/2 + 28},450 ${houseBox.x + houseBox.w/2 - 28},450`} fill="#8b8a85" />
-        {/* Trees */}
-        <circle cx="110" cy="160" r="22" fill="#4a6b3a" opacity="0.85" />
-        <circle cx="120" cy="150" r="14" fill="#7ea65a" opacity="0.6" />
-        <circle cx="450" cy="155" r="28" fill="#4a6b3a" opacity="0.85" />
-        <circle cx="460" cy="145" r="18" fill="#7ea65a" opacity="0.6" />
-        <circle cx="420" cy="360" r="20" fill="#4a6b3a" opacity="0.85" />
+    <div style={{
+      position: 'relative',
+      width: '100%',
+      aspectRatio: small ? `${cols * tilePx} / ${rows * tilePx * 0.66}` : `${cols * tilePx} / ${rows * tilePx * 0.85}`,
+      overflow: 'hidden',
+      background: '#2a2a2a',
+    }}>
+      {/* Real satellite tile grid */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'grid',
+        gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gridTemplateRows: `repeat(${rows}, 1fr)`,
+      }}>
+        {Array.from({ length: rows }).flatMap((_, ry) =>
+          Array.from({ length: cols }).map((__, cx) => (
+            <img
+              key={`${cx}-${ry}`}
+              src={`/images/walkthroughs/yard-measure/tile-${cx}-${ry}.jpg`}
+              alt=""
+              style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
+              draggable={false}
+            />
+          )),
+        )}
+      </div>
 
-        {/* AI-traced polygon — animated dasharray */}
+      {/* AI-traced polygon — drawn over the visible lawn of the
+          center-block residence. Uses the composite coordinate space. */}
+      <svg
+        viewBox={`0 0 ${compositeW} ${compositeH}`}
+        preserveAspectRatio="xMidYMid slice"
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+      >
         {traced && (
-          <motion.polygon
-            points={grassPoints}
-            fill="none"
-            stroke="#22c55e"
-            strokeWidth="3.5"
-            strokeLinejoin="round"
-            strokeDasharray="1600"
-            initial={{ strokeDashoffset: 1600 }}
-            animate={{ strokeDashoffset: 0 }}
-            transition={{ duration: 2.4, ease: 'easeInOut' }}
-            style={{ filter: 'drop-shadow(0 0 6px rgba(34,197,94,0.5))' }}
-          />
+          <>
+            <motion.polygon
+              points={LAWN_POLYGON}
+              fill="rgba(34,197,94,0.15)"
+              stroke="#22c55e"
+              strokeWidth="4"
+              strokeLinejoin="round"
+              strokeDasharray="1400"
+              initial={{ strokeDashoffset: 1400, fillOpacity: 0 }}
+              animate={{ strokeDashoffset: 0, fillOpacity: 1 }}
+              transition={{
+                strokeDashoffset: { duration: 2.4, ease: 'easeInOut' },
+                fillOpacity:     { duration: 0.6, delay: 2.2 },
+              }}
+              style={{ filter: 'drop-shadow(0 0 8px rgba(34,197,94,0.6))' }}
+            />
+            {/* Pin at center of polygon */}
+            <motion.circle
+              cx={650}
+              cy={420}
+              r="6"
+              fill="#22c55e"
+              initial={{ opacity: 0, scale: 0 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2, duration: 0.3 }}
+            />
+          </>
         )}
       </svg>
 
-      {/* Map-tile-style chrome overlays */}
+      {/* Map-tile-style chrome overlays — looks like Google/Esri */}
       <div style={{
         position: 'absolute', top: 6, left: 6,
         padding: '3px 7px', borderRadius: 4,
@@ -501,24 +532,24 @@ function SatelliteTile({ traced, traceElapsed = 0, small }) {
         padding: '2px 6px',
         background: 'rgba(255,255,255,0.85)',
         borderRadius: 3,
-        fontSize: 8, color: '#666',
+        fontSize: 8, color: '#444',
       }}>
-        Map data ©2026 Google
+        Imagery © Esri
       </div>
 
       {/* Sparkles particles during trace */}
       {traced && traceElapsed > 200 && (
         <>
-          {[...Array(4)].map((_, i) => (
+          {[...Array(5)].map((_, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, scale: 0 }}
               animate={{ opacity: [0, 1, 0], scale: [0, 1.4, 0] }}
-              transition={{ duration: 1.4, delay: 0.4 + i * 0.25, repeat: Infinity, repeatDelay: 1.2 }}
+              transition={{ duration: 1.4, delay: 0.4 + i * 0.2, repeat: Infinity, repeatDelay: 1.2 }}
               style={{
                 position: 'absolute',
-                top: `${30 + (i * 12)}%`,
-                left: `${30 + (i * 8)}%`,
+                top: `${45 + (i * 8)}%`,
+                left: `${42 + (i * 6)}%`,
                 pointerEvents: 'none',
               }}
             >

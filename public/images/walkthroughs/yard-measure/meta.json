@@ -1,0 +1,37 @@
+{
+  "source": "Esri World Imagery",
+  "center": {
+    "lat": 40.4276,
+    "lng": -111.7987
+  },
+  "zoom": 19,
+  "grid": {
+    "rows": 3,
+    "cols": 5,
+    "tilePx": 256
+  },
+  "tiles": [
+    [
+      "tile-0-0.jpg",
+      "tile-1-0.jpg",
+      "tile-2-0.jpg",
+      "tile-3-0.jpg",
+      "tile-4-0.jpg"
+    ],
+    [
+      "tile-0-1.jpg",
+      "tile-1-1.jpg",
+      "tile-2-1.jpg",
+      "tile-3-1.jpg",
+      "tile-4-1.jpg"
+    ],
+    [
+      "tile-0-2.jpg",
+      "tile-1-2.jpg",
+      "tile-2-2.jpg",
+      "tile-3-2.jpg",
+      "tile-4-2.jpg"
+    ]
+  ],
+  "totalSize": "1280×768"
+}
