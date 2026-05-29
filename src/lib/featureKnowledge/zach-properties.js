@@ -28,6 +28,7 @@ export default {
       { id: 'saved',  baseDur: 5000, narration: 'Save it and the property card lands in the grid with the key details on the front.' },
       { id: 'detail', baseDur: 6000, narration: 'Every chip on that card is a field your crew needs — mow frequency, turf size, dog warnings, gate codes.' },
       { id: 'grid',   baseDur: 6500, narration: 'Filter by mow day, search by name, and your whole book of business is one page.' },
+      { id: 'fieldscout', baseDur: 7500, narration: 'Every property with a mow day auto-creates a recurring job that flows straight to Field Scout. The crew sees today\'s route, taps a property, clocks in, and the visit logs itself when they tap done.' },
     ],
   },
 

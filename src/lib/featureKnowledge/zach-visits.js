@@ -27,6 +27,7 @@ export default {
       { id: 'predict',baseDur: 6500, narration: 'Zach predicts how long the mow should take based on past visits. Beat the prediction, you know the crew is rolling.' },
       { id: 'logged', baseDur: 5500, narration: 'Save and the visit lands in the timeline with crew, duration, and weather logged.' },
       { id: 'history',baseDur: 6000, narration: 'Every visit on every property in one searchable feed. Customers see their history too.' },
+      { id: 'fieldscout', baseDur: 7500, narration: "Most of the time the crew never opens this page. They mark the mow done from Field Scout — the visit row writes itself with today's date, the right property, and the crew that did the work." },
     ],
   },
 

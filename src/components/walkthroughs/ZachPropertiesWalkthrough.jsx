@@ -3,7 +3,8 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, Plus, MapPin, Calendar, Ruler, Dog, KeyRound, Edit2, Trash2,
-  Calculator, User, Save,
+  Calculator, User, Save, Compass, Clock, Play, ArrowRight, Sparkles,
+  CheckCircle2,
 } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
@@ -68,6 +69,11 @@ export default function ZachPropertiesWalkthrough() {
 }
 
 function Stage({ scene, sceneElapsed }) {
+  // Scene 6: full-screen Field Scout view replacing the desk app.
+  if (scene === 'fieldscout') {
+    return <FieldScoutCrewView sceneElapsed={sceneElapsed} />
+  }
+
   // form scene: typewriter address
   const typedLen = scene === 'form'
     ? Math.min(ADDRESS_TYPED.length, Math.floor(sceneElapsed / 55))
@@ -189,13 +195,171 @@ function PropertyCard({ property: p, highlight, flashIn }) {
   )
 }
 
+// Field Scout crew view — shows the bridged lawn jobs as they appear
+// to the crew on the day-of.
+function FieldScoutCrewView({ sceneElapsed }) {
+  const TODAY_JOBS = [
+    { id: 1, name: 'Smith — Main St',     addr: '6395 W 10400 N · Highland',  sqft: 6450, prediction: 36, status: 'pending' },
+    { id: 2, name: 'Garcia — Mountainview',addr: '1457 N 110 W · Orem',       sqft: 4200, prediction: 22, status: 'pending' },
+    { id: 3, name: 'Walker — Center St',   addr: '212 E Center · Lehi',       sqft: 8900, prediction: 48, status: 'pending' },
+  ]
+  // After ~3.5s, first job flips to "Done" + a visit-toast slides up.
+  const firstDone = sceneElapsed > 3500
+  const visitToast = sceneElapsed > 4200
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0,
+      padding: 18,
+      background: T.bg,
+      overflow: 'hidden',
+      display: 'flex',
+      gap: 14,
+    }}>
+      {/* Left: Field Scout app frame */}
+      <div style={{
+        flex: 1,
+        background: T.bgCard,
+        border: `1px solid ${T.border}`,
+        borderRadius: 14,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: '0 4px 18px rgba(0,0,0,0.06)',
+      }}>
+        {/* Field Scout header */}
+        <div style={{
+          padding: '12px 16px',
+          borderBottom: `1px solid ${T.border}`,
+          background: T.accent,
+          color: '#fff',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <Compass size={16} />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>Field Scout</div>
+            <div style={{ fontSize: 10, opacity: 0.9 }}>Today · Wednesday May 27 · Crew B</div>
+          </div>
+        </div>
+
+        {/* Daily stats strip */}
+        <div style={{ padding: '8px 16px', borderBottom: `1px solid ${T.border}`, background: T.bg, display: 'flex', gap: 12, fontSize: 11, color: T.textMuted }}>
+          <div><strong style={{ color: T.text }}>{TODAY_JOBS.length}</strong> jobs today</div>
+          <div><strong style={{ color: T.text }}>{TODAY_JOBS.reduce((s, j) => s + j.prediction, 0)} min</strong> predicted</div>
+          <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <Sparkles size={11} style={{ color: T.purple }} /> Powered by Zach
+          </div>
+        </div>
+
+        {/* Today's job cards */}
+        <div style={{ flex: 1, padding: 12, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'auto' }}>
+          {TODAY_JOBS.map((j, i) => {
+            const isDone = i === 0 && firstDone
+            return (
+              <motion.div
+                key={j.id}
+                animate={isDone ? { background: T.successBg, borderColor: T.success } : { background: T.bgCard, borderColor: T.border }}
+                transition={{ duration: 0.4 }}
+                style={{
+                  padding: 12,
+                  border: `1.5px solid ${T.border}`,
+                  borderRadius: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                }}
+              >
+                <div style={{
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: isDone ? T.success : T.accentBg,
+                  color: isDone ? '#fff' : T.accent,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  {isDone ? <CheckCircle2 size={16} strokeWidth={2.5} /> : <span style={{ fontSize: 12, fontWeight: 700 }}>{i + 1}</span>}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>
+                    {j.name} <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 500 }}>· Mow</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 3 }}>{j.addr}</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <Chip icon={Ruler}>{j.sqft.toLocaleString()} sqft</Chip>
+                    <Chip icon={Clock}>~{j.prediction} min</Chip>
+                  </div>
+                </div>
+                {!isDone ? (
+                  i === 0 ? (
+                    <motion.button
+                      animate={{ scale: [1, 1.05, 1] }}
+                      transition={{ repeat: Infinity, duration: 1.4 }}
+                      style={{
+                        padding: '6px 12px',
+                        background: T.accent,
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 7,
+                        fontSize: 11, fontWeight: 700,
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                      }}
+                    >
+                      <Play size={11} /> Start
+                    </motion.button>
+                  ) : (
+                    <div style={{ padding: '6px 12px', background: T.bg, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 7, fontSize: 10 }}>
+                      Up next
+                    </div>
+                  )
+                ) : (
+                  <div style={{ fontSize: 10, color: T.successDark, fontWeight: 700 }}>Done · 34 min</div>
+                )}
+              </motion.div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Right: arrow + visit-toast */}
+      <div style={{ width: 220, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12 }}>
+        <ArrowRight size={28} style={{ color: T.accent, alignSelf: 'center' }} />
+        <AnimatePresence>
+          {visitToast && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              style={{
+                padding: 12,
+                background: T.bgCard,
+                border: `1.5px solid ${T.success}`,
+                borderRadius: 10,
+                boxShadow: '0 4px 14px rgba(34,197,94,0.15)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                <Sparkles size={12} style={{ color: T.success }} />
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.successDark, textTransform: 'uppercase' }}>
+                  Auto-logged
+                </div>
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.text }}>Smith — Main St</div>
+              <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>lawn_visits row · Today · Mow · Crew B</div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}
+
 function caption(phase, sceneKey, setupIdx, setupShowingIntro, card) {
   const m = {
-    empty:  '1. Empty Properties board — Add Property in top-right',
-    form:   '2. Fill in name, address, lot details, gate code, dog notes',
-    saved:  '3. Property card lands in the grid',
-    detail: '4. Key details visible on the card — frequency, sqft, dog, gate',
-    grid:   '5. Full grid of properties · filter and search',
+    empty:      '1. Empty Properties board — Add Property in top-right',
+    form:       '2. Fill in name, address, lot details, gate code, dog notes',
+    saved:      '3. Property card lands in the grid',
+    detail:     '4. Key details visible on the card — frequency, sqft, dog, gate',
+    grid:       '5. Full grid of properties · filter and search',
+    fieldscout: '6. Crew taps the property in Field Scout — visit writes itself',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
   if (phase === 'setup' && setupShowingIntro) return 'Now — how to set it up'

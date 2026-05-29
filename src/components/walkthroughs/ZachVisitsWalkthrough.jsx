@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Plus, ClipboardCheck, Calendar, Users, Clock, Cloud, TrendingUp,
+  Compass, Play, ArrowRight, Sparkles, CheckCircle2, Ruler,
 } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
@@ -64,7 +65,9 @@ export default function ZachVisitsWalkthrough() {
   )
 }
 
-function Stage({ scene }) {
+function Stage({ scene, sceneElapsed }) {
+  if (scene === 'fieldscout') return <FieldScoutCompletionView sceneElapsed={sceneElapsed} />
+
   const visibleVisits = scene === 'logged' ? [VISITS[0]]
     : scene === 'history' ? VISITS
     : []
@@ -171,13 +174,163 @@ function VisitCard({ visit: v, flashIn }) {
   )
 }
 
+// Field Scout completion view — tech taps the property, marks done,
+// the lawn_visits sidecar writes itself.
+function FieldScoutCompletionView({ sceneElapsed }) {
+  const clockRunning = sceneElapsed > 800
+  const markDoneVisible = sceneElapsed > 2200
+  const visitToast = sceneElapsed > 4500
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0,
+      padding: 18,
+      background: T.bg,
+      overflow: 'hidden',
+      display: 'flex',
+      gap: 14,
+    }}>
+      {/* Field Scout job-detail card */}
+      <div style={{
+        flex: 1,
+        background: T.bgCard,
+        border: `1px solid ${T.border}`,
+        borderRadius: 14,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: '0 4px 18px rgba(0,0,0,0.06)',
+      }}>
+        <div style={{
+          padding: '10px 14px',
+          borderBottom: `1px solid ${T.border}`,
+          background: T.accent,
+          color: '#fff',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <Compass size={14} />
+          <div style={{ fontSize: 12, fontWeight: 700 }}>Field Scout · Active job</div>
+        </div>
+
+        <div style={{ padding: 14, flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: T.text, marginBottom: 3 }}>
+            Smith — Main St
+          </div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>
+            6395 W 10400 N · Highland UT 84003
+          </div>
+
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+            <Chip>Mow</Chip>
+            <Chip icon={Ruler}>6,450 sqft</Chip>
+            <Chip icon={Clock}>~36 min est.</Chip>
+          </div>
+
+          {/* Clock-in panel */}
+          <div style={{
+            padding: '12px 14px',
+            background: clockRunning ? T.successBg : T.bg,
+            border: `1.5px solid ${clockRunning ? T.success : T.border}`,
+            borderRadius: 10,
+            marginBottom: 14,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}>
+            <Clock size={18} style={{ color: clockRunning ? T.successDark : T.textMuted }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: clockRunning ? T.successDark : T.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {clockRunning ? 'Clocked in to this job' : 'Not started'}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.text, fontVariantNumeric: 'tabular-nums' }}>
+                {clockRunning ? <Timer elapsed={Math.max(0, sceneElapsed - 800)} /> : '00:00'}
+              </div>
+            </div>
+            {clockRunning && (
+              <motion.div
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ repeat: Infinity, duration: 1.4 }}
+                style={{ width: 10, height: 10, borderRadius: '50%', background: T.success }}
+              />
+            )}
+          </div>
+
+          {/* Mark done button */}
+          {markDoneVisible && (
+            <motion.button
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0, scale: [1, 1.04, 1] }}
+              transition={{ scale: { repeat: Infinity, duration: 1.6 } }}
+              style={{
+                marginTop: 'auto',
+                width: '100%',
+                padding: '12px 14px',
+                background: T.success,
+                color: '#fff',
+                border: 'none',
+                borderRadius: 9,
+                fontSize: 13, fontWeight: 700,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                cursor: 'pointer',
+              }}
+            >
+              <CheckCircle2 size={15} /> Mark mow complete
+            </motion.button>
+          )}
+        </div>
+      </div>
+
+      {/* Right: arrow + auto-logged visit toast */}
+      <div style={{ width: 220, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12 }}>
+        <ArrowRight size={28} style={{ color: T.accent, alignSelf: 'center' }} />
+        <AnimatePresence>
+          {visitToast && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              style={{
+                padding: 12,
+                background: T.bgCard,
+                border: `1.5px solid ${T.success}`,
+                borderRadius: 10,
+                boxShadow: '0 4px 14px rgba(34,197,94,0.15)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                <Sparkles size={12} style={{ color: T.success }} />
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.successDark, textTransform: 'uppercase' }}>
+                  lawn_visits auto-write
+                </div>
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.text, marginBottom: 2 }}>Smith — Main St</div>
+              <div style={{ fontSize: 10, color: T.textMuted }}>visit_date: today</div>
+              <div style={{ fontSize: 10, color: T.textMuted }}>crew: Crew B</div>
+              <div style={{ fontSize: 10, color: T.textMuted }}>duration: 34 min</div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}
+
+// Tiny ticking timer display ("MM:SS")
+function Timer({ elapsed }) {
+  const seconds = Math.floor(elapsed / 1000)
+  const mm = Math.floor(seconds / 60).toString().padStart(2, '0')
+  const ss = (seconds % 60).toString().padStart(2, '0')
+  return <>{mm}:{ss}</>
+}
+
 function caption(phase, sceneKey, setupIdx, setupShowingIntro, card) {
   const m = {
-    empty:   '1. Empty Visits log — Log Visit in top-right',
-    form:    '2. Pick the property, date, service type, crew, duration',
-    predict: '3. Zach predicts time based on past visits — beat the prediction',
-    logged:  '4. Visit lands in the timeline with crew, duration, weather',
-    history: "5. A property's full visit history — customers see it too",
+    empty:      '1. Empty Visits log — Log Visit in top-right',
+    form:       '2. Pick the property, date, service type, crew, duration',
+    predict:    '3. Zach predicts time based on past visits — beat the prediction',
+    logged:     '4. Visit lands in the timeline with crew, duration, weather',
+    history:    "5. A property's full visit history — customers see it too",
+    fieldscout: '6. Crew marks done in Field Scout — visit logs itself',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
   if (phase === 'setup' && setupShowingIntro) return 'Now — how the crew logs a visit'

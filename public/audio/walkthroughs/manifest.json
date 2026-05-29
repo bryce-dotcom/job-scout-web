@@ -1,52 +1,4 @@
 {
-  "prospect-scout": {
-    "voice": "Bill",
-    "voiceId": "pqHfZKP75CvOlQylNhV4",
-    "lines": [
-      "empty",
-      "filter",
-      "results",
-      "reveal",
-      "import",
-      "setup-intro",
-      "setup-0",
-      "setup-1",
-      "setup-2",
-      "setup-3"
-    ]
-  },
-  "yard-measure": {
-    "voice": "Bill",
-    "voiceId": "pqHfZKP75CvOlQylNhV4",
-    "lines": [
-      "address",
-      "zoom",
-      "trace",
-      "quote",
-      "delivered",
-      "setup-intro",
-      "setup-0",
-      "setup-1",
-      "setup-2",
-      "setup-3"
-    ]
-  },
-  "zach-properties": {
-    "voice": "Bill",
-    "voiceId": "pqHfZKP75CvOlQylNhV4",
-    "lines": [
-      "empty",
-      "form",
-      "saved",
-      "detail",
-      "grid",
-      "setup-intro",
-      "setup-0",
-      "setup-1",
-      "setup-2",
-      "setup-3"
-    ]
-  },
   "zach-visits": {
     "voice": "Bill",
     "voiceId": "pqHfZKP75CvOlQylNhV4",
@@ -56,38 +8,7 @@
       "predict",
       "logged",
       "history",
-      "setup-intro",
-      "setup-0",
-      "setup-1",
-      "setup-2",
-      "setup-3"
-    ]
-  },
-  "zach-treatments": {
-    "voice": "Bill",
-    "voiceId": "pqHfZKP75CvOlQylNhV4",
-    "lines": [
-      "empty",
-      "form",
-      "scheduled",
-      "done",
-      "program",
-      "setup-intro",
-      "setup-0",
-      "setup-1",
-      "setup-2",
-      "setup-3"
-    ]
-  },
-  "zach-pricing": {
-    "voice": "Bill",
-    "voiceId": "pqHfZKP75CvOlQylNhV4",
-    "lines": [
-      "sections",
-      "mow",
-      "treat",
-      "preview",
-      "save",
+      "fieldscout",
       "setup-intro",
       "setup-0",
       "setup-1",
