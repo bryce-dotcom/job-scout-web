@@ -53,7 +53,9 @@ export default function UtilityInvoiceDetail() {
     notes: '',
     project_cost: '',
     incentive_amount: '',
-    net_cost: ''
+    net_cost: '',
+    parts_total_override: '',
+    labor_total_override: ''
   })
 
   // Record Payment modal — captures the real paid_at date so commission
@@ -264,6 +266,8 @@ export default function UtilityInvoiceDetail() {
       labor_pct: labP,
       material_amount: Math.round(pc * matP / 100 * 100) / 100 || '',
       labor_amount: Math.round(pc * labP / 100 * 100) / 100 || '',
+      parts_total_override: invoice.parts_total_override ?? '',
+      labor_total_override: invoice.labor_total_override ?? '',
     })
     setIsEditing(true)
   }
@@ -363,6 +367,11 @@ export default function UtilityInvoiceDetail() {
     const incAmt = parseFloat(editForm.incentive_amount) || 0
     const pc = parseFloat(editForm.project_cost) || 0
     const nc = parseFloat(editForm.net_cost) || 0
+    // Parts/Labor manual override — both must be filled to take effect.
+    const partsOv = editForm.parts_total_override === '' || editForm.parts_total_override == null
+      ? null : parseFloat(editForm.parts_total_override)
+    const laborOv = editForm.labor_total_override === '' || editForm.labor_total_override == null
+      ? null : parseFloat(editForm.labor_total_override)
     const { data: updated, error } = await supabase.from('utility_invoices').update({
       amount: incAmt,
       utility_name: editForm.utility_name || null,
@@ -373,6 +382,8 @@ export default function UtilityInvoiceDetail() {
       net_cost: nc,
       material_pct: parseFloat(editForm.material_pct) || 70,
       labor_pct: parseFloat(editForm.labor_pct) || 30,
+      parts_total_override: partsOv,
+      labor_total_override: laborOv,
       // Allow HR to override the displayed invoice number on the
       // utility-copy PDF (e.g. add a -U suffix the utility wants, or
       // match a specific number scheme the program requires).
@@ -535,15 +546,37 @@ export default function UtilityInvoiceDetail() {
     // Same in-scope vs add-on math still drives the footer totals; the
     // body just doesn't show per-line detail.
     if (useLineItems && invoice.summary_format) {
-      // Compute Parts vs Labor across BOTH sections. Service/Labor
-      // product types route to Labor; everything else to Parts.
+      // Compute Parts vs Labor with the 3-tier hierarchy (highest first):
+      //   1) Manual override on invoice.parts_total_override + labor_total_override (both set)
+      //   2) Sum of per-line labor_cost (real split — labor_cost = labor, rest = parts)
+      //   3) Fallback type heuristic for legacy invoices without labor_cost data
       let partsTotal = 0
       let laborTotal = 0
-      for (const l of allLines) {
-        const total = parseFloat(l.line_total ?? l.total) || 0
-        const type = (l.item?.type || '').toLowerCase()
-        if (type === 'service' || type === 'labor') laborTotal += total
-        else partsTotal += total
+      const hasOverride = invoice.parts_total_override != null && invoice.labor_total_override != null
+      const hasLaborCostData = allLines.some(l => (parseFloat(l.labor_cost) || 0) > 0)
+
+      if (hasOverride) {
+        partsTotal = parseFloat(invoice.parts_total_override) || 0
+        laborTotal = parseFloat(invoice.labor_total_override) || 0
+      } else if (hasLaborCostData) {
+        for (const l of allLines) {
+          const total = parseFloat(l.line_total ?? l.total) || 0
+          const labor = parseFloat(l.labor_cost) || 0
+          const type = (l.item?.type || '').toLowerCase()
+          if (type === 'service' || type === 'labor') {
+            laborTotal += total
+          } else {
+            laborTotal += labor
+            partsTotal += Math.max(0, total - labor)
+          }
+        }
+      } else {
+        for (const l of allLines) {
+          const total = parseFloat(l.line_total ?? l.total) || 0
+          const type = (l.item?.type || '').toLowerCase()
+          if (type === 'service' || type === 'labor') laborTotal += total
+          else partsTotal += total
+        }
       }
 
       doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(0)
@@ -1005,6 +1038,49 @@ export default function UtilityInvoiceDetail() {
                   <p style={{ fontSize: '11px', color: theme.textMuted, fontStyle: 'italic', margin: 0 }}>
                     {invoice?.material_pct ?? 70}% material / {invoice?.labor_pct ?? 30}% labor
                   </p>
+                )}
+
+                {/* Manual Parts/Labor override — only for Summary-format PDFs.
+                    Both fields must be filled to take effect; blank = auto-
+                    compute from per-line labor_cost data. */}
+                {isEditing && invoice.summary_format && (
+                  <div style={{
+                    marginTop: 4,
+                    padding: '12px',
+                    backgroundColor: theme.bg,
+                    border: `1px dashed ${theme.border}`,
+                    borderRadius: '8px',
+                    display: 'flex', flexDirection: 'column', gap: '8px',
+                  }}>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Parts / Labor Override (Summary PDF)
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                      <span style={{ color: theme.textSecondary }}>Parts Total</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editForm.parts_total_override}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, parts_total_override: e.target.value }))}
+                        placeholder="auto"
+                        style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                      <span style={{ color: theme.textSecondary }}>Labor Total</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editForm.labor_total_override}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, labor_total_override: e.target.value }))}
+                        placeholder="auto"
+                        style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
+                      />
+                    </div>
+                    <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>
+                      Both blank = auto-compute from line items. Set both to force the PDF totals.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>

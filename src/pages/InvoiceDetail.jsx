@@ -71,7 +71,9 @@ export default function InvoiceDetail() {
     amount: '',
     discount_applied: '',
     job_description: '',
-    notes: ''
+    notes: '',
+    parts_total_override: '',
+    labor_total_override: ''
   })
 
   // PDF state
@@ -637,14 +639,16 @@ export default function InvoiceDetail() {
       discount_applied: invoice.discount_applied || '',
       credit_card_fee: invoice.credit_card_fee || '',
       job_description: invoice.job_description || '',
-      notes: invoice.notes || ''
+      notes: invoice.notes || '',
+      parts_total_override: invoice.parts_total_override ?? '',
+      labor_total_override: invoice.labor_total_override ?? ''
     })
     setIsEditing(true)
   }
 
   const cancelEditing = () => {
     setIsEditing(false)
-    setEditForm({ invoice_id: '', amount: '', discount_applied: '', credit_card_fee: '', job_description: '', notes: '' })
+    setEditForm({ invoice_id: '', amount: '', discount_applied: '', credit_card_fee: '', job_description: '', notes: '', parts_total_override: '', labor_total_override: '' })
   }
 
   const saveEdits = async () => {
@@ -669,12 +673,21 @@ export default function InvoiceDetail() {
         return
       }
     }
+    // Parts/Labor manual override — both must be filled to take effect.
+    // Blank/empty = clear override and fall back to per-line labor_cost
+    // computation. Stored as numeric or NULL.
+    const partsOv = editForm.parts_total_override === '' || editForm.parts_total_override == null
+      ? null : parseFloat(editForm.parts_total_override)
+    const laborOv = editForm.labor_total_override === '' || editForm.labor_total_override == null
+      ? null : parseFloat(editForm.labor_total_override)
     const payload = {
       amount: parseFloat(editForm.amount) || 0,
       discount_applied: parseFloat(editForm.discount_applied) || 0,
       credit_card_fee: parseFloat(editForm.credit_card_fee) || 0,
       job_description: editForm.job_description || null,
       notes: editForm.notes || null,
+      parts_total_override: partsOv,
+      labor_total_override: laborOv,
       updated_at: new Date().toISOString(),
     }
     if (trimmedNumber) payload.invoice_id = trimmedNumber
@@ -865,16 +878,44 @@ export default function InvoiceDetail() {
     if (invoice.summary_format && invoiceLines && invoiceLines.length > 0) {
       checkPage(30)
 
-      // Compute Parts vs Labor split. Service/Labor product types
-      // route to Labor; everything else to Parts. Lines with no
-      // linked product (raw custom items) go to Parts by default.
+      // Compute Parts vs Labor with this hierarchy (highest priority first):
+      //   1) Manual override on invoice.parts_total_override +
+      //      invoice.labor_total_override (when both set)
+      //   2) Sum of per-line labor_cost (split each line into parts +
+      //      labor — the legitimate split when job_lines carried
+      //      labor_cost through to invoice creation)
+      //   3) Fallback type-based heuristic for legacy invoice_lines
+      //      that have no labor_cost recorded
       let partsTotal = 0
       let laborTotal = 0
-      for (const line of invoiceLines) {
-        const lineTotal = parseFloat(line.line_total) || 0
-        const type = (line.item?.type || '').toLowerCase()
-        if (type === 'service' || type === 'labor') laborTotal += lineTotal
-        else partsTotal += lineTotal
+      const hasOverride = invoice.parts_total_override != null && invoice.labor_total_override != null
+      const hasLaborCostData = invoiceLines.some(l => (parseFloat(l.labor_cost) || 0) > 0)
+
+      if (hasOverride) {
+        partsTotal = parseFloat(invoice.parts_total_override) || 0
+        laborTotal = parseFloat(invoice.labor_total_override) || 0
+      } else if (hasLaborCostData) {
+        for (const line of invoiceLines) {
+          const lineTotal = parseFloat(line.line_total) || 0
+          const labor     = parseFloat(line.labor_cost) || 0
+          const type = (line.item?.type || '').toLowerCase()
+          if (type === 'service' || type === 'labor') {
+            // Pure-labor line — whole thing is labor regardless of labor_cost
+            laborTotal += lineTotal
+          } else {
+            // Split: labor_cost = labor portion, rest = parts
+            laborTotal += labor
+            partsTotal += Math.max(0, lineTotal - labor)
+          }
+        }
+      } else {
+        // Legacy fallback: type-based split
+        for (const line of invoiceLines) {
+          const lineTotal = parseFloat(line.line_total) || 0
+          const type = (line.item?.type || '').toLowerCase()
+          if (type === 'service' || type === 'labor') laborTotal += lineTotal
+          else partsTotal += lineTotal
+        }
       }
 
       // Header
@@ -2339,6 +2380,49 @@ export default function InvoiceDetail() {
                   ) : (
                     <span style={{ color: theme.textMuted }}>{formatCurrency(invoice.credit_card_fee)}</span>
                   )}
+                </div>
+              )}
+
+              {/* Manual Parts/Labor override — only shown in edit mode when
+                  the invoice is set to Summary format. Both fields must be
+                  filled for the override to take effect; leaving them blank
+                  falls back to per-line labor_cost computation. */}
+              {isEditing && invoice.summary_format && (
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: theme.bg,
+                  border: `1px dashed ${theme.border}`,
+                  borderRadius: '8px',
+                  display: 'flex', flexDirection: 'column', gap: '8px',
+                }}>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Parts / Labor Override (Summary PDF)
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                    <span style={{ color: theme.textSecondary }}>Parts Total</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.parts_total_override}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, parts_total_override: e.target.value }))}
+                      placeholder="auto"
+                      style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                    <span style={{ color: theme.textSecondary }}>Labor Total</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.labor_total_override}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, labor_total_override: e.target.value }))}
+                      placeholder="auto"
+                      style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
+                    />
+                  </div>
+                  <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>
+                    Both blank = auto-compute from line items. Set both to force the PDF totals.
+                  </p>
                 </div>
               )}
 

@@ -1187,6 +1187,10 @@ function JobDetailInner() {
           discount: parseFloat(l.discount) || 0,
           line_total: parseFloat(l.total) || ((l.quantity || 1) * (parseFloat(l.price) || 0)),
           sort_order: idx,
+          // Carry through the labor portion so summary-mode PDFs can
+          // legitimately split Parts vs Labor from per-line data
+          // (instead of guessing by product type).
+          labor_cost: parseFloat(l.labor_cost) || 0,
         }))
         const { error: linesErr } = await supabase.from('invoice_lines').insert(invoiceLineRows)
         if (linesErr) console.error('Failed to copy line items into invoice_lines:', linesErr)
@@ -1484,6 +1488,9 @@ function JobDetailInner() {
             // Default true unless explicitly marked false (matches the
             // products_services default + the line-table column default).
             in_utility_scope: l.in_utility_scope !== false,
+            // Carry through the labor portion so summary-mode PDFs can
+            // legitimately split Parts vs Labor from per-line data.
+            labor_cost: parseFloat(l.labor_cost) || 0,
           }))
           const { error: linesErr } = await supabase.from('invoice_lines').insert(invoiceLineRows)
           if (linesErr) console.error('Failed to copy line items into invoice_lines:', linesErr)
