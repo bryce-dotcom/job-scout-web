@@ -41,6 +41,13 @@ export default function UtilityInvoiceDetail() {
   // scope)" without recomputing anything.
   const [invoiceLines, setInvoiceLines] = useState([])
   const [linkedInvoice, setLinkedInvoice] = useState(null)
+  // Parent invoice (typically a deposit) so the utility-copy summary PDF
+  // can subtract the deposit credit just like the customer-copy does,
+  // making the two summary PDFs reconcile to the same Balance Due.
+  const [parentInvoice, setParentInvoice] = useState(null)
+  // Payments recorded against the linked customer invoice — same as
+  // what the customer-copy footer uses for "Paid" / "Balance Due".
+  const [linkedInvoicePayments, setLinkedInvoicePayments] = useState([])
   // Component graph for bundle-aware Parts/Labor splitting (see
   // splitLinePartsLabor). Lets summary-mode PDFs split bundles where
   // labor is priced into the bundle's components, not on the line.
@@ -128,15 +135,42 @@ export default function UtilityInvoiceDetail() {
       // them into in-scope vs add-on without recomputing.
       if (data.invoice_id) {
         const [{ data: inv }, { data: ilines }] = await Promise.all([
-          supabase.from('invoices').select('id, invoice_id, amount, discount_applied, created_at, job_description').eq('id', data.invoice_id).single(),
+          // Pull the same fields InvoiceDetail uses so the deposit /
+          // incentive / credit-card-fee math on the two summary PDFs
+          // stays in lock-step.
+          supabase.from('invoices').select('id, invoice_id, amount, discount_applied, credit_card_fee, parent_invoice_id, created_at, job_description').eq('id', data.invoice_id).single(),
           // Pull item.type for the Parts/Labor split in summary mode
           supabase.from('invoice_lines').select('*, item:products_services(id, name, type)').eq('invoice_id', data.invoice_id).order('sort_order').order('line_number'),
         ])
         setLinkedInvoice(inv || null)
         setInvoiceLines(ilines || [])
+
+        // Parent deposit invoice — same shape as InvoiceDetail uses.
+        // Stores `amount` (deposit credit) + paid date.
+        if (inv?.parent_invoice_id) {
+          const { data: parent } = await supabase
+            .from('invoices')
+            .select('id, invoice_id, amount, invoice_type, created_at, updated_at')
+            .eq('id', inv.parent_invoice_id)
+            .maybeSingle()
+          setParentInvoice(parent || null)
+        } else {
+          setParentInvoice(null)
+        }
+
+        // Payments against the linked customer invoice — drives the
+        // "Paid" / "Balance Due" reconciliation rows on the utility PDF
+        // so the bottom line matches the customer-copy PDF.
+        const { data: pays } = await supabase
+          .from('payments')
+          .select('amount')
+          .eq('invoice_id', data.invoice_id)
+        setLinkedInvoicePayments(pays || [])
       } else {
         setLinkedInvoice(null)
         setInvoiceLines([])
+        setParentInvoice(null)
+        setLinkedInvoicePayments([])
       }
 
       // Load product + bundle-component graph for the line items in
@@ -719,11 +753,10 @@ export default function UtilityInvoiceDetail() {
     }
 
     // ---- Financial summary (footer) ----
-    // Reconciliation lines for the utility's auditor. The "in-scope
-    // subtotal" line above sums to what we claimed for incentive; the
-    // utility incentive applied here equals what they owe us. Customer
-    // add-ons (when present) are a separate line that doesn't touch
-    // the incentive math.
+    // Mirrors the customer-copy PDF's reconciliation rows when there's
+    // a linked customer invoice — same subtotal, deposit credit,
+    // utility incentive, CC fee, paid, and balance due — so the two
+    // summary PDFs reconcile to the same Balance Due number.
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0)
@@ -731,20 +764,83 @@ export default function UtilityInvoiceDetail() {
     const summaryX = margin + 80
     const valX = rightEdge
 
-    doc.setFont('helvetica', 'bold')
-    doc.text('Total Project Cost:', summaryX, y)
-    doc.text(formatCurrency(invoice.project_cost || invoice.amount || (materialTotal + laborTotal)), valX, y, { align: 'right' }); y += 6
+    if (linkedInvoice) {
+      // Use the customer invoice's amount / discount as the source of
+      // truth — same fields InvoiceDetail uses to render its footer.
+      const gross = parseFloat(linkedInvoice.amount) || 0
+      const disc  = parseFloat(linkedInvoice.discount_applied) || 0
+      const ccFee = parseFloat(linkedInvoice.credit_card_fee) || 0
+      const isLegacyNet = disc > 0 && disc >= gross
+      const customerTotal = isLegacyNet ? gross : (gross - disc)
 
-    doc.setFont('helvetica', 'normal'); doc.setTextColor(100)
-    doc.text('Customer Portion:', summaryX, y)
-    doc.text(formatCurrency(invoice.net_cost), valX, y, { align: 'right' }); y += 8
+      const depositCredit = (parentInvoice && parentInvoice.invoice_type === 'deposit')
+        ? (parseFloat(parentInvoice.amount) || 0) : 0
+      const incentivePortion = Math.max(0, disc - depositCredit)
+      const hasDepositBreakout = depositCredit > 0 && !isLegacyNet && disc >= depositCredit
+      const depositPaidDate = parentInvoice?.updated_at || parentInvoice?.created_at
 
-    doc.setDrawColor(214, 205, 184); doc.line(summaryX, y - 2, rightEdge, y - 2)
+      const totalPaidAmt = (linkedInvoicePayments || [])
+        .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
 
-    doc.setTextColor(212, 148, 10); doc.setFontSize(14); doc.setFont('helvetica', 'bold')
-    doc.text('Utility Incentive:', summaryX, y + 5)
-    doc.text(formatCurrency(invoice.incentive_amount || invoice.amount), valX, y + 5, { align: 'right' })
-    y += 18
+      const drawTotalLine = (label, amount, opts = {}) => {
+        doc.setFont('helvetica', opts.bold ? 'bold' : 'normal')
+        doc.setFontSize(opts.fontSize || 10)
+        if (opts.color) doc.setTextColor(...opts.color); else doc.setTextColor(0)
+        doc.text(label, summaryX, y)
+        doc.text(amount, valX, y, { align: 'right' })
+        y += 6
+      }
+
+      drawTotalLine('Subtotal:', formatCurrency(gross))
+
+      if (disc > 0) {
+        if (isLegacyNet) {
+          drawTotalLine('Utility Incentive (applied):', formatCurrency(disc), { color: [120, 120, 120] })
+        } else if (hasDepositBreakout) {
+          if (incentivePortion > 0) {
+            drawTotalLine('Utility Incentive:', `-${formatCurrency(incentivePortion)}`, { color: [200, 0, 0] })
+          }
+          const depositLabel = depositPaidDate
+            ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
+            : 'Deposit Applied:'
+          drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
+        } else {
+          drawTotalLine('Utility Incentive:', `-${formatCurrency(disc)}`, { color: [200, 0, 0] })
+        }
+      }
+
+      if (ccFee > 0) drawTotalLine('CC Processing Fee:', formatCurrency(ccFee))
+
+      if (totalPaidAmt > 0) drawTotalLine('Paid:', formatCurrency(totalPaidAmt), { color: [0, 128, 0] })
+
+      y += 2
+      doc.setDrawColor(90, 99, 73); doc.setLineWidth(0.5)
+      doc.line(summaryX, y, valX, y)
+      doc.setLineWidth(0.2)
+      y += 7
+
+      const balDue = customerTotal + ccFee - totalPaidAmt
+      drawTotalLine('Balance Due:', formatCurrency(Math.max(0, balDue)), { bold: true, fontSize: 13 })
+      y += 10
+    } else {
+      // Legacy utility-only invoices (no linked customer invoice) keep
+      // the original "Project Cost / Customer Portion / Utility Owes"
+      // rollup. Nothing to reconcile against in this branch.
+      doc.setFont('helvetica', 'bold')
+      doc.text('Total Project Cost:', summaryX, y)
+      doc.text(formatCurrency(invoice.project_cost || invoice.amount || (materialTotal + laborTotal)), valX, y, { align: 'right' }); y += 6
+
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(100)
+      doc.text('Customer Portion:', summaryX, y)
+      doc.text(formatCurrency(invoice.net_cost), valX, y, { align: 'right' }); y += 8
+
+      doc.setDrawColor(214, 205, 184); doc.line(summaryX, y - 2, rightEdge, y - 2)
+
+      doc.setTextColor(212, 148, 10); doc.setFontSize(14); doc.setFont('helvetica', 'bold')
+      doc.text('Utility Incentive:', summaryX, y + 5)
+      doc.text(formatCurrency(invoice.incentive_amount || invoice.amount), valX, y + 5, { align: 'right' })
+      y += 18
+    }
 
     // Notes
     if (invoice.notes) {
