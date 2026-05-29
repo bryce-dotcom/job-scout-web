@@ -632,6 +632,7 @@ export default function InvoiceDetail() {
   // Edit mode handlers
   const startEditing = () => {
     setEditForm({
+      invoice_id: invoice.invoice_id || '',
       amount: invoice.amount || '',
       discount_applied: invoice.discount_applied || '',
       credit_card_fee: invoice.credit_card_fee || '',
@@ -643,19 +644,41 @@ export default function InvoiceDetail() {
 
   const cancelEditing = () => {
     setIsEditing(false)
-    setEditForm({ amount: '', discount_applied: '', credit_card_fee: '', job_description: '', notes: '' })
+    setEditForm({ invoice_id: '', amount: '', discount_applied: '', credit_card_fee: '', job_description: '', notes: '' })
   }
 
   const saveEdits = async () => {
     setSaving(true)
-    const { error } = await supabase.from('invoices').update({
+    // Invoice number changes: defend against blank + check uniqueness
+    // within the same company. invoice_id is a free-text column so we
+    // enforce the no-duplicate rule client-side.
+    const trimmedNumber = (editForm.invoice_id || '').trim()
+    const numberChanged = trimmedNumber && trimmedNumber !== invoice.invoice_id
+    if (numberChanged) {
+      const { data: dup } = await supabase
+        .from('invoices')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('invoice_id', trimmedNumber)
+        .neq('id', id)
+        .maybeSingle()
+      if (dup) {
+        const { toast } = await import('../lib/toast')
+        toast.error(`Invoice number "${trimmedNumber}" is already in use. Pick a different one.`)
+        setSaving(false)
+        return
+      }
+    }
+    const payload = {
       amount: parseFloat(editForm.amount) || 0,
       discount_applied: parseFloat(editForm.discount_applied) || 0,
       credit_card_fee: parseFloat(editForm.credit_card_fee) || 0,
       job_description: editForm.job_description || null,
       notes: editForm.notes || null,
-      updated_at: new Date().toISOString()
-    }).eq('id', id)
+      updated_at: new Date().toISOString(),
+    }
+    if (trimmedNumber) payload.invoice_id = trimmedNumber
+    const { error } = await supabase.from('invoices').update(payload).eq('id', id)
 
     const { toast } = await import('../lib/toast')
     if (error) {
@@ -1499,7 +1522,23 @@ export default function InvoiceDetail() {
         </button>
         <div style={{ flex: 1 }}>
           <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {invoice.invoice_id}
+            {isEditing ? (
+              <input
+                type="text"
+                value={editForm.invoice_id}
+                onChange={(e) => setEditForm(prev => ({ ...prev, invoice_id: e.target.value }))}
+                placeholder="INV-XXXX"
+                style={{
+                  padding: '4px 8px',
+                  fontSize: 13, fontWeight: 600,
+                  color: theme.accent, backgroundColor: theme.bgCard,
+                  border: `1px solid ${theme.border}`, borderRadius: 6,
+                  outline: 'none', width: 180,
+                }}
+              />
+            ) : (
+              invoice.invoice_id
+            )}
             {invoice.invoice_type === 'deposit' && (
               <span style={{
                 padding: '2px 10px', borderRadius: 999,

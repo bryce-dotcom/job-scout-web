@@ -250,6 +250,9 @@ export default function UtilityInvoiceDetail() {
     const matP = parseFloat(invoice.material_pct) || 70
     const labP = parseFloat(invoice.labor_pct) || 30
     setEditForm({
+      // Display number — shown to the utility on the PDF header. Falls
+      // back to the customer invoice's number on legacy rows.
+      linked_invoice_number: invoice.linked_invoice_number || linkedInvoice?.invoice_id || '',
       amount: invoice.amount || '',
       utility_name: invoice.utility_name || '',
       customer_name: invoice.customer_name || '',
@@ -370,6 +373,10 @@ export default function UtilityInvoiceDetail() {
       net_cost: nc,
       material_pct: parseFloat(editForm.material_pct) || 70,
       labor_pct: parseFloat(editForm.labor_pct) || 30,
+      // Allow HR to override the displayed invoice number on the
+      // utility-copy PDF (e.g. add a -U suffix the utility wants, or
+      // match a specific number scheme the program requires).
+      linked_invoice_number: (editForm.linked_invoice_number || '').trim() || null,
       updated_at: new Date().toISOString()
     }).eq('id', id).select().single()
 
@@ -797,8 +804,25 @@ export default function UtilityInvoiceDetail() {
           <ArrowLeft size={20} />
         </button>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600' }}>
-            UTILITY COPY · {invoice.linked_invoice_number || linkedInvoice?.invoice_id || `UTL-${invoice.id}`}{invoice.linked_invoice_number ? '-U' : ''}
+          <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span>UTILITY COPY ·</span>
+            {isEditing ? (
+              <input
+                type="text"
+                value={editForm.linked_invoice_number}
+                onChange={(e) => setEditForm(prev => ({ ...prev, linked_invoice_number: e.target.value }))}
+                placeholder="INV-XXXX"
+                style={{
+                  padding: '4px 8px',
+                  fontSize: 13, fontWeight: 600,
+                  color: theme.accent, backgroundColor: theme.bgCard,
+                  border: `1px solid ${theme.border}`, borderRadius: 6,
+                  outline: 'none', width: 180,
+                }}
+              />
+            ) : (
+              <span>{invoice.linked_invoice_number || linkedInvoice?.invoice_id || `UTL-${invoice.id}`}{invoice.linked_invoice_number ? '-U' : ''}</span>
+            )}
           </p>
           {invoice.linked_invoice_number && (
             <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
