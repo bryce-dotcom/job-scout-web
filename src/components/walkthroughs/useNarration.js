@@ -94,7 +94,7 @@ function speakViaSpeechSynthesis(text, voices) {
   }
 }
 
-export function useNarration({ walkthroughId, scene, script, enabled = true }) {
+export function useNarration({ walkthroughId, scene, script, enabled = true, preloadedAudio = null }) {
   const lastSceneRef = useRef(null)
 
   useEffect(() => {
@@ -107,6 +107,22 @@ export function useNarration({ walkthroughId, scene, script, enabled = true }) {
     let cancelled = false
 
     const tryMp3 = async () => {
+      // Fast path: caller pre-loaded the audio element. No HEAD probe,
+      // no new Audio(), no decode wait — play() is near-instant.
+      if (preloadedAudio && preloadedAudio[scene]) {
+        const audio = preloadedAudio[scene]
+        stopAll()
+        try {
+          audio.currentTime = 0
+          activeAudio = audio
+          await audio.play()
+          return true
+        } catch (e) {
+          return false
+        }
+      }
+      // Slow path: probe + new Audio. Kept for back-compat with any
+      // call site that doesn't preload.
       const url = audioUrlFor(walkthroughId, scene)
       if (!url) return false
       const ok = await probeAudio(url)
@@ -118,8 +134,6 @@ export function useNarration({ walkthroughId, scene, script, enabled = true }) {
       try {
         await audio.play()
       } catch (e) {
-        // Autoplay can still fail in edge cases (e.g. iframe sandboxing).
-        // Fall back to Web Speech.
         return false
       }
       return true
@@ -128,7 +142,6 @@ export function useNarration({ walkthroughId, scene, script, enabled = true }) {
     ;(async () => {
       const playedMp3 = await tryMp3()
       if (playedMp3 || cancelled) return
-      // Fallback: Web Speech API
       const voices = await loadVoices()
       if (cancelled || !enabled) return
       speakViaSpeechSynthesis(script[scene], voices)
@@ -137,7 +150,7 @@ export function useNarration({ walkthroughId, scene, script, enabled = true }) {
     return () => {
       cancelled = true
     }
-  }, [scene, walkthroughId, enabled, script])
+  }, [scene, walkthroughId, enabled, script, preloadedAudio])
 
   // Cancel on unmount.
   useEffect(() => {

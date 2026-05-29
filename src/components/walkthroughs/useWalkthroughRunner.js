@@ -15,10 +15,12 @@
 // Returns everything the walkthrough needs to render itself.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNarration, probeWalkthroughAudio, resetNarrationCache } from './useNarration'
+import { useNarration, resetNarrationCache } from './useNarration'
 import { getNarrationForCard } from '../../lib/featureKnowledge'
+import { audioUrlFor } from '../../lib/walkthroughScripts'
 
-const AUDIO_TAIL_MS = 600  // breathing room after audio ends
+const AUDIO_TAIL_MS = 800  // breathing room after audio ends
+const PRELOAD_TIMEOUT_MS = 6000  // give up preloading after 6s
 
 export function useWalkthroughRunner(card) {
   const narration = useMemo(() => getNarrationForCard(card), [card])
@@ -47,15 +49,57 @@ export function useWalkthroughRunner(card) {
   const [running, setRunning] = useState(true)
   const [voiceOn, setVoiceOn] = useState(true)
   const [audioDurations, setAudioDurations] = useState({})
+  const [audioElements, setAudioElements] = useState({})
+  const [audioReady, setAudioReady] = useState(false)
   const timerRef = useRef(null)
   const startedAt = useRef(Date.now())
 
-  // Probe MP3 durations once on mount.
+  // Preload every MP3 on mount AND wait for canplaythrough before
+  // letting the runner tick. Two-bird fix:
+  //   1. play() is near-instant when a scene starts → no start lag
+  //   2. We get accurate durations from the loaded element to size scenes
+  // Side effect: the modal pauses ~200–500ms before the first scene
+  // visual starts. Worth it for sync'd audio.
   useEffect(() => {
+    if (typeof window === 'undefined') return
     let cancelled = false
-    probeWalkthroughAudio(card.id, ALL_SCENE_KEYS).then((map) => {
-      if (!cancelled) setAudioDurations(map)
+
+    const loadOne = (key) => new Promise((resolve) => {
+      const url = audioUrlFor(card.id, key)
+      if (!url) return resolve({ key, audio: null, duration: null })
+      const audio = new Audio()
+      audio.preload = 'auto'
+      let done = false
+      const settle = (val) => {
+        if (done) return
+        done = true
+        audio.removeEventListener('canplaythrough', onReady)
+        audio.removeEventListener('error', onErr)
+        resolve(val)
+      }
+      const onReady = () => settle({ key, audio, duration: isFinite(audio.duration) ? Math.round(audio.duration * 1000) : null })
+      const onErr   = () => settle({ key, audio: null, duration: null })
+      audio.addEventListener('canplaythrough', onReady)
+      audio.addEventListener('error', onErr)
+      setTimeout(() => settle({ key, audio: null, duration: null }), PRELOAD_TIMEOUT_MS)
+      audio.src = url
+      // Trigger the network fetch (some browsers need this).
+      audio.load()
     })
+
+    Promise.all(ALL_SCENE_KEYS.map(loadOne)).then((results) => {
+      if (cancelled) return
+      const durations = {}
+      const elements  = {}
+      for (const r of results) {
+        if (r.duration) durations[r.key] = r.duration
+        if (r.audio)    elements[r.key]  = r.audio
+      }
+      setAudioDurations(durations)
+      setAudioElements(elements)
+      setAudioReady(true)
+    })
+
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.id])
@@ -77,9 +121,11 @@ export function useWalkthroughRunner(card) {
     }
   }, [audioDurations, BASE_SCENES, BASE_SETUP_INTRO_MS, BASE_SETUP_STEP_DUR])
 
-  // RAF-driven elapsed tracker.
+  // RAF-driven elapsed tracker. Gated on audioReady so scene 1's
+  // narration plays in sync with scene 1's visuals.
   useEffect(() => {
     if (!running) return
+    if (!audioReady) return
     startedAt.current = Date.now() - elapsed
     const tick = () => {
       const now = Date.now() - startedAt.current
@@ -94,7 +140,7 @@ export function useWalkthroughRunner(card) {
     timerRef.current = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(timerRef.current)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, totalMs])
+  }, [running, totalMs, audioReady])
 
   const position = useMemo(
     () => timelinePosition(elapsed, { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs }),
@@ -106,6 +152,7 @@ export function useWalkthroughRunner(card) {
     scene: position.sceneKey,
     script: NARRATION,
     enabled: voiceOn,
+    preloadedAudio: audioElements,
   })
 
   const replay = () => {
