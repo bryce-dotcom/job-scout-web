@@ -30,6 +30,18 @@ const defaultTheme = {
   accentBg: 'rgba(90,99,73,0.12)'
 }
 
+// Render a UTC ISO timestamp from the DB into the bare "YYYY-MM-DDTHH:MM"
+// format an <input type="datetime-local"> expects — in the BROWSER's local
+// timezone. Avoids the "saves shift the time by your UTC offset on every
+// edit" bug Christopher hit (jobs/23309).
+const toLocalDateTimeInput = (isoString) => {
+  if (!isoString) return ''
+  const d = new Date(isoString)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 const emptyJob = {
   job_title: '',
   job_address: '',
@@ -738,8 +750,12 @@ export default function Jobs() {
         }).filter(Boolean)
       })(),
       business_unit: job.business_unit || '',
-      start_date: job.start_date ? job.start_date.slice(0, 16) : '',
-      end_date: job.end_date ? job.end_date.slice(0, 16) : '',
+      // Convert stored UTC timestamps back to a LOCAL datetime-local string
+      // so the input shows the wall-clock time the user originally picked.
+      // Naively slicing the ISO would show UTC, which then gets re-saved
+      // wrong on the next round-trip.
+      start_date: toLocalDateTimeInput(job.start_date),
+      end_date:   toLocalDateTimeInput(job.end_date),
       allotted_time_hours: job.allotted_time_hours || '',
       details: job.details || '',
       notes: job.notes || '',
@@ -816,8 +832,16 @@ export default function Jobs() {
         : (formData.assigned_team || null),
       job_lead_id: formData.job_lead_id || (formData.assigned_employee_ids.length > 0 ? parseInt(formData.assigned_employee_ids[0]) : null),
       business_unit: formData.business_unit || null,
-      start_date: formData.start_date || null,
-      end_date: formData.end_date || null,
+      // datetime-local inputs emit a bare "YYYY-MM-DDTHH:MM" string with no
+      // timezone. If we pass that straight to a timestamptz column Postgres
+      // assumes UTC, so when the Job Board reads it back and renders in
+      // local time, the wall-clock time shifts by the TZ offset (Christopher
+      // saw 2:00 PM entries come back as 7:00 AM in MST). Round-tripping
+      // through new Date() (which parses the bare string as LOCAL) and
+      // .toISOString() (which serializes to UTC with offset baked in)
+      // preserves the wall-clock the user picked.
+      start_date: formData.start_date ? new Date(formData.start_date).toISOString() : null,
+      end_date:   formData.end_date   ? new Date(formData.end_date).toISOString()   : null,
       allotted_time_hours: formData.allotted_time_hours || null,
       details: formData.details || null,
       notes: formData.notes || null,

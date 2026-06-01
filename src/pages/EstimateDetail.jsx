@@ -1306,15 +1306,26 @@ function EstimateDetailInner() {
       // fetchEstimateData() are not visible inside this same async tick.)
       const { data: freshEstimate } = await supabase
         .from('quotes')
-        .select('*, lead:leads(id, customer_name, phone, email, address), customer:customers(id, name, email, phone, address, business_name)')
+        .select('*, lead:leads(id, customer_name, business_name, phone, email, address), customer:customers(id, name, email, phone, address, business_name, secondary_contact_name, secondary_contact_phone, secondary_contact_email)')
         .eq('id', id)
         .single()
       const estimateRow = freshEstimate || estimate
 
       // 1. Find or create customer
+      // Doug + Christopher feedback: contact name/phone wasn't pulling
+      // through from Lead → Estimate → Job (Capital Lumber, Evergreen).
+      // Two failure modes were happening here:
+      //   a) Customer create only carried name/phone/email/address —
+      //      business_name was dropped, so commercial leads landed as
+      //      bare-name records with no business context.
+      //   b) When a customer was already linked but was missing phone
+      //      (e.g. created from a stub lead), we never back-filled from
+      //      the lead, so installers couldn't reach the contact.
       let customerId = estimateRow.customer_id || null
       const customerInfo = estimateRow.customer || estimateRow.lead
+      const leadInfo    = estimateRow.lead || null
       const customerName = customerInfo?.name || customerInfo?.customer_name || ''
+      const businessName = customerInfo?.business_name || leadInfo?.business_name || null
 
       if (!customerId && customerName) {
         const { data: existing } = await supabase
@@ -1332,15 +1343,47 @@ function EstimateDetailInner() {
             .insert({
               company_id: companyId,
               name: customerName.trim(),
-              phone: customerInfo?.phone || null,
-              email: customerInfo?.email || null,
-              address: customerInfo?.address || null,
+              business_name: businessName || null,
+              phone: customerInfo?.phone || leadInfo?.phone || null,
+              email: customerInfo?.email || leadInfo?.email || null,
+              address: customerInfo?.address || leadInfo?.address || null,
             })
             .select()
             .single()
           if (custErr) throw custErr
           customerId = newCust.id
         }
+      }
+
+      // Back-fill the linked customer when fields the lead has would
+      // otherwise stay blank on the job's contact card. Never overwrite
+      // existing data — only fills NULL slots.
+      if (customerId && leadInfo) {
+        const cust = estimateRow.customer || null
+        const patch = {}
+        if (cust && !cust.phone         && leadInfo.phone)         patch.phone = leadInfo.phone
+        if (cust && !cust.email         && leadInfo.email)         patch.email = leadInfo.email
+        if (cust && !cust.address       && leadInfo.address)       patch.address = leadInfo.address
+        if (cust && !cust.business_name && leadInfo.business_name) patch.business_name = leadInfo.business_name
+        if (Object.keys(patch).length > 0) {
+          patch.updated_at = new Date().toISOString()
+          const { error: patchErr } = await supabase
+            .from('customers').update(patch).eq('id', customerId)
+          if (patchErr) console.warn('[convertToJob] customer back-fill failed', patchErr)
+        }
+      }
+
+      // Defensive: if we still couldn't resolve a customer, log loudly
+      // so we can catch the next Capital Lumber-style orphan before
+      // installers find out in the field. The job insert is allowed to
+      // proceed (legacy behavior preserved) but the issue is visible.
+      if (!customerId) {
+        console.error('[convertToJob] WARNING: creating job with no customer link', {
+          estimate_id: estimateRow.id,
+          quote_id: estimateRow.quote_id,
+          lead_id: estimateRow.lead_id,
+          customer_name_seen: customerName || null,
+        })
       }
 
       // 2. Create the job
