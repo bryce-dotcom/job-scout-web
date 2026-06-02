@@ -1764,11 +1764,24 @@ export default function FieldScout() {
 
                   {/* Notes / details */}
                   {(activeBriefing.job.details || activeBriefing.job.notes) && (
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: '10px', fontWeight: '700', opacity: 0.75, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px' }}>
                         Notes
                       </div>
-                      <div style={{ fontSize: '12px', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                      {/* Cameron flagged: notes block overflowed off-screen on
+                          phones when text contained long URLs / model numbers
+                          with no spaces, and the page didn't scroll
+                          horizontally to compensate. overflowWrap:anywhere
+                          breaks at any character when needed; wordBreak:
+                          break-word covers older mobile Safari. */}
+                      <div style={{
+                        fontSize: '12px',
+                        lineHeight: 1.5,
+                        whiteSpace: 'pre-wrap',
+                        overflowWrap: 'anywhere',
+                        wordBreak: 'break-word',
+                        maxWidth: '100%',
+                      }}>
                         {activeBriefing.job.details || activeBriefing.job.notes}
                       </div>
                     </div>
@@ -1821,7 +1834,7 @@ export default function FieldScout() {
                                     </div>
                                   )}
                                   {aiNotes && (
-                                    <div style={{ fontSize: '10px', opacity: 0.9, marginTop: '4px', fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>
+                                    <div style={{ fontSize: '10px', opacity: 0.9, marginTop: '4px', fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.4, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                                       {aiNotes}
                                     </div>
                                   )}
@@ -1865,16 +1878,21 @@ export default function FieldScout() {
                                   {qty || '1'}x
                                 </div>
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: '12px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {/* Let item names and descriptions wrap
+                                      onto multiple lines on phones instead
+                                      of clipping with ellipsis — Cameron
+                                      couldn't read the full name when it
+                                      got truncated. */}
+                                  <div style={{ fontSize: '12px', fontWeight: '600', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                                     {name}
                                   </div>
                                   {l.item?.description && (
-                                    <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '2px', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                                       {l.item.description}
                                     </div>
                                   )}
                                   {l.notes && (
-                                    <div style={{ fontSize: '10px', opacity: 0.9, marginTop: '2px', fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>
+                                    <div style={{ fontSize: '10px', opacity: 0.9, marginTop: '2px', fontStyle: 'italic', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                                       {l.notes}
                                     </div>
                                   )}
@@ -2682,7 +2700,9 @@ export default function FieldScout() {
                         display: '-webkit-box',
                         WebkitLineClamp: 2,
                         WebkitBoxOrient: 'vertical',
-                        lineHeight: '1.4'
+                        lineHeight: '1.4',
+                        overflowWrap: 'anywhere',
+                        wordBreak: 'break-word',
                       }}>
                         {job.notes}
                       </div>
@@ -2695,14 +2715,19 @@ export default function FieldScout() {
                       padding: '0 16px 16px',
                       borderTop: `1px solid ${theme.border}`
                     }}>
-                      {/* Full notes */}
+                      {/* Full notes — same overflow safety as the briefing
+                          modal: long URLs / model numbers wrap instead of
+                          spilling off the right edge of phone screens. */}
                       {job.notes && (
                         <div style={{
                           padding: '12px 0',
                           fontSize: '13px',
                           color: theme.textSecondary,
                           lineHeight: '1.5',
-                          whiteSpace: 'pre-wrap'
+                          whiteSpace: 'pre-wrap',
+                          overflowWrap: 'anywhere',
+                          wordBreak: 'break-word',
+                          maxWidth: '100%',
                         }}>
                           {job.notes}
                         </div>
