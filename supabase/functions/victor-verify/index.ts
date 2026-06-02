@@ -3,7 +3,17 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
+
+// Always 200 so supabase.functions.invoke exposes the body to the caller
+// (non-2xx becomes an opaque error wrapper on the client side). The
+// `success` flag inside tells the client whether to treat it as a result.
+const json = (body: Record<string, unknown>) =>
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -15,17 +25,11 @@ serve(async (req) => {
 
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ success: false, error: 'API key not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+      return json({ success: false, error: 'API key not configured on the server' });
     }
 
     if (!images || images.length === 0) {
-      return new Response(JSON.stringify({ success: false, error: 'No images provided' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+      return json({ success: false, error: 'No images provided' });
     }
 
     const isDaily = verificationType === 'daily';
@@ -219,10 +223,7 @@ Only return valid JSON, no other text.`;
 
     if (data.error) {
       console.error('[Victor] Claude API error:', data.error);
-      return new Response(JSON.stringify({ success: false, error: data.error.message || 'AI analysis failed' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+      return json({ success: false, error: data.error.message || 'AI analysis failed' });
     }
 
     const content = data.content?.[0]?.text || '';
@@ -232,27 +233,17 @@ Only return valid JSON, no other text.`;
     if (jsonMatch) {
       try {
         const analysis = JSON.parse(jsonMatch[0]);
-        return new Response(JSON.stringify({ success: true, analysis }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        return json({ success: true, analysis });
       } catch (parseErr) {
         console.error('[Victor] JSON parse error:', parseErr);
-        return new Response(JSON.stringify({ success: false, error: 'Failed to parse AI response', raw: content }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        return json({ success: false, error: 'Failed to parse AI response', raw: content });
       }
     }
 
-    return new Response(JSON.stringify({ success: false, error: 'Could not parse analysis', raw: content }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+    return json({ success: false, error: 'Could not parse analysis', raw: content });
 
   } catch (error) {
     console.error('[Victor] Error:', error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+    return json({ success: false, error: (error as Error).message || 'Internal error' });
   }
 });

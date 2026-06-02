@@ -153,17 +153,55 @@ export default function VictorVerify({
       .then(({ data }) => setJobLines(data || []))
   }, [selectedJobId, isDaily, companyId])
 
+  // Downscale + re-encode a photo as JPEG so the request fits Supabase's
+  // 6MB edge-function body cap, and so Claude doesn't reject HEIC/etc.
+  // (Cameron hit "Edge function error" on every job because raw iPhone
+  // photos at full resolution × 8 blew the body limit, and HEIC files
+  // got rejected by Claude's vision API which only accepts jpeg/png/
+  // gif/webp.) Returns { base64, mediaType } ready for the AI request.
+  const prepareImageForAI = async (file) => {
+    const MAX_EDGE = 1600   // px on the longest side — Claude Vision is happy at this
+    const QUALITY = 0.82
+    // Load via createImageBitmap when available (handles EXIF orientation
+    // automatically). Fall back to HTMLImageElement for older browsers.
+    let bitmap = null
+    try {
+      bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    } catch {
+      bitmap = await new Promise((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = reject
+        img.src = URL.createObjectURL(file)
+      })
+    }
+    const srcW = bitmap.width || bitmap.naturalWidth
+    const srcH = bitmap.height || bitmap.naturalHeight
+    const scale = Math.min(1, MAX_EDGE / Math.max(srcW, srcH))
+    const w = Math.round(srcW * scale)
+    const h = Math.round(srcH * scale)
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h)
+    const dataUrl = canvas.toDataURL('image/jpeg', QUALITY)
+    return {
+      base64: dataUrl.split(',')[1],
+      mediaType: 'image/jpeg',
+    }
+  }
+
   // Handle line item photo capture
   const handleLineItemPhoto = async (lineId, e) => {
     const file = e.target.files?.[0]
     if (!file) return
     const preview = URL.createObjectURL(file)
-    const base64 = await new Promise(resolve => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result.split(',')[1])
-      reader.readAsDataURL(file)
-    })
-    setLineItemPhotos(prev => ({ ...prev, [lineId]: { file, preview, base64 } }))
+    try {
+      const { base64, mediaType } = await prepareImageForAI(file)
+      setLineItemPhotos(prev => ({ ...prev, [lineId]: { file, preview, base64, mediaType } }))
+    } catch (err) {
+      console.error('[Victor] line-item photo prep failed', err)
+      setError(`Couldn't read that photo (${file.name}). Try a different photo.`)
+    }
   }
 
   const removeLineItemPhoto = (lineId) => {
@@ -188,13 +226,13 @@ export default function VictorVerify({
     const defaultType = isDaily ? 'vehicle' : 'completion'
     for (const file of files) {
       const preview = URL.createObjectURL(file)
-      // Read base64
-      const base64 = await new Promise(resolve => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result.split(',')[1])
-        reader.readAsDataURL(file)
-      })
-      setPhotos(prev => [...prev, { file, preview, photoType: defaultType, base64 }])
+      try {
+        const { base64, mediaType } = await prepareImageForAI(file)
+        setPhotos(prev => [...prev, { file, preview, photoType: defaultType, base64, mediaType }])
+      } catch (err) {
+        console.error('[Victor] photo prep failed', err)
+        setError(`Couldn't read that photo (${file.name}). Try a different photo.`)
+      }
     }
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
@@ -314,14 +352,16 @@ export default function VictorVerify({
       const allImages = [
         ...photos.map(p => ({
           base64: p.base64,
-          mediaType: p.file.type || 'image/jpeg',
+          // mediaType comes from prepareImageForAI which always returns
+          // 'image/jpeg' — Claude vision rejects HEIC and other formats.
+          mediaType: p.mediaType || 'image/jpeg',
           photoType: p.photoType
         })),
         ...Object.entries(lineItemPhotos).map(([lineId, p]) => {
           const line = jobLines.find(l => String(l.id) === String(lineId))
           return {
             base64: p.base64,
-            mediaType: p.file.type || 'image/jpeg',
+            mediaType: p.mediaType || 'image/jpeg',
             photoType: 'line_item',
             lineItemName: line?.item?.name || line?.description || ''
           }
@@ -352,7 +392,18 @@ export default function VictorVerify({
 
       const { data: aiResult, error: aiError } = await supabase.functions.invoke('victor-verify', { body })
 
-      if (aiError) throw new Error(aiError.message)
+      // supabase.functions.invoke masks the actual response body when the
+      // function returns a non-2xx status — surface BOTH the wrapper error
+      // and the function's own error message so users (and us) can see
+      // why a verification failed instead of an opaque "Edge function
+      // returned a non-2xx status code."
+      if (aiError) {
+        const detail = aiResult?.error ? `: ${aiResult.error}` : ''
+        throw new Error((aiError.message || 'AI verification failed') + detail)
+      }
+      if (aiResult && aiResult.success === false) {
+        throw new Error(aiResult.error || 'AI verification failed')
+      }
 
       const analysis = aiResult?.analysis || aiResult || {}
 
