@@ -15,8 +15,9 @@ import {
   Presentation, X, ChevronLeft, Sparkles, RefreshCw,
   Boxes, Shield, FileBarChart, Globe, Target, TrendingUp,
   Loader, MapPin, Wrench, Navigation, Smartphone, AlertCircle,
-  CircleDot, Hash, ChevronUp
+  CircleDot, Hash, ChevronUp, Library
 } from 'lucide-react'
+import HelpFeatureReference from '../../components/HelpFeatureReference'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -1726,6 +1727,17 @@ const HELP_SECTIONS = [
         </div>
       </div>
     )
+  },
+  {
+    // Auto-generated from src/lib/featureKnowledge/<id>.js — the same
+    // knowledge cards that drive walkthroughs and Arnie. One source of
+    // truth, no copy-paste, no drift. Editing a card here updates the
+    // Help page, the walkthrough narration, and the agent in one go.
+    id: 'feature-reference',
+    title: 'Feature Reference (auto-generated)',
+    icon: Library,
+    color: '#8b5cf6',
+    content: (theme) => <HelpFeatureReference theme={theme} />,
   },
 ]
 

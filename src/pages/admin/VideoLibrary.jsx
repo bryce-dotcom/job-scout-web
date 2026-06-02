@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../components/Layout'
 import { useIsMobile } from '../../hooks/useIsMobile'
@@ -52,6 +52,29 @@ export default function VideoLibrary() {
     () => FEATURE_CATALOG.reduce((sum, c) => sum + (c.features?.length || 0), 0),
     []
   )
+
+  // Deep-link support: /admin/videos#walkthrough=<id> auto-opens the
+  // matching feature's modal on mount. Used from the Help page's
+  // Feature Reference section so "Watch walkthrough" lands directly
+  // on the video instead of dropping the user in a 32-item grid.
+  useEffect(() => {
+    const openFromHash = () => {
+      const m = (window.location.hash || '').match(/walkthrough=([^&]+)/)
+      if (!m) return
+      const wantId = decodeURIComponent(m[1])
+      for (const cat of FEATURE_CATALOG) {
+        for (const feature of (cat.features || [])) {
+          if (feature.walkthrough === wantId) {
+            setPlaying(feature)
+            return
+          }
+        }
+      }
+    }
+    openFromHash()
+    window.addEventListener('hashchange', openFromHash)
+    return () => window.removeEventListener('hashchange', openFromHash)
+  }, [])
 
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '1280px', margin: '0 auto' }}>
