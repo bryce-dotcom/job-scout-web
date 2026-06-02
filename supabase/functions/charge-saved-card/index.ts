@@ -148,7 +148,10 @@ serve(async (req) => {
       return jsonResponse({ error: errMsg }, 400);
     }
 
-    // Payment succeeded — record it
+    // Payment succeeded — record it. We set stripe_payment_intent_id so
+    // the webhook dedup check sees this row when payment_intent.succeeded
+    // fires later for the same charge (otherwise we'd record the payment
+    // twice — once here, once when the webhook arrives).
     await supabase.from('payments').insert({
       company_id,
       invoice_id: invoice.id,
@@ -158,6 +161,7 @@ serve(async (req) => {
       method: 'Credit Card',
       status: 'Completed',
       notes: `Charged ${pm.brand} ****${pm.last_four} (${piData.id})`,
+      stripe_payment_intent_id: piData.id,
     });
 
     // Update CC fee on invoice if applicable

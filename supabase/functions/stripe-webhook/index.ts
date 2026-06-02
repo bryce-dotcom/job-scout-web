@@ -119,7 +119,14 @@ serve(async (req) => {
         { headers: { 'Content-Type': 'application/json' } });
     }
 
-    if (event.type !== 'checkout.session.completed') {
+    // We care about two event types:
+    //   - checkout.session.completed   (hosted Checkout + Payment Links)
+    //   - payment_intent.succeeded     (direct PaymentIntent.create flows
+    //                                   like charge-saved-card, or any
+    //                                   future off-session charge that
+    //                                   skips Checkout)
+    // Anything else gets acked so Stripe stops retrying.
+    if (event.type !== 'checkout.session.completed' && event.type !== 'payment_intent.succeeded') {
       return new Response(JSON.stringify({ received: true }),
         { headers: { 'Content-Type': 'application/json' } });
     }
@@ -127,11 +134,22 @@ serve(async (req) => {
     const session = event.data.object;
     const metadata = session.metadata || {};
     const companyId = metadata.company_id;
-    const documentId = metadata.document_id;
-    const documentType = metadata.document_type;
-    const paymentType = metadata.payment_type;
-    const amountTotal = session.amount_total; // cents
-    const paymentIntent = session.payment_intent;
+    // Backward compat: stripe-create-payment-link historically wrote
+    // `metadata[invoice_id]` while create-checkout-session writes
+    // `metadata[document_id]`. The webhook used to only read document_id,
+    // so EVERY Stripe payment-link charge silently failed to record
+    // (Tracy reported Angie Haynie being charged 9× because the invoice
+    // stayed Unpaid in our DB after the customer paid).
+    const documentId = metadata.document_id || metadata.invoice_id;
+    const documentType = metadata.document_type || (metadata.invoice_id ? 'invoice' : '');
+    const paymentType = metadata.payment_type || (metadata.invoice_id ? 'invoice_payment' : '');
+    // checkout.session: amount_total. payment_intent: amount (charged) / amount_received.
+    const amountTotal = event.type === 'payment_intent.succeeded'
+      ? (session.amount_received ?? session.amount)
+      : session.amount_total; // cents
+    const paymentIntent = event.type === 'payment_intent.succeeded'
+      ? session.id                  // the PI itself
+      : session.payment_intent;     // checkout session links to a PI
 
     if (!companyId) {
       console.error('Missing company_id in checkout session metadata');
@@ -312,8 +330,27 @@ serve(async (req) => {
         .single();
 
       if (invoice) {
-        // Determine payment method from Stripe session
-        const paymentMethodType = session.payment_method_types?.[0] === 'us_bank_account' ? 'ACH' : 'Credit Card';
+        // Idempotency — Stripe can fire both checkout.session.completed
+        // AND payment_intent.succeeded for the same charge, and webhooks
+        // may be retried. We dedupe on stripe_payment_intent_id so the
+        // payment never gets recorded twice.
+        if (paymentIntent) {
+          const { data: existingPayment } = await supabase
+            .from('payments')
+            .select('id')
+            .eq('stripe_payment_intent_id', paymentIntent)
+            .maybeSingle();
+          if (existingPayment?.id) {
+            return new Response(JSON.stringify({ received: true, duplicate: true }),
+              { headers: { 'Content-Type': 'application/json' } });
+          }
+        }
+
+        // Determine payment method. checkout.session has
+        // payment_method_types; raw PaymentIntent has payment_method_types
+        // as well. Default to Credit Card when unknown.
+        const pmType = (session.payment_method_types?.[0] || '').toLowerCase();
+        const paymentMethodType = pmType === 'us_bank_account' ? 'ACH' : 'Credit Card';
 
         // Insert payment record
         await supabase.from('payments').insert({

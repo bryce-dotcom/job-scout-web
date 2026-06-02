@@ -129,6 +129,10 @@ serve(async (req) => {
     const linkParams = new URLSearchParams();
     linkParams.append('line_items[0][price]', price.id);
     linkParams.append('line_items[0][quantity]', '1');
+    // document_id is the canonical key the webhook reads (matches
+    // create-checkout-session). invoice_id stays for backward compat
+    // with any older payment links already in the wild.
+    linkParams.append('metadata[document_id]', String(invoice.id));
     linkParams.append('metadata[invoice_id]', String(invoice.id));
     linkParams.append('metadata[company_id]', String(company_id));
     linkParams.append('metadata[document_type]', 'invoice');
