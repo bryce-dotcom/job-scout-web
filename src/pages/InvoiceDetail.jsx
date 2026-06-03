@@ -81,6 +81,14 @@ export default function InvoiceDetail() {
     labor_total_override: ''
   })
 
+  // Whether this tenant has Stripe configured. Drives whether the
+  // Send Payment Link / Charge Saved Card buttons offer the real
+  // action or a "Connect Stripe →" CTA. Avoids the Antonino-style
+  // failure where the user clicks Send Payment Link, gets a toast
+  // saying "Stripe not configured," and doesn't know what to do.
+  // null = still loading; false = no key; true = configured.
+  const [stripeConfigured, setStripeConfigured] = useState(null)
+
   // PDF state
   const [generatingPdf, setGeneratingPdf] = useState(false)
   const [pdfHistory, setPdfHistory] = useState([])
@@ -155,6 +163,27 @@ export default function InvoiceDetail() {
     if (invoiceData) {
       setInvoice(invoiceData)
       setSendEmail(invoiceData.sent_to_email || invoiceData.customer?.email || '')
+
+      // Detect Stripe configuration up-front so the Send Payment Link
+      // button can render the right action (or a setup CTA when the
+      // tenant hasn't connected Stripe yet — Antonino Lawn Care kept
+      // clicking the button and getting an opaque error because no
+      // payment_config row existed for their company).
+      try {
+        const { data: cfgRow } = await supabase
+          .from('settings')
+          .select('value')
+          .eq('company_id', invoiceData.company_id)
+          .eq('key', 'payment_config')
+          .maybeSingle()
+        let hasKey = false
+        if (cfgRow?.value) {
+          try { hasKey = !!JSON.parse(cfgRow.value).stripe_secret_key } catch { /* leave false */ }
+        }
+        setStripeConfigured(hasKey)
+      } catch {
+        setStripeConfigured(false)
+      }
 
       // If this invoice rolls a deposit credit into discount_applied,
       // load the parent so the discount block can show the deposit as
@@ -2511,15 +2540,28 @@ export default function InvoiceDetail() {
                       Charge Saved Card
                     </button>
                   )}
-                  <button
-                    onClick={sendStripePaymentLink}
-                    disabled={generatingLink}
-                    style={actionBtnStyle('#7c3aed', '#ffffff')}
-                    title={invoice.stripe_payment_link_url ? 'Copy existing payment link to clipboard' : 'Generate a one-click Stripe Payment Link the customer can pay via card or ACH'}
-                  >
-                    <Link2 size={18} />
-                    {generatingLink ? 'Generating…' : (invoice.stripe_payment_link_url ? 'Copy Payment Link' : 'Send Payment Link')}
-                  </button>
+                  {stripeConfigured === false ? (
+                    // Stripe not connected yet — render a setup CTA
+                    // instead of letting the user click into an error.
+                    <button
+                      onClick={() => navigate('/settings?tab=integrations')}
+                      style={actionBtnStyle('rgba(124,58,237,0.10)', '#7c3aed')}
+                      title="Connect your Stripe account in Settings → Integrations so customers can pay invoices by card or ACH"
+                    >
+                      <Link2 size={18} />
+                      Connect Stripe to Send Payment Links
+                    </button>
+                  ) : (
+                    <button
+                      onClick={sendStripePaymentLink}
+                      disabled={generatingLink || stripeConfigured === null}
+                      style={actionBtnStyle('#7c3aed', '#ffffff')}
+                      title={invoice.stripe_payment_link_url ? 'Copy existing payment link to clipboard' : 'Generate a one-click Stripe Payment Link the customer can pay via card or ACH'}
+                    >
+                      <Link2 size={18} />
+                      {generatingLink ? 'Generating…' : (invoice.stripe_payment_link_url ? 'Copy Payment Link' : 'Send Payment Link')}
+                    </button>
+                  )}
                   <button
                     onClick={markAsPaid}
                     disabled={saving}

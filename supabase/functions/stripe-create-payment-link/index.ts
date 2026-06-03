@@ -77,7 +77,7 @@ serve(async (req) => {
     if (configRow?.value) {
       try { stripeKey = JSON.parse(configRow.value).stripe_secret_key; } catch { /* ignore */ }
     }
-    if (!stripeKey) return errResponse('Stripe is not configured for this tenant. Add your Stripe secret key in Settings → Payments.');
+    if (!stripeKey) return errResponse('Stripe is not configured for this tenant. Connect your Stripe account in Settings → Integrations.');
 
     // Tenant company name for the line item description
     const { data: company } = await supabase
