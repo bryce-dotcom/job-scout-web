@@ -53,6 +53,11 @@ import inventory          from './inventory.js'
 import productsServices   from './products-services.js'
 import expenses           from './expenses.js'
 import conrad             from './conrad.js'
+// — Round 3: AI agents + employee/finance corner —
+import victor             from './victor.js'
+import dougie             from './dougie.js'
+import myPay              from './my-pay.js'
+import utilityInvoices    from './utility-invoices.js'
 
 const CARDS = [
   prospectScout,
@@ -92,6 +97,10 @@ const CARDS = [
   productsServices,
   expenses,
   conrad,
+  victor,
+  dougie,
+  myPay,
+  utilityInvoices,
 ]
 
 export const KNOWLEDGE_CARDS = Object.fromEntries(

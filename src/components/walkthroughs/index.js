@@ -45,6 +45,10 @@ import InventoryWalkthrough          from './InventoryWalkthrough'
 import ProductsServicesWalkthrough   from './ProductsServicesWalkthrough'
 import ExpensesWalkthrough           from './ExpensesWalkthrough'
 import ConradWalkthrough             from './ConradWalkthrough'
+import VictorWalkthrough             from './VictorWalkthrough'
+import DougieWalkthrough             from './DougieWalkthrough'
+import MyPayWalkthrough              from './MyPayWalkthrough'
+import UtilityInvoicesWalkthrough    from './UtilityInvoicesWalkthrough'
 
 export const WALKTHROUGHS = {
   'yard-measure':        YardMeasureWalkthrough,
@@ -84,6 +88,10 @@ export const WALKTHROUGHS = {
   'products-services':   ProductsServicesWalkthrough,
   'expenses':            ExpensesWalkthrough,
   'conrad':              ConradWalkthrough,
+  'victor':              VictorWalkthrough,
+  'dougie':              DougieWalkthrough,
+  'my-pay':              MyPayWalkthrough,
+  'utility-invoices':    UtilityInvoicesWalkthrough,
 }
 
 export function getWalkthrough(id) {

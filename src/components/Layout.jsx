@@ -25,6 +25,7 @@ import {
   Lightbulb,
   Building,
   Building2,
+  ShoppingCart,
   FileStack,
   MessageSquare,
   BarChart3,
@@ -293,6 +294,7 @@ export default function Layout() {
         { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
         { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' },
         { to: '/vendors', icon: Building2, label: 'Vendors', hint: 'Suppliers you order parts and materials from' },
+        { to: '/procurement', icon: ShoppingCart, label: 'Procurement Queue', hint: 'Jobs needing parts — batch them into vendor POs' },
         { to: '/purchase-orders', icon: FileText, label: 'Purchase Orders', hint: 'Orders sent to vendors for parts and materials' }
       ]
     },

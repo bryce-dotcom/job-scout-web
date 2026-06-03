@@ -265,6 +265,7 @@ export const FEATURE_CATALOG = [
         replaces: ['QuickBooks workaround invoices', 'Excel rebate trackers'],
         highlights: ['70/30 split editable', 'Processor commission', 'Link to customer'],
         route: null,
+        walkthrough: 'utility-invoices',
       },
       {
         name: 'Public Lenard Agent Pages',
@@ -282,6 +283,7 @@ export const FEATURE_CATALOG = [
         replaces: ['manual QA', 'model retraining cycles'],
         highlights: ['Few-shot learning', 'Per-company corrections'],
         route: null,
+        walkthrough: 'dougie',
       },
     ],
   },
@@ -608,6 +610,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Gusto employee app', 'ADP MyADP'],
         highlights: ['Self-service paystubs', 'Pending commission view'],
         route: null,
+        walkthrough: 'my-pay',
       },
       {
         name: 'Bonus & Piece Rate',
@@ -773,6 +776,7 @@ export const FEATURE_CATALOG = [
         highlights: ['Photo-to-photo AI', 'Per-job checklist', 'Score + grade'],
         route: null,
         status: 'shipped',
+        walkthrough: 'victor',
       },
       {
         name: 'Frankie The AI CFO',
