@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import HelpBadge from '../components/HelpBadge'
+import JobPartsTab from '../components/JobPartsTab'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import SignedProposalCard from '../components/SignedProposalCard'
 import { jobStatusColors as statusColors } from '../lib/statusColors'
@@ -4022,6 +4023,25 @@ function JobDetailInner() {
               </div>
             )}
           </div>
+
+          {/* Parts tab — only renders when this job has parts-bearing
+              line items. Self-contained component that handles parts_status
+              transitions, Allocate-from-Stock, Generate PO, and Consume. */}
+          {lineItems.some(l => l.item_id) && (
+            <div style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              padding: '18px 20px',
+            }}>
+              <JobPartsTab
+                job={job}
+                theme={theme}
+                companyId={companyId}
+                onChange={fetchJobData}
+              />
+            </div>
+          )}
 
           {/* Line Items */}
           <div style={{
