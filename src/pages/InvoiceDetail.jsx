@@ -100,6 +100,16 @@ export default function InvoiceDetail() {
   const [logEntry, setLogEntry] = useState('')
   const [savingLog, setSavingLog] = useState(false)
 
+  // Move-payment state — Tracy reported needing to delete + re-create
+  // a payment to shift it from one invoice to another (Fieldstone Canyon
+  // → Fieldstone Willow). Setting this to a payment opens a modal that
+  // lets her reassign the payment_id to another invoice for the same
+  // customer without losing the original payment metadata.
+  const [movePayment, setMovePayment] = useState(null)
+  const [moveCandidates, setMoveCandidates] = useState([])
+  const [moveLoading, setMoveLoading] = useState(false)
+  const [moveTargetId, setMoveTargetId] = useState('')
+
   // Send modal state
   const [showSendModal, setShowSendModal] = useState(false)
   const [sendEmail, setSendEmail] = useState('')
@@ -651,6 +661,102 @@ export default function InvoiceDetail() {
       setLogEntry('')
     }
     setSavingLog(false)
+  }
+
+  // Open the "Move payment to another invoice" modal — fetches other
+  // open invoices for the same customer so Tracy can pick one. Skips
+  // the current invoice and any closed/archived ones.
+  const openMovePayment = async (payment) => {
+    setMovePayment(payment)
+    setMoveTargetId('')
+    setMoveCandidates([])
+    setMoveLoading(true)
+    try {
+      const customerId = invoice?.customer_id
+      if (!customerId) {
+        toast.error('Invoice has no customer — cannot move payment')
+        setMovePayment(null); setMoveLoading(false); return
+      }
+      const { data } = await supabase
+        .from('invoices')
+        .select('id, invoice_id, amount, payment_status, job_description, created_at')
+        .eq('company_id', companyId)
+        .eq('customer_id', customerId)
+        .neq('id', parseInt(id))
+        .not('payment_status', 'in', '("Archived","Voided")')
+        .order('created_at', { ascending: false })
+        .limit(50)
+      setMoveCandidates(data || [])
+    } catch (err) {
+      toast.error('Failed to load invoices: ' + err.message)
+    }
+    setMoveLoading(false)
+  }
+
+  const commitMovePayment = async () => {
+    if (!movePayment || !moveTargetId) return
+    const targetId = parseInt(moveTargetId)
+    if (!targetId) return
+    setSaving(true)
+    try {
+      // Reassign the payment to the new invoice — preserves amount /
+      // method / stripe_payment_intent_id / receipt / source so the
+      // audit trail stays intact.
+      const { data: target } = await supabase
+        .from('invoices')
+        .select('id, job_id, customer_id, amount')
+        .eq('id', targetId)
+        .single()
+      if (!target) throw new Error('Target invoice not found')
+
+      const { error: upErr } = await supabase
+        .from('payments')
+        .update({
+          invoice_id: target.id,
+          job_id: target.job_id || null,
+          customer_id: target.customer_id || movePayment.customer_id || null,
+          notes: ((movePayment.notes || '') + `\nMoved from invoice #${id} on ${new Date().toLocaleDateString()}`).trim(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', movePayment.id)
+      if (upErr) throw upErr
+
+      // Recalculate BOTH invoices' payment_status — source + target.
+      const recalcInvoice = async (invId) => {
+        const { data: inv } = await supabase
+          .from('invoices')
+          .select('id, amount, discount_applied, credit_card_fee')
+          .eq('id', invId).single()
+        if (!inv) return
+        const { data: pays } = await supabase
+          .from('payments')
+          .select('amount')
+          .eq('invoice_id', invId)
+        const totalPaid = (pays || []).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+        const gross = parseFloat(inv.amount) || 0
+        const discount = parseFloat(inv.discount_applied) || 0
+        const isLegacyNet = discount > 0 && discount >= gross
+        const customerTotal = isLegacyNet ? gross : Math.max(0, gross - discount)
+        let newStatus = 'Pending'
+        if (totalPaid >= customerTotal - 0.01) newStatus = 'Paid'
+        else if (totalPaid > 0) newStatus = 'Partially Paid'
+        await supabase
+          .from('invoices')
+          .update({ payment_status: newStatus, updated_at: new Date().toISOString() })
+          .eq('id', invId)
+      }
+      await Promise.all([recalcInvoice(parseInt(id)), recalcInvoice(target.id)])
+
+      toast.success(`Payment moved to invoice ${target.id}`)
+      setMovePayment(null)
+      setMoveTargetId('')
+      setMoveCandidates([])
+      await fetchInvoiceData()
+      await fetchInvoices()
+    } catch (err) {
+      toast.error('Failed to move payment: ' + err.message)
+    }
+    setSaving(false)
   }
 
   const rescindPayment = async (payment) => {
@@ -1468,7 +1574,7 @@ export default function InvoiceDetail() {
       if (invoice.job_id) {
         const { data: currentJob } = await supabase
           .from('jobs')
-          .select('status')
+          .select('status, lead_id')
           .eq('id', invoice.job_id)
           .single()
         const status = currentJob?.status
@@ -1477,6 +1583,24 @@ export default function InvoiceDetail() {
             status: 'Invoiced',
             updated_at: new Date().toISOString(),
           }).eq('id', invoice.job_id)
+        }
+        // Mirror the move to the linked lead so the pipeline card lands
+        // in Invoiced on Send (not on Create — that was Tracy's complaint
+        // on JOB-MP2ZU0VY). Only bump when the lead is in an earlier
+        // stage so we don't undo a manual move to a later column.
+        if (currentJob?.lead_id) {
+          const { data: lead } = await supabase
+            .from('leads')
+            .select('status')
+            .eq('id', currentJob.lead_id)
+            .single()
+          const ls = lead?.status
+          if (ls && !['Invoiced', 'Paid', 'Closed', 'Archived', 'Lost'].includes(ls)) {
+            await supabase.from('leads').update({
+              status: 'Invoiced',
+              updated_at: new Date().toISOString(),
+            }).eq('id', currentJob.lead_id)
+          }
         }
       }
 
@@ -2084,6 +2208,19 @@ export default function InvoiceDetail() {
                           </button>
                         )}
                         <button
+                          onClick={() => openMovePayment(payment)}
+                          disabled={saving}
+                          title="Move this payment to another invoice for the same customer"
+                          style={{
+                            background: 'none', border: `1px solid ${theme.border}`,
+                            padding: '3px 8px', borderRadius: 6,
+                            cursor: saving ? 'not-allowed' : 'pointer',
+                            color: theme.textSecondary, fontSize: 11, fontWeight: 600,
+                          }}
+                        >
+                          ↔ Move
+                        </button>
+                        <button
                           onClick={() => rescindPayment(payment)}
                           disabled={saving}
                           title="Rescind payment record (does NOT refund Stripe; for manual entries)"
@@ -2501,9 +2638,20 @@ export default function InvoiceDetail() {
                 paddingTop: '12px',
                 borderTop: `1px solid ${theme.border}`
               }}>
-                <span style={{ fontWeight: '600', color: theme.text }}>Balance Due</span>
-                <span style={{ fontSize: '20px', fontWeight: '600', color: balanceDue > 0 ? '#c28b38' : '#4a7c59' }}>
-                  {formatCurrency(balanceDue)}
+                {/* Tracy flagged on INV-MNJD9UQN: header showed a
+                    negative Balance Due even when the PDF showed it
+                    correctly (PDF clamps via Math.max(0, balDue)).
+                    Mirror that clamp for the display + add an explicit
+                    "Overpaid by $X" indicator so a real overpayment
+                    isn't hidden — just labeled correctly. */}
+                <span style={{ fontWeight: '600', color: theme.text }}>
+                  {balanceDue < -0.005 ? 'Overpaid by' : 'Balance Due'}
+                </span>
+                <span style={{
+                  fontSize: '20px', fontWeight: '600',
+                  color: balanceDue > 0 ? '#c28b38' : (balanceDue < -0.005 ? '#7c3aed' : '#4a7c59'),
+                }}>
+                  {formatCurrency(Math.abs(balanceDue) < 0.005 ? 0 : Math.abs(balanceDue))}
                 </span>
               </div>
 
@@ -3217,6 +3365,93 @@ export default function InvoiceDetail() {
               >
                 <CreditCard size={16} />
                 {charging ? 'Processing...' : 'Charge Card'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Move Payment Modal — Tracy's "delete payment + reapply to
+          other invoice" workflow without the data loss. */}
+      {movePayment && (
+        <div
+          onClick={() => !saving && setMovePayment(null)}
+          style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, padding: '16px',
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{
+            backgroundColor: theme.bgCard,
+            borderRadius: '12px',
+            border: `1px solid ${theme.border}`,
+            padding: '24px', width: '100%', maxWidth: '480px',
+          }}>
+            <h3 style={{ fontSize: '17px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
+              Move Payment to Another Invoice
+            </h3>
+            <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>
+              Reassigns this {formatCurrency(movePayment.amount)} {movePayment.method} payment from {formatDate(movePayment.date)} to another invoice for the same customer. The original payment record stays intact — just its invoice link changes.
+            </p>
+
+            {moveLoading ? (
+              <p style={{ fontSize: '13px', color: theme.textMuted }}>Loading invoices…</p>
+            ) : moveCandidates.length === 0 ? (
+              <p style={{ fontSize: '13px', color: theme.textMuted, fontStyle: 'italic' }}>
+                No other invoices found for this customer.
+              </p>
+            ) : (
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: theme.textSecondary, marginBottom: '6px' }}>
+                  Move to invoice
+                </label>
+                <select
+                  value={moveTargetId}
+                  onChange={(e) => setMoveTargetId(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px 12px',
+                    border: `1px solid ${theme.border}`, borderRadius: '8px',
+                    fontSize: '14px', color: theme.text, backgroundColor: theme.bgCard,
+                  }}
+                >
+                  <option value="">— Pick an invoice —</option>
+                  {moveCandidates.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.invoice_id} · {formatCurrency(c.amount)} · {c.payment_status}
+                      {c.job_description ? ` — ${c.job_description.slice(0, 50)}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setMovePayment(null)}
+                disabled={saving}
+                style={{
+                  flex: 1, padding: '12px',
+                  border: `1px solid ${theme.border}`, backgroundColor: 'transparent',
+                  color: theme.text, borderRadius: '8px', fontSize: '14px',
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={commitMovePayment}
+                disabled={saving || !moveTargetId}
+                style={{
+                  flex: 1, padding: '12px',
+                  backgroundColor: theme.accent, color: '#ffffff',
+                  border: 'none', borderRadius: '8px', fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: (saving || !moveTargetId) ? 'not-allowed' : 'pointer',
+                  opacity: (saving || !moveTargetId) ? 0.6 : 1,
+                }}
+              >
+                {saving ? 'Moving…' : 'Move Payment'}
               </button>
             </div>
           </div>

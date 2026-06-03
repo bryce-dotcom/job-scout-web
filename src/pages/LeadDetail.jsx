@@ -126,17 +126,30 @@ export default function LeadDetail() {
   const fetchLeadData = async () => {
     setLoading(true)
 
-    // Fetch lead with relations
-    let { data: leadData, error: leadError } = await supabase
-      .from('leads')
-      .select(`
+    // Tracy reported on /leads/temp_8f159a37-... that her temp leads
+    // 404 when she navigates back: the PK is bigint, so .eq('id',
+    // 'temp_xxx') errors out before any data lands. When the URL is a
+    // temp/string id, try the unique_temp + lead_id text columns so
+    // she can find the real lead instead of a blank page.
+    const isStringId = typeof id === 'string' && !/^\d+$/.test(id)
+    const baseSelect = `
         *,
         lead_owner:employees!leads_lead_owner_id_fkey(id, name),
         setter_owner:employees!leads_setter_owner_id_fkey(id, name),
         source_employee:employees!leads_lead_source_employee_id_fkey(id, name)
-      `)
-      .eq('id', id)
-      .single()
+      `
+    const baseQuery = () => supabase.from('leads').select(baseSelect)
+    let leadData = null, leadError = null
+    if (isStringId) {
+      // Try unique_temp first (stored on insert) then lead_id (display
+      // code). maybeSingle so a miss returns null instead of erroring.
+      ;({ data: leadData, error: leadError } = await baseQuery().eq('unique_temp', id).maybeSingle())
+      if (!leadData && !leadError) {
+        ;({ data: leadData, error: leadError } = await baseQuery().eq('lead_id', id).maybeSingle())
+      }
+    } else {
+      ;({ data: leadData, error: leadError } = await baseQuery().eq('id', id).single())
+    }
 
     // If join fails (e.g. PostgREST schema cache), fall back without source_employee
     if (leadError) {

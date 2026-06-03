@@ -1201,10 +1201,14 @@ function JobDetailInner() {
         updated_at: new Date().toISOString()
       }).eq('id', id)
 
-      // Sync to lead pipeline
-      if (job.lead_id) {
-        await supabase.from('leads').update({ status: 'Invoiced', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
-      }
+      // Tracy reported on JOB-MP2ZU0VY: cards jumped from Completed
+      // straight to Invoiced on the pipeline the moment the invoice was
+      // CREATED, so she lost the "needs to be sent" view. The pipeline
+      // card moves on lead.status, so the old lead.update here was the
+      // culprit. Leaving the lead in its current stage now — InvoiceDetail
+      // bumps lead.status to 'Invoiced' inside the actual Send flow,
+      // which matches Tracy's mental model ("step 3 = Send moves the
+      // card, not step 2 = Create").
 
       await fetchJobData()
       navigate(`/invoices/${invoice.id}`, { state: { from: window.location.pathname } })
@@ -1501,9 +1505,9 @@ function JobDetailInner() {
           updated_at: new Date().toISOString()
         }).eq('id', id)
 
-        if (job.lead_id) {
-          await supabase.from('leads').update({ status: 'Invoiced', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
-        }
+        // Don't auto-bump the lead to Invoiced — InvoiceDetail's Send
+        // flow does that when the email actually goes out. See comment
+        // above in createCustomerInvoice for the full reasoning.
 
         // If a utility invoice already exists on this job (e.g., the user
         // regenerated only the customer side), re-link it to this new
@@ -1592,6 +1596,40 @@ function JobDetailInner() {
         toast.error('No incentive amount found. Enter a utility incentive on this job first.')
         setSaving(false)
         return
+      }
+
+      // Bryce flagged on utility-invoice 66 / JOB-MNQHM69Z: project_cost
+      // and net_cost were both $0 even though the customer invoice was
+      // $217k. Root cause: this function only populated projectCost from a
+      // lighting audit; jobs without an audit (or audits without
+      // est_project_cost) landed with $0. When we have a linked customer
+      // invoice, use its amount (+ any paid deposit) as the project total.
+      if (linkedInvoiceId && (!projectCost || projectCost === 0)) {
+        const { data: linkedInv } = await supabase
+          .from('invoices')
+          .select('id, amount, parent_invoice_id')
+          .eq('id', linkedInvoiceId)
+          .maybeSingle()
+        if (linkedInv) {
+          let total = parseFloat(linkedInv.amount) || 0
+          // Add the deposit invoice amount if there's a paid deposit
+          // sibling — keeps the utility-side "Total Project Cost" in
+          // line with the actual customer scope.
+          if (linkedInv.parent_invoice_id) {
+            const { data: deposit } = await supabase
+              .from('invoices')
+              .select('amount, invoice_type')
+              .eq('id', linkedInv.parent_invoice_id)
+              .maybeSingle()
+            if (deposit?.invoice_type === 'deposit') {
+              total += parseFloat(deposit.amount) || 0
+            }
+          }
+          if (total > 0) {
+            projectCost = total
+            netCost = Math.max(0, total - incentiveAmount)
+          }
+        }
       }
 
       if (!notes) {
@@ -4560,8 +4598,16 @@ function JobDetailInner() {
 
           {/* Bonus Hours Card */}
           {(() => {
+            // Bryce flagged on /jobs/21014: bonus module wasn't rendering
+            // even though the job was finished. Root cause: status check
+            // didn't include 'Verified' / 'Verified Complete', the
+            // post-Victor terminal statuses that ARE exactly when crews
+            // need to see their bonus.
+            const bonusEligibleStatuses = new Set([
+              'In Progress', 'Complete', 'Completed', 'Verified', 'Verified Complete'
+            ])
             const showBonus = bonusConfig?.efficiency_bonus_enabled && allottedHours > 0 &&
-              (job.status === 'In Progress' || job.status === 'Complete' || job.status === 'Completed')
+              bonusEligibleStatuses.has(job.status)
             if (!showBonus) return null
 
             const rate = bonusConfig.efficiency_bonus_rate || 25

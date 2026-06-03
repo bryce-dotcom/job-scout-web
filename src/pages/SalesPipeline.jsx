@@ -1288,12 +1288,13 @@ export default function SalesPipeline() {
               onChange={(e) => setOwnerFilter(e.target.value)}
               style={{
                 padding: '8px 12px',
-                backgroundColor: theme.bgCard,
-                border: `1px solid ${theme.border}`,
+                backgroundColor: ownerFilter !== 'all' ? 'rgba(90,99,73,0.10)' : theme.bgCard,
+                border: `1px solid ${ownerFilter !== 'all' ? theme.accent : theme.border}`,
                 borderRadius: '8px',
                 color: theme.text,
                 fontSize: '13px',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                fontWeight: ownerFilter !== 'all' ? '600' : '400',
               }}
             >
               {canViewAll && <option value="all">All Owners</option>}
@@ -1302,6 +1303,25 @@ export default function SalesPipeline() {
                 <option key={emp.id} value={emp.id}>{emp.id === user?.id ? `${emp.name} (Me)` : emp.name}</option>
               ))}
             </select>
+            {/* Tracy reported "I only see me" — likely her filter got
+                stuck on her own name without realizing. The active
+                filter now highlights in green, and a one-click "Show
+                All" appears when scoped so she can reset instantly. */}
+            {canViewAll && ownerFilter !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setOwnerFilter('all')}
+                style={{
+                  padding: '8px 12px', borderRadius: '8px',
+                  backgroundColor: 'transparent', color: theme.accent,
+                  border: `1px solid ${theme.accent}`, cursor: 'pointer',
+                  fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap',
+                }}
+                title="Clear the owner filter and show everyone's pipeline"
+              >
+                ↺ Show All
+              </button>
+            )}
 
             <select
               value={buFilter}
@@ -1553,7 +1573,13 @@ export default function SalesPipeline() {
                 <select
                   value={ownerFilter}
                   onChange={(e) => setOwnerFilter(e.target.value)}
-                  style={{ flex: 1, padding: '10px 12px', backgroundColor: m.bgCard, border: `1px solid ${m.border}`, borderRadius: '8px', color: m.text, fontSize: '13px' }}
+                  style={{
+                    flex: 1, padding: '10px 12px',
+                    backgroundColor: ownerFilter !== 'all' ? 'rgba(90,99,73,0.10)' : m.bgCard,
+                    border: `1px solid ${ownerFilter !== 'all' ? m.accent : m.border}`,
+                    borderRadius: '8px', color: m.text, fontSize: '13px',
+                    fontWeight: ownerFilter !== 'all' ? '600' : '400',
+                  }}
                 >
                   {canViewAll && <option value="all">All Owners</option>}
                   {canViewAll && <option value="unassigned">Unassigned</option>}
@@ -1561,6 +1587,21 @@ export default function SalesPipeline() {
                     <option key={emp.id} value={emp.id}>{emp.id === user?.id ? `${emp.name} (Me)` : emp.name}</option>
                   ))}
                 </select>
+                {canViewAll && ownerFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setOwnerFilter('all')}
+                    style={{
+                      padding: '10px 12px', borderRadius: '8px',
+                      backgroundColor: 'transparent', color: m.accent,
+                      border: `1px solid ${m.accent}`, cursor: 'pointer',
+                      fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap',
+                    }}
+                    title="Clear the owner filter"
+                  >
+                    ↺ All
+                  </button>
+                )}
                 <select
                   value={buFilter}
                   onChange={(e) => setBuFilter(e.target.value)}
