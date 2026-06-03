@@ -9,6 +9,7 @@ import { ArrowLeft, Save, Plus, Trash2, Send, Package, FileText, X, Briefcase, D
 import { useIsMobile } from '../hooks/useIsMobile'
 import { PO_STATUS_LABELS, computePoTotals, formatCurrency } from '../lib/poUtils'
 import { generatePoPdf } from '../lib/poPdf'
+import { receiveShipment, autoDistribute } from '../lib/poReceive'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', bgCardHover: '#eef2eb',
@@ -44,6 +45,13 @@ export default function PurchaseOrderDetail() {
   // New-line draft
   const [draft, setDraft] = useState({ product_id: '', description: '', quantity: 1, unit_cost: 0 })
   const [productPickerOpen, setProductPickerOpen] = useState(false)
+
+  // Receive modal state
+  const [receiveModalOpen, setReceiveModalOpen] = useState(false)
+  const [receiveItems, setReceiveItems] = useState([])   // [{ poLineId, receivedQty }]
+  const [receivePackingSlip, setReceivePackingSlip] = useState('')
+  const [receiveNotes, setReceiveNotes] = useState('')
+  const [receiving, setReceiving] = useState(false)
 
   // Send modal state
   const [sendModalOpen, setSendModalOpen] = useState(false)
@@ -344,6 +352,54 @@ export default function PurchaseOrderDetail() {
     }).eq('id', id)
     toast.success('PO marked as sent')
     await fetchAll()
+  }
+
+  // ── Receive shipment ────────────────────────────────────────────────
+
+  const openReceiveModal = () => {
+    if (lines.length === 0) {
+      toast.error('Nothing to receive — PO has no line items.')
+      return
+    }
+    // Default each line to its remaining unreceived qty
+    setReceiveItems(lines.map(l => ({
+      poLineId: l.id,
+      receivedQty: Math.max(0, (parseFloat(l.quantity_ordered) || 0) - (parseFloat(l.quantity_received) || 0)),
+    })))
+    setReceivePackingSlip('')
+    setReceiveNotes('')
+    setReceiveModalOpen(true)
+  }
+
+  const confirmReceive = async () => {
+    setReceiving(true)
+    try {
+      const items = receiveItems
+        .filter(i => parseFloat(i.receivedQty) > 0)
+        .map(i => ({
+          poLine: lines.find(l => l.id === i.poLineId),
+          receivedQty: parseFloat(i.receivedQty) || 0,
+        }))
+      if (items.length === 0) {
+        toast.error('No quantities entered to receive.')
+        setReceiving(false); return
+      }
+      const result = await receiveShipment({
+        companyId, po, items,
+        packingSlip: receivePackingSlip,
+        notes: receiveNotes,
+      })
+      toast.success(
+        result.newStatus === 'received'
+          ? 'Shipment received in full ✓'
+          : 'Partial shipment recorded'
+      )
+      setReceiveModalOpen(false)
+      await fetchAll()
+    } catch (err) {
+      toast.error('Receive failed: ' + err.message)
+    }
+    setReceiving(false)
   }
 
   // Cancel a PO (soft — keeps the row + audit trail)
@@ -747,13 +803,13 @@ export default function PurchaseOrderDetail() {
                   <Send size={16} /> Re-send to Vendor
                 </button>
               )}
-              {po.status === 'sent' && (
+              {(po.status === 'sent' || po.status === 'partial_received') && (
                 <button
-                  disabled
-                  style={actionBtn('#16a34a', '#fff', { disabled: true })}
-                  title="Receive shipment goes live in Phase 1D"
+                  onClick={openReceiveModal}
+                  disabled={saving}
+                  style={actionBtn('#16a34a', '#fff')}
                 >
-                  <Package size={16} /> Receive Shipment (1D)
+                  <Package size={16} /> Receive Shipment
                 </button>
               )}
               {po.sent_at && (
@@ -788,6 +844,130 @@ export default function PurchaseOrderDetail() {
           onClose={() => setProductPickerOpen(false)}
           defaultVendorId={po.vendor_id}
         />
+      )}
+
+      {/* Receive shipment modal */}
+      {receiveModalOpen && (
+        <div
+          onClick={() => !receiving && setReceiveModalOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, padding: 16,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{
+            backgroundColor: theme.bgCard, borderRadius: 12,
+            border: `1px solid ${theme.border}`, padding: 22,
+            width: '100%', maxWidth: 640, maxHeight: '90vh', overflowY: 'auto',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 700, color: theme.text, margin: 0 }}>
+                  Receive Shipment
+                </h3>
+                <p style={{ fontSize: 12, color: theme.textMuted, margin: '2px 0 0' }}>
+                  {po.po_number} · {po.vendor?.name} · enter what arrived for each line
+                </p>
+              </div>
+              <button onClick={() => setReceiveModalOpen(false)} disabled={receiving} style={{
+                background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted,
+              }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Per-line received qty inputs */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{
+                display: 'grid', gridTemplateColumns: '1fr 90px 90px 90px',
+                gap: 8, fontSize: 11, fontWeight: 600, color: theme.textMuted,
+                textTransform: 'uppercase', letterSpacing: 0.5, padding: '0 4px 6px',
+              }}>
+                <span>Description</span>
+                <span style={{ textAlign: 'right' }}>Ordered</span>
+                <span style={{ textAlign: 'right' }}>Already Rec</span>
+                <span style={{ textAlign: 'right' }}>This Receipt</span>
+              </div>
+              {lines.map(line => {
+                const item = receiveItems.find(i => i.poLineId === line.id)
+                const ordered = parseFloat(line.quantity_ordered) || 0
+                const already = parseFloat(line.quantity_received) || 0
+                const remaining = Math.max(0, ordered - already)
+                return (
+                  <div key={line.id} style={{
+                    display: 'grid', gridTemplateColumns: '1fr 90px 90px 90px',
+                    gap: 8, alignItems: 'center', padding: '8px 4px',
+                    borderTop: `1px solid ${theme.border}`,
+                  }}>
+                    <span style={{ fontSize: 13, color: theme.text }}>{line.description}</span>
+                    <span style={{ fontSize: 13, textAlign: 'right', color: theme.textSecondary }}>{ordered}</span>
+                    <span style={{ fontSize: 13, textAlign: 'right', color: theme.textMuted }}>{already}</span>
+                    <input
+                      type="number" step="0.01" min="0" max={remaining}
+                      value={item?.receivedQty ?? 0}
+                      onChange={(e) => setReceiveItems(prev => prev.map(i =>
+                        i.poLineId === line.id ? { ...i, receivedQty: e.target.value } : i
+                      ))}
+                      style={{
+                        padding: '6px 8px', border: `1px solid ${theme.border}`, borderRadius: 6,
+                        backgroundColor: theme.bg, color: theme.text, fontSize: 13, outline: 'none',
+                        textAlign: 'right',
+                      }}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <Label theme={theme}>Packing slip # (optional)</Label>
+                <input
+                  type="text" value={receivePackingSlip}
+                  onChange={(e) => setReceivePackingSlip(e.target.value)}
+                  style={selectStyle(theme)}
+                />
+              </div>
+              <div>
+                <Label theme={theme}>Notes (optional)</Label>
+                <textarea
+                  value={receiveNotes} onChange={(e) => setReceiveNotes(e.target.value)}
+                  rows={2} style={textareaStyle(theme)}
+                  placeholder="Damaged items, missing pieces, backorder info, etc."
+                />
+              </div>
+              <div style={{
+                padding: '10px 12px', borderRadius: 8,
+                backgroundColor: 'rgba(34,197,94,0.08)', fontSize: 12, color: '#15803d',
+                lineHeight: 1.5,
+              }}>
+                <strong>What happens on Confirm:</strong> Inventory increases by the received
+                qty per product. Each linked job's allocated_qty grows (oldest-scheduled-job
+                first when one PO line serves multiple jobs). Job parts_status updates
+                automatically.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button onClick={() => setReceiveModalOpen(false)} disabled={receiving} style={{
+                flex: 1, padding: 12, border: `1px solid ${theme.border}`,
+                backgroundColor: 'transparent', color: theme.text, borderRadius: 8,
+                fontSize: 14, cursor: receiving ? 'not-allowed' : 'pointer',
+              }}>
+                Cancel
+              </button>
+              <button onClick={confirmReceive} disabled={receiving} style={{
+                flex: 1, padding: 12, backgroundColor: '#16a34a', color: '#fff',
+                border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
+                cursor: receiving ? 'not-allowed' : 'pointer',
+                opacity: receiving ? 0.6 : 1,
+              }}>
+                {receiving ? 'Receiving…' : 'Confirm Receipt'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Send-to-vendor modal */}
