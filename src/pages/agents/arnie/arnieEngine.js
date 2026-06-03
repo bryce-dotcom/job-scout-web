@@ -1,7 +1,7 @@
 import { getUserRole, assembleDataContext, getDataLoadStatus } from './arnieTools'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
-import { JOBSCOUT_KNOWLEDGE } from './arnieKnowledge'
+import { JOBSCOUT_KNOWLEDGE, getFeatureContextForMessage } from './arnieKnowledge'
 
 function buildSystemPrompt(user, company, role) {
   const roleNames = { developer: 'Developer', super_admin: 'Owner/Super Admin', admin: 'Admin', manager: 'Manager', team_lead: 'Team Lead', user: 'User' }
@@ -357,6 +357,20 @@ export async function sendMessageStream(message, history = [], onChunk) {
     if (totalRecords === 0) {
       dataContext = '### Data Load Status\nWARNING: No data has loaded yet. The store is still initializing. Tell the user their data is still loading and to try again in a moment.'
     }
+  }
+
+  // Feature-specific deep context — if the user's message names a
+  // feature in our knowledge cards, prepend the full card so Arnie
+  // cites setup steps + gotchas + FAQs accurately instead of
+  // improvising from the high-level feature index. Empty string when
+  // nothing matches (cheap no-op for casual chitchat).
+  try {
+    const featureContext = getFeatureContextForMessage(message)
+    if (featureContext) {
+      dataContext = featureContext + '\n\n' + (dataContext || '')
+    }
+  } catch (e) {
+    console.error('[Arnie] feature context injection failed:', e)
   }
 
   const conversationHistory = [
