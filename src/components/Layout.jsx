@@ -24,6 +24,7 @@ import {
   ClipboardList,
   Lightbulb,
   Building,
+  Building2,
   FileStack,
   MessageSquare,
   BarChart3,
@@ -290,7 +291,8 @@ export default function Layout() {
         { to: '/field-scout', icon: Compass, label: 'Field Scout (Clock)', hint: 'Daily dashboard + clock in/out for field techs' },
         { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'PM workspace to schedule and track job sections' },
         { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
-        { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' }
+        { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' },
+        { to: '/vendors', icon: Building2, label: 'Vendors', hint: 'Suppliers you order parts and materials from' }
       ]
     },
     {
