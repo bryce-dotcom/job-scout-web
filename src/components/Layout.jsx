@@ -307,6 +307,7 @@ export default function Layout() {
         { to: '/invoices', icon: Receipt, label: 'Invoices', hint: 'Customer invoices and utility incentives' },
         { to: '/lead-payments', icon: CreditCard, label: 'Deposits', hint: 'Lead deposits and pre-job payments' },
         { to: '/expenses', icon: DollarSign, label: 'Expenses', hint: 'Track business expenses and receipts' },
+        { to: '/bills', icon: FileText, label: 'Bills', hint: 'Accounts Payable — bills you owe vendors' },
         { to: '/books', icon: BookOpen, label: 'Books', hint: 'Accounting and financial overview' }
       ]
     },

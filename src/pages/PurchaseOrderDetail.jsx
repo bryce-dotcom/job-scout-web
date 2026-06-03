@@ -402,6 +402,49 @@ export default function PurchaseOrderDetail() {
     setReceiving(false)
   }
 
+  // Create a Bill from this PO. Pulls vendor + total + due-date defaults
+  // and navigates to the Bill detail for finishing touches + payment.
+  // Idempotent guard: if a bill already exists pointing at this PO, just
+  // navigate there instead of creating a duplicate.
+  const createBillFromPo = async () => {
+    setSaving(true)
+    try {
+      const { data: existing } = await supabase
+        .from('bills').select('id').eq('po_id', po.id).limit(1)
+      if (existing && existing[0]) {
+        navigate(`/bills/${existing[0].id}`)
+        setSaving(false); return
+      }
+      // Compute due_date from vendor.default_payment_terms (parses "Net 30" → +30 days)
+      const terms = po.vendor?.default_payment_terms || 'Net 30'
+      const match = terms.match(/(\d+)/)
+      const daysOut = match ? parseInt(match[1], 10) : 30
+      const dueDate = new Date()
+      dueDate.setDate(dueDate.getDate() + daysOut)
+      const amount = parseFloat(po.total) || 0
+
+      const { data: bill, error } = await supabase
+        .from('bills').insert({
+          company_id: companyId,
+          vendor_id: po.vendor_id,
+          po_id: po.id,
+          bill_number: null,  // user fills in vendor's invoice # on the Bill page
+          amount,
+          balance_due: amount,
+          bill_date: new Date().toISOString().slice(0, 10),
+          due_date: dueDate.toISOString().slice(0, 10),
+          status: 'open',
+          notes: `Auto-created from PO ${po.po_number}`,
+        }).select().single()
+      if (error) throw error
+      toast.success(`Bill created · ${formatCurrency(amount)} due ${dueDate.toLocaleDateString()}`)
+      navigate(`/bills/${bill.id}`)
+    } catch (err) {
+      toast.error('Bill creation failed: ' + err.message)
+    }
+    setSaving(false)
+  }
+
   // Cancel a PO (soft — keeps the row + audit trail)
   const cancelPo = async () => {
     if (!confirm('Cancel this PO? It will move to the Cancelled status.')) return
@@ -810,6 +853,20 @@ export default function PurchaseOrderDetail() {
                   style={actionBtn('#16a34a', '#fff')}
                 >
                   <Package size={16} /> Receive Shipment
+                </button>
+              )}
+
+              {/* Create Bill from PO — visible once anything's received.
+                  Pulls vendor + amount + due date defaults from the PO + vendor
+                  terms. User can adjust before saving. */}
+              {(po.status === 'received' || po.status === 'partial_received') && (
+                <button
+                  onClick={createBillFromPo}
+                  disabled={saving}
+                  style={actionBtn('rgba(59,130,246,0.10)', '#3b82f6')}
+                  title="Create an Accounts Payable bill from this PO so the office can track + pay the vendor"
+                >
+                  <FileText size={16} /> Create Bill
                 </button>
               )}
               {po.sent_at && (
