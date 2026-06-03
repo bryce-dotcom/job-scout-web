@@ -296,6 +296,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Fleetio', 'Samsara', 'Fleet Complete'],
         highlights: ['Photo inspections', 'Driver assignment', 'Per-vehicle history'],
         route: '/fleet',
+        walkthrough: 'fleet',
       },
       {
         name: 'Fleet Maintenance & Costs',
@@ -417,6 +418,7 @@ export const FEATURE_CATALOG = [
         replaces: ['QuickBooks items', 'HousecallPro price book', 'Jobber price book'],
         highlights: ['Labor rate binding', 'Product groups', 'Photo + DLC enrichment'],
         route: '/products',
+        walkthrough: 'products-services',
       },
       {
         name: 'Product Components / BOMs',
@@ -433,6 +435,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Fishbowl', 'QuickBooks Inventory', 'Sortly'],
         highlights: ['Job consumption', 'Per-location stock'],
         route: '/inventory',
+        walkthrough: 'inventory',
       },
       {
         name: 'Labor Rates',
@@ -481,6 +484,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Expensify', 'QuickBooks Expenses', 'Ramp'],
         highlights: ['Receipt photos', 'Job allocation', 'Split categories'],
         route: '/expenses',
+        walkthrough: 'expenses',
       },
       {
         name: 'Invoices',
@@ -759,6 +763,7 @@ export const FEATURE_CATALOG = [
         highlights: ['Constant Contact OAuth', 'AI copywriting', 'Smart send-time'],
         route: '/agents/conrad-connect',
         status: 'shipped',
+        walkthrough: 'conrad',
       },
       {
         name: 'Victor The Verification Agent',

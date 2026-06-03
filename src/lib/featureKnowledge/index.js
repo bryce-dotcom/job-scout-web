@@ -47,6 +47,12 @@ import onboardingPortal   from './onboarding-portal.js'
 import payroll            from './payroll.js'
 import timeClock          from './time-clock.js'
 import taxFilings         from './tax-filings.js'
+// — Operations / Fleet / Marketing —
+import fleet              from './fleet.js'
+import inventory          from './inventory.js'
+import productsServices   from './products-services.js'
+import expenses           from './expenses.js'
+import conrad             from './conrad.js'
 
 const CARDS = [
   prospectScout,
@@ -81,6 +87,11 @@ const CARDS = [
   payroll,
   timeClock,
   taxFilings,
+  fleet,
+  inventory,
+  productsServices,
+  expenses,
+  conrad,
 ]
 
 export const KNOWLEDGE_CARDS = Object.fromEntries(

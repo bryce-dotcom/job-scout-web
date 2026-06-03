@@ -40,6 +40,11 @@ import OnboardingPortalWalkthrough   from './OnboardingPortalWalkthrough'
 import PayrollWalkthrough            from './PayrollWalkthrough'
 import TimeClockWalkthrough          from './TimeClockWalkthrough'
 import TaxFilingsWalkthrough         from './TaxFilingsWalkthrough'
+import FleetWalkthrough              from './FleetWalkthrough'
+import InventoryWalkthrough          from './InventoryWalkthrough'
+import ProductsServicesWalkthrough   from './ProductsServicesWalkthrough'
+import ExpensesWalkthrough           from './ExpensesWalkthrough'
+import ConradWalkthrough             from './ConradWalkthrough'
 
 export const WALKTHROUGHS = {
   'yard-measure':        YardMeasureWalkthrough,
@@ -74,6 +79,11 @@ export const WALKTHROUGHS = {
   'payroll':             PayrollWalkthrough,
   'time-clock':          TimeClockWalkthrough,
   'tax-filings':         TaxFilingsWalkthrough,
+  'fleet':               FleetWalkthrough,
+  'inventory':           InventoryWalkthrough,
+  'products-services':   ProductsServicesWalkthrough,
+  'expenses':            ExpensesWalkthrough,
+  'conrad':              ConradWalkthrough,
 }
 
 export function getWalkthrough(id) {
