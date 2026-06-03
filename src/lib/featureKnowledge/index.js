@@ -58,6 +58,13 @@ import victor             from './victor.js'
 import dougie             from './dougie.js'
 import myPay              from './my-pay.js'
 import utilityInvoices    from './utility-invoices.js'
+// — Round 4: schedule + reports + docs + lighting catalog + commissions + employees —
+import jobCalendar        from './job-calendar.js'
+import reports            from './reports.js'
+import documentRules      from './document-rules.js'
+import fixtureTypes       from './fixture-types.js'
+import commissions        from './commissions.js'
+import employees          from './employees.js'
 
 const CARDS = [
   prospectScout,
@@ -101,6 +108,12 @@ const CARDS = [
   dougie,
   myPay,
   utilityInvoices,
+  jobCalendar,
+  reports,
+  documentRules,
+  fixtureTypes,
+  commissions,
+  employees,
 ]
 
 export const KNOWLEDGE_CARDS = Object.fromEntries(

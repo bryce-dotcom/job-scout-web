@@ -49,6 +49,12 @@ import VictorWalkthrough             from './VictorWalkthrough'
 import DougieWalkthrough             from './DougieWalkthrough'
 import MyPayWalkthrough              from './MyPayWalkthrough'
 import UtilityInvoicesWalkthrough    from './UtilityInvoicesWalkthrough'
+import JobCalendarWalkthrough        from './JobCalendarWalkthrough'
+import ReportsWalkthrough            from './ReportsWalkthrough'
+import DocumentRulesWalkthrough      from './DocumentRulesWalkthrough'
+import FixtureTypesWalkthrough       from './FixtureTypesWalkthrough'
+import CommissionsWalkthrough        from './CommissionsWalkthrough'
+import EmployeesWalkthrough          from './EmployeesWalkthrough'
 
 export const WALKTHROUGHS = {
   'yard-measure':        YardMeasureWalkthrough,
@@ -92,6 +98,12 @@ export const WALKTHROUGHS = {
   'dougie':              DougieWalkthrough,
   'my-pay':              MyPayWalkthrough,
   'utility-invoices':    UtilityInvoicesWalkthrough,
+  'job-calendar':        JobCalendarWalkthrough,
+  'reports':             ReportsWalkthrough,
+  'document-rules':      DocumentRulesWalkthrough,
+  'fixture-types':       FixtureTypesWalkthrough,
+  'commissions':         CommissionsWalkthrough,
+  'employees':           EmployeesWalkthrough,
 }
 
 export function getWalkthrough(id) {

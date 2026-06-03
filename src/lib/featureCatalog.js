@@ -158,6 +158,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Google Calendar', 'HousecallPro calendar', 'Jobber calendar'],
         highlights: ['Drag-to-reschedule', 'Color by status'],
         route: null,
+        walkthrough: 'job-calendar',
       },
       {
         name: 'Field Scout',
@@ -208,6 +209,7 @@ export const FEATURE_CATALOG = [
         replaces: ['DocuSign Templates', 'PandaDoc templates'],
         highlights: ['PDF field mapping', 'Service-type-driven packages'],
         route: null,
+        walkthrough: 'document-rules',
       },
     ],
   },
@@ -231,6 +233,7 @@ export const FEATURE_CATALOG = [
         replaces: ['DLC Premium spreadsheets', 'manual fixture libraries'],
         highlights: ['DLC doc links', 'Baseline vs proposed math'],
         route: null,
+        walkthrough: 'fixture-types',
       },
       {
         name: 'Utility Providers',
@@ -627,6 +630,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Spiff', 'QuotaPath', 'ServiceTitan commissions'],
         highlights: ['Multi-tier', 'Setter + closer split', 'Utility processor commission'],
         route: null,
+        walkthrough: 'commissions',
       },
       {
         name: 'PTO Tracking',
@@ -716,6 +720,7 @@ export const FEATURE_CATALOG = [
         replaces: ['BambooHR', 'Gusto employees', 'Rippling'],
         highlights: ['Multi-pay-type flags', 'HR access flag', 'Tax classification'],
         route: '/employees',
+        walkthrough: 'employees',
       },
       {
         name: 'Time Log',
@@ -1220,6 +1225,7 @@ export const FEATURE_CATALOG = [
         replaces: ['QuickBooks Reports', 'Tableau'],
         highlights: ['Drill-into-row', 'Per-report URL'],
         route: '/reports',
+        walkthrough: 'reports',
       },
       {
         name: 'Frankie Insights',
