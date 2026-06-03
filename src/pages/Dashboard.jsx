@@ -17,6 +17,7 @@ import {
   Calendar,
   TrendingUp,
   Package,
+  FileText,
   Truck,
   ChevronRight,
   Plus,
@@ -71,6 +72,10 @@ const METRIC_DEFS = [
   { id: 'netIncome', label: 'MTD Net Income', icon: DollarSign, color: '#16a34a', nav: null, hint: 'Revenue minus expenses this month. Positive = profit, negative = loss. Based on actual cash flow, not estimates.' },
   { id: 'avgJobValue', label: 'Avg Job Value', icon: DollarSign, color: '#3b82f6', nav: null, hint: 'Average dollar amount per completed job across all time. Calculated from job totals.' },
   { id: 'conversionRate', label: 'Win Rate', icon: TrendingUp, color: '#10b981', nav: '/pipeline', hint: 'Percentage of decided leads (Won + Lost) that were Won. Higher is better.' },
+  // ── PO module tiles (opt-in via preferences) ────────────────────────
+  { id: 'needsOrder', label: 'Jobs Needing Parts', icon: Package, color: '#ea580c', nav: '/procurement', hint: 'Jobs with parts_status=needs_order. Batch these into vendor POs on the Procurement Queue page.' },
+  { id: 'openPOs', label: 'Open Purchase Orders', icon: FileText, color: '#3b82f6', nav: '/purchase-orders', hint: 'POs in Draft / Sent / Partial-Received status. Total $ on order to vendors.' },
+  { id: 'billsDueWeek', label: 'Bills Due This Week', icon: DollarSign, color: '#c28b38', nav: '/bills', hint: 'Vendor bills with due_date inside the next 7 days. Cash you need on hand.' },
 ]
 
 // Alert type definitions
@@ -137,6 +142,10 @@ export default function Dashboard() {
   const [showSettings, setShowSettings] = useState(false)
   const [prefs, setPrefs] = useState(loadPrefs)
   const [pendingTimeOff, setPendingTimeOff] = useState([])
+  // PO module stats — lazy-loaded so the Dashboard doesn't pay the cost
+  // for companies that don't use the PO/Bills modules. Empty defaults
+  // are safe; metric tiles only render when added to user prefs.
+  const [poStats, setPoStats] = useState({ needsOrder: 0, openPOs: 0, openPOTotal: 0, billsDueWeek: 0, billsDueWeekCount: 0 })
   const settingsRef = useRef(null)
 
   // Pending time-off requests — Alayda asked "How can I see requests for
@@ -152,6 +161,36 @@ export default function Dashboard() {
       .eq('company_id', companyId)
       .eq('status', 'pending')
       .then(({ data }) => { if (!cancelled) setPendingTimeOff(data || []) })
+    return () => { cancelled = true }
+  }, [companyId])
+
+  // PO module stats — three concurrent counts for the new dashboard tiles
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    const now = new Date(); now.setHours(0,0,0,0)
+    const weekOut = new Date(now); weekOut.setDate(weekOut.getDate() + 7)
+    Promise.all([
+      supabase.from('jobs').select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId).eq('parts_status', 'needs_order'),
+      supabase.from('purchase_orders').select('total')
+        .eq('company_id', companyId).in('status', ['draft', 'sent', 'partial_received']),
+      supabase.from('bills').select('balance_due, due_date')
+        .eq('company_id', companyId).neq('status', 'paid').neq('status', 'void')
+        .gte('due_date', now.toISOString().slice(0,10))
+        .lte('due_date', weekOut.toISOString().slice(0,10)),
+    ]).then(([nRes, pRes, bRes]) => {
+      if (cancelled) return
+      const openPOTotal = (pRes.data || []).reduce((s, p) => s + (parseFloat(p.total) || 0), 0)
+      const billsDueWeek = (bRes.data || []).reduce((s, b) => s + (parseFloat(b.balance_due) || 0), 0)
+      setPoStats({
+        needsOrder: nRes.count || 0,
+        openPOs: (pRes.data || []).length,
+        openPOTotal,
+        billsDueWeek,
+        billsDueWeekCount: (bRes.data || []).length,
+      })
+    })
     return () => { cancelled = true }
   }, [companyId])
 
@@ -326,6 +365,10 @@ export default function Dashboard() {
     netIncome: { value: formatCurrency(netIncome), subtitle: 'Revenue - Expenses (cash basis)', ytdValue: formatCurrency(ytdNetIncome), ytdLabel: 'YTD Net Income' },
     avgJobValue: { value: formatCurrency(avgJobValue), subtitle: `Across ${allDeliveredJobs.length} delivered jobs` },
     conversionRate: { value: `${conversionRate}%`, subtitle: `${wonLeads} won / ${decidedLeads} decided` },
+    // ── PO module tiles (numbers from poStats lazy-fetch above) ─────
+    needsOrder: { value: poStats.needsOrder, subtitle: poStats.needsOrder > 0 ? 'Click to batch into vendor POs' : 'No jobs waiting on parts' },
+    openPOs: { value: poStats.openPOs, subtitle: `${formatCurrency(poStats.openPOTotal)} on order to vendors` },
+    billsDueWeek: { value: formatCurrency(poStats.billsDueWeek), subtitle: `${poStats.billsDueWeekCount} bill${poStats.billsDueWeekCount === 1 ? '' : 's'} due in the next 7 days` },
   }
 
   // Pipeline
