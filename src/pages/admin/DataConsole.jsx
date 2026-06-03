@@ -7,7 +7,7 @@ import { useIsMobile } from '../../hooks/useIsMobile'
 import {
   LayoutDashboard, MessageSquare, Building2, Users, Zap, Bot,
   Package, Database, Upload, Terminal, ScrollText, Settings, Sparkles, GitMerge,
-  ArrowLeft, Menu, X, RefreshCw, Search, Check
+  ArrowLeft, Menu, X, RefreshCw, Search, Check, AlertTriangle
 } from 'lucide-react'
 
 // Sub-pages
@@ -24,6 +24,7 @@ import DataConsoleFeedback from './DataConsoleFeedback'
 import DataConsoleAuditLog from './DataConsoleAuditLog'
 import DataConsoleSystem from './DataConsoleSystem'
 import DataConsoleMigrations from './DataConsoleMigrations'
+import DataConsoleDrift from './DataConsoleDrift'
 
 // Placeholder for AI Assistant (coming later)
 const Placeholder = ({ title }) => (
@@ -47,6 +48,7 @@ const navItems = [
   { path: 'migrations', label: 'Migrations', icon: GitMerge },
   { path: 'sql', label: 'SQL Runner', icon: Terminal },
   { path: 'audit-log', label: 'Audit Log', icon: ScrollText },
+  { path: 'drift', label: 'Card Drift', icon: AlertTriangle },
   { path: 'system', label: 'System', icon: Settings },
   { path: 'ai-assist', label: 'AI Assistant', icon: Sparkles },
 ]
@@ -379,6 +381,7 @@ export default function DataConsole() {
           <Route path="migrations" element={<DataConsoleMigrations />} />
           <Route path="sql" element={<DataConsoleSQL />} />
           <Route path="audit-log" element={<DataConsoleAuditLog />} />
+          <Route path="drift" element={<DataConsoleDrift />} />
           <Route path="system" element={<DataConsoleSystem />} />
           <Route path="ai-assist" element={<Placeholder title="AI Assistant" />} />
         </Routes>
