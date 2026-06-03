@@ -5,9 +5,10 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
-import { ArrowLeft, Save, Plus, Trash2, Send, Package, FileText, X, Briefcase } from 'lucide-react'
+import { ArrowLeft, Save, Plus, Trash2, Send, Package, FileText, X, Briefcase, Download, Mail } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { PO_STATUS_LABELS, computePoTotals, formatCurrency } from '../lib/poUtils'
+import { generatePoPdf } from '../lib/poPdf'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', bgCardHover: '#eef2eb',
@@ -21,6 +22,7 @@ export default function PurchaseOrderDetail() {
   const goBack = useSmartBack('/purchase-orders')
   const isMobile = useIsMobile()
   const companyId = useStore((s) => s.companyId)
+  const company = useStore((s) => s.company)
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
@@ -42,6 +44,14 @@ export default function PurchaseOrderDetail() {
   // New-line draft
   const [draft, setDraft] = useState({ product_id: '', description: '', quantity: 1, unit_cost: 0 })
   const [productPickerOpen, setProductPickerOpen] = useState(false)
+
+  // Send modal state
+  const [sendModalOpen, setSendModalOpen] = useState(false)
+  const [sendEmail, setSendEmail] = useState('')
+  const [sendCc, setSendCc] = useState('')
+  const [sendSubject, setSendSubject] = useState('')
+  const [sendBody, setSendBody] = useState('')
+  const [sending, setSending] = useState(false)
 
   useEffect(() => {
     if (!companyId) { navigate('/'); return }
@@ -193,6 +203,147 @@ export default function PurchaseOrderDetail() {
       subtotal: t.subtotal, total: t.total, updated_at: new Date().toISOString(),
     }).eq('id', id)
     setPo(p => p ? { ...p, subtotal: t.subtotal, total: t.total } : p)
+  }
+
+  // PDF + Send helpers ────────────────────────────────────────────────
+
+  // Build a fresh PDF doc from current state (vendor + lines + job).
+  const buildPdf = () => generatePoPdf({
+    po, lines, vendor: po.vendor, company, job: po.job,
+  })
+
+  const downloadPdf = () => {
+    try {
+      const doc = buildPdf()
+      doc.save(`${po.po_number}.pdf`)
+      toast.success('PDF downloaded')
+    } catch (err) {
+      toast.error('PDF failed: ' + err.message)
+    }
+  }
+
+  const previewPdf = () => {
+    try {
+      const doc = buildPdf()
+      const blob = doc.output('blob')
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+    } catch (err) {
+      toast.error('Preview failed: ' + err.message)
+    }
+  }
+
+  // Open send modal with sensible defaults pulled from vendor + company
+  const openSendModal = () => {
+    const vendorEmail = po.vendor?.email || ''
+    if (!lines.length) {
+      toast.error('Add at least one line item before sending the PO.')
+      return
+    }
+    setSendEmail(vendorEmail)
+    setSendCc('')
+    const companyName = company?.company_name || company?.name || 'Our Company'
+    setSendSubject(`Purchase Order ${po.po_number} from ${companyName}`)
+    setSendBody(
+      `Hi${po.vendor?.contact_name ? ' ' + po.vendor.contact_name.split(' ')[0] : ''},\n\n` +
+      `Please find attached Purchase Order ${po.po_number} for our records.\n\n` +
+      (po.expected_delivery_date
+        ? `We're expecting delivery by ${new Date(po.expected_delivery_date).toLocaleDateString()}. `
+        : '') +
+      `Please confirm receipt of this order and let us know if anything needs clarification.\n\n` +
+      `Thank you,\n${companyName}`
+    )
+    setSendModalOpen(true)
+  }
+
+  // Generate PDF → base64 → send via send-email edge function
+  const sendToVendor = async () => {
+    if (!sendEmail.trim()) {
+      toast.error('Enter a recipient email')
+      return
+    }
+    setSending(true)
+    try {
+      const doc = buildPdf()
+      const pdfBlob = doc.output('blob')
+      // Base64 encode
+      const arrayBuffer = await pdfBlob.arrayBuffer()
+      const bytes = new Uint8Array(arrayBuffer)
+      let binary = ''
+      const chunk = 0x8000
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
+      }
+      const base64 = btoa(binary)
+
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const ccList = sendCc.split(',').map(s => s.trim()).filter(Boolean)
+      const toList = [sendEmail.trim(), ...ccList]
+      const companyName = company?.company_name || company?.name || 'Our Company'
+
+      const escapedBody = sendBody.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#2c3530;padding:20px;">
+        <div style="max-width:600px;margin:0 auto;background:#fff;padding:24px;border:1px solid #d6cdb8;border-radius:10px;">
+          <div style="font-size:11px;letter-spacing:2px;color:rgba(0,0,0,0.5);text-transform:uppercase;font-weight:600;margin-bottom:6px;">Purchase Order</div>
+          <div style="font-size:22px;font-weight:700;margin-bottom:16px;">${po.po_number}</div>
+          <div style="font-size:14px;line-height:1.6;color:#2c3530;white-space:pre-line;">${escapedBody}</div>
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid #eef2eb;font-size:11px;color:#7d8a7f;">
+            PDF attached &middot; Sent from ${companyName}
+          </div>
+        </div>
+      </body></html>`
+
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ANON_KEY}`,
+          'apikey': ANON_KEY,
+        },
+        body: JSON.stringify({
+          to: toList,
+          from: `${companyName} <invoices@appsannex.com>`,
+          subject: sendSubject,
+          html,
+          attachments: [{
+            filename: `${po.po_number}.pdf`,
+            content: base64,
+            content_type: 'application/pdf',
+          }],
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.success === false) {
+        throw new Error(data.error || `send-email HTTP ${res.status}`)
+      }
+
+      // Flip status to 'sent' + record sent_at
+      await supabase.from('purchase_orders').update({
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', id)
+
+      toast.success(`PO sent to ${sendEmail}`)
+      setSendModalOpen(false)
+      await fetchAll()
+    } catch (err) {
+      toast.error('Send failed: ' + err.message)
+    }
+    setSending(false)
+  }
+
+  // Mark sent manually (vendor doesn't have email or user prefers to send out-of-band)
+  const markSentManually = async () => {
+    if (!confirm('Mark this PO as sent without emailing the vendor? Use this when you sent the PO some other way (printed + handed over, called in, etc.)')) return
+    await supabase.from('purchase_orders').update({
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq('id', id)
+    toast.success('PO marked as sent')
+    await fetchAll()
   }
 
   // Cancel a PO (soft — keeps the row + audit trail)
@@ -548,13 +699,52 @@ export default function PurchaseOrderDetail() {
               Actions
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* PDF — always available regardless of status */}
+              <button
+                onClick={previewPdf}
+                disabled={lines.length === 0}
+                style={actionBtn(theme.accentBg, theme.accent, { disabled: lines.length === 0 })}
+                title={lines.length === 0 ? 'Add at least one line item' : 'Open the PO PDF in a new tab'}
+              >
+                <FileText size={16} /> Preview PDF
+              </button>
+              <button
+                onClick={downloadPdf}
+                disabled={lines.length === 0}
+                style={actionBtn(theme.accentBg, theme.accent, { disabled: lines.length === 0 })}
+              >
+                <Download size={16} /> Download PDF
+              </button>
+
+              {/* Send / re-send to vendor */}
               {po.status === 'draft' && (
+                <>
+                  <button
+                    onClick={openSendModal}
+                    disabled={saving || lines.length === 0}
+                    style={actionBtn(theme.accent, '#fff', { disabled: saving || lines.length === 0 })}
+                    title={!po.vendor?.email ? 'Vendor has no email on file — use Mark Sent below or update the vendor' : 'Email the PDF to the vendor'}
+                  >
+                    <Send size={16} /> Send to Vendor
+                  </button>
+                  <button
+                    onClick={markSentManually}
+                    disabled={saving || lines.length === 0}
+                    style={actionBtn('rgba(125,138,127,0.12)', theme.textSecondary)}
+                    title="For vendors with no email or PO sent out-of-band"
+                  >
+                    <Mail size={16} /> Mark Sent Manually
+                  </button>
+                </>
+              )}
+              {po.status === 'sent' && (
                 <button
-                  disabled
-                  style={actionBtn(theme.accent, '#fff', { disabled: true })}
-                  title="PDF + email goes live in Phase 1C"
+                  onClick={openSendModal}
+                  disabled={saving}
+                  style={actionBtn(theme.accentBg, theme.accent)}
+                  title="Re-send the PDF to the vendor"
                 >
-                  <Send size={16} /> Send to Vendor (1C)
+                  <Send size={16} /> Re-send to Vendor
                 </button>
               )}
               {po.status === 'sent' && (
@@ -565,6 +755,15 @@ export default function PurchaseOrderDetail() {
                 >
                   <Package size={16} /> Receive Shipment (1D)
                 </button>
+              )}
+              {po.sent_at && (
+                <div style={{
+                  marginTop: 4, padding: '6px 10px', borderRadius: 6,
+                  backgroundColor: 'rgba(59,130,246,0.08)',
+                  fontSize: 11, color: '#1e40af',
+                }}>
+                  ✉ Sent {new Date(po.sent_at).toLocaleString()}
+                </div>
               )}
               {po.status !== 'cancelled' && po.status !== 'closed' && (
                 <button
@@ -589,6 +788,92 @@ export default function PurchaseOrderDetail() {
           onClose={() => setProductPickerOpen(false)}
           defaultVendorId={po.vendor_id}
         />
+      )}
+
+      {/* Send-to-vendor modal */}
+      {sendModalOpen && (
+        <div
+          onClick={() => !sending && setSendModalOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, padding: 16,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{
+            backgroundColor: theme.bgCard, borderRadius: 12,
+            border: `1px solid ${theme.border}`, padding: 22,
+            width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 700, color: theme.text, margin: 0 }}>
+                  Send PO to Vendor
+                </h3>
+                <p style={{ fontSize: 12, color: theme.textMuted, margin: '2px 0 0' }}>
+                  {po.po_number} · {formatCurrency(po.total)} · {lines.length} line{lines.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              <button
+                onClick={() => setSendModalOpen(false)}
+                disabled={sending}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <Label theme={theme}>To *</Label>
+                <input type="email" value={sendEmail} onChange={(e) => setSendEmail(e.target.value)}
+                  placeholder="vendor@example.com" style={selectStyle(theme)} />
+              </div>
+              <div>
+                <Label theme={theme}>CC (comma-separated)</Label>
+                <input type="text" value={sendCc} onChange={(e) => setSendCc(e.target.value)}
+                  placeholder="ops@yourcompany.com" style={selectStyle(theme)} />
+              </div>
+              <div>
+                <Label theme={theme}>Subject</Label>
+                <input type="text" value={sendSubject} onChange={(e) => setSendSubject(e.target.value)}
+                  style={selectStyle(theme)} />
+              </div>
+              <div>
+                <Label theme={theme}>Body</Label>
+                <textarea value={sendBody} onChange={(e) => setSendBody(e.target.value)} rows={7}
+                  style={textareaStyle(theme)} />
+              </div>
+              <div style={{
+                padding: '8px 10px', borderRadius: 6,
+                backgroundColor: theme.bg, fontSize: 12, color: theme.textSecondary,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <FileText size={13} /> {po.po_number}.pdf will be attached.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button onClick={() => setSendModalOpen(false)} disabled={sending} style={{
+                flex: 1, padding: 12,
+                border: `1px solid ${theme.border}`, backgroundColor: 'transparent',
+                color: theme.text, borderRadius: 8, fontSize: 14,
+                cursor: sending ? 'not-allowed' : 'pointer',
+              }}>
+                Cancel
+              </button>
+              <button onClick={sendToVendor} disabled={sending || !sendEmail} style={{
+                flex: 1, padding: 12,
+                backgroundColor: theme.accent, color: '#fff',
+                border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
+                cursor: (sending || !sendEmail) ? 'not-allowed' : 'pointer',
+                opacity: (sending || !sendEmail) ? 0.6 : 1,
+              }}>
+                {sending ? 'Sending…' : 'Send Email'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
