@@ -292,7 +292,8 @@ export default function Layout() {
         { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'PM workspace to schedule and track job sections' },
         { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
         { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' },
-        { to: '/vendors', icon: Building2, label: 'Vendors', hint: 'Suppliers you order parts and materials from' }
+        { to: '/vendors', icon: Building2, label: 'Vendors', hint: 'Suppliers you order parts and materials from' },
+        { to: '/purchase-orders', icon: FileText, label: 'Purchase Orders', hint: 'Orders sent to vendors for parts and materials' }
       ]
     },
     {
