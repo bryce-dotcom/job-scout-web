@@ -9,6 +9,7 @@ import {
   CheckCircle2, Send, ChevronRight, RefreshCw, Settings,
   DollarSign, Calendar, User, Filter, Search
 } from 'lucide-react'
+import { invoiceBalance, invoiceDaysOverdue, isInvoiceOpen, paymentDate } from './frankieFields'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -53,6 +54,17 @@ export default function FrankieCollections() {
   const isMobile = useIsMobile()
 
   const invoices = useStore(s => s.invoices) || []
+  const payments = useStore(s => s.payments) || []
+
+  // Payments indexed by invoice for balance calc.
+  const paymentsByInv = useMemo(() => {
+    const map = new Map()
+    for (const p of payments) {
+      if (!p.invoice_id) continue
+      map.set(p.invoice_id, (map.get(p.invoice_id) || 0) + (Number(p.amount) || 0))
+    }
+    return map
+  }, [payments])
   const companyId = useStore(s => s.companyId)
   const company = useStore(s => s.company)
 
@@ -78,23 +90,26 @@ export default function FrankieCollections() {
     setReminderLog(data || [])
   }
 
-  // Get overdue invoices with urgency levels
+  // Get overdue invoices with urgency levels. Uses the canonical
+  // frankieFields helpers so the math matches Books/Invoices/Frankie
+  // Dashboard. balance = customer total minus applied payments;
+  // overdue is past due_date OR (no due_date AND past created_at + 30).
   const overdueInvoices = useMemo(() => {
     const now = new Date()
     return invoices
-      .filter(inv =>
-        inv.status !== 'Paid' && inv.status !== 'Void' &&
-        parseFloat(inv.balance_due) > 0 &&
-        inv.due_date && new Date(inv.due_date) < now
-      )
+      .filter(inv => {
+        if (!isInvoiceOpen(inv)) return false
+        if (invoiceBalance(inv, paymentsByInv) <= 0) return false
+        return invoiceDaysOverdue(inv, now) > 0
+      })
       .map(inv => {
-        const days = daysOverdue(inv.due_date)
+        const days = invoiceDaysOverdue(inv, now)
         const urgency = getUrgency(days)
         const lastReminder = reminderLog.find(r => r.invoice_id === inv.id)
-        return { ...inv, daysOverdue: days, urgency, lastReminder }
+        return { ...inv, daysOverdue: days, urgency, lastReminder, balance_due: invoiceBalance(inv, paymentsByInv) }
       })
       .sort((a, b) => b.daysOverdue - a.daysOverdue)
-  }, [invoices, reminderLog])
+  }, [invoices, paymentsByInv, reminderLog])
 
   // Filter
   const filteredInvoices = useMemo(() => {

@@ -8,6 +8,11 @@ import {
   ArrowUpRight, ArrowDownRight, ChevronDown, ChevronUp,
   Calculator, Target
 } from 'lucide-react'
+import {
+  invoiceBalance, invoiceCustomerTotal, invoiceDaysOverdue, isInvoiceOpen,
+  paymentDate, jobIsComplete, jobContractValue, jobCostFromLines,
+  expenseCategoryName,
+} from './frankieFields'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -50,12 +55,20 @@ export default function FrankieInsights() {
 
     const results = { anomalies: [], recommendations: [], metrics: {} }
 
-    // Revenue analysis
-    const revenue30d = payments.filter(p => new Date(p.payment_date) >= thirtyDaysAgo)
-      .reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+    // Build payments-by-invoice index for balance calc.
+    const paymentsByInv = new Map()
+    for (const p of payments) {
+      if (!p.invoice_id) continue
+      paymentsByInv.set(p.invoice_id, (paymentsByInv.get(p.invoice_id) || 0) + (Number(p.amount) || 0))
+    }
+
+    // Revenue analysis — uses paymentDate helper (actual column is `date`).
+    const revenue30d = payments.filter(p => {
+      const d = paymentDate(p); return d && new Date(d) >= thirtyDaysAgo
+    }).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
     const revenuePrev = payments.filter(p => {
-      const d = new Date(p.payment_date)
-      return d >= sixtyDaysAgo && d < thirtyDaysAgo
+      const d = paymentDate(p); if (!d) return false
+      const t = new Date(d); return t >= sixtyDaysAgo && t < thirtyDaysAgo
     }).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
 
     // Expense analysis
@@ -72,15 +85,16 @@ export default function FrankieInsights() {
     const categoryAvgs = {}
     const categoryCurrents = {}
 
-    // Get 90-day averages by category
+    // Get 90-day averages by category. expense.category is a JOIN; the
+    // category name lives on category.name — use expenseCategoryName helper.
     expenses.filter(e => new Date(e.expense_date) >= ninetyDaysAgo).forEach(e => {
-      const cat = e.category || 'Uncategorized'
+      const cat = expenseCategoryName(e)
       if (!categoryAvgs[cat]) categoryAvgs[cat] = []
       categoryAvgs[cat].push(parseFloat(e.amount) || 0)
     })
 
     recentExpenses.forEach(e => {
-      const cat = e.category || 'Uncategorized'
+      const cat = expenseCategoryName(e)
       categoryCurrents[cat] = (categoryCurrents[cat] || 0) + (parseFloat(e.amount) || 0)
     })
 
@@ -148,12 +162,11 @@ export default function FrankieInsights() {
       })
     }
 
-    // Recommendations
-    const unpaidInvoices = invoices.filter(inv =>
-      inv.status !== 'Paid' && inv.status !== 'Void' && parseFloat(inv.balance_due) > 0
-    )
-    const overdue = unpaidInvoices.filter(inv => inv.due_date && new Date(inv.due_date) < now)
-    const overdueTotal = overdue.reduce((s, inv) => s + (parseFloat(inv.balance_due) || 0), 0)
+    // Recommendations — uses canonical helpers so AR + overdue match Books
+    // and the rest of the app.
+    const unpaidInvoices = invoices.filter(inv => isInvoiceOpen(inv) && invoiceBalance(inv, paymentsByInv) > 0)
+    const overdue = unpaidInvoices.filter(inv => invoiceDaysOverdue(inv, now) > 0)
+    const overdueTotal = overdue.reduce((s, inv) => s + invoiceBalance(inv, paymentsByInv), 0)
 
     if (overdueTotal > 0) {
       results.recommendations.push({
@@ -164,10 +177,15 @@ export default function FrankieInsights() {
       })
     }
 
-    const completedJobs = jobs.filter(j => j.status === 'Complete' || j.status === 'Completed')
+    // Job profitability — uses jobIsComplete (matches all the actual
+    // JobScout status values) and jobContractValue (job_total column).
+    // Costs come from job_lines.labor_cost rows; we pass [] here until
+    // job_lines is wired into the store so this branch silently no-ops.
+    const completedJobs = jobs.filter(jobIsComplete)
     const lowMarginJobs = completedJobs.filter(j => {
-      const contract = parseFloat(j.contract_amount) || 0
-      const cost = (parseFloat(j.labor_cost) || 0) + (parseFloat(j.material_cost) || 0) + (parseFloat(j.other_cost) || 0)
+      const contract = jobContractValue(j)
+      const cost = jobCostFromLines(j.id, [])
+      if (cost === 0) return false // not enough data to flag
       return contract > 0 && ((contract - cost) / contract * 100) < 15
     })
     if (lowMarginJobs.length > 0) {
@@ -197,13 +215,16 @@ export default function FrankieInsights() {
       })
     }
 
-    // Job profitability by type
+    // Job profitability by type — same caveat as the dashboard: cost data
+    // lives on job_lines (not jobs), and isn't yet wired into the store.
+    // We capture contract value for grouping; cost stays 0 until job_lines
+    // is plumbed in, which makes the margin column non-misleading.
     const jobTypeProfit = {}
     completedJobs.forEach(j => {
-      const type = j.job_type || j.job_category || 'General'
+      const type = j.service_type || j.business_unit || 'General'
       if (!jobTypeProfit[type]) jobTypeProfit[type] = { contract: 0, cost: 0, count: 0 }
-      jobTypeProfit[type].contract += parseFloat(j.contract_amount) || 0
-      jobTypeProfit[type].cost += (parseFloat(j.labor_cost) || 0) + (parseFloat(j.material_cost) || 0) + (parseFloat(j.other_cost) || 0)
+      jobTypeProfit[type].contract += jobContractValue(j)
+      jobTypeProfit[type].cost += jobCostFromLines(j.id, [])
       jobTypeProfit[type].count++
     })
     results.jobTypeProfit = Object.entries(jobTypeProfit)

@@ -1,5 +1,10 @@
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
+import {
+  invoiceBalance, invoiceCustomerTotal, invoiceDaysOverdue, invoiceStatus,
+  isInvoiceOpen, paymentDate, jobIsComplete, jobContractValue,
+  jobCostFromLines, expenseCategoryName,
+} from './frankieFields'
 
 function buildSystemPrompt(user, company, role) {
   return `You are Frankie — the sharp, no-nonsense AI CFO for JobScout.
@@ -86,12 +91,21 @@ function assembleFinancialContext() {
   context += `- Total Jobs: ${jobs.length}\n`
   context += `- Total Customers: ${customers.length}\n\n`
 
-  // Revenue (last 30 days)
-  const recentPayments = payments.filter(p => new Date(p.payment_date) >= thirtyDaysAgo)
+  // Payments index for invoiceBalance.
+  const paymentsByInv = new Map()
+  for (const p of payments) {
+    if (!p.invoice_id) continue
+    paymentsByInv.set(p.invoice_id, (paymentsByInv.get(p.invoice_id) || 0) + (Number(p.amount) || 0))
+  }
+
+  // Revenue (last 30 days) — uses paymentDate helper for the right column.
+  const recentPayments = payments.filter(p => {
+    const d = paymentDate(p); return d && new Date(d) >= thirtyDaysAgo
+  })
   const revenue30d = recentPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const prevPayments = payments.filter(p => {
-    const d = new Date(p.payment_date)
-    return d >= sixtyDaysAgo && d < thirtyDaysAgo
+    const d = paymentDate(p); if (!d) return false
+    const t = new Date(d); return t >= sixtyDaysAgo && t < thirtyDaysAgo
   })
   const revenuePrev30d = prevPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
 
@@ -100,10 +114,10 @@ function assembleFinancialContext() {
   context += `- Previous 30 days: $${revenuePrev30d.toFixed(2)}\n`
   context += `- Total collected (all time): $${payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0).toFixed(2)}\n\n`
 
-  // Payment methods breakdown
+  // Payment methods breakdown — actual column is `method`, not `payment_method`.
   const methodBreakdown = {}
   recentPayments.forEach(p => {
-    const method = p.payment_method || 'Unknown'
+    const method = p.method || p.payment_method || 'Unknown'
     methodBreakdown[method] = (methodBreakdown[method] || 0) + (parseFloat(p.amount) || 0)
   })
   if (Object.keys(methodBreakdown).length > 0) {
@@ -128,10 +142,10 @@ function assembleFinancialContext() {
   context += `- Previous 30 days: $${expensesPrev30d.toFixed(2)}\n`
   context += `- Net Cash Flow (30d): $${(revenue30d - expenses30d).toFixed(2)}\n\n`
 
-  // Expense categories
+  // Expense categories — expense.category is a JOIN, use helper for the name.
   const catBreakdown = {}
   recentExpenses.forEach(e => {
-    const cat = e.category || 'Uncategorized'
+    const cat = expenseCategoryName(e)
     catBreakdown[cat] = (catBreakdown[cat] || 0) + (parseFloat(e.amount) || 0)
   })
   if (Object.keys(catBreakdown).length > 0) {
@@ -151,13 +165,12 @@ function assembleFinancialContext() {
   context += `- 90-day expense total: $${expenses90d.toFixed(2)}\n`
   context += `- Monthly burn rate (avg): $${(expenses90d / 3).toFixed(2)}\n\n`
 
-  // Accounts Receivable
-  const unpaid = invoices.filter(inv =>
-    inv.status !== 'Paid' && inv.status !== 'Void' && parseFloat(inv.balance_due) > 0
-  )
-  const totalAR = unpaid.reduce((sum, inv) => sum + (parseFloat(inv.balance_due) || 0), 0)
-  const overdue = unpaid.filter(inv => inv.due_date && new Date(inv.due_date) < now)
-  const totalOverdue = overdue.reduce((sum, inv) => sum + (parseFloat(inv.balance_due) || 0), 0)
+  // Accounts Receivable — every helper goes through frankieFields so the
+  // numbers Frankie tells the user match what they see in Books / Invoices.
+  const unpaid = invoices.filter(inv => isInvoiceOpen(inv) && invoiceBalance(inv, paymentsByInv) > 0)
+  const totalAR = unpaid.reduce((sum, inv) => sum + invoiceBalance(inv, paymentsByInv), 0)
+  const overdue = unpaid.filter(inv => invoiceDaysOverdue(inv, now) > 0)
+  const totalOverdue = overdue.reduce((sum, inv) => sum + invoiceBalance(inv, paymentsByInv), 0)
 
   context += `### Accounts Receivable\n`
   context += `- Total AR: $${totalAR.toFixed(2)} (${unpaid.length} invoices)\n`
@@ -166,8 +179,8 @@ function assembleFinancialContext() {
   // AR Aging
   const aging = { current: 0, days30: 0, days60: 0, days90plus: 0 }
   unpaid.forEach(inv => {
-    const days = inv.due_date ? Math.max(0, Math.floor((now - new Date(inv.due_date)) / (1000 * 60 * 60 * 24))) : 0
-    const bal = parseFloat(inv.balance_due) || 0
+    const days = invoiceDaysOverdue(inv, now)
+    const bal = invoiceBalance(inv, paymentsByInv)
     if (days === 0) aging.current += bal
     else if (days <= 30) aging.days30 += bal
     else if (days <= 60) aging.days60 += bal
@@ -182,36 +195,40 @@ function assembleFinancialContext() {
   if (overdue.length > 0) {
     context += `### Overdue Invoice Details (top 10)\n`
     overdue.slice(0, 10).forEach(inv => {
-      const days = Math.floor((now - new Date(inv.due_date)) / (1000 * 60 * 60 * 24))
-      context += `- ${inv.invoice_id || inv.invoice_number || '#' + inv.id}: ${inv.customer?.name || 'Unknown'} — $${parseFloat(inv.balance_due).toFixed(2)} (${days} days overdue)\n`
+      const days = invoiceDaysOverdue(inv, now)
+      const bal = invoiceBalance(inv, paymentsByInv)
+      context += `- ${inv.invoice_id || inv.invoice_number || '#' + inv.id}: ${inv.customer?.name || 'Unknown'} — $${bal.toFixed(2)} (${days} days overdue)\n`
     })
     context += '\n'
   }
 
-  // Job Profitability (completed jobs)
-  const completedJobs = jobs.filter(j => j.status === 'Complete' || j.status === 'Completed')
+  // Job Profitability — completed jobs use jobIsComplete (covers Completed,
+  // Verified Complete, Paid, Closed, etc.) and jobContractValue (job_total
+  // column). Cost data lives on job_lines.labor_cost; not yet wired into
+  // the engine so we report "cost data not yet captured" when it's 0.
+  const completedJobs = jobs.filter(jobIsComplete)
   if (completedJobs.length > 0) {
     context += `### Job Profitability (${completedJobs.length} completed jobs)\n`
     let totalContract = 0, totalCost = 0
     completedJobs.forEach(j => {
-      const contract = parseFloat(j.contract_amount) || 0
-      const cost = (parseFloat(j.labor_cost) || 0) + (parseFloat(j.material_cost) || 0) + (parseFloat(j.other_cost) || 0)
-      totalContract += contract
-      totalCost += cost
+      totalContract += jobContractValue(j)
+      totalCost += jobCostFromLines(j.id, [])
     })
-    const avgMargin = totalContract > 0 ? ((totalContract - totalCost) / totalContract * 100) : 0
     context += `- Total contract value: $${totalContract.toFixed(2)}\n`
-    context += `- Total cost: $${totalCost.toFixed(2)}\n`
-    context += `- Total profit: $${(totalContract - totalCost).toFixed(2)}\n`
-    context += `- Average margin: ${avgMargin.toFixed(1)}%\n\n`
+    if (totalCost > 0) {
+      const avgMargin = totalContract > 0 ? ((totalContract - totalCost) / totalContract * 100) : 0
+      context += `- Total cost: $${totalCost.toFixed(2)}\n`
+      context += `- Total profit: $${(totalContract - totalCost).toFixed(2)}\n`
+      context += `- Average margin: ${avgMargin.toFixed(1)}%\n\n`
+    } else {
+      context += `- Cost data not yet captured on job lines — margin analysis unavailable. Recommend capturing labor_cost on job_lines for future profitability tracking.\n\n`
+    }
 
     // Top 10 most recent completed jobs
     context += `### Recent Completed Jobs (up to 10)\n`
     completedJobs.slice(0, 10).forEach(j => {
-      const contract = parseFloat(j.contract_amount) || 0
-      const cost = (parseFloat(j.labor_cost) || 0) + (parseFloat(j.material_cost) || 0) + (parseFloat(j.other_cost) || 0)
-      const margin = contract > 0 ? ((contract - cost) / contract * 100) : 0
-      context += `- ${j.job_title || j.job_id || '#' + j.id}: Contract $${contract.toFixed(2)}, Cost $${cost.toFixed(2)}, Margin ${margin.toFixed(1)}%\n`
+      const contract = jobContractValue(j)
+      context += `- ${j.job_title || j.job_id || '#' + j.id}: Contract $${contract.toFixed(2)}\n`
     })
     context += '\n'
   }
@@ -221,16 +238,16 @@ function assembleFinancialContext() {
   if (activeJobs.length > 0) {
     context += `### Active Jobs (${activeJobs.length})\n`
     let totalPipeline = 0
-    activeJobs.forEach(j => { totalPipeline += (parseFloat(j.contract_amount) || 0) })
+    activeJobs.forEach(j => { totalPipeline += jobContractValue(j) })
     context += `- Pipeline value: $${totalPipeline.toFixed(2)}\n`
     context += `- Scheduled: ${activeJobs.filter(j => j.status === 'Scheduled').length}\n`
     context += `- In Progress: ${activeJobs.filter(j => j.status === 'In Progress').length}\n\n`
   }
 
-  // Invoice status breakdown
+  // Invoice status breakdown — actual column is payment_status.
   const invStatuses = {}
   invoices.forEach(inv => {
-    const s = inv.status || 'Unknown'
+    const s = invoiceStatus(inv)
     invStatuses[s] = (invStatuses[s] || 0) + 1
   })
   context += `### Invoice Status Breakdown\n`

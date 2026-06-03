@@ -8,6 +8,11 @@ import {
   Receipt, CreditCard, AlertTriangle, Clock, ChevronRight,
   RefreshCw, MessageCircle, Bell, PieChart, Wallet, Banknote
 } from 'lucide-react'
+import {
+  invoiceBalance, invoiceCustomerTotal, invoiceDaysOverdue, isInvoiceOpen,
+  paymentDate, jobContractValue, jobIsComplete, jobCostFromLines, jobMargin,
+  expenseCategoryName, hasMeaningfulData,
+} from './frankieFields'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -72,20 +77,30 @@ export default function FrankieDashboard() {
     setRefreshing(false)
   }
 
-  // Financial computations
+  // Financial computations — go through frankieFields helpers so every
+  // metric agrees with the rest of the app (Books, Invoices, Pipeline).
   const financials = useMemo(() => {
     const now = new Date()
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000)
 
-    // Revenue (payments received in last 30 days)
-    const recentPayments = payments.filter(p => new Date(p.payment_date) >= thirtyDaysAgo)
+    // Build payments-by-invoice index so invoiceBalance is O(1) per call.
+    const paymentsByInv = new Map()
+    for (const p of payments) {
+      if (!p.invoice_id) continue
+      paymentsByInv.set(p.invoice_id, (paymentsByInv.get(p.invoice_id) || 0) + (Number(p.amount) || 0))
+    }
+
+    // Revenue (payments received in last 30 days) — uses paymentDate helper
+    // so it works with the actual `date` column (not `payment_date`).
+    const recentPayments = payments.filter(p => {
+      const d = paymentDate(p); return d && new Date(d) >= thirtyDaysAgo
+    })
     const revenue30d = recentPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
 
-    // Previous 30 days for comparison
     const prevPayments = payments.filter(p => {
-      const d = new Date(p.payment_date)
-      return d >= sixtyDaysAgo && d < thirtyDaysAgo
+      const d = paymentDate(p); if (!d) return false
+      const t = new Date(d); return t >= sixtyDaysAgo && t < thirtyDaysAgo
     })
     const revenuePrev30d = prevPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
     const revenueChange = revenuePrev30d > 0 ? ((revenue30d - revenuePrev30d) / revenuePrev30d * 100) : 0
@@ -104,21 +119,25 @@ export default function FrankieDashboard() {
     // Net cash flow
     const netCashFlow = revenue30d - expenses30d
 
-    // Accounts Receivable (unpaid invoices)
-    const unpaidInvoices = invoices.filter(inv =>
-      inv.status !== 'Paid' && inv.status !== 'Void' && parseFloat(inv.balance_due) > 0
-    )
-    const totalAR = unpaidInvoices.reduce((sum, inv) => sum + (parseFloat(inv.balance_due) || 0), 0)
+    // Accounts Receivable — uses customer balance (gross − discount −
+    // applied payments), not gross. Same math as InvoiceDetail / Books.
+    // Attach balance_due on each row so downstream render code (which
+    // reads inv.balance_due) sees the right value without re-computing.
+    const unpaidInvoices = invoices
+      .filter(inv => isInvoiceOpen(inv) && invoiceBalance(inv, paymentsByInv) > 0)
+      .map(inv => ({ ...inv, balance_due: invoiceBalance(inv, paymentsByInv) }))
+    const totalAR = unpaidInvoices.reduce((sum, inv) => sum + inv.balance_due, 0)
 
-    // Overdue invoices
-    const overdueInvoices = unpaidInvoices.filter(inv => inv.due_date && new Date(inv.due_date) < now)
-    const totalOverdue = overdueInvoices.reduce((sum, inv) => sum + (parseFloat(inv.balance_due) || 0), 0)
+    // Overdue invoices — uses due_date if set, otherwise created_at + 30
+    // (Net 30) so new tenants still get meaningful aging.
+    const overdueInvoices = unpaidInvoices.filter(inv => invoiceDaysOverdue(inv, now) > 0)
+    const totalOverdue = overdueInvoices.reduce((sum, inv) => sum + inv.balance_due, 0)
 
     // AR aging buckets
     const arAging = { current: 0, days30: 0, days60: 0, days90plus: 0 }
     unpaidInvoices.forEach(inv => {
-      const overdueDays = daysOverdue(inv.due_date)
-      const balance = parseFloat(inv.balance_due) || 0
+      const overdueDays = invoiceDaysOverdue(inv, now)
+      const balance = invoiceBalance(inv, paymentsByInv)
       if (overdueDays === 0) arAging.current += balance
       else if (overdueDays <= 30) arAging.days30 += balance
       else if (overdueDays <= 60) arAging.days60 += balance
@@ -131,26 +150,29 @@ export default function FrankieDashboard() {
       .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
     const monthlyBurnRate = expenses90d / 3
 
-    // Expense categories (last 30 days)
+    // Expense categories — category is a relation, not a string. Use helper.
     const categoryBreakdown = {}
     recentExpenses.forEach(e => {
-      const cat = e.category || 'Uncategorized'
+      const cat = expenseCategoryName(e)
       categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + (parseFloat(e.amount) || 0)
     })
     const topCategories = Object.entries(categoryBreakdown)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 6)
 
-    // Total invoiced (all time)
-    const totalInvoiced = invoices.reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0)
+    // Total invoiced (all time) — actual column is `amount`, not `total`.
+    const totalInvoiced = invoices.reduce((sum, inv) => sum + invoiceCustomerTotal(inv), 0)
     const totalCollected = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
     const collectionRate = totalInvoiced > 0 ? (totalCollected / totalInvoiced * 100) : 0
 
-    // Job profitability snapshot
-    const completedJobs = jobs.filter(j => j.status === 'Complete' || j.status === 'Completed')
+    // Job profitability snapshot — uses jobIsComplete (handles all the
+    // actual JobScout status values, not just 'Complete'/'Completed'),
+    // jobContractValue (job_total column), and jobCostFromLines (walks
+    // job_lines.labor_cost since jobs don't carry cost directly).
+    const completedJobs = jobs.filter(jobIsComplete)
     const jobProfitability = completedJobs.slice(0, 5).map(j => {
-      const contract = parseFloat(j.contract_amount) || 0
-      const cost = (parseFloat(j.labor_cost) || 0) + (parseFloat(j.material_cost) || 0) + (parseFloat(j.other_cost) || 0)
+      const contract = jobContractValue(j)
+      const cost = jobCostFromLines(j.id, []) // job_lines not yet wired into store
       const profit = contract - cost
       const margin = contract > 0 ? (profit / contract * 100) : 0
       return { ...j, contract, cost, profit, margin }
@@ -202,8 +224,38 @@ export default function FrankieDashboard() {
     days90plus: '#ef4444'
   }
 
+  // Empty / new-tenant state — when there's no real data yet, show a
+  // welcome card with the next steps so a brand-new tenant who just
+  // recruited Frankie doesn't land on a dashboard full of $0s.
+  const noData = !hasMeaningfulData({ invoices, payments })
+
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '1200px', margin: '0 auto' }}>
+      {noData && (
+        <div style={{
+          marginBottom: '24px',
+          padding: '20px 24px',
+          backgroundColor: theme.accentBg,
+          border: `1px solid ${theme.border}`,
+          borderRadius: '12px',
+        }}>
+          <h2 style={{ margin: '0 0 8px', fontSize: '17px', fontWeight: '700', color: theme.text }}>
+            👋 Welcome to Frankie
+          </h2>
+          <p style={{ margin: '0 0 12px', fontSize: '14px', color: theme.textSecondary, lineHeight: 1.5 }}>
+            I'm your AI CFO. I'll start tracking revenue, AR, expenses, burn rate, and job profitability as soon as you have
+            data in JobScout. Three things will light me up:
+          </p>
+          <ol style={{ margin: '0 0 12px 18px', padding: 0, color: theme.textSecondary, fontSize: '13px', lineHeight: 1.7 }}>
+            <li><strong>Send your first invoice</strong> — I'll track AR + overdue from there.</li>
+            <li><strong>Record your first payment</strong> — revenue + collection rate calc light up.</li>
+            <li><strong>Connect a bank account in Books</strong> — expenses + burn rate go live.</li>
+          </ol>
+          <p style={{ margin: 0, fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+            Once you have any of the above, this banner disappears and your real numbers replace it. No setup required on my end.
+          </p>
+        </div>
+      )}
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -471,7 +523,7 @@ export default function FrankieDashboard() {
               </thead>
               <tbody>
                 {financials.overdueInvoices.slice(0, 10).map(inv => {
-                  const days = daysOverdue(inv.due_date)
+                  const days = invoiceDaysOverdue(inv)
                   return (
                     <tr
                       key={inv.id}

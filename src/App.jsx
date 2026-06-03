@@ -475,8 +475,11 @@ function App() {
             <Route path="history" element={<ArnieHistory />} />
           </Route>
 
-          {/* Frankie Workspace (AI CFO) */}
-          <Route path="/agents/frankie" element={<FrankieWorkspace />}>
+          {/* Frankie Workspace (AI CFO) — gated by recruitment so any new
+              tenant who picks Frankie from Base Camp gets in automatically,
+              and non-recruited tenants land on the "Recruit Frankie" prompt
+              from AgentRequired instead of a broken workspace. */}
+          <Route path="/agents/frankie" element={<AgentRequired slug="frankie-finance"><FrankieWorkspace /></AgentRequired>}>
             <Route index element={<FrankieDashboard />} />
             <Route path="ask" element={<FrankieAsk />} />
             <Route path="collections" element={<FrankieCollections />} />
