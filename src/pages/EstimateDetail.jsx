@@ -1404,7 +1404,13 @@ function EstimateDetailInner() {
           // approved. Schedule modal flips it to Scheduled when a date
           // is set.
           status: 'Chillin',
-          start_date: estimateRow.service_date || new Date().toISOString(),
+          // Only carry start_date through if the estimate actually had
+          // a service_date. Auto-filling NOW pushed every approved job
+          // into the Scheduled column (PMJobSetter derives the column
+          // from start_date when it's today-or-later), even though the
+          // tech hadn't actually committed to a date — which is what
+          // Doug reported as "jobs show up in Scheduled when approved."
+          start_date: estimateRow.service_date || null,
           job_total: parseFloat(estimateRow.quote_amount) || (subtotal - discount),
           utility_incentive: parseFloat(estimateRow.utility_incentive) || 0,
           // Carry the estimate's notes / summary onto the job so the
@@ -2399,6 +2405,28 @@ function EstimateDetailInner() {
                 <span style={{ padding: '3px 8px', borderRadius: '4px', backgroundColor: 'rgba(245,158,11,0.15)', color: '#92400e', fontWeight: '600' }}>
                   📄 Viewed portal {portalTokenStats.access_count}× {portalTokenStats.accessed_at && `· last ${new Date(portalTokenStats.accessed_at).toLocaleString('en-US', { month: 'short', day: 'numeric' })}`}
                 </span>
+              )}
+              {/* Inline Resend — same action as the sidebar Resend
+                  Proposal button, but right next to the delivery badge
+                  so it's findable at the top of the page. Christopher
+                  reported "There is no resend estimate at the top of
+                  the page." It existed lower down — but he never
+                  scrolled past the fold to find it. */}
+              {estimate.last_sent_at && (
+                <button
+                  type="button"
+                  onClick={() => setShowSendModal(true)}
+                  style={{
+                    padding: '3px 10px', borderRadius: '4px',
+                    backgroundColor: 'rgba(90,99,73,0.12)', color: '#3b5d4f',
+                    border: 'none', cursor: 'pointer',
+                    fontSize: '11px', fontWeight: '700',
+                    display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  }}
+                  title="Resend this proposal to the customer"
+                >
+                  ↻ Resend
+                </button>
               )}
             </div>
           )}

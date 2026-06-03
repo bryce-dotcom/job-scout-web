@@ -387,18 +387,37 @@ export default function PMJobSetter() {
       jobsData = res.data
     }
 
-    // Also fetch Completed jobs from current year so they show on the board
-    const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString()
-    const { data: completedYTD } = await supabase
+    // Also fetch Completed jobs so they show on the board's Completed
+    // column and count toward the MTD/QTD/YTD totals.
+    //
+    // Doug flagged: MTD/QTD/YTD on /job-board was missing jobs that
+    // were completed in-range but CREATED in a prior period (recurring
+    // weekly cleans, jobs that sat unscheduled, etc.). The fetch used
+    // to gate purely on created_at >= Jan 1, so a recurring job
+    // created last November but completed in May silently dropped out
+    // of YTD entirely.
+    //
+    // Fix: pull anything completed OR last-touched OR created in the
+    // current year, then let the page-level date-range filter narrow
+    // to the selected MTD/QTD/YTD bucket. For custom ranges that
+    // extend further back, fall back to last-365 so old recurring
+    // work isn't invisible to filters.
+    // Use a rolling 365-day floor so MTD/QTD/YTD always have enough
+    // completed-jobs data to filter from, without re-fetching every
+    // time the date-range selector changes.
+    const completedFloor = (() => {
+      const d = new Date(); d.setDate(d.getDate() - 365); return d
+    })().toISOString()
+    const { data: completedRecent } = await supabase
       .from('jobs')
       .select(jobCols)
       .eq('company_id', companyId)
       .in('status', ['Completed', 'Complete', 'Verified', 'Verified Complete'])
-      .gte('created_at', yearStart)
+      .or(`completed_at.gte.${completedFloor},updated_at.gte.${completedFloor},created_at.gte.${completedFloor}`)
       .order('start_date', { ascending: true })
       .limit(2000)
-    if (completedYTD?.length) {
-      jobsData = [...(jobsData || []), ...completedYTD]
+    if (completedRecent?.length) {
+      jobsData = [...(jobsData || []), ...completedRecent]
     }
 
     // Fetch all job sections

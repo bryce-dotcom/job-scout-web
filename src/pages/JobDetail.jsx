@@ -5292,15 +5292,40 @@ function JobDetailInner() {
                         {new Date(inv.created_at).toLocaleDateString()}
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>
-                        {formatCurrency(inv.amount)}
-                      </div>
-                      <div style={{
-                        fontSize: '11px', fontWeight: '500',
-                        color: inv.payment_status === 'Paid' ? '#4a7c59' : inv.payment_status === 'Overdue' ? '#dc2626' : theme.textMuted
-                      }}>
-                        {inv.payment_status}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      {/* Resend shortcut — drops the user straight into
+                          the invoice's Send modal so they don't have to
+                          download + re-attach manually (Christopher's
+                          ask on /jobs/21017). */}
+                      {inv.payment_status !== 'Paid' && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            navigate(`/invoices/${inv.id}#send`, { state: { from: window.location.pathname } })
+                          }}
+                          style={{
+                            padding: '4px 10px', borderRadius: '6px',
+                            backgroundColor: 'rgba(90,99,73,0.10)', color: theme.accent,
+                            border: 'none', cursor: 'pointer',
+                            fontSize: '11px', fontWeight: '600',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={inv.last_sent_at ? 'Resend invoice' : 'Send invoice'}
+                        >
+                          ↻ {inv.last_sent_at ? 'Resend' : 'Send'}
+                        </button>
+                      )}
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>
+                          {formatCurrency(inv.amount)}
+                        </div>
+                        <div style={{
+                          fontSize: '11px', fontWeight: '500',
+                          color: inv.payment_status === 'Paid' ? '#4a7c59' : inv.payment_status === 'Overdue' ? '#dc2626' : theme.textMuted
+                        }}>
+                          {inv.payment_status}
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -151,6 +151,19 @@ export default function InvoiceDetail() {
     fetchSettings()
   }, [companyId, id, navigate])
 
+  // Auto-open the Send modal when the URL hash is #send — used by the
+  // "↻ Resend" shortcut on JobDetail's invoices list so the user lands
+  // here with the modal already up, instead of having to find and click
+  // the Send button themselves. We strip the hash after to avoid the
+  // modal re-opening on subsequent renders or page back-navigations.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (window.location.hash === '#send' && invoice) {
+      setShowSendModal(true)
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    }
+  }, [invoice])
+
   const fetchInvoiceData = async () => {
     setLoading(true)
 
@@ -1740,6 +1753,27 @@ export default function InvoiceDetail() {
                       {invoice.email_opened_at && <div>Opened {new Date(invoice.email_opened_at).toLocaleString()}</div>}
                       {invoice.email_clicked_at && <div>Clicked {new Date(invoice.email_clicked_at).toLocaleString()}</div>}
                     </div>
+                  </div>
+                  {/* Inline Resend — same action as the sidebar
+                      Send/Resend button but right next to the delivery
+                      panel so it's findable without scrolling. Christopher
+                      reported needing to download + re-attach manually
+                      because he couldn't find the Resend button. */}
+                  <div style={{ marginTop: '10px', textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowSendModal(true)}
+                      style={{
+                        padding: '6px 14px', borderRadius: '6px',
+                        backgroundColor: '#ffffff', color: cfg.color,
+                        border: `1px solid ${cfg.color}40`, cursor: 'pointer',
+                        fontSize: '12px', fontWeight: '600',
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      }}
+                      title={invoice.email_bounce_reason ? 'Re-send to a corrected address' : 'Re-send this invoice to the customer'}
+                    >
+                      ↻ Resend Invoice
+                    </button>
                   </div>
                 </div>
               )

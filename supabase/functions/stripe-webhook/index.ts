@@ -432,7 +432,10 @@ serve(async (req) => {
               salesperson_id: estimate.salesperson_id || null,
               quote_id: estimate.id,
               status: 'Chillin',
-              start_date: estimate.service_date || new Date().toISOString(),
+              // Match EstimateDetail.convertToJob — only carry an actual
+              // service_date through. Auto-filling NOW would push the
+              // job into the Scheduled column on the board.
+              start_date: estimate.service_date || null,
               job_total: parseFloat(String(estimate.quote_amount || 0)) || 0,
               utility_incentive: parseFloat(String(estimate.utility_incentive || 0)) || 0,
               details: estimate.summary || null,
