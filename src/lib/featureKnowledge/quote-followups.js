@@ -1,5 +1,7 @@
 // Knowledge Card — Quote Follow-ups
-// Auto-drips emails to customers who let a quote sit.
+// Sourced from supabase/functions/estimate-followup/index.ts
+// No dedicated settings page — configuration is in Conrad automations.
+// When the Edge Function changes, this card needs to follow.
 
 export default {
   id: 'quote-followups',
@@ -9,95 +11,101 @@ export default {
   route: '/estimates',
 
   summary:
-    "A cron job auto-emails customers who let a quote sit. Three nudges over two weeks; stops the moment they sign. Arnie can recommend an add-on service based on what they're looking at.",
+    "Automated email drip for estimates that sit in 'Sent' status without a signature. The estimate-followup Edge Function runs nightly and sends three nudges — Day 3, Day 7, Day 14 — each with the portal link button. All pending nudges cancel the moment the estimate is Approved or Rejected.",
 
   replaces: ['Mailchimp drip campaigns', 'Constant Contact automations', "manual 'just following up' emails"],
   highlights: [
-    'Three nudges over two weeks',
-    'Stops on signature',
-    'Arnie suggests add-ons',
-    'Per-template open rate',
+    'Day 3: "Just checking in — Estimate EST-xxx"',
+    'Day 7: "Following up on your estimate"',
+    'Day 14: "Last chance to lock in your pricing"',
+    'Auto-cancels on Approved / Rejected / Expired',
+    'Portal link button in every email — one click to sign',
   ],
 
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'sent',     baseDur: 5000, narration: 'Quote sent on Monday. No response by Thursday.' },
-      { id: 'nudge1',   baseDur: 6500, narration: 'Day three — Job Scout sends a polite nudge. "Hey, just making sure this didn\'t get lost in your inbox."' },
-      { id: 'nudge2',   baseDur: 6500, narration: 'Day seven — a second nudge with an Arnie-suggested add-on the customer might also want.' },
-      { id: 'nudge3',   baseDur: 6000, narration: 'Day fourteen — the last nudge. After this, the quote stops chasing.' },
-      { id: 'signed',   baseDur: 6500, narration: 'Customer signs. All future nudges cancel automatically. The pipeline flips to Won.' },
+      { id: 'sent',   baseDur: 5000, narration: "Estimate sent on June fifth. No response. Job Scout's nightly cron watches for exactly this — a Sent estimate with no signature after three days." },
+      { id: 'nudge1', baseDur: 6500, narration: 'Day three — the first follow-up fires. Subject: "Just checking in — Estimate EST-041". A friendly note with a View and Approve button pointing straight to the portal link.' },
+      { id: 'nudge2', baseDur: 6500, narration: 'Day seven — a second nudge. Different subject, more urgency. "Following up on your estimate. Our team is ready to get started as soon as you give the green light."' },
+      { id: 'nudge3', baseDur: 6000, narration: 'Day fourteen — the final touch. "Last chance to lock in your pricing." After this one, the sequence stops chasing regardless of response.' },
+      { id: 'signed', baseDur: 6500, narration: "Customer clicks the Day 7 portal link and signs. EST-041 flips to Approved, the Day 14 nudge is cancelled automatically, and a Job record is created." },
     ],
   },
 
   setup: {
     overview:
-      "Quote Follow-ups runs automatically. The only setup is picking which templates to use and whether Arnie should add add-on suggestions. Templates live in Settings → Quote Follow-up.",
+      "Quote Follow-ups run automatically once the estimate-followup Edge Function is deployed (it ships with the app). The email templates are hard-coded in the function — customize them by editing the FOLLOWUP_SUBJECTS and FOLLOWUP_BODIES constants in supabase/functions/estimate-followup/index.ts.",
     introBaseDur: 1200,
-    introNarration: "Here's how to turn it on.",
+    introNarration: "Follow-ups run automatically. Here's what you can change.",
     steps: [
       {
         icon: 'Settings',
-        title: 'Open Settings → Quote Follow-up',
-        body: "Three templates, three send days. Defaults are pre-written; edit to match your voice.",
-        narration: 'Open Settings, Quote Follow-up. Three templates, three send days. Edit to match your voice.',
+        title: 'Check the cron schedule',
+        body: 'The estimate-followup function is triggered by a Vercel or Supabase cron. Confirm it is scheduled in vercel.json or the Supabase cron dashboard to run daily.',
+        narration: 'Confirm the cron runs daily in your Vercel or Supabase cron dashboard.',
         baseDur: 5500,
       },
       {
         icon: 'PenTool',
-        title: 'Customize the templates',
-        body: "Subject, body, signature. Use merge fields like {{customer_name}} and {{quote_total}}.",
-        narration: 'Customize subject, body, signature. Merge fields fill in the customer details.',
-        baseDur: 5500,
-      },
-      {
-        icon: 'Sparkles',
-        title: 'Enable Arnie add-ons (optional)',
-        body: "Arnie reads the quote and suggests a related service the customer might also want — drop it into the second nudge.",
-        narration: 'Optional — let Arnie suggest a related add-on in the second nudge.',
+        title: 'Customize the email templates',
+        body: 'Open supabase/functions/estimate-followup/index.ts. Edit FOLLOWUP_SUBJECTS and FOLLOWUP_BODIES. Three templates: Day 3 friendly check-in, Day 7 urgency, Day 14 final touch. Portal URL button is auto-included.',
+        narration: 'Edit the three templates in the Edge Function — subject line and body for each day.',
         baseDur: 5500,
       },
       {
         icon: 'Power',
-        title: 'Flip the switch',
-        body: "Toggle Follow-ups On. The cron picks it up tomorrow morning. Stops the moment a customer signs.",
-        narration: "Flip it on. Stops the moment a customer signs.",
+        title: 'Change the send days (optional)',
+        body: 'FOLLOWUP_DAYS = [3, 7, 14] in the function. Change to [2, 5, 10] for a faster sequence, or [5, 10, 21] for a slower one.',
+        narration: 'Change FOLLOWUP_DAYS in the function if you want a faster or slower cadence.',
         baseDur: 5000,
+      },
+      {
+        icon: 'UserX',
+        title: 'Suppress for a customer (optional)',
+        body: 'On the customer record, toggle "Suppress automated emails". Affects all estimates and invoices for that customer — no cron emails will fire.',
+        narration: "Toggle 'Suppress automated emails' on the customer record to opt them out.",
+        baseDur: 5500,
       },
     ],
   },
 
   agentKnowledge: {
     whatItIs:
-      "Automated email drip for quotes that haven't been signed. Three templates send on day 3, day 7, and day 14 after quote_sent_at. Cancels automatically on signature or quote_status = won/lost. Optional Arnie integration suggests an add-on service in the day-7 nudge.",
+      "Automated email drip for quotes with status='Sent' that haven't been signed. The estimate-followup Edge Function (supabase/functions/estimate-followup/index.ts) runs nightly, finds Sent quotes past each FOLLOWUP_DAYS threshold, and sends via SendGrid. Three emails: Day 3 'Just checking in', Day 7 'Following up', Day 14 'Last chance to lock in'. Each email contains a portal URL button. Cancels automatically when quote.status changes to Approved, Rejected, or Expired.",
 
     howItWorks:
-      "Backed by a Vercel cron + the followups-cron Edge Function. Runs nightly: SELECT quotes WHERE status='sent' AND last_followup_at < (NOW - send_day_days). Sends via SendGrid using templates from quote_followup_templates table. quote_followup_log tracks every send + open. Arnie suggestions call the arnie-chat Edge Function with the quote context.",
+      "FOLLOWUP_DAYS = [3, 7, 14]. Nightly query: SELECT quotes WHERE status='Sent' AND sent_date <= NOW - N days AND followup_count < N. Sends via SendGrid using FOLLOWUP_SUBJECTS[n] and FOLLOWUP_BODIES[n] templates. After each send, increments quote.followup_count and sets quote.last_followup_at. All three templates include a portal link button (View & Approve / Review Your Estimate / Approve Before Pricing Changes). Portal URL format: /portal/:token.",
 
     examples: [
-      "Customer ghosts after a $2,400 quote — nudge 1 lands Thursday, customer responds Friday",
-      "Quote signed on day 4 — nudge 2 (day 7) never fires",
-      "Arnie sees quote has 'lawn maintenance' line, adds 'You might also want our fertilizer program' to nudge 2",
+      "EST-041 sent Jun 5 → Day 3 nudge Jun 8 → customer opens Jun 9 → signs Jun 11 → Day 14 nudge never fires",
+      "EST-038 sent May 24 → 3 nudges fire → no response → quote expires after Day 14",
+      "Customer has suppress_emails=true → no nudges fire regardless of estimate status",
     ],
 
     gotchas: [
-      "Cron runs in UTC; send_day_days is in days not hours.",
-      "Email tracking pixel may be blocked by Gmail privacy proxy — opens under-report.",
-      "Cancel triggers fire on status change (signed, lost), not on quote_id deletion.",
+      "Email templates are hard-coded in the Edge Function source, not in a database settings table.",
+      "Cron runs in UTC — 'Day 3' means 72 hours after sent_date in UTC, not local time.",
+      "Email open tracking pixel may be blocked by Gmail privacy proxy — opens under-report.",
+      "followup_count on the quotes table tracks how many have fired — useful for debugging.",
     ],
 
     faqs: [
       {
         q: 'Can I turn off follow-ups for one specific customer?',
-        a: 'Yes — on the customer record, toggle "Suppress automated emails". Affects all quotes for that customer.',
+        a: "Yes — on the Customer Detail page, toggle 'Suppress automated emails'. This prevents all automated cron emails (follow-ups + invoice reminders) for that customer.",
+      },
+      {
+        q: "Why didn't a follow-up fire for an estimate?",
+        a: "Check: (1) is the estimate status exactly 'Sent'? Draft, Approved, Rejected, Expired skip. (2) Was sent_date set? (3) Is the cron actually running? Check the Supabase or Vercel cron logs.",
       },
     ],
 
     actions: {
-      settings: { route: '/settings#quote-followups', label: 'Open Settings → Quote Follow-up' },
+      open: { route: '/estimates', label: 'Open Estimates' },
     },
   },
 
-  lastVerified: '2026-05-29',
+  lastVerified: '2026-06-04',
   freshUntil: 90,
 }
