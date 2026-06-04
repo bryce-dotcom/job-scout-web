@@ -1,6 +1,6 @@
 // Knowledge Card — Customers
-// The customer hub — every customer file with saved payment methods,
-// portal link, and full job + invoice timeline.
+// Sourced from src/pages/Customers.jsx + src/pages/CustomerDetail.jsx.
+// When those pages change, this card needs to follow.
 
 export default {
   id: 'customers',
@@ -10,91 +10,96 @@ export default {
   route: '/customers',
 
   summary:
-    'Every customer file in one place — contact, address, saved payment methods, magic-link portal, statements, full job and invoice timeline. The Rolodex you actually use.',
+    "The customer master list. Grid of EntityCards with name + business + email + phone + status pill, searchable across name/business/email/phone/address/notes/tags. Click any card to drop into the Customer Detail page where jobs, estimates, invoices, payments, saved payment methods, and the magic-link portal token all live.",
 
-  replaces: ['HousecallPro customers', 'Jobber clients', 'ServiceTitan customer hub', 'spreadsheet Rolodex'],
+  replaces: ['HousecallPro Customers', 'Jobber Clients', 'ServiceTitan Customer Hub', 'spreadsheet Rolodex'],
   highlights: [
-    'Saved payment methods on file',
-    'Magic-link customer portal per customer',
-    'Source-system traceability',
-    'Statements + history in one tab',
+    'Search across name/business/email/phone/address',
+    'Status filter (Active / Inactive / Prospect)',
+    'Saved Stripe payment methods per customer',
+    'Magic-link portal token per customer',
   ],
 
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'empty',    baseDur: 4500, narration: "Empty customer list. Let's add the first one." },
-      { id: 'form',     baseDur: 7000, narration: 'Name, business name, phone, email, billing address. Done in twenty seconds.' },
-      { id: 'card',     baseDur: 5500, narration: 'The customer card lands in the grid with their key details up front.' },
-      { id: 'detail',   baseDur: 6500, narration: 'Open one and you see jobs, estimates, invoices, payments, and saved cards — every interaction in one timeline.' },
-      { id: 'portal',   baseDur: 6500, narration: 'Send a magic link and they pay, sign quotes, and download statements from their own portal — no password required.' },
+      { id: 'empty',  baseDur: 4500, narration: "Empty Customers page. Building two icon, no customers yet. Click Add Customer to start." },
+      { id: 'form',   baseDur: 7000, narration: 'The Add Customer modal opens. Name, business name, email, phone, address, salesperson, status. Required field is name — the rest is optional.' },
+      { id: 'card',   baseDur: 5500, narration: "The customer card lands in the grid. Accent square with the User icon, name, business name underneath, email row, phone row, status pill, salesperson on the right." },
+      { id: 'detail', baseDur: 6500, narration: 'Click any card to drop into the Customer Detail page. Tabs across the top — Jobs, Estimates, Invoices, Payments, Cards, Communications. Every interaction in one timeline.' },
+      { id: 'portal', baseDur: 6500, narration: "Send Portal Link writes a rotating customer_portal_token. Customer opens slash portal slash colon token, pays invoices, signs quotes, downloads statements — no password required." },
     ],
   },
 
   setup: {
     overview:
-      'Customers is the heart of the CRM. Add one record per customer you serve. Every job, every invoice, every payment attaches back to a customer record.',
+      'The Customers page ships ready. The only setup is whether you want to assign salesperson ownership and what status values you want. The Add Customer form takes ~20 seconds; only Name is required.',
     introBaseDur: 1200,
-    introNarration: "Here's how to get your book of customers in.",
+    introNarration: "Almost no setup. Here's how to get your book of customers in.",
     steps: [
       {
         icon: 'Plus',
         title: 'Click Add Customer',
-        body: 'Top-right of the Customers page. Opens the customer form.',
-        narration: 'Click Add Customer in the top right.',
-        baseDur: 3800,
+        body: 'Top-right action in PageHeader. Opens the modal. Required: name. Optional but recommended: business_name, email, phone, address, salesperson_id, status (Active / Inactive / Prospect).',
+        narration: 'Click Add Customer top right. Only Name is required — the rest fills in as you learn the customer.',
+        baseDur: 5500,
       },
       {
-        icon: 'User',
-        title: 'Contact and billing',
-        body: 'Name, business name, phone, email, billing address. All optional — fill what you have, edit later.',
-        narration: 'Fill in name, contact info, and billing address. All optional — fill what you have.',
+        icon: 'Upload',
+        title: 'Or bulk import',
+        body: 'Import button opens the CSV importer. Maps to customersFields schema (name, business_name, email, phone, address, status, salesperson_email, notes, marketing_opt_in). Re-runnable safely.',
+        narration: 'Bulk import from CSV maps onto the same fields. Re-runnable without making duplicates.',
+        baseDur: 5500,
+      },
+      {
+        icon: 'Search',
+        title: 'Search is fuzzy and fast',
+        body: 'Search bar searches name + business + email + phone + address + notes + secondary contact + tags. Phone matching is digit-normalized so "(801) 555-0142" matches "8015550142".',
+        narration: 'Search across name, business, email, phone, address, notes, tags. Phone matching ignores formatting.',
         baseDur: 5500,
       },
       {
         icon: 'CreditCard',
-        title: 'Save a card for them',
-        body: 'Optional — drop in their Stripe payment method so you can charge it later without re-asking.',
-        narration: 'Optional — save a payment method so you can charge them later without asking again.',
+        title: 'Optional — save a card on file',
+        body: 'On Customer Detail → Cards tab, attach a Stripe payment method. Lets you charge it later without re-asking. Stored in customer_payment_methods, last 4 + brand only visible.',
+        narration: 'Save a Stripe payment method on the customer detail. Last four visible, charge later without asking again.',
         baseDur: 6000,
-      },
-      {
-        icon: 'Globe',
-        title: 'Share the portal link',
-        body: "Send the customer's magic-link URL by email or text. They open it, see their quotes and invoices, and pay — no password.",
-        narration: 'Send them the portal link. They sign quotes, pay invoices, and download statements without a password.',
-        baseDur: 6500,
       },
     ],
   },
 
   agentKnowledge: {
     whatItIs:
-      "The customer master table for everything in Job Scout. Every job, every invoice, every payment, every appointment ties back to a customer record. Carries contact info, billing address, saved Stripe payment methods, source-system traceability, and a magic-link portal URL per customer.",
+      "The customer master surface. Renders customers table rows as EntityCards in a CSS grid (auto-fill, 320px min column width on desktop, 1 column on mobile). Search + status filter on top. Per-card actions: Edit (pencil), Delete (trash). Whole card click navigates to /customers/:id (CustomerDetail).",
 
     howItWorks:
-      "Backed by the customers table (company_id-scoped, RLS enforced). Tracks source_system for HCP/import attribution. customer_payment_methods holds saved Stripe payment methods. customer_portal_tokens stores rotating magic-link tokens (90-day expiry) for the no-login portal at /portal/:token. Statements pull from invoices + payments, rendered as PDFs via render-statement Edge Function.",
+      "Reads from customers (RLS company_id-scoped). Search filtering happens client-side via buildBlob + matchPhoneOrTokens helpers in src/lib/searchUtils.js. Status enum: Active / Inactive / Prospect. salesperson_id FK to employees. Linked tables surfaced on CustomerDetail: customer_payment_methods (Stripe pm IDs + last4 + brand), customer_portal_tokens (rotating 90-day tokens for /portal/:token magic-link access), and the standard children — leads, estimates, jobs, invoices, payments — all joined by customer_id.",
 
     examples: [
-      'Lead converts → customer record auto-created with source_system=lead_conversion',
-      'HCP migration → 500 customers imported in one click, source_system=hcp_import',
-      'Owner needs to see customer\'s lifetime value → open customer detail → Payments tab',
+      'Search "northbridge" → matches name, business_name, and email blob → 1 result · "Sarah Chen · Northbridge Industries"',
+      'Status filter "Prospect" → only customers whose first job hasn\'t been won yet',
+      'Click → /customers/27 → CustomerDetail with 6 tabs (Jobs, Estimates, Invoices, Payments, Cards, Communications)',
     ],
 
     gotchas: [
-      'business_name + name are separate fields. For B2B, use business_name as the display label.',
-      'Magic-link portal tokens rotate — the OLD token stops working when you regenerate.',
-      'Saved Stripe payment methods are scoped per company — you cannot reuse a card across companies.',
+      "business_name and name are separate fields. For B2B accounts use business_name as the display label; for residential, just name.",
+      "Deleting a customer cascades through children (leads, jobs, invoices) if you actually confirm. The Delete button is a soft warning — it asks before destroying.",
+      "Magic-link portal tokens rotate when re-issued. Re-sending the link kills the old URL.",
+      "Search excludes deleted/inactive in 'Active' filter mode by default — switch the dropdown to 'All Status' to see them.",
     ],
 
     faqs: [
       {
         q: 'How do I import customers from HousecallPro?',
-        a: 'Use the HCP Importer in the Data Console. Customers, jobs, estimates, invoices, and payments all import with source_system traceability so you can re-run safely.',
+        a: 'Import button → upload CSV exported from HCP. The CSV importer maps HCP fields to Job Scout fields with source_system="hcp_import" traceability so you can re-run safely without duplicates.',
       },
       {
         q: 'Can the customer pay without logging in?',
-        a: 'Yes — the magic-link portal at /portal/:token requires no password. The link is rotating and per-customer.',
+        a: "Yes — Customer Detail → top action → Send Portal Link generates a magic URL at /portal/<rotating_token>. They view invoices, pay them via the saved Stripe link, sign open quotes, and download statements. No password.",
+      },
+      {
+        q: 'What\'s the difference between Inactive and Prospect status?',
+        a: 'Prospect = a customer who never had a job won. Inactive = had a job at some point, gone quiet. Active is the default everywhere else.',
       },
     ],
 
@@ -104,6 +109,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-05-29',
+  lastVerified: '2026-06-03',
   freshUntil: 90,
 }
