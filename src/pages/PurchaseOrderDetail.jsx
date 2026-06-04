@@ -9,7 +9,7 @@ import { ArrowLeft, Save, Plus, Trash2, Send, Package, FileText, X, Briefcase, D
 import { useIsMobile } from '../hooks/useIsMobile'
 import { PO_STATUS_LABELS, computePoTotals, formatCurrency } from '../lib/poUtils'
 import { generatePoPdf } from '../lib/poPdf'
-import { receiveShipment, autoDistribute } from '../lib/poReceive'
+import { receiveShipment, autoDistribute, recomputeJobPartsStatus } from '../lib/poReceive'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', bgCardHover: '#eef2eb',
@@ -326,12 +326,8 @@ export default function PurchaseOrderDetail() {
         throw new Error(data.error || `send-email HTTP ${res.status}`)
       }
 
-      // Flip status to 'sent' + record sent_at
-      await supabase.from('purchase_orders').update({
-        status: 'sent',
-        sent_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq('id', id)
+      // Flip status to 'sent' + record sent_at + auto-update linked jobs
+      await markPoSentAndUpdateJobs()
 
       toast.success(`PO sent to ${sendEmail}`)
       setSendModalOpen(false)
@@ -342,15 +338,71 @@ export default function PurchaseOrderDetail() {
     setSending(false)
   }
 
-  // Mark sent manually (vendor doesn't have email or user prefers to send out-of-band)
-  const markSentManually = async () => {
-    if (!confirm('Mark this PO as sent without emailing the vendor? Use this when you sent the PO some other way (printed + handed over, called in, etc.)')) return
+  // Shared helper: flip PO to 'sent', then auto-flip every linked job's
+  // workflow status to "Waiting Product" if the company has that status
+  // configured. Bryce asked: when a PO ships out, the Job Board should
+  // reflect that the work is blocked on parts. We check the company's
+  // job_statuses setting before flipping so we don't fight custom
+  // pipelines that don't use "Waiting Product".
+  const markPoSentAndUpdateJobs = async () => {
     await supabase.from('purchase_orders').update({
       status: 'sent',
       sent_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }).eq('id', id)
-    toast.success('PO marked as sent')
+
+    // Collect every job linked to this PO (single-job via po.job_id,
+    // multi-job via purchase_order_line_jobs)
+    const jobIds = new Set()
+    if (po.job_id) jobIds.add(po.job_id)
+    const { data: links } = await supabase
+      .from('purchase_order_line_jobs')
+      .select('job_id')
+      .in('po_line_id', lines.map(l => l.id))
+    for (const link of links || []) jobIds.add(link.job_id)
+    if (jobIds.size === 0) return
+
+    // Always update parts_status to 'ordered' (always safe)
+    for (const jobId of jobIds) {
+      await recomputeJobPartsStatus(jobId)
+    }
+
+    // Conditionally flip workflow status to "Waiting Product" if it
+    // exists in this company's job_statuses setting
+    const { data: setting } = await supabase
+      .from('settings').select('value')
+      .eq('company_id', companyId).eq('key', 'job_statuses').maybeSingle()
+    let companyStatuses = null
+    if (setting?.value) {
+      try {
+        const v = JSON.parse(setting.value)
+        if (Array.isArray(v)) companyStatuses = v
+      } catch { /* fall through */ }
+    }
+    const HAS_WAITING_PRODUCT = companyStatuses
+      ? companyStatuses.some(s => String(s).toLowerCase() === 'waiting product')
+      : true  // unset settings = default list which includes it on HHH
+    if (!HAS_WAITING_PRODUCT) return
+
+    // Only bump jobs that aren't already in a terminal/late stage
+    const KEEP_AS_IS = new Set(['Waiting Product', 'In Progress', 'Completed', 'Complete', 'Verified', 'Verified Complete', 'Invoiced', 'Paid', 'Closed', 'Archived', 'Cancelled'])
+    for (const jobId of jobIds) {
+      const { data: job } = await supabase
+        .from('jobs').select('id, status').eq('id', jobId).maybeSingle()
+      if (job && !KEEP_AS_IS.has(job.status)) {
+        await supabase.from('jobs').update({
+          status: 'Waiting Product',
+          updated_at: new Date().toISOString(),
+        }).eq('id', jobId)
+      }
+    }
+  }
+
+  // Mark sent manually (vendor doesn't have email or user prefers to send out-of-band)
+  const markSentManually = async () => {
+    if (!confirm('Mark this PO as sent without emailing the vendor? Use this when you sent the PO some other way (printed + handed over, called in, etc.)')) return
+    await markPoSentAndUpdateJobs()
+    toast.success('PO marked as sent · linked jobs moved to Waiting Product')
     await fetchAll()
   }
 
@@ -447,12 +499,61 @@ export default function PurchaseOrderDetail() {
 
   // Cancel a PO (soft — keeps the row + audit trail)
   const cancelPo = async () => {
-    if (!confirm('Cancel this PO? It will move to the Cancelled status.')) return
+    if (!confirm('Cancel this PO? It will move to the Cancelled status. Any jobs that were waiting on these parts will be released so they can be re-ordered.')) return
+    // Release the job_lines that were tagged with this PO's line IDs so
+    // their parent jobs can re-order. Without this the JobDetail Parts
+    // tab hides the "Generate PO" button because lines look like they're
+    // already on a PO — exactly what happened on the Nucor PO that was
+    // cancelled and then couldn't be re-created.
+    const poLineIds = lines.map(l => l.id)
+    if (poLineIds.length > 0) {
+      const { data: linkedJobLines } = await supabase
+        .from('job_lines')
+        .select('id, job_id')
+        .in('po_line_id', poLineIds)
+      const touchedJobIds = [...new Set((linkedJobLines || []).map(l => l.job_id))]
+      await supabase.from('job_lines')
+        .update({ po_line_id: null, updated_at: new Date().toISOString() })
+        .in('po_line_id', poLineIds)
+      // Recompute parts_status on each affected job
+      for (const jobId of touchedJobIds) {
+        await recomputeJobPartsStatus(jobId)
+      }
+    }
     await supabase.from('purchase_orders').update({
       status: 'cancelled', closed_at: new Date().toISOString(),
     }).eq('id', id)
-    toast.success('PO cancelled')
+    toast.success('PO cancelled — linked jobs released for re-ordering')
     await fetchAll()
+  }
+
+  // Hard delete — actually removes the PO row + cascades to lines /
+  // line-jobs / receipts. Only allowed when status='draft' to prevent
+  // accidental destruction of sent-or-received history.
+  const deletePo = async () => {
+    if (po.status !== 'draft' && po.status !== 'cancelled') {
+      toast.error('Only Draft or Cancelled POs can be deleted')
+      return
+    }
+    if (!confirm(`Permanently delete ${po.po_number}? This cannot be undone.`)) return
+    // Release linked job_lines BEFORE the cascade deletes them
+    const poLineIds = lines.map(l => l.id)
+    if (poLineIds.length > 0) {
+      const { data: linkedJobLines } = await supabase
+        .from('job_lines').select('id, job_id').in('po_line_id', poLineIds)
+      const touchedJobIds = [...new Set((linkedJobLines || []).map(l => l.job_id))]
+      await supabase.from('job_lines')
+        .update({ po_line_id: null, updated_at: new Date().toISOString() })
+        .in('po_line_id', poLineIds)
+      await supabase.from('purchase_orders').delete().eq('id', id)
+      for (const jobId of touchedJobIds) {
+        await recomputeJobPartsStatus(jobId)
+      }
+    } else {
+      await supabase.from('purchase_orders').delete().eq('id', id)
+    }
+    toast.success(`${po.po_number} deleted`)
+    navigate('/purchase-orders')
   }
 
   if (loading) return <div style={{ padding: 24, color: theme.textMuted }}>Loading PO…</div>
@@ -885,6 +986,16 @@ export default function PurchaseOrderDetail() {
                   style={actionBtn('rgba(220,38,38,0.10)', '#dc2626')}
                 >
                   <X size={16} /> Cancel PO
+                </button>
+              )}
+              {(po.status === 'draft' || po.status === 'cancelled') && (
+                <button
+                  onClick={deletePo}
+                  disabled={saving}
+                  style={actionBtn('transparent', '#dc2626')}
+                  title="Permanently delete this PO. Only available on Draft or Cancelled POs."
+                >
+                  <Trash2 size={16} /> Delete PO
                 </button>
               )}
             </div>
