@@ -3,7 +3,7 @@ import { useStore } from '../../../lib/store'
 import {
   invoiceBalance, invoiceCustomerTotal, invoiceDaysOverdue, invoiceStatus,
   isInvoiceOpen, paymentDate, jobIsComplete, jobContractValue,
-  jobCostFromLines, expenseCategoryName,
+  jobCostFromLines, expenseCategoryName, unifiedExpenses,
 } from './frankieFields'
 
 function buildSystemPrompt(user, company, role) {
@@ -71,7 +71,11 @@ function assembleFinancialContext() {
   const state = useStore.getState()
   const invoices = state.invoices || []
   const payments = state.payments || []
-  const expenses = state.expenses || []
+  // Combine manual entries with bank-fed Plaid debits. See
+  // frankieFields.unifiedExpenses — without this Frankie tells the AI
+  // "you have $0 in expenses" for any tenant whose spend is auto-imported
+  // from a bank (i.e., most of them).
+  const expenses = unifiedExpenses(state.expenses || [], state.plaidTransactions || [])
   const jobs = state.jobs || []
   const customers = state.customers || []
   const employees = state.employees || []

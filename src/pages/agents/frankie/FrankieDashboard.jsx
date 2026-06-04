@@ -11,7 +11,7 @@ import {
 import {
   invoiceBalance, invoiceCustomerTotal, invoiceDaysOverdue, isInvoiceOpen,
   paymentDate, jobContractValue, jobIsComplete, jobCostFromLines, jobMargin,
-  expenseCategoryName, hasMeaningfulData,
+  expenseCategoryName, hasMeaningfulData, unifiedExpenses,
 } from './frankieFields'
 
 const defaultTheme = {
@@ -54,12 +54,24 @@ export default function FrankieDashboard() {
 
   const invoices = useStore(s => s.invoices) || []
   const payments = useStore(s => s.payments) || []
-  const expenses = useStore(s => s.expenses) || []
+  const manualExpenses = useStore(s => s.expenses) || []
+  const plaidTransactions = useStore(s => s.plaidTransactions) || []
   const jobs = useStore(s => s.jobs) || []
   const fetchInvoices = useStore(s => s.fetchInvoices)
   const fetchPayments = useStore(s => s.fetchPayments)
   const fetchExpenses = useStore(s => s.fetchExpenses)
+  const fetchPlaidTransactions = useStore(s => s.fetchPlaidTransactions)
   const companyId = useStore(s => s.companyId)
+
+  // The actual expense source — manual entries plus bank-fed debits.
+  // Most tenants (HHH included) have zero manual entries and all their
+  // real spend is in plaid_transactions, so reading manual_expenses
+  // alone reports $0 expenses. unifiedExpenses normalizes both into
+  // one stream with .expense_date / .amount / .category.name shape.
+  const expenses = useMemo(
+    () => unifiedExpenses(manualExpenses, plaidTransactions),
+    [manualExpenses, plaidTransactions]
+  )
 
   const [refreshing, setRefreshing] = useState(false)
 
@@ -68,12 +80,18 @@ export default function FrankieDashboard() {
       fetchInvoices()
       fetchPayments()
       fetchExpenses()
+      if (fetchPlaidTransactions) fetchPlaidTransactions()
     }
   }, [companyId])
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await Promise.all([fetchInvoices(), fetchPayments(), fetchExpenses()])
+    await Promise.all([
+      fetchInvoices(),
+      fetchPayments(),
+      fetchExpenses(),
+      fetchPlaidTransactions ? fetchPlaidTransactions() : Promise.resolve(),
+    ])
     setRefreshing(false)
   }
 

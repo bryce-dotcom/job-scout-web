@@ -8,7 +8,8 @@ import { companyNotify } from '../lib/companyNotify'
 import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin, Map,
   Play, CheckCircle, FileText, ChevronRight, User, Users, Upload, Download,
-  Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight, Coffee, ChevronDown, ChevronUp, Navigation, ExternalLink
+  Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight, Coffee, ChevronDown, ChevronUp, Navigation, ExternalLink,
+  Archive, RotateCcw
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
@@ -238,7 +239,8 @@ function RecentWins({ wins, theme, isMobile, navigate, formatDate }) {
 }
 
 // ============ KANBAN COLUMN ============
-function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigate, formatDate, scheduleJob, startJob, completeJob, openMap }) {
+function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigate, formatDate, scheduleJob, startJob, completeJob, openMap, archiveJob }) {
+  const [hoveredJobId, setHoveredJobId] = useState(null)
   return (
     <div style={{
       flex: 1,
@@ -290,6 +292,7 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
         )}
         {jobs.map(job => {
           const invoiceStyle = invoiceStatusColors[job.invoice_status] || invoiceStatusColors['Not Invoiced']
+          const isHovered = hoveredJobId === job.id
           return (
             <div
               key={job.id}
@@ -297,27 +300,40 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
               style={{
                 backgroundColor: theme.bgCard,
                 borderRadius: '10px',
-                border: `1px solid ${theme.border}`,
+                border: `1px solid ${isHovered ? color : theme.border}`,
                 padding: '12px 14px',
                 cursor: 'pointer',
-                transition: 'all 0.12s ease'
+                transition: 'all 0.12s ease',
+                boxShadow: isHovered ? `0 2px 8px ${color}15` : 'none',
+                position: 'relative'
               }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = color
-                e.currentTarget.style.boxShadow = `0 2px 8px ${color}15`
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = theme.border
-                e.currentTarget.style.boxShadow = 'none'
-              }}
+              onMouseEnter={() => setHoveredJobId(job.id)}
+              onMouseLeave={() => setHoveredJobId(null)}
             >
+              {/* Archive button — appears on hover, top-right corner */}
+              {isHovered && archiveJob && (
+                <button
+                  onClick={e => { e.stopPropagation(); archiveJob(job) }}
+                  title="Archive this job"
+                  style={{
+                    position: 'absolute', top: '8px', right: '8px',
+                    background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+                    borderRadius: '6px', padding: '3px 6px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '3px',
+                    fontSize: '10px', fontWeight: '600', color: '#dc2626',
+                    zIndex: 1
+                  }}
+                >
+                  <Archive size={10} /> Archive
+                </button>
+              )}
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span style={{ fontSize: '11px', fontWeight: '600', color: color, display: 'flex', alignItems: 'center', gap: '4px' }}>
                   {job.job_id}
                   <ExternalLink size={10} color={theme.textMuted} />
                 </span>
                 {job.job_total > 0 && (
-                  <span style={{ fontSize: '12px', fontWeight: '600', color: theme.accent }}>
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: theme.accent, paddingRight: isHovered ? '60px' : '0' }}>
                     {formatCurrency(job.job_total)}
                   </span>
                 )}
@@ -450,6 +466,9 @@ export default function Jobs() {
   const mapInstanceRef = useRef(null)
   const geocodeCacheRef = useRef({})
   const customerInputRef = useRef(null)
+  // Recently Archived — fetched separately because the store filters them out
+  const [archivedJobs, setArchivedJobs] = useState([])
+  const [archivedJobsLoading, setArchivedJobsLoading] = useState(false)
 
   // Build dynamic board columns from DB-driven job statuses
   const boardColumns = (() => {
@@ -510,6 +529,23 @@ export default function Jobs() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
+  // Fetch recently archived jobs (last 60 days) for the restore drawer
+  const fetchArchivedJobs = useCallback(async () => {
+    if (!companyId) return
+    setArchivedJobsLoading(true)
+    const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
+    const { data } = await supabase
+      .from('jobs')
+      .select('id, job_id, job_title, status, archived_at, updated_at, customer:customers!customer_id(name)')
+      .eq('company_id', companyId)
+      .eq('status', 'Archived')
+      .gte('archived_at', cutoff)
+      .order('archived_at', { ascending: false })
+      .limit(50)
+    setArchivedJobs(data || [])
+    setArchivedJobsLoading(false)
+  }, [companyId])
+
   useEffect(() => {
     if (!companyId) {
       navigate('/')
@@ -518,7 +554,8 @@ export default function Jobs() {
     fetchJobs()
     fetchCustomers()
     if (fetchProducts) fetchProducts()
-  }, [companyId, navigate, fetchJobs, fetchCustomers, fetchProducts])
+    fetchArchivedJobs()
+  }, [companyId, navigate, fetchJobs, fetchCustomers, fetchProducts, fetchArchivedJobs])
 
   // Auto-open create modal when navigating from CustomerDetail with customer pre-filled
   useEffect(() => {
@@ -1067,6 +1104,30 @@ export default function Jobs() {
     await fetchJobs()
   }
 
+  // Archive a job (soft-delete — sets status to Archived so it disappears
+  // from the active board but can be restored from the Recently Archived drawer).
+  // This is the safe alternative to hard-deleting: no data loss, reversible.
+  const archiveJob = async (job) => {
+    const { error } = await supabase
+      .from('jobs')
+      .update({ status: 'Archived', archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', job.id)
+    if (error) { toast.error('Failed to archive job'); return }
+    toast.success(`"${job.job_title || job.job_id}" archived — restore it from Recently Archived below`)
+    await Promise.all([fetchJobs(), fetchArchivedJobs()])
+  }
+
+  // Restore a previously archived job back to Chillin (the triage column)
+  const restoreJob = async (job) => {
+    const { error } = await supabase
+      .from('jobs')
+      .update({ status: 'Chillin', archived_at: null, updated_at: new Date().toISOString() })
+      .eq('id', job.id)
+    if (error) { toast.error('Failed to restore job'); return }
+    toast.success(`"${job.job_title || job.job_id}" restored to Chillin`)
+    await Promise.all([fetchJobs(), fetchArchivedJobs()])
+  }
+
   const openMap = (address) => {
     if (address) {
       window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`, '_blank')
@@ -1342,6 +1403,7 @@ export default function Jobs() {
                 startJob={startJob}
                 completeJob={completeJob}
                 openMap={openMap}
+                archiveJob={archiveJob}
               />
             ))}
           </div>
@@ -1380,6 +1442,91 @@ export default function Jobs() {
                   </div>
                 ))}
               </div>
+            </details>
+          )}
+
+          {/* ── Recently Archived ────────────────────────────────────────── */}
+          {/* Shows jobs archived in the last 60 days so anyone can undo
+              accidental archives. Doug was hard-deleting to clean the board
+              — this gives a safe alternative: archive → restore if needed. */}
+          {(archivedJobs.length > 0 || archivedJobsLoading) && (
+            <details style={{ marginTop: '16px' }}>
+              <summary style={{
+                fontSize: '13px', fontWeight: '600', color: theme.textMuted,
+                cursor: 'pointer', padding: '8px 0', userSelect: 'none',
+                display: 'flex', alignItems: 'center', gap: '6px', listStyle: 'none'
+              }}>
+                <Archive size={13} style={{ color: theme.textMuted }} />
+                Recently Archived ({archivedJobs.length})
+                <span style={{ fontSize: '11px', fontWeight: '400', color: theme.textMuted }}>
+                  — last 60 days · click to restore
+                </span>
+              </summary>
+              {archivedJobsLoading ? (
+                <div style={{ padding: '12px', color: theme.textMuted, fontSize: '13px' }}>Loading…</div>
+              ) : (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(260px, 1fr))',
+                  gap: '8px', marginTop: '10px'
+                }}>
+                  {archivedJobs.map(job => (
+                    <div
+                      key={job.id}
+                      style={{
+                        backgroundColor: theme.bgCard, borderRadius: '10px',
+                        border: `1px solid ${theme.border}`, padding: '12px 14px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        gap: '10px', opacity: 0.85
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: '10px', color: theme.textMuted, fontWeight: '600', display: 'block' }}>
+                          {job.job_id}
+                        </span>
+                        <p style={{
+                          fontSize: '13px', fontWeight: '500', color: theme.text,
+                          margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                        }}>
+                          {job.job_title || 'Untitled'}
+                        </p>
+                        <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                          {job.customer?.name || ''}
+                          {job.archived_at && (
+                            <> · archived {new Date(job.archived_at).toLocaleDateString()}</>
+                          )}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                        <button
+                          onClick={() => navigate(`/jobs/${job.id}`)}
+                          title="View job"
+                          style={{
+                            padding: '5px 8px', borderRadius: '7px', fontSize: '11px',
+                            backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+                            color: theme.textSecondary, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: '3px'
+                          }}
+                        >
+                          <ExternalLink size={10} /> View
+                        </button>
+                        <button
+                          onClick={() => restoreJob(job)}
+                          title="Restore to Chillin"
+                          style={{
+                            padding: '5px 10px', borderRadius: '7px', fontSize: '11px', fontWeight: '600',
+                            backgroundColor: 'rgba(90,99,73,0.1)', border: `1px solid rgba(90,99,73,0.3)`,
+                            color: theme.accent, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: '3px'
+                          }}
+                        >
+                          <RotateCcw size={10} /> Restore
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </details>
           )}
 

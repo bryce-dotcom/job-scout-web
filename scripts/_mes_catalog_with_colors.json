@@ -1,0 +1,4642 @@
+{
+  "allRows": [
+    {
+      "sheet": "MES Interior",
+      "section": "Panel High Bay",
+      "sku": "6681",
+      "name": "02861 - LED 2x2 Back-Lit Panel Highbay (Elm GSR+) 100W-150W-210W CCT Tunable (4000K-5000K) Frosted White 150 LM/W ASR (3.5mm) 6KV 120-277V DLC Prem (MES) DLC ID#",
+      "category": "High Bay LED : Linear",
+      "price": "$99.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Panel High Bay",
+      "sku": "6682",
+      "name": "02862 - LED 2x4 Back-Lit Panel Highbay (Elm GSR+) 180W-260W-325W CCT Tunable (4000K-5000K) Frosted White 160 LM/W ZSR (3.5mm) 6KV 120-277V DLC Prem (MES) DLC ID#",
+      "category": "High Bay LED : Linear",
+      "price": "$131.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "5116",
+      "name": "09240 03 - LED 2FT Linear High Bay (Pine SSR+) 50W-60W-70W-90W-110W 5000K Frosted White ZSR Rotatable 100-277V DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$65.80",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "5117",
+      "name": "09241 03 - LED 2FT Linear High Bay (Pine SSR+) 90W-110W-130W-150W-165W 5000K Frosted White ZSR Rotatable 100-277V DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$72.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "5118",
+      "name": "09242 03 - LED 2FT Linear High Bay (Pine SSR+) 150W-165W-180W-200W-220W 5000K Frosted White ZSR Rotatable 100-277V 6KV IP20 DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$81.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "5742",
+      "name": "09245 - LED 2FT Linear High Bay (Pine SSR+) 90W-110W-130W-150W-165W 5000K Frosted White ZSR Rotatable 277-480V DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$102.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "5743",
+      "name": "09246 - LED 2FT Linear High Bay (Pine SSR+) 150W-165W-180W-200W-220W 5000K Frosted White ZSR Rotatable 277-480V DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$111.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "6078",
+      "name": "09247 01 - LED 3FT Linear High Bay (Pine GSR) 110W-165W-220W-300W CCT Tunable (3000K-4000K-5000K) Frosted White ZSR 100-277V DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$118.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "6785",
+      "name": "09248 - LED 4FT Linear High Bay (Pine SSR) 220W-280W-320W-360W-400W 5000K Frosted White ZSR 120-277V 10KV DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$175.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "6786",
+      "name": "09249 - LED 4FT Linear High Bay (Pine SSR) 220W-280W-320W-360W-420W 5000K Frosted White ZSR 120-277V 10KV DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$175.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "6438",
+      "name": "09650 - LED 2FT Linear High Bay (Sequoia GSR) 280W-320W-360W-400W CCT Tunable (3000K-4000K-5000K) Frosted White ZSR 10KV 120-277V DLC Prem (MES) DLC ID#",
+      "category": "High Bay LED : Linear",
+      "price": "$185.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Round High Bay",
+      "sku": "5132",
+      "name": "03065 02 - LED Round UFO High Bay (Ash GSR+) 60W-80W-100W CCT Tunable (3500K-4000K-5000K) Clear Black Dim ZSR 120-277V UL & DLC Prem (MES)",
+      "category": "High Bay LED : Round",
+      "price": "$58.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Round High Bay",
+      "sku": "5133",
+      "name": "03066 02 - LED Round UFO High Bay (Ash GSR+) 110W-130W-150W CCT Tunable (3500K-4000K-5000K) Clear Black Dimmable ZSR 120-277V UL & DLC Premium Listed (MES)",
+      "category": "High Bay LED : Round",
+      "price": "$65.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Round High Bay",
+      "sku": "5134",
+      "name": "03068 02 - LED Round UFO High Bay (Ash GSR+) 200W-220W-240W CCT Tunable (3500K-4000K-5000K) Clear Black Dimmable ZSR 120-277V UL & DLC Premium Listed (MES)",
+      "category": "High Bay LED : Round",
+      "price": "$82.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Round High Bay",
+      "sku": "5550",
+      "name": "03080 02 - LED Round UFO High Bay (Ash GSR+) 200W-220W-240W CCT Tunable (3500K-4000K-5000K) Clear Black Dimmable ZSR 277V-480V DLC Prem (MES)",
+      "category": "High Bay LED : Round",
+      "price": "$115.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Round High Bay",
+      "sku": "6437",
+      "name": "03083 - LED Round UFO High Bay (Ash GSR+) 200W-240W-300W CCT Tunable (3000K-4000K-5000K) Clear Black Dimmable ZSR 6KV 120-277V DLC Prem (MES) DLC ID#",
+      "category": "High Bay LED : Round",
+      "price": "$110.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Round High Bay",
+      "sku": "6127",
+      "name": "03081 02 - LED Round UFO High Bay (Ash GSR+) 110W-130W-150W CCT Tunable (3500K-4000K-5000K) Clear White Dimmable ZSR 120-277V DLC Prem (MES)",
+      "category": "High Bay LED : Round",
+      "price": "$71.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Round High Bay",
+      "sku": "6128",
+      "name": "03082 02 - LED Round UFO High Bay (Ash GSR+) 200W-220W-240W CCT Tunable (3500K-4000K-5000K) Clear White Dimmable ZSR 120-277V DLC Prem (MES)",
+      "category": "High Bay LED : Round",
+      "price": "$85.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Round High Bay",
+      "sku": "6782",
+      "name": "03066 03 - LED Round UFO High Bay (Ash GSR+ Pro) 110W-130W-150W CCT Tunable (4000K-5000K) Black ZSR (60D-90D Beam Angle Adjustable) 120-277V 6KV DLC Prem (MES)",
+      "category": "High Bay LED : Round",
+      "price": "$68.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Round High Bay",
+      "sku": "6783",
+      "name": "03067 02 - LED Round UFO High Bay (Ash GSR+ Pro) 160W-180W-200W CCT Tunable (4000K-5000K) Black ZSR (60D-90D Beam Angle Adjustable) 120-277V 6KV DLC Prem (MES)",
+      "category": "High Bay LED : Round",
+      "price": "$78.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Round High Bay",
+      "sku": "6784",
+      "name": "03068 03 - LED Round UFO High Bay (Ash GSR+ Pro) 200W-220W-240W CCT Tunable (4000K-5000K) Black ZSR (60D-90D Beam Angle Adjustable) 120-277V 6KV DLC Prem (MES)",
+      "category": "High Bay LED : Round",
+      "price": "$85.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Vapor Tight High Bay",
+      "sku": "6311",
+      "name": "02510 02 - LED 4ft Vapor Tight High Bay (Hazel GSR) 105W-135W-155W-180W CCT Tunable (3500K-4000K-5000K) Frosted Gray QSR 120V-277V NSF DLC Prem (MES)",
+      "category": "Spec Grade Fixtures : Vaportight Highbay",
+      "price": "$195.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Food Grade Canopy",
+      "sku": "4990",
+      "name": "05822 - LED Canopy Fixture (Hercules GSR) 100W-120W-150W CCT Tunable (3000K-4000K-5000K) White 120V-277V UL & DLC Prem (MES)",
+      "category": "Spec Grade Fixtures : Canopy",
+      "price": "$185.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Integrated Fixtures",
+      "sku": "6499",
+      "name": "02317 - LED 2FT Integrated Fixture (Rose G) 15W-18W-22W CCT Tunable (3500K-4000K-5000K-5700K-6500K) Frosted White (With Accessories) 120-277V DLC Prem (MES)",
+      "category": "Indoor LED Retrofit : Integrated Strip",
+      "price": "$15.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Integrated Fixtures",
+      "sku": "6062",
+      "name": "02319 - LED 4ft Integrated Fixture (Rose G) 22W-30W-40W CCT Tunable (3500K-4000K-5000K-5700K-6500K) (No Accessories) Frosted White 120-277V DLC Prem (MES)",
+      "category": "Indoor LED Retrofit : Integrated Strip",
+      "price": "$14.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Integrated Fixtures",
+      "sku": "6063",
+      "name": "02320 - 4FT Integrated Accessories (Rose G) (Mounting Hardware, Cables & Connector) Sku # 02319 (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Integrated",
+      "price": "$1.80",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "5882",
+      "name": "04008 02 - LED 4ft Strip Fixture Retrofit (Lily GSR) 34W-38W-45W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : Strip Fixture Retrofit",
+      "price": "$36.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6132",
+      "name": "04010 02 - LED 8ft (4ftx2) Strip Fixture Retrofit (Lily GSR) 65W-75W-90W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V DLC Prem (MES)",
+      "category": "Indoor LED Retrofit : Strip Fixture Retrofit",
+      "price": "$69.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6673",
+      "name": "04008 03 - LED 4FT Strip Fixture Retrofit (Lily GSR+) 34W-38W-45W CCT Tunable (3500K-4000K-5000K) Frosted White QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Retrofit : Strip Fixture Retrofit",
+      "price": "$36.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6674",
+      "name": "04010 03 - LED 8FT (4FTx2) Strip Fixture Retrofit (Lily GSR+) 65W-75W-90W CCT Tunable (3500K-4000K-5000K) Frosted White QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Retrofit : Strip Fixture Retrofit",
+      "price": "$69.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6678",
+      "name": "02842 03 - LED 1x4 Back-Lit Panel Retrofit (Lotus GSR+) 14W-17W-20W-28W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Retrofit : Back-Lit Panel Retrofit",
+      "price": "$38.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "5138",
+      "name": "02843 - LED 2x2 Back-Lit Panel Retrofit (Lotus GSR) 20W-25W-30W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V (MES)",
+      "category": "Indoor LED Retrofit : Back-Lit Panel Retrofit",
+      "price": "$35.10",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "5139",
+      "name": "02845 - LED 2x4 Back-Lit Panel Retrofit (Lotus GSR) 23W-30W-36W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V (MES)",
+      "category": "Indoor LED Retrofit : Back-Lit Panel Retrofit",
+      "price": "$51.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "5140",
+      "name": "02846 - LED 2x4 Back-Lit Panel Retrofit (Lotus GSR) 35W-40W-46W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V (MES)",
+      "category": "Indoor LED Retrofit : Back-Lit Panel Retrofit",
+      "price": "$53.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6679",
+      "name": "02843 03 - LED 2x2 Back-Lit Panel Retrofit (Lotus GSR+) 15W-18W-25W-30W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Retrofit : Back-Lit Panel Retrofit",
+      "price": "$36.85",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6680",
+      "name": "02845 03 - LED 2x4 Back-Lit Panel Retrofit (Lotus GSR+) 17W-20W-28W-34W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Retrofit : Back-Lit Panel Retrofit",
+      "price": "$53.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "3923",
+      "name": "04064 - LED 1x4 Volumetric Troffer Retrofit (Lilac GSR) 20W-25W-30W CCT Tunable (3500K-4000K-5000K) Frosted White SR 120V-277V (MES)",
+      "category": "Indoor LED Retrofit : Troffer Retrofit",
+      "price": "$39.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6058",
+      "name": "04065 01 - LED 2x2 Volumetric Troffer Retrofit (Lilac GSR) 20W-25W-30W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V DLC Prem (MES)",
+      "category": "Indoor LED Retrofit : Troffer Retrofit",
+      "price": "$36.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6057",
+      "name": "04066 01 - LED 2x4 Volumetric Troffer Retrofit (Lilac GSR) 25W-30W-35W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V DLC Prem (MES)",
+      "category": "Indoor LED Retrofit : Troffer Retrofit",
+      "price": "$49.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6131",
+      "name": "04067 01 - LED 2x4 Volumetric Troffer Retrofit (Lilac GSR) 34W-38W-45W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Retrofit : Troffer Retrofit",
+      "price": "$52.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6675",
+      "name": "04065 03 - LED 2x2 Volumetric Troffer Retrofit (Lilac GSR+) 14W-17W-20W-28W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Retrofit : Troffer Retrofit",
+      "price": "$37.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6676",
+      "name": "04066 03 - LED 2x4 Volumetric Troffer Retrofit (Lilac GSR+) 17W-20W-28W-34W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) D",
+      "category": "Indoor LED Retrofit : Troffer Retrofit",
+      "price": "$55.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Downlights & Architectural Linear",
+      "sku": "6029",
+      "name": "02938 01 - LED Downlight 4\" (Willow G+) 6W-8W-10W-12W-16W CCT Tunable (2700K-3000K-3500K-4000K-5000K) White 120-277V CRI80 (MES)",
+      "category": "Indoor LED Fixture : Downlights",
+      "price": "$22.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Downlights & Architectural Linear",
+      "sku": "6030",
+      "name": "02939 01 - LED Downlight 6\" (Willow G+) 12W-16W-22W-26W-30W CCT Tunable (2700K-3000K-3500K-4000K-5000K) White 120-277V CRI80 (MES)",
+      "category": "Indoor LED Fixture : Downlights",
+      "price": "$27.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Downlights & Architectural Linear",
+      "sku": "6031",
+      "name": "02942 01 - LED Downlight 8\" (Willow G+) 16W-22W-26W-30W-35W CCT Tunable (2700K-3000K-3500K-4000K-5000K) White 120-277V CRI80 (MES)",
+      "category": "Indoor LED Fixture : Downlights",
+      "price": "$35.70",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Downlights & Architectural Linear",
+      "sku": "6403",
+      "name": "02944 01 - LED Downlight 10\" (Willow G+) 22W-26W-30W-35W-40W CCT Tunable (2700K-3000K-3500K-4000K-5000K) White CRI80 120V-277V ES (MES)",
+      "category": "Indoor LED Fixture : Downlights",
+      "price": "$48.80",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Downlights & Architectural Linear",
+      "sku": "5161",
+      "name": "02565 - LED 4FT Architectural Linear (Aspen G) Light 30W-40W-50W CCT Tunable (3500K-4000K-5000K) Up/Down White + 5FT Cable + Aircraft Cable 120-277V UL & DLC Prem (MES)",
+      "category": "Indoor LED Fixture : Arch Linear Fixture",
+      "price": "$88.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Downlights & Architectural Linear",
+      "sku": "5162",
+      "name": "02566 - LED 4FT Architectural Linear (Aspen G) Light 30W-40W-50W CCT Tunable (3500K-4000K-5000K) Up/Down Black + 5FT Cable + Aircraft Cable 120-277V UL & DLC Prem (MES)",
+      "category": "Indoor LED Fixture : Arch Linear Fixture",
+      "price": "$88.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6324",
+      "name": "02381 02 - LED 4ft Covered Strip Fixture (Juniper GSR) 24W-32W-40W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 100V-277V DLC Prem (MES)",
+      "category": "Indoor LED Fixture : Covered Strip Fixture",
+      "price": "$35.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6325",
+      "name": "02382 02 - LED 8ft Covered Strip Fixture (Juniper GSR) 40W-50W-64W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 100V-277V DLC Prem (MES)",
+      "category": "Indoor LED Fixture : Covered Strip Fixture",
+      "price": "$63.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6683",
+      "name": "02381 04 - LED 4FT Covered Strip Fixture (Juniper GSR+) 21W-26W-34W-40W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Covered Strip Fixture",
+      "price": "$35.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6684",
+      "name": "02381 05 - LED 4FT Covered Strip Fixture (Juniper GSR+) 40W-47W-53W-68W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Covered Strip Fixture",
+      "price": "$42.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6685",
+      "name": "02382 04 - LED 8FT Covered Strip Fixture (Juniper GSR+) 34W-42W-52W-68W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Covered Strip Fixture",
+      "price": "$63.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6686",
+      "name": "02382 05 - LED 8FT Covered Strip Fixture (Juniper GSR+) 40W-53W-68W-80W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Covered Strip Fixture",
+      "price": "$68.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6687",
+      "name": "02382 06 - LED 8FT Covered Strip Fixture (Juniper GSR+) 80W-94W-106W-136W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Covered Strip Fixture",
+      "price": "$88.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "3635",
+      "name": "02508 - LED 4ft Vapor Tight Fixture (Hazel GSR) 35W-45W-60W CCT Tunable (3500K-4000K-5000K) Frosted Gray QSR 120V-277V NSF DLC Prem (MES)",
+      "category": "Indoor LED Fixture : Vaportight",
+      "price": "$67.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "3636",
+      "name": "02509 - LED 8ft Vapor Tight Fixture (Hazel GSR) 55W-65W-75W-90W CCT Tunable (3500K-4000K-5000K) Frosted Gray SR 120V-277V NSF DLC Prem (MES)",
+      "category": "Indoor LED Fixture : Vaportight",
+      "price": "$135.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6688",
+      "name": "02361 - LED 2FT Stairwell Linear Strip Fixture (Cherry GSR+) 13W-17W-21W-26W CCT Tunable (2700K-3000K-3500K-4000K-5000K) Frosted White 150 LM/W PQSR 120V-277V UL & DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Stairwell Fixture",
+      "price": "$48.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6689",
+      "name": "02362 - LED 4FT Stairwell Linear Strip Fixture (Cherry GSR+) 21W-26W-34W-40W CCT Tunable (2700K-3000K-3500K-4000K-5000K) Frosted White 150 LM/W PQSR 120V-277V UL & DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Stairwell Fixture",
+      "price": "$55.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6691",
+      "name": "19488 03 - LED 2FT Wraparound Fixture (Laurel GSR+) 12W-16W-20W-25W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 145LM/W PQSR 120-277V UL & DLC Prem (MES) DLC ID# =",
+      "category": "Indoor LED Fixture : Wraparound",
+      "price": "$45.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6690",
+      "name": "19489 02 - LED 4FT Wraparound Fixture (Laurel GSR) 24W-31W-38W-46W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 125LM/W PQSR 120-277V DLC Prem (MES) DLC =24/31/38/46W",
+      "category": "Indoor LED Fixture : Wraparound",
+      "price": "$39.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6693",
+      "name": "02471 01 - LED 4FT Curved Wraparound Fixture (Olive GSR+) 21W-26W-34W-40W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 9.7in Wide 150 LM/W QSR 120-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Wraparound",
+      "price": "$58.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6623",
+      "name": "02472 - LED 4FT Curved Wraparound Fixture (Olive GSR) 30W-40W-50W CCT Tunable (3500K-4000K-5000K) Frosted White 14in Wide QSR 120-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Wraparound",
+      "price": "$76.30",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6471",
+      "name": "02838 03 - LED 1x4 Flat Panel - Back Lit (Spruce GSR+) 15W-20W-25W-30W-40W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White QSR (CU) 120-277V DLC Prem (MES)",
+      "category": "Indoor LED Fixture : Back-Lit Panel",
+      "price": "$39.50",
+      "fill": "FFFFFF",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6441",
+      "name": "02839 03 - LED 2x2 Flat Panel - Back Lit (Spruce GSR+) 15W-20W-25W-30W-40W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White QSR (CU) 120-277V DLC Prem (MES)",
+      "category": "Indoor LED Fixture : Back-Lit Panel",
+      "price": "$31.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6442",
+      "name": "02841 03 - LED 2x4 Flat Panel - Back Lit (Spruce GSR+) 23W-30W-35W-40W-50W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White QSR (CU) 120V-277V DLC Prem (MES)",
+      "category": "Indoor LED Fixture : Back-Lit Panel",
+      "price": "$42.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6443",
+      "name": "02841 05 - LED 2x4 Flat Panel - Back Lit (Spruce GSR+) 30W-40W-50W-60W-72W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White QSR (CU) 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Back-Lit Panel",
+      "price": "$51.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6450",
+      "name": "02850 - LED 1x4 Flat Panel - Back Lit (Birch GSR+) 15W-20W-25W-30W-40W CCT Tunable (3500K-4000K-5000K) Frosted White (QSR & PQSR) 120-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Back-Lit Panel",
+      "price": "$39.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6426",
+      "name": "02851 - LED 2x2 Flat Panel - Back Lit (Birch GSR+) 15W-20W-25W-30W-40W CCT Tunable (3500K-4000K-5000K) Frosted White (QSR & PQSR) 120-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Back-Lit Panel",
+      "price": "$32.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6427",
+      "name": "02852 - LED 2x4 Flat Panel - Back Lit (Birch GSR+) 23W-30W-35W-40W-50W CCT Tunable (3500K-4000K-5000K) Frosted White (QSR & PQSR) 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Back-Lit Panel",
+      "price": "$43.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6428",
+      "name": "02853 - LED 2x4 Flat Panel - Back Lit (Birch GSR+) 30W-40W-50W-60W-72W CCT Tunable (3500K-4000K-5000K) Frosted White (QSR & PQSR) 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Back-Lit Panel",
+      "price": "$53.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6249",
+      "name": "02844 - LED 1x4 Back-Lit Panel (Smart Pro) 36W CCT Tunable Dimmable w/  BLE Sensor UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Fixture : Back-Lit Panel Integrated",
+      "price": "$68.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "3712",
+      "name": "02836 - LED 2x2 Back-Lit Panel (Smart Pro) 36W CCT Tunable Dimmable w/ BLE Sensor  UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Fixture : Back-Lit Panel Integrated",
+      "price": "$65.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "3713",
+      "name": "02837 - LED 2x4 Back-Lit Panel (Smart Pro) 50W CCT Tunable (3000-6500K) Dim w/ BLE Sensor 100-277V UL & DLC Prem Listed (MES)",
+      "category": "Indoor LED Fixture : Back-Lit Panel Integrated",
+      "price": "$82.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Troffer (Center Basket)",
+      "sku": "6444",
+      "name": "02675 03 - LED 2x2 Volumetric Troffer (Redwood GSR+) 15W-20W-25W-30W-40W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White QSR (CU) 120-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Troffer",
+      "price": "$35.10",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Troffer (Center Basket)",
+      "sku": "6445",
+      "name": "02676 03 - LED 2x4 Volumetric Troffer (Redwood GSR+) 23W-30W-35W-40W-50W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White QSR (CU) 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Troffer",
+      "price": "$48.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Troffer (Center Basket)",
+      "sku": "6446",
+      "name": "02676 05 - LED 2x4 Volumetric Troffer (Redwood GSR+) 30W-40W-50W-60W-72W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White QSR (CU) 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Troffer",
+      "price": "$57.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Troffer (Center Basket)",
+      "sku": "6429",
+      "name": "02677 - LED 2x2 Volumetric Troffer (Sycamore GSR+) 15W-20W-25W-30W-40W CCT Tunable (3500K-4000K-5000K) Frosted White (QSR & PQSR) 120-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Troffer",
+      "price": "$36.10",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Troffer (Center Basket)",
+      "sku": "6430",
+      "name": "02678 - LED 2x4 Volumetric Troffer (Sycamore GSR+) 23W-30W-35W-40W-50W CCT Tunable (3500K-4000K-5000K) Frosted White (QSR & PQSR) 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Troffer",
+      "price": "$49.85",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Troffer (Center Basket)",
+      "sku": "6431",
+      "name": "02679 - LED 2x4 Volumetric Troffer (Sycamore GSR+) 30W-40W-50W-60W-72W CCT Tunable (3500K-4000K-5000K) Frosted White (QSR & PQSR) 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Troffer",
+      "price": "$58.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Troffer (Center Basket)",
+      "sku": "3668",
+      "name": "02673 - LED 2x2 Volumetric Troffer (Smart Pro) 36W CCT Tunable Dimmable w/ BLE Sensor 100-277V UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Fixture : Troffer Integrated",
+      "price": "$65.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Troffer (Center Basket)",
+      "sku": "3669",
+      "name": "02674 - LED 2x4 Volumetric Troffer (Smart Pro) 50W CCT Tunable Dimmable w/ BLE Sensor 100-277V UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Fixture : Troffer Integrated",
+      "price": "$82.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Grow Lights",
+      "sku": "3746",
+      "name": "02991 - LED Spider Grow Light 330W Standard Driver UL and DLC Premium Listed (MES)",
+      "category": "Indoor LED Fixture : Grow light",
+      "price": "$575.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Grow Lights",
+      "sku": "3747",
+      "name": "02993 - LED Spider Grow Light 660W Standard Driver UL and DLC Premium Listed (MES)",
+      "category": "Indoor LED Fixture : Grow light",
+      "price": "$750.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6089",
+      "name": "02113 - LED 4FT Glass T5 Tube (Gladiola S) 15W CCT Tunable (3500K-4000K-5000K-6500K) Dual End Bypass (Type B) Frosted PET Coated 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T5",
+      "price": "$10.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6090",
+      "name": "02114 - LED 4FT Glass T5 Tube (Gladiola S) 24W CCT Tunnable (3500K-4000K-5000K-6500K) Dual End Bypass (Type B) Frosted PET Coated 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T5",
+      "price": "$11.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6093",
+      "name": "02057 - LED U-Bend Glass T8 Tube (Gladiola S) 15W CCT Tunable (3500K-4000K-5000K) Dual Mode (Type A+B) Frosted PET Coated 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$12.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "4465",
+      "name": "09230 - LED 2ft Glass Tube 6W 4000K Dual End Bypass (Type B) UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.95",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "4466",
+      "name": "09231 - LED 2ft Glass Tube 6W 5000K Dual End Bypass (Type B) UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.95",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "4467",
+      "name": "09232 - LED 4ft Glass Tube 9W 4000K Dual End Bypass (Type B) UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.45",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "4468",
+      "name": "09233 - LED 4ft Glass Tube 9W 5000K Dual End Bypass (Type B) UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.45",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6081",
+      "name": "02093 - LED 4FT Glass T8 Tube (Gladiola B) 13.5W 4000K Dual End Bypass  (Type B) Frosted PET Coated 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$3.95",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6082",
+      "name": "02094 - LED 4FT Glass T8 Tube (Gladiola B) 13.5W 5000K Dual End Bypass (Type B) Frosted PET Coated 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$3.95",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6083",
+      "name": "02095 - LED 4FT Glass T8 Tube (Gladiola S) 13.5W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Dual End Bypass (Type B) Frosted PET Coated 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "5845",
+      "name": "02092 - LED 4FT Glass T8 FA8 Tube 15W 5000K Dual End Bypass (Type B) Frosted 120-277V DLC Listed (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.45",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6084",
+      "name": "02096 - LED 4FT Glass T8 Tube (Gladiola B) 17W 4000K Dual End Bypass (Type B) Frosted PET Coated 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.65",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6085",
+      "name": "02097 - LED 4FT Glass T8 Tube (Gladiola B) 17W 5000K Dual End Bypass (Type B) Frosted PET Coated 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.65",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6086",
+      "name": "02098 - LED 4FT Glass T8 Tube (Gladiola S) 17W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Dual End Bypass (Type B) Frosted PET Coated 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$5.15",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6087",
+      "name": "02099 - LED 4FT Glass T8 Tube (Gladiola B) 24W 4000K Dual End Bypass (Type B) Frosted PET Coated 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$5.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6088",
+      "name": "02112 - LED 4FT Glass T8 Tube (Gladiola B) 24W 5000K Dual End Bypass (Type B) Frosted PET Coated 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$5.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "3573",
+      "name": "02105 - LED 4ft AL+PC T8 Tube 22W 6500K Dual End Bypass Clear Lens UL Listed (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$5.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6091",
+      "name": "02115 - LED 4FT AL+PC Emergency T8 Tube (Gladiola S) 15W CCT Tunable  (3500K-4000K-5000K) Dual End Bypass (Type B) 120-277V 380LM DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8 Emergency",
+      "price": "$65.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "6092",
+      "name": "02116 - LED 4FT AL+PC Emergency T8 Tube (Gladiola S) 15W CCT Tunable  (3500K-4000K-5000K) Dual End Bypass (Type B) 120-277V 680LM DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8 Emergency",
+      "price": "$75.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "4469",
+      "name": "09234 - LED 4ft Glass Tube 9W 4000K Dual Mode (Type A+B) UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.95",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "4470",
+      "name": "09235 - LED 4ft Glass Tube 9W 5000K Dual Mode (Type A+B) UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.95",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "4826",
+      "name": "02081 - LED 4ft Glass Tube 15W 4000K Frosted Dual Mode 100V-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "4827",
+      "name": "02082 - LED 4ft Glass Tube 15W 5000K Frosted Dual Mode 100V-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Type C Tubes Kits",
+      "sku": "6148",
+      "name": "03815 - LED 2FT Glass T8 Tube (Orchid B) 6W 4000K (Type C) Frosted  Shatterproof 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$5.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Type C Tubes Kits",
+      "sku": "6151",
+      "name": "03816 - LED 2FT Glass T8 Tube (Orchid B) 6W 5000K (Type C) Frosted Shatterproof 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$5.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Type C Tubes Kits",
+      "sku": "6100",
+      "name": "03813 - LED 4FT Glass T8 Tube (Orchid B) 9W 4000K (Type C) Frosted Shatterproof 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Type C Tubes Kits",
+      "sku": "6101",
+      "name": "03814 - LED 4FT Glass T8 Tube (Orchid B) 9W 5000K (Type C) Frosted Shatterproof 120-277V DLC (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Type C Tubes Kits",
+      "sku": "3875",
+      "name": "03806 - LED 4ft Glass T8 Tube (Orchid B) 15W 4000K (Type C) Frosted 120-277V (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Type C Tubes Kits",
+      "sku": "3876",
+      "name": "03807 - LED 4ft Glass T8 Tube (Orchid B) 15W 5000K (Type C) Frosted 120-277V (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Type C Tubes Kits",
+      "sku": "5808",
+      "name": "05000 01 - LED 2FT Type C Kit Wire Harness Only Works W/ Mag. Strip Driver",
+      "category": "Accessories : Indoor LED Retrofit: Type C Kit",
+      "price": "$1.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Type C Tubes Kits",
+      "sku": "6289",
+      "name": "09022 01 - LED Magnetic Strip Kit Driver 9W-15W-18W Dim Sensor Ready (MES)",
+      "category": "Drivers : Magnetic Driver",
+      "price": "$12.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Type C Tubes Kits",
+      "sku": "4409",
+      "name": "09024 - LED Magnetic Strip Kit Driver 24W-30W-40W Dimmable Sensor Ready (MES)",
+      "category": "Drivers : Magnetic Driver",
+      "price": "$13.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Type C Tubes Kits",
+      "sku": "5763",
+      "name": "05385 - LED Magnetic Strip Kit Driver 30W-45W-60W Dimmable Sensor Ready (MES)",
+      "category": "Drivers : Magnetic Driver",
+      "price": "$16.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "3868",
+      "name": "03558 - LED 2ft Magnetic Strip Frosted Cover Only Iris (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$0.60",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "3869",
+      "name": "03559 - LED 4ft Magnetic Strip Frosted Cover Only Iris (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$1.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "5073",
+      "name": "09036 - LED 2ft Magnetic Strip (Iris B) Retrofit Strip Only 4000K No Lens (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$5.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "5074",
+      "name": "09037 - LED 2ft Magnetic Strip (Iris B) Retrofit Strip Only 5000K No Lens (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$5.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "6036",
+      "name": "09043 - LED 2ft Magnetic Strip (Iris B) Retrofit Strip Only 3000K Frosted Lens (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$5.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "5084",
+      "name": "09040 - LED 2ft Magnetic Strip (Iris B) Retrofit Strip Only 3500K Frosted Lens (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$6.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "5075",
+      "name": "09038 - LED 2ft Magnetic Strip (Iris B) Retrofit Strip Only 4000K Frosted Lens (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$6.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "5076",
+      "name": "09039 - LED 2ft Magnetic Strip (Iris B) Retrofit Strip Only 5000K Frosted Lens (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$6.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "4412",
+      "name": "09027 - LED 4ft Magnetic Strip (Iris B) Retrofit Strip Only 4000K No Lens (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$5.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "4413",
+      "name": "09028 - LED 4ft Magnetic Strip (Iris B) Retrofit Strip Only 5000K No Lens (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$5.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "4415",
+      "name": "09031 - LED 4ft Magnetic Strip (Iris B) Retrofit Strip Only 3500K Frosted Lens (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$6.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "4414",
+      "name": "09029 - LED 4ft Magnetic Strip (Iris B) Retrofit Strip Only 4000K Frosted Lens (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$6.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "4948",
+      "name": "09030 - LED 4ft Magnetic Strip (Iris B) Retrofit Strip Only 5000K Frosted Lens (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$6.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "5085",
+      "name": "09041 - LED 4ft Magnetic Strip (Iris B) Retrofit Strip Only 5000K Frosted Lens Rated Up to 40W 8MM (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$7.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "3842",
+      "name": "03520 - LED Magnetic Strip Kit 1 Prong Wire Harness Iris / Choice (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Magnetic Strips Kit",
+      "price": "$0.68",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "3843",
+      "name": "03521 - LED Magnetic Strip Kit 1 Prong Wire Harness 4ft Long Iris / Choice (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Magnetic Strips Kit",
+      "price": "$0.80",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "3844",
+      "name": "03522 - LED Magnetic Strip Kit 2 Prong Wire Harness Iris / Choice (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Magnetic Strips Kit",
+      "price": "$1.10",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "3845",
+      "name": "03523 - LED Magnetic Strip Kit 3 Prong Wire Harness Iris / Choice (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Magnetic Strips Kit",
+      "price": "$1.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "3846",
+      "name": "03524 - LED Magnetic Strip Kit 4 Prong Wire Harness Iris / Choice (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Magnetic Strips Kit",
+      "price": "$2.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "6289",
+      "name": "09022 01 - LED Magnetic Strip Kit Driver 9W-15W-18W Dim Sensor Ready (MES)",
+      "category": "Drivers : Magnetic Driver",
+      "price": "$12.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "4409",
+      "name": "09024 - LED Magnetic Strip Kit Driver 24W-30W-40W Dimmable Sensor Ready (MES)",
+      "category": "Drivers : Magnetic Driver",
+      "price": "$13.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "5763",
+      "name": "05385 - LED Magnetic Strip Kit Driver 30W-45W-60W Dimmable Sensor Ready (MES)",
+      "category": "Drivers : Magnetic Driver",
+      "price": "$16.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "5003",
+      "name": "09033 - LED Magnetic Strip Kit Driver 80W Dimmable Sensor Ready (MES)",
+      "category": "Drivers : Magnetic Driver",
+      "price": "$20.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "6415",
+      "name": "09045 - LED 2ft Magnetic Retrofit Strip (Iris GSR) CCT Tunable (3500K-4000K-5000K) Strip Only Frosted (Rated up to 20W)120-277V (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$7.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "6416",
+      "name": "09046 - LED 4ft Magnetic Retrofit Strip (Iris GSR) CCT Tunable (3500K-4000K-5000K) Strip Only Frosted (Rated Up to 24W) 120-277V (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$7.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "6417",
+      "name": "09047 - LED 4ft Magnetic Retrofit Strip (Iris GSR) CCT Tunable (3500K-4000K-5000K) Strip Only Frosted (Rated Up to 40W) 120-277V (MES)",
+      "category": "Indoor LED Retrofit : Magnetic Strip Iris",
+      "price": "$8.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "6421",
+      "name": "03750 - LED Magnetic Retrofit Strip (Iris GSR) 1 Prong Wire Harness CCT Tunable Magnetic Strip (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Magnetic Strips Kit",
+      "price": "$0.90",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "6422",
+      "name": "03751 - LED Magnetic Retrofit Strip (Iris GSR) 2 Prong Wire Harness CCT Tunable Magnetic Strip (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Magnetic Strips Kit",
+      "price": "$1.40",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "6423",
+      "name": "03752 - LED Magnetic Retrofit Strip (Iris GSR) 3 Prong Wire Harness CCT Tunable Magnetic Strip (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Magnetic Strips Kit",
+      "price": "$2.20",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "6418",
+      "name": "09051 - LED Magnetic Retrofit Strip Kit Driver (Iris GSR) 9W-12W-18W CCT Tunable (3500K-4000K-5000K) QSR 120-277V (MES)",
+      "category": "Drivers : Magnetic Driver",
+      "price": "$15.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "6419",
+      "name": "09052 - LED Magnetic Retrofit Strip Kit Driver (Iris GSR) 24W-30W-40W CCT Tunable (3500K-4000K-5000K) QSR 120-277V (MES)",
+      "category": "Drivers : Magnetic Driver",
+      "price": "$17.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Magnetic Strip Kits",
+      "sku": "6420",
+      "name": "09053 - LED Magnetic Retrofit Strip Kit Driver (Iris GSR) 30W-45W-60W CCT Tunable (3500K-4000K-5000K) QSR 120-277V (MES)",
+      "category": "Drivers : Magnetic Driver",
+      "price": "$20.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Outdoor Retrofit w/ Driver",
+      "sku": "4135",
+      "name": "06012 - LED Outdoor Retrofit Kit (Tulip B) 35W 5000K DLC Prem (MES)",
+      "category": "Outdoor HID LED Retrofit : Outdoor Retrofit w/ Driver",
+      "price": "$63.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Outdoor Retrofit w/ Driver",
+      "sku": "5063",
+      "name": "06013 01 - LED Outdoor Retrofit Kit (Tulip B) 100W 5000K Dim DLC Prem (MES)",
+      "category": "Outdoor HID LED Retrofit : Outdoor Retrofit w/ Driver",
+      "price": "$85.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Outdoor Retrofit w/ Driver",
+      "sku": "4132",
+      "name": "06009 - LED Outdoor Retrofit Kit (Tulip B) 200W 5000K Dim DLC Prem (MES)",
+      "category": "Outdoor HID LED Retrofit : Outdoor Retrofit w/ Driver",
+      "price": "$105.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Outdoor Retrofit w/ Driver",
+      "sku": "4133",
+      "name": "06010 - LED Outdoor Retrofit Kit (Tulip B) 240W 5000K Dim DLC Prem (MES)",
+      "category": "Outdoor HID LED Retrofit : Outdoor Retrofit w/ Driver",
+      "price": "$115.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Soffit Canopy Retrofit",
+      "sku": "6028",
+      "name": "06100 01 - LED Soffit Canopy Retrofit Fixture Only (Jasmine G) 20W-30W-40W CCT Tunable (3000K-4000K-5000K) Stripe White Dim 120-277V DLC PREM (MES)",
+      "category": "Outdoor HID LED Retrofit : Soffitt Retrofit",
+      "price": "$45.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Soffit Canopy Retrofit",
+      "sku": "4151",
+      "name": "06118 - LED Soffit Canopy Retrofit Plate Only (Jasmine S) 12x12 White (MES)",
+      "category": "Outdoor HID LED Retrofit : Soffitt Retrofit",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Soffit Canopy Retrofit",
+      "sku": "4152",
+      "name": "06119 - LED Soffit Canopy Retrofit Plate Only (Jasmine S) 15x15 White (MES)",
+      "category": "Outdoor HID LED Retrofit : Soffitt Retrofit",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Soffit Canopy Retrofit",
+      "sku": "4153",
+      "name": "06120 - LED Soffit Canopy Retrofit Plate Only (Jasmine S) 18x18 White (MES)",
+      "category": "Outdoor HID LED Retrofit : Soffitt Retrofit",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Soffit Canopy Retrofit",
+      "sku": "4154",
+      "name": "06121 - LED Soffit Canopy Retrofit Plate Only (Jasmine S) 22x22 White (MES)",
+      "category": "Outdoor HID LED Retrofit : Soffitt Retrofit",
+      "price": "$20.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Soffit Canopy Retrofit",
+      "sku": "4157",
+      "name": "06124 - LED Soffit Canopy Retrofit Plate Only (Jasmine S) 24x24 White (MES)",
+      "category": "Outdoor HID LED Retrofit : Soffitt Retrofit",
+      "price": "$25.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Soffit Canopy Retrofit",
+      "sku": "4155",
+      "name": "06122 - LED Soffit Canopy Retrofit Plate Only (Jasmine S)12x12 Bronze (MES)",
+      "category": "Outdoor HID LED Retrofit : Soffitt Retrofit",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Soffit Canopy Retrofit",
+      "sku": "4156",
+      "name": "06123 - LED Soffit Canopy Retrofit Plate Only (Jasmine S) 15x15 Bronze (MES)",
+      "category": "Outdoor HID LED Retrofit : Soffitt Retrofit",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Soffit Canopy Retrofit",
+      "sku": "4150",
+      "name": "06117 - LED Soffit Canopy Retrofit Plate Only (Jasmine S) 18x18 Bronze (MES)",
+      "category": "Outdoor HID LED Retrofit : Soffitt Retrofit",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Dusk to Dawn",
+      "sku": "3960",
+      "name": "05005 - LED Dusk to Dawn Barn (Bengal G) Light 40W-50W-60W CCT Tunable (3000K-4000K-5000K) Silver Gray 100-277V Photocell Ready UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Dusk to Dawn",
+      "price": "$59.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Flood",
+      "sku": "5110",
+      "name": "05346 - LED Flood Light (Puma G) 25W-45W-60W CCT Tunable (3000K-4000K-5000K) Knuckle Mount Bronze Photocell 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Flood",
+      "price": "$49.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Flood",
+      "sku": "5111",
+      "name": "05347 - LED Flood Light (Puma G) 60W-80W-100W CCT Tunable (3000K-4000K-5000K) No Mount Bronze Photocell 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Flood",
+      "price": "$85.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Flood",
+      "sku": "5112",
+      "name": "05348 - LED Flood Light (Puma G) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) No Mount Bronze Photocell 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Flood",
+      "price": "$98.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "3963",
+      "name": "05058 - LED Wall Pack Security (Cheetah G) 10W-15W-20W CCT Tunable (3500K-4000K-5000K) White w/ Photocell 120-277V UL & DLC Premium Listed (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Security",
+      "price": "$36.75",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "3964",
+      "name": "05059 - LED Wall Pack Security (Cheetah G) 10W-15W-20W CCT Tunable (3500K-4000K-5000K) Bronze  w/ Photocell 120-277V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Security",
+      "price": "$36.75",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6246",
+      "name": "05060 - LED Wall Pack Security (Fox G) 15W-20W-30W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell 120-277V ETL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Security",
+      "price": "$36.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6247",
+      "name": "05108 01 - LED Slim Full Cutoff Wall Pack (Viper GSR) 10W-20W-30W-40W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Slim Full Cutoff",
+      "price": "$59.75",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6236",
+      "name": "05109 01 -  LED Slim Full Cutoff Wall Pack (Viper GSR) 20W-40W-60W-80W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Slim Full Cutoff",
+      "price": "$67.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6212",
+      "name": "05252 01 - LED Standard Wall Pack (Tiger GSR) 10W-20W-30W-40W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Standard",
+      "price": "$57.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5922",
+      "name": "05255 01 - LED Standard Wall Pack (Tiger GSR) 20W-40W-60W-80W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Standard",
+      "price": "$69.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5924",
+      "name": "05256 01 - LED Standard Wall Pack (Tiger GSR) 30W-60W-90W-120W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Standard",
+      "price": "$78.85",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5925",
+      "name": "05259 01 - LED Standard Wall Pack (Tiger GSR) 30W-60W-90W-120W CCT Tunable (3000K-4000K-5000K) White w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Standard",
+      "price": "$78.85",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5923",
+      "name": "05260 01 - LED Standard Wall Pack (Tiger GSR) 20W-40W-60W-80W CCT Tunable (3000K-4000K-5000K) White w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Standard",
+      "price": "$69.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6213",
+      "name": "05265 - LED Slim Wall Pack (Raptor GSR) 10W-20W-30W-40W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Slim",
+      "price": "$57.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5914",
+      "name": "05261 - LED Slim Wall Pack (Raptor GSR) 20W-40W-60W-80W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Slim",
+      "price": "$69.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5916",
+      "name": "05263 - LED Slim Wall Pack (Raptor GSR) 30W-60W-90W-120W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Slim",
+      "price": "$78.85",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5915",
+      "name": "05262 - LED Slim Wall Pack (Raptor GSR) 20W-40W-60W-80W CCT Tunable (3000K-4000K-5000K) White w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Slim",
+      "price": "$69.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5917",
+      "name": "05264 - LED Slim Wall Pack (Raptor GSR) 30W-60W-90W-120W CCT Tunable (3000K-4000K-5000K) White w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Slim",
+      "price": "$78.85",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6758",
+      "name": "05131 - LED Half Moon Wall Pack (Hyena GSR) 10W-20W-30W-40W CCT Tunable (3000K-4000K-5000K) Bronze Photocell ZSR 6KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack : Half Moon",
+      "price": "$68.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6759",
+      "name": "05132 - LED Half Moon Wall Pack (Hyena GSR) 20W-40W-60W-80W CCT Tunable (3000K-4000K-5000K) Bronze Photocell ZSR 6KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack : Half Moon",
+      "price": "$75.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6760",
+      "name": "05133 - LED Half Moon Wall Pack (Hyena GSR) 30W-60W-90W-120W CCT Tunable (3000K-4000K-5000K) Bronze Photocell ZSR 6KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack : Half Moon",
+      "price": "$89.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5918",
+      "name": "05126 02 - LED Full Cutoff Wall Pack (Jaguar GSR) 20W-40W-60W-80W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Full Cutoff",
+      "price": "$72.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5919",
+      "name": "05128 02 - LED Full Cutoff Wall Pack (Jaguar GSR) 20W-40W-60W-80W CCT Tunable (3000K-4000K-5000K) White w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Full Cutoff",
+      "price": "$78.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5920",
+      "name": "05129 02 - LED Full Cutoff Wall Pack (Jaguar GSR) 30W-60W-90W-120W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Full Cutoff",
+      "price": "$85.95",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "5921",
+      "name": "05130 02 - LED Full Cutoff Wall Pack (Jaguar GSR) 30W-60W-90W-120W CCT Tunable (3000K-4000K-5000K) White w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Full Cutoff",
+      "price": "$85.95",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6762",
+      "name": "05126 03 - LED Full CutOff Wall Pack (Jaguar GSR+) 10W-20W-30W-40W CCT Tunable (3000K-4000K-5000K) Up/Down Bronze Photocell ZSR 6KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Full Cutoff",
+      "price": "$68.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6763",
+      "name": "05126 04 - LED Full CutOff Wall Pack (Jaguar GSR+) 20W-40W-60W-80W CCT Tunable (3000K-4000K-5000K) Up/Down Bronze Photocell ZSR 6KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Full Cutoff",
+      "price": "$75.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Canopy",
+      "sku": "4144",
+      "name": "06102 - LED Soffit Canopy Fixture (Bobcat G) 13W-15W-20W CCT Tunable (3500K-4000K-5000K) White 120V-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Canopy",
+      "price": "$49.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Canopy",
+      "sku": "4145",
+      "name": "06103 - LED Soffit Canopy Fixture (Bobcat G) 36W-45W-55W CCT Tunable (3500K-4000K-5000K) White 120V-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Canopy",
+      "price": "$58.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Canopy",
+      "sku": "4146",
+      "name": "06104 - LED Soffit Canopy Fixture (Bobcat G) 13W-15W-20W CCT Tunable (3500K-4000K-5000K) Bronze 120V-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Canopy",
+      "price": "$49.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Canopy",
+      "sku": "4147",
+      "name": "06105 - LED Soffit Canopy Fixture (Bobcat G) 36W-45W-55W CCT Tunable (3500K-4000K-5000K) Bronze 120V-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Canopy",
+      "price": "$58.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Canopy",
+      "sku": "5968",
+      "name": "05823 02 - LED Canopy / Garage Fixture (Leo GSR) 20W-40W-60W-80W CCT Tunable (3500K-4000K-5000K) Bronze ZSR 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Canopy",
+      "price": "$65.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Canopy",
+      "sku": "6277",
+      "name": "05824 02 - LED Canopy / Garage Fixture (Leo GSR) 20W-40W-60W-80W CCT Tunable (3500K-4000K-5000K) Clear White ZSR 120-277V DLC Prem (MES) DLC ID",
+      "category": "Outdoor LED Fixture : Canopy",
+      "price": "$65.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Canopy",
+      "sku": "6280",
+      "name": "05825 02 - LED Canopy / Garage Fixture (Leo GSR) 20W-30W-40W CCT Tunable (3500K-4000K-5000K) Clear Bronze ZSR 120-277V DLC Prem (MES) DLC ID",
+      "category": "Outdoor LED Fixture : Canopy",
+      "price": "$57.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Canopy",
+      "sku": "6279",
+      "name": "05826 02 - LED Canopy / Garage Fixture (Leo GSR) 20W-30W-40W CCT Tunable (3500K-4000K-5000K) Clear White ZSR 120-277V DLC Prem (MES) DLC ID",
+      "category": "Outdoor LED Fixture : Canopy",
+      "price": "$57.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Canopy",
+      "sku": "6264",
+      "name": "05858 - LED Canopy Fixture (Lynx GSR) 100W-120W-150W CCT Tunable (4000K-5000K-5700K) Clear White ZSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Outdoor LED Fixture : Canopy",
+      "price": "$99.85",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6095",
+      "name": "05376 - LED Area Light (Lion GSR) 60W-75W-90W (No Mount) CCT Tunable  (3000K-4000K-5000K) Bronze ZSR 120-277V 10K DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$88.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6096",
+      "name": "05377 - LED Area Light (Lion GSR) 120W-135W-150W (No Mount) CCT Tunable (3000K-4000K-5000K) Bronze ZSR 120-277V 10KV DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$98.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6097",
+      "name": "05378 - LED Area Light (Lion GSR) 200W-220W-240W (No Mount) CCT Tunable (3000K-4000K-5000K) Bronze ZSR 120-277V 10K DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$145.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6099",
+      "name": "05379 - LED Area Light (Lion GSR) 260W-280W-300W (No Mount) CCT Tunable (3000K-4000K-5000K) Bronze ZSR 120-277V 10K DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$178.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6520",
+      "name": "05390 - LED Area Light (Lion GSR) 120W-135W-150W (No mount) CCT Tunable (3000K-4000K-5000K) Bronze ZSR 277V-480V 10KV DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$132.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6666",
+      "name": "05391 - LED Area Light (Lion GSR) 200W-220W-240W (No mount) CCT Tunable (3000K-4000K-5000K) Bronze ZSR 10KV 277V-480V UL & DLC Prem (MES) DLC ID#",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$185.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6434",
+      "name": "05406 - LED Area Light (Lion SSR) 380W-400W-450W (No mount) 5000K Bronze ZSR Shield 120-480V Ready 20KV (No Driver) DLC Prem (MES) DLC ID#",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$195.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6126",
+      "name": "05380 - LED Area Light (Lion GSR) 120W-135W-150W (No mount) CCT Tunable (3000K-4000K-5000K) White ZSR 120-277V 10KV DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$102.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6507",
+      "name": "05382 - LED Area Light (Lion GSR) 260W-280W-300W (No mount) CCT Tunable (3000K-4000K-5000K) White ZSR 10KV 120V-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$178.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6182",
+      "name": "05393 - LED Area Light (Lion GSR) 120W-135W-150W (No mount) CCT Tunable (3000K-4000K-5000K) White ZSR 277V-480V 10KV DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$132.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6183",
+      "name": "05394 - LED Area Light (Lion GSR) 200W-220W-240W (No mount) CCT Tunable (3000K-4000K-5000K) White ZSR 10KV 277V-480V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$185.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6184",
+      "name": "05395 - LED Area Light (Lion GSR) 260W-280W-300W (No mount) CCT Tunable (3000K-4000K-5000K) White ZSR 277V-480V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$219.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6433",
+      "name": "05405 - LED Area Light (Lion SSR) 380W-400W-450W (No mount) 5000K White ZSR Shield 120-480V Ready 20KV (No Driver) DLC Prem (MES) DLC ID#",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$195.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6231",
+      "name": "05397 - LED Area Light (Lion GSR) 120W-135W-150W (No mount) CCT  Tunable (3000K-4000K-5000K) Silver ZSR 120-277V 10KV DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$102.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5142",
+      "name": "05970 - LED Area Light (Wolf GSR) 60W-80W-100W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 120-277V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$88.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5148",
+      "name": "05971 - LED Area Light (Wolf GSR) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 120-277V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$98.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5144",
+      "name": "05972 - LED Area Light (Wolf GSR) 200W-220W-240W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 120-277V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$145.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5145",
+      "name": "05973 - LED Area Light (Wolf GSR) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 120-277V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$178.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6521",
+      "name": "05974 01 - LED Area Light (Wolf GSR) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 277-480V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$128.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6529",
+      "name": "05975 01 - LED Area Light (Wolf GSR) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 277-480V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$218.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5789",
+      "name": "05980 - LED Area Light (Wolf GSR) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Black ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$98.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5790",
+      "name": "05981 - LED Area Light (Wolf GSR) 200W-220W-240W CCT Tunable (3000K-4000K-5000K) (No Mount) Black ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$145.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5791",
+      "name": "05982 - LED Area Light (Wolf GSR) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Black ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$178.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5792",
+      "name": "05983 - LED Area Light (Wolf GSR) 200W-220W-240W CCT Tunable (3000K-4000K-5000K) (No Mount) Silver ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$145.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5793",
+      "name": "05984 - LED Area Light (Wolf GSR) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Silver ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$178.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5801",
+      "name": "05985 - LED Area Light (Wolf GSR) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Silver ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$98.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6766",
+      "name": "05970 01 - LED Area Light (Wolf GSR+) 60W-80W-100W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$96.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6768",
+      "name": "05971 01 - LED Area Light (Wolf GSR+) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$106.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6770",
+      "name": "05972 01- LED Area Light (Wolf GSR+) 200W-220W-240W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$153.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6772",
+      "name": "05973 01- LED Area Light (Wolf GSR+) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$186.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6774",
+      "name": "05974 02 - LED Area Light (Wolf GSR+) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 277-480V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$136.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6776",
+      "name": "05975 02 - LED Area Light (Wolf GSR+) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 277-480V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$226.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6767",
+      "name": "05986 01 - LED Area Light (Wolf GSR+) 60W-80W-100W CCT Tunable (3000K-4000K-5000K) (No Mount) White ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$96.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6769",
+      "name": "05987 01 - LED Area Light (Wolf GSR+) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) White ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$106.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6771",
+      "name": "05988 01- LED Area Light (Wolf GSR+) 200W-220W-240W CCT Tunable (3000K-4000K-5000K) (No Mount) White ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$153.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6773",
+      "name": "05989 01- LED Area Light (Wolf GSR+) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) White ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$186.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6777",
+      "name": "05994 02 - LED Area Light (Wolf GSR+) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) White ZSR (T3-T4-T5 Beam Angle Adjustable) 277-480V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$226.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Post Top",
+      "sku": "5113",
+      "name": "05898 - LED Post Top Light (Leopard G) 50W-60W-75W CCT Tunable (4000K-5000K) GM Mount Bronze Photocell 120-277V 10KV DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Post Top",
+      "price": "$102.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Post Top",
+      "sku": "5114",
+      "name": "05899 - LED Post Top Light (Leopard G) 100W-120W-150W CCT Tunable (4000K-5000K) GM Mount Bronze Photocell 120-277V 10KV DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Post Top",
+      "price": "$135.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Post Top",
+      "sku": "6798",
+      "name": "05905 - LED Post Top Light (Eagle GSR) 75W-100W-125W-150W CCT Tunable (3000K-4000K-5000K) Clear Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 6KV IP65 DLC Prem (MES) DLC ID#",
+      "category": "Outdoor LED Fixture : Post Top",
+      "price": "$155.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Bollards",
+      "sku": "5050",
+      "name": "04800 - LED Bollard Round Dome Head (Giraffe G) 12W-16W-22W CCT Tunable (3000K-4000K-5000K) Clear Bronze 120V-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Bollard",
+      "price": "$69.90",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Bollards",
+      "sku": "5051",
+      "name": "04801 - LED Bollard Flat Top Head (Giraffe G) 12W-16W-22W CCT Tunable (3000K-4000K-5000K) Clear Bronze 120V-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Bollard",
+      "price": "$79.90",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Bollards",
+      "sku": "6469",
+      "name": "04802 01 - LED Bollard Round Dome Head (Giraffe G) 12W-16W-22W CCT Tunable (3000K-4000K-5000K) Clear White w/ Photocell 4KV IP65 120V-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Bollard",
+      "price": "$76.90",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Bollards",
+      "sku": "5053",
+      "name": "04803 -  LED Bollard Base (Giraffe G) White w/Mounting Hardware (MES)",
+      "category": "Outdoor LED Fixture : Bollard",
+      "price": "$59.80",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Bollards",
+      "sku": "6470",
+      "name": "04804 01 - LED Bollard Base (Giraffe G) White w/Mounting Hardware (01 Series) (MES)",
+      "category": "Outdoor LED Fixture : Bollard",
+      "price": "$59.80",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Bollards",
+      "sku": "6800",
+      "name": "04801 01 - LED Bollard Louvered Flat Head (Giraffe G+) 14W-19W-24W CCT Tunable (3000K-4000K-5000K) Clear Bronze Photocell 120-277V 10KV IP65 UL (MES)",
+      "category": "Outdoor LED Fixture : Bollard",
+      "price": "$79.90",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Bollards",
+      "sku": "6803",
+      "name": "04806 - LED Bollard Cone Flat Head (Giraffe G+) 14W-19W-24W CCT Tunable (3000K-4000K-5000K) Clear Bronze Photocell 120-277V 10KV IP65 DLC Prem (MES) DLC ID#",
+      "category": "Outdoor LED Fixture : Bollard",
+      "price": "$71.90",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Bollards",
+      "sku": "6804",
+      "name": "04807 - LED Bollard Decorative Flat Head (Giraffe G+) 14W-19W-24W CCT Tunable (3000K-4000K-5000K) Clear Bronze Photocell 120-277V 10KV IP65 DLC Prem (MES) DLC ID#",
+      "category": "Outdoor LED Fixture : Bollard",
+      "price": "$89.90",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Bollards",
+      "sku": "6801",
+      "name": "04803 01 - LED Bollard Round Base (Giraffe G+) Bronze Mounting Hardware (MES)",
+      "category": "Outdoor LED Fixture : Bollard",
+      "price": "$59.80",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Sports",
+      "sku": "5122",
+      "name": "05954 - LED Stadium Light (Coyote SSR) 300W-400W-500W 5000K Black Yoke Mount ZSR Shield (NO DRIVER) 120-480V Ready DLC Prem Listed (MES)",
+      "category": "Outdoor LED Fixture : Sports",
+      "price": "$345.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Sports",
+      "sku": "5123",
+      "name": "05955 - LED Stadium Light (Coyote SSR) 500W-600W-750W 5000K Black Yoke Mount ZSR Shield (NO DRIVER) 120-480V Ready DLC Prem Listed (MES)",
+      "category": "Outdoor LED Fixture : Sports",
+      "price": "$445.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Sports",
+      "sku": "5124",
+      "name": "05956 - LED Stadium Light (Coyote SSR) 800W-1000W-1200W 5000K Black Yoke Mount ZSR Shield (NO DRIVER) 120-480V Ready DLC Prem Listed (MES)",
+      "category": "Outdoor LED Fixture : Sports",
+      "price": "$565.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Sports",
+      "sku": "5125",
+      "name": "05957 - LED Stadium Light (Coyote SSR) Driver 300W-400W-500W 120-277V (MES)",
+      "category": "Outdoor LED Fixture : Sports",
+      "price": "$145.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Sports",
+      "sku": "5126",
+      "name": "05958 - LED Stadium Light (Coyote SSR) Driver 300W-400W-500W 277-480V (MES)",
+      "category": "Outdoor LED Fixture : Sports",
+      "price": "$185.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Sports",
+      "sku": "5127",
+      "name": "05959 - LED Stadium Light (Coyote SSR) Driver 500W-600W-750W 120-277V (MES)",
+      "category": "Outdoor LED Fixture : Sports",
+      "price": "$181.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Sports",
+      "sku": "5128",
+      "name": "05960 - LED Stadium Light (Coyote SSR) Driver 500W-600W-750W 277-480V (MES)",
+      "category": "Outdoor LED Fixture : Sports",
+      "price": "$231.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Sports",
+      "sku": "5129",
+      "name": "05961 - LED Stadium Light (Coyote SSR) Driver 800W-1000W-1200W 120-277V (MES)",
+      "category": "Outdoor LED Fixture : Sports",
+      "price": "$282.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Sports",
+      "sku": "5130",
+      "name": "05962 - LED Stadium Light (Coyote SSR) Driver 800W-1000W-1200W 277-480V (MES)",
+      "category": "Outdoor LED Fixture : Sports",
+      "price": "$335.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6365",
+      "name": "09536 - AC Powered Single EV Charger (ZR) Pedestal (Support PP System Bracketkit, Tilt Sensor) (Work with AX Series) (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$463.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6366",
+      "name": "09537 - AC Powered Single EV Charger 16.4Ft (Top) Cable Management System (Work with AX Series) (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$539.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6367",
+      "name": "09538 - AC Powered Single EV Charger (ZR) 25Ft (Top) Cable Management System (Work with AX Series) (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$590.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6330",
+      "name": "09542 - AC Powered EV Charger 4G Module (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$75.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6333",
+      "name": "09543 - AC Powered EV Charger BLE Module (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$15.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6334",
+      "name": "09544 - AC Powered (LH) EV Charger ISO15118 Module (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$350.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6335",
+      "name": "09545 - AC Powered EV Charger SAE J1772 gun cable 25ft 80A (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$285.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6573",
+      "name": "09546 - AC Powered EV Charger NACS Tesla gun cable 18ft 80A (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$325.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6336",
+      "name": "09546 01 - AC Powered EV Charger NACS Tesla gun cable 25ft 80A (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$325.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6337",
+      "name": "09547 - AC Powered EV Charger Basic Pedestal (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$265.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6338",
+      "name": "09548 - AC Powered EV Charger 25ft (TOP) Cable Management System (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$350.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6339",
+      "name": "09549 - AC Powered EV Charger Side by Side Bracket (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$73.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6172",
+      "name": "09555 - AC Powered EV Charger Pedestal Mount with Installation Kit Black (09550) (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$265.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6316",
+      "name": "09568 - AC Powered EV Charger CTEP Smart Ammeter 80A (09561) (MES) Part# G2.5",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$150.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6475",
+      "name": "09569 - AC Powered EV Charger CTEP Smart Ammeter 2x80A (09563) (MES) Part# G5",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$150.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6317",
+      "name": "09570 - AC Powered EV Charger CTEP Smart Ammeter 2x48A (09562) (MES) Part# G5",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$100.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6347",
+      "name": "09571 - AC Powered (TS) EV Charger ISO15118 Module (2Pcs) (09561,09562,09563) (MES) Part# G2.5, G5",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$250.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6348",
+      "name": "09572 - AC Powered EV Charger 4G Module (MES) Part# G2.5, G5",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$65.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6354",
+      "name": "09573 - AC Powered EV Charger NACS Tesla gun cable 5.5M 48A  (MES) Part# G5",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$275.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6355",
+      "name": "09574 - AC Powered EV Charger NACS Tesla gun cable 5.5M 80A (MES) Part# G2.5, G5",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$325.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6356",
+      "name": "09575 - AC Powered EV Charger SAE J1772 gun cable 5.5M 48A (MES) Part# G5",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$235.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6357",
+      "name": "09576 - AC Powered EV Charger SAE J1772 gun cable 5.5M 80A (MES) Part# G2.5, G5",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$285.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6358",
+      "name": "09577 - AC Powered Single EV Charger Pedestal (Work with G2.5, G5) (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$463.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6359",
+      "name": "09578 - AC Powered Single EV Charger 18 Ft (Top) Cable Management System (Work with G2.5, G5) (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$539.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6360",
+      "name": "09579 - AC Powered Single EV Charger 25Ft (Top) Cable Management System (Work with G2.5, G5) (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$590.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6546",
+      "name": "19866 - AC Powered EV Charger (HB) Black Gun Nozzle holder (Work with 09555) (MES)",
+      "category": "Accessories : EV Chargers: AC",
+      "price": "$15.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6379",
+      "name": "09594 - DC Powered EV Charger (Top) Cable Management System 15ft Dual 300A CCS1 (Work with DS120/DS180) (MES)",
+      "category": "Accessories : EV Chargers: DC",
+      "price": "$2,415.60",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6380",
+      "name": "09595 - DC Powered EV Charger (Top) Cable Management System 23ft Dual 300A CCS1 (Work with DS120/DS180) (MES)",
+      "category": "Accessories : EV Chargers: DC",
+      "price": "$3,404.70",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5864",
+      "name": "03484 - 2FT Linear High Bay (Pine SSR+) Pendant Mount 110W-300W (MES) Only Works With 03 Series",
+      "category": "Accessories : High Bay: Linear",
+      "price": "$8.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5863",
+      "name": "03485 - 2FT Linear High Bay (Pine SSR+) Surface Mount 110W-300W (MES) Only Works With 03 Series",
+      "category": "Accessories : High Bay: Linear",
+      "price": "$10.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5862",
+      "name": "03486 - 2FT Linear High Bay (Pine SSR+) Wireguard (2/Set) 220W (MES) Only Works With 03 Series",
+      "category": "Accessories : High Bay: Linear",
+      "price": "$15.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5861",
+      "name": "03487 - 2FT Linear High Bay (Pine SSR+) Wireguard (2/Set) 110W-165W (MES) Only Works With 03 Series",
+      "category": "Accessories : High Bay: Linear",
+      "price": "$14.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3818",
+      "name": "03488 - 2FT Linear High Bay (Pine SSR) Surface Mount 110W-165W (MES) Only Works With 01 Series",
+      "category": "Accessories : High Bay: Linear",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3819",
+      "name": "03489 - 3FT Linear High Bay (Pine SSR & GSR) Surface Mount 220W-300W (MES) Only Works With 01 Series",
+      "category": "Accessories : High Bay: Linear",
+      "price": "$15.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6787",
+      "name": "03491 - 4FT Linear High Bay (Pine SSR) Surface Mount 400W (MES)",
+      "category": "Accessories : High Bay: Linear",
+      "price": "$10.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3822",
+      "name": "03494 - 2FT Linear High Bay (Pine SSR) Pendant Mount 110W-165W (MES) Only Works With 01 Series",
+      "category": "Accessories : High Bay: Linear",
+      "price": "$8.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3823",
+      "name": "03495 - 2FT Linear High Bay (Pine SSR) Wireguard (2/Set) 110W-165W (MES) Only Works With 01 Series",
+      "category": "Accessories : High Bay: Linear",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3824",
+      "name": "03497 - 3FT Linear High Bay (Pine SSR & GSR) Pendant Mount 220W-300W (MES) Only Works With 01 Series",
+      "category": "Accessories : High Bay: Linear",
+      "price": "$9.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3825",
+      "name": "03498 - 3FT Linear High Bay (Pine SSR & GSR) Wireguard (2/Set) 220W-300W (MES) Only Works With 01 Series",
+      "category": "Accessories : High Bay: Linear",
+      "price": "$15.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5870",
+      "name": "03044 - LED Round UFO High Bay (ASH GSR+) Acrylic Reflector 200W-240W (MES) Only Works With 02 Series",
+      "category": "Accessories : High Bay: Round",
+      "price": "$20.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5869",
+      "name": "03045 - LED Round UFO High Bay (ASH GSR+) Acrylic Reflector 110W-150W (MES) Only Works With 02 Series",
+      "category": "Accessories : High Bay: Round",
+      "price": "$17.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5868",
+      "name": "03046 - LED Round UFO High Bay (ASH GSR+) Surface Mount 200W-240W (MES) Only Works With 02 Series",
+      "category": "Accessories : High Bay: Round",
+      "price": "$9.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5867",
+      "name": "03047 - LED Round UFO High Bay (ASH GSR+) Surface Mount 100W-150W (MES) Only Works With 02 Series",
+      "category": "Accessories : High Bay: Round",
+      "price": "$8.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5866",
+      "name": "03048 - LED Round UFO High Bay (ASH GSR+) Wire Guard 200W-240W (MES) Only Works With 02 Series",
+      "category": "Accessories : High Bay: Round",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5865",
+      "name": "03049 - LED Round UFO High Bay (ASH GSR+) Wire Guard 100W-150W (MES) Only Works With 02 Series",
+      "category": "Accessories : High Bay: Round",
+      "price": "$11.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6235",
+      "name": "02511 - LED 4ft Vapor Tight Fixture (Hazel GSR) Knockout End Caps (MES)",
+      "category": "Accessories : High Bay: Vapor Tight",
+      "price": "$1.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3721",
+      "name": "02888 - 2x2 Flat Panel Back Lit Surface Mount Bracket (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$12.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3722",
+      "name": "02889 - 2x4 Flat Panel Back Lit Surface Mount Bracket (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$15.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6141",
+      "name": "02894 - 1x4 Flat Panel - Back-lit / Troffer Surface Mount Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$14.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6142",
+      "name": "02895 - 2x2 Flat Panel - Back-lit / Troffer Surface Mount Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$13.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6143",
+      "name": "02896 - 2x4 Flat Panel - Back-lit / Troffer Surface Mount Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$16.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6144",
+      "name": "02897 - 1x4 Flat Panel - Back-lit / Troffer Suspension Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$7.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6145",
+      "name": "02898 - 2x2 Flat Panel - Back-lit / Troffer Suspension Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$7.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6146",
+      "name": "02899 - 2x4 Flat Panel - Back-lit / Troffer Suspension Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$8.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4392",
+      "name": "08476 - Junction Box for Back-Lit Panel (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$2.25",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6150",
+      "name": "19789 - 1x4 Surface Mount Kit (81.28 MM) (MES-W)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$18.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5884",
+      "name": "02892 - LED Covered Strip Fixture (Juniper GSR) Aircraft Cable 5FT (2/Set) (MES) Only Works with 01 & 02 Series",
+      "category": "Accessories : Indoor LED Fixture: Covered Strip",
+      "price": "$5.40",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5885",
+      "name": "02893 - LED Covered Strip Fixture (Juniper GSR) Linkable Bracket (MES) Only Works with 01 & 02 Series",
+      "category": "Accessories : Indoor LED Fixture: Covered Strip",
+      "price": "$2.70",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3742",
+      "name": "02945 - LED Downlight 4\" (Willow G) Goof Ring (MES)",
+      "category": "Accessories : Indoor LED Fixture: Downlights",
+      "price": "$4.95",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3743",
+      "name": "02946 - LED Downlight 6\" (Willow G) Goof Ring (MES)",
+      "category": "Accessories : Indoor LED Fixture: Downlights",
+      "price": "$6.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3744",
+      "name": "02947 - LED Downlight 8\" (Willow G) Goof Ring (MES)",
+      "category": "Accessories : Indoor LED Fixture: Downlights",
+      "price": "$8.10",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3745",
+      "name": "02948 - LED Downlight 10\" (Willow G) Goof Ring (MES)",
+      "category": "Accessories : Indoor LED Fixture: Downlights",
+      "price": "$9.90",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3616",
+      "name": "02300 - LED 4ft Integrated Fixture 12in Connector Cable (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Integrated",
+      "price": "$0.90",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3617",
+      "name": "02301 - 4ft Integrated 40-inch Long Connector Cable (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Integrated",
+      "price": "$2.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3618",
+      "name": "02303 - 4ft Integrated Mounting Hardware or Clips (MES)",
+      "category": "Accessories : Indoor LED Retrofit: Integrated",
+      "price": "$1.80",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6252",
+      "name": "06301 01 - DC Powered Adjustable L Adapter (Convert QSR To ZSR) Controls White (MES)",
+      "category": "Accessories : Lighting Controls : Advanced Controls",
+      "price": "$6.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6253",
+      "name": "06302 01 - DC Powered Adjustable L Adapter (Convert QSR To ZSR) Controls Bronze (MES)",
+      "category": "Accessories : Lighting Controls : Advanced Controls",
+      "price": "$6.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4657",
+      "name": "19288 - 12V Power Supply (MES)",
+      "category": "Accessories : Lighting Controls: Electrical Components",
+      "price": "$6.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6240",
+      "name": "06273 01 - Remote Control (Lite LinQ) Sensor Reset (MES)",
+      "category": "Accessories : Lighting Controls: Network",
+      "price": "$55.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5950",
+      "name": "06288 - 3PSR to ZSR Converter (Adapter) (MES)",
+      "category": "Accessories : Lighting Controls: Network",
+      "price": "$4.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4094",
+      "name": "05788 - Black Twist Shorting Cap (MES)",
+      "category": "Accessories : Lighting Controls: Standalone",
+      "price": "$6.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4161",
+      "name": "06205 - Remote Control 4 Scene Programming (Shark) Black 06281 Sensor Only (MES)",
+      "category": "Accessories : Lighting Controls: Standalone",
+      "price": "$25.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4182",
+      "name": "06250 - Bracket for Fixture Mounted Occupancy Control (MES)",
+      "category": "Accessories : Lighting Controls: Standalone",
+      "price": "$2.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4210",
+      "name": "06276 - Remote Control 4 Scene Locked (Dolphin) White Gen 2 (MES)",
+      "category": "Accessories : Lighting Controls: Standalone",
+      "price": "$22.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5159",
+      "name": "06279 - Remote Control 4 Scene Programming (Dolphin) with LCD Display White Gen 3 (MES)",
+      "category": "Accessories : Lighting Controls: Standalone",
+      "price": "$30.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6194",
+      "name": "06321 - Remote Control 1 Scene Programming (LT) 06320 Only (MES)",
+      "category": "Accessories : Lighting Controls: Standalone",
+      "price": "$30.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4066",
+      "name": "05700 - Area Light Easy Arm Mount Bronze Gen 4.1 & Lion Series (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4067",
+      "name": "05701 - Area Light Easy Arm Mount White Gen 4.1 & Lion Series (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4068",
+      "name": "05702 - Area Light Easy Arm Mount Black Gen 4.1 & Lion Series (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4069",
+      "name": "05703 - Area Light Easy Slipfitter Mount Bronze Gen 4.1 & Lion Series (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4070",
+      "name": "05704 - Area Light Easy Slipfitter Mount White Gen 4.1 & Lion Series (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4071",
+      "name": "05705 - Area Light Easy Slipfitter Mount Black Gen 4.1 & Lion Series (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4072",
+      "name": "05706 - Area Light Easy Trunnion Mount Bronze Gen 4.1 & Lion Series (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4073",
+      "name": "05707 - Area Light Easy Trunnion Mount White Gen 4.1 & Lion Series (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4074",
+      "name": "05708 - Area Light Easy Trunnion Mount Black Gen 4.1 & Lion Series (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4075",
+      "name": "05712 - LED Area Light Shield 100W 150W For Gen 3/4/4.1 (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$15.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4076",
+      "name": "05713 - LED Area Light Shield 240W 300W For Gen 3/4/4.1 (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$17.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6436",
+      "name": "05746 - LED Area Light (Lion SSR) 380W-400W-450W 5000K Driver only (2 Pcs) 120-277V (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$90.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6435",
+      "name": "05747 - LED Area Light (Lion SSR) 380W-400W-450W 5000K Driver only (2 Pcs) 277-480V (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$130.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6439",
+      "name": "05748 - LED Area Light (Lion SSR) 180W-200W-240W 5000K Driver only (1 Pcs) 120-277V (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$50.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6440",
+      "name": "05749 - LED Area Light (Lion SSR) 180W-200W-240W 5000K Driver only (1 Pcs) 277-480V (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$60.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5149",
+      "name": "05755 - LED Area Light Slipfitter Mount Bronze (Wolf - Leopard - Puma) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5150",
+      "name": "05756 - LED Area Light Arm Mount Bronze (Wolf - Leopard - Puma) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5151",
+      "name": "05757 - LED Area Light Trunnion Mount Bronze (Wolf - Leopard - Puma) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5155",
+      "name": "05758 - LED Area Light Slipfitter Mount White (Wolf - Leopard - Puma) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5153",
+      "name": "05759 - LED Area Light Arm Mount White (Wolf - Leopard - Puma) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5154",
+      "name": "05760 - LED Area Light Trunnion Mount White (Wolf - Leopard - Puma) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5796",
+      "name": "05763 - LED Area Light Trunnion Mount Black (Wolf - Leopard - Puma) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5799",
+      "name": "05766 - LED Area Light Trunnion Mount Silver (Wolf - Leopard - Puma) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6033",
+      "name": "05767 - LED Area Light Shield (Wolf) Bronze 150W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$15.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6034",
+      "name": "05768 - LED Area Light Shield (Wolf) Bronze 300W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$17.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6778",
+      "name": "05769 - LED Area Light (Wolf GSR+)  Flood Mount Bronze 100W-150W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6779",
+      "name": "05770 - LED Area Light (Wolf GSR+) Flood Mount Bronze 240W-300W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6780",
+      "name": "05771 - LED Area Light (Wolf GSR+) T3 Optic Lens Left-Right Polarization 100W-150W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$10.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6781",
+      "name": "05772 - LED Area Light (Wolf GSR+) T3 Optic Lens Left-Right Polarization 240W-300W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$15.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4098",
+      "name": "05792 - Area Light Easy Arm Mount Silver (Lion - Cougar) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4099",
+      "name": "05793 - Area Light Easy Slipfitter Mount Silver (Lion - Cougar) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4100",
+      "name": "05794 - Area Light Easy Trunnion Mount Silver (Lion - Cougar) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4101",
+      "name": "05795 - LED Area Light Shield (Lion SSR) 90W-150W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$15.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5055",
+      "name": "04805 - LED Bollard Mounting Hardware For Giraffe Series (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Bollard",
+      "price": "$7.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4116",
+      "name": "05880 - Canopy Flat Plate 18x18 8x8 Square Hole (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Canopy",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4117",
+      "name": "05881 - Canopy Flat Plate 18x18 9x9 Square Hole (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Canopy",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4118",
+      "name": "05882 - Canopy Flat Plate 18x18 No Hole (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Canopy",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4119",
+      "name": "05883 - Canopy Flat Plate 24x24 8x8 Square Hole (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Canopy",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4120",
+      "name": "05884 - Canopy Flat Plate 24x24 No Hole (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Canopy",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4121",
+      "name": "05885 - Canopy Flat Plate 24x24 Rectangle Hole (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Canopy",
+      "price": "$18.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3961",
+      "name": "05030 - Curve Metal Pipe (Bengal G) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Dusk to Dawn",
+      "price": "$15.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6799",
+      "name": "05773 - LED Post Top Light (Eagle GSR) Straight Mount Bronze (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Post Top",
+      "price": "$25.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4079",
+      "name": "05721 - LED Stadium Light (Wolverine B) 500W Slipfitter Mount (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$58.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4080",
+      "name": "05723 - LED Stadium Light (Wolverine B) Laser (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$55.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5965",
+      "name": "05947 - LED Stadium Light Slipfitter Mount (Wolverine) 750W Black (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$67.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5839",
+      "name": "05948 - Wire Connectors for (Coyote SSR) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$4.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5840",
+      "name": "05949 - Wire For (Coyote SSR) 60ft. 14 Gauge With Connectors (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$65.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5218",
+      "name": "05963 - LED Stadium Light (Coyote SSR) Slipfitter Mount 400W-500W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$57.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5219",
+      "name": "05964 - LED Stadium Light (Coyote SSR) Slipfitter Mount 600W-750W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$65.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5220",
+      "name": "05965 - LED Stadium Light (Coyote SSR) Slipfitter Mount 1000W-1200W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$73.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5221",
+      "name": "05966 - LED Stadium Light (Coyote SSR) 60 Degree Lens 400W-500W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$22.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5222",
+      "name": "05967 - LED Stadium Light (Coyote SSR) 80 Degree Lens 400W-500W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$22.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5223",
+      "name": "05968 - LED Stadium Light (Coyote SSR) 120 Degree Lens 400W-500W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$22.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5224",
+      "name": "05969 - LED Stadium Light (Coyote SSR) 20 Degree Lens 600W-750W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$25.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5225",
+      "name": "05976 - LED Stadium Light (Coyote SSR) 60 Degree Lens 600W-750W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$27.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5226",
+      "name": "05977 - LED Stadium Light (Coyote SSR) 80 Degree Lens 600W-750W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$27.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5227",
+      "name": "05978 - LED Stadium Light (Coyote SSR) 20 Degree Lens 1000W-1200W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$31.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5228",
+      "name": "05979 - LED Stadium Light (Coyote SSR) 40 Degree Lens 1000W-1200W (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Sports",
+      "price": "$31.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4085",
+      "name": "05728 - Street (Cougar SSR) Light Base Mount Silver (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Street",
+      "price": "$8.50",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4103",
+      "name": "05797 - Street (Cougar SSR) Light Shield (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Street",
+      "price": "$17.00",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3994",
+      "name": "05290 - Standard Wall Pack Shield Cover (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Wall Pack",
+      "price": "$9.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5048",
+      "name": "05291 - Standard Wall Pack Shield Cover For Tiger Series (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Wall Pack",
+      "price": "$9.75",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4351",
+      "name": "08090 - LED Cold Case (Cooler) Light Hardware or Brackets (MES)",
+      "category": "Accessories : Refrigeration",
+      "price": "$1.25",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4352",
+      "name": "08091 - LED Cold Case (Cooler) Light Starter Cable (MES)",
+      "category": "Accessories : Refrigeration",
+      "price": "$0.90",
+      "fill": null,
+      "isGreen": false
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4353",
+      "name": "08092 - LED Cold Case (Cooler) Light Y Connector Cable (MES)",
+      "category": "Accessories : Refrigeration",
+      "price": "$1.35",
+      "fill": null,
+      "isGreen": false
+    }
+  ],
+  "greenRows": [
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "5116",
+      "name": "09240 03 - LED 2FT Linear High Bay (Pine SSR+) 50W-60W-70W-90W-110W 5000K Frosted White ZSR Rotatable 100-277V DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$65.80",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "5117",
+      "name": "09241 03 - LED 2FT Linear High Bay (Pine SSR+) 90W-110W-130W-150W-165W 5000K Frosted White ZSR Rotatable 100-277V DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$72.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "5118",
+      "name": "09242 03 - LED 2FT Linear High Bay (Pine SSR+) 150W-165W-180W-200W-220W 5000K Frosted White ZSR Rotatable 100-277V 6KV IP20 DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$81.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear High Bay",
+      "sku": "6785",
+      "name": "09248 - LED 4FT Linear High Bay (Pine SSR) 220W-280W-320W-360W-400W 5000K Frosted White ZSR 120-277V 10KV DLC Prem (MES)",
+      "category": "High Bay LED : Linear",
+      "price": "$175.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Vapor Tight High Bay",
+      "sku": "6311",
+      "name": "02510 02 - LED 4ft Vapor Tight High Bay (Hazel GSR) 105W-135W-155W-180W CCT Tunable (3500K-4000K-5000K) Frosted Gray QSR 120V-277V NSF DLC Prem (MES)",
+      "category": "Spec Grade Fixtures : Vaportight Highbay",
+      "price": "$195.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "5138",
+      "name": "02843 - LED 2x2 Back-Lit Panel Retrofit (Lotus GSR) 20W-25W-30W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V (MES)",
+      "category": "Indoor LED Retrofit : Back-Lit Panel Retrofit",
+      "price": "$35.10",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "5139",
+      "name": "02845 - LED 2x4 Back-Lit Panel Retrofit (Lotus GSR) 23W-30W-36W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V (MES)",
+      "category": "Indoor LED Retrofit : Back-Lit Panel Retrofit",
+      "price": "$51.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "5140",
+      "name": "02846 - LED 2x4 Back-Lit Panel Retrofit (Lotus GSR) 35W-40W-46W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V (MES)",
+      "category": "Indoor LED Retrofit : Back-Lit Panel Retrofit",
+      "price": "$53.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6679",
+      "name": "02843 03 - LED 2x2 Back-Lit Panel Retrofit (Lotus GSR+) 15W-18W-25W-30W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Retrofit : Back-Lit Panel Retrofit",
+      "price": "$36.85",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Snap Fit Fixtures",
+      "sku": "6680",
+      "name": "02845 03 - LED 2x4 Back-Lit Panel Retrofit (Lotus GSR+) 17W-20W-28W-34W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Retrofit : Back-Lit Panel Retrofit",
+      "price": "$53.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6683",
+      "name": "02381 04 - LED 4FT Covered Strip Fixture (Juniper GSR+) 21W-26W-34W-40W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Covered Strip Fixture",
+      "price": "$35.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6684",
+      "name": "02381 05 - LED 4FT Covered Strip Fixture (Juniper GSR+) 40W-47W-53W-68W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Covered Strip Fixture",
+      "price": "$42.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6686",
+      "name": "02382 05 - LED 8FT Covered Strip Fixture (Juniper GSR+) 40W-53W-68W-80W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Covered Strip Fixture",
+      "price": "$68.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6687",
+      "name": "02382 06 - LED 8FT Covered Strip Fixture (Juniper GSR+) 80W-94W-106W-136W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Covered Strip Fixture",
+      "price": "$88.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "3635",
+      "name": "02508 - LED 4ft Vapor Tight Fixture (Hazel GSR) 35W-45W-60W CCT Tunable (3500K-4000K-5000K) Frosted Gray QSR 120V-277V NSF DLC Prem (MES)",
+      "category": "Indoor LED Fixture : Vaportight",
+      "price": "$67.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6690",
+      "name": "19489 02 - LED 4FT Wraparound Fixture (Laurel GSR) 24W-31W-38W-46W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 125LM/W PQSR 120-277V DLC Prem (MES) DLC =24/31/38/46W",
+      "category": "Indoor LED Fixture : Wraparound",
+      "price": "$39.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6693",
+      "name": "02471 01 - LED 4FT Curved Wraparound Fixture (Olive GSR+) 21W-26W-34W-40W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 9.7in Wide 150 LM/W QSR 120-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Wraparound",
+      "price": "$58.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Linear Strip Fixtures",
+      "sku": "6623",
+      "name": "02472 - LED 4FT Curved Wraparound Fixture (Olive GSR) 30W-40W-50W CCT Tunable (3500K-4000K-5000K) Frosted White 14in Wide QSR 120-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Wraparound",
+      "price": "$76.30",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6471",
+      "name": "02838 03 - LED 1x4 Flat Panel - Back Lit (Spruce GSR+) 15W-20W-25W-30W-40W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White QSR (CU) 120-277V DLC Prem (MES)",
+      "category": "Indoor LED Fixture : Back-Lit Panel",
+      "price": "$39.50",
+      "fill": "FFFFFF",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6427",
+      "name": "02852 - LED 2x4 Flat Panel - Back Lit (Birch GSR+) 23W-30W-35W-40W-50W CCT Tunable (3500K-4000K-5000K) Frosted White (QSR & PQSR) 120V-277V DLC Prem (MES) DLC ID#",
+      "category": "Indoor LED Fixture : Back-Lit Panel",
+      "price": "$43.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "6249",
+      "name": "02844 - LED 1x4 Back-Lit Panel (Smart Pro) 36W CCT Tunable Dimmable w/  BLE Sensor UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Fixture : Back-Lit Panel Integrated",
+      "price": "$68.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "3712",
+      "name": "02836 - LED 2x2 Back-Lit Panel (Smart Pro) 36W CCT Tunable Dimmable w/ BLE Sensor  UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Fixture : Back-Lit Panel Integrated",
+      "price": "$65.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "Back-Lit Panels",
+      "sku": "3713",
+      "name": "02837 - LED 2x4 Back-Lit Panel (Smart Pro) 50W CCT Tunable (3000-6500K) Dim w/ BLE Sensor 100-277V UL & DLC Prem Listed (MES)",
+      "category": "Indoor LED Fixture : Back-Lit Panel Integrated",
+      "price": "$82.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Interior",
+      "section": "LED Tubes",
+      "sku": "4468",
+      "name": "09233 - LED 4ft Glass Tube 9W 5000K Dual End Bypass (Type B) UL & DLC Premium Listed (MES)",
+      "category": "Indoor LED Retrofit : LED Tubes T8",
+      "price": "$4.45",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Soffit Canopy Retrofit",
+      "sku": "6028",
+      "name": "06100 01 - LED Soffit Canopy Retrofit Fixture Only (Jasmine G) 20W-30W-40W CCT Tunable (3000K-4000K-5000K) Stripe White Dim 120-277V DLC PREM (MES)",
+      "category": "Outdoor HID LED Retrofit : Soffitt Retrofit",
+      "price": "$45.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "3963",
+      "name": "05058 - LED Wall Pack Security (Cheetah G) 10W-15W-20W CCT Tunable (3500K-4000K-5000K) White w/ Photocell 120-277V UL & DLC Premium Listed (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Security",
+      "price": "$36.75",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "3964",
+      "name": "05059 - LED Wall Pack Security (Cheetah G) 10W-15W-20W CCT Tunable (3500K-4000K-5000K) Bronze  w/ Photocell 120-277V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Security",
+      "price": "$36.75",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6247",
+      "name": "05108 01 - LED Slim Full Cutoff Wall Pack (Viper GSR) 10W-20W-30W-40W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Slim Full Cutoff",
+      "price": "$59.75",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Wall Packs",
+      "sku": "6236",
+      "name": "05109 01 -  LED Slim Full Cutoff Wall Pack (Viper GSR) 20W-40W-60W-80W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Wall Pack: Slim Full Cutoff",
+      "price": "$67.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5142",
+      "name": "05970 - LED Area Light (Wolf GSR) 60W-80W-100W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 120-277V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$88.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5148",
+      "name": "05971 - LED Area Light (Wolf GSR) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 120-277V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$98.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5144",
+      "name": "05972 - LED Area Light (Wolf GSR) 200W-220W-240W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 120-277V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$145.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5145",
+      "name": "05973 - LED Area Light (Wolf GSR) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 120-277V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$178.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6521",
+      "name": "05974 01 - LED Area Light (Wolf GSR) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 277-480V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$128.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6529",
+      "name": "05975 01 - LED Area Light (Wolf GSR) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 277-480V UL & DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$218.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5789",
+      "name": "05980 - LED Area Light (Wolf GSR) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Black ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$98.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5790",
+      "name": "05981 - LED Area Light (Wolf GSR) 200W-220W-240W CCT Tunable (3000K-4000K-5000K) (No Mount) Black ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$145.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5791",
+      "name": "05982 - LED Area Light (Wolf GSR) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Black ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$178.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5792",
+      "name": "05983 - LED Area Light (Wolf GSR) 200W-220W-240W CCT Tunable (3000K-4000K-5000K) (No Mount) Silver ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$145.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5793",
+      "name": "05984 - LED Area Light (Wolf GSR) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Silver ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$178.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "5801",
+      "name": "05985 - LED Area Light (Wolf GSR) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Silver ZSR 10KV 120-277V DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$98.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6766",
+      "name": "05970 01 - LED Area Light (Wolf GSR+) 60W-80W-100W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$96.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6768",
+      "name": "05971 01 - LED Area Light (Wolf GSR+) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$106.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6770",
+      "name": "05972 01- LED Area Light (Wolf GSR+) 200W-220W-240W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$153.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6772",
+      "name": "05973 01- LED Area Light (Wolf GSR+) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$186.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6774",
+      "name": "05974 02 - LED Area Light (Wolf GSR+) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 277-480V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$136.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6776",
+      "name": "05975 02 - LED Area Light (Wolf GSR+) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR (T3-T4-T5 Beam Angle Adjustable) 277-480V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$226.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6767",
+      "name": "05986 01 - LED Area Light (Wolf GSR+) 60W-80W-100W CCT Tunable (3000K-4000K-5000K) (No Mount) White ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$96.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6769",
+      "name": "05987 01 - LED Area Light (Wolf GSR+) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) White ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$106.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6771",
+      "name": "05988 01- LED Area Light (Wolf GSR+) 200W-220W-240W CCT Tunable (3000K-4000K-5000K) (No Mount) White ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$153.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6773",
+      "name": "05989 01- LED Area Light (Wolf GSR+) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) White ZSR (T3-T4-T5 Beam Angle Adjustable) 120-277V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$186.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "MES Exterior",
+      "section": "Area (Pole Lights)",
+      "sku": "6777",
+      "name": "05994 02 - LED Area Light (Wolf GSR+) 260W-280W-300W CCT Tunable (3000K-4000K-5000K) (No Mount) White ZSR (T3-T4-T5 Beam Angle Adjustable) 277-480V 10KV IP65 DLC Prem (MES)",
+      "category": "Outdoor LED Fixture : Area Light",
+      "price": "$226.50",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3721",
+      "name": "02888 - 2x2 Flat Panel Back Lit Surface Mount Bracket (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$12.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "3722",
+      "name": "02889 - 2x4 Flat Panel Back Lit Surface Mount Bracket (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$15.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6141",
+      "name": "02894 - 1x4 Flat Panel - Back-lit / Troffer Surface Mount Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$14.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6142",
+      "name": "02895 - 2x2 Flat Panel - Back-lit / Troffer Surface Mount Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$13.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6143",
+      "name": "02896 - 2x4 Flat Panel - Back-lit / Troffer Surface Mount Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$16.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6144",
+      "name": "02897 - 1x4 Flat Panel - Back-lit / Troffer Suspension Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$7.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6145",
+      "name": "02898 - 2x2 Flat Panel - Back-lit / Troffer Suspension Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$7.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6146",
+      "name": "02899 - 2x4 Flat Panel - Back-lit / Troffer Suspension Kit (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$8.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "4392",
+      "name": "08476 - Junction Box for Back-Lit Panel (MES)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$2.25",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "6150",
+      "name": "19789 - 1x4 Surface Mount Kit (81.28 MM) (MES-W)",
+      "category": "Accessories : Indoor LED Fixture: Back-lit Panel",
+      "price": "$18.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5149",
+      "name": "05755 - LED Area Light Slipfitter Mount Bronze (Wolf - Leopard - Puma) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5150",
+      "name": "05756 - LED Area Light Arm Mount Bronze (Wolf - Leopard - Puma) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": "00FF00",
+      "isGreen": true
+    },
+    {
+      "sheet": "Accessories",
+      "section": "",
+      "sku": "5151",
+      "name": "05757 - LED Area Light Trunnion Mount Bronze (Wolf - Leopard - Puma) (MES)",
+      "category": "Accessories : Outdoor LED Fixture: Area Light",
+      "price": "$13.00",
+      "fill": "00FF00",
+      "isGreen": true
+    }
+  ],
+  "colors": [
+    "D0D0D0",
+    "00FF00",
+    "FFFFFF",
+    "FAFAF7"
+  ]
+}

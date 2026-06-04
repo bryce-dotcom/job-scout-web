@@ -101,6 +101,7 @@ import FrankieDashboard from './pages/agents/frankie/FrankieDashboard'
 import FrankieAsk from './pages/agents/frankie/FrankieAsk'
 import FrankieCollections from './pages/agents/frankie/FrankieCollections'
 import FrankieInsights from './pages/agents/frankie/FrankieInsights'
+import FrankieReports from './pages/agents/frankie/FrankieReports'
 import FrankieSettings from './pages/agents/frankie/FrankieSettings'
 import CustomerPortal from './pages/CustomerPortal'
 import LenardAZSRP from './pages/agents/LenardAZSRP'
@@ -484,6 +485,7 @@ function App() {
             <Route path="ask" element={<FrankieAsk />} />
             <Route path="collections" element={<FrankieCollections />} />
             <Route path="insights" element={<FrankieInsights />} />
+            <Route path="reports" element={<FrankieReports />} />
             <Route path="settings" element={<FrankieSettings />} />
           </Route>
 

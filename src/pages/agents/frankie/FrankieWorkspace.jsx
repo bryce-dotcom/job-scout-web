@@ -7,6 +7,7 @@ const FRANKIE_TABS = [
   { path: '/agents/frankie/ask', label: 'Ask Frankie', icon: 'MessageCircle' },
   { path: '/agents/frankie/collections', label: 'Collections', icon: 'Bell' },
   { path: '/agents/frankie/insights', label: 'Insights', icon: 'TrendingUp' },
+  { path: '/agents/frankie/reports', label: 'Reports', icon: 'BarChart3' },
   { path: '/agents/frankie/settings', label: 'Settings', icon: 'Settings' },
 ]
 

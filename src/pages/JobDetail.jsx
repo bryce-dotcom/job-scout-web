@@ -14,7 +14,8 @@ import {
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
   Package, Loader, Check, Info, Eye, Zap, Camera, ChevronDown, ChevronRight, Image, Copy,
-  Shield, Star, Receipt, Link2, TrendingUp, Search, PackageCheck, UserPlus, Send, Mail
+  Shield, Star, Receipt, Link2, TrendingUp, Search, PackageCheck, UserPlus, Send, Mail,
+  Archive, RotateCcw
 } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import JobCostingModal from '../components/JobCostingModal'
@@ -1101,6 +1102,33 @@ function JobDetailInner() {
   }
 
   // Send to setter pipeline
+  // Archive this job (soft-delete). Navigates back to the board so
+  // the user sees it's gone. The Recently Archived drawer on /jobs lets
+  // anyone undo this within 60 days.
+  const handleArchiveJob = async () => {
+    if (!confirm(`Archive "${job.job_title || job.job_id}"?\n\nIt will disappear from the board but you can restore it from "Recently Archived" on the Jobs page within 60 days.`)) return
+    const { toast } = await import('../lib/toast')
+    const { error } = await supabase
+      .from('jobs')
+      .update({ status: 'Archived', archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', job.id)
+    if (error) { toast.error('Archive failed: ' + error.message); return }
+    toast.success(`"${job.job_title || job.job_id}" archived — restore from the Jobs board if needed`)
+    navigate('/jobs')
+  }
+
+  // Restore an archived job back to Chillin
+  const handleRestoreJob = async () => {
+    const { toast } = await import('../lib/toast')
+    const { error } = await supabase
+      .from('jobs')
+      .update({ status: 'Chillin', archived_at: null, updated_at: new Date().toISOString() })
+      .eq('id', job.id)
+    if (error) { toast.error('Restore failed: ' + error.message); return }
+    toast.success(`"${job.job_title || job.job_id}" restored to Chillin`)
+    navigate('/jobs')
+  }
+
   const handleSendToSetter = async () => {
     const reason = window.prompt(`Why does ${job.customer_name || job.job_title} need a meeting?\n\nAdd a note for the setter:`)
     if (reason === null) return
@@ -3380,6 +3408,24 @@ function JobDetailInner() {
         >
           <UserPlus size={16} /> Send to Setter
         </button>
+        {/* Archive / Restore — safe alternative to deleting a job */}
+        {job.status === 'Archived' ? (
+          <button
+            onClick={handleRestoreJob}
+            title="Restore this job to the Chillin column"
+            style={{ padding: '8px 14px', backgroundColor: 'rgba(90,99,73,0.1)', color: '#5a6349', border: '1px solid rgba(90,99,73,0.3)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap' }}
+          >
+            <RotateCcw size={15} /> Restore Job
+          </button>
+        ) : (
+          <button
+            onClick={handleArchiveJob}
+            title="Archive this job (reversible — restore from Jobs board)"
+            style={{ padding: '8px 14px', backgroundColor: 'rgba(239,68,68,0.07)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '500', whiteSpace: 'nowrap' }}
+          >
+            <Archive size={15} /> Archive Job
+          </button>
+        )}
       </div>
 
       {/* Deal Breadcrumb */}

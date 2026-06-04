@@ -130,6 +130,47 @@ export function expenseCategoryName(e) {
   return e?.category?.name || 'Uncategorized'
 }
 
+// Combine manual_expenses + plaid_transactions debits into a single normalized
+// expense stream. Most tenants have zero manual_expenses (HHH is one of them)
+// and have all their spend coming through bank-fed Plaid debits — so a Frankie
+// view that reads manual_expenses alone reports "$0 expenses" no matter how
+// much the company actually spent. Always run real expense queries through
+// here so the numbers match Books → Money's "Money Out" total.
+//
+// Plaid convention: positive amount = money out (debit). Skip transfers
+// (they're not real expenses, just moving cash between own accounts).
+export function unifiedExpenses(manualExpenses = [], plaidTransactions = []) {
+  const out = []
+  for (const e of manualExpenses || []) {
+    out.push({
+      _source: 'manual',
+      id: 'manual-' + e.id,
+      date: e.expense_date || e.date || e.created_at,
+      expense_date: e.expense_date || e.date || e.created_at,
+      amount: Number(e.amount) || 0,
+      vendor: e.vendor || e.payee || '',
+      category: { name: e.category?.name || 'Uncategorized' },
+      description: e.description || '',
+    })
+  }
+  for (const t of plaidTransactions || []) {
+    const amt = Number(t.amount) || 0
+    if (amt <= 0) continue
+    if (t.is_transfer) continue
+    out.push({
+      _source: 'bank',
+      id: 'plaid-' + t.id,
+      date: t.date,
+      expense_date: t.date,
+      amount: amt,
+      vendor: t.merchant_name || t.name || '',
+      category: { name: t.user_category || t.ai_category || 'Uncategorized' },
+      description: t.merchant_name || t.name || '',
+    })
+  }
+  return out
+}
+
 // ──────────────────────────── aggregate helpers ────────────────────────────
 
 // Total AR across all open invoices (customer balance after payments).

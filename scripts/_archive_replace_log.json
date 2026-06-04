@@ -1,0 +1,1596 @@
+{
+  "rollbacks": [
+    {
+      "id": 1432,
+      "restored": {
+        "cost": 0,
+        "manufacturer": null,
+        "model_number": null,
+        "markup_percent": null,
+        "description": null,
+        "updated_at": "2026-05-22T05:16:44.788Z"
+      }
+    },
+    {
+      "id": 1433,
+      "restored": {
+        "cost": 0,
+        "manufacturer": null,
+        "model_number": null,
+        "markup_percent": null,
+        "description": null,
+        "updated_at": "2026-05-22T05:16:45.082Z"
+      }
+    },
+    {
+      "id": 1434,
+      "restored": {
+        "cost": 0,
+        "manufacturer": null,
+        "model_number": null,
+        "markup_percent": null,
+        "description": null,
+        "updated_at": "2026-05-22T05:16:45.240Z"
+      }
+    },
+    {
+      "id": 1435,
+      "restored": {
+        "cost": 0,
+        "manufacturer": null,
+        "model_number": null,
+        "markup_percent": null,
+        "description": null,
+        "updated_at": "2026-05-22T05:16:45.342Z"
+      }
+    },
+    {
+      "id": 1436,
+      "restored": {
+        "cost": 0,
+        "manufacturer": null,
+        "model_number": null,
+        "markup_percent": null,
+        "description": null,
+        "updated_at": "2026-05-22T05:16:45.441Z"
+      }
+    },
+    {
+      "id": 1437,
+      "restored": {
+        "cost": 0,
+        "manufacturer": null,
+        "model_number": null,
+        "markup_percent": null,
+        "description": null,
+        "updated_at": "2026-05-22T05:16:45.546Z"
+      }
+    },
+    {
+      "id": 1438,
+      "restored": {
+        "cost": 0,
+        "manufacturer": null,
+        "model_number": null,
+        "markup_percent": null,
+        "description": null,
+        "updated_at": "2026-05-22T05:16:45.643Z"
+      }
+    },
+    {
+      "id": 1439,
+      "restored": {
+        "cost": 0,
+        "manufacturer": null,
+        "model_number": null,
+        "markup_percent": null,
+        "description": null,
+        "updated_at": "2026-05-22T05:16:45.738Z"
+      }
+    },
+    {
+      "id": 1492,
+      "restored": {
+        "cost": 0,
+        "manufacturer": null,
+        "model_number": null,
+        "markup_percent": null,
+        "description": null,
+        "updated_at": "2026-05-22T05:16:45.839Z"
+      }
+    },
+    {
+      "id": 1494,
+      "restored": {
+        "cost": 0,
+        "manufacturer": null,
+        "model_number": null,
+        "markup_percent": null,
+        "description": null,
+        "updated_at": "2026-05-22T05:16:45.940Z"
+      }
+    },
+    {
+      "id": 2029,
+      "restored": {
+        "cost": 0,
+        "manufacturer": null,
+        "model_number": null,
+        "markup_percent": null,
+        "description": null,
+        "updated_at": "2026-05-22T05:16:46.033Z"
+      }
+    }
+  ],
+  "archives": [
+    {
+      "id": 1955,
+      "archivedAs": "LEDONE 70W/90W/110W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1957,
+      "archivedAs": "LEDONE 180W/200W/220W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1958,
+      "archivedAs": "LEDONE 290W/320W/350W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1959,
+      "archivedAs": "LEDONE 360W/400W/440W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1960,
+      "archivedAs": "LEDONE Adjustable Area Lights 75W/100W/120W/150W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1961,
+      "archivedAs": "LEDONE Adjustable Area Lights 160W/200W/240W/320W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1962,
+      "archivedAs": "LEDONE Mini Wall Pack 8W/10W/15W/25W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1963,
+      "archivedAs": "LEDONE Adjustable Wall Packs 20W/30W/40W/50W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1964,
+      "archivedAs": "LEDONE Adjustable Wall Packs 50W/60W/80W/100W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1965,
+      "archivedAs": "LEDONE Strip Light 48W/68W/90W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1966,
+      "archivedAs": "LEDONE Strip Light 60W/70W/80W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1967,
+      "archivedAs": "LEDONE Backlit Panels 20W/25W/30W (1X4) (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1968,
+      "archivedAs": "LEDONE Backlit Panels 20W/25W/30W (2X2) (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 1969,
+      "archivedAs": "LEDONE Backlit Panels 30W/35W/40W (2X4) (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2002,
+      "archivedAs": "LEDONE Vapor Tight Fixtures 25W/35W/50W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2003,
+      "archivedAs": "LEDONE Vapor Tight Fixtures 60W/75W/90W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2006,
+      "archivedAs": "LEDONE Canopy 40W/50W/60W/75W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2009,
+      "archivedAs": "WL 130/150/165W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2010,
+      "archivedAs": "WL 70/90/110W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2011,
+      "archivedAs": "WL 130/150/165W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2046,
+      "archivedAs": "ML 50W/60W/70W/90W/110W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2047,
+      "archivedAs": "ML 90W/110W/130W/150W/165W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2048,
+      "archivedAs": "ML 150W/165W/180W/200W/220W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2049,
+      "archivedAs": "ML 220W/280W/320W/360W/400W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2050,
+      "archivedAs": "ML 105W/135W/155W/180W Highbay (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2051,
+      "archivedAs": "ML 2x2 Backlit Panel Retrofit Kit 20W/25W/30W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2052,
+      "archivedAs": "ML 2x4 Backlit Panel Retrofit Kit 23W/30W/36W (ARCHIVED 2026-05-21)"
+    },
+    {
+      "id": 2053,
+      "archivedAs": "ML 2x4 Backlit Panel Retrofit Kit 35W/40W/46W (ARCHIVED 2026-05-21)"
+    }
+  ],
+  "newProducts": [
+    {
+      "oldId": 1955,
+      "newId": 2094,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "70W/90W/110W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE 70W/90W/110W Highbay on 2026-05-21)\nMES Product: 09240 03 - LED 2FT Linear High Bay (Pine SSR+) 50W-60W-70W-90W-110W 5000K Frosted White ZSR Rotatable 100-277V DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 5116\nMES Cost: $65.80\nWattage Options: 50W / 60W / 70W / 90W / 110W\nReplaces old product ID: 1955 (LEDONE 70W/90W/110W Highbay)\nOriginal Cost: $71.07 → New Cost: $65.80\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 8 parent bundles",
+      "unit_price": 142.14,
+      "cost": 65.8,
+      "markup_percent": 116.01823708206686,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5116",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1957,
+      "newId": 2095,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "180W/200W/220W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE 180W/200W/220W Highbay on 2026-05-21)\nMES Product: 09242 03 - LED 2FT Linear High Bay (Pine SSR+) 150W-165W-180W-200W-220W 5000K Frosted White ZSR Rotatable 100-277V 6KV IP20 DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 5118\nMES Cost: $81.50\nWattage Options: 150W / 165W / 180W / 200W / 220W\nReplaces old product ID: 1957 (LEDONE 180W/200W/220W Highbay)\nOriginal Cost: $125.66 → New Cost: $81.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 8 parent bundles",
+      "unit_price": 219.91,
+      "cost": 81.5,
+      "markup_percent": 169.82822085889572,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5118",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1958,
+      "newId": 2096,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "290W/320W/350W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE 290W/320W/350W Highbay on 2026-05-21)\nMES Product: 09248 - LED 4FT Linear High Bay (Pine SSR) 220W-280W-320W-360W-400W 5000K Frosted White ZSR 120-277V 10KV DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 6785\nMES Cost: $175.00\nWattage Options: 220W / 280W / 320W / 360W / 400W\nReplaces old product ID: 1958 (LEDONE 290W/320W/350W Highbay)\nOriginal Cost: $182.31 → New Cost: $175.00\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 8 parent bundles",
+      "unit_price": 319.04,
+      "cost": 175,
+      "markup_percent": 82.30857142857144,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "6785",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1959,
+      "newId": 2097,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "360W/400W/440W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE 360W/400W/440W Highbay on 2026-05-21)\nMES Product: 09248 - LED 4FT Linear High Bay (Pine SSR) 220W-280W-320W-360W-400W 5000K Frosted White ZSR 120-277V 10KV DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 6785\nMES Cost: $175.00\nWattage Options: 220W / 280W / 320W / 360W / 400W\nReplaces old product ID: 1959 (LEDONE 360W/400W/440W Highbay)\nOriginal Cost: $199.30 → New Cost: $175.00\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 8 parent bundles",
+      "unit_price": 348.78,
+      "cost": 175,
+      "markup_percent": 99.30285714285712,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "6785",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1960,
+      "newId": 2098,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Adjustable Area Lights 75W/100W/120W/150W (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Adjustable Area Lights 75W/100W/120W/150W on 2026-05-21)\nMES Product: 05971 - LED Area Light (Wolf GSR) 120W-135W-150W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 120-277V UL & DLC Prem (MES)\nMES Section/Sheet: Area (Pole Lights)\nMES SKU: 5148\nMES Cost: $98.50\nWattage Options: 120W / 135W / 150W\nReplaces old product ID: 1960 (LEDONE Adjustable Area Lights 75W/100W/120W/150W)\nOriginal Cost: $194.15 → New Cost: $98.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 2 parent bundles",
+      "unit_price": 339.76,
+      "cost": 98.5,
+      "markup_percent": 244.93401015228423,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5148",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1961,
+      "newId": 2099,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Adjustable Area Lights 160W/200W/240W/320W (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Adjustable Area Lights 160W/200W/240W/320W on 2026-05-21)\nMES Product: 05972 - LED Area Light (Wolf GSR) 200W-220W-240W CCT Tunable (3000K-4000K-5000K) (No Mount) Bronze ZSR 10KV 120-277V UL & DLC Prem (MES)\nMES Section/Sheet: Area (Pole Lights)\nMES SKU: 5144\nMES Cost: $145.50\nWattage Options: 200W / 220W / 240W\nReplaces old product ID: 1961 (LEDONE Adjustable Area Lights 160W/200W/240W/320W)\nOriginal Cost: $286.34 → New Cost: $145.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 2 parent bundles",
+      "unit_price": 501.09,
+      "cost": 145.5,
+      "markup_percent": 244.39175257731955,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5144",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1962,
+      "newId": 2100,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Mini Wall Pack 8W/10W/15W/25W (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Mini Wall Pack 8W/10W/15W/25W on 2026-05-21)\nMES Product: 05058 - LED Wall Pack Security (Cheetah G) 10W-15W-20W CCT Tunable (3500K-4000K-5000K) White w/ Photocell 120-277V UL & DLC Premium Listed (MES)\nMES Section/Sheet: Wall Packs\nMES SKU: 3963\nMES Cost: $36.75\nWattage Options: 10W / 15W / 20W\nReplaces old product ID: 1962 (LEDONE Mini Wall Pack 8W/10W/15W/25W)\nOriginal Cost: $88.91 → New Cost: $36.75\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 3 parent bundles",
+      "unit_price": 189.38,
+      "cost": 36.75,
+      "markup_percent": 415.31972789115645,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "3963",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1963,
+      "newId": 2101,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Adjustable Wall Packs 20W/30W/40W/50W (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Adjustable Wall Packs 20W/30W/40W/50W on 2026-05-21)\nMES Product: 05108 01 - LED Slim Full Cutoff Wall Pack (Viper GSR) 10W-20W-30W-40W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)\nMES Section/Sheet: Wall Packs\nMES SKU: 6247\nMES Cost: $59.75\nWattage Options: 10W / 20W / 30W / 40W\nReplaces old product ID: 1963 (LEDONE Adjustable Wall Packs 20W/30W/40W/50W)\nOriginal Cost: $65.92 → New Cost: $59.75\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 2 parent bundles",
+      "unit_price": 131.84,
+      "cost": 59.75,
+      "markup_percent": 120.65271966527197,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "6247",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1964,
+      "newId": 2102,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Adjustable Wall Packs 50W/60W/80W/100W (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Adjustable Wall Packs 50W/60W/80W/100W on 2026-05-21)\nMES Product: 05109 01 -  LED Slim Full Cutoff Wall Pack (Viper GSR) 20W-40W-60W-80W CCT Tunable (3000K-4000K-5000K) Bronze w/ Photocell + QSR DLC Prem (MES)\nMES Section/Sheet: Wall Packs\nMES SKU: 6236\nMES Cost: $67.50\nWattage Options: 20W / 40W / 60W / 80W\nReplaces old product ID: 1964 (LEDONE Adjustable Wall Packs 50W/60W/80W/100W)\nOriginal Cost: $103.51 → New Cost: $67.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 3 parent bundles",
+      "unit_price": 181.14,
+      "cost": 67.5,
+      "markup_percent": 168.35555555555553,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "6236",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1965,
+      "newId": 2103,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Strip Light 48W/68W/90W (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Strip Light 48W/68W/90W on 2026-05-21)\nMES Product: 02381 05 - LED 4FT Covered Strip Fixture (Juniper GSR+) 40W-47W-53W-68W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#\nMES Section/Sheet: Linear Strip Fixtures\nMES SKU: 6684\nMES Cost: $42.00\nWattage Options: 40W / 47W / 53W / 68W\nReplaces old product ID: 1965 (LEDONE Strip Light 48W/68W/90W)\nOriginal Cost: $86.52 → New Cost: $42.00\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 8 parent bundles",
+      "unit_price": 173.04,
+      "cost": 42,
+      "markup_percent": 311.99999999999994,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "6684",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1966,
+      "newId": 2104,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Strip Light 60W/70W/80W (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Strip Light 60W/70W/80W on 2026-05-21)\nMES Product: 02382 05 - LED 8FT Covered Strip Fixture (Juniper GSR+) 40W-53W-68W-80W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White 150 LM/W QSR & PQSR 120V-277V DLC Prem (MES) DLC ID#\nMES Section/Sheet: Linear Strip Fixtures\nMES SKU: 6686\nMES Cost: $68.00\nWattage Options: 40W / 53W / 68W / 80W\nReplaces old product ID: 1966 (LEDONE Strip Light 60W/70W/80W)\nOriginal Cost: $70.00 → New Cost: $68.00\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 7 parent bundles",
+      "unit_price": 140,
+      "cost": 68,
+      "markup_percent": 105.88235294117648,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "6686",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1967,
+      "newId": 2105,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Backlit Panels 20W/25W/30W (1X4) (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Backlit Panels 20W/25W/30W (1X4) on 2026-05-21)\nMES Product: 02838 03 - LED 1x4 Flat Panel - Back Lit (Spruce GSR+) 15W-20W-25W-30W-40W CCT Tunable (3000K-3500K-4000K-5000K-6500K) Frosted White QSR (CU) 120-277V DLC Prem (MES)\nMES Section/Sheet: Back-Lit Panels\nMES SKU: 6471\nMES Cost: $39.50\nWattage Options: 15W / 20W / 25W / 30W / 40W\nReplaces old product ID: 1967 (LEDONE Backlit Panels 20W/25W/30W (1X4))\nOriginal Cost: $42.23 → New Cost: $39.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 8 parent bundles",
+      "unit_price": 105.57,
+      "cost": 39.5,
+      "markup_percent": 167.2658227848101,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "6471",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1968,
+      "newId": 2106,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Backlit Panels 20W/25W/30W (2X2) (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Backlit Panels 20W/25W/30W (2X2) on 2026-05-21)\nMES Product: 02843 - LED 2x2 Back-Lit Panel Retrofit (Lotus GSR) 20W-25W-30W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V (MES)\nMES Section/Sheet: Snap Fit Fixtures\nMES SKU: 5138\nMES Cost: $35.10\nWattage Options: 20W / 25W / 30W\nReplaces old product ID: 1968 (LEDONE Backlit Panels 20W/25W/30W (2X2))\nOriginal Cost: $40.17 → New Cost: $35.10\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 8 parent bundles",
+      "unit_price": 100.43,
+      "cost": 35.1,
+      "markup_percent": 186.12535612535615,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5138",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 1969,
+      "newId": 2107,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Backlit Panels 30W/35W/40W (2X4) (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Backlit Panels 30W/35W/40W (2X4) on 2026-05-21)\nMES Product: 02852 - LED 2x4 Flat Panel - Back Lit (Birch GSR+) 23W-30W-35W-40W-50W CCT Tunable (3500K-4000K-5000K) Frosted White (QSR & PQSR) 120V-277V DLC Prem (MES) DLC ID#\nMES Section/Sheet: Back-Lit Panels\nMES SKU: 6427\nMES Cost: $43.50\nWattage Options: 23W / 30W / 35W / 40W / 50W\nReplaces old product ID: 1969 (LEDONE Backlit Panels 30W/35W/40W (2X4))\nOriginal Cost: $49.95 → New Cost: $43.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 8 parent bundles",
+      "unit_price": 124.88,
+      "cost": 43.5,
+      "markup_percent": 187.08045977011494,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "6427",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2002,
+      "newId": 2108,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Vapor Tight Fixtures 25W/35W/50W (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Vapor Tight Fixtures 25W/35W/50W on 2026-05-21)\nMES Product: 02508 - LED 4ft Vapor Tight Fixture (Hazel GSR) 35W-45W-60W CCT Tunable (3500K-4000K-5000K) Frosted Gray QSR 120V-277V NSF DLC Prem (MES)\nMES Section/Sheet: Linear Strip Fixtures\nMES SKU: 3635\nMES Cost: $67.50\nWattage Options: 35W / 45W / 60W\nReplaces old product ID: 2002 (LEDONE Vapor Tight Fixtures 25W/35W/50W)\nOriginal Cost: $69.01 → New Cost: $67.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 8 parent bundles",
+      "unit_price": 138.02,
+      "cost": 67.5,
+      "markup_percent": 104.4740740740741,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "3635",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2003,
+      "newId": 2109,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Vapor Tight Fixtures 60W/75W/90W (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Vapor Tight Fixtures 60W/75W/90W on 2026-05-21)\nMES Product: 02508 - LED 4ft Vapor Tight Fixture (Hazel GSR) 35W-45W-60W CCT Tunable (3500K-4000K-5000K) Frosted Gray QSR 120V-277V NSF DLC Prem (MES)\nMES Section/Sheet: Linear Strip Fixtures\nMES SKU: 3635\nMES Cost: $67.50\nWattage Options: 35W / 45W / 60W\nReplaces old product ID: 2003 (LEDONE Vapor Tight Fixtures 60W/75W/90W)\nOriginal Cost: $156.56 → New Cost: $67.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 9 parent bundles",
+      "unit_price": 273.98,
+      "cost": 67.5,
+      "markup_percent": 305.8962962962963,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "3635",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2006,
+      "newId": 2110,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "Canopy 40W/50W/60W/75W (MES)",
+      "description": "Vendor: MES (replaces archived LEDONE Canopy 40W/50W/60W/75W on 2026-05-21)\nMES Product: 06100 01 - LED Soffit Canopy Retrofit Fixture Only (Jasmine G) 20W-30W-40W CCT Tunable (3000K-4000K-5000K) Stripe White Dim 120-277V DLC PREM (MES)\nMES Section/Sheet: Soffit Canopy Retrofit\nMES SKU: 6028\nMES Cost: $45.00\nWattage Options: 20W / 30W / 40W\nReplaces old product ID: 2006 (LEDONE Canopy 40W/50W/60W/75W)\nOriginal Cost: $67.98 → New Cost: $45.00\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 4 parent bundles",
+      "unit_price": 135.96,
+      "cost": 45,
+      "markup_percent": 202.13333333333335,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "6028",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2009,
+      "newId": 2111,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "130/150/165W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived WL 130/150/165W Highbay on 2026-05-21)\nMES Product: 09241 03 - LED 2FT Linear High Bay (Pine SSR+) 90W-110W-130W-150W-165W 5000K Frosted White ZSR Rotatable 100-277V DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 5117\nMES Cost: $72.50\nWattage Options: 90W / 110W / 130W / 150W / 165W\nReplaces old product ID: 2009 (WL 130/150/165W Highbay)\nOriginal Cost: $65.00 → New Cost: $72.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 0 parent bundles",
+      "unit_price": 162.5,
+      "cost": 72.5,
+      "markup_percent": 124.13793103448276,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5117",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2010,
+      "newId": 2112,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "70/90/110W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived WL 70/90/110W Highbay on 2026-05-21)\nMES Product: 09240 03 - LED 2FT Linear High Bay (Pine SSR+) 50W-60W-70W-90W-110W 5000K Frosted White ZSR Rotatable 100-277V DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 5116\nMES Cost: $65.80\nWattage Options: 50W / 60W / 70W / 90W / 110W\nReplaces old product ID: 2010 (WL 70/90/110W Highbay)\nOriginal Cost: $49.00 → New Cost: $65.80\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 0 parent bundles",
+      "unit_price": 122.5,
+      "cost": 65.8,
+      "markup_percent": 86.17021276595746,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5116",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2011,
+      "newId": 2113,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "130/150/165W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived WL 130/150/165W Highbay on 2026-05-21)\nMES Product: 09241 03 - LED 2FT Linear High Bay (Pine SSR+) 90W-110W-130W-150W-165W 5000K Frosted White ZSR Rotatable 100-277V DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 5117\nMES Cost: $72.50\nWattage Options: 90W / 110W / 130W / 150W / 165W\nReplaces old product ID: 2011 (WL 130/150/165W Highbay)\nOriginal Cost: $65.00 → New Cost: $72.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 0 parent bundles",
+      "unit_price": 162.5,
+      "cost": 72.5,
+      "markup_percent": 124.13793103448276,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5117",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2046,
+      "newId": 2114,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "50W/60W/70W/90W/110W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived ML 50W/60W/70W/90W/110W Highbay on 2026-05-21)\nMES Product: 09240 03 - LED 2FT Linear High Bay (Pine SSR+) 50W-60W-70W-90W-110W 5000K Frosted White ZSR Rotatable 100-277V DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 5116\nMES Cost: $65.80\nWattage Options: 50W / 60W / 70W / 90W / 110W\nReplaces old product ID: 2046 (ML 50W/60W/70W/90W/110W Highbay)\nOriginal Cost: $65.80 → New Cost: $65.80\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 0 parent bundles",
+      "unit_price": 131.6,
+      "cost": 65.8,
+      "markup_percent": 100,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5116",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2047,
+      "newId": 2115,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "90W/110W/130W/150W/165W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived ML 90W/110W/130W/150W/165W Highbay on 2026-05-21)\nMES Product: 09241 03 - LED 2FT Linear High Bay (Pine SSR+) 90W-110W-130W-150W-165W 5000K Frosted White ZSR Rotatable 100-277V DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 5117\nMES Cost: $72.50\nWattage Options: 90W / 110W / 130W / 150W / 165W\nReplaces old product ID: 2047 (ML 90W/110W/130W/150W/165W Highbay)\nOriginal Cost: $72.80 → New Cost: $72.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 0 parent bundles",
+      "unit_price": 145.6,
+      "cost": 72.5,
+      "markup_percent": 100.82758620689654,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5117",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2048,
+      "newId": 2116,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "150W/165W/180W/200W/220W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived ML 150W/165W/180W/200W/220W Highbay on 2026-05-21)\nMES Product: 09242 03 - LED 2FT Linear High Bay (Pine SSR+) 150W-165W-180W-200W-220W 5000K Frosted White ZSR Rotatable 100-277V 6KV IP20 DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 5118\nMES Cost: $81.50\nWattage Options: 150W / 165W / 180W / 200W / 220W\nReplaces old product ID: 2048 (ML 150W/165W/180W/200W/220W Highbay)\nOriginal Cost: $81.50 → New Cost: $81.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 0 parent bundles",
+      "unit_price": 163,
+      "cost": 81.5,
+      "markup_percent": 100,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5118",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2049,
+      "newId": 2117,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "220W/280W/320W/360W/400W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived ML 220W/280W/320W/360W/400W Highbay on 2026-05-21)\nMES Product: 09248 - LED 4FT Linear High Bay (Pine SSR) 220W-280W-320W-360W-400W 5000K Frosted White ZSR 120-277V 10KV DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 6785\nMES Cost: $175.00\nWattage Options: 220W / 280W / 320W / 360W / 400W\nReplaces old product ID: 2049 (ML 220W/280W/320W/360W/400W Highbay)\nOriginal Cost: $175.00 → New Cost: $175.00\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 0 parent bundles",
+      "unit_price": 350,
+      "cost": 175,
+      "markup_percent": 100,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "6785",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2050,
+      "newId": 2118,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "105W/135W/155W/180W Highbay (MES)",
+      "description": "Vendor: MES (replaces archived ML 105W/135W/155W/180W Highbay on 2026-05-21)\nMES Product: 09242 03 - LED 2FT Linear High Bay (Pine SSR+) 150W-165W-180W-200W-220W 5000K Frosted White ZSR Rotatable 100-277V 6KV IP20 DLC Prem (MES)\nMES Section/Sheet: Linear High Bay\nMES SKU: 5118\nMES Cost: $81.50\nWattage Options: 150W / 165W / 180W / 200W / 220W\nReplaces old product ID: 2050 (ML 105W/135W/155W/180W Highbay)\nOriginal Cost: $195.00 → New Cost: $81.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 0 parent bundles",
+      "unit_price": 390,
+      "cost": 81.5,
+      "markup_percent": 378.5276073619632,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5118",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2051,
+      "newId": 2119,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "2x2 Backlit Panel Retrofit Kit 20W/25W/30W (MES)",
+      "description": "Vendor: MES (replaces archived ML 2x2 Backlit Panel Retrofit Kit 20W/25W/30W on 2026-05-21)\nMES Product: 02843 - LED 2x2 Back-Lit Panel Retrofit (Lotus GSR) 20W-25W-30W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V (MES)\nMES Section/Sheet: Snap Fit Fixtures\nMES SKU: 5138\nMES Cost: $35.10\nWattage Options: 20W / 25W / 30W\nReplaces old product ID: 2051 (ML 2x2 Backlit Panel Retrofit Kit 20W/25W/30W)\nOriginal Cost: $35.10 → New Cost: $35.10\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 0 parent bundles",
+      "unit_price": 70.2,
+      "cost": 35.1,
+      "markup_percent": 100,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5138",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2052,
+      "newId": 2120,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "2x4 Backlit Panel Retrofit Kit 23W/30W/36W (MES)",
+      "description": "Vendor: MES (replaces archived ML 2x4 Backlit Panel Retrofit Kit 23W/30W/36W on 2026-05-21)\nMES Product: 02845 - LED 2x4 Back-Lit Panel Retrofit (Lotus GSR) 23W-30W-36W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V (MES)\nMES Section/Sheet: Snap Fit Fixtures\nMES SKU: 5139\nMES Cost: $51.50\nWattage Options: 23W / 30W / 36W\nReplaces old product ID: 2052 (ML 2x4 Backlit Panel Retrofit Kit 23W/30W/36W)\nOriginal Cost: $51.50 → New Cost: $51.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 0 parent bundles",
+      "unit_price": 102.99,
+      "cost": 51.5,
+      "markup_percent": 99.98058252427184,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5139",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    },
+    {
+      "oldId": 2053,
+      "newId": 2121,
+      "company_id": 3,
+      "item_id": null,
+      "business_unit": null,
+      "type": "Electrical Services (Bundles)",
+      "name": "2x4 Backlit Panel Retrofit Kit 35W/40W/46W (MES)",
+      "description": "Vendor: MES (replaces archived ML 2x4 Backlit Panel Retrofit Kit 35W/40W/46W on 2026-05-21)\nMES Product: 02846 - LED 2x4 Back-Lit Panel Retrofit (Lotus GSR) 35W-40W-46W CCT Tunable (3500K-4000K-5000K) Frosted White QSR 120V-277V (MES)\nMES Section/Sheet: Snap Fit Fixtures\nMES SKU: 5140\nMES Cost: $53.50\nWattage Options: 35W / 40W / 46W\nReplaces old product ID: 2053 (ML 2x4 Backlit Panel Retrofit Kit 35W/40W/46W)\nOriginal Cost: $53.50 → New Cost: $53.50\nSelected by: London (green-highlighted in MES pricing sheet)\nReferenced by 0 parent bundles",
+      "unit_price": 107,
+      "cost": 53.5,
+      "markup_percent": 100,
+      "taxable": true,
+      "active": true,
+      "allotted_time_hours": null,
+      "group_id": 25,
+      "labor_rate_id": null,
+      "manufacturer": "MES",
+      "model_number": "5140",
+      "product_category": null,
+      "dlc_listed": false,
+      "in_utility_scope": true,
+      "floor_price": null,
+      "ceiling_price": null,
+      "suggest_in_lenard": false
+    }
+  ],
+  "repoints": [
+    {
+      "compRowId": 765,
+      "parentId": 1370,
+      "oldComponentId": 1955,
+      "newComponentId": 2094
+    },
+    {
+      "compRowId": 397,
+      "parentId": 1371,
+      "oldComponentId": 1955,
+      "newComponentId": 2094
+    },
+    {
+      "compRowId": 98,
+      "parentId": 1125,
+      "oldComponentId": 1955,
+      "newComponentId": 2094
+    },
+    {
+      "compRowId": 396,
+      "parentId": 1181,
+      "oldComponentId": 1955,
+      "newComponentId": 2094
+    },
+    {
+      "compRowId": 769,
+      "parentId": 1373,
+      "oldComponentId": 1955,
+      "newComponentId": 2094
+    },
+    {
+      "compRowId": 399,
+      "parentId": 1372,
+      "oldComponentId": 1955,
+      "newComponentId": 2094
+    },
+    {
+      "compRowId": 759,
+      "parentId": 1374,
+      "oldComponentId": 1955,
+      "newComponentId": 2094
+    },
+    {
+      "compRowId": 764,
+      "parentId": 1375,
+      "oldComponentId": 1955,
+      "newComponentId": 2094
+    },
+    {
+      "compRowId": 75,
+      "parentId": 1386,
+      "oldComponentId": 1957,
+      "newComponentId": 2095
+    },
+    {
+      "compRowId": 137,
+      "parentId": 1388,
+      "oldComponentId": 1957,
+      "newComponentId": 2095
+    },
+    {
+      "compRowId": 154,
+      "parentId": 1384,
+      "oldComponentId": 1957,
+      "newComponentId": 2095
+    },
+    {
+      "compRowId": 365,
+      "parentId": 1385,
+      "oldComponentId": 1957,
+      "newComponentId": 2095
+    },
+    {
+      "compRowId": 370,
+      "parentId": 1387,
+      "oldComponentId": 1957,
+      "newComponentId": 2095
+    },
+    {
+      "compRowId": 773,
+      "parentId": 1390,
+      "oldComponentId": 1957,
+      "newComponentId": 2095
+    },
+    {
+      "compRowId": 731,
+      "parentId": 1389,
+      "oldComponentId": 1957,
+      "newComponentId": 2095
+    },
+    {
+      "compRowId": 734,
+      "parentId": 1391,
+      "oldComponentId": 1957,
+      "newComponentId": 2095
+    },
+    {
+      "compRowId": 133,
+      "parentId": 1393,
+      "oldComponentId": 1958,
+      "newComponentId": 2096
+    },
+    {
+      "compRowId": 184,
+      "parentId": 1396,
+      "oldComponentId": 1958,
+      "newComponentId": 2096
+    },
+    {
+      "compRowId": 352,
+      "parentId": 1398,
+      "oldComponentId": 1958,
+      "newComponentId": 2096
+    },
+    {
+      "compRowId": 377,
+      "parentId": 1394,
+      "oldComponentId": 1958,
+      "newComponentId": 2096
+    },
+    {
+      "compRowId": 379,
+      "parentId": 1401,
+      "oldComponentId": 1958,
+      "newComponentId": 2096
+    },
+    {
+      "compRowId": 738,
+      "parentId": 1402,
+      "oldComponentId": 1958,
+      "newComponentId": 2096
+    },
+    {
+      "compRowId": 741,
+      "parentId": 1403,
+      "oldComponentId": 1958,
+      "newComponentId": 2096
+    },
+    {
+      "compRowId": 746,
+      "parentId": 1400,
+      "oldComponentId": 1958,
+      "newComponentId": 2096
+    },
+    {
+      "compRowId": 106,
+      "parentId": 1399,
+      "oldComponentId": 1959,
+      "newComponentId": 2097
+    },
+    {
+      "compRowId": 112,
+      "parentId": 1397,
+      "oldComponentId": 1959,
+      "newComponentId": 2097
+    },
+    {
+      "compRowId": 119,
+      "parentId": 1392,
+      "oldComponentId": 1959,
+      "newComponentId": 2097
+    },
+    {
+      "compRowId": 387,
+      "parentId": 1395,
+      "oldComponentId": 1959,
+      "newComponentId": 2097
+    },
+    {
+      "compRowId": 747,
+      "parentId": 1405,
+      "oldComponentId": 1959,
+      "newComponentId": 2097
+    },
+    {
+      "compRowId": 750,
+      "parentId": 1406,
+      "oldComponentId": 1959,
+      "newComponentId": 2097
+    },
+    {
+      "compRowId": 753,
+      "parentId": 1407,
+      "oldComponentId": 1959,
+      "newComponentId": 2097
+    },
+    {
+      "compRowId": 758,
+      "parentId": 1404,
+      "oldComponentId": 1959,
+      "newComponentId": 2097
+    },
+    {
+      "compRowId": 189,
+      "parentId": 1447,
+      "oldComponentId": 1960,
+      "newComponentId": 2098
+    },
+    {
+      "compRowId": 192,
+      "parentId": 1449,
+      "oldComponentId": 1960,
+      "newComponentId": 2098
+    },
+    {
+      "compRowId": 186,
+      "parentId": 1446,
+      "oldComponentId": 1961,
+      "newComponentId": 2099
+    },
+    {
+      "compRowId": 190,
+      "parentId": 1448,
+      "oldComponentId": 1961,
+      "newComponentId": 2099
+    },
+    {
+      "compRowId": 435,
+      "parentId": 1442,
+      "oldComponentId": 1962,
+      "newComponentId": 2100
+    },
+    {
+      "compRowId": 205,
+      "parentId": 1500,
+      "oldComponentId": 1962,
+      "newComponentId": 2100
+    },
+    {
+      "compRowId": 207,
+      "parentId": 1445,
+      "oldComponentId": 1962,
+      "newComponentId": 2100
+    },
+    {
+      "compRowId": 210,
+      "parentId": 1440,
+      "oldComponentId": 1963,
+      "newComponentId": 2101
+    },
+    {
+      "compRowId": 211,
+      "parentId": 1443,
+      "oldComponentId": 1963,
+      "newComponentId": 2101
+    },
+    {
+      "compRowId": 213,
+      "parentId": 1441,
+      "oldComponentId": 1964,
+      "newComponentId": 2102
+    },
+    {
+      "compRowId": 214,
+      "parentId": 1444,
+      "oldComponentId": 1964,
+      "newComponentId": 2102
+    },
+    {
+      "compRowId": 909,
+      "parentId": 2029,
+      "oldComponentId": 1964,
+      "newComponentId": 2102
+    },
+    {
+      "compRowId": 832,
+      "parentId": 1436,
+      "oldComponentId": 1965,
+      "newComponentId": 2103
+    },
+    {
+      "compRowId": 838,
+      "parentId": 1437,
+      "oldComponentId": 1965,
+      "newComponentId": 2103
+    },
+    {
+      "compRowId": 805,
+      "parentId": 1439,
+      "oldComponentId": 1965,
+      "newComponentId": 2103
+    },
+    {
+      "compRowId": 823,
+      "parentId": 1432,
+      "oldComponentId": 1965,
+      "newComponentId": 2103
+    },
+    {
+      "compRowId": 824,
+      "parentId": 1434,
+      "oldComponentId": 1965,
+      "newComponentId": 2103
+    },
+    {
+      "compRowId": 827,
+      "parentId": 1438,
+      "oldComponentId": 1965,
+      "newComponentId": 2103
+    },
+    {
+      "compRowId": 829,
+      "parentId": 1435,
+      "oldComponentId": 1965,
+      "newComponentId": 2103
+    },
+    {
+      "compRowId": 834,
+      "parentId": 1433,
+      "oldComponentId": 1965,
+      "newComponentId": 2103
+    },
+    {
+      "compRowId": 820,
+      "parentId": 1497,
+      "oldComponentId": 1966,
+      "newComponentId": 2104
+    },
+    {
+      "compRowId": 840,
+      "parentId": 1494,
+      "oldComponentId": 1966,
+      "newComponentId": 2104
+    },
+    {
+      "compRowId": 446,
+      "parentId": 1495,
+      "oldComponentId": 1966,
+      "newComponentId": 2104
+    },
+    {
+      "compRowId": 456,
+      "parentId": 1493,
+      "oldComponentId": 1966,
+      "newComponentId": 2104
+    },
+    {
+      "compRowId": 812,
+      "parentId": 1499,
+      "oldComponentId": 1966,
+      "newComponentId": 2104
+    },
+    {
+      "compRowId": 818,
+      "parentId": 1496,
+      "oldComponentId": 1966,
+      "newComponentId": 2104
+    },
+    {
+      "compRowId": 839,
+      "parentId": 1492,
+      "oldComponentId": 1966,
+      "newComponentId": 2104
+    },
+    {
+      "compRowId": 845,
+      "parentId": 1423,
+      "oldComponentId": 1967,
+      "newComponentId": 2105
+    },
+    {
+      "compRowId": 851,
+      "parentId": 1421,
+      "oldComponentId": 1967,
+      "newComponentId": 2105
+    },
+    {
+      "compRowId": 603,
+      "parentId": 1408,
+      "oldComponentId": 1967,
+      "newComponentId": 2105
+    },
+    {
+      "compRowId": 617,
+      "parentId": 1409,
+      "oldComponentId": 1967,
+      "newComponentId": 2105
+    },
+    {
+      "compRowId": 842,
+      "parentId": 1422,
+      "oldComponentId": 1967,
+      "newComponentId": 2105
+    },
+    {
+      "compRowId": 848,
+      "parentId": 1420,
+      "oldComponentId": 1967,
+      "newComponentId": 2105
+    },
+    {
+      "compRowId": 604,
+      "parentId": 1416,
+      "oldComponentId": 1967,
+      "newComponentId": 2105
+    },
+    {
+      "compRowId": 609,
+      "parentId": 1417,
+      "oldComponentId": 1967,
+      "newComponentId": 2105
+    },
+    {
+      "compRowId": 856,
+      "parentId": 1427,
+      "oldComponentId": 1968,
+      "newComponentId": 2106
+    },
+    {
+      "compRowId": 862,
+      "parentId": 1425,
+      "oldComponentId": 1968,
+      "newComponentId": 2106
+    },
+    {
+      "compRowId": 631,
+      "parentId": 1418,
+      "oldComponentId": 1968,
+      "newComponentId": 2106
+    },
+    {
+      "compRowId": 635,
+      "parentId": 1419,
+      "oldComponentId": 1968,
+      "newComponentId": 2106
+    },
+    {
+      "compRowId": 855,
+      "parentId": 1426,
+      "oldComponentId": 1968,
+      "newComponentId": 2106
+    },
+    {
+      "compRowId": 860,
+      "parentId": 1424,
+      "oldComponentId": 1968,
+      "newComponentId": 2106
+    },
+    {
+      "compRowId": 629,
+      "parentId": 1410,
+      "oldComponentId": 1968,
+      "newComponentId": 2106
+    },
+    {
+      "compRowId": 644,
+      "parentId": 1411,
+      "oldComponentId": 1968,
+      "newComponentId": 2106
+    },
+    {
+      "compRowId": 880,
+      "parentId": 1429,
+      "oldComponentId": 1969,
+      "newComponentId": 2107
+    },
+    {
+      "compRowId": 650,
+      "parentId": 1414,
+      "oldComponentId": 1969,
+      "newComponentId": 2107
+    },
+    {
+      "compRowId": 865,
+      "parentId": 1415,
+      "oldComponentId": 1969,
+      "newComponentId": 2107
+    },
+    {
+      "compRowId": 871,
+      "parentId": 1430,
+      "oldComponentId": 1969,
+      "newComponentId": 2107
+    },
+    {
+      "compRowId": 874,
+      "parentId": 1431,
+      "oldComponentId": 1969,
+      "newComponentId": 2107
+    },
+    {
+      "compRowId": 878,
+      "parentId": 1428,
+      "oldComponentId": 1969,
+      "newComponentId": 2107
+    },
+    {
+      "compRowId": 649,
+      "parentId": 1412,
+      "oldComponentId": 1969,
+      "newComponentId": 2107
+    },
+    {
+      "compRowId": 664,
+      "parentId": 1413,
+      "oldComponentId": 1969,
+      "newComponentId": 2107
+    },
+    {
+      "compRowId": 890,
+      "parentId": 1471,
+      "oldComponentId": 2002,
+      "newComponentId": 2108
+    },
+    {
+      "compRowId": 883,
+      "parentId": 1475,
+      "oldComponentId": 2002,
+      "newComponentId": 2108
+    },
+    {
+      "compRowId": 893,
+      "parentId": 1472,
+      "oldComponentId": 2002,
+      "newComponentId": 2108
+    },
+    {
+      "compRowId": 895,
+      "parentId": 1473,
+      "oldComponentId": 2002,
+      "newComponentId": 2108
+    },
+    {
+      "compRowId": 557,
+      "parentId": 1468,
+      "oldComponentId": 2002,
+      "newComponentId": 2108
+    },
+    {
+      "compRowId": 558,
+      "parentId": 1470,
+      "oldComponentId": 2002,
+      "newComponentId": 2108
+    },
+    {
+      "compRowId": 567,
+      "parentId": 1474,
+      "oldComponentId": 2002,
+      "newComponentId": 2108
+    },
+    {
+      "compRowId": 572,
+      "parentId": 1469,
+      "oldComponentId": 2002,
+      "newComponentId": 2108
+    },
+    {
+      "compRowId": 898,
+      "parentId": 1482,
+      "oldComponentId": 2003,
+      "newComponentId": 2109
+    },
+    {
+      "compRowId": 906,
+      "parentId": 1498,
+      "oldComponentId": 2003,
+      "newComponentId": 2109
+    },
+    {
+      "compRowId": 577,
+      "parentId": 1476,
+      "oldComponentId": 2003,
+      "newComponentId": 2109
+    },
+    {
+      "compRowId": 593,
+      "parentId": 1480,
+      "oldComponentId": 2003,
+      "newComponentId": 2109
+    },
+    {
+      "compRowId": 901,
+      "parentId": 1477,
+      "oldComponentId": 2003,
+      "newComponentId": 2109
+    },
+    {
+      "compRowId": 903,
+      "parentId": 1481,
+      "oldComponentId": 2003,
+      "newComponentId": 2109
+    },
+    {
+      "compRowId": 578,
+      "parentId": 1479,
+      "oldComponentId": 2003,
+      "newComponentId": 2109
+    },
+    {
+      "compRowId": 583,
+      "parentId": 1478,
+      "oldComponentId": 2003,
+      "newComponentId": 2109
+    },
+    {
+      "compRowId": 589,
+      "parentId": 1483,
+      "oldComponentId": 2003,
+      "newComponentId": 2109
+    },
+    {
+      "compRowId": 703,
+      "parentId": 1489,
+      "oldComponentId": 2006,
+      "newComponentId": 2110
+    },
+    {
+      "compRowId": 707,
+      "parentId": 1491,
+      "oldComponentId": 2006,
+      "newComponentId": 2110
+    },
+    {
+      "compRowId": 702,
+      "parentId": 1488,
+      "oldComponentId": 2006,
+      "newComponentId": 2110
+    },
+    {
+      "compRowId": 705,
+      "parentId": 1490,
+      "oldComponentId": 2006,
+      "newComponentId": 2110
+    }
+  ],
+  "errors": []
+}

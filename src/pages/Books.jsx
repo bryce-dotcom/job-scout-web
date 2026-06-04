@@ -6,6 +6,7 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import HelpBadge from '../components/HelpBadge'
 import EmptyState from '../components/EmptyState'
+import ReportsPanel from '../components/ReportsPanel'
 import {
   BookOpen, Plus, X, DollarSign, TrendingUp, TrendingDown,
   Wallet, CreditCard, Building, PiggyBank, Pencil, Trash2,
@@ -267,6 +268,11 @@ export default function Books() {
   // Balance sheet expander — collapsed by default since most ops users
   // don't enter assets/liabilities day-to-day. Year-end concern only.
   const [showBalanceSheet, setShowBalanceSheet] = useState(false)
+
+  // Reports tab has two modes: 'standard' = one-click canned reports,
+  // 'yearend' = the CPA package bundle that was the only Year-End view
+  // before this tab got renamed from "Year-End" to "Reports".
+  const [reportsSubTab, setReportsSubTab] = useState('standard')
 
   const [bankAccounts, setBankAccounts] = useState([])
   const [expenses, setExpenses] = useState([])
@@ -1291,7 +1297,7 @@ export default function Books() {
             { id: 'transactions', label: 'Transactions', badge: unreviewedCount > 0 ? unreviewedCount : null },
             { id: 'stripe', label: 'Payments' },
             { id: 'accounts', label: 'Accounts' },
-            { id: 'tax', label: 'Year-End' },
+            { id: 'tax', label: 'Reports' },
             { id: 'booked', label: 'Booked' }
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={tabStyle(activeTab === tab.id)}>
@@ -2685,6 +2691,28 @@ export default function Books() {
       {/* ════════════════════ TAX & REPORTS TAB ════════════════════ */}
       {activeTab === 'tax' && (
         <>
+          {/* Sub-tab strip — Standard reports (one-click) vs Year-End (CPA bundle). */}
+          <div style={{ display: 'flex', gap: '4px', backgroundColor: theme.bg, padding: '4px', borderRadius: '10px', marginBottom: '16px', alignSelf: 'flex-start', width: 'fit-content' }}>
+            {[
+              { id: 'standard', label: 'Standard Reports' },
+              { id: 'yearend', label: 'Year-End / CPA' },
+            ].map(t => (
+              <button key={t.id} onClick={() => setReportsSubTab(t.id)} style={{
+                padding: '8px 14px', borderRadius: '8px', border: 'none',
+                backgroundColor: reportsSubTab === t.id ? theme.accent : 'transparent',
+                color: reportsSubTab === t.id ? '#fff' : theme.text,
+                fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+              }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {reportsSubTab === 'standard' && (
+            <ReportsPanel theme={theme} isMobile={isMobile} />
+          )}
+
+          {reportsSubTab !== 'standard' && (<>
           {/* "What's this page?" intro card. */}
           <div style={{
             marginBottom: '20px',
@@ -2976,6 +3004,7 @@ export default function Books() {
               </div>
             )
           })()}
+          </>)}
         </>
       )}
 

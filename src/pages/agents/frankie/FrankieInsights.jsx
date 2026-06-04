@@ -11,7 +11,7 @@ import {
 import {
   invoiceBalance, invoiceCustomerTotal, invoiceDaysOverdue, isInvoiceOpen,
   paymentDate, jobIsComplete, jobContractValue, jobCostFromLines,
-  expenseCategoryName,
+  expenseCategoryName, unifiedExpenses,
 } from './frankieFields'
 
 const defaultTheme = {
@@ -38,8 +38,16 @@ export default function FrankieInsights() {
 
   const invoices = useStore(s => s.invoices) || []
   const payments = useStore(s => s.payments) || []
-  const expenses = useStore(s => s.expenses) || []
+  const manualExpenses = useStore(s => s.expenses) || []
+  const plaidTransactions = useStore(s => s.plaidTransactions) || []
   const jobs = useStore(s => s.jobs) || []
+  // Unified expense stream: manual entries + bank debits. Without this,
+  // tenants with bank-fed Plaid expenses (most of them) see "no anomalies"
+  // because expenses look like $0. See frankieFields.unifiedExpenses note.
+  const expenses = useMemo(
+    () => unifiedExpenses(manualExpenses, plaidTransactions),
+    [manualExpenses, plaidTransactions]
+  )
 
   const [whatIfOpen, setWhatIfOpen] = useState(false)
   const [priceChange, setPriceChange] = useState(0)

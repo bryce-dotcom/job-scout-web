@@ -7,6 +7,7 @@ import { isAdmin as checkAdmin, isManager as checkManager } from '../lib/accessC
 import { toast } from '../lib/toast'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { getDeliveredStatusIds } from '../lib/jobMetrics'
+import ReportsPanel from '../components/ReportsPanel'
 import {
   BarChart3,
   TrendingUp,
@@ -75,6 +76,7 @@ const REPORT_TABLES = [
 ]
 
 const reportTypes = [
+  { id: 'standard', label: 'Standard Reports', icon: BarChart3, desc: 'P&L, AR aging, job costing, sales/expense breakdowns — one click each', access: 'manager' },
   { id: 'sales', label: 'Sales Report', icon: TrendingUp, desc: 'Leads, conversions, pipeline value', access: 'manager' },
   { id: 'jobs', label: 'Jobs Report', icon: Briefcase, desc: 'Job status, revenue, time tracking', access: 'manager' },
   { id: 'financial', label: 'Financial Report', icon: DollarSign, desc: 'Invoices, payments, revenue', access: 'admin' },
@@ -495,6 +497,7 @@ export default function Reports() {
 
   const renderReport = () => {
     switch (reportType) {
+      case 'standard': return <ReportsPanel theme={theme} isMobile={isMobile} />
       case 'sales': return <SalesReport theme={theme} companyId={companyId} leads={leads} employees={employees} salesPipeline={salesPipeline} formatCurrency={formatCurrency} inputStyle={inputStyle} pillStyle={pillStyle} exportCSV={exportCSV} />
       case 'jobs': return <JobsReport theme={theme} companyId={companyId} jobs={jobs} employees={employees} formatCurrency={formatCurrency} inputStyle={inputStyle} pillStyle={pillStyle} exportCSV={exportCSV} />
       case 'financial': return renderFinancialReport()
@@ -599,7 +602,7 @@ export default function Reports() {
 
   // ── Report Detail View ────────────────────────────────────────────
   const currentReport = reportTypes.find(r => r.id === reportType)
-  const showDateRange = !['custom', 'products-needed'].includes(reportType)
+  const showDateRange = !['custom', 'products-needed', 'standard'].includes(reportType)
 
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
