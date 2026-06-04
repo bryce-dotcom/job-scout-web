@@ -188,14 +188,21 @@ export default function JobCostingModal({ job, theme, onClose }) {
         }
       }
 
-      // 3. Build fallback lines — one entry per job_line, with optional bundle breakdown
+      // 3. Build fallback lines — one entry per job_line, with optional bundle breakdown.
+      // We intentionally do NOT filter on material_or_labor because many bundle products
+      // (e.g. SMBE Highbay "w/ Controls") are tagged 'labor' to indicate install-included
+      // pricing but are still physical products with a material cost. Only exclude lines
+      // that are purely time-and-materials labor entries with no physical product at all.
       const fallbackLines = jobLines
         .filter(jl => {
           if (coveredJobLineIds.has(jl.id)) return false
           if (jl.po_line_id) return false
-          const isServiceKind = jl.kind === 'labor' || jl.kind === 'service'
-          const isPureLabor = jl.item?.material_or_labor === 'labor' || isServiceKind
-          return !isPureLabor
+          // Only skip lines that are explicitly pure-labor WITH no product link
+          // (i.e. a labor-hours row added manually with no SKU/item)
+          const hasProduct = !!(jl.item?.id || jl.item_name || jl.description)
+          const isPureTimeLabor = jl.kind === 'labor' && !jl.item?.id && !(parseFloat(jl.price) > 0)
+          if (isPureTimeLabor) return false
+          return hasProduct || parseFloat(jl.price) > 0
         })
         .map(jl => {
           const jobQty = parseFloat(jl.quantity) || 1
@@ -305,9 +312,12 @@ export default function JobCostingModal({ job, theme, onClose }) {
       const isMaterial = (cat) => cat && materialKeywords.some((k) => cat.toLowerCase().includes(k))
       const isSub = (cat) => cat && cat.toLowerCase() === 'subcontractor'
 
-      const materialExpenses = expenses.filter((e) => isMaterial(e.category))
+      // Split receipts: those with dollar amounts entered vs photos still at $0
+      const allMaterialExpenses = expenses.filter((e) => isMaterial(e.category))
+      const materialExpenses = allMaterialExpenses.filter(e => parseFloat(e.amount) > 0)
+      const pendingReceiptExpenses = allMaterialExpenses.filter(e => !(parseFloat(e.amount) > 0) && e.receipt_url)
       const subExpenses = expenses.filter((e) => isSub(e.category))
-      const receiptExpenses = expenses.filter((e) => e.receipt_url)
+      const receiptExpenses = expenses.filter((e) => e.receipt_url && parseFloat(e.amount) > 0)
       const otherExpenses = expenses.filter((e) => !isMaterial(e.category) && !isSub(e.category))
 
       const plaidAmt = (t) => t._allocatedAmount != null ? t._allocatedAmount : Math.abs(parseFloat(t.amount) || 0)
@@ -385,7 +395,7 @@ export default function JobCostingModal({ job, theme, onClose }) {
         // Bills (AP)
         billLines, totalBillsAP, totalBillsBalance,
         // Expenses / Plaid
-        materialCost, materialExpenses, materialPlaid,
+        materialCost, materialExpenses, pendingReceiptExpenses, materialPlaid,
         // Labor
         laborCost, laborLines,
         // Sub / Other
@@ -742,15 +752,69 @@ export default function JobCostingModal({ job, theme, onClose }) {
                 </div>
               )}
 
-              {/* ── Materials (expenses + Plaid) ─────────────────────── */}
-              {renderSection(Package, 'Material Expenses', [...data.materialExpenses, ...data.materialPlaid], data.materialCost, (item, idx) => (
-                <div key={item.id || idx} style={rowStyle}>
-                  <span style={{ ...labelStyle, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '12px' }}>
-                    {item.description || item.name || item.merchant_name || 'Material'}
-                  </span>
-                  <span style={valueStyle}>{fmt(Math.abs(parseFloat(item.amount) || 0))}</span>
+              {/* ── Material Expenses (receipts + Plaid) ────────────── */}
+              <div style={sectionStyle}>
+                <div style={sectionHeaderStyle}>
+                  <Package size={18} color={theme.accent || '#5a6349'} />
+                  <span>Material Expenses</span>
                 </div>
-              ))}
+                {[...data.materialExpenses, ...data.materialPlaid].length === 0 && data.pendingReceiptExpenses.length === 0 ? (
+                  <div style={{ fontSize: '13px', color: theme.textMuted, padding: '4px 0' }}>
+                    No material expenses recorded
+                  </div>
+                ) : (
+                  <>
+                    {[...data.materialExpenses, ...data.materialPlaid].map((item, idx) => (
+                      <div key={item.id || idx} style={rowStyle}>
+                        <span style={{ ...labelStyle, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '12px' }}>
+                          {item.description || item.name || item.merchant_name || 'Material'}
+                        </span>
+                        <span style={valueStyle}>{fmt(Math.abs(parseFloat(item.amount) || 0))}</span>
+                      </div>
+                    ))}
+                    {/* Receipts captured but dollar amount not yet entered */}
+                    {data.pendingReceiptExpenses.length > 0 && (
+                      <div style={{
+                        marginTop: '6px', padding: '8px 10px', borderRadius: '8px',
+                        backgroundColor: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                          <AlertCircle size={12} color='#a16207' />
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: '#a16207' }}>
+                            {data.pendingReceiptExpenses.length} receipt{data.pendingReceiptExpenses.length !== 1 ? 's' : ''} need dollar amounts entered
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {data.pendingReceiptExpenses.map((exp, idx) => (
+                            <a
+                              key={exp.id || idx}
+                              href={exp.receipt_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open receipt to enter amount"
+                              style={{ display: 'block', flexShrink: 0 }}
+                            >
+                              <img
+                                src={exp.receipt_url}
+                                alt="Receipt"
+                                style={{ width: 44, height: 44, borderRadius: '6px', objectFit: 'cover', border: '1px solid rgba(234,179,8,0.4)', cursor: 'pointer' }}
+                                onError={e => { e.target.style.display = 'none' }}
+                              />
+                            </a>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#a16207', marginTop: '4px' }}>
+                          Open each receipt image, enter the dollar amount in the expense record, then refresh job costing.
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+                <div style={subtotalRowStyle}>
+                  <span>Subtotal{data.pendingReceiptExpenses.length > 0 ? ` (${data.pendingReceiptExpenses.length} receipts pending)` : ''}</span>
+                  <span>{fmt(data.materialCost)}</span>
+                </div>
+              </div>
 
               {/* ── Labor ───────────────────────────────────────────────── */}
               <div style={sectionStyle}>
