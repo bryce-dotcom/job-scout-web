@@ -168,6 +168,10 @@ function JobDetailInner() {
   const isAdmin = checkAdmin(user)
   const customers = useStore((state) => state.customers)
   const storeJobStatuses = useStore((state) => state.jobStatuses)
+  // Needed by the "Who Pays What" AR block + per-invoice balance display
+  // (above the invoice list). Without payments in scope, the readers see
+  // gross amounts instead of true customer balance.
+  const payments = useStore((state) => state.payments) || []
   const businessUnits = useStore((state) => state.businessUnits)
   const storeJobSectionStatuses = useStore((state) => state.jobSectionStatuses)
   const laborRates = useStore((state) => state.laborRates)
@@ -5385,6 +5389,52 @@ function JobDetailInner() {
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
                 Invoices ({jobInvoices.length + jobUtilityInvoices.length})
               </h3>
+
+              {/* "Who pays what" AR breakdown — same numbers shown
+                  elsewhere in the app, surfaced here so users don't have
+                  to mentally subtract incentive + deposit to figure out
+                  what each side still owes on this job. */}
+              {(() => {
+                const customerOpen = jobInvoices.filter(i => i.payment_status !== 'Paid' && i.payment_status !== 'Void' && i.payment_status !== 'Cancelled')
+                const customerBal = customerOpen.reduce((s, i) => {
+                  const gross = Number(i.amount) || 0
+                  const disc = Number(i.discount_applied) || 0
+                  const isLegacy = disc >= gross
+                  const customer = isLegacy ? gross : Math.max(0, gross - disc)
+                  const paid = (payments || []).filter(p => p.invoice_id === i.id).reduce((ps, p) => ps + (Number(p.amount) || 0), 0)
+                  return s + Math.max(0, customer - paid)
+                }, 0)
+                const utilOpen = jobUtilityInvoices.filter(u => u.payment_status !== 'Paid' && u.payment_status !== 'Void')
+                const utilBal = utilOpen.reduce((s, u) => s + (Number(u.amount || u.incentive_amount) || 0), 0)
+                if (customerBal === 0 && utilBal === 0) return null
+                return (
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px',
+                    marginBottom: '12px', padding: '12px',
+                    backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}`,
+                  }}>
+                    {customerBal > 0 && (
+                      <div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Customer owes</div>
+                        <div style={{ fontSize: '18px', fontWeight: '700', color: '#3b82f6' }}>{formatCurrency(customerBal)}</div>
+                      </div>
+                    )}
+                    {utilBal > 0 && (
+                      <div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Utility owes</div>
+                        <div style={{ fontSize: '18px', fontWeight: '700', color: '#14b8a6' }}>{formatCurrency(utilBal)}</div>
+                      </div>
+                    )}
+                    {customerBal > 0 && utilBal > 0 && (
+                      <div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Combined AR</div>
+                        <div style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>{formatCurrency(customerBal + utilBal)}</div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {jobInvoices.map(inv => (
                   <div key={'c-' + inv.id} style={{
@@ -5429,15 +5479,39 @@ function JobDetailInner() {
                         </button>
                       )}
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>
-                          {formatCurrency(inv.amount)}
-                        </div>
-                        <div style={{
-                          fontSize: '11px', fontWeight: '500',
-                          color: inv.payment_status === 'Paid' ? '#4a7c59' : inv.payment_status === 'Overdue' ? '#dc2626' : theme.textMuted
-                        }}>
-                          {inv.payment_status}
-                        </div>
+                        {(() => {
+                          // Show CUSTOMER BALANCE as the primary number,
+                          // not gross. Project total $217k − utility incentive
+                          // − deposit credit = $19k that the customer actually
+                          // owes. Showing $217k here led every reader to think
+                          // the customer was on the hook for the full project.
+                          const gross = Number(inv.amount) || 0
+                          const disc = Number(inv.discount_applied) || 0
+                          const isLegacy = disc >= gross
+                          const customer = isLegacy ? gross : Math.max(0, gross - disc)
+                          const paid = (payments || []).filter(p => p.invoice_id === inv.id).reduce((ps, p) => ps + (Number(p.amount) || 0), 0)
+                          const balance = Math.max(0, customer - paid)
+                          const showBreakdown = disc > 0
+                          return (
+                            <>
+                              <div style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>
+                                {formatCurrency(balance)}
+                              </div>
+                              {showBreakdown && (
+                                <div style={{ fontSize: '10px', color: theme.textMuted, lineHeight: 1.3 }}>
+                                  {formatCurrency(gross)} − {formatCurrency(disc)} disc
+                                  {paid > 0 ? ` − ${formatCurrency(paid)} paid` : ''}
+                                </div>
+                              )}
+                              <div style={{
+                                fontSize: '11px', fontWeight: '500',
+                                color: inv.payment_status === 'Paid' ? '#4a7c59' : inv.payment_status === 'Overdue' ? '#dc2626' : theme.textMuted
+                              }}>
+                                {inv.payment_status}
+                              </div>
+                            </>
+                          )
+                        })()}
                       </div>
                     </div>
                   </div>

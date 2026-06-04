@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import WhosWorking from '../components/WhosWorking'
 import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
+import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
 import {
   UserPlus,
   Briefcase,
@@ -264,7 +265,14 @@ export default function Dashboard() {
   }).length
   const unpaidInvoices = invoices.filter(i => ['Pending', 'Sent', 'Partial', 'Overdue'].includes(i.payment_status))
   const pendingInvoices = unpaidInvoices.length
-  const accountsReceivable = unpaidInvoices.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
+  // AR = customer balance (gross − discount − applied payments) PLUS what
+  // utilities still owe in unpaid rebates. Reading inv.amount alone for
+  // an Energy Scout project inflated AR by ~$200k per job (gross included
+  // the incentive that's not the customer's to pay). Utility invoices
+  // were also being ignored entirely, which under-counted real AR.
+  const customerAR = totalCustomerAR(invoices, payments)
+  const utilityAR = totalUtilityAR(utilityInvoices)
+  const accountsReceivable = customerAR + utilityAR
 
   const isThisMonth = (dateStr) => dateStr && new Date(dateStr) >= firstOfMonth
   // Revenue: match Books.jsx formula (paid invoices + deposits + Plaid bank deposits + collected incentives)
@@ -356,7 +364,12 @@ export default function Dashboard() {
     mtdDelivered: { value: formatCurrency(mtdDelivered), subtitle: `${mtdDeliveredJobs.length} job${mtdDeliveredJobs.length !== 1 ? 's' : ''} delivered this month`, ytdValue: formatCurrency(ytdDelivered), ytdLabel: 'YTD Delivered' },
     activeLeads: { value: activeLeads, subtitle: 'Leads in pipeline (not Won/Lost)' },
     openJobs: { value: openJobs, subtitle: 'Scheduled + In Progress + Chillin' },
-    pendingInvoices: { value: pendingInvoices, subtitle: `${formatCurrency(accountsReceivable)} owed (from Invoices)` },
+    pendingInvoices: {
+      value: pendingInvoices,
+      subtitle: utilityAR > 0
+        ? `${formatCurrency(customerAR)} customers + ${formatCurrency(utilityAR)} utilities = ${formatCurrency(accountsReceivable)} owed`
+        : `${formatCurrency(accountsReceivable)} owed`,
+    },
     mtdRevenue: { value: formatCurrency(thisMonthRevenue), subtitle: revenueSubtitle || 'Paid invoices + deposits + bank', ytdValue: formatCurrency(ytdRevenue), ytdLabel: 'YTD Revenue' },
     mtdDeposits: { value: formatCurrency(thisMonthDeposits), subtitle: 'From Lead Payments page', ytdValue: formatCurrency(ytdDeposits), ytdLabel: 'YTD Deposits' },
     mtdExpenses: { value: formatCurrency(thisMonthExpenses), subtitle: expenseSubtitle || 'Manual expenses + bank outflows', ytdValue: formatCurrency(ytdExpenses), ytdLabel: 'YTD Expenses' },

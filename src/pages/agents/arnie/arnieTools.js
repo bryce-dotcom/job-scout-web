@@ -1,5 +1,9 @@
 import { useStore } from '../../../lib/store'
 import { getAccessLevel, ACCESS_LEVELS } from '../../../lib/accessControl'
+import {
+  invoiceBalance, invoiceCustomerTotal, isInvoiceOpen,
+  paymentsByInvoiceIndex, totalCustomerAR, totalUtilityAR,
+} from '../../../lib/arHelpers'
 
 // Role helpers — accept role string from getUserRole()
 const isOwner = (role) => ['developer', 'super_admin'].includes(role)
@@ -285,18 +289,31 @@ export function getEmployees(role) {
 export function getFinancials(role) {
   if (!isOwner(role)) return { restricted: true, message: 'Financial data requires owner access.' }
 
-  const { invoices, expenses, payments, leadPayments } = useStore.getState()
+  // Note: utility_invoices joined alongside invoices because Energy Scout
+  // jobs split AR between customer + utility — ignoring utility receivable
+  // under-counted real AR by ~$163k per project for HHH.
+  const { invoices, utilityInvoices, expenses, payments, leadPayments } = useStore.getState()
   const invItems = invoices || []
+  const utilItems = utilityInvoices || []
   const expItems = expenses || []
   const payItems = payments || []
   const depositItems = leadPayments || []
 
-  const totalInvoiced = invItems.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0)
+  // Payments-by-invoice index for O(1) balance lookups.
+  const paymentsByInv = paymentsByInvoiceIndex(payItems)
+
+  // Customer total billed = sum of customer-facing totals (gross minus
+  // utility incentive / deposit credit). Use invoiceCustomerTotal so a
+  // $217k project with $197k of credits counts as $20k billed to the
+  // customer, not $217k.
+  const totalInvoiced = invItems.reduce((sum, i) => sum + invoiceCustomerTotal(i), 0)
   const totalPaid = payItems.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const totalExpenses = expItems.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
   const totalDeposits = depositItems.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
 
-  const unpaid = invItems.filter(i => i.status === 'sent' || i.status === 'overdue' || i.payment_status === 'Pending' || i.payment_status === 'Overdue')
+  // "Open" customer invoices (not Paid/Void/Cancelled). Mirror Books +
+  // Frankie logic via isInvoiceOpen.
+  const unpaid = invItems.filter(isInvoiceOpen)
 
   // Date helpers
   const now = new Date()
@@ -323,13 +340,15 @@ export function getFinancials(role) {
   const expensesLastMonth = sumInRange(expItems, 'date', 'amount', lastMonthStart, lastMonthEnd)
   const expensesYtd = sumInRange(expItems, 'date', 'amount', yearStart, null)
 
-  // Per-customer unpaid invoice breakdown (top 15)
+  // Per-customer unpaid invoice breakdown (top 15). Uses invoiceBalance —
+  // gross minus discount minus applied payments — so each customer's
+  // "owed" matches what they'd see on their statement of account.
   const unpaidByCustomer = {}
   unpaid.forEach(i => {
     const cust = i.customer_name || `Customer #${i.customer_id}` || 'Unknown'
     if (!unpaidByCustomer[cust]) unpaidByCustomer[cust] = { count: 0, totalOwed: 0, oldestDate: null }
     unpaidByCustomer[cust].count++
-    unpaidByCustomer[cust].totalOwed += parseFloat(i.balance || i.total || i.amount || 0)
+    unpaidByCustomer[cust].totalOwed += invoiceBalance(i, paymentsByInv)
     const d = i.created_at || i.date
     if (d && (!unpaidByCustomer[cust].oldestDate || d < unpaidByCustomer[cust].oldestDate)) {
       unpaidByCustomer[cust].oldestDate = d
@@ -401,7 +420,16 @@ export function getFinancials(role) {
     expensesYtd: expensesYtd.toFixed(2),
     revenueByMonth: last12,
     unpaidInvoices: unpaid.length,
-    totalUnpaidAmount: unpaid.reduce((s, i) => s + parseFloat(i.balance || i.total || 0), 0).toFixed(2),
+    // What customers still owe across all open customer invoices.
+    customerAR: totalCustomerAR(invItems, paymentsByInv).toFixed(2),
+    // What utilities still owe in unpaid rebates — counts as receivable
+    // too, separately labeled so the AI can answer "who owes us" correctly.
+    utilityAR: totalUtilityAR(utilItems).toFixed(2),
+    utilityInvoiceCount: utilItems.filter(u => u?.payment_status !== 'Paid' && u?.payment_status !== 'Void').length,
+    // Combined AR — this is the number that should be quoted as "accounts
+    // receivable" unless the question is specifically about customer or
+    // utility only.
+    totalUnpaidAmount: (totalCustomerAR(invItems, paymentsByInv) + totalUtilityAR(utilItems)).toFixed(2),
     topUnpaidCustomers,
     invoiceCount: invItems.length,
     expenseCount: expItems.length,
