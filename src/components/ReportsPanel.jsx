@@ -40,10 +40,12 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
   const [activeId, setActiveId] = useState('pl')
 
   // Lazy-load the data job costing needs (job_lines + products_services
-  // cost field). These can be large so we only pull them on demand —
+  // cost + material_or_labor classification + product_components for
+  // bundle walking). These can be large so we only pull them on demand —
   // any other report never triggers this network round-trip.
   const [jobLines, setJobLines] = useState([])
   const [products, setProducts] = useState([])
+  const [productComponents, setProductComponents] = useState([])
   const [jobCostingLoading, setJobCostingLoading] = useState(false)
 
   useEffect(() => {
@@ -55,17 +57,21 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
   useEffect(() => {
     if (activeId !== 'job-costing') return
     if (!companyId) return
-    if (jobLines.length > 0 && products.length > 0) return
+    if (jobLines.length > 0 && products.length > 0 && productComponents.length >= 0) return
     let cancelled = false
     setJobCostingLoading(true)
     ;(async () => {
-      const [{ data: lines }, { data: prods }] = await Promise.all([
+      const [{ data: lines }, { data: prods }, { data: comps }] = await Promise.all([
         supabase.from('job_lines').select('id, job_id, item_id, quantity, line_total, labor_cost').eq('company_id', companyId).limit(20000),
-        supabase.from('products_services').select('id, cost').eq('company_id', companyId).limit(10000),
+        // material_or_labor needed so classifyProduct credits each
+        // component cost to the right column (parts vs labor).
+        supabase.from('products_services').select('id, cost, material_or_labor').eq('company_id', companyId).limit(10000),
+        supabase.from('product_components').select('parent_product_id, component_product_id, quantity').eq('company_id', companyId).limit(20000),
       ])
       if (cancelled) return
       setJobLines(lines || [])
       setProducts(prods || [])
+      setProductComponents(comps || [])
       setJobCostingLoading(false)
     })()
     return () => { cancelled = true }
@@ -84,11 +90,12 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
       plaidTransactions,
       jobLines,
       products,
+      productComponents,
       from: new Date(from),
       to: new Date(to + 'T23:59:59'),
       now: new Date(),
     })
-  }, [activeId, invoices, payments, customers, jobs, employees, expenses, plaidTransactions, jobLines, products, from, to])
+  }, [activeId, invoices, payments, customers, jobs, employees, expenses, plaidTransactions, jobLines, products, productComponents, from, to])
 
   const inputStyle = {
     padding: '8px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`,

@@ -323,7 +323,22 @@ export function expenseByVendor({ manualExpenses = [], plaidTransactions = [], f
 // to the job (bank debits with job_id or manual_expenses with job_id).
 // Jobs without cost data show "—" in the cost columns instead of $0 so
 // the user can tell "no data captured" from "actually $0."
-export function jobCosting({ jobs = [], jobLines = [], payments = [], products = [], plaidTransactions = [], manualExpenses = [], from, to } = {}) {
+//
+// Cost walking: most JobScout lines reference BUNDLE products
+// (type "Electrical Services (Bundles)") whose own `cost` field is $0
+// because the real cost lives in their components — the fixture
+// (material) + lift / control accessories (labor). We walk
+// product_components to sum the classified component costs and split
+// into material vs labor using each component's material_or_labor flag.
+// Lines whose product is a leaf (no components) fall back to
+// products_services.cost × quantity directly. labor_cost on the line
+// row is added on top if recorded.
+export function jobCosting({
+  jobs = [], jobLines = [], payments = [],
+  products = [], productComponents = [],
+  plaidTransactions = [], manualExpenses = [],
+  from, to,
+} = {}) {
   const fromD = from instanceof Date ? from : new Date(from)
   const toD = to instanceof Date ? to : new Date(to)
 
@@ -344,10 +359,57 @@ export function jobCosting({ jobs = [], jobLines = [], payments = [], products =
     linesByJob.set(l.job_id, arr)
   }
 
-  // Index product costs.
-  const productCost = new Map()
-  for (const p of products || []) {
-    productCost.set(p.id, Number(p.cost) || 0)
+  // Build product index + component-walker for bundle cost resolution.
+  const productMap = new Map((products || []).map(p => [p.id, p]))
+  const componentsByParent = new Map()
+  for (const c of productComponents || []) {
+    const arr = componentsByParent.get(c.parent_product_id) || []
+    arr.push(c)
+    componentsByParent.set(c.parent_product_id, arr)
+  }
+
+  // Recursively classify a product into { materialCost, laborCost }.
+  // Mirrors the logic in src/lib/materialLaborSplit.js but returns the
+  // raw material + labor cost split so we can credit each to the right
+  // column in the job costing report. Leaf product → its own cost goes
+  // to material or labor based on material_or_labor flag. Bundle → walk
+  // children and sum.
+  const classifyProduct = (productId) => {
+    const result = { materialCost: 0, laborCost: 0, unclassified: false }
+    if (!productId) { result.unclassified = true; return result }
+    const product = productMap.get(productId)
+    const children = componentsByParent.get(productId) || []
+    if (children.length === 0) {
+      if (!product) { result.unclassified = true; return result }
+      const cost = Number(product.cost) || 0
+      if (product.material_or_labor === 'material') result.materialCost = cost
+      else if (product.material_or_labor === 'labor') result.laborCost = cost
+      else {
+        // No classification → treat as material (most fixtures default
+        // here when not yet flagged). The number is still right; only
+        // the material/labor column attribution is "best guess."
+        result.materialCost = cost
+      }
+      return result
+    }
+    for (const c of children) {
+      const subId = c.component_product_id
+      const sub = productMap.get(subId)
+      const subQty = Number(c.quantity) || 1
+      if (!sub) { result.unclassified = true; continue }
+      const subCost = (Number(sub.cost) || 0) * subQty
+      if (sub.material_or_labor === 'material') {
+        result.materialCost += subCost
+      } else if (sub.material_or_labor === 'labor') {
+        result.laborCost += subCost
+      } else {
+        // Recurse one level — sub-bundle.
+        const sub2 = classifyProduct(subId)
+        result.materialCost += sub2.materialCost * subQty
+        result.laborCost += sub2.laborCost * subQty
+      }
+    }
+    return result
   }
 
   // Tagged expenses — Plaid debits + manual entries with job_id.
@@ -387,8 +449,17 @@ export function jobCosting({ jobs = [], jobLines = [], payments = [], products =
     let laborCost = 0
     for (const l of lines) {
       const qty = Number(l.quantity) || 1
-      const itemCost = productCost.get(l.item_id) || 0
-      materialCost += itemCost * qty
+      // Walk the line's product (including bundle components) to get a
+      // real material + labor split. This is what makes job costing
+      // work on bundle-heavy projects like Energy Scout — the parent
+      // bundle's own `cost` field is $0 but the components carry the
+      // real numbers.
+      const split = classifyProduct(l.item_id)
+      materialCost += split.materialCost * qty
+      laborCost += split.laborCost * qty
+      // Add any labor_cost explicitly recorded on the line on top —
+      // those represent supplemental labor (e.g., per-line overtime
+      // adjustments) that aren't already accounted for in components.
       laborCost += Number(l.labor_cost) || 0
     }
     const taggedExpense = expensesByJob.get(j.id) || 0
