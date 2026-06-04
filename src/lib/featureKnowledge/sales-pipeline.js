@@ -1,5 +1,6 @@
 // Knowledge Card — Sales Pipeline
-// The kanban view of every lead from Appointment Set → Won.
+// Sourced from src/pages/SalesPipeline.jsx.
+// When that page changes, this card needs to follow.
 
 export default {
   id: 'sales-pipeline',
@@ -9,59 +10,60 @@ export default {
   route: '/pipeline',
 
   summary:
-    'A Kanban pipeline (Appointment Set → Qualified → Quoted → Won) that lives on the lead itself — no separate deals table, no double entry. Drag a card; the lead row updates.',
+    "The kanban board for every lead from New → Won. Two collapsible tracks: Sales funnel (drag-drop stages from New to Won) and Delivery funnel (auto-synced from jobs). Stats strip shows Sales Won, Active, Won count, and Pipeline value with MTD/YTD/30d/90d/All date filter. Drag a card to advance stage; drop on Won to confirm and auto-create a job.",
 
-  replaces: ['Salesforce opportunities', 'HubSpot Deals', 'Pipedrive', 'ServiceTitan sales board'],
+  replaces: ['Salesforce Opportunities', 'HubSpot Deals', 'Pipedrive', 'ServiceTitan sales board'],
   highlights: [
-    'Lead IS the deal — no double entry',
-    'Stage-age tracking per card',
-    'Drag-and-drop between stages',
-    'Per-rep filter + revenue forecast',
+    'Lead IS the deal — same row, no double entry',
+    'Two-track: Sales funnel + Delivery funnel (auto-synced)',
+    'Stats strip: Sales Won $ · Active · Won · Pipeline $ with date range',
+    'Drop on Won → notes → job auto-created in Delivery',
+    'Quote Sent stage shows individual estimate cards (not lead cards)',
   ],
 
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'board',     baseDur: 5500, narration: 'Four stages — Appointment Set, Qualified, Quoted, Won. Every lead lives on this board.' },
-      { id: 'drag',      baseDur: 6500, narration: 'Drag a card from Appointment Set to Qualified. The lead row updates; no double entry.' },
-      { id: 'quoted',    baseDur: 6000, narration: 'When you send a quote, the card moves to Quoted automatically with the quote total on the front.' },
-      { id: 'forecast',  baseDur: 6500, narration: 'Each column tallies its revenue forecast at the top so the owner sees the funnel in one glance.' },
-      { id: 'won',       baseDur: 6000, narration: 'On Won, the lead converts to a customer, the quote becomes a job, and the bonus tracker stamps the close.' },
+      { id: 'overview',  baseDur: 5500, narration: "The Sales Pipeline. Two collapsible tracks side by side. Sales on top, Delivery below. Stats strip across the header — Sales Won, Active leads, Win count, and Pipeline value. MTD is the default window." },
+      { id: 'board',     baseDur: 7000, narration: "Open the Sales track and every stage gets a column. New, Contacted, Scheduled, Qualified, Estimate Sent, Negotiation, Won, Lost. Each column shows count, dollar value, and draggable lead cards." },
+      { id: 'drag',      baseDur: 6500, narration: "Drag a card forward. The column lights up as the drop target. Drop it and the lead status updates immediately — no double entry, no separate deals table." },
+      { id: 'won',       baseDur: 6500, narration: "Drag to Won. A confirm modal asks for notes. Save and the lead flips to Won — a Job record is auto-created in the Delivery Pipeline. Quote, job, and bonus all fire in one move." },
+      { id: 'delivery',  baseDur: 6000, narration: "The Delivery Pipeline is auto-synced from jobs. Chillin, Job Scheduled, In Progress, Job Complete, Invoiced, Paid. Sales doesn't touch it — Operations moves cards through until the deal is closed." },
     ],
   },
 
   setup: {
     overview:
-      'Sales Pipeline is automatic — every lead shows up on the board as soon as it has an appointment booked. You only need to configure the stage labels (rare) and the per-stage commission rules.',
+      "The pipeline ships ready. Every lead shows up automatically. The only optional setup is customizing stage names and which stats appear in the header strip.",
     introBaseDur: 1200,
-    introNarration: "There's almost no setup. Here's what to know.",
+    introNarration: "Almost no setup. Here's what to know.",
     steps: [
       {
         icon: 'Eye',
         title: 'Open Pipeline',
-        body: "Sales Flow → Pipeline. Leads with an appointment booked show up automatically in the right column.",
-        narration: 'Open Pipeline under Sales Flow. Leads with appointments appear automatically.',
+        body: 'Sales Flow → Pipeline (or click Board View from the Leads page). All leads with any status show immediately.',
+        narration: 'Open Pipeline. All leads are already there.',
         baseDur: 4500,
       },
       {
         icon: 'Move',
-        title: 'Drag cards between stages',
-        body: "Tap and drag to move a deal forward. Each move stamps the stage history so reports can show velocity.",
-        narration: 'Drag a card forward as the deal progresses. The stage history writes itself.',
+        title: 'Drag cards to advance',
+        body: 'Grab a card and drop it on the target stage column. The column highlights on hover. Won and Lost trigger confirm modals.',
+        narration: 'Drag a card to advance the stage. Won and Lost ask for confirmation.',
         baseDur: 5500,
       },
       {
         icon: 'Filter',
-        title: 'Filter by rep',
-        body: "Each sales rep sees their own deals by default. Owners can flip to All Reps to see the whole funnel.",
-        narration: 'Each rep sees their own deals. Owners can switch to All Reps for the whole funnel.',
+        title: 'Filter by rep or date',
+        body: 'All Owners dropdown scopes the board to one rep. Date range buttons (MTD/YTD/30d/90d/All) filter the Sales Won stat and Won column count.',
+        narration: 'Use the owner filter to scope a rep\'s pipeline. MTD is the default date window.',
         baseDur: 5500,
       },
       {
         icon: 'Trophy',
-        title: 'Mark Won when the deal closes',
-        body: "Hit Won. The lead converts, the quote becomes a job, the bonus tracker fires. One click does all three.",
-        narration: 'Hit Won when the deal closes. Convert, job, bonus — all three in one click.',
+        title: 'Mark Won — job auto-creates',
+        body: 'Drop a lead on Won, add notes in the confirm modal. The lead converts and a Job row is immediately created in the Delivery Pipeline (status=Chillin). One drop does all three.',
+        narration: 'Drop on Won, confirm with notes. Lead converts, job is created, bonus fires — one drop.',
         baseDur: 6000,
       },
     ],
@@ -69,36 +71,48 @@ export default {
 
   agentKnowledge: {
     whatItIs:
-      "The Kanban-style view of the leads table filtered by sales stage. Lives on the same lead row that intake created — no separate deals/opportunities table. Stages: Appointment Set, Qualified, Quoted, Won, Lost.",
+      "Kanban view of the leads table. Desktop: two collapsible sections — Sales Pipeline (New/Contacted/Scheduled/Qualified/Estimate Sent/Negotiation/Won/Lost) and Delivery Pipeline (Chillin/Job Scheduled/In Progress/Job Complete/Invoiced/Paid/Closed). Both always show a stage-headers strip with count badge and $ total; cards only visible when expanded. Header: title + search + stats strip + date range toggle + owner filter + BU filter + List View (→ /leads) + Add Lead.",
 
     howItWorks:
-      "Reads from leads WHERE status IN (the stages). Drag-drop calls updateLead with status + stage_changed_at timestamp. Won converts the lead via leads.converted_customer_id + auto-creates a customer + flips any associated quote into a job. Per-stage revenue forecast aggregates the quote_total of leads in that column.",
+      "Reads from leads table (company_id-scoped) plus joined jobs and quotes. Stage display names differ from DB values: 'Appointment Set' → 'Scheduled', 'Quote Sent' → 'Estimate Sent'. Pre-estimate stages (New/Contacted/Appointment Set/Qualified) show lead cards. Estimate stages (Quote Sent/Negotiation/Won) show one card per attached quote. Delivery stages show job rows. Drag-drop calls updateLead(status). Dropping on Won → confirm modal → updateLead(status='Won') + auto-create jobs row (status='Chillin'). Dropping on Lost → confirm modal → updateLead(status='Lost'). Stats: 'Sales Won' uses wonJobsInRange(jobs, cutoff) from jobMetrics.js — NOT lead.status=Won count.",
 
     examples: [
-      "Setter books an appointment → lead lands in Appointment Set",
-      "Rep visits, qualifies → drag to Qualified",
-      "Quote sent → auto-moves to Quoted with $ amount visible",
-      "Customer signs → drag to Won → job + customer + bonus all fire",
+      "Setter books appointment → lead appears in Scheduled column (Appointment Set status)",
+      "Rep sends estimate → lead moves to Estimate Sent, shows estimate card with $ amount",
+      "Drag David Kim (Qualified, $24,500) to Estimate Sent → lead auto-advances",
+      "Drop Jennifer Walsh EST-047 on Won → modal → job auto-created → appears in Delivery/Chillin",
     ],
 
     gotchas: [
-      "There's no 'Deals' table. The Pipeline IS the leads table. Don't go looking for a separate deals report.",
-      "Stage history is timestamped — Reports can show stage velocity per rep.",
-      "Won is one-way — if a deal falls through, mark it Lost (don't drag back to Quoted).",
+      "There is NO Deals table. The Pipeline IS the leads table filtered by status.",
+      "'Quote Sent' status displays as 'Estimate Sent' on the board (stage display name mapping).",
+      "Sales Won stat in the header counts JOBS created in the date window (wonJobsInRange), not lead.status=Won.",
+      "List View button (top-right) navigates to /leads — same data, grid layout.",
+      "Delivery Pipeline is read-only from the pipeline — Operations moves cards from within the Jobs pages.",
+      "Field techs are auto-scoped to their own pipeline (canViewAll=false); cannot see other reps' deals.",
     ],
 
     faqs: [
       {
-        q: 'Can I add custom stages?',
-        a: 'In Settings → Pipeline Stages. The defaults work for most service businesses; add custom stages if you have a longer cycle.',
+        q: 'Can I add custom pipeline stages?',
+        a: 'Yes — Settings icon (top-right, Super Admin only) opens Pipeline Settings where you can add, rename, reorder, and color stages. Won and Lost are system stages and cannot be deleted.',
+      },
+      {
+        q: "Why does the Won column count differ from the 'Sales Won' stat?",
+        a: "Sales Won counts jobs created in the selected date window (using jobMetrics.wonJobsInRange). The Won column count shows leads with status=Won. They'll differ if won jobs moved to the Delivery track before the filter window.",
+      },
+      {
+        q: 'How do I see the pipeline for just one rep?',
+        a: "Use the All Owners dropdown in the header. Field techs are automatically scoped to themselves and cannot see other reps' pipelines.",
       },
     ],
 
     actions: {
-      open: { route: '/pipeline', label: 'Open Pipeline' },
+      open:  { route: '/pipeline', label: 'Open Pipeline' },
+      leads: { route: '/leads',    label: 'Switch to List View' },
     },
   },
 
-  lastVerified: '2026-05-29',
+  lastVerified: '2026-06-04',
   freshUntil: 90,
 }
