@@ -128,7 +128,7 @@ export default function JobCostingModal({ job, theme, onClose }) {
       // Build set of job_line_ids that are covered by a PO
       const coveredJobLineIds = new Set(rawPoLineJobs.map(r => r.job_line_id))
 
-      // PO lines: flatten to a single list of { description, vendor, po_number, po_status, qty, unit_cost, total, is_received }
+      // PO lines: flatten to a single list of { description, vendor, po_number, po_status, qty, unit_cost, total }
       const poProductLines = rawPoLineJobs
         .filter(r => r.po_line)
         .map(r => {
@@ -138,8 +138,6 @@ export default function JobCostingModal({ job, theme, onClose }) {
           const qtyOrdered = parseFloat(pol.quantity_ordered) || 0
           const qtyReceived = parseFloat(pol.quantity_received) || 0
           const unitCost = parseFloat(pol.unit_cost) || 0
-          // Use the linked quantity (from purchase_order_line_jobs) × unit_cost
-          // so multi-job POs show only this job's share.
           const linkedQty = parseFloat(r.quantity) || qtyOrdered
           return {
             description: pol.description || '—',
@@ -153,39 +151,111 @@ export default function JobCostingModal({ job, theme, onClose }) {
           }
         })
 
-      // Fallback lines: job lines NOT covered by a PO and not pure labor.
-      // Cost source priority:
-      //   1. products_services.cost — the catalog cost WE pay (best source)
-      //   2. job_line.labor_cost — if the line has an explicit cost entered
-      //   3. $0 + flag as "no cost data" so the manager knows it's missing
-      // We deliberately do NOT use job_line.price (that's what the customer pays).
+      // ── Bundle decomposition ─────────────────────────────────────────
+      // Products with cost=null may be bundles — look up product_components
+      // to get the individual parts and their costs. A bundle line on the
+      // job represents N units of the bundle; each component's cost is
+      //   component.cost × component.quantity × job_line.quantity
+      //
+      // If the bundle has no components either, flag as "no cost data".
+
+      // 1. Collect product IDs that need bundle lookup (no catalog cost)
+      const candidateBundleIds = [...new Set(
+        jobLines
+          .filter(jl => !coveredJobLineIds.has(jl.id) && !jl.po_line_id && jl.item?.id && !(parseFloat(jl.item?.cost) > 0))
+          .map(jl => jl.item.id)
+          .filter(Boolean)
+      )]
+
+      // 2. Fetch components for all candidate bundles in one query
+      let bundleComponentMap = {}   // parent_product_id → [{ name, cost, qty_per_bundle, material_or_labor }]
+      if (candidateBundleIds.length > 0) {
+        const { data: compRows } = await supabase
+          .from('product_components')
+          .select('parent_product_id, quantity, component:products_services!component_product_id(id, name, cost, material_or_labor)')
+          .in('parent_product_id', candidateBundleIds)
+          .eq('company_id', companyId)
+        for (const row of compRows || []) {
+          const pid = row.parent_product_id
+          if (!bundleComponentMap[pid]) bundleComponentMap[pid] = []
+          bundleComponentMap[pid].push({
+            name: row.component?.name || '—',
+            cost: parseFloat(row.component?.cost) || 0,
+            hasCost: parseFloat(row.component?.cost) > 0,
+            qty_per_bundle: parseFloat(row.quantity) || 1,
+            material_or_labor: row.component?.material_or_labor || null,
+          })
+        }
+      }
+
+      // 3. Build fallback lines — one entry per job_line, with optional bundle breakdown
       const fallbackLines = jobLines
         .filter(jl => {
-          if (coveredJobLineIds.has(jl.id)) return false          // already in a PO
-          if (jl.po_line_id) return false                         // linked to a PO line directly
-          // Exclude pure-labor lines (labor component goes through timeclock)
+          if (coveredJobLineIds.has(jl.id)) return false
+          if (jl.po_line_id) return false
           const isServiceKind = jl.kind === 'labor' || jl.kind === 'service'
           const isPureLabor = jl.item?.material_or_labor === 'labor' || isServiceKind
           return !isPureLabor
         })
         .map(jl => {
-          // Use product catalog cost (our buy price), never the sell price
+          const jobQty = parseFloat(jl.quantity) || 1
           const catalogCost = parseFloat(jl.item?.cost)
-          const qty = parseFloat(jl.quantity) || 1
-          const unitCost = catalogCost > 0 ? catalogCost : 0
-          const hasNoCostData = !(catalogCost > 0)
+          const productId = jl.item?.id
+          const name = jl.item?.name || jl.item_name || jl.description || 'Item'
+
+          // Case A: product has a direct catalog cost → use it
+          if (catalogCost > 0) {
+            return {
+              isBundle: false,
+              description: name,
+              qty: jobQty,
+              unit_cost: catalogCost,
+              total: catalogCost * jobQty,
+              sell_price: parseFloat(jl.price) || 0,
+              hasNoCostData: false,
+              components: null,
+            }
+          }
+
+          // Case B: no direct cost — check if it's a bundle with components
+          const components = productId ? bundleComponentMap[productId] : null
+          if (components && components.length > 0) {
+            // Cost per bundle = sum of (component.cost × component.qty_per_bundle)
+            const costPerBundle = components.reduce((s, c) => s + c.cost * c.qty_per_bundle, 0)
+            return {
+              isBundle: true,
+              description: name,
+              qty: jobQty,
+              unit_cost: costPerBundle,             // cost of one bundle to us
+              total: costPerBundle * jobQty,
+              sell_price: parseFloat(jl.price) || 0,
+              hasNoCostData: costPerBundle === 0,
+              components: components.map(c => ({
+                name: c.name,
+                cost_per_unit: c.cost,
+                qty_per_bundle: c.qty_per_bundle,
+                total_qty: c.qty_per_bundle * jobQty,
+                total_cost: c.cost * c.qty_per_bundle * jobQty,
+                hasCost: c.hasCost,
+              })),
+            }
+          }
+
+          // Case C: no cost, no components → flag as missing
           return {
-            description: jl.item?.name || jl.item_name || jl.description || 'Item',
-            qty,
-            unit_cost: unitCost,
-            total: unitCost * qty,
-            sell_price: parseFloat(jl.price) || 0,   // kept for reference only
-            hasNoCostData,
+            isBundle: false,
+            description: name,
+            qty: jobQty,
+            unit_cost: 0,
+            total: 0,
+            sell_price: parseFloat(jl.price) || 0,
+            hasNoCostData: true,
+            components: null,
           }
         })
 
-      const poProductCost   = poProductLines.reduce((s, l) => s + l.total, 0)
-      const fallbackCost    = fallbackLines.reduce((s, l) => s + l.total, 0)
+      const poProductCost    = poProductLines.reduce((s, l) => s + l.total, 0)
+      const fallbackCost     = fallbackLines.reduce((s, l) => s + l.total, 0)
       const totalProductCost = poProductCost + fallbackCost
 
       // ── Bills from POs linked to this job ───────────────────────────
@@ -553,8 +623,9 @@ export default function JobCostingModal({ job, theme, onClose }) {
                   </>
                 )}
 
-                {/* Fallback lines — catalog cost (our buy price) for items not yet on a PO.
-                    unit_cost = products_services.cost (what WE pay), NOT the sell price. */}
+                {/* Fallback lines — catalog/bundle cost (our buy price) for items not yet on a PO.
+                    Bundles with cost=null are decomposed into their components so you can
+                    see exactly what each part costs, not just the sell price. */}
                 {data.fallbackLines.length > 0 && (
                   <>
                     {data.hasPOData && (
@@ -563,26 +634,59 @@ export default function JobCostingModal({ job, theme, onClose }) {
                       </div>
                     )}
                     {data.fallbackLines.map((line, idx) => (
-                      <div key={idx} style={{ ...rowStyle, opacity: line.hasNoCostData ? 0.6 : 0.85 }}>
-                        <div style={{ flex: 1, minWidth: 0, marginRight: '12px' }}>
-                          <div style={{ ...labelStyle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {line.description}
-                            {line.hasNoCostData && (
-                              <span style={{ marginLeft: '6px', fontSize: '10px', color: '#ef4444', fontWeight: 600 }}>
-                                no cost set
-                              </span>
-                            )}
+                      <div key={idx} style={{ marginBottom: line.isBundle ? '6px' : 0 }}>
+                        {/* Line header row */}
+                        <div style={{ ...rowStyle, opacity: line.hasNoCostData ? 0.6 : 0.85, borderBottom: line.isBundle ? 'none' : undefined }}>
+                          <div style={{ flex: 1, minWidth: 0, marginRight: '12px' }}>
+                            <div style={{ ...labelStyle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {line.isBundle && (
+                                <span style={{ fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', backgroundColor: 'rgba(90,99,73,0.12)', color: theme.accent, flexShrink: 0 }}>
+                                  BUNDLE
+                                </span>
+                              )}
+                              {line.description}
+                              {line.hasNoCostData && !line.isBundle && (
+                                <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 600 }}>no cost set</span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                              {line.hasNoCostData && !line.components
+                                ? <em>No catalog cost or bundle components — add cost to the product</em>
+                                : line.isBundle
+                                  ? <>{line.qty} bundle{line.qty !== 1 ? 's' : ''} × {fmt(line.unit_cost)}/ea <em>(sum of parts)</em>{line.sell_price > line.unit_cost && <span style={{ marginLeft: '6px', color: '#22c55e' }}>sells for {fmt(line.sell_price)}</span>}</>
+                                  : <>{line.qty} × {fmt(line.unit_cost)} <em>(catalog cost)</em>{line.sell_price > line.unit_cost && <span style={{ marginLeft: '6px', color: '#22c55e' }}>sells for {fmt(line.sell_price)}</span>}</>
+                              }
+                            </div>
                           </div>
-                          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                            {line.hasNoCostData
-                              ? <em>Product cost not set in catalog — add cost to the product to see real margin</em>
-                              : <>{line.qty} × {fmt(line.unit_cost)} <em>(catalog cost)</em>{line.sell_price > line.unit_cost && <span style={{ marginLeft: '6px', color: '#22c55e' }}>sells for {fmt(line.sell_price)}</span>}</>
-                            }
-                          </div>
+                          <span style={{ ...valueStyle, color: line.hasNoCostData ? '#ef4444' : theme.textMuted }}>
+                            {line.hasNoCostData && !line.components ? '—' : fmt(line.total)}
+                          </span>
                         </div>
-                        <span style={{ ...valueStyle, color: line.hasNoCostData ? '#ef4444' : theme.textMuted }}>
-                          {line.hasNoCostData ? '—' : fmt(line.total)}
-                        </span>
+
+                        {/* Bundle component breakdown — indented */}
+                        {line.isBundle && line.components && (
+                          <div style={{
+                            marginLeft: '16px', marginTop: '2px', marginBottom: '4px',
+                            borderLeft: `2px solid ${theme.border}`, paddingLeft: '10px',
+                          }}>
+                            {line.components.map((comp, ci) => (
+                              <div key={ci} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: '12px', borderBottom: `1px solid ${theme.border}22` }}>
+                                <div style={{ flex: 1, minWidth: 0, marginRight: '8px' }}>
+                                  <span style={{ color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                                    {comp.name}
+                                    {!comp.hasCost && <span style={{ marginLeft: '6px', fontSize: '10px', color: '#ef4444' }}>no cost</span>}
+                                  </span>
+                                  <span style={{ fontSize: '10px', color: theme.textMuted }}>
+                                    {comp.qty_per_bundle}/bundle × {line.qty} = {comp.total_qty} units @ {fmt(comp.cost_per_unit)}
+                                  </span>
+                                </div>
+                                <span style={{ fontWeight: 500, color: comp.hasCost ? theme.text : '#ef4444', flexShrink: 0 }}>
+                                  {comp.hasCost ? fmt(comp.total_cost) : '—'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </>
