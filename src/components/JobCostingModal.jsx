@@ -97,11 +97,13 @@ export default function JobCostingModal({ job, theme, onClose }) {
           .eq('job_id', job.id),
 
         // ── Job lines (all) ─────────────────────────────────────────────
-        // Used to show estimated product cost for lines that have no PO yet.
-        // labor_cost > 0 lines are labor; the rest are products.
+        // Used to show product cost for lines that have no PO yet.
+        // We join to products_services to get the COST TO US (catalog cost),
+        // NOT job_line.price which is what the customer pays.
+        // labor_cost > 0 lines are the labor component (handled separately).
         supabase
           .from('job_lines')
-          .select('id, description, item_name, price, total, quantity, labor_cost, po_line_id, kind')
+          .select('id, description, item_name, price, total, quantity, labor_cost, po_line_id, kind, item:products_services!item_id(id, name, cost, material_or_labor)')
           .eq('job_id', job.id),
       ])
 
@@ -151,21 +153,36 @@ export default function JobCostingModal({ job, theme, onClose }) {
           }
         })
 
-      // Fallback lines: job lines NOT covered by a PO and not pure labor
+      // Fallback lines: job lines NOT covered by a PO and not pure labor.
+      // Cost source priority:
+      //   1. products_services.cost — the catalog cost WE pay (best source)
+      //   2. job_line.labor_cost — if the line has an explicit cost entered
+      //   3. $0 + flag as "no cost data" so the manager knows it's missing
+      // We deliberately do NOT use job_line.price (that's what the customer pays).
       const fallbackLines = jobLines
         .filter(jl => {
           if (coveredJobLineIds.has(jl.id)) return false          // already in a PO
           if (jl.po_line_id) return false                         // linked to a PO line directly
-          const isLaborLine = parseFloat(jl.labor_cost) > 0 && !(parseFloat(jl.price) > 0)
+          // Exclude pure-labor lines (labor component goes through timeclock)
           const isServiceKind = jl.kind === 'labor' || jl.kind === 'service'
-          return !isLaborLine && !isServiceKind                    // keep product lines only
+          const isPureLabor = jl.item?.material_or_labor === 'labor' || isServiceKind
+          return !isPureLabor
         })
-        .map(jl => ({
-          description: jl.item_name || jl.description || 'Item',
-          qty: parseFloat(jl.quantity) || 1,
-          unit_cost: parseFloat(jl.price) || 0,
-          total: parseFloat(jl.total) || (parseFloat(jl.price) * parseFloat(jl.quantity)) || 0,
-        }))
+        .map(jl => {
+          // Use product catalog cost (our buy price), never the sell price
+          const catalogCost = parseFloat(jl.item?.cost)
+          const qty = parseFloat(jl.quantity) || 1
+          const unitCost = catalogCost > 0 ? catalogCost : 0
+          const hasNoCostData = !(catalogCost > 0)
+          return {
+            description: jl.item?.name || jl.item_name || jl.description || 'Item',
+            qty,
+            unit_cost: unitCost,
+            total: unitCost * qty,
+            sell_price: parseFloat(jl.price) || 0,   // kept for reference only
+            hasNoCostData,
+          }
+        })
 
       const poProductCost   = poProductLines.reduce((s, l) => s + l.total, 0)
       const fallbackCost    = fallbackLines.reduce((s, l) => s + l.total, 0)
@@ -495,13 +512,13 @@ export default function JobCostingModal({ job, theme, onClose }) {
                   <span>Products / Parts</span>
                   {data.hasPOData ? (
                     <span style={{ fontSize: '11px', fontWeight: 400, color: theme.textMuted, marginLeft: 'auto' }}>
-                      from Purchase Orders
+                      actual cost from POs
                     </span>
-                  ) : (
+                  ) : data.fallbackLines.length > 0 ? (
                     <span style={{ fontSize: '11px', fontWeight: 400, color: '#eab308', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                      <AlertCircle size={11} /> estimated — no PO yet
+                      <AlertCircle size={11} /> catalog cost — no PO yet
                     </span>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* PO-linked product lines */}
@@ -536,25 +553,36 @@ export default function JobCostingModal({ job, theme, onClose }) {
                   </>
                 )}
 
-                {/* Fallback lines — job line prices for items not yet on a PO */}
+                {/* Fallback lines — catalog cost (our buy price) for items not yet on a PO.
+                    unit_cost = products_services.cost (what WE pay), NOT the sell price. */}
                 {data.fallbackLines.length > 0 && (
                   <>
                     {data.hasPOData && (
                       <div style={{ padding: '6px 0 2px', fontSize: '11px', color: '#eab308', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <AlertCircle size={11} /> Estimated (no PO yet):
+                        <AlertCircle size={11} /> No PO yet — using catalog cost:
                       </div>
                     )}
                     {data.fallbackLines.map((line, idx) => (
-                      <div key={idx} style={{ ...rowStyle, opacity: 0.8 }}>
+                      <div key={idx} style={{ ...rowStyle, opacity: line.hasNoCostData ? 0.6 : 0.85 }}>
                         <div style={{ flex: 1, minWidth: 0, marginRight: '12px' }}>
                           <div style={{ ...labelStyle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {line.description}
+                            {line.hasNoCostData && (
+                              <span style={{ marginLeft: '6px', fontSize: '10px', color: '#ef4444', fontWeight: 600 }}>
+                                no cost set
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                            {line.qty} × {fmt(line.unit_cost)} <em>(est. from job line)</em>
+                            {line.hasNoCostData
+                              ? <em>Product cost not set in catalog — add cost to the product to see real margin</em>
+                              : <>{line.qty} × {fmt(line.unit_cost)} <em>(catalog cost)</em>{line.sell_price > line.unit_cost && <span style={{ marginLeft: '6px', color: '#22c55e' }}>sells for {fmt(line.sell_price)}</span>}</>
+                            }
                           </div>
                         </div>
-                        <span style={{ ...valueStyle, color: theme.textMuted }}>{fmt(line.total)}</span>
+                        <span style={{ ...valueStyle, color: line.hasNoCostData ? '#ef4444' : theme.textMuted }}>
+                          {line.hasNoCostData ? '—' : fmt(line.total)}
+                        </span>
                       </div>
                     ))}
                   </>
@@ -756,7 +784,7 @@ export default function JobCostingModal({ job, theme, onClose }) {
                 {/* Cost breakdown rows */}
                 <div style={{ ...summaryRowStyle, fontSize: '12px' }}>
                   <span style={{ color: theme.textMuted, paddingLeft: '12px' }}>
-                    Products / Parts {data.hasPOData ? '(from PO)' : '(estimated)'}
+                    Products / Parts {data.hasPOData ? '(PO cost)' : '(catalog cost)'}
                   </span>
                   <span style={{ color: theme.textMuted, fontWeight: 500 }}>{fmt(data.totalProductCost)}</span>
                 </div>
