@@ -104,7 +104,7 @@ export function generatePoPdf({ po, lines, vendor, company, job, businessUnit })
 
   doc.setTextColor(0); doc.setFont('helvetica', 'normal'); doc.setFontSize(10)
   for (const line of lines || []) {
-    if (y > 260) { doc.addPage(); y = 20 }
+    if (y > 250) { doc.addPage(); y = 20 }
     const descLines = doc.splitTextToSize(line.description || 'Item', descColW)
     const rowH = Math.max(6, descLines.length * 5)
     for (let i = 0; i < descLines.length; i++) {
@@ -114,6 +114,29 @@ export function generatePoPdf({ po, lines, vendor, company, job, businessUnit })
     doc.text(formatCurrency(line.unit_cost), costX, y)
     doc.text(formatCurrency(line.line_total), totalX, y, { align: 'right' })
     y += rowH + 2
+
+    // Per-line job allocation — Bryce flagged: vendors pick + label by
+    // job, so they need to see which job each portion is for. Renders
+    // as muted italic block under the description, indented from the
+    // left margin, e.g.:
+    //   For:  JOB-2301 Capital Lumber — qty 5
+    //         JOB-2302 Evergreen      — qty 8
+    if (Array.isArray(line.jobLinks) && line.jobLinks.length > 0) {
+      doc.setFontSize(9); doc.setTextColor(110); doc.setFont('helvetica', 'italic')
+      const labelX = margin + 8
+      doc.text('For:', labelX, y)
+      const jobX = labelX + 14
+      for (let i = 0; i < line.jobLinks.length; i++) {
+        if (y > 270) { doc.addPage(); y = 20 }
+        const link = line.jobLinks[i]
+        const job = link.jobs || {}
+        const label = `${job.job_id || `Job ${link.job_id}`}${job.customer_name ? '  ' + job.customer_name : (job.job_title ? '  ' + job.job_title : '')} — qty ${link.quantity}`
+        doc.text(label, jobX, y)
+        y += 5
+      }
+      doc.setFontSize(10); doc.setTextColor(0); doc.setFont('helvetica', 'normal')
+      y += 2  // breathing room before next line
+    }
   }
 
   // Bottom border

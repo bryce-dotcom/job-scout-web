@@ -46,6 +46,15 @@ export default function PurchaseOrderDetail() {
   const [draft, setDraft] = useState({ product_id: '', description: '', quantity: 1, unit_cost: 0 })
   const [productPickerOpen, setProductPickerOpen] = useState(false)
 
+  // Link-to-job modal state — adds an additional job that needs the
+  // same product as this PO line. Used for the "we already sent the PO,
+  // now another job needs the same part — combine them" case.
+  const [linkJobModal, setLinkJobModal] = useState(null)  // { line } | null
+  const [linkCandidates, setLinkCandidates] = useState([])
+  const [linkLoading, setLinkLoading] = useState(false)
+  const [linkSelectedJobLineId, setLinkSelectedJobLineId] = useState('')
+  const [linkQty, setLinkQty] = useState('')
+
   // Receive modal state
   const [receiveModalOpen, setReceiveModalOpen] = useState(false)
   const [receiveItems, setReceiveItems] = useState([])   // [{ poLineId, receivedQty }]
@@ -81,7 +90,27 @@ export default function PurchaseOrderDetail() {
     const poRow = poRes.data
     if (!poRow) { setLoading(false); return }
     setPo(poRow)
-    setLines(linesRes.data || [])
+    const baseLines = linesRes.data || []
+
+    // Pull the per-line job allocations so the vendor sees which job each
+    // line is for. Bryce flagged: vendors usually pick + label by job, so
+    // they need that on the PO. Renders inline under each line on the
+    // detail page AND on the PDF the vendor receives.
+    const lineIds = baseLines.map(l => l.id)
+    let lineJobs = []
+    if (lineIds.length > 0) {
+      const { data } = await supabase
+        .from('purchase_order_line_jobs')
+        .select('id, po_line_id, job_line_id, job_id, quantity, jobs(id, job_id, job_title, customer_name)')
+        .in('po_line_id', lineIds)
+      lineJobs = data || []
+    }
+    // Bucket by po_line_id for easy attachment to each line row
+    const linesWithJobs = baseLines.map(l => ({
+      ...l,
+      jobLinks: lineJobs.filter(lj => lj.po_line_id === l.id),
+    }))
+    setLines(linesWithJobs)
     setVendors(vRes.data || [])
     setProducts(pRes.data || [])
     setVendorId(String(poRow.vendor_id || ''))
@@ -406,6 +435,151 @@ export default function PurchaseOrderDetail() {
     await fetchAll()
   }
 
+  // ── Link an additional job to an existing PO line ──────────────────
+
+  const openLinkJobModal = async (line) => {
+    setLinkJobModal({ line })
+    setLinkLoading(true)
+    setLinkCandidates([])
+    setLinkSelectedJobLineId('')
+    setLinkQty('')
+    try {
+      // Find every job_line in this company that wants the same product
+      // AND isn't already on a PO line (po_line_id is null). Only show
+      // jobs whose parent job's parts_status is needs_order or in_stock —
+      // skip jobs already done/billed.
+      if (!line.product_id) {
+        setLinkLoading(false); return
+      }
+      const { data } = await supabase
+        .from('job_lines')
+        .select('id, job_id, quantity, allocated_qty, po_line_id, jobs(id, job_id, job_title, customer_name, status, parts_status, start_date)')
+        .eq('company_id', companyId)
+        .eq('item_id', line.product_id)
+        .is('po_line_id', null)
+        .limit(500)
+      // Filter by job parts_status + needed qty > 0
+      const usable = (data || []).filter(jl => {
+        const need = (parseFloat(jl.quantity) || 0) - (parseFloat(jl.allocated_qty) || 0)
+        if (need <= 0) return false
+        const ps = jl.jobs?.parts_status
+        return !ps || ['not_needed', 'in_stock', 'needs_order'].includes(ps)
+      })
+      // Exclude jobs that already have a row on THIS PO line via the join
+      const alreadyLinkedJobIds = new Set((line.jobLinks || []).map(lj => lj.job_id))
+      const filtered = usable.filter(jl => !alreadyLinkedJobIds.has(jl.job_id))
+      // Sort oldest scheduled first
+      filtered.sort((a, b) => {
+        const ad = a.jobs?.start_date; const bd = b.jobs?.start_date
+        if (!ad && !bd) return a.id - b.id
+        if (!ad) return 1; if (!bd) return -1
+        return new Date(ad) - new Date(bd)
+      })
+      setLinkCandidates(filtered)
+    } catch (err) {
+      toast.error('Failed to load candidate jobs: ' + err.message)
+    }
+    setLinkLoading(false)
+  }
+
+  const commitLinkJob = async () => {
+    if (!linkJobModal || !linkSelectedJobLineId) return
+    const jobLine = linkCandidates.find(c => String(c.id) === String(linkSelectedJobLineId))
+    if (!jobLine) return
+    const qty = parseFloat(linkQty) || 0
+    if (qty <= 0) { toast.error('Enter a quantity > 0'); return }
+    const need = (parseFloat(jobLine.quantity) || 0) - (parseFloat(jobLine.allocated_qty) || 0)
+    if (qty > need) {
+      if (!confirm(`This job only needs ${need} more. Link ${qty} anyway?`)) return
+    }
+    setSaving(true)
+    try {
+      const line = linkJobModal.line
+      // 1) Insert the join row
+      await supabase.from('purchase_order_line_jobs').insert({
+        company_id: companyId,
+        po_line_id: line.id,
+        job_line_id: jobLine.id,
+        job_id: jobLine.job_id,
+        quantity: qty,
+      })
+      // 2) Tag job_line.po_line_id so it doesn't show up in /procurement
+      await supabase.from('job_lines').update({
+        po_line_id: line.id, updated_at: new Date().toISOString(),
+      }).eq('id', jobLine.id)
+      // 3) Bump quantity_ordered on the PO line + recompute totals
+      const newQty = (parseFloat(line.quantity_ordered) || 0) + qty
+      const unitCost = parseFloat(line.unit_cost) || 0
+      const newLineTotal = Math.round(newQty * unitCost * 100) / 100
+      await supabase.from('purchase_order_lines').update({
+        quantity_ordered: newQty,
+        line_total: newLineTotal,
+        updated_at: new Date().toISOString(),
+      }).eq('id', line.id)
+      await refreshTotals()
+      // 4) Update the linked job's parts_status (now on order)
+      await recomputeJobPartsStatus(jobLine.job_id)
+      // 5) If PO is already sent, also flip the job's workflow status to
+      //    Waiting Product (same rule as send-to-vendor)
+      if (po.status === 'sent' || po.status === 'partial_received') {
+        const { data: setting } = await supabase
+          .from('settings').select('value')
+          .eq('company_id', companyId).eq('key', 'job_statuses').maybeSingle()
+        let companyStatuses = null
+        if (setting?.value) {
+          try { const v = JSON.parse(setting.value); if (Array.isArray(v)) companyStatuses = v } catch {}
+        }
+        const HAS_WP = companyStatuses
+          ? companyStatuses.some(s => String(s).toLowerCase() === 'waiting product')
+          : true
+        if (HAS_WP) {
+          const KEEP = new Set(['Waiting Product','In Progress','Completed','Complete','Verified','Verified Complete','Invoiced','Paid','Closed','Archived','Cancelled'])
+          const { data: job } = await supabase.from('jobs').select('id, status').eq('id', jobLine.job_id).maybeSingle()
+          if (job && !KEEP.has(job.status)) {
+            await supabase.from('jobs').update({ status: 'Waiting Product', updated_at: new Date().toISOString() }).eq('id', job.id)
+          }
+        }
+      }
+      toast.success(`Linked ${jobLine.jobs?.job_id || 'job'} · qty ${qty}`)
+      setLinkJobModal(null)
+      await fetchAll()
+    } catch (err) {
+      toast.error('Link failed: ' + err.message)
+    }
+    setSaving(false)
+  }
+
+  const unlinkJobFromLine = async (link) => {
+    if (!confirm(`Remove ${link.jobs?.job_id || 'this job'} from the PO line? The job will go back to needs_order so you can re-source the parts elsewhere.`)) return
+    setSaving(true)
+    try {
+      // Find the linked job_line and release its po_line_id
+      await supabase.from('purchase_order_line_jobs').delete().eq('id', link.id)
+      await supabase.from('job_lines').update({
+        po_line_id: null, updated_at: new Date().toISOString(),
+      }).eq('id', link.job_line_id)
+      // Decrement PO line quantity by the unlinked amount
+      const poLine = lines.find(l => l.id === link.po_line_id)
+      if (poLine) {
+        const newQty = Math.max(0, (parseFloat(poLine.quantity_ordered) || 0) - (parseFloat(link.quantity) || 0))
+        const unitCost = parseFloat(poLine.unit_cost) || 0
+        await supabase.from('purchase_order_lines').update({
+          quantity_ordered: newQty,
+          line_total: Math.round(newQty * unitCost * 100) / 100,
+          updated_at: new Date().toISOString(),
+        }).eq('id', poLine.id)
+        await refreshTotals()
+      }
+      // Recompute job's parts_status
+      await recomputeJobPartsStatus(link.job_id)
+      toast.success('Job unlinked')
+      await fetchAll()
+    } catch (err) {
+      toast.error('Unlink failed: ' + err.message)
+    }
+    setSaving(false)
+  }
+
   // ── Receive shipment ────────────────────────────────────────────────
 
   const openReceiveModal = () => {
@@ -727,58 +901,122 @@ export default function PurchaseOrderDetail() {
                   <span />
                 </div>
                 {lines.map(line => (
-                  <div key={line.id} style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 90px 110px 110px 36px',
-                    gap: 8, alignItems: 'center',
-                    padding: '8px 4px',
-                    borderTop: `1px solid ${theme.border}`,
-                  }}>
-                    {isEditable ? (
-                      <input
-                        type="text" value={line.description || ''}
-                        onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, description: e.target.value } : l))}
-                        onBlur={(e) => updateLineField(line.id, 'description', e.target.value)}
-                        style={inlineInput(theme)}
-                      />
-                    ) : (
-                      <span style={{ fontSize: 13, color: theme.text }}>{line.description}</span>
-                    )}
-                    {isEditable ? (
-                      <input
-                        type="number" step="0.01" value={line.quantity_ordered}
-                        onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, quantity_ordered: e.target.value } : l))}
-                        onBlur={(e) => updateLineField(line.id, 'quantity_ordered', parseFloat(e.target.value) || 0)}
-                        style={{ ...inlineInput(theme), textAlign: 'right' }}
-                      />
-                    ) : (
-                      <span style={{ fontSize: 13, textAlign: 'right' }}>{line.quantity_ordered}</span>
-                    )}
-                    {isEditable ? (
-                      <input
-                        type="number" step="0.01" value={line.unit_cost}
-                        onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, unit_cost: e.target.value } : l))}
-                        onBlur={(e) => updateLineField(line.id, 'unit_cost', parseFloat(e.target.value) || 0)}
-                        style={{ ...inlineInput(theme), textAlign: 'right' }}
-                      />
-                    ) : (
-                      <span style={{ fontSize: 13, textAlign: 'right' }}>{formatCurrency(line.unit_cost)}</span>
-                    )}
-                    <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: theme.text }}>
-                      {formatCurrency(line.line_total)}
-                    </span>
-                    {isEditable && (
-                      <button
-                        onClick={() => deleteLine(line.id)}
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          color: theme.textMuted, padding: 4,
-                        }}
-                        title="Remove line"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
+                  <div key={line.id} style={{ borderTop: `1px solid ${theme.border}`, padding: '8px 4px' }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 90px 110px 110px 36px',
+                      gap: 8, alignItems: 'center',
+                    }}>
+                      {isEditable ? (
+                        <input
+                          type="text" value={line.description || ''}
+                          onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, description: e.target.value } : l))}
+                          onBlur={(e) => updateLineField(line.id, 'description', e.target.value)}
+                          style={inlineInput(theme)}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 13, color: theme.text }}>{line.description}</span>
+                      )}
+                      {isEditable ? (
+                        <input
+                          type="number" step="0.01" value={line.quantity_ordered}
+                          onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, quantity_ordered: e.target.value } : l))}
+                          onBlur={(e) => updateLineField(line.id, 'quantity_ordered', parseFloat(e.target.value) || 0)}
+                          style={{ ...inlineInput(theme), textAlign: 'right' }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 13, textAlign: 'right' }}>{line.quantity_ordered}</span>
+                      )}
+                      {isEditable ? (
+                        <input
+                          type="number" step="0.01" value={line.unit_cost}
+                          onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, unit_cost: e.target.value } : l))}
+                          onBlur={(e) => updateLineField(line.id, 'unit_cost', parseFloat(e.target.value) || 0)}
+                          style={{ ...inlineInput(theme), textAlign: 'right' }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 13, textAlign: 'right' }}>{formatCurrency(line.unit_cost)}</span>
+                      )}
+                      <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: theme.text }}>
+                        {formatCurrency(line.line_total)}
+                      </span>
+                      {isEditable && (
+                        <button
+                          onClick={() => deleteLine(line.id)}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: theme.textMuted, padding: 4,
+                          }}
+                          title="Remove line"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Job allocation row — shows vendors which job each
+                        portion is for so they can label / pack-list at
+                        pick time. Also where the "+ Link to job" button
+                        lives for adding more jobs to this line later. */}
+                    <div style={{
+                      marginTop: 6, marginLeft: 4,
+                      paddingLeft: 10, borderLeft: `2px solid ${theme.border}`,
+                      display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center',
+                    }}>
+                      {(line.jobLinks && line.jobLinks.length > 0) ? (
+                        line.jobLinks.map(link => (
+                          <button
+                            key={link.id}
+                            onClick={() => navigate(`/jobs/${link.job_id}`)}
+                            style={{
+                              padding: '3px 8px', borderRadius: 6,
+                              backgroundColor: theme.accentBg, color: theme.accent,
+                              border: 'none', cursor: 'pointer',
+                              fontSize: 11, fontWeight: 600,
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                            }}
+                            title={`Linked to job — click to open`}
+                          >
+                            <Briefcase size={10} />
+                            {link.jobs?.job_id || `Job ${link.job_id}`}
+                            {link.jobs?.customer_name && (
+                              <span style={{ opacity: 0.7, fontWeight: 400 }}>
+                                — {link.jobs.customer_name}
+                              </span>
+                            )}
+                            <span style={{ fontWeight: 700, padding: '0 4px', backgroundColor: 'rgba(255,255,255,0.5)', borderRadius: 3 }}>
+                              {link.quantity}
+                            </span>
+                            {isEditable && (
+                              <X
+                                size={10}
+                                onClick={(e) => { e.stopPropagation(); unlinkJobFromLine(link) }}
+                                style={{ marginLeft: 2, opacity: 0.6 }}
+                                title="Remove this job from the line"
+                              />
+                            )}
+                          </button>
+                        ))
+                      ) : (
+                        <span style={{ fontSize: 11, color: theme.textMuted, fontStyle: 'italic' }}>
+                          Not yet linked to a job
+                        </span>
+                      )}
+                      {(po.status === 'draft' || po.status === 'sent' || po.status === 'partial_received') && (
+                        <button
+                          onClick={() => openLinkJobModal(line)}
+                          style={{
+                            padding: '3px 8px', borderRadius: 6,
+                            backgroundColor: 'transparent', color: theme.textSecondary,
+                            border: `1px dashed ${theme.border}`, cursor: 'pointer',
+                            fontSize: 11, fontWeight: 500,
+                          }}
+                          title="Add another job that needs this part — increments the PO qty + flips that job to ordered"
+                        >
+                          + Link to job
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1012,6 +1250,113 @@ export default function PurchaseOrderDetail() {
           onClose={() => setProductPickerOpen(false)}
           defaultVendorId={po.vendor_id}
         />
+      )}
+
+      {/* Link-to-job modal — adds another job that needs the same product */}
+      {linkJobModal && (
+        <div
+          onClick={() => !saving && setLinkJobModal(null)}
+          style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, padding: 16,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{
+            backgroundColor: theme.bgCard, borderRadius: 12,
+            border: `1px solid ${theme.border}`, padding: 22,
+            width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 700, color: theme.text, margin: 0 }}>
+                  Link Another Job to This Line
+                </h3>
+                <p style={{ fontSize: 12, color: theme.textMuted, margin: '2px 0 0' }}>
+                  {linkJobModal.line?.description}
+                </p>
+              </div>
+              <button onClick={() => setLinkJobModal(null)} disabled={saving} style={{
+                background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted,
+              }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {linkLoading ? (
+              <p style={{ color: theme.textMuted, fontSize: 13 }}>Loading candidate jobs…</p>
+            ) : linkCandidates.length === 0 ? (
+              <p style={{ color: theme.textMuted, fontSize: 13, fontStyle: 'italic' }}>
+                No other jobs need this part right now. Add this product as a line item on a job first (the job needs to be in needs_order or in_stock).
+              </p>
+            ) : (
+              <>
+                <div style={{ marginBottom: 12 }}>
+                  <Label theme={theme}>Pick a job</Label>
+                  <select
+                    value={linkSelectedJobLineId}
+                    onChange={(e) => {
+                      setLinkSelectedJobLineId(e.target.value)
+                      const jl = linkCandidates.find(c => String(c.id) === e.target.value)
+                      if (jl) {
+                        const need = (parseFloat(jl.quantity) || 0) - (parseFloat(jl.allocated_qty) || 0)
+                        setLinkQty(String(need))
+                      }
+                    }}
+                    style={selectStyle(theme)}
+                  >
+                    <option value="">— Select a job —</option>
+                    {linkCandidates.map(c => {
+                      const need = (parseFloat(c.quantity) || 0) - (parseFloat(c.allocated_qty) || 0)
+                      return (
+                        <option key={c.id} value={c.id}>
+                          {c.jobs?.job_id} · {c.jobs?.customer_name || c.jobs?.job_title || 'Job'} · needs {need}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <Label theme={theme}>Quantity to add for this job</Label>
+                  <input
+                    type="number" step="0.01" value={linkQty}
+                    onChange={(e) => setLinkQty(e.target.value)}
+                    style={selectStyle(theme)}
+                  />
+                </div>
+                <div style={{
+                  padding: '10px 12px', borderRadius: 8,
+                  backgroundColor: theme.bg, fontSize: 12, color: theme.textSecondary,
+                  lineHeight: 1.5,
+                }}>
+                  <strong>What happens on Save:</strong> PO line quantity bumps by {linkQty || '?'}.
+                  Selected job tagged as on order for this product.
+                  {(po.status === 'sent' || po.status === 'partial_received') && ` Job status flips to Waiting Product.`}
+                </div>
+              </>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button onClick={() => setLinkJobModal(null)} disabled={saving} style={{
+                flex: 1, padding: 12, border: `1px solid ${theme.border}`,
+                backgroundColor: 'transparent', color: theme.text, borderRadius: 8, fontSize: 14,
+                cursor: saving ? 'not-allowed' : 'pointer',
+              }}>Cancel</button>
+              <button
+                onClick={commitLinkJob}
+                disabled={saving || !linkSelectedJobLineId || !linkQty}
+                style={{
+                  flex: 1, padding: 12, backgroundColor: theme.accent, color: '#fff',
+                  border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
+                  cursor: (saving || !linkSelectedJobLineId || !linkQty) ? 'not-allowed' : 'pointer',
+                  opacity: (saving || !linkSelectedJobLineId || !linkQty) ? 0.6 : 1,
+                }}
+              >
+                {saving ? 'Linking…' : 'Link to PO'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Receive shipment modal */}
