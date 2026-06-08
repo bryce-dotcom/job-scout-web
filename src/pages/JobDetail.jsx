@@ -7956,6 +7956,74 @@ function JobDetailInner() {
       {showCostingModal && job && (
         <JobCostingModal job={job} theme={theme} onClose={() => setShowCostingModal(false)} />
       )}
+
+      {/* Follow-up prompt — fires once when the job completes. Cleanest
+          UX is a tiny yes/no instead of immediately opening the
+          full Add Service Visit form. */}
+      {showScheduleFollowup && (
+        <>
+          <div
+            onClick={() => setShowScheduleFollowup(false)}
+            style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000 }}
+          />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            zIndex: 1001, width: 'min(440px, 92vw)',
+            backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '12px',
+            padding: '20px',
+          }}>
+            <h2 style={{ margin: '0 0 6px', fontSize: '17px', fontWeight: 700, color: theme.text }}>
+              Schedule a follow-up service?
+            </h2>
+            <p style={{ margin: '0 0 16px', fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
+              Job is complete. Want to schedule an annual checkup, warranty visit, or other follow-up
+              service tied to this job? Tracy will see it on the Upcoming Services page so she can call
+              the customer to confirm before the due date.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button onClick={() => setShowScheduleFollowup(false)} style={{
+                padding: '8px 14px', borderRadius: '8px', border: `1px solid ${theme.border}`,
+                backgroundColor: 'transparent', color: theme.text, fontSize: '13px', cursor: 'pointer',
+              }}>
+                Not now
+              </button>
+              <button onClick={() => { setShowScheduleFollowup(false); setShowAddServiceVisit(true) }} style={{
+                padding: '8px 14px', borderRadius: '8px', border: 'none',
+                backgroundColor: theme.accent, color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+              }}>
+                Yes, add service visit
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Add Service Visit modal — creates a new job linked back to this
+          one as the parent. User picks the type (warranty / annual /
+          tune-up / repair / upsell / callback), the date, and how
+          parts + labor are covered (customer / manufacturer / company /
+          split). The new job inherits this job's customer, address,
+          business unit, and lead — everything else is per-visit. */}
+      {showAddServiceVisit && (
+        <AddServiceVisitModal
+          parentJob={job}
+          companyId={companyId}
+          theme={theme}
+          onClose={() => setShowAddServiceVisit(false)}
+          onCreated={async (newId) => {
+            setShowAddServiceVisit(false)
+            // Refresh children list so the new visit appears under Linked Services.
+            const { data: children } = await supabase
+              .from('jobs')
+              .select('id, job_id, job_title, status, start_date, service_due_date, service_kind, parts_coverage, labor_coverage, job_total, prepaid_revenue, completed_at')
+              .eq('parent_job_id', parseInt(id))
+              .order('service_due_date', { ascending: true, nullsFirst: false })
+            setChildServices(children || [])
+            // Open the new job so the user can flesh out line items and schedule.
+            navigate(`/jobs/${newId}`, { state: { from: window.location.pathname } })
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -8171,73 +8239,6 @@ function CustomerUtilitySplit({ job, theme }) {
         </div>
       </div>
 
-      {/* Follow-up prompt — fires once when the job completes. Cleanest
-          UX is a tiny yes/no instead of immediately opening the
-          full Add Service Visit form. */}
-      {showScheduleFollowup && (
-        <>
-          <div
-            onClick={() => setShowScheduleFollowup(false)}
-            style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000 }}
-          />
-          <div style={{
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            zIndex: 1001, width: 'min(440px, 92vw)',
-            backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '12px',
-            padding: '20px',
-          }}>
-            <h2 style={{ margin: '0 0 6px', fontSize: '17px', fontWeight: 700, color: theme.text }}>
-              Schedule a follow-up service?
-            </h2>
-            <p style={{ margin: '0 0 16px', fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
-              Job is complete. Want to schedule an annual checkup, warranty visit, or other follow-up
-              service tied to this job? Tracy will see it on the Upcoming Services page so she can call
-              the customer to confirm before the due date.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button onClick={() => setShowScheduleFollowup(false)} style={{
-                padding: '8px 14px', borderRadius: '8px', border: `1px solid ${theme.border}`,
-                backgroundColor: 'transparent', color: theme.text, fontSize: '13px', cursor: 'pointer',
-              }}>
-                Not now
-              </button>
-              <button onClick={() => { setShowScheduleFollowup(false); setShowAddServiceVisit(true) }} style={{
-                padding: '8px 14px', borderRadius: '8px', border: 'none',
-                backgroundColor: theme.accent, color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-              }}>
-                Yes, add service visit
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Add Service Visit modal — creates a new job linked back to this
-          one as the parent. User picks the type (warranty / annual /
-          tune-up / repair / upsell / callback), the date, and how
-          parts + labor are covered (customer / manufacturer / company /
-          split). The new job inherits this job's customer, address,
-          business unit, and lead — everything else is per-visit. */}
-      {showAddServiceVisit && (
-        <AddServiceVisitModal
-          parentJob={job}
-          companyId={companyId}
-          theme={theme}
-          onClose={() => setShowAddServiceVisit(false)}
-          onCreated={async (newId) => {
-            setShowAddServiceVisit(false)
-            // Refresh children list so the new visit appears under Linked Services.
-            const { data: children } = await supabase
-              .from('jobs')
-              .select('id, job_id, job_title, status, start_date, service_due_date, service_kind, parts_coverage, labor_coverage, job_total, prepaid_revenue, completed_at')
-              .eq('parent_job_id', parseInt(id))
-              .order('service_due_date', { ascending: true, nullsFirst: false })
-            setChildServices(children || [])
-            // Open the new job so the user can flesh out line items and schedule.
-            navigate(`/jobs/${newId}`, { state: { from: window.location.pathname } })
-          }}
-        />
-      )}
     </div>
   )
 }
