@@ -470,20 +470,58 @@ export function jobCosting({
     // Skip jobs with no revenue AND no cost — uninteresting empty rows.
     if (revenue === 0 && !hasCostData) continue
 
+    // Prepaid revenue (annual checkup paid upfront on the parent's
+    // invoice) counts as revenue for this job's costing without a
+    // separate payment record. Recurring services that bill per-visit
+    // leave prepaid_revenue null and rely on the payments tag.
+    const effectiveRevenue = revenue + (Number(j.prepaid_revenue) || 0)
+
     rows.push({
       job: j.job_id || ('#' + j.id),
       title: j.job_title || j.customer_name || '',
       status: j.status || '',
-      revenue,
+      service_kind: j.service_kind || (j.parent_job_id ? 'service' : null),
+      parent_job_id: j.parent_job_id || null,
+      _jobDbId: j.id,
+      revenue: effectiveRevenue,
       material: hasCostData ? materialCost : null,
       labor: hasCostData ? laborCost : null,
       tagged_expense: hasCostData ? taggedExpense : null,
       total_cost: hasCostData ? totalCost : null,
-      profit: hasCostData ? profit : null,
-      margin: hasCostData && revenue > 0 ? margin : null,
+      profit: hasCostData ? effectiveRevenue - totalCost : null,
+      margin: hasCostData && effectiveRevenue > 0 ? (effectiveRevenue - totalCost) / effectiveRevenue : null,
     })
   }
-  rows.sort((a, b) => (b.profit ?? -Infinity) - (a.profit ?? -Infinity))
+
+  // Roll up children under their parents — service visits show indented
+  // under the original install so users see the full lifecycle of the
+  // customer relationship at a glance. Standalone jobs (no parent) stay
+  // sorted by profit. Each parent's profit is the sum of its own row +
+  // any children's profits, exposed as parent_with_children_profit so
+  // the totals row reflects rollup totals.
+  const rowsByDbId = new Map(rows.map(r => [r._jobDbId, r]))
+  const orphanRoots = rows.filter(r => !r.parent_job_id || !rowsByDbId.has(r.parent_job_id))
+  const childrenByParent = new Map()
+  for (const r of rows) {
+    if (r.parent_job_id && rowsByDbId.has(r.parent_job_id)) {
+      const arr = childrenByParent.get(r.parent_job_id) || []
+      arr.push(r)
+      childrenByParent.set(r.parent_job_id, arr)
+    }
+  }
+  const ordered = []
+  for (const root of orphanRoots.sort((a, b) => (b.profit ?? -Infinity) - (a.profit ?? -Infinity))) {
+    ordered.push(root)
+    const kids = childrenByParent.get(root._jobDbId) || []
+    for (const kid of kids.sort((a, b) => (b.profit ?? -Infinity) - (a.profit ?? -Infinity))) {
+      // Visual indent on the job + title so it reads as "under" the parent.
+      ordered.push({ ...kid, job: '  └ ' + kid.job })
+    }
+  }
+  // Strip internal helper fields before returning rows for display.
+  const cleanRows = ordered.map(({ _jobDbId, parent_job_id, ...rest }) => rest) // eslint-disable-line no-unused-vars
+  rows.length = 0
+  rows.push(...cleanRows)
 
   const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0)
   const totalCost = rows.reduce((s, r) => s + (r.total_cost || 0), 0)
@@ -493,10 +531,11 @@ export function jobCosting({
   return {
     id: 'job-costing',
     name: 'Job Costing — Actual Profit per Job',
-    description: 'Revenue (from payments), material + labor cost (from job lines), and any bank debits tagged to the job. Margin only shown when cost data exists for the job.',
+    description: 'Revenue (payments + prepaid plan allocation), material + labor cost (from job lines), and any bank debits tagged to the job. Service visits (warranty, annual, repair, etc.) roll up under their parent install with an indent. Margin shown only when cost data exists.',
     columns: [
       { key: 'job', label: 'Job' },
       { key: 'title', label: 'Title' },
+      { key: 'service_kind', label: 'Type' },
       { key: 'status', label: 'Status' },
       { key: 'revenue', label: 'Revenue', align: 'right', format: 'currency' },
       { key: 'material', label: 'Material', align: 'right', format: 'currency' },

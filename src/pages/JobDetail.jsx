@@ -235,6 +235,12 @@ function JobDetailInner() {
   const [jobInvoices, setJobInvoices] = useState([])
   const [jobUtilityInvoices, setJobUtilityInvoices] = useState([])
   const [jobTimeEntries, setJobTimeEntries] = useState([])
+
+  // Service visits attached to this job (children) + the parent job if
+  // this IS a service visit. Loaded alongside the rest of the job data.
+  const [childServices, setChildServices] = useState([])
+  const [parentJob, setParentJob] = useState(null)
+  const [showAddServiceVisit, setShowAddServiceVisit] = useState(false)
   const [localIncentive, setLocalIncentive] = useState('')
   const [localDiscount, setLocalDiscount] = useState('')
   const [discountMode, setDiscountMode] = useState('$')  // '$' = flat, '%' = percent of subtotal
@@ -504,6 +510,28 @@ function JobDetailInner() {
         .eq('job_id', id)
         .order('created_at', { ascending: false })
       setJobUtilityInvoices(utilInvoicesData || [])
+
+      // Fetch child service visits + parent job for Linked Services panel
+      // and Job Costing rollup. parent_job_id was added in the
+      // 20260608_add_service_visit_fields_to_jobs migration; jobs that
+      // existed before that column was filled in won't show anything here.
+      const SERVICE_JOB_FIELDS = 'id, job_id, job_title, status, start_date, service_due_date, service_kind, parts_coverage, labor_coverage, job_total, prepaid_revenue, completed_at'
+      const { data: children } = await supabase
+        .from('jobs')
+        .select(SERVICE_JOB_FIELDS)
+        .eq('parent_job_id', parseInt(id))
+        .order('service_due_date', { ascending: true, nullsFirst: false })
+      setChildServices(children || [])
+      if (jobData?.parent_job_id) {
+        const { data: parent } = await supabase
+          .from('jobs')
+          .select(SERVICE_JOB_FIELDS)
+          .eq('id', jobData.parent_job_id)
+          .maybeSingle()
+        setParentJob(parent || null)
+      } else {
+        setParentJob(null)
+      }
 
       // Fetch time_clock entries logged against this job (by any employee)
       const { data: timeData } = await supabase
@@ -5378,6 +5406,111 @@ function JobDetailInner() {
             </div>
           )}
 
+          {/* Linked Services — parent install + child service visits
+              (warranty, annual checkup, repair, etc.). Hidden when there's
+              nothing linked AND the user can't add (rare). Always shows
+              the "Add service visit" button when at least one invoice has
+              been created so it's discoverable. */}
+          {(parentJob || childServices.length > 0 || jobInvoices.length > 0) && (
+            <div style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              padding: '20px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', gap: '8px', flexWrap: 'wrap' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                  Linked Services
+                </h3>
+                <button
+                  onClick={() => setShowAddServiceVisit(true)}
+                  style={{
+                    padding: '6px 12px', borderRadius: '8px', border: 'none',
+                    backgroundColor: theme.accent, color: '#fff',
+                    fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                  }}
+                  title="Add a warranty visit, annual check-up, repair, or other follow-up service tied to this job."
+                >
+                  + Add service visit
+                </button>
+              </div>
+              <p style={{ margin: '0 0 12px', fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+                Warranty visits, annual check-ups, repairs, and other follow-up services. Each one is its own job — so it has its own schedule,
+                line items, and invoice — but rolls up under the original here and on Job Costing reports.
+              </p>
+
+              {parentJob && (
+                <div style={{
+                  padding: '10px 12px', marginBottom: '10px',
+                  backgroundColor: 'rgba(59,130,246,0.06)', borderRadius: '8px',
+                  border: `1px solid rgba(59,130,246,0.18)`,
+                  fontSize: '13px', color: theme.text,
+                }}>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.5px', marginRight: '8px' }}>Parent</span>
+                  <button onClick={() => navigate(`/jobs/${parentJob.id}`, { state: { from: window.location.pathname } })}
+                    style={{ background: 'none', border: 'none', color: theme.accent, cursor: 'pointer', padding: 0, fontWeight: 600 }}>
+                    {parentJob.job_id || ('#' + parentJob.id)}
+                  </button>
+                  {' — '}{parentJob.job_title || ''}
+                </div>
+              )}
+
+              {childServices.length === 0 && !parentJob ? (
+                <p style={{ fontSize: '13px', color: theme.textMuted, fontStyle: 'italic', margin: 0 }}>
+                  No service visits scheduled yet. Use the button above to add one.
+                </p>
+              ) : childServices.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {childServices.map(c => {
+                    const kindLabel = (c.service_kind || 'service').replace(/_/g, ' ')
+                    const due = c.service_due_date || c.start_date
+                    const kindColor = c.service_kind === 'warranty' ? '#dc2626'
+                      : c.service_kind === 'annual' ? '#22c55e'
+                      : c.service_kind === 'tune_up' ? '#0ea5e9'
+                      : c.service_kind === 'repair' ? '#f97316'
+                      : c.service_kind === 'upsell' ? '#a855f7'
+                      : '#6b7280'
+                    return (
+                      <div key={c.id}
+                        onClick={() => navigate(`/jobs/${c.id}`, { state: { from: window.location.pathname } })}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                          padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',
+                          border: `1px solid ${theme.border}`, cursor: 'pointer',
+                        }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '14px', fontWeight: 600, color: theme.text }}>
+                            {c.job_id || ('#' + c.id)}
+                            {c.job_title ? <span style={{ color: theme.textSecondary, fontWeight: 400 }}> — {c.job_title}</span> : null}
+                          </div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ padding: '1px 7px', borderRadius: '8px', backgroundColor: kindColor + '22', color: kindColor, fontWeight: 500, textTransform: 'capitalize' }}>
+                              {kindLabel}
+                            </span>
+                            {due && <span>Due {new Date(due).toLocaleDateString()}</span>}
+                            {c.parts_coverage && c.parts_coverage !== 'customer' && <span>Parts: {c.parts_coverage}</span>}
+                            {c.labor_coverage && c.labor_coverage !== 'customer' && <span>Labor: {c.labor_coverage}</span>}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                            {c.status || '—'}
+                          </div>
+                          {(c.prepaid_revenue || c.job_total) ? (
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: theme.text }}>
+                              {formatCurrency(Number(c.prepaid_revenue || c.job_total) || 0)}
+                              {c.prepaid_revenue ? <span style={{ fontSize: '10px', color: theme.textMuted, marginLeft: '4px' }}>prepaid</span> : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Linked Invoices */}
           {(jobInvoices.length > 0 || jobUtilityInvoices.length > 0) && (
             <div style={{
@@ -8001,6 +8134,244 @@ function CustomerUtilitySplit({ job, theme }) {
           ))}
         </div>
       </div>
+
+      {/* Add Service Visit modal — creates a new job linked back to this
+          one as the parent. User picks the type (warranty / annual /
+          tune-up / repair / upsell / callback), the date, and how
+          parts + labor are covered (customer / manufacturer / company /
+          split). The new job inherits this job's customer, address,
+          business unit, and lead — everything else is per-visit. */}
+      {showAddServiceVisit && (
+        <AddServiceVisitModal
+          parentJob={job}
+          companyId={companyId}
+          theme={theme}
+          onClose={() => setShowAddServiceVisit(false)}
+          onCreated={async (newId) => {
+            setShowAddServiceVisit(false)
+            // Refresh children list so the new visit appears under Linked Services.
+            const { data: children } = await supabase
+              .from('jobs')
+              .select('id, job_id, job_title, status, start_date, service_due_date, service_kind, parts_coverage, labor_coverage, job_total, prepaid_revenue, completed_at')
+              .eq('parent_job_id', parseInt(id))
+              .order('service_due_date', { ascending: true, nullsFirst: false })
+            setChildServices(children || [])
+            // Open the new job so the user can flesh out line items and schedule.
+            navigate(`/jobs/${newId}`, { state: { from: window.location.pathname } })
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+// ────────────────────── AddServiceVisitModal ──────────────────────
+// Lives in this file so it can reach JobDetail's imports (supabase, theme,
+// etc.) without dragging them into a separate component. If this grows
+// past ~150 lines, split it out.
+function AddServiceVisitModal({ parentJob, companyId, theme, onClose, onCreated }) {
+  const [kind, setKind] = useState('annual')
+  const [dueDate, setDueDate] = useState(() => {
+    // Default to 1 year from the parent's completion (or today + 1 year).
+    const base = parentJob?.completed_at ? new Date(parentJob.completed_at) : new Date()
+    base.setFullYear(base.getFullYear() + 1)
+    return base.toISOString().slice(0, 10)
+  })
+  const [title, setTitle] = useState('')
+  const [partsCoverage, setPartsCoverage] = useState('customer')
+  const [laborCoverage, setLaborCoverage] = useState('customer')
+  const [prepaidAmount, setPrepaidAmount] = useState('')
+  const [coverageNotes, setCoverageNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const KIND_OPTIONS = [
+    { value: 'annual',    label: 'Annual check-up',    hint: 'Yearly maintenance visit (typically prepaid as part of an upsell).' },
+    { value: 'tune_up',   label: 'Tune-up',            hint: 'Tune / adjust / clean — billed per visit.' },
+    { value: 'warranty',  label: 'Warranty visit',     hint: 'Covered under our warranty or the manufacturer\'s. Customer usually billed $0.' },
+    { value: 'repair',    label: 'Repair',             hint: 'Customer-paid repair (something broke).' },
+    { value: 'upsell',    label: 'Upsell follow-up',   hint: 'Add-on work sold after the original job.' },
+    { value: 'callback',  label: 'Callback',           hint: 'Returning to address an issue from the original visit. Typically internally absorbed.' },
+  ]
+
+  const COVERAGE_OPTIONS = [
+    { value: 'customer',     label: 'Customer' },
+    { value: 'manufacturer', label: 'Manufacturer' },
+    { value: 'company',      label: 'Company (absorb)' },
+    { value: 'split',        label: 'Split' },
+    { value: 'na',           label: 'N/A' },
+  ]
+
+  // Reasonable defaults per kind — saves clicks.
+  const handleKindChange = (newKind) => {
+    setKind(newKind)
+    if (newKind === 'warranty')  { setPartsCoverage('manufacturer'); setLaborCoverage('company') }
+    else if (newKind === 'callback') { setPartsCoverage('company'); setLaborCoverage('company') }
+    else if (newKind === 'annual' || newKind === 'tune_up' || newKind === 'repair' || newKind === 'upsell') {
+      setPartsCoverage('customer'); setLaborCoverage('customer')
+    }
+  }
+
+  const create = async () => {
+    setSaving(true)
+    try {
+      const newJobId = 'JOB-' + Math.random().toString(36).slice(2, 10).toUpperCase()
+      const titleResolved = title.trim() || `${KIND_OPTIONS.find(o => o.value === kind)?.label || 'Service visit'} — ${parentJob.job_title || parentJob.job_id || 'job'}`
+      const insertPayload = {
+        company_id: companyId,
+        job_id: newJobId,
+        job_title: titleResolved,
+        parent_job_id: parentJob.id,
+        service_kind: kind,
+        service_due_date: dueDate || null,
+        parts_coverage: partsCoverage,
+        labor_coverage: laborCoverage,
+        coverage_notes: coverageNotes.trim() || null,
+        prepaid_revenue: prepaidAmount ? Number(prepaidAmount) : null,
+        // Carry over context from parent.
+        customer_id: parentJob.customer_id,
+        customer_name: parentJob.customer_name,
+        business_name: parentJob.business_name,
+        job_address: parentJob.job_address,
+        business_unit: parentJob.business_unit,
+        salesperson_id: parentJob.salesperson_id,
+        salesperson: parentJob.salesperson,
+        lead_id: parentJob.lead_id,
+        // Start in the most permissive future-work bucket the company has
+        // configured. "Chillin" exists for HHH; other tenants fall back
+        // through trigger logic when status doesn't match.
+        status: 'Chillin',
+        invoice_status: 'Not Invoiced',
+      }
+      const { data: inserted, error } = await supabase
+        .from('jobs')
+        .insert([insertPayload])
+        .select('id, job_id')
+        .single()
+      if (error) {
+        const { toast } = await import('../lib/toast')
+        toast.error('Failed to create service visit: ' + error.message)
+      } else {
+        onCreated?.(inserted.id)
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputStyle = {
+    width: '100%', padding: '8px 10px',
+    borderRadius: '6px', border: `1px solid ${theme.border}`,
+    backgroundColor: '#fff', color: theme.text, fontSize: '13px',
+  }
+  const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 600, color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }
+
+  return (
+    <>
+      <div
+        onClick={() => !saving && onClose()}
+        style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000 }}
+      />
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+        zIndex: 1001, width: 'min(560px, 92vw)', maxHeight: '90vh', overflowY: 'auto',
+        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '12px',
+        padding: '20px',
+      }}>
+        <h2 style={{ margin: '0 0 4px', fontSize: '17px', fontWeight: 700, color: theme.text }}>
+          Add service visit
+        </h2>
+        <p style={{ margin: '0 0 16px', fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+          Creates a new job linked to <strong>{parentJob?.job_id || ('#' + parentJob?.id)}</strong>. The visit has its own
+          schedule, line items, and invoice. Job costing rolls everything up under the parent.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div>
+            <label style={labelStyle}>Visit type</label>
+            <select value={kind} onChange={(e) => handleKindChange(e.target.value)} style={inputStyle}>
+              {KIND_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+              {KIND_OPTIONS.find(o => o.value === kind)?.hint}
+            </div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Visit title (optional)</label>
+            <input
+              type="text" value={title} onChange={(e) => setTitle(e.target.value)}
+              placeholder={`${KIND_OPTIONS.find(o => o.value === kind)?.label} — ${parentJob?.job_title || ''}`}
+              style={inputStyle}
+            />
+          </div>
+
+          <div>
+            <label style={labelStyle}>Due date</label>
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={inputStyle} />
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+              When the visit should happen. Default is 1 year from the parent's completion date.
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={labelStyle}>Parts coverage</label>
+              <select value={partsCoverage} onChange={(e) => setPartsCoverage(e.target.value)} style={inputStyle}>
+                {COVERAGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Labor coverage</label>
+              <select value={laborCoverage} onChange={(e) => setLaborCoverage(e.target.value)} style={inputStyle}>
+                {COVERAGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {(kind === 'annual' || kind === 'upsell') && (
+            <div>
+              <label style={labelStyle}>Prepaid revenue (optional)</label>
+              <input
+                type="number" step="0.01" min="0" value={prepaidAmount}
+                onChange={(e) => setPrepaidAmount(e.target.value)} placeholder="0.00"
+                style={inputStyle}
+              />
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                If the customer prepaid for this visit on the parent job (typical for annual plans sold with the install), enter the allocated revenue here.
+                Job Costing counts it as revenue on this visit without needing a separate invoice.
+              </div>
+            </div>
+          )}
+
+          {(partsCoverage !== 'customer' || laborCoverage !== 'customer') && (
+            <div>
+              <label style={labelStyle}>Coverage notes</label>
+              <input
+                type="text" value={coverageNotes} onChange={(e) => setCoverageNotes(e.target.value)}
+                placeholder="Warranty claim # / RMA # / plan reference"
+                style={inputStyle}
+              />
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' }}>
+          <button onClick={onClose} disabled={saving} style={{
+            padding: '8px 14px', borderRadius: '8px', border: `1px solid ${theme.border}`,
+            backgroundColor: 'transparent', color: theme.text, fontSize: '13px',
+            cursor: saving ? 'not-allowed' : 'pointer',
+          }}>
+            Cancel
+          </button>
+          <button onClick={create} disabled={saving} style={{
+            padding: '8px 14px', borderRadius: '8px', border: 'none',
+            backgroundColor: theme.accent, color: '#fff', fontSize: '13px', fontWeight: 600,
+            cursor: saving ? 'wait' : 'pointer',
+          }}>
+            {saving ? 'Creating…' : 'Create service visit'}
+          </button>
+        </div>
+      </div>
+    </>
   )
 }
