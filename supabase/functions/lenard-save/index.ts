@@ -5,6 +5,54 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Auto-infer the pre-LED existing wattage when a user picks an LED
+// replacement product directly (via the product picker) without first
+// choosing the existing-fixture preset. Without this, lines come in
+// with existW=0 → wattsReduced=0 → annual savings=$0, even though the
+// actual project HAS savings. Cole / Noah flagged 4 audits in this
+// state — every line had a real product + newW + qty, but existing_wattage
+// was 0 across the board.
+//
+// Estimates are CONSERVATIVE per fixture category — typical pre-LED
+// equivalents based on industry-standard replacements. Better to
+// understate savings than overstate. Real data (any line with a
+// non-zero existW) is left alone.
+function inferExistingWatts(category: string | null | undefined, newW: number): number {
+  if (!newW || newW <= 0) return 0;
+  const c = (category || '').toLowerCase();
+  if (c.includes('high bay') || c.includes('highbay')) {
+    if (newW <= 75)  return 175; // 175W MH
+    if (newW <= 110) return 250; // 250W MH or 4L T5HO
+    if (newW <= 150) return 400; // 400W MH or 6L T5HO
+    if (newW <= 220) return 750; // 750W MH
+    return 1000;                 // 1000W MH
+  }
+  if (c.includes('linear') || c.includes('panel') || c.includes('strip') || c.includes('troffer') || c.includes('wrap')) {
+    if (newW <= 20) return 56;   // 2L T8 2ft
+    if (newW <= 30) return 64;   // 2L T8 4ft
+    if (newW <= 45) return 96;   // 3L T8 4ft
+    if (newW <= 80) return 128;  // 4L T8 4ft / 2L T8 8ft
+    return 172;                  // 4L T12 4ft
+  }
+  if (c.includes('wall pack') || c.includes('wallpack')) {
+    if (newW <= 30)  return 100; // 100W MH
+    if (newW <= 50)  return 175; // 175W MH
+    return 250;                  // 250W MH
+  }
+  if (c.includes('area light') || c.includes('pole') || c.includes('shoebox') || c.includes('cobra')) {
+    if (newW <= 75)  return 250; // 250W HPS
+    if (newW <= 150) return 400; // 400W HPS / MH
+    return 1000;                 // 1000W
+  }
+  if (c.includes('flood') || c.includes('canopy')) {
+    if (newW <= 75)  return 175;
+    if (newW <= 150) return 400;
+    return 1000;
+  }
+  // Unknown category — conservative 1.5x newW.
+  return Math.round(newW * 1.5);
+}
+
 async function supabasePost(url: string, key: string, body: any): Promise<any> {
   const res = await fetch(url, {
     method: 'POST',
@@ -81,9 +129,27 @@ serve(async (req) => {
     const fullAddress = [address, city, state, zip].filter(Boolean).join(', ') || null;
 
     // --- Shared calculations (used by lead notes + audit) ---
-    const totalFixtures = lines.reduce((s: number, l: any) => s + (l.qty || 0), 0);
-    const totalExistW = lines.reduce((s: number, l: any) => s + ((l.existW || 0) * (l.qty || 0)), 0);
-    const totalNewW = lines.reduce((s: number, l: any) => s + ((l.newW || 0) * (l.qty || 0)), 0);
+    // Apply existing-wattage inference per line so users who picked an
+    // LED product without recording the existing fixture still produce
+    // a meaningful savings number. Inferred values are conservative
+    // pre-LED equivalents based on fixture category + LED replacement
+    // wattage. Lines with a real existW are left alone.
+    let inferredAnyExistW = false;
+    const enrichedLines = lines.map((l: any) => {
+      const existW = l.existW || 0;
+      const newW = l.newW || 0;
+      if (existW === 0 && newW > 0) {
+        const inferred = inferExistingWatts(l.fixtureCategory || '', newW);
+        if (inferred > 0) {
+          inferredAnyExistW = true;
+          return { ...l, existW: inferred, _existWInferred: true };
+        }
+      }
+      return l;
+    });
+    const totalFixtures = enrichedLines.reduce((s: number, l: any) => s + (l.qty || 0), 0);
+    const totalExistW = enrichedLines.reduce((s: number, l: any) => s + ((l.existW || 0) * (l.qty || 0)), 0);
+    const totalNewW = enrichedLines.reduce((s: number, l: any) => s + ((l.newW || 0) * (l.qty || 0)), 0);
     const wattsReduced = Math.max(0, totalExistW - totalNewW);
     const opHours = pd.operatingHours || 12;
     const opDays = pd.daysPerYear || 365;
@@ -216,14 +282,23 @@ serve(async (req) => {
     // =====================================================
     // 3. Create Audit Areas
     // =====================================================
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i];
+    for (let i = 0; i < enrichedLines.length; i++) {
+      const l = enrichedLines[i];
       const qty = l.qty || 1;
       const existW = l.existW || 0;
       const newW = l.newW || 0;
+      const inferred = !!l._existWInferred;
 
       // Build photo_path if this line has a photoIndex
       const photoPath = (l.photoIndex != null && l.photoIndex >= 0) ? `audits/${auditDbId}/photo_${l.photoIndex}.jpg` : null;
+
+      // Tag the notes with [estimated existing watts] when we inferred so
+      // the field tech / customer can see exactly which areas need
+      // verification on a site visit.
+      const baseNotes = l.overrideNotes || (l.productName ? `SBE Product: ${l.productName}` : null);
+      const notesWithEstimate = inferred
+        ? (baseNotes ? `${baseNotes} [existing watts estimated: ${existW}W]` : `[existing watts estimated: ${existW}W]`)
+        : baseNotes;
 
       await supabasePost(`${SUPABASE_URL}/rest/v1/audit_areas`, key, {
         company_id: cid,
@@ -240,7 +315,7 @@ serve(async (req) => {
         total_led_watts: qty * newW,
         area_watts_reduced: (qty * existW) - (qty * newW),
         confirmed: l.confirmed || false,
-        override_notes: l.overrideNotes || (l.productName ? `SBE Product: ${l.productName}` : null),
+        override_notes: notesWithEstimate,
         photo_path: photoPath,
       });
     }
