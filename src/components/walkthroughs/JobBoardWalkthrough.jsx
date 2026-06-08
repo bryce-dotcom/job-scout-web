@@ -1,8 +1,12 @@
-// Job Board (PM Setter) walkthrough — drag-to-schedule.
+// Job Board walkthrough — rebuilt to Prospect Scout standard.
+// Source: src/pages/PMJobSetter.jsx — week-view Gantt + per-employee rows.
+// DO NOT import ZachShell — reproduces real component structure with mock data.
 
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ClipboardList, Users, AlertTriangle, Calendar,
+  Calendar, ChevronLeft, ChevronRight, Search, Filter,
+  Briefcase, PlayCircle, CheckCircle2, ClipboardList, PauseCircle, Plus,
+  User, MapPin, Clock,
 } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
@@ -11,121 +15,223 @@ import {
   CenteredOverlay, SetupIntro, DonePanel,
   WalkthroughCaption, WalkthroughProgressBar,
 } from './WalkthroughChrome'
-import { T, ZachShell, Chip } from './zach/ZachShell'
 import card from '../../lib/featureKnowledge/job-board.js'
 
-const CREWS = ['Cole', 'Marcus', 'Priya']
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
-
-// Hours booked per crew/day. Empty = 0.
-const initialGrid = {
-  Cole: { Mon: 8, Tue: 0, Wed: 6, Thu: 0, Fri: 4 },
-  Marcus: { Mon: 0, Tue: 4, Wed: 0, Thu: 8, Fri: 0 },
-  Priya: { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0 },
+const T = {
+  bg:            '#f7f5ef',
+  bgCard:        '#ffffff',
+  border:        '#d6cdb8',
+  text:          '#2c3530',
+  textSecondary: '#4d5a52',
+  textMuted:     '#7d8a7f',
+  accent:        '#5a6349',
+  accentBg:      'rgba(90,99,73,0.12)',
 }
 
-const dropGrid = JSON.parse(JSON.stringify(initialGrid))
-dropGrid.Cole.Tue = 14   // big drop
+// defaultStatusColors from PMJobSetter.jsx
+const STATUS_COLORS = {
+  'Chillin':     '#6382bf',
+  'Scheduled':   '#3b82f6',
+  'In Progress': '#f59e0b',
+  'On Hold':     '#6b7280',
+  'Complete':    '#22c55e',
+}
 
-const overGrid = JSON.parse(JSON.stringify(dropGrid))
-overGrid.Cole.Tue = 20   // overbook attempt
+// calendarColors from PMJobSetter.jsx line 22
+const CAL_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6']
 
-const shuffleGrid = JSON.parse(JSON.stringify(dropGrid))
-shuffleGrid.Marcus.Wed = 8
-shuffleGrid.Priya.Thu = 8
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DATES = ['Jun 9', 'Jun 10', 'Jun 11', 'Jun 12', 'Jun 13', 'Jun 14']
+
+const EMPLOYEES = [
+  { id: 1, name: 'Doug Anderson', color: CAL_COLORS[0] },
+  { id: 2, name: 'Tracy Benson',  color: CAL_COLORS[1] },
+  { id: 3, name: 'Crew 2',        color: CAL_COLORS[2] },
+]
+
+// Jobs placed on the board: { emp, startDay (0-based), spanDays, title, status }
+const PLACED_JOBS = [
+  { id: 1, emp: 0, startDay: 0, spanDays: 2, title: 'LED Retrofit — Northbridge', customer: 'Marcus Okafor',   status: 'In Progress', amount: 24500 },
+  { id: 2, emp: 0, startDay: 3, spanDays: 1, title: 'Parking Lot LED',            customer: 'David Kim',      status: 'Scheduled',   amount: 12000 },
+  { id: 3, emp: 1, startDay: 1, spanDays: 1, title: 'Fleet Wrap Package',         customer: 'Sarah Chen',     status: 'Scheduled',   amount: 18200 },
+  { id: 4, emp: 1, startDay: 4, spanDays: 1, title: 'Solar Panel Array',          customer: 'Ryan Torres',    status: 'In Progress', amount: 48200 },
+  { id: 5, emp: 2, startDay: 0, spanDays: 3, title: 'Warehouse LED',              customer: 'Brady Marsh',    status: 'In Progress', amount: 34500 },
+]
 
 export default function JobBoardWalkthrough() {
   const runner = useWalkthroughRunner(card)
-  const { phase, sceneKey, setupIdx, setupShowingIntro, elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+  const { phase, sceneKey, sceneElapsed, setupIdx, setupShowingIntro,
+    elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+
   return (
-    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: `linear-gradient(135deg, ${T.bg} 0%, #ece6d4 100%)`, overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: T.bg, overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0 }}>
         {phase === 'marketing' && <Stage scene={sceneKey} />}
         <AnimatePresence mode="wait">
           {phase === 'setup' && setupShowingIntro && <SetupIntro key="intro" />}
           {phase === 'setup' && !setupShowingIntro && (
-            <CenteredOverlay key="checklist"><SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} /></CenteredOverlay>
+            <CenteredOverlay key="checklist">
+              <SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} />
+            </CenteredOverlay>
           )}
-          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="One screen, the whole week, every crew." />}
+          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Your job board is live." />}
         </AnimatePresence>
       </div>
       <VoiceToggle enabled={voiceOn} onToggle={() => setVoiceOn(v => !v)} theme={T} />
-      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro, card)} />
+      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro)} />
       <WalkthroughProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
     </div>
   )
 }
 
 function Stage({ scene }) {
-  const grid = scene === 'guardrail' ? overGrid
-    : scene === 'shuffle' ? shuffleGrid
-    : scene === 'overview' ? shuffleGrid
-    : (scene === 'drop' ? dropGrid : initialGrid)
-
-  const unassigned = scene === 'unassigned' ? 20 : 14
+  const showDetail = scene === 'detail'
 
   return (
-    <ZachShell title="Job Board · Week of May 24" subtitle="Drag sections onto crews and days." actionLabel="Optimize Week" actionIcon={ClipboardList} filterChips={[{ icon: Users, label: '3 crews on duty' }, { icon: Calendar, label: 'Week view' }]}>
-      <div style={{ display: 'flex', gap: 10, flex: 1, overflow: 'hidden' }}>
-        {/* Unassigned rail */}
-        <div style={{ width: 110, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9, padding: 8 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Unassigned</div>
-          <motion.div animate={{ scale: scene === 'unassigned' ? [1, 1.04, 1] : 1 }} transition={{ repeat: scene === 'unassigned' ? Infinity : 0, duration: 1.5 }} style={{ padding: 8, background: T.warningBg, border: `1.5px solid ${T.warning}`, borderRadius: 7 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: T.warning, textAlign: 'center' }}>{unassigned}</div>
-            <div style={{ fontSize: 9, color: T.textSecondary, textAlign: 'center', textTransform: 'uppercase', fontWeight: 600 }}>sections</div>
-          </motion.div>
-        </div>
-
-        {/* Grid */}
-        <div style={{ flex: 1, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '70px repeat(5, 1fr)', borderBottom: `1px solid ${T.border}` }}>
-            <div style={{ padding: 6, fontSize: 10, color: T.textMuted, fontWeight: 600 }}>Crew</div>
-            {DAYS.map(d => <div key={d} style={{ padding: 6, fontSize: 10, color: T.textMuted, fontWeight: 700, textAlign: 'center' }}>{d}</div>)}
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '11px', fontFamily: 'system-ui, sans-serif', color: T.text, overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ backgroundColor: T.bgCard, borderBottom: `1px solid ${T.border}`, padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '14px', fontWeight: '700', color: T.text }}>Job Board</span>
+          {/* Week nav */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <button style={{ padding: '3px 6px', border: `1px solid ${T.border}`, borderRadius: '4px', backgroundColor: 'transparent', cursor: 'pointer' }}><ChevronLeft size={11} /></button>
+            <span style={{ fontSize: '10px', color: T.textMuted, whiteSpace: 'nowrap' }}>Jun 9 – Jun 14, 2026</span>
+            <button style={{ padding: '3px 6px', border: `1px solid ${T.border}`, borderRadius: '4px', backgroundColor: 'transparent', cursor: 'pointer' }}><ChevronRight size={11} /></button>
           </div>
-          {CREWS.map(crew => (
-            <div key={crew} style={{ display: 'grid', gridTemplateColumns: '70px repeat(5, 1fr)', borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ padding: '8px 6px', fontSize: 11, color: T.text, fontWeight: 700 }}>{crew}</div>
-              {DAYS.map(d => <Cell key={d} hours={grid[crew][d]} highlight={scene === 'drop' && crew === 'Cole' && d === 'Tue'} overbook={scene === 'guardrail' && crew === 'Cole' && d === 'Tue' && grid[crew][d] > 16} />)}
-            </div>
-          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+          <div style={{ position: 'relative' }}>
+            <Search size={10} style={{ position: 'absolute', left: '6px', top: '50%', transform: 'translateY(-50%)', color: T.textMuted }} />
+            <input readOnly placeholder="Search..." style={{ padding: '4px 6px 4px 18px', border: `1px solid ${T.border}`, borderRadius: '5px', fontSize: '10px', backgroundColor: T.bg, color: T.text, outline: 'none', width: '100px' }} />
+          </div>
+          <select style={{ padding: '4px 6px', border: `1px solid ${T.border}`, borderRadius: '5px', fontSize: '10px', backgroundColor: T.bg, color: T.textSecondary }}>
+            <option>All PMs</option>
+          </select>
+          <button style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 8px', border: 'none', borderRadius: '5px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', cursor: 'pointer' }}>
+            <Plus size={10} />Schedule
+          </button>
         </div>
       </div>
-    </ZachShell>
+
+      {/* Gantt grid */}
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
+        <GanttGrid scene={scene} />
+        {showDetail && <JobDetailPanel />}
+      </div>
+    </div>
   )
 }
 
-function Cell({ hours, highlight, overbook }) {
-  const allotted = 16
-  const pct = Math.min(100, (hours / allotted) * 100)
-  const color = overbook ? T.danger : hours > allotted ? T.danger : hours >= 12 ? T.warning : hours > 0 ? T.successDark : T.textMuted
-  const bg    = overbook ? 'rgba(239,68,68,0.15)' : hours > 0 ? T.bg : 'transparent'
+function GanttGrid({ scene }) {
+  const highlight = scene === 'drag' ? 2 : null // highlight Thu column
+  const COL_W = '13.5%'
+  const ROW_H = '70px'
+
   return (
-    <motion.div animate={{ scale: highlight ? [1, 1.06, 1] : 1, backgroundColor: bg }} transition={{ duration: 0.6 }} style={{ margin: 4, padding: 6, border: `1.5px solid ${overbook ? T.danger : highlight ? T.accent : T.border}`, borderRadius: 6, minHeight: 40 }}>
-        {hours > 0 ? (
-          <>
-            <div style={{ fontSize: 13, fontWeight: 800, color, textAlign: 'center' }}>{hours}h</div>
-            <div style={{ height: 3, background: T.bg, borderRadius: 99, marginTop: 3 }}>
-              <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 99 }} />
+    <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+      {/* Day headers */}
+      <div style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, backgroundColor: T.bgCard }}>
+        <div style={{ width: '100px', flexShrink: 0, padding: '6px 8px', fontSize: '10px', fontWeight: '600', color: T.textMuted, borderRight: `1px solid ${T.border}` }}>Employee</div>
+        {DAYS.map((day, i) => (
+          <div key={day} style={{ flex: 1, padding: '6px 4px', textAlign: 'center', backgroundColor: highlight === i ? T.accentBg : 'transparent', borderRight: `1px solid ${T.border}` }}>
+            <div style={{ fontSize: '9px', fontWeight: '700', color: T.textMuted }}>{day}</div>
+            <div style={{ fontSize: '10px', color: i === 0 ? T.accent : T.text, fontWeight: i === 0 ? '600' : '400' }}>{DATES[i]}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Employee rows */}
+      {EMPLOYEES.map((emp, eIdx) => (
+        <div key={emp.id} style={{ display: 'flex', borderBottom: `1px solid ${T.border}`, minHeight: ROW_H, position: 'relative' }}>
+          {/* Name col */}
+          <div style={{ width: '100px', flexShrink: 0, padding: '8px', display: 'flex', alignItems: 'center', gap: '5px', borderRight: `1px solid ${T.border}`, backgroundColor: T.bgCard }}>
+            <div style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: emp.color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: '700', color: emp.color, flexShrink: 0 }}>
+              {emp.name.charAt(0)}
             </div>
-            {overbook && <div style={{ fontSize: 8, color: T.danger, textAlign: 'center', marginTop: 2, fontWeight: 700 }}>OVERBOOKED</div>}
-          </>
-        ) : (
-          <div style={{ fontSize: 10, color: T.textMuted, textAlign: 'center', paddingTop: 8 }}>—</div>
-        )}
-      </motion.div>
+            <span style={{ fontSize: '10px', fontWeight: '500', color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.name}</span>
+          </div>
+          {/* Day cells */}
+          {DAYS.map((_, dIdx) => (
+            <div key={dIdx} style={{ flex: 1, borderRight: `1px solid ${T.border}`, backgroundColor: highlight === dIdx ? T.accentBg + '60' : 'transparent', position: 'relative' }} />
+          ))}
+          {/* Job bars */}
+          {PLACED_JOBS.filter(j => j.emp === eIdx).map(job => {
+            const sc = STATUS_COLORS[job.status] || T.accent
+            const left = `calc(100px + ${job.startDay} * (100% - 100px) / 6)`
+            const width = `calc(${job.spanDays} * (100% - 100px) / 6 - 4px)`
+            return (
+              <motion.div
+                key={job.id}
+                initial={{ opacity: 0, scale: 0.96 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: (eIdx + job.startDay) * 0.06, duration: 0.25 }}
+                style={{
+                  position: 'absolute',
+                  left, top: '8px', width,
+                  height: 'calc(100% - 16px)',
+                  backgroundColor: sc + '20',
+                  border: `1.5px solid ${sc}`,
+                  borderRadius: '5px',
+                  padding: '4px 6px',
+                  cursor: 'pointer',
+                  overflow: 'hidden',
+                  zIndex: 1,
+                }}
+              >
+                <div style={{ fontSize: '9px', fontWeight: '700', color: sc, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {job.title}
+                </div>
+                <div style={{ fontSize: '8px', color: T.textSecondary, marginTop: '1px' }}>{job.customer}</div>
+                {job.amount > 0 && (
+                  <div style={{ fontSize: '9px', fontWeight: '700', color: T.accent, marginTop: '2px' }}>${job.amount.toLocaleString()}</div>
+                )}
+              </motion.div>
+            )
+          })}
+        </div>
+      ))}
+    </div>
   )
 }
 
-function caption(phase, sceneKey, setupIdx, setupShowingIntro, card) {
+function JobDetailPanel() {
+  const job = PLACED_JOBS[0]
+  return (
+    <motion.div
+      initial={{ x: 30, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      transition={{ duration: 0.3 }}
+      style={{ width: '200px', flexShrink: 0, backgroundColor: T.bgCard, borderLeft: `1px solid ${T.border}`, padding: '12px', overflowY: 'auto' }}
+    >
+      <div style={{ fontSize: '12px', fontWeight: '600', color: T.text, marginBottom: '8px' }}>LED Retrofit — Northbridge</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+        <span style={{ padding: '2px 7px', borderRadius: '8px', fontSize: '9px', fontWeight: '600', backgroundColor: STATUS_COLORS['In Progress'] + '20', color: STATUS_COLORS['In Progress'] }}>In Progress</span>
+      </div>
+      {[
+        [User,   'Marcus Okafor'],
+        [MapPin, '1440 S Temple, SLC'],
+        [Clock,  'Jun 9 – Jun 10'],
+      ].map(([Icon, label]) => (
+        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10px', color: T.textSecondary, marginBottom: '3px' }}>
+          <Icon size={10} />{label}
+        </div>
+      ))}
+      <div style={{ fontSize: '14px', fontWeight: '700', color: T.accent, marginTop: '6px' }}>$24,500</div>
+    </motion.div>
+  )
+}
+
+function caption(phase, sceneKey, setupIdx, setupShowingIntro) {
   const m = {
-    unassigned: '1. Twenty unassigned sections sit in the queue',
-    drop:       '2. Drag onto Cole/Tuesday — slot fills to 14h',
-    guardrail:  '3. Try to overbook → red bar, confirmation required',
-    shuffle:    '4. Shuffle work across crews and days',
-    overview:   '5. One screen, the whole week, every crew',
+    board:    '1 · Job Board — week-view Gantt, per-employee rows, colored job bars',
+    drag:     '2 · Drag a job bar to reschedule — target column highlights on hover',
+    detail:   '3 · Click a job bar → detail panel slides in with status, customer, date, amount',
+    filter:   '4 · Filter by PM, status, or business unit — non-admins see only their rows',
+    schedule: '5 · + Schedule button opens the job scheduling modal — pick job + date + PM',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
-  if (phase === 'setup' && setupShowingIntro) return 'Sections drive the board'
+  if (phase === 'setup' && setupShowingIntro) return 'How the job board works'
   if (phase === 'setup') return `Setup ${setupIdx + 1}/${card.setup.steps.length} — ${card.setup.steps[setupIdx]?.title || ''}`
   if (phase === 'done') return "That's the loop. Replay anytime."
   return ''
