@@ -1,10 +1,10 @@
-// Victor (AI photo verification) walkthrough.
+// Victor walkthrough — rebuilt to Prospect Scout standard.
+// Source: src/pages/agents/victor/VictorVerify.jsx
+// Victor is a photo QA agent — grade A–F, before/after completeness checks.
+// DO NOT import ZachShell.
 
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  ShieldCheck, Upload, Sparkles, Award, AlertTriangle, FileText,
-  Camera, CheckCircle2,
-} from 'lucide-react'
+import { ShieldCheck, Camera, Upload, Star, CheckCircle, AlertTriangle, X } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
 import SetupChecklist from './SetupChecklist'
@@ -12,157 +12,132 @@ import {
   CenteredOverlay, SetupIntro, DonePanel,
   WalkthroughCaption, WalkthroughProgressBar,
 } from './WalkthroughChrome'
-import { T, ZachShell, Chip } from './zach/ZachShell'
 import card from '../../lib/featureKnowledge/victor.js'
+
+const T = {
+  bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
+  text: '#2c3530', textSecondary: '#4d5a52', textMuted: '#7d8a7f',
+  accent: '#5a6349', accentBg: 'rgba(90,99,73,0.12)',
+}
+
+// gradeColors from VictorVerify.jsx line 21
+const GRADE_COLORS = { 'A': '#22c55e', 'B': '#3b82f6', 'C': '#f59e0b', 'D': '#f97316', 'F': '#ef4444' }
+
+// Mock Victor report
+const MOCK_REPORT = {
+  grade: 'B',
+  job: 'LED Retrofit — Northbridge · JOB-041',
+  score: 82,
+  checks: [
+    { type: 'completion', label: 'Completed Work',   status: 'pass', photos: 3 },
+    { type: 'before',     label: 'Before Photos',    status: 'pass', photos: 4 },
+    { type: 'after',      label: 'After Photos',     status: 'pass', photos: 4 },
+    { type: 'cleanliness',label: 'Cleanliness',      status: 'warn', photos: 1 },
+    { type: 'workquality',label: 'Work Quality',     status: 'pass', photos: 2 },
+    { type: 'general',    label: 'General — Missing',status: 'fail', photos: 0 },
+  ],
+  notes: "Good coverage on Before/After. Missing general site photos. Cleanliness documentation sparse — needs 2+ cleanup shots for full score.",
+}
 
 export default function VictorWalkthrough() {
   const runner = useWalkthroughRunner(card)
-  const { phase, sceneKey, setupIdx, setupShowingIntro, elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+  const { phase, sceneKey, sceneElapsed, setupIdx, setupShowingIntro,
+    elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+
   return (
-    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: `linear-gradient(135deg, ${T.bg} 0%, #ece6d4 100%)`, overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: T.bg, overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0 }}>
         {phase === 'marketing' && <Stage scene={sceneKey} />}
         <AnimatePresence mode="wait">
           {phase === 'setup' && setupShowingIntro && <SetupIntro key="intro" />}
           {phase === 'setup' && !setupShowingIntro && (
-            <CenteredOverlay key="checklist"><SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} /></CenteredOverlay>
+            <CenteredOverlay key="checklist">
+              <SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} />
+            </CenteredOverlay>
           )}
-          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="The pre-payroll sanity check that catches half-done work." />}
+          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Quality verified before payroll." />}
         </AnimatePresence>
       </div>
       <VoiceToggle enabled={voiceOn} onToggle={() => setVoiceOn(v => !v)} theme={T} />
-      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro, card)} />
+      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro)} />
       <WalkthroughProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
     </div>
   )
 }
 
 function Stage({ scene }) {
+  const showGrade = scene !== 'upload'
+  const gc = GRADE_COLORS[MOCK_REPORT.grade]
+
   return (
-    <ZachShell title="Victor · JOB-2147 verification" subtitle="32 photos · 8 bays · threshold 80" actionLabel="Run Verify" actionIcon={ShieldCheck} actionHighlight={scene === 'analyze'}>
-      {scene === 'upload' && (
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>Photos uploaded · 32 / 32</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4 }}>
-            {Array.from({ length: 32 }, (_, i) => (
-              <motion.div key={i} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.025 }} style={{ aspectRatio: '1', background: i % 2 === 0 ? '#1f2937' : '#0f1726', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                <Camera size={10} style={{ color: 'rgba(255,255,255,0.5)' }} />
-                {i < 16 && <div style={{ position: 'absolute', bottom: 1, right: 2, fontSize: 7, color: '#fbbf24', fontWeight: 700 }}>before</div>}
-                {i >= 16 && <div style={{ position: 'absolute', bottom: 1, right: 2, fontSize: 7, color: '#22c55e', fontWeight: 700 }}>after</div>}
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '11px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <ShieldCheck size={16} style={{ color: '#8b5cf6' }} />
+        <span style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>Victor</span>
+        <span style={{ fontSize: '10px', color: T.textMuted }}>Photo Verification Agent</span>
+      </div>
+
+      {/* Job context */}
+      <div style={{ backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Camera size={13} style={{ color: T.accent, flexShrink: 0 }} />
+        <span style={{ fontSize: '11px', fontWeight: '500', color: T.text }}>{MOCK_REPORT.job}</span>
+        {scene === 'upload' && (
+          <button style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', border: 'none', borderRadius: '5px', backgroundColor: '#8b5cf6', color: '#fff', fontSize: '10px', cursor: 'pointer' }}>
+            <Upload size={10} />Upload Photos
+          </button>
+        )}
+      </div>
+
+      {/* Grade card */}
+      {showGrade && (
+        <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.35 }}
+          style={{ backgroundColor: T.bgCard, border: `2px solid ${gc}`, borderRadius: '10px', padding: '14px', display: 'flex', alignItems: 'center', gap: '16px' }}
+        >
+          <div style={{ width: '52px', height: '52px', borderRadius: '12px', backgroundColor: gc + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px', fontWeight: '900', color: gc, flexShrink: 0 }}>
+            {MOCK_REPORT.grade}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: T.text }}>Quality Score: {MOCK_REPORT.score}/100</div>
+            <div style={{ fontSize: '10px', color: T.textSecondary, marginTop: '3px' }}>{MOCK_REPORT.notes}</div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Check grid */}
+      {showGrade && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+          {MOCK_REPORT.checks.map((check, i) => {
+            const color = check.status === 'pass' ? '#22c55e' : check.status === 'warn' ? '#f59e0b' : '#ef4444'
+            const Icon = check.status === 'pass' ? CheckCircle : check.status === 'warn' ? AlertTriangle : X
+            return (
+              <motion.div key={check.type} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07, duration: 0.25 }}
+                style={{ backgroundColor: color + '10', border: `1px solid ${color}30`, borderRadius: '7px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '3px' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Icon size={10} style={{ color, flexShrink: 0 }} />
+                  <span style={{ fontSize: '9px', fontWeight: '600', color }}>{check.label}</span>
+                </div>
+                <span style={{ fontSize: '10px', color: T.textMuted }}>{check.photos} photo{check.photos !== 1 ? 's' : ''}</span>
               </motion.div>
-            ))}
-          </div>
-          <div style={{ marginTop: 8, fontSize: 10, color: T.textMuted, fontStyle: 'italic', textAlign: 'center' }}>
-            16 before · 16 after · uploaded from Field Scout
-          </div>
+            )
+          })}
         </div>
       )}
-
-      {scene === 'analyze' && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 12 }}>
-          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.4, ease: 'linear' }} style={{ width: 64, height: 64, borderRadius: '50%', border: `4px solid ${T.purple}`, borderTopColor: 'transparent' }} />
-          <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Victor is reading the photos…</div>
-          <div style={{ fontSize: 11, color: T.textMuted, maxWidth: 320, textAlign: 'center' }}>
-            Pairing before/after · counting fixtures · grading workmanship · checking against the lighting-retrofit checklist
-          </div>
-        </div>
-      )}
-
-      {scene === 'grade' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center' }}>
-          <motion.div initial={{ scale: 0.7 }} animate={{ scale: 1 }} style={{ width: 140, height: 140, borderRadius: '50%', background: `conic-gradient(${T.successDark} 94%, ${T.bg} 94%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-            <div style={{ width: 116, height: 116, borderRadius: '50%', background: T.bgCard, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ fontSize: 36, fontWeight: 800, color: T.successDark }}>94</div>
-              <div style={{ fontSize: 9, color: T.textMuted, fontWeight: 700, textTransform: 'uppercase' }}>out of 100</div>
-            </div>
-          </motion.div>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: T.successBg, color: T.successDark, borderRadius: 99, fontWeight: 800, fontSize: 14 }}>
-            <Award size={16} /> Grade A
-          </motion.div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, width: '100%' }}>
-            {[
-              { label: 'Coverage',    value: '8/8 bays', color: T.successDark },
-              { label: 'Workmanship', value: '92/100',   color: T.successDark },
-              { label: 'Pairings',    value: '15/16',    color: T.warning },
-            ].map((r, i) => (
-              <motion.div key={r.label} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 + i * 0.15 }} style={{ padding: 8, background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 7, textAlign: 'center' }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: r.color }}>{r.value}</div>
-                <div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>{r.label}</div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {scene === 'flag' && (
-        <div style={{ background: T.bgCard, border: `1.5px solid ${T.warning}`, borderRadius: 11, padding: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <AlertTriangle size={18} style={{ color: T.warning }} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>2 issues flagged</div>
-              <div style={{ fontSize: 10, color: T.textMuted }}>Tech can re-shoot before leaving the site</div>
-            </div>
-          </div>
-          {[
-            { area: 'Bay 6 · end of row',  issue: 'no after photo',         severity: 'high' },
-            { area: 'Fixture 4-2',          issue: 'visible misalignment',   severity: 'med' },
-          ].map((row, i) => (
-            <motion.div key={i} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.2 }} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 70px', gap: 10, padding: 10, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 7, marginBottom: 6, fontSize: 11, alignItems: 'center' }}>
-              <div style={{ color: T.text, fontWeight: 700 }}>{row.area}</div>
-              <div style={{ color: T.textMuted }}>{row.issue}</div>
-              <Chip color={row.severity === 'high' ? T.danger : T.warning} bg={row.severity === 'high' ? 'rgba(239,68,68,0.12)' : T.warningBg}>{row.severity}</Chip>
-            </motion.div>
-          ))}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} style={{ marginTop: 8, padding: 8, background: T.accentBg, borderRadius: 6, fontSize: 11, color: T.accent, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-            <Camera size={12} /> Tech notified · re-shoot before clock out
-          </motion.div>
-        </div>
-      )}
-
-      {scene === 'report' && (
-        <div style={{ background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 11, padding: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <FileText size={22} style={{ color: T.successDark }} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>Victor Report · JOB-2147</div>
-              <div style={{ fontSize: 10, color: T.textMuted }}>Northbridge LED Retrofit · attached to job + portal</div>
-            </div>
-            <Chip color={T.successDark} bg={T.successBg}>Grade A · 94</Chip>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-            <Field label="Photos analyzed" value="32" />
-            <Field label="Areas covered"   value="8 / 8" />
-            <Field label="Pairing rate"    value="94%" color={T.successDark} />
-            <Field label="Workmanship"     value="92 / 100" color={T.successDark} />
-          </div>
-          <div style={{ padding: 10, background: T.bg, borderRadius: 6, fontSize: 11, color: T.text, lineHeight: 1.5 }}>
-            <strong>Summary:</strong> Job complete with high coverage. Bay 6 missing after-photo (fixed by tech). Fixture 4-2 minor misalignment (noted, not blocking). Insurance, rebate paperwork, and disputes are covered by this report.
-          </div>
-        </div>
-      )}
-    </ZachShell>
-  )
-}
-
-function Field({ label, value, color }) {
-  return (
-    <div style={{ padding: 8, background: T.bg, borderRadius: 7, border: `1px solid ${T.border}` }}>
-      <div style={{ fontSize: 9, color: T.textMuted, textTransform: 'uppercase', fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 800, color: color || T.text, marginTop: 2 }}>{value}</div>
     </div>
   )
 }
 
-function caption(phase, sceneKey, setupIdx, setupShowingIntro, card) {
+function caption(phase, sceneKey, setupIdx, setupShowingIntro) {
   const m = {
-    upload:  '1. Tech uploads 32 photos · 16 before, 16 after',
-    analyze: '2. Victor reads · pairs before/after · grades workmanship',
-    grade:   '3. Score 94 · Grade A · per-dimension breakdown',
-    flag:    '4. Flags 2 issues · tech re-shoots before clocking out',
-    report:  '5. Report attached to job + customer portal',
+    upload: '1 · Victor — photo QA agent, upload job photos for review',
+    grade:  '2 · Victor grades the submission A–F with a score out of 100',
+    check:  '3 · Six checks: Before, After, Completed Work, Cleanliness, Quality, General',
+    notes:  '4 · AI notes exactly what\'s missing — "needs 2+ cleanup shots for full score"',
+    block:  '5 · Failed Victor review can block efficiency bonuses until photos are complete',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
-  if (phase === 'setup' && setupShowingIntro) return 'Unlock Victor · set threshold'
+  if (phase === 'setup' && setupShowingIntro) return 'How Victor works'
   if (phase === 'setup') return `Setup ${setupIdx + 1}/${card.setup.steps.length} — ${card.setup.steps[setupIdx]?.title || ''}`
   if (phase === 'done') return "That's the loop. Replay anytime."
   return ''
