@@ -291,6 +291,7 @@ export default function Layout() {
       baseItems: [
         { to: '/field-scout', icon: Compass, label: 'Field Scout (Clock)', hint: 'Daily dashboard + clock in/out for field techs' },
         { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'PM workspace to schedule and track job sections' },
+        { to: '/services/upcoming', icon: Wrench, label: 'Upcoming Services', hint: 'Warranty, annual check-ups, and other service visits coming due — call customers to schedule' },
         { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
         { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' },
         { to: '/vendors', icon: Building2, label: 'Vendors', hint: 'Suppliers you order parts and materials from' },

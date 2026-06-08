@@ -47,6 +47,7 @@ import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import DocumentRules from './pages/DocumentRules'
 import Reports from './pages/Reports'
+import UpcomingServices from './pages/UpcomingServices'
 import CommunicationsLog from './pages/CommunicationsLog'
 import Expenses from './pages/Expenses'
 import Appointments from './pages/Appointments'
@@ -391,6 +392,7 @@ function App() {
           <Route path="/utility-programs/:id/rates" element={<AgentRequired slug="lenard-lighting"><RebateRates /></AgentRequired>} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/document-rules" element={<DocumentRules />} />
+          <Route path="/services/upcoming" element={<UpcomingServices />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/reports/:reportType" element={<Reports />} />
           <Route path="/communications" element={<CommunicationsLog />} />

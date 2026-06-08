@@ -502,6 +502,35 @@ export default function CustomerPortal() {
           </div>
         )}
 
+        {/* Coverage banner — same as InvoiceDetail, but reads coverage
+            fields from the job included in the edge-function response. */}
+        {isInvoice && (() => {
+          const j = doc.job
+          const partsCov = j?.parts_coverage
+          const laborCov = j?.labor_coverage
+          if (!partsCov && !laborCov) return null
+          if (partsCov === 'customer' && laborCov === 'customer') return null
+          const labelFor = (c) => c === 'manufacturer' ? 'manufacturer warranty' : c === 'company' ? 'us — no charge to you' : c === 'split' ? 'split' : c
+          const bits = []
+          if (partsCov && partsCov !== 'customer') bits.push(`Parts: ${labelFor(partsCov)}`)
+          if (laborCov && laborCov !== 'customer') bits.push(`Labor: ${labelFor(laborCov)}`)
+          return (
+            <div style={{
+              marginBottom: '16px', padding: '14px 16px',
+              backgroundColor: 'rgba(217,119,6,0.08)',
+              border: '1px solid rgba(217,119,6,0.28)',
+              borderRadius: '10px',
+            }}>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#92400e', marginBottom: '4px' }}>
+                Coverage on this {j?.service_kind ? j.service_kind.replace(/_/g, ' ') : 'visit'}
+              </div>
+              <div style={{ fontSize: '13px', color: '#92400e' }}>
+                {bits.join(' · ')}. You are only being billed for items not listed above.
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Invoice details */}
         {isInvoice && (
           <div style={{ ...styles.card, marginBottom: '16px' }}>

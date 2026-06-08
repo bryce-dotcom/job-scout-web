@@ -179,7 +179,7 @@ export default function InvoiceDetail() {
 
     const { data: invoiceData } = await supabase
       .from('invoices')
-      .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title, lead_id, quote_id)')
+      .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title, lead_id, quote_id, service_kind, parts_coverage, labor_coverage, coverage_notes, parent_job_id)')
       .eq('id', id)
       .single()
 
@@ -1806,6 +1806,43 @@ export default function InvoiceDetail() {
         customerId={invoice.customer_id}
         jobId={invoice.job_id}
       />
+
+      {/* Coverage banner — when this invoice is for a service visit
+          where parts and/or labor are covered by manufacturer or
+          absorbed by us, surface it prominently so reps don't accidentally
+          collect from the customer and the customer doesn't get confused
+          by the $0 lines below. */}
+      {(() => {
+        const j = invoice.job
+        const partsCov = j?.parts_coverage
+        const laborCov = j?.labor_coverage
+        if (!partsCov && !laborCov) return null
+        if (partsCov === 'customer' && laborCov === 'customer') return null
+        const labelFor = (c) => c === 'manufacturer' ? 'manufacturer warranty' : c === 'company' ? 'us — no customer charge' : c === 'split' ? 'split (see notes)' : c
+        const bits = []
+        if (partsCov && partsCov !== 'customer') bits.push(`Parts: ${labelFor(partsCov)}`)
+        if (laborCov && laborCov !== 'customer') bits.push(`Labor: ${labelFor(laborCov)}`)
+        return (
+          <div style={{
+            marginBottom: '16px', padding: '12px 14px',
+            backgroundColor: 'rgba(217,119,6,0.08)',
+            border: '1px solid rgba(217,119,6,0.28)',
+            borderRadius: '10px',
+            display: 'flex', alignItems: 'flex-start', gap: '10px',
+          }}>
+            <AlertTriangle size={16} style={{ color: '#d97706', flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#92400e' }}>
+                Coverage on this {j?.service_kind ? j.service_kind.replace(/_/g, ' ') : 'service visit'}
+              </div>
+              <div style={{ fontSize: '12px', color: '#92400e', marginTop: '2px' }}>
+                {bits.join(' · ')}. Customer is only billed for items not listed above.
+                {j?.coverage_notes ? ` Notes: ${j.coverage_notes}.` : ''}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 360px', gap: '24px' }}>
         {/* Main Content */}

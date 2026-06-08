@@ -241,6 +241,11 @@ function JobDetailInner() {
   const [childServices, setChildServices] = useState([])
   const [parentJob, setParentJob] = useState(null)
   const [showAddServiceVisit, setShowAddServiceVisit] = useState(false)
+  // Fires once when the job moves to Completed / Verified Complete and
+  // the user hasn't already added a child service. One question: do they
+  // want to schedule a follow-up service visit now? "Yes" opens the
+  // Add Service Visit modal; "No" silently moves on.
+  const [showScheduleFollowup, setShowScheduleFollowup] = useState(false)
   const [localIncentive, setLocalIncentive] = useState('')
   const [localDiscount, setLocalDiscount] = useState('')
   const [discountMode, setDiscountMode] = useState('$')  // '$' = flat, '%' = percent of subtotal
@@ -1069,6 +1074,23 @@ function JobDetailInner() {
           },
           createdBy: user?.id
         })
+      }
+
+      // Service-followup prompt — once the job is complete, ask if we
+      // should schedule an annual checkup or warranty follow-up. Only
+      // prompt for parent jobs (not for service visits being completed)
+      // and only when this job doesn't already have child services.
+      if (!job.parent_job_id) {
+        // Check for existing children before prompting (no double-asking).
+        const { data: existingChildren } = await supabase
+          .from('jobs')
+          .select('id')
+          .eq('parent_job_id', job.id)
+          .limit(1)
+        if (!existingChildren || existingChildren.length === 0) {
+          // Fire-and-forget — opening the modal handles the user's choice.
+          setShowScheduleFollowup(true)
+        }
       }
     }
 
@@ -5439,6 +5461,20 @@ function JobDetailInner() {
                 line items, and invoice — but rolls up under the original here and on Job Costing reports.
               </p>
 
+              {/* If this IS a warranty visit (parts or labor covered by mfr),
+                  surface a Track manufacturer reimbursement action so the
+                  user can record what the manufacturer owes us. Uses the
+                  same utility_invoices table as utility rebates (claim_type
+                  = 'manufacturer_warranty') so the existing AR pipeline
+                  picks it up automatically. */}
+              {(job?.parts_coverage === 'manufacturer' || job?.labor_coverage === 'manufacturer') && (
+                <ManufacturerClaimSection
+                  job={job}
+                  companyId={companyId}
+                  theme={theme}
+                />
+              )}
+
               {parentJob && (
                 <div style={{
                   padding: '10px 12px', marginBottom: '10px',
@@ -8135,6 +8171,47 @@ function CustomerUtilitySplit({ job, theme }) {
         </div>
       </div>
 
+      {/* Follow-up prompt — fires once when the job completes. Cleanest
+          UX is a tiny yes/no instead of immediately opening the
+          full Add Service Visit form. */}
+      {showScheduleFollowup && (
+        <>
+          <div
+            onClick={() => setShowScheduleFollowup(false)}
+            style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000 }}
+          />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            zIndex: 1001, width: 'min(440px, 92vw)',
+            backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '12px',
+            padding: '20px',
+          }}>
+            <h2 style={{ margin: '0 0 6px', fontSize: '17px', fontWeight: 700, color: theme.text }}>
+              Schedule a follow-up service?
+            </h2>
+            <p style={{ margin: '0 0 16px', fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
+              Job is complete. Want to schedule an annual checkup, warranty visit, or other follow-up
+              service tied to this job? Tracy will see it on the Upcoming Services page so she can call
+              the customer to confirm before the due date.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button onClick={() => setShowScheduleFollowup(false)} style={{
+                padding: '8px 14px', borderRadius: '8px', border: `1px solid ${theme.border}`,
+                backgroundColor: 'transparent', color: theme.text, fontSize: '13px', cursor: 'pointer',
+              }}>
+                Not now
+              </button>
+              <button onClick={() => { setShowScheduleFollowup(false); setShowAddServiceVisit(true) }} style={{
+                padding: '8px 14px', borderRadius: '8px', border: 'none',
+                backgroundColor: theme.accent, color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+              }}>
+                Yes, add service visit
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Add Service Visit modal — creates a new job linked back to this
           one as the parent. User picks the type (warranty / annual /
           tune-up / repair / upsell / callback), the date, and how
@@ -8161,6 +8238,144 @@ function CustomerUtilitySplit({ job, theme }) {
           }}
         />
       )}
+    </div>
+  )
+}
+
+// ────────────────────── ManufacturerClaimSection ──────────────────────
+// On a warranty-coverage job, lets the user create a manufacturer claim
+// (stored as a utility_invoices row with claim_type = 'manufacturer_warranty')
+// so the existing AR pipeline picks it up. Shows existing claims if any.
+function ManufacturerClaimSection({ job, companyId, theme }) {
+  const [claims, setClaims] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [adding, setAdding] = useState(false)
+  const [amount, setAmount] = useState('')
+  const [vendor, setVendor] = useState('')
+  const [reference, setReference] = useState('')
+
+  useEffect(() => {
+    if (!companyId || !job?.id) return
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      const { data } = await supabase
+        .from('utility_invoices')
+        .select('id, amount, payment_status, utility_name, notes, created_at')
+        .eq('company_id', companyId)
+        .eq('job_id', job.id)
+        .eq('claim_type', 'manufacturer_warranty')
+      if (!cancelled) {
+        setClaims(data || [])
+        setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [companyId, job?.id])
+
+  const createClaim = async () => {
+    if (!amount || Number(amount) <= 0) return
+    setAdding(true)
+    try {
+      const payload = {
+        company_id: companyId,
+        job_id: job.id,
+        customer_name: job.customer_name || job.business_name || '',
+        utility_name: vendor.trim() || 'Manufacturer warranty',
+        amount: Number(amount),
+        incentive_amount: Number(amount),
+        payment_status: 'Pending',
+        claim_type: 'manufacturer_warranty',
+        notes: reference.trim() ? `Reference: ${reference.trim()}` : null,
+        business_unit: job.business_unit || null,
+      }
+      const { data, error } = await supabase
+        .from('utility_invoices')
+        .insert([payload])
+        .select('id, amount, payment_status, utility_name, notes, created_at')
+        .single()
+      if (!error && data) {
+        setClaims([...claims, data])
+        setAmount(''); setVendor(''); setReference('')
+      }
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  if (loading) return null
+
+  return (
+    <div style={{
+      padding: '12px', marginBottom: '12px',
+      backgroundColor: 'rgba(220,38,38,0.04)',
+      border: '1px solid rgba(220,38,38,0.18)',
+      borderRadius: '8px',
+    }}>
+      <div style={{ fontSize: '12px', fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+        Manufacturer reimbursement
+      </div>
+      <p style={{ margin: '0 0 10px', fontSize: '12px', color: theme.textSecondary, lineHeight: 1.5 }}>
+        Track what the manufacturer owes us for parts/labor on this warranty visit. Counts toward your Combined AR alongside utility rebates.
+      </p>
+
+      {claims.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
+          {claims.map(c => (
+            <div key={c.id} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '8px 10px', backgroundColor: theme.bgCard, borderRadius: '6px',
+              border: `1px solid ${theme.border}`, fontSize: '13px',
+            }}>
+              <div>
+                <span style={{ fontWeight: 600, color: theme.text }}>{c.utility_name}</span>
+                {c.notes && <span style={{ color: theme.textMuted, marginLeft: '6px', fontSize: '11px' }}>{c.notes}</span>}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{
+                  fontSize: '10px', padding: '1px 6px', borderRadius: '8px', fontWeight: 600,
+                  backgroundColor: c.payment_status === 'Paid' ? 'rgba(34,197,94,0.12)' : 'rgba(234,179,8,0.12)',
+                  color: c.payment_status === 'Paid' ? '#16a34a' : '#a16207',
+                }}>
+                  {c.payment_status}
+                </span>
+                <span style={{ fontWeight: 600, color: theme.text }}>
+                  ${Number(c.amount).toFixed(2)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '6px', alignItems: 'flex-end' }}>
+        <div>
+          <label style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>Amount</label>
+          <input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+            style={{ width: '100%', padding: '6px 8px', borderRadius: '5px', border: `1px solid ${theme.border}`, backgroundColor: '#fff', color: theme.text, fontSize: '12px' }} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>Manufacturer</label>
+          <input type="text" value={vendor} onChange={(e) => setVendor(e.target.value)}
+            placeholder="e.g. MES"
+            style={{ width: '100%', padding: '6px 8px', borderRadius: '5px', border: `1px solid ${theme.border}`, backgroundColor: '#fff', color: theme.text, fontSize: '12px' }} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>Claim #</label>
+          <input type="text" value={reference} onChange={(e) => setReference(e.target.value)}
+            placeholder="RMA / claim ref"
+            style={{ width: '100%', padding: '6px 8px', borderRadius: '5px', border: `1px solid ${theme.border}`, backgroundColor: '#fff', color: theme.text, fontSize: '12px' }} />
+        </div>
+        <button onClick={createClaim} disabled={adding || !amount || Number(amount) <= 0} style={{
+          padding: '7px 12px', borderRadius: '6px', border: 'none',
+          backgroundColor: theme.accent, color: '#fff', fontSize: '12px', fontWeight: 600,
+          cursor: adding ? 'wait' : 'pointer', opacity: (!amount || Number(amount) <= 0) ? 0.5 : 1,
+          whiteSpace: 'nowrap',
+        }}>
+          {adding ? '…' : '+ Add claim'}
+        </button>
+      </div>
     </div>
   )
 }
