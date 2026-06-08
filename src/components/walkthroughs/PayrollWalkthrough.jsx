@@ -1,9 +1,11 @@
-// Payroll Runs walkthrough.
+// Payroll walkthrough — rebuilt to Prospect Scout standard.
+// Source: src/pages/Payroll.jsx
+// DO NOT import ZachShell — reproduces real component structure with mock data.
 
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  DollarSign, Calendar, Calculator, CheckCircle2, Wallet, Send,
-  FileBadge, Bell, ArrowRight,
+  DollarSign, Calendar, Clock, TrendingUp, Zap,
+  ChevronLeft, ChevronRight, Play, Plus, FileText, X,
 } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
@@ -12,147 +14,205 @@ import {
   CenteredOverlay, SetupIntro, DonePanel,
   WalkthroughCaption, WalkthroughProgressBar,
 } from './WalkthroughChrome'
-import { T, ZachShell, Chip } from './zach/ZachShell'
 import card from '../../lib/featureKnowledge/payroll.js'
 
-const PREVIEW = [
-  { name: 'Cole',   reg: 80,  ot: 4,  gross: 3920, fed: 412, state: 144, fica: 243, net: 3121 },
-  { name: 'Marcus', reg: 80,  ot: 0,  gross: 3200, fed: 305, state: 112, fica: 198, net: 2585 },
-  { name: 'Priya',  reg: 76,  ot: 0,  gross: 3192, fed: 298, state: 104, fica: 198, net: 2592 },
-  { name: 'Alayda', reg: 80,  ot: 0,  gross: 4000, fed: 425, state: 152, fica: 248, net: 3175 },
+const T = {
+  bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
+  text: '#2c3530', textSecondary: '#4d5a52', textMuted: '#7d8a7f',
+  accent: '#5a6349', accentBg: 'rgba(90,99,73,0.12)',
+}
+
+const MOCK_EMPLOYEES = [
+  { id: 1, name: 'Doug Anderson',  role: 'Sales',      hours: 80.0, regular: 80.0, ot: 0,   commission: 3200, gross: 6200,  net: 5100  },
+  { id: 2, name: 'Tracy Benson',   role: 'Manager',    hours: 72.5, regular: 72.5, ot: 0,   commission: 1800, gross: 5800,  net: 4750  },
+  { id: 3, name: 'Marcus Webb',    role: 'Field Tech', hours: 87.0, regular: 80.0, ot: 7.0, commission: 840,  gross: 4280,  net: 3520  },
+  { id: 4, name: 'Linda Park',     role: 'Setter',     hours: 64.0, regular: 64.0, ot: 0,   commission: 750,  gross: 2950,  net: 2430  },
 ]
 
 export default function PayrollWalkthrough() {
   const runner = useWalkthroughRunner(card)
-  const { phase, sceneKey, setupIdx, setupShowingIntro, elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+  const { phase, sceneKey, sceneElapsed, setupIdx, setupShowingIntro,
+    elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+
   return (
-    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: `linear-gradient(135deg, ${T.bg} 0%, #ece6d4 100%)`, overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: T.bg, overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0 }}>
         {phase === 'marketing' && <Stage scene={sceneKey} />}
         <AnimatePresence mode="wait">
           {phase === 'setup' && setupShowingIntro && <SetupIntro key="intro" />}
           {phase === 'setup' && !setupShowingIntro && (
-            <CenteredOverlay key="checklist"><SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} /></CenteredOverlay>
+            <CenteredOverlay key="checklist">
+              <SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} />
+            </CenteredOverlay>
           )}
-          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Gusto math · without the per-employee fee." />}
+          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Payroll processed." />}
         </AnimatePresence>
       </div>
       <VoiceToggle enabled={voiceOn} onToggle={() => setVoiceOn(v => !v)} theme={T} />
-      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro, card)} />
+      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro)} />
       <WalkthroughProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
     </div>
   )
 }
 
 function Stage({ scene }) {
+  const showDetail = scene === 'detail'
+  const showRunModal = scene === 'run'
+
   return (
-    <ZachShell title="Payroll · May 16-31" subtitle="Biweekly · 8 employees" actionLabel={scene === 'pay' ? 'Approved' : 'Approve'} actionIcon={CheckCircle2} actionHighlight={scene === 'pay'}>
-      {scene === 'period' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Stat label="Pay period" value="May 16 – 31" color={T.text} icon={Calendar} />
-          <Stat label="Pay date" value="Jun 5" color={T.accent} icon={Calendar} />
-          <Stat label="Hours pulled" value="624 h" color={T.successDark} />
-          <Stat label="Employees" value="8" color={T.text} />
-          <div style={{ gridColumn: 'span 2', padding: 10, background: T.purpleBg, border: `1.5px solid ${T.purple}`, borderRadius: 7, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Calculator size={16} style={{ color: T.purple }} />
-            <div style={{ fontSize: 11, color: T.text }}>Time clock auto-pulled · ready to compute</div>
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '11px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden', position: 'relative' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <DollarSign size={16} style={{ color: T.accent }} />
+          <span style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>Payroll</span>
+        </div>
+        <button style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', border: 'none', borderRadius: '7px', backgroundColor: '#22c55e', color: '#fff', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>
+          <Play size={11} />Run Payroll
+        </button>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '7px' }}>
+        {/* Pay Period */}
+        <div style={{ backgroundColor: T.bgCard, borderRadius: '9px', border: `1px solid ${T.border}`, padding: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '5px' }}>
+            <Calendar size={12} style={{ color: T.accent }} />
+            <span style={{ fontSize: '9px', color: T.textMuted }}>Pay Period</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <button style={{ padding: '2px', border: `1px solid ${T.border}`, borderRadius: '4px', backgroundColor: 'transparent', cursor: 'pointer' }}><ChevronLeft size={9} /></button>
+            <span style={{ fontSize: '10px', fontWeight: '600', color: T.text, flex: 1, textAlign: 'center' }}>Jun 1 – Jun 14</span>
+            <button style={{ padding: '2px', border: `1px solid ${T.border}`, borderRadius: '4px', backgroundColor: 'transparent', cursor: 'pointer' }}><ChevronRight size={9} /></button>
           </div>
         </div>
-      )}
-
-      {(scene === 'compute' || scene === 'review') && (
-        <div style={{ background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9, overflow: 'hidden', flex: 1 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '90px 50px 50px 70px 60px 60px 60px 70px', fontSize: 9, color: T.textMuted, fontWeight: 700, padding: '6px 8px', borderBottom: `1.5px solid ${T.border}`, textTransform: 'uppercase' }}>
-            <div>Employee</div><div>Reg</div><div>OT</div><div>Gross</div><div>Fed</div><div>State</div><div>FICA</div><div>Net</div>
+        {/* Next Payday */}
+        <div style={{ backgroundColor: T.bgCard, borderRadius: '9px', border: `1px solid ${T.border}`, padding: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '5px' }}>
+            <Clock size={12} style={{ color: '#3b82f6' }} />
+            <span style={{ fontSize: '9px', color: T.textMuted }}>Next Payday</span>
           </div>
-          {PREVIEW.map((row, i) => (
-            <motion.div key={row.name} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.12 }} style={{ display: 'grid', gridTemplateColumns: '90px 50px 50px 70px 60px 60px 60px 70px', fontSize: 11, color: T.text, padding: '8px 8px', borderBottom: `1px solid ${T.border}`, alignItems: 'center' }}>
-              <div style={{ fontWeight: 700 }}>{row.name}</div>
-              <div>{row.reg}h</div>
-              <div style={{ color: row.ot > 0 ? T.warning : T.textMuted, fontWeight: row.ot > 0 ? 700 : 400 }}>{row.ot}h</div>
-              <div style={{ fontWeight: 700 }}>${row.gross.toLocaleString()}</div>
-              <div style={{ color: T.danger }}>-${row.fed}</div>
-              <div style={{ color: T.danger }}>-${row.state}</div>
-              <div style={{ color: T.danger }}>-${row.fica}</div>
-              <div style={{ fontWeight: 800, color: T.successDark }}>${row.net.toLocaleString()}</div>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: T.text }}>Jun 15</div>
+          <div style={{ fontSize: '10px', color: '#8b5cf6', fontWeight: '600' }}>6 days away</div>
+        </div>
+        {/* Total Payroll */}
+        <div style={{ backgroundColor: T.bgCard, borderRadius: '9px', border: `1px solid ${T.border}`, padding: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '5px' }}>
+            <DollarSign size={12} style={{ color: '#22c55e' }} />
+            <span style={{ fontSize: '9px', color: T.textMuted }}>Total Payroll</span>
+          </div>
+          <div style={{ fontSize: '16px', fontWeight: '700', color: '#22c55e' }}>$19,230</div>
+        </div>
+        {/* Commissions */}
+        <div style={{ backgroundColor: T.bgCard, borderRadius: '9px', border: `1px solid ${T.border}`, padding: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '5px' }}>
+            <TrendingUp size={12} style={{ color: '#f59e0b' }} />
+            <span style={{ fontSize: '9px', color: T.textMuted }}>Commissions</span>
+          </div>
+          <div style={{ fontSize: '16px', fontWeight: '700', color: '#f59e0b' }}>$6,590</div>
+          <div style={{ fontSize: '9px', color: '#f97316' }}>$750 pending</div>
+        </div>
+      </div>
+
+      {/* Employee rows */}
+      {!showDetail && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px', overflowY: 'auto' }}>
+          {MOCK_EMPLOYEES.map((emp, i) => (
+            <motion.div key={emp.id} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06, duration: 0.25 }}
+              style={{ backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '9px', padding: '10px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
+            >
+              <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: T.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', color: T.accent, flexShrink: 0 }}>
+                {emp.name.charAt(0)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: T.text }}>{emp.name}</div>
+                <div style={{ fontSize: '9px', color: T.textMuted }}>{emp.role} · {emp.hours.toFixed(1)} hrs{emp.ot > 0 ? ` (${emp.ot}h OT)` : ''}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '13px', fontWeight: '700', color: '#22c55e' }}>${emp.net.toLocaleString()}</div>
+                <div style={{ fontSize: '9px', color: T.textMuted }}>net · gross ${emp.gross.toLocaleString()}</div>
+              </div>
             </motion.div>
           ))}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} style={{ display: 'flex', justifyContent: 'space-between', padding: 10, background: T.accentBg }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.accent }}>Total net</div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.accent }}>$11,473</div>
-          </motion.div>
         </div>
       )}
 
-      {scene === 'pay' && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-          <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} style={{ background: T.bgCard, border: `1.5px solid ${T.successDark}`, borderRadius: 12, padding: 22, textAlign: 'center', maxWidth: 360 }}>
-            <CheckCircle2 size={48} style={{ color: T.successDark, margin: '0 auto 6px' }} />
-            <div style={{ fontSize: 18, fontWeight: 800, color: T.successDark }}>Payroll approved</div>
-            <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>$11,473 queued for direct deposit · paystubs published</div>
-            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {[
-                { icon: Wallet, label: 'ACH file queued · arrives Jun 5' },
-                { icon: Send,   label: '8 paystubs published to My Pay' },
-                { icon: FileBadge, label: 'GL journal entries posted' },
-              ].map((row, i) => (
-                <motion.div key={row.label} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 + i * 0.18 }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: 6, background: T.bg, borderRadius: 6, fontSize: 11, color: T.text }}>
-                  <row.icon size={11} style={{ color: T.accent }} />
-                  {row.label}
-                </motion.div>
-              ))}
+      {/* Detail view for Doug */}
+      {showDetail && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '7px' }}>
+          <div style={{ backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '9px', padding: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '11px', backgroundColor: T.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: '700', color: T.accent }}>D</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: T.text }}>Doug Anderson</div>
+              <div style={{ fontSize: '10px', color: T.textMuted }}>Sales · $32/hr · PTO: 4.5 days</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '9px', color: T.textMuted }}>Net Pay</div>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: '#22c55e' }}>$5,100</div>
+              <div style={{ fontSize: '9px', color: T.textMuted }}>Gross: $6,200</div>
+            </div>
+          </div>
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+            {[['+ Time', '#6b7280'], ['+ Commission', '#6b7280'], ['Addition', '#22c55e'], ['Deduction', '#ef4444'], ['Check Stub', '#3b82f6']].map(([label, color]) => (
+              <button key={label} style={{ padding: '5px 10px', border: `1px solid ${color}20`, borderRadius: '6px', backgroundColor: `${color}10`, color, fontSize: '10px', fontWeight: '500', cursor: 'pointer' }}>{label}</button>
+            ))}
+          </div>
+          {/* Pay breakdown */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+            {[
+              ['Reg. Hours', '80h × $32', '+$2,560'],
+              ['Commissions', '3 closed deals', '+$3,200'],
+              ['Benefits', 'Health / 401k', '−$420'],
+              ['Taxes', 'Fed + State', '−$1,080'],
+            ].map(([label, desc, val]) => (
+              <div key={label} style={{ backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', padding: '8px' }}>
+                <div style={{ fontSize: '10px', fontWeight: '600', color: T.text }}>{label}</div>
+                <div style={{ fontSize: '9px', color: T.textMuted }}>{desc}</div>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: val.startsWith('+') ? '#22c55e' : '#ef4444', marginTop: '2px' }}>{val}</div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Run Payroll modal */}
+      {showRunModal && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, padding: '16px' }}>
+          <motion.div initial={{ scale: 0.96, y: -10 }} animate={{ scale: 1, y: 0 }} style={{ backgroundColor: T.bgCard, borderRadius: '12px', border: `1px solid ${T.border}`, width: '280px', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderBottom: `1px solid ${T.border}` }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>Run Payroll</span>
+              <X size={13} style={{ color: T.textMuted }} />
+            </div>
+            <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ fontSize: '11px', color: T.textSecondary }}>Pay period: <strong>Jun 1 – Jun 14, 2026</strong></div>
+              <div style={{ fontSize: '11px', color: T.textSecondary }}>Payday: <strong>Jun 15, 2026</strong></div>
+              <div style={{ fontSize: '14px', fontWeight: '700', color: '#22c55e' }}>Total: $19,230</div>
+              <div style={{ fontSize: '9px', color: T.textMuted, backgroundColor: T.bg, padding: '6px 8px', borderRadius: '5px' }}>
+                This creates payroll_runs records and locks the period. Ensure all time entries and commissions are correct first.
+              </div>
+              <div style={{ display: 'flex', gap: '7px' }}>
+                <button style={{ flex: 1, padding: '7px', border: `1px solid ${T.border}`, borderRadius: '6px', backgroundColor: 'transparent', color: T.textSecondary, fontSize: '10px', cursor: 'pointer' }}>Cancel</button>
+                <button style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '6px', backgroundColor: '#22c55e', color: '#fff', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}>Confirm & Run</button>
+              </div>
             </div>
           </motion.div>
-        </div>
+        </motion.div>
       )}
-
-      {scene === 'tax' && (
-        <div style={{ background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9, padding: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>Payroll inbox · tax to-dos</div>
-          {[
-            { label: 'EFTPS federal deposit · $1,440', due: 'Friday Jun 8', urgency: 'high' },
-            { label: 'Utah TC-941 quarterly · Q2',     due: 'Jul 31',       urgency: 'med' },
-            { label: 'FUTA Form 940 · annual',         due: 'Jan 31',       urgency: 'low' },
-          ].map((row, i) => (
-            <motion.div key={row.label} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.18 }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 10, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 7, marginBottom: 5 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Bell size={14} style={{ color: row.urgency === 'high' ? T.danger : row.urgency === 'med' ? T.warning : T.textMuted }} />
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: T.text }}>{row.label}</div>
-                  <div style={{ fontSize: 10, color: T.textMuted }}>Due {row.due}</div>
-                </div>
-              </div>
-              <Chip color={row.urgency === 'high' ? T.danger : row.urgency === 'med' ? T.warning : T.textMuted} bg={row.urgency === 'high' ? 'rgba(239,68,68,0.12)' : row.urgency === 'med' ? T.warningBg : T.bg}>{row.urgency}</Chip>
-            </motion.div>
-          ))}
-        </div>
-      )}
-    </ZachShell>
-  )
-}
-
-function Stat({ label, value, color, icon: Icon }) {
-  return (
-    <div style={{ padding: 10, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
-        {Icon && <Icon size={12} style={{ color }} />}
-        <div style={{ fontSize: 9, color: T.textMuted, textTransform: 'uppercase', fontWeight: 700 }}>{label}</div>
-      </div>
-      <div style={{ fontSize: 14, fontWeight: 800, color }}>{value}</div>
     </div>
   )
 }
 
-function caption(phase, sceneKey, setupIdx, setupShowingIntro, card) {
+function caption(phase, sceneKey, setupIdx, setupShowingIntro) {
   const m = {
-    period:  '1. Pick the pay period · hours pull from time clock',
-    compute: '2. Compute · IRS Pub 15-T · state · FICA · Medicare',
-    review:  '3. Per-employee preview · gross to net itemized',
-    pay:     '4. Approve · ACH queued · paystubs + GL post automatically',
-    tax:     '5. Tax deposits + filings auto-land in payroll inbox',
+    period:    '1 · Payroll — pay period nav, Next Payday, Total Payroll, Commissions summary',
+    employees: '2 · Employee rows — hours, OT flag, gross pay, net pay',
+    detail:    '3 · Employee detail — pay breakdown: hours + commissions + additions − deductions',
+    run:       '4 · Run Payroll — confirm period, payday, total · locks the period',
+    stub:      '5 · Check Stub — printable pay stub for every employee every period',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
-  if (phase === 'setup' && setupShowingIntro) return 'One-time setup · runs are 5 minutes'
+  if (phase === 'setup' && setupShowingIntro) return 'How Payroll works'
   if (phase === 'setup') return `Setup ${setupIdx + 1}/${card.setup.steps.length} — ${card.setup.steps[setupIdx]?.title || ''}`
   if (phase === 'done') return "That's the loop. Replay anytime."
   return ''

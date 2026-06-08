@@ -1,9 +1,11 @@
-// Books walkthrough.
+// Books walkthrough — rebuilt to Prospect Scout standard.
+// Source: src/pages/Books.jsx
+// DO NOT import ZachShell — reproduces real component structure with mock data.
 
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  BookOpen, TrendingUp, FileText, CheckSquare, Download, Edit2,
-  Landmark, ArrowUp, ArrowDown,
+  BookOpen, Wallet, TrendingUp, TrendingDown, PiggyBank,
+  AlertCircle, CheckCircle, CheckSquare, Download, CreditCard,
 } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
@@ -12,34 +14,43 @@ import {
   CenteredOverlay, SetupIntro, DonePanel,
   WalkthroughCaption, WalkthroughProgressBar,
 } from './WalkthroughChrome'
-import { T, ZachShell, Chip } from './zach/ZachShell'
 import card from '../../lib/featureKnowledge/books.js'
 
-const TXS = [
-  { date: 'May 28', desc: 'Stripe deposit · INV-2014',  cat: 'Income',           amount: 4280, in: true },
-  { date: 'May 27', desc: 'Lowes Highland #2218',       cat: 'Materials',         amount: -389, in: false },
-  { date: 'May 26', desc: 'Verizon Wireless',           cat: 'Phone',             amount: -128, in: false },
-  { date: 'May 25', desc: 'Stripe deposit · INV-2011',  cat: 'Income',           amount: 1840, in: true },
-  { date: 'May 24', desc: 'Pacific Gas & Electric',     cat: 'Utilities',         amount: -284, in: false },
+const T = {
+  bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
+  text: '#2c3530', textSecondary: '#4d5a52', textMuted: '#7d8a7f',
+  accent: '#5a6349', accentBg: 'rgba(90,99,73,0.12)',
+}
+
+const MOCK_TRANSACTIONS = [
+  { id: 1, date: 'Jun 8', name: 'Home Depot #1042',       amount: -847.32, ai_category: 'Materials',     confirmed: true,  tax_cat: 'Line 26 - Materials' },
+  { id: 2, date: 'Jun 7', name: 'Shell Gas Station',      amount: -124.50, ai_category: 'Vehicle — Fuel', confirmed: false, tax_cat: 'Line 20 - Auto expenses' },
+  { id: 3, date: 'Jun 7', name: 'ACH Deposit',            amount: 18200.00,ai_category: 'Income',        confirmed: false, tax_cat: '' },
+  { id: 4, date: 'Jun 6', name: 'Office Depot',           amount: -89.99,  ai_category: 'Office',        confirmed: true,  tax_cat: 'Line 20 - Office expenses' },
+  { id: 5, date: 'Jun 5', name: 'Northbridge Invoice Pay',amount: 24500.00,ai_category: 'Income',        confirmed: true,  tax_cat: '' },
 ]
 
 export default function BooksWalkthrough() {
   const runner = useWalkthroughRunner(card)
-  const { phase, sceneKey, setupIdx, setupShowingIntro, elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+  const { phase, sceneKey, sceneElapsed, setupIdx, setupShowingIntro,
+    elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+
   return (
-    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: `linear-gradient(135deg, ${T.bg} 0%, #ece6d4 100%)`, overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: T.bg, overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0 }}>
         {phase === 'marketing' && <Stage scene={sceneKey} />}
         <AnimatePresence mode="wait">
           {phase === 'setup' && setupShowingIntro && <SetupIntro key="intro" />}
           {phase === 'setup' && !setupShowingIntro && (
-            <CenteredOverlay key="checklist"><SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} /></CenteredOverlay>
+            <CenteredOverlay key="checklist">
+              <SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} />
+            </CenteredOverlay>
           )}
-          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Clean books your CPA actually trusts." />}
+          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Books clean, CPA happy." />}
         </AnimatePresence>
       </div>
       <VoiceToggle enabled={voiceOn} onToggle={() => setVoiceOn(v => !v)} theme={T} />
-      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro, card)} />
+      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro)} />
       <WalkthroughProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
     </div>
   )
@@ -47,103 +58,127 @@ export default function BooksWalkthrough() {
 
 function Stage({ scene }) {
   return (
-    <ZachShell title="Books · May 2026" subtitle="Profit & loss · transactions · reconciliation" actionLabel="Export" actionIcon={Download}>
-      {scene === 'pnl' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Stat label="Revenue" value="$48,420" color={T.successDark} icon={ArrowUp} />
-          <Stat label="Expenses" value="$31,180" color={T.danger} icon={ArrowDown} />
-          <Stat label="Net income" value="$17,240" color={T.accent} icon={TrendingUp} highlight />
-          <Stat label="Margin" value="35.6%" color={T.purple} icon={TrendingUp} />
-          <div style={{ gridColumn: 'span 2', background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9, padding: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>P&L by month</div>
-            <div style={{ display: 'flex', alignItems: 'end', gap: 6, height: 60 }}>
-              {[28, 35, 42, 38, 48].map((h, i) => (
-                <motion.div key={i} initial={{ height: 0 }} animate={{ height: `${h}%` }} transition={{ delay: i * 0.1, duration: 0.6 }} style={{ flex: 1, background: T.accent, borderRadius: 4, position: 'relative' }}>
-                  <div style={{ position: 'absolute', bottom: -16, left: 0, right: 0, textAlign: 'center', fontSize: 8, color: T.textMuted }}>
-                    {['Jan', 'Feb', 'Mar', 'Apr', 'May'][i]}
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '11px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <BookOpen size={16} style={{ color: T.accent }} />
+          <span style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>Books</span>
         </div>
-      )}
-
-      {(scene === 'tx' || scene === 'edit') && (
-        <div style={{ background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9, padding: 10, height: '100%', overflow: 'auto' }}>
-          {TXS.map((tx, i) => (
-            <motion.div key={i} initial={{ opacity: 0 }} animate={{ opacity: 1, backgroundColor: scene === 'edit' && i === 1 ? T.accentBg : 'transparent' }} transition={{ delay: i * 0.1 }} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 110px 90px', gap: 8, alignItems: 'center', padding: '8px 6px', borderBottom: `1px solid ${T.border}`, fontSize: 11 }}>
-              <div style={{ fontSize: 10, color: T.textMuted }}>{tx.date}</div>
-              <div style={{ color: T.text }}>{tx.desc}</div>
-              <Chip color={tx.in ? T.successDark : T.accent} bg={tx.in ? T.successBg : T.accentBg}>{tx.cat}</Chip>
-              <div style={{ fontWeight: 700, textAlign: 'right', color: tx.in ? T.successDark : T.text }}>
-                {tx.in ? '+' : ''}${Math.abs(tx.amount).toLocaleString()}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
-
-      {scene === 'recon' && (
-        <div style={{ background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 11, padding: 18, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <Chip icon={Landmark} color={T.accent} bg={T.accentBg}>Chase Business Checking</Chip>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
-            <Stat label="Plaid ending balance" value="$42,118" color={T.text} />
-            <Stat label="Book balance" value="$42,118" color={T.text} />
-          </div>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} style={{ marginTop: 12, padding: 12, background: T.successBg, border: `1.5px solid ${T.successDark}`, borderRadius: 7, textAlign: 'center' }}>
-            <CheckSquare size={28} style={{ color: T.successDark, margin: '0 auto 4px' }} />
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.successDark }}>Reconciled · $0 drift</div>
-            <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>Period locked · ready for CPA</div>
-          </motion.div>
-        </div>
-      )}
-
-      {scene === 'export' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {[
-            { label: 'P&L (Profit & Loss)', icon: TrendingUp },
-            { label: 'Balance Sheet',       icon: BookOpen },
-            { label: 'Trial Balance',       icon: FileText },
-            { label: 'General Ledger',      icon: FileText },
-          ].map((r, i) => (
-            <motion.div key={r.label} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.12 }} style={{ padding: 12, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <r.icon size={18} style={{ color: T.accent }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{r.label}</div>
-                <div style={{ fontSize: 10, color: T.textMuted }}>CPA-ready PDF + CSV</div>
-              </div>
-              <Download size={14} style={{ color: T.textMuted }} />
-            </motion.div>
-          ))}
-        </div>
-      )}
-    </ZachShell>
-  )
-}
-
-function Stat({ label, value, color, icon: Icon, highlight }) {
-  return (
-    <motion.div animate={{ borderColor: highlight ? T.accent : T.border }} style={{ padding: 10, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
-        {Icon && <Icon size={12} style={{ color }} />}
-        <div style={{ fontSize: 9, color: T.textMuted, textTransform: 'uppercase', fontWeight: 700 }}>{label}</div>
+        <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', border: `1px solid ${T.border}`, borderRadius: '6px', backgroundColor: T.bgCard, fontSize: '10px', cursor: 'pointer', color: T.textSecondary }}>
+          <Download size={10} />Download CPA Package
+        </button>
       </div>
-      <div style={{ fontSize: 16, fontWeight: 800, color }}>{value}</div>
-    </motion.div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: '3px', backgroundColor: T.bg, padding: '3px', borderRadius: '8px', width: 'fit-content' }}>
+        {['Overview', 'Transactions 2', 'Expenses', 'Tax Summary'].map((tab, i) => (
+          <button key={tab} style={{ padding: '4px 10px', fontSize: '10px', fontWeight: (scene === 'transactions' || scene === 'reconcile') ? (i === 1 ? '600' : '400') : (i === 0 ? '600' : '400'), backgroundColor: (scene === 'transactions' || scene === 'reconcile') ? (i === 1 ? T.bgCard : 'transparent') : (i === 0 ? T.bgCard : 'transparent'), color: (scene === 'transactions' || scene === 'reconcile') ? (i === 1 ? T.text : T.textMuted) : (i === 0 ? T.text : T.textMuted), border: 'none', borderRadius: '6px', cursor: 'pointer', boxShadow: 'none', position: 'relative' }}>
+            {tab === 'Transactions 2' ? <>Transactions<span style={{ marginLeft: '4px', padding: '1px 5px', borderRadius: '8px', backgroundColor: '#ef4444', color: '#fff', fontSize: '8px', fontWeight: '700' }}>2</span></> : tab}
+          </button>
+        ))}
+      </div>
+
+      {/* Overview content */}
+      {(scene === 'overview' || scene === 'reconcile') && (
+        <>
+          {/* Metric cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+            {[
+              { icon: Wallet,       color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  label: 'Cash Available', value: '$84,200' },
+              { icon: TrendingUp,   color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', label: 'Money In (MTD)', value: '$48,700' },
+              { icon: TrendingDown, color: '#ef4444', bg: 'rgba(239,68,68,0.1)',  label: 'Money Out (MTD)',value: '$12,400' },
+              { icon: PiggyBank,    color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  label: 'Net This Month', value: '$36,300' },
+            ].map(s => (
+              <div key={s.label} style={{ backgroundColor: T.bgCard, borderRadius: '10px', border: `1px solid ${T.border}`, padding: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                  <div style={{ width: '28px', height: '28px', borderRadius: '7px', backgroundColor: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <s.icon size={13} style={{ color: s.color }} />
+                  </div>
+                  <span style={{ fontSize: '9px', color: T.textMuted }}>{s.label}</span>
+                </div>
+                <div style={{ fontSize: '18px', fontWeight: '700', color: s.color }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Income to reconcile alert */}
+          {scene === 'reconcile' && (
+            <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+              style={{ padding: '10px 12px', backgroundColor: 'rgba(234,179,8,0.05)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: '10px' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <AlertCircle size={13} style={{ color: '#eab308' }} />
+                <span style={{ fontSize: '11px', fontWeight: '700', color: T.text }}>Income to reconcile</span>
+              </div>
+              <div style={{ fontSize: '10px', color: T.textSecondary, marginBottom: '8px' }}>2 bank deposits not matched to invoices. Blocks commission tracking until resolved.</div>
+              {[
+                { date: 'Jun 7', amount: '$18,200', label: 'ACH Deposit — no invoice match' },
+                { date: 'Jun 5', amount: '$6,400',  label: 'ACH Deposit — no invoice match' },
+              ].map(item => (
+                <div key={item.date} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', backgroundColor: T.bgCard, borderRadius: '6px', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '10px', color: T.textSecondary }}>{item.date} · {item.label}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#22c55e' }}>{item.amount}</span>
+                    <button style={{ padding: '2px 8px', border: 'none', borderRadius: '4px', backgroundColor: T.accent, color: '#fff', fontSize: '9px', fontWeight: '600', cursor: 'pointer' }}>Match</button>
+                  </div>
+                </div>
+              ))}
+            </motion.div>
+          )}
+        </>
+      )}
+
+      {/* Transactions tab */}
+      {scene === 'transactions' && (
+        <div style={{ flex: 1, overflow: 'hidden', backgroundColor: T.bgCard, borderRadius: '10px', border: `1px solid ${T.border}` }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ backgroundColor: T.accentBg }}>
+                {['Date', 'Description', 'Amount', 'Category (AI)', 'Tax Line', '✓'].map(col => (
+                  <th key={col} style={{ padding: '7px 10px', textAlign: col === 'Amount' ? 'right' : 'left', fontSize: '9px', fontWeight: '600', color: T.textMuted, borderBottom: `1px solid ${T.border}` }}>{col}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {MOCK_TRANSACTIONS.map((txn, i) => (
+                <motion.tr key={txn.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
+                  style={{ borderBottom: `1px solid ${T.border}`, backgroundColor: txn.confirmed ? 'transparent' : 'rgba(234,179,8,0.04)' }}
+                >
+                  <td style={{ padding: '7px 10px', fontSize: '10px', color: T.textMuted }}>{txn.date}</td>
+                  <td style={{ padding: '7px 10px', fontSize: '10px', color: T.text, maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{txn.name}</td>
+                  <td style={{ padding: '7px 10px', fontSize: '10px', fontWeight: '600', textAlign: 'right', color: txn.amount > 0 ? '#22c55e' : '#ef4444' }}>
+                    {txn.amount > 0 ? '+' : ''}{txn.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                  </td>
+                  <td style={{ padding: '7px 10px' }}>
+                    <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', backgroundColor: T.accentBg, color: T.accent, fontWeight: '500' }}>{txn.ai_category}</span>
+                  </td>
+                  <td style={{ padding: '7px 10px', fontSize: '9px', color: T.textMuted, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{txn.tax_cat || '—'}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                    {txn.confirmed
+                      ? <CheckCircle size={12} style={{ color: '#22c55e' }} />
+                      : <div style={{ width: '12px', height: '12px', borderRadius: '3px', border: `1.5px solid ${T.border}`, cursor: 'pointer' }} />}
+                  </td>
+                </motion.tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   )
 }
 
-function caption(phase, sceneKey, setupIdx, setupShowingIntro, card) {
+function caption(phase, sceneKey, setupIdx, setupShowingIntro) {
   const m = {
-    pnl:    '1. P&L by month / quarter / year — at a glance',
-    tx:     '2. Every transaction · bank, expense, payment, payroll',
-    edit:   '3. Edit a row — category · Form 1065 line · job alloc',
-    recon:  '4. Reconcile to bank statement in two clicks',
-    export: '5. CPA-ready exports · P&L · BS · GL · trial balance',
+    overview:     '1 · Books Overview — Cash Available, Money In, Money Out, Net This Month',
+    reconcile:    '2 · Income to reconcile — amber alert when deposits have no matching invoice',
+    transactions: '3 · Transactions tab — Plaid transactions with AI category suggestions + confirm checkbox',
+    confirm:      '4 · Confirm a transaction — picks up AI category + tax line for the CPA export',
+    export:       '5 · Download CPA Package — categorized transactions, payroll, tax summary in one ZIP',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
-  if (phase === 'setup' && setupShowingIntro) return 'Plaid + chart of accounts'
+  if (phase === 'setup' && setupShowingIntro) return 'How to keep Books clean'
   if (phase === 'setup') return `Setup ${setupIdx + 1}/${card.setup.steps.length} — ${card.setup.steps[setupIdx]?.title || ''}`
   if (phase === 'done') return "That's the loop. Replay anytime."
   return ''
