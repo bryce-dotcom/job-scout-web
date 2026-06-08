@@ -604,7 +604,10 @@ export default function SalesPipeline() {
     const cutoffEndStr = dateRange === 'custom' && customDateTo ? new Date(customDateTo + 'T23:59:59').toISOString() : null
     if (cutoffStr) {
       const stage = stages.find(s => s.id === lead.status)
-      const isTerminalStage = !!(stage?.isWon || stage?.isLost || stage?.isClosed)
+      // isPaid is terminal for date-range purposes — a deal paid 2 years ago
+      // shouldn't appear in the current month's pipeline view. isClosed was
+      // already terminal; adding isPaid mirrors the same logic.
+      const isTerminalStage = !!(stage?.isWon || stage?.isLost || stage?.isClosed || stage?.isPaid)
       // For delivery-side leads, also count as terminal if the lead's
       // current status is in the company's "delivered" category.
       const deliveredJobStatusIds = (storeJobStatuses || [])
@@ -1160,14 +1163,22 @@ export default function SalesPipeline() {
     const wonCards = getLeadsForStage('Won')
     const salesWonTotal = wonCards.reduce((s, l) => s + getLeadAmount(l), 0)
     const salesWonCount = wonCards.length
-    const rangeCutoff = getDateCutoff(dateRange)
-    const deliveredInRange = deliveredJobsInRange(ownerFilteredJobs, storeJobStatuses, rangeCutoff, null)
-    const deliveredTotal = sumJobTotal(deliveredInRange)
-    const deliveredCount = deliveredInRange.length
+
+    // "Delivered" — leads in terminal delivery stages (Paid, Closed, or any
+    // status the company marks category='delivered' in settings), already
+    // date-filtered by filteredPipelineLeads. The old deliveredJobsInRange()
+    // returned 0 here because no statuses had category='delivered' configured.
+    // Using filteredPipelineLeads mirrors exactly what the pipeline columns show.
+    const deliveredLeadsList = filteredPipelineLeads.filter(l => {
+      const stage = stageMap.get(l.status)
+      return stage?.isPaid || stage?.isClosed
+    })
+    const deliveredCount = deliveredLeadsList.length
+    const deliveredTotal = sumAmount(deliveredLeadsList)
 
     return {
       salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} deal${salesWonCount !== 1 ? 's' : ''} closed`, color: '#16a34a', isFormatted: true },
-      delivered: { value: formatCurrency(deliveredTotal), label: 'Delivered', sublabel: `${deliveredCount} completed`, color: '#10b981', isFormatted: true },
+      delivered: { value: formatCurrency(deliveredTotal), label: 'Delivered', sublabel: `${deliveredCount} paid/closed`, color: '#10b981', isFormatted: true },
       active: { value: activeLeads.length, label: 'Active', color: null },
       won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
       lost: { value: lostLeadsList.length, label: 'Lost', color: '#64748b' },

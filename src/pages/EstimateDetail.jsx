@@ -928,7 +928,15 @@ function EstimateDetailInner() {
   }
 
   const rejectEstimate = async () => {
-    await updateEstimateField('status', 'Rejected')
+    // Set rejected_date alongside status so the sales pipeline date filter
+    // has a reliable "when was this deal lost" timestamp. Without it the
+    // filter falls back to quote.updated_at which can surface old rejected
+    // deals in MTD if the quote gets touched for any reason.
+    const now = new Date().toISOString()
+    setSaving(true)
+    setEstimate(prev => ({ ...prev, status: 'Rejected', rejected_date: now }))
+    await updateQuote(id, { status: 'Rejected', rejected_date: now, updated_at: now })
+    setSaving(false)
     await fetchQuotes()
   }
 
