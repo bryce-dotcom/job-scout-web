@@ -1,10 +1,10 @@
-// Document Rules & Packages walkthrough.
+// Document Rules walkthrough — rebuilt to Prospect Scout standard.
+// Source: src/lib/featureKnowledge/document-rules.js (route: /document-rules)
+// Auto-attach W-9, COI, MSDS, warranty to quotes by trigger rules.
+// DO NOT import ZachShell.
 
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  FileStack, FileText, Filter, PenLine, Archive, CheckCircle2,
-  AlertCircle, ArrowRight,
-} from 'lucide-react'
+import { FileStack, Plus, CheckCircle, Zap, X } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
 import SetupChecklist from './SetupChecklist'
@@ -12,185 +12,137 @@ import {
   CenteredOverlay, SetupIntro, DonePanel,
   WalkthroughCaption, WalkthroughProgressBar,
 } from './WalkthroughChrome'
-import { T, ZachShell, Chip } from './zach/ZachShell'
 import card from '../../lib/featureKnowledge/document-rules.js'
+
+const T = {
+  bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
+  text: '#2c3530', textSecondary: '#4d5a52', textMuted: '#7d8a7f',
+  accent: '#5a6349', accentBg: 'rgba(90,99,73,0.12)',
+}
+
+const MOCK_RULES = [
+  { id: 1, trigger: 'customer.business_name is set',      doc: 'W-9 Contractor Form',      active: true  },
+  { id: 2, trigger: 'job.service_type = "LED Retrofit"',  doc: 'LED Warranty Certificate', active: true  },
+  { id: 3, trigger: 'job.site_requires_coi = true',       doc: 'Certificate of Insurance',  active: true  },
+  { id: 4, trigger: 'quote includes Chemical line',        doc: 'MSDS Safety Sheet',        active: false },
+  { id: 5, trigger: 'quote.total > $10,000',              doc: 'Scope of Work Agreement',  active: true  },
+]
 
 export default function DocumentRulesWalkthrough() {
   const runner = useWalkthroughRunner(card)
-  const { phase, sceneKey, setupIdx, setupShowingIntro, elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+  const { phase, sceneKey, sceneElapsed, setupIdx, setupShowingIntro,
+    elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+
   return (
-    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: `linear-gradient(135deg, ${T.bg} 0%, #ece6d4 100%)`, overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: T.bg, overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0 }}>
         {phase === 'marketing' && <Stage scene={sceneKey} />}
         <AnimatePresence mode="wait">
           {phase === 'setup' && setupShowingIntro && <SetupIntro key="intro" />}
           {phase === 'setup' && !setupShowingIntro && (
-            <CenteredOverlay key="checklist"><SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} /></CenteredOverlay>
+            <CenteredOverlay key="checklist">
+              <SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} />
+            </CenteredOverlay>
           )}
-          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Never forget the COI again." />}
+          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Right documents, every time." />}
         </AnimatePresence>
       </div>
       <VoiceToggle enabled={voiceOn} onToggle={() => setVoiceOn(v => !v)} theme={T} />
-      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro, card)} />
+      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro)} />
       <WalkthroughProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
     </div>
   )
 }
 
 function Stage({ scene }) {
+  const showModal = scene === 'rule'
+  const showFire = scene === 'fire'
+
   return (
-    <ZachShell title="Document Rules" subtitle="Auto-attach docs to quotes by trigger" actionLabel="New Rule" actionIcon={Filter}>
-      {scene === 'rules' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {[
-            { name: 'B2B requires W-9',         trigger: 'customer.type = Commercial', pkg: 'W-9 Package',          color: T.purple },
-            { name: 'Lighting needs warranty',  trigger: 'service_type = Lighting',     pkg: 'Lighting Retrofit',    color: T.accent },
-            { name: 'School districts need COI', trigger: 'customer.requires_coi = true', pkg: 'Insurance Certs',    color: T.warning },
-          ].map((r, i) => (
-            <motion.div key={r.name} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.15 }} style={{ padding: 12, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <Filter size={14} style={{ color: r.color }} />
-                <div style={{ fontSize: 13, fontWeight: 800, color: T.text, flex: 1 }}>{r.name}</div>
-                <Chip color={T.successDark} bg={T.successBg}>active</Chip>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 20px 1fr', gap: 8, alignItems: 'center', fontSize: 11 }}>
-                <div style={{ fontSize: 9, color: T.textMuted, fontWeight: 700, textTransform: 'uppercase' }}>when</div>
-                <div style={{ color: T.text, fontFamily: 'monospace', fontSize: 10 }}>{r.trigger}</div>
-                <ArrowRight size={12} style={{ color: T.textMuted }} />
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <FileStack size={11} style={{ color: r.color }} />
-                  <span style={{ color: T.text, fontWeight: 700 }}>{r.pkg}</span>
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '11px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden', position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+          <FileStack size={15} style={{ color: T.accent }} />
+          <span style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>Document Rules</span>
+        </div>
+        <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', border: 'none', borderRadius: '5px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', cursor: 'pointer' }}>
+          <Plus size={11} />Add Rule
+        </button>
+      </div>
+
+      {/* Auto-fired alert (fire scene) */}
+      {showFire && (
+        <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+          style={{ backgroundColor: '#dcfce7', border: '1px solid #86efac', borderRadius: '9px', padding: '10px 12px' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <Zap size={12} style={{ color: '#16a34a' }} />
+            <span style={{ fontSize: '10px', fontWeight: '700', color: '#15803d' }}>3 documents auto-attached to EST-041</span>
+          </div>
+          <div style={{ fontSize: '10px', color: '#166534' }}>W-9 · LED Warranty Certificate · Scope of Work Agreement</div>
+        </motion.div>
+      )}
+
+      {/* Rules list */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px', overflowY: 'auto' }}>
+        {MOCK_RULES.map((rule, i) => (
+          <motion.div key={rule.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07, duration: 0.25 }}
+            style={{ backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '9px', padding: '10px 12px', opacity: rule.active ? 1 : 0.55 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <span style={{ fontSize: '11px', fontWeight: '600', color: T.text }}>{rule.doc}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                {/* Toggle */}
+                <div style={{ width: '28px', height: '16px', borderRadius: '8px', backgroundColor: rule.active ? T.accent : '#d1d5db', position: 'relative', cursor: 'pointer' }}>
+                  <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#fff', position: 'absolute', top: '2px', left: rule.active ? '14px' : '2px', transition: 'left 0.2s' }} />
                 </div>
               </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
-
-      {scene === 'trigger' && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 14 }}>
-          <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} style={{ background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9, padding: 14, maxWidth: 220 }}>
-            <Chip>New quote</Chip>
-            <div style={{ marginTop: 8, fontSize: 12, fontWeight: 800, color: T.text }}>EST-2160 · Highland HS</div>
-            <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>customer.type = School District</div>
-            <div style={{ fontSize: 10, color: T.textMuted }}>customer.requires_coi = true</div>
-          </motion.div>
-          <motion.div animate={{ x: [0, 8, 0] }} transition={{ repeat: Infinity, duration: 1.4 }}>
-            <ArrowRight size={28} style={{ color: T.accent }} />
-          </motion.div>
-          <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 }} style={{ background: T.bgCard, border: `1.5px solid ${T.warning}`, borderRadius: 9, padding: 14, maxWidth: 250 }}>
-            <Chip color={T.warning} bg={T.warningBg}>Rule fired · COI attached</Chip>
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <DocPill name="Certificate of Insurance.pdf" />
-              <DocPill name="Workers Comp Cert.pdf" />
+            </div>
+            <div style={{ fontSize: '9px', color: T.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Zap size={9} style={{ color: rule.active ? T.accent : T.textMuted }} />
+              When: <span style={{ color: rule.active ? T.textSecondary : T.textMuted }}>{rule.trigger}</span>
             </div>
           </motion.div>
-        </div>
-      )}
+        ))}
+      </div>
 
-      {scene === 'package' && (
-        <div style={{ background: T.bgCard, border: `1.5px solid ${T.accent}`, borderRadius: 11, padding: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <FileStack size={18} style={{ color: T.accent }} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>Package · Lighting Retrofit</div>
-              <div style={{ fontSize: 10, color: T.textMuted }}>4 docs · one attach</div>
+      {/* Add Rule modal */}
+      {showModal && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, padding: '16px' }}>
+          <motion.div initial={{ scale: 0.96 }} animate={{ scale: 1 }} style={{ backgroundColor: T.bgCard, borderRadius: '12px', border: `1px solid ${T.border}`, width: '280px', boxShadow: '0 8px 32px rgba(0,0,0,0.16)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderBottom: `1px solid ${T.border}` }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>Add Document Rule</span>
+              <X size={13} style={{ color: T.textMuted }} />
             </div>
-          </div>
-          {[
-            { name: 'DLC Spec Sheet · 4ft LED',   type: 'PDF · 280 KB' },
-            { name: '5-Year Limited Warranty',     type: 'PDF · 120 KB' },
-            { name: 'Install Instructions',         type: 'PDF · 1.2 MB' },
-            { name: 'RMP Rebate Form',              type: 'PDF · 80 KB' },
-          ].map((d, i) => (
-            <motion.div key={d.name} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.15 }} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 100px', gap: 10, padding: 10, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, marginBottom: 5, alignItems: 'center' }}>
-              <div style={{ width: 30, height: 30, borderRadius: 6, background: T.accentBg, color: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <FileText size={13} />
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{d.name}</div>
-              <div style={{ fontSize: 10, color: T.textMuted, textAlign: 'right' }}>{d.type}</div>
-            </motion.div>
-          ))}
-        </div>
-      )}
-
-      {scene === 'track' && (
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>Signature tracking · EST-2147</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {[
-              { name: 'DLC Spec Sheet',         signed: true,  who: 'Sarah · May 28 10:14am' },
-              { name: 'Warranty Acknowledge',   signed: true,  who: 'Sarah · May 28 10:14am' },
-              { name: 'Install Authorization',  signed: true,  who: 'Sarah · May 28 10:14am' },
-              { name: 'RMP Rebate Authorization', signed: false, who: 'Waiting · sent 5/28' },
-            ].map((d, i) => (
-              <motion.div key={d.name} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.15 }} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 130px', gap: 8, padding: 8, background: T.bgCard, border: `1.5px solid ${d.signed ? T.successDark : T.warning}`, borderRadius: 6, alignItems: 'center', fontSize: 11 }}>
-                {d.signed
-                  ? <CheckCircle2 size={18} style={{ color: T.successDark }} />
-                  : <AlertCircle  size={18} style={{ color: T.warning }} />}
-                <div>
-                  <div style={{ color: T.text, fontWeight: 700 }}>{d.name}</div>
-                  <div style={{ fontSize: 9, color: T.textMuted }}>{d.who}</div>
+            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {[['Trigger Condition', 'customer.business_name is set'], ['Document to Attach', 'W-9 Contractor Form']].map(([l, v]) => (
+                <div key={l}>
+                  <label style={{ display: 'block', fontSize: '10px', fontWeight: '500', color: T.textSecondary, marginBottom: '3px' }}>{l}</label>
+                  <div style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: '5px', backgroundColor: T.bg, fontSize: '11px', color: T.text }}>{v}</div>
                 </div>
-                <Chip color={d.signed ? T.successDark : T.warning} bg={d.signed ? T.successBg : T.warningBg}>{d.signed ? 'signed' : 'pending'}</Chip>
-              </motion.div>
-            ))}
-          </div>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} style={{ marginTop: 8, padding: 8, background: T.warningBg, borderRadius: 6, fontSize: 11, color: T.text, display: 'flex', alignItems: 'center', gap: 5 }}>
-            <AlertCircle size={12} style={{ color: T.warning }} />
-            3 / 4 signed · auto-nudge sent to Sarah for the last one
-          </motion.div>
-        </div>
-      )}
-
-      {scene === 'vault' && (
-        <div style={{ background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 11, padding: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <Archive size={18} style={{ color: T.purple }} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>Signed Documents Vault</div>
-              <div style={{ fontSize: 10, color: T.textMuted }}>Auditable · searchable · year-end-ready</div>
+              ))}
+              <div style={{ display: 'flex', gap: '7px' }}>
+                <button style={{ flex: 1, padding: '7px', border: `1px solid ${T.border}`, borderRadius: '5px', backgroundColor: 'transparent', color: T.textSecondary, fontSize: '10px', cursor: 'pointer' }}>Cancel</button>
+                <button style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '5px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', fontWeight: '500', cursor: 'pointer' }}>Save Rule</button>
+              </div>
             </div>
-            <Chip color={T.purple} bg={T.purpleBg}>1,248 docs</Chip>
-          </div>
-          {[
-            { name: 'Northbridge · Install Auth',   signed: 'May 28 2026', ip: '24.116.x.x' },
-            { name: 'Solera · Warranty Ack',         signed: 'May 27 2026', ip: '70.182.x.x' },
-            { name: 'Cypress · COI Cert',            signed: 'May 24 2026', ip: '70.18.x.x' },
-            { name: 'Granite · DLC Spec Ack',        signed: 'May 22 2026', ip: '24.108.x.x' },
-          ].map((d, i) => (
-            <motion.div key={d.name} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.1 }} style={{ display: 'grid', gridTemplateColumns: '24px 1fr 100px 110px', gap: 8, padding: '6px 8px', borderBottom: `1px dashed ${T.border}`, fontSize: 10, alignItems: 'center' }}>
-              <PenLine size={11} style={{ color: T.successDark }} />
-              <div style={{ color: T.text, fontWeight: 600 }}>{d.name}</div>
-              <div style={{ color: T.textMuted }}>{d.signed}</div>
-              <div style={{ color: T.textMuted, fontFamily: 'monospace', textAlign: 'right' }}>{d.ip}</div>
-            </motion.div>
-          ))}
-        </div>
+          </motion.div>
+        </motion.div>
       )}
-    </ZachShell>
-  )
-}
-
-function DocPill({ name }) {
-  return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 8px', background: T.bg, borderRadius: 99, fontSize: 10, color: T.text }}>
-      <FileText size={10} style={{ color: T.warning }} />
-      {name}
     </div>
   )
 }
 
-function caption(phase, sceneKey, setupIdx, setupShowingIntro, card) {
+function caption(phase, sceneKey, setupIdx, setupShowingIntro) {
   const m = {
-    rules:   '1. Three rules · B2B, lighting, COI · always-on',
-    trigger: '2. New school-district quote → COI auto-attached',
-    package: '3. One package · 4 docs · DLC + warranty + install + rebate',
-    track:   '4. Per-doc signature tracking · 3 of 4 signed',
-    vault:   '5. Signed docs vault · auditable · IP + timestamp logged',
+    list:  '1 · Document Rules — trigger + document pairs with active/inactive toggle',
+    rule:  '2 · Add Rule — set the trigger condition + which document to attach',
+    fire:  '3 · Rule fires when quote matches — W-9 + Warranty + Scope auto-attached instantly',
+    tog:   '4 · Toggle a rule off to pause it — trigger condition stays saved',
+    audit: '5 · Every document attached is logged with the rule that triggered it',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
-  if (phase === 'setup' && setupShowingIntro) return 'Build rules · packages · forget paperwork'
+  if (phase === 'setup' && setupShowingIntro) return 'How Document Rules work'
   if (phase === 'setup') return `Setup ${setupIdx + 1}/${card.setup.steps.length} — ${card.setup.steps[setupIdx]?.title || ''}`
   if (phase === 'done') return "That's the loop. Replay anytime."
   return ''
