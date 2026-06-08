@@ -740,6 +740,33 @@ export default function SalesPipeline() {
         })
       }
 
+      // Won column: also add DIRECT JOBS (no estimate/quote) from wonInRangeJobs.
+      // These are service calls and bookings that bypassed the estimate stage —
+      // window cleaning, recurring services, small repairs booked directly.
+      // Filter to quote_id === null to avoid double-counting jobs that came
+      // from approved estimates (those are already in estimateCards above).
+      if (stageId === 'Won') {
+        ;(wonInRangeJobs || [])
+          .filter(job => !job.quote_id)
+          .forEach(job => {
+            // Skip if somehow already in list (shouldn't happen but be safe)
+            if (estimateCards.find(c => c._jobId === job.id)) return
+            estimateCards.push({
+              _isDirectJob: true,
+              _isEstimate: true,    // so getLeadAmount() picks up _quoteAmount
+              _jobId: job.id,
+              id: `job-${job.id}`,
+              _quoteName: job.job_title || job.job_id || 'Direct Job',
+              _quoteAmount: parseFloat(job.job_total) || 0,
+              _quoteCreatedAt: job.created_at,
+              _quoteApprovedDate: job.created_at,
+              customer_name: job.customer?.name || '',
+              job_id: job.job_id,
+              status: job.status,
+            })
+          })
+      }
+
       return estimateCards.sort((a, b) =>
         new Date(b._quoteCreatedAt || b.created_at || 0) - new Date(a._quoteCreatedAt || a.created_at || 0)
       )
@@ -1173,14 +1200,13 @@ export default function SalesPipeline() {
     // the header stat always matches what the rep sees in the pipeline.
     // Previously used wonJobsInRange(storeJobs) which counted jobs by
     // created_at — a different dataset that never agreed with the column.
-    // "Sales Won" — jobs CREATED in the selected window (estimate→job
-    // approval OR fresh job). Source of truth: src/lib/jobMetrics.js.
-    // Honors the active owner filter via ownerFilteredJobs so the grand
-    // total only shows the selected rep's wins.
+    // "Sales Won" — same source as the Won column cards so tile and column
+    // always agree. Includes both estimate-based wins (approved_date in range)
+    // and direct jobs (created in range, no quote). Owner and date filtered.
+    const wonCards = getLeadsForStage('Won')
+    const salesWonTotal = wonCards.reduce((s, l) => s + getLeadAmount(l), 0)
+    const salesWonCount = wonCards.length
     const rangeCutoff = getDateCutoff(dateRange)
-    const wonInRange = wonJobsInRange(ownerFilteredJobs, rangeCutoff, null)
-    const salesWonTotal = sumJobTotal(wonInRange)
-    const salesWonCount = wonInRange.length
 
     // "Delivered" — leads in terminal delivery stages (Paid, Closed),
     // already date-filtered by filteredPipelineLeads (isPaid is now terminal).
@@ -1194,7 +1220,7 @@ export default function SalesPipeline() {
     const deliveredTotal = sumAmount(deliveredLeadsList)
 
     return {
-      salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} job${salesWonCount !== 1 ? 's' : ''} created`, color: '#16a34a', isFormatted: true },
+      salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} deal${salesWonCount !== 1 ? 's' : ''} won`, color: '#16a34a', isFormatted: true },
       delivered: { value: formatCurrency(deliveredTotal), label: 'Delivered', sublabel: `${deliveredCount} paid/closed`, color: '#10b981', isFormatted: true },
       active: { value: activeLeads.length, label: 'Active', color: null },
       won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
