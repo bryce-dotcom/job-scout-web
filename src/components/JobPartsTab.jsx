@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabase'
 import { toast } from '../lib/toast'
 import { Package, Truck, CheckCircle, AlertCircle, Plus, ShoppingCart } from 'lucide-react'
 import { recomputeJobPartsStatus } from '../lib/poReceive'
-import { generatePoNumber } from '../lib/poUtils'
+import { generatePoNumber, expandProductForPO } from '../lib/poUtils'
 
 const PARTS_STATUS_LABELS = {
   not_needed:        { label: 'No Parts',          color: '#7d8a7f', bg: 'rgba(125,138,127,0.12)' },
@@ -176,45 +176,52 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
           .select().single()
         if (error) throw error
 
-        // Insert lines + back-link via purchase_order_line_jobs
+        // Insert lines + back-link via purchase_order_line_jobs.
+        // Bundles (cost=null) are expanded into per-component lines so the
+        // vendor receives a list of actual parts to pick, not an abstract name.
         let subtotal = 0
-        for (let i = 0; i < items.length; i++) {
-          const { line, toOrder } = items[i]
-          // Need the product cost
-          const { data: prod } = await supabase
-            .from('products_services').select('cost, vendor_sku, name').eq('id', line.item_id).maybeSingle()
-          const unitCost = parseFloat(prod?.cost) || 0
-          const lineTotal = unitCost * toOrder
-          subtotal += lineTotal
-          const desc = prod?.vendor_sku
-            ? `${prod.name} (${prod.vendor_sku})`
-            : (line.item?.name || line.description || prod?.name || 'Item')
-          const { data: poLine } = await supabase
-            .from('purchase_order_lines')
-            .insert({
+        let sortOrder = 0
+        for (const { line, toOrder } of items) {
+          // expandProductForPO handles direct-cost, bundle, and no-cost cases
+          const orderItems = await expandProductForPO(line.item_id, toOrder, companyId)
+          let firstPoLineId = null   // first PO line for this job_line → used for job_line.po_line_id
+
+          for (const oi of orderItems) {
+            const lineTotal = oi.unitCost * oi.quantity
+            subtotal += lineTotal
+            const { data: poLine } = await supabase
+              .from('purchase_order_lines')
+              .insert({
+                company_id: companyId,
+                po_id: po.id,
+                product_id: oi.productId,
+                description: oi.description,
+                quantity_ordered: oi.quantity,
+                quantity_received: 0,
+                unit_cost: oi.unitCost,
+                line_total: lineTotal,
+                sort_order: sortOrder++,
+              })
+              .select().single()
+
+            // Back-link so receiving fans qty out to this job_line
+            await supabase.from('purchase_order_line_jobs').insert({
               company_id: companyId,
-              po_id: po.id,
-              product_id: line.item_id,
-              description: desc,
-              quantity_ordered: toOrder,
-              quantity_received: 0,
-              unit_cost: unitCost,
-              line_total: lineTotal,
-              sort_order: i,
+              po_line_id: poLine.id,
+              job_line_id: line.id,
+              job_id: job.id,
+              quantity: oi.quantity,
             })
-            .select().single()
-          // Back-link this PO line to the job_line so receiving fans out
-          await supabase.from('purchase_order_line_jobs').insert({
-            company_id: companyId,
-            po_line_id: poLine.id,
-            job_line_id: line.id,
-            job_id: job.id,
-            quantity: toOrder,
-          })
-          // Tag the job_line with its PO line so we don't double-order
-          await supabase.from('job_lines').update({
-            po_line_id: poLine.id, updated_at: new Date().toISOString(),
-          }).eq('id', line.id)
+
+            if (!firstPoLineId) firstPoLineId = poLine.id
+          }
+
+          // Tag the job_line with the first PO line ID so it shows as "on order"
+          if (firstPoLineId) {
+            await supabase.from('job_lines').update({
+              po_line_id: firstPoLineId, updated_at: new Date().toISOString(),
+            }).eq('id', line.id)
+          }
         }
         // Update PO totals
         await supabase.from('purchase_orders').update({

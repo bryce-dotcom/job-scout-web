@@ -13,7 +13,7 @@ import { ShoppingCart, Building2, ChevronDown, ChevronRight, RefreshCw, Briefcas
 import { useIsMobile } from '../hooks/useIsMobile'
 import PageHeader from '../components/PageHeader'
 import { aggregateNeedsOrder } from '../lib/partsAggregator'
-import { generatePoNumber, formatCurrency } from '../lib/poUtils'
+import { generatePoNumber, formatCurrency, expandProductForPO } from '../lib/poUtils'
 import { recomputeJobPartsStatus } from '../lib/poReceive'
 
 const defaultTheme = {
@@ -167,61 +167,66 @@ export default function Procurement() {
           .select().single()
         if (poErr) throw poErr
 
+        // Bundles (cost=null) are expanded into per-component lines before
+        // inserting PO lines, so the vendor receives actual part names/quantities.
         let subtotal = 0
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i]
-          const unitCost = item.product.cost
-          const lineTotal = unitCost * item.toOrder
-          subtotal += lineTotal
-          const desc = item.product.vendor_sku
-            ? `${item.product.name} (${item.product.vendor_sku})`
-            : item.product.name
+        let sortOrder = 0
+        for (const item of items) {
+          // Expand: direct-cost product → 1 line; bundle → N component lines
+          const orderItems = await expandProductForPO(item.product.id, item.toOrder, companyId)
 
-          // Insert the PO line
-          const { data: poLine } = await supabase
-            .from('purchase_order_lines')
-            .insert({
-              company_id: companyId,
-              po_id: po.id,
-              product_id: item.product.id,
-              description: desc,
-              quantity_ordered: item.toOrder,
-              quantity_received: 0,
-              unit_cost: unitCost,
-              line_total: lineTotal,
-              sort_order: i,
-            })
-            .select().single()
-
-          // Insert one purchase_order_line_jobs row per contributing job_line
-          // Quantities for each job are proportional to their portion of the
-          // toOrder pool — if the product had stock that covered part of the
-          // need, that stock-covered portion stays unallocated (Allocate from
-          // Stock on JobDetail handles that).
+          // Pro-rate the job contributions across the expanded lines.
+          // Each component's quantity is already scaled (qty_per_bundle × toOrder),
+          // so we distribute proportionally to each job's share of toOrder.
           const totalContrib = item.jobContributions.reduce((s, c) => s + c.qty, 0)
-          if (totalContrib > 0) {
-            let remaining = item.toOrder
-            const fanout = item.jobContributions.map((c, idx) => {
-              // Last contribution gets the remainder to avoid rounding loss
-              const isLast = idx === item.jobContributions.length - 1
-              const share = isLast ? remaining : Math.round((c.qty / totalContrib) * item.toOrder * 100) / 100
-              remaining -= share
-              return { ...c, share }
-            })
-            for (const c of fanout) {
-              if (c.share <= 0) continue
-              await supabase.from('purchase_order_line_jobs').insert({
+
+          for (const oi of orderItems) {
+            const lineTotal = oi.unitCost * oi.quantity
+            subtotal += lineTotal
+
+            const { data: poLine } = await supabase
+              .from('purchase_order_lines')
+              .insert({
                 company_id: companyId,
-                po_line_id: poLine.id,
-                job_line_id: c.jobLineId,
-                job_id: c.jobId,
-                quantity: c.share,
+                po_id: po.id,
+                product_id: oi.productId,
+                description: oi.description,
+                quantity_ordered: oi.quantity,
+                quantity_received: 0,
+                unit_cost: oi.unitCost,
+                line_total: lineTotal,
+                sort_order: sortOrder++,
               })
-              // Tag the job_line with its PO line so we don't double-order
-              await supabase.from('job_lines').update({
-                po_line_id: poLine.id, updated_at: new Date().toISOString(),
-              }).eq('id', c.jobLineId)
-              touchedJobs.add(c.jobId)
+              .select().single()
+
+            // Fan the PO line out to each contributing job_line,
+            // pro-rated by that job's share of the aggregate order.
+            if (totalContrib > 0) {
+              let remaining = oi.quantity
+              const fanout = item.jobContributions.map((c, idx) => {
+                const isLast = idx === item.jobContributions.length - 1
+                const share = isLast ? remaining : Math.round((c.qty / totalContrib) * oi.quantity * 100) / 100
+                remaining -= share
+                return { ...c, share }
+              })
+              for (const c of fanout) {
+                if (c.share <= 0) continue
+                await supabase.from('purchase_order_line_jobs').insert({
+                  company_id: companyId,
+                  po_line_id: poLine.id,
+                  job_line_id: c.jobLineId,
+                  job_id: c.jobId,
+                  quantity: c.share,
+                })
+                // Only set po_line_id on the job_line for the first component
+                // (marks it as "on order" without conflicting with other components)
+                if (oi === orderItems[0]) {
+                  await supabase.from('job_lines').update({
+                    po_line_id: poLine.id, updated_at: new Date().toISOString(),
+                  }).eq('id', c.jobLineId)
+                }
+                touchedJobs.add(c.jobId)
+              }
             }
           }
         }

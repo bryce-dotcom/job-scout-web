@@ -66,3 +66,82 @@ export function formatCurrency(amount) {
   if (amount == null || isNaN(amount)) return '$0.00'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 }
+
+// ── Bundle expansion for PO creation ─────────────────────────────────
+// When a product has no catalog cost it's a bundle whose price is the
+// sum of its components. For PO purposes each component becomes its own
+// PO line (the vendor ships the parts, not an abstract bundle name).
+//
+// Returns an array of "order items":
+//   { productId, name, description, unitCost, quantity, vendorId }
+//
+// If the product has a direct cost, returns a single-element array
+// (the normal case). If it has components, expands them. If it has
+// neither, returns one row with unitCost=0 so the PO line is at least
+// created and the buyer can fill in the price manually.
+export async function expandProductForPO(productId, bundleQty, companyId) {
+  if (!productId) return []
+
+  const { data: prod } = await supabase
+    .from('products_services')
+    .select('id, name, cost, vendor_sku, default_vendor_id')
+    .eq('id', productId)
+    .maybeSingle()
+  if (!prod) return []
+
+  const directCost = parseFloat(prod.cost)
+
+  // Case A: product has a direct catalog cost — order as-is
+  if (directCost > 0) {
+    const desc = prod.vendor_sku ? `${prod.name} (${prod.vendor_sku})` : prod.name
+    return [{
+      productId: prod.id,
+      name: prod.name,
+      description: desc,
+      unitCost: directCost,
+      quantity: bundleQty,
+      vendorId: prod.default_vendor_id || null,
+      isComponent: false,
+      bundleParentName: null,
+    }]
+  }
+
+  // Case B: no direct cost — look for bundle components
+  const { data: comps } = await supabase
+    .from('product_components')
+    .select('quantity, component:products_services!component_product_id(id, name, cost, vendor_sku, default_vendor_id)')
+    .eq('parent_product_id', prod.id)
+    .eq('company_id', companyId)
+
+  if (comps && comps.length > 0) {
+    return comps.map(c => {
+      const comp = c.component || {}
+      const compQty = (parseFloat(c.quantity) || 1) * bundleQty
+      const compCost = parseFloat(comp.cost) || 0
+      const desc = comp.vendor_sku ? `${comp.name} (${comp.vendor_sku})` : comp.name
+      return {
+        productId: comp.id,
+        name: comp.name,
+        description: `${desc} [for ${prod.name}]`,
+        unitCost: compCost,
+        quantity: compQty,
+        vendorId: comp.default_vendor_id || prod.default_vendor_id || null,
+        isComponent: true,
+        bundleParentName: prod.name,
+      }
+    })
+  }
+
+  // Case C: no cost, no components — create a $0 PO line as a placeholder
+  const desc = prod.vendor_sku ? `${prod.name} (${prod.vendor_sku})` : prod.name
+  return [{
+    productId: prod.id,
+    name: prod.name,
+    description: desc,
+    unitCost: 0,
+    quantity: bundleQty,
+    vendorId: prod.default_vendor_id || null,
+    isComponent: false,
+    bundleParentName: null,
+  }]
+}
