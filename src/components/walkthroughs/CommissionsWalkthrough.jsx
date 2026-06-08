@@ -1,10 +1,9 @@
-// Commissions walkthrough.
+// Commissions walkthrough — rebuilt to Prospect Scout standard.
+// Source: src/lib/featureKnowledge/commissions.js (feature within Payroll)
+// DO NOT import ZachShell — shows the pending→earned→paid state machine.
 
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Trophy, DollarSign, CheckCircle2, FileSignature, CircleDollarSign,
-  User, ArrowRight, Clock,
-} from 'lucide-react'
+import { Trophy, DollarSign, Clock, CheckCircle, X, TrendingUp } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
 import SetupChecklist from './SetupChecklist'
@@ -12,171 +11,133 @@ import {
   CenteredOverlay, SetupIntro, DonePanel,
   WalkthroughCaption, WalkthroughProgressBar,
 } from './WalkthroughChrome'
-import { T, ZachShell, Chip } from './zach/ZachShell'
 import card from '../../lib/featureKnowledge/commissions.js'
+
+const T = {
+  bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
+  text: '#2c3530', textSecondary: '#4d5a52', textMuted: '#7d8a7f',
+  accent: '#5a6349', accentBg: 'rgba(90,99,73,0.12)',
+}
+
+// Mock commission entries showing the state machine
+const MOCK_COMMISSIONS = [
+  { id: 1, type: 'Setter',   person: 'Linda Park',    event: 'Appt: Marcus Okafor · Jun 9',  amount: 25,   status: 'Earned', trigger: 'quote_created' },
+  { id: 2, type: 'Sales',    person: 'Doug Anderson',  event: 'Deal: EST-041 · $24,500',       amount: 1960, status: 'Earned', trigger: 'deal_won' },
+  { id: 3, type: 'Source',   person: 'Doug Anderson',  event: 'Lead source: Ryan Torres',      amount: 25,   status: 'Pending', trigger: 'first_invoice_paid' },
+  { id: 4, type: 'Setter',   person: 'Linda Park',    event: 'Appt: Sarah Chen · Jun 12',    amount: 25,   status: 'Pending', trigger: 'quote_created' },
+  { id: 5, type: 'Sales',    person: 'Tracy Benson',  event: 'Deal: EST-038 · $18,200',       amount: 1456, status: 'Paid',    trigger: 'deal_won' },
+]
+
+const STATUS_STYLES = {
+  'Pending': { bg: 'rgba(234,179,8,0.12)', text: '#c28b38',  label: 'Pending' },
+  'Earned':  { bg: 'rgba(34,197,94,0.12)',  text: '#22c55e',  label: 'Earned' },
+  'Paid':    { bg: 'rgba(74,124,89,0.12)',  text: '#4a7c59',  label: 'Paid' },
+}
+
+const TYPE_COLORS = { 'Setter': '#3b82f6', 'Sales': '#22c55e', 'Source': '#a855f7' }
 
 export default function CommissionsWalkthrough() {
   const runner = useWalkthroughRunner(card)
-  const { phase, sceneKey, setupIdx, setupShowingIntro, elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+  const { phase, sceneKey, sceneElapsed, setupIdx, setupShowingIntro,
+    elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+
   return (
-    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: `linear-gradient(135deg, ${T.bg} 0%, #ece6d4 100%)`, overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: T.bg, overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0 }}>
         {phase === 'marketing' && <Stage scene={sceneKey} />}
         <AnimatePresence mode="wait">
           {phase === 'setup' && setupShowingIntro && <SetupIntro key="intro" />}
           {phase === 'setup' && !setupShowingIntro && (
-            <CenteredOverlay key="checklist"><SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} /></CenteredOverlay>
+            <CenteredOverlay key="checklist">
+              <SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} />
+            </CenteredOverlay>
           )}
-          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Pending → earned → paid · no spreadsheet, no surprises." />}
+          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Commissions automated." />}
         </AnimatePresence>
       </div>
       <VoiceToggle enabled={voiceOn} onToggle={() => setVoiceOn(v => !v)} theme={T} />
-      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro, card)} />
+      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro)} />
       <WalkthroughProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
     </div>
   )
 }
 
 function Stage({ scene }) {
+  const highlight = scene === 'quote' ? 'Earned' : scene === 'won' ? 'Earned' : scene === 'payout' ? 'Paid' : null
+  const entries = scene === 'set'
+    ? MOCK_COMMISSIONS.filter(c => c.status === 'Pending')
+    : MOCK_COMMISSIONS
+
   return (
-    <ZachShell title="Commissions · Marcus & Cole" subtitle="Setter · sales rep · lead source" actionLabel="Approve Cycle" actionIcon={Trophy}>
-      {scene === 'set' && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, flexDirection: 'column' }}>
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ background: T.bgCard, border: `1.5px solid ${T.accent}`, borderRadius: 10, padding: 16, maxWidth: 380, width: '100%' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <Trophy size={18} style={{ color: T.accent }} />
-              <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>Marcus set an appointment</div>
-            </div>
-            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>Lead: Sarah Chen · Northbridge · LED retrofit</div>
-            <div style={{ padding: 12, background: T.warningBg, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Clock size={14} style={{ color: T.warning }} />
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: T.warning, textTransform: 'uppercase' }}>Pending</div>
-                  <div style={{ fontSize: 9, color: T.textMuted }}>Setter rate · $25 / appointment</div>
-                </div>
-              </div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: T.warning }}>+$25</div>
-            </div>
-          </motion.div>
-        </div>
-      )}
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '11px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Trophy size={15} style={{ color: T.accent }} />
+        <span style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>Commissions</span>
+        <span style={{ fontSize: '10px', color: T.textMuted, marginLeft: '4px' }}>Pending → Earned → Paid</span>
+      </div>
 
-      {scene === 'quote' && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
-          <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} style={{ background: T.bgCard, border: `1.5px solid ${T.warning}`, borderRadius: 9, padding: 12, maxWidth: 180 }}>
-            <Chip color={T.warning} bg={T.warningBg}>Pending · $25</Chip>
-            <div style={{ marginTop: 8, fontSize: 11, color: T.text }}>Waiting on quote-created</div>
-          </motion.div>
-          <motion.div animate={{ x: [0, 8, 0] }} transition={{ repeat: Infinity, duration: 1.2 }}>
-            <FileSignature size={28} style={{ color: T.accent }} />
-          </motion.div>
-          <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 }} style={{ background: T.bgCard, border: `1.5px solid ${T.successDark}`, borderRadius: 9, padding: 12, maxWidth: 200 }}>
-            <Chip color={T.successDark} bg={T.successBg}>Earned · $25</Chip>
-            <div style={{ marginTop: 8, fontSize: 11, color: T.text }}>Quote sent · rule fired</div>
-            <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>Marcus locks in his commission</div>
-          </motion.div>
-        </div>
-      )}
-
-      {scene === 'won' && (
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>Deal won · $28,400 · 38% gross profit</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {[
-              { role: 'Setter',        person: 'Marcus',    base: 'Quote created',     amount: 25,    color: T.warning,     icon: User },
-              { role: 'Sales rep',     person: 'Cole',      base: '8% gross profit',   amount: 320,   color: T.successDark, icon: Trophy },
-              { role: 'Lead source',   person: 'Yelp',      base: '$25 / first invoice',amount: 25,   color: T.purple,      icon: DollarSign },
-            ].map((row, i) => (
-              <motion.div key={row.role} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.15 }} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 1fr 80px', gap: 10, padding: 10, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 8, fontSize: 11, alignItems: 'center' }}>
-                <div style={{ width: 32, height: 32, borderRadius: 7, background: row.color + '20', color: row.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <row.icon size={14} />
-                </div>
-                <div>
-                  <div style={{ color: T.text, fontWeight: 700 }}>{row.role} · {row.person}</div>
-                  <div style={{ fontSize: 9, color: T.textMuted }}>{row.base}</div>
-                </div>
-                <Chip color={T.successDark} bg={T.successBg}>Earned</Chip>
-                <div style={{ fontSize: 14, fontWeight: 800, color: row.color, textAlign: 'right' }}>+${row.amount}</div>
-              </motion.div>
-            ))}
+      {/* State machine summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '7px' }}>
+        {[
+          { label: 'Pending', count: entries.filter(c => c.status === 'Pending').length, amount: entries.filter(c => c.status === 'Pending').reduce((s, c) => s + c.amount, 0), color: '#c28b38' },
+          { label: 'Earned',  count: entries.filter(c => c.status === 'Earned').length,  amount: entries.filter(c => c.status === 'Earned').reduce((s, c) => s + c.amount, 0),  color: '#22c55e' },
+          { label: 'Paid',    count: entries.filter(c => c.status === 'Paid').length,    amount: entries.filter(c => c.status === 'Paid').reduce((s, c) => s + c.amount, 0),    color: '#4a7c59' },
+        ].map(s => (
+          <div key={s.label} style={{ backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', padding: '9px', textAlign: 'center', borderTop: `3px solid ${s.color}` }}>
+            <div style={{ fontSize: '14px', fontWeight: '700', color: s.color }}>${s.amount.toLocaleString()}</div>
+            <div style={{ fontSize: '9px', color: T.textMuted }}>{s.label} ({s.count})</div>
           </div>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} style={{ marginTop: 8, padding: 10, background: T.successBg, borderRadius: 7, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: T.successDark }}>Total commissions earned</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.successDark }}>$370</div>
-          </motion.div>
-        </div>
-      )}
+        ))}
+      </div>
 
-      {scene === 'rules' && (
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Qualification rules · per role</div>
-          {[
-            { role: 'Setter',      qual: 'Quote created',      rate: '$25 / appointment',     color: T.accent },
-            { role: 'Sales rep',   qual: 'Deal won',           rate: '8% of gross profit',    color: T.successDark },
-            { role: 'Lead source', qual: 'First invoice paid', rate: '$25 / first appointment',color: T.purple },
-          ].map((row, i) => (
-            <motion.div key={row.role} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.15 }} style={{ padding: 12, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 8, marginBottom: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: row.color }}>{row.role}</div>
-                <Chip color={row.color} bg={row.color + '20'}>{row.rate}</Chip>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 24px 1fr', gap: 8, fontSize: 11, alignItems: 'center' }}>
-                <div style={{ fontSize: 9, color: T.textMuted, fontWeight: 700, textTransform: 'uppercase' }}>Qualifies</div>
-                <Chip color={T.warning} bg={T.warningBg}>Pending</Chip>
-                <ArrowRight size={12} style={{ color: T.textMuted }} />
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <Chip color={T.successDark} bg={T.successBg}>Earned</Chip>
-                  <span style={{ color: T.textMuted, fontSize: 10 }}>when {row.qual}</span>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
-
-      {scene === 'payout' && (
-        <div style={{ background: T.bgCard, border: `1.5px solid ${T.successDark}`, borderRadius: 11, padding: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <CircleDollarSign size={18} style={{ color: T.successDark }} />
-            <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>Marcus · paystub June 5</div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: 8 }}>
-            {[
-              { label: 'Base · 80h × $32',           amount: 2560 },
-              { label: 'OT · 4h × $48',              amount: 192  },
-              { label: 'Setter commission · 8 appt', amount: 200,  highlight: true },
-              { label: 'Source bonus · 2 leads',     amount: 50,   highlight: true },
-            ].map((row, i) => (
-              <motion.div key={row.label} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.15 }} style={{ display: 'contents' }}>
-                <div style={{ padding: '6px 10px', fontSize: 11, color: row.highlight ? T.successDark : T.text, fontWeight: row.highlight ? 700 : 500 }}>
-                  {row.highlight && <Trophy size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />}
-                  {row.label}
-                </div>
-                <div style={{ padding: '6px 10px', fontSize: 12, color: row.highlight ? T.successDark : T.text, fontWeight: 800, textAlign: 'right' }}>${row.amount.toLocaleString()}</div>
-              </motion.div>
-            ))}
-          </div>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} style={{ marginTop: 8, padding: 8, background: T.successBg, borderRadius: 6, display: 'flex', justifyContent: 'space-between' }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: T.successDark }}>Gross total</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.successDark }}>$3,002</div>
-          </motion.div>
-        </div>
-      )}
-    </ZachShell>
+      {/* Commission entries table */}
+      <div style={{ flex: 1, overflow: 'hidden', backgroundColor: T.bgCard, borderRadius: '9px', border: `1px solid ${T.border}` }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ backgroundColor: T.accentBg }}>
+              {['Type', 'Person', 'Event', 'Amount', 'Status'].map(col => (
+                <th key={col} style={{ padding: '6px 9px', textAlign: col === 'Amount' ? 'right' : 'left', fontSize: '9px', fontWeight: '600', color: T.textMuted, borderBottom: `1px solid ${T.border}` }}>{col}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((comm, i) => {
+              const ss = STATUS_STYLES[comm.status]
+              const tc = TYPE_COLORS[comm.type] || '#6b7280'
+              return (
+                <motion.tr key={comm.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
+                  style={{ borderBottom: `1px solid ${T.border}`, backgroundColor: highlight === comm.status ? `${ss.text}08` : 'transparent' }}
+                >
+                  <td style={{ padding: '6px 9px' }}>
+                    <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: '600', backgroundColor: tc + '18', color: tc }}>{comm.type}</span>
+                  </td>
+                  <td style={{ padding: '6px 9px', fontSize: '10px', color: T.text }}>{comm.person}</td>
+                  <td style={{ padding: '6px 9px', fontSize: '9px', color: T.textSecondary, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{comm.event}</td>
+                  <td style={{ padding: '6px 9px', fontSize: '10px', fontWeight: '600', color: '#22c55e', textAlign: 'right' }}>${comm.amount.toLocaleString()}</td>
+                  <td style={{ padding: '6px 9px' }}>
+                    <span style={{ padding: '2px 7px', borderRadius: '8px', fontSize: '9px', fontWeight: '600', backgroundColor: ss.bg, color: ss.text }}>{ss.label}</span>
+                  </td>
+                </motion.tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   )
 }
 
-function caption(phase, sceneKey, setupIdx, setupShowingIntro, card) {
+function caption(phase, sceneKey, setupIdx, setupShowingIntro) {
   const m = {
-    set:    '1. Setter books · +$25 posts as pending',
-    quote:  '2. Quote sent → rule fires → pending becomes earned',
-    won:    '3. Deal won · setter + rep + source all paid',
-    rules:  '4. One rule per role · sets when pending → earned',
-    payout: '5. Next paystub · commissions itemized · paid automatically',
+    set:    '1 · Setter books appointment → commission posts as Pending ($25)',
+    quote:  '2 · Rep sends estimate → qualification rule fires → Pending flips to Earned',
+    won:    '3 · Deal closes → sales rep commission Earned (% of gross profit)',
+    rules:  '4 · Rules per role: Setter on quote-created, Rep on won, Source on first payment',
+    payout: '5 · Next payroll run picks up all Earned → Paid · itemized on the stub',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
-  if (phase === 'setup' && setupShowingIntro) return 'Set rates · pick rules · posts automatically'
+  if (phase === 'setup' && setupShowingIntro) return 'How Commissions work'
   if (phase === 'setup') return `Setup ${setupIdx + 1}/${card.setup.steps.length} — ${card.setup.steps[setupIdx]?.title || ''}`
   if (phase === 'done') return "That's the loop. Replay anytime."
   return ''
