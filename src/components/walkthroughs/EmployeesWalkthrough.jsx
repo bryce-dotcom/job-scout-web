@@ -1,10 +1,9 @@
-// Employees walkthrough.
+// Employees walkthrough — rebuilt to Prospect Scout standard.
+// Source: src/pages/Employees.jsx
+// DO NOT import ZachShell — reproduces real component structure with mock data.
 
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Users, UserPlus, Palette, DollarSign, BadgeCheck, AlertCircle,
-  Send, Calendar,
-} from 'lucide-react'
+import { Users, Plus, Send, Upload, Download, Settings, User, Mail, Phone, X } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
 import SetupChecklist from './SetupChecklist'
@@ -12,182 +11,168 @@ import {
   CenteredOverlay, SetupIntro, DonePanel,
   WalkthroughCaption, WalkthroughProgressBar,
 } from './WalkthroughChrome'
-import { T, ZachShell, Chip } from './zach/ZachShell'
 import card from '../../lib/featureKnowledge/employees.js'
 
-const ROSTER = [
-  { name: 'Cole Westbrook', role: 'Lead Tech',  rate: 38, hours: 8, color: '#22c55e', status: 'active' },
-  { name: 'Marcus Reeves',  role: 'Lead Tech',  rate: 32, hours: 8, color: '#3b82f6', status: 'active' },
-  { name: 'Priya Anand',    role: 'Lead Tech',  rate: 36, hours: 8, color: '#a855f7', status: 'active' },
-  { name: 'Alayda Reyes',   role: 'Setter',     rate: 22, hours: 6, color: '#f59e0b', status: 'active' },
-  { name: 'Sarah Chen',     role: 'Sales Rep',  rate: 28, hours: 8, color: '#ec4899', status: 'active' },
-  { name: 'David Okafor',   role: 'Admin',      rate: 30, hours: 8, color: '#6366f1', status: 'active' },
-  { name: 'Tony Romero',    role: 'Tech',       rate: 24, hours: 8, color: '#14b8a6', status: 'active' },
-  { name: 'Mike Sloan',     role: 'Tech',       rate: 24, hours: 8, color: '#ef4444', status: 'inactive' },
+const T = {
+  bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
+  text: '#2c3530', textSecondary: '#4d5a52', textMuted: '#7d8a7f',
+  accent: '#5a6349', accentBg: 'rgba(90,99,73,0.12)',
+}
+
+// roleColors from Employees.jsx lines 19-36
+const ROLE_COLORS = {
+  'Admin': '#D4AF37', 'Owner': '#D4AF37', 'CEO': '#D4AF37',
+  'Manager': '#f59e0b', 'Sales': '#22c55e', 'Salesperson': '#22c55e',
+  'Setter': '#3b82f6', 'Lead Setter': '#3b82f6',
+  'Field Tech': '#a855f7', 'Installer': '#a855f7', 'Tech': '#a855f7',
+  'Office': '#f97316', 'Finance': '#06b6d4', 'Project Manager': '#06b6d4',
+}
+const rc = (role) => ROLE_COLORS[role] || '#6b7280'
+
+const MOCK_EMPLOYEES = [
+  { id: 1, name: 'Doug Anderson',  role: 'Sales',      email: 'doug@acme.com',    phone: '(801) 555-0101', active: true,  tax: 'W2' },
+  { id: 2, name: 'Tracy Benson',   role: 'Manager',    email: 'tracy@acme.com',   phone: '(801) 555-0102', active: true,  tax: 'W2' },
+  { id: 3, name: 'Marcus Webb',    role: 'Field Tech', email: 'marcus@acme.com',  phone: '(801) 555-0103', active: true,  tax: 'W2' },
+  { id: 4, name: 'Linda Park',     role: 'Setter',     email: 'linda@acme.com',   phone: '(801) 555-0104', active: true,  tax: 'W2' },
+  { id: 5, name: 'Ryan Diaz',      role: 'Field Tech', email: 'ryan@acme.com',    phone: '(801) 555-0105', active: false, tax: '1099' },
+  { id: 6, name: 'Sarah Mitchell', role: 'Admin',      email: 'sarah@acme.com',   phone: '(801) 555-0106', active: true,  tax: 'W2' },
 ]
 
 export default function EmployeesWalkthrough() {
   const runner = useWalkthroughRunner(card)
-  const { phase, sceneKey, setupIdx, setupShowingIntro, elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+  const { phase, sceneKey, sceneElapsed, setupIdx, setupShowingIntro,
+    elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+
   return (
-    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: `linear-gradient(135deg, ${T.bg} 0%, #ece6d4 100%)`, overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: T.bg, overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0 }}>
         {phase === 'marketing' && <Stage scene={sceneKey} />}
         <AnimatePresence mode="wait">
           {phase === 'setup' && setupShowingIntro && <SetupIntro key="intro" />}
           {phase === 'setup' && !setupShowingIntro && (
-            <CenteredOverlay key="checklist"><SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} /></CenteredOverlay>
+            <CenteredOverlay key="checklist">
+              <SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} />
+            </CenteredOverlay>
           )}
-          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Set the roster once. Maintenance is light." />}
+          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Your team is configured." />}
         </AnimatePresence>
       </div>
       <VoiceToggle enabled={voiceOn} onToggle={() => setVoiceOn(v => !v)} theme={T} />
-      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro, card)} />
+      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro)} />
       <WalkthroughProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
     </div>
   )
 }
 
 function Stage({ scene }) {
+  const showModal = scene === 'invite'
+  const employees = scene === 'empty' ? [] : scene === 'inactive' ? MOCK_EMPLOYEES : MOCK_EMPLOYEES.filter(e => e.active)
+
   return (
-    <ZachShell title="Employees · 8 on roster" subtitle="Admin directory · pay rates · certifications" actionLabel="New Hire" actionIcon={UserPlus} actionHighlight={scene === 'invite'}>
-      {scene === 'list' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {ROSTER.filter(r => r.status === 'active').slice(0, 6).map((r, i) => (
-            <motion.div key={r.name} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 90px 70px 60px 60px', gap: 10, alignItems: 'center', padding: 10, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 8, fontSize: 11 }}>
-              <div style={{ width: 32, height: 32, borderRadius: '50%', background: r.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
-                {r.name[0]}
-              </div>
-              <div>
-                <div style={{ color: T.text, fontWeight: 700 }}>{r.name}</div>
-                <div style={{ fontSize: 9, color: T.textMuted }}>{r.role}</div>
-              </div>
-              <div style={{ color: T.text, fontWeight: 600 }}>${r.rate}/hr</div>
-              <div style={{ color: T.textMuted, fontSize: 10 }}>{r.hours}h allotted</div>
-              <div style={{ width: 12, height: 12, borderRadius: '50%', background: r.color }} />
-              <Chip color={T.successDark} bg={T.successBg}>active</Chip>
-            </motion.div>
-          ))}
-        </div>
-      )}
-
-      {scene === 'detail' && (
-        <div style={{ background: T.bgCard, border: `1.5px solid ${T.accent}`, borderRadius: 11, padding: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-            <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#22c55e', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 20 }}>C</div>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Cole Westbrook</div>
-              <div style={{ fontSize: 10, color: T.textMuted }}>Lead Tech · hired Mar 14, 2024</div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
-                <Palette size={10} style={{ color: T.textMuted }} />
-                <span style={{ fontSize: 9, color: T.textMuted }}>calendar color: green</span>
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-            <Field label="Hourly"      value="$38.00" />
-            <Field label="Allotted hrs" value="8 / day" />
-            <Field label="Setter rate" value="—" />
-            <Field label="Rep rate"    value="—" />
-          </div>
-        </div>
-      )}
-
-      {scene === 'pay' && (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '12px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '14px 16px', gap: '10px', overflow: 'hidden', position: 'relative' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 6 }}>Pay rates · drives payroll</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {ROSTER.filter(r => r.status === 'active').slice(0, 6).map((r, i) => (
-              <motion.div key={r.name} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.08 }} style={{ display: 'grid', gridTemplateColumns: '32px 1fr 90px 80px 80px', gap: 10, alignItems: 'center', padding: 8, background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 7, fontSize: 11 }}>
-                <div style={{ width: 24, height: 24, borderRadius: '50%', background: r.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 11 }}>{r.name[0]}</div>
-                <div style={{ color: T.text, fontWeight: 700 }}>{r.name}</div>
-                <Chip>{r.role}</Chip>
-                <div style={{ color: T.text, fontWeight: 700, textAlign: 'right' }}>${r.rate}/hr</div>
-                <div style={{ color: T.textMuted, textAlign: 'right', fontSize: 10 }}>${(r.rate * r.hours * 80).toLocaleString()}/mo</div>
+          <div style={{ fontSize: '18px', fontWeight: '700', color: T.text }}>Team</div>
+          <div style={{ fontSize: '11px', color: T.textMuted }}>{employees.length} employees</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: T.textSecondary, cursor: 'pointer' }}>
+            <input type="checkbox" readOnly defaultChecked={scene === 'inactive'} style={{ accentColor: T.accent }} />
+            Show inactive
+          </label>
+          <button style={{ padding: '5px', border: `1px solid ${T.border}`, borderRadius: '6px', backgroundColor: 'transparent', color: T.textMuted, cursor: 'pointer' }}><Settings size={12} /></button>
+          <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', border: `1px solid ${T.accent}`, borderRadius: '6px', backgroundColor: 'transparent', color: T.accent, fontSize: '11px', cursor: 'pointer' }}>
+            <Send size={11} />Invite
+          </button>
+          <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', border: `1px solid ${T.border}`, borderRadius: '6px', backgroundColor: T.accent, color: '#fff', fontSize: '11px', cursor: 'pointer' }}>
+            <Plus size={11} />Add Employee
+          </button>
+        </div>
+      </div>
+
+      {/* Grid */}
+      {employees.length === 0 ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: T.bgCard, borderRadius: '12px', border: `1px solid ${T.border}` }}>
+          <User size={36} style={{ color: T.textMuted, marginBottom: '10px' }} />
+          <p style={{ color: T.textSecondary, fontSize: '12px', margin: 0 }}>No employees yet. Add your first team member.</p>
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px', alignContent: 'start', overflowY: 'auto' }}>
+          {employees.map((emp, i) => {
+            const color = rc(emp.role)
+            return (
+              <motion.div key={emp.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: emp.active ? 1 : 0.6, y: 0 }} transition={{ delay: i * 0.05, duration: 0.3 }}
+                style={{ backgroundColor: T.bgCard, borderRadius: '12px', border: `1px solid ${T.border}`, padding: '16px', textAlign: 'center', cursor: 'pointer' }}
+              >
+                {/* Avatar */}
+                <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontSize: '18px', fontWeight: '600', color }}>
+                  {emp.name.charAt(0)}
+                </div>
+                {/* Name */}
+                <div style={{ fontSize: '13px', fontWeight: '600', color: T.text, marginBottom: '2px' }}>{emp.name}</div>
+                {/* Role */}
+                <div style={{ fontSize: '11px', color, fontWeight: '500', marginBottom: '6px' }}>{emp.role}</div>
+                {/* Badges */}
+                <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '9px', padding: '2px 7px', borderRadius: '18px', backgroundColor: emp.active ? 'rgba(34,197,94,0.1)' : 'rgba(107,114,128,0.1)', color: emp.active ? '#16a34a' : '#6b7280' }}>
+                    {emp.active ? 'Active' : 'Inactive'}
+                  </span>
+                  <span style={{ fontSize: '9px', padding: '2px 7px', borderRadius: '18px', backgroundColor: emp.tax === 'W2' ? 'rgba(59,130,246,0.1)' : 'rgba(249,115,22,0.1)', color: emp.tax === 'W2' ? '#3b82f6' : '#f97316' }}>
+                    {emp.tax}
+                  </span>
+                </div>
+                {/* Contact */}
+                <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10px', color: T.textSecondary }}>
+                    <Mail size={10} style={{ color: T.textMuted }} />{emp.email}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '10px', color: T.textSecondary }}>
+                    <Phone size={10} style={{ color: T.textMuted }} />{emp.phone}
+                  </div>
+                </div>
               </motion.div>
-            ))}
-          </div>
+            )
+          })}
         </div>
       )}
 
-      {scene === 'certs' && (
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>Certifications · expirations tracked</div>
-          {[
-            { who: 'Cole',   cert: 'Electrical license',  expires: '2026-08-31', days: 90,  color: T.warning,     status: 'renewing' },
-            { who: 'Marcus', cert: 'EPA 608',              expires: '2027-04-12', days: 320, color: T.successDark, status: 'valid' },
-            { who: 'Priya',  cert: 'OSHA 30',              expires: '2026-12-04', days: 184, color: T.successDark, status: 'valid' },
-            { who: 'Cole',   cert: 'Lift certification',  expires: '2026-06-20', days: 17,  color: T.danger,      status: 'expiring' },
-          ].map((c, i) => (
-            <motion.div key={i} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.12 }} style={{ display: 'grid', gridTemplateColumns: '32px 1fr 1fr 100px 80px', gap: 10, padding: 10, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 7, marginBottom: 5, alignItems: 'center', fontSize: 11 }}>
-              <BadgeCheck size={16} style={{ color: c.color }} />
-              <div style={{ color: T.text, fontWeight: 700 }}>{c.who}</div>
-              <div style={{ color: T.text }}>{c.cert}</div>
-              <div style={{ color: T.textMuted, fontSize: 10 }}>{c.expires}</div>
-              <Chip color={c.color} bg={c.color + '20'}>{c.days}d {c.status === 'expiring' ? 'left!' : ''}</Chip>
-            </motion.div>
-          ))}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} style={{ marginTop: 8, padding: 8, background: 'rgba(239,68,68,0.12)', border: `1px solid ${T.danger}`, borderRadius: 6, fontSize: 11, color: T.text, display: 'flex', alignItems: 'center', gap: 5 }}>
-            <AlertCircle size={12} style={{ color: T.danger }} />
-            Cole's lift cert expires in 17d · renewal task auto-fired
-          </motion.div>
-        </div>
-      )}
-
-      {scene === 'invite' && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-          <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} style={{ background: T.bgCard, border: `1.5px solid ${T.accent}`, borderRadius: 11, padding: 18, maxWidth: 380 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-              <UserPlus size={20} style={{ color: T.accent }} />
-              <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Send Onboarding Link</div>
+      {/* Invite modal */}
+      {showModal && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, padding: '16px' }}>
+          <motion.div initial={{ scale: 0.96 }} animate={{ scale: 1 }} style={{ backgroundColor: T.bgCard, borderRadius: '12px', border: `1px solid ${T.border}`, width: '280px', boxShadow: '0 8px 32px rgba(0,0,0,0.16)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderBottom: `1px solid ${T.border}` }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>Invite Employee</span>
+              <X size={13} style={{ color: T.textMuted }} />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <FormField label="Name" value="Brandon Mitchell" />
-              <FormField label="Role" value="Tech" />
-              <FormField label="Phone" value="(801) 555-0410" />
-              <FormField label="Email" value="brandon@hhh.services" />
+            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
+              {[['Name', 'Jennifer Walsh'], ['Email', 'jwalsh@acme.com'], ['Role', 'Sales'], ['User Access', 'User']].map(([l, v]) => (
+                <div key={l}>
+                  <label style={{ display: 'block', fontSize: '10px', fontWeight: '500', color: T.textSecondary, marginBottom: '3px' }}>{l}</label>
+                  <div style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: '5px', backgroundColor: T.bg, fontSize: '11px', color: T.text }}>{v}</div>
+                </div>
+              ))}
+              <button style={{ padding: '8px', border: 'none', borderRadius: '6px', backgroundColor: T.accent, color: '#fff', fontSize: '11px', fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                <Send size={11} />Send Invitation
+              </button>
             </div>
-            <motion.button animate={{ scale: [0.95, 1] }} style={{ marginTop: 10, padding: '10px 14px', background: T.accent, color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%' }}>
-              <Send size={13} /> Send magic link
-            </motion.button>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} style={{ marginTop: 8, padding: 8, background: T.successBg, borderRadius: 6, fontSize: 11, color: T.successDark, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-              <Calendar size={12} /> Link valid 14 days · self-serve W-4 + I-9 + deposit
-            </motion.div>
           </motion.div>
-        </div>
+        </motion.div>
       )}
-    </ZachShell>
-  )
-}
-
-function Field({ label, value }) {
-  return (
-    <div style={{ padding: 8, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6 }}>
-      <div style={{ fontSize: 9, color: T.textMuted, textTransform: 'uppercase', fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 12, color: T.text, fontWeight: 700, marginTop: 2 }}>{value}</div>
     </div>
   )
 }
 
-function FormField({ label, value }) {
-  return (
-    <div>
-      <div style={{ fontSize: 9, color: T.textMuted, textTransform: 'uppercase', fontWeight: 700, marginBottom: 3 }}>{label}</div>
-      <div style={{ padding: '8px 10px', background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, color: T.text }}>{value}</div>
-    </div>
-  )
-}
-
-function caption(phase, sceneKey, setupIdx, setupShowingIntro, card) {
+function caption(phase, sceneKey, setupIdx, setupShowingIntro) {
   const m = {
-    list:   '1. Staff roster · roles, rates, calendar colors',
-    detail: '2. Per employee · hourly, allotted hrs, overrides',
-    pay:    '3. Pay rates · drives payroll math',
-    certs:  '4. Certifications · expirations auto-flagged',
-    invite: '5. New hire? Send magic link · phone-first self-serve',
+    empty:    '1 · Team page — Add Employee + Invite buttons, "Show inactive" checkbox',
+    grid:     '2 · Employee grid — avatar (initials in role color), name, role, Active/W2 badges',
+    invite:   '3 · Invite modal — name, email, role, user access — sends magic link',
+    inactive: '4 · Show inactive reveals dim cards for former team members',
+    detail:   '5 · Click any card → employee detail with pay rates, HR docs, time history',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
-  if (phase === 'setup' && setupShowingIntro) return 'Set roster once · maintenance is light'
+  if (phase === 'setup' && setupShowingIntro) return 'How to add your team'
   if (phase === 'setup') return `Setup ${setupIdx + 1}/${card.setup.steps.length} — ${card.setup.steps[setupIdx]?.title || ''}`
   if (phase === 'done') return "That's the loop. Replay anytime."
   return ''
