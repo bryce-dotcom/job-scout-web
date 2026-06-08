@@ -1,9 +1,9 @@
-// Utility Programs walkthrough.
+// Utility Programs walkthrough — rebuilt to Prospect Scout standard.
+// Source: src/pages/UtilityPrograms.jsx
+// DO NOT import ZachShell — reproduces real component structure with mock data.
 
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  FileCheck, Zap, Calendar, FileSignature, Lock, CheckCircle2,
-} from 'lucide-react'
+import { Zap, Plus, Search, Calendar, CheckCircle, X } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
 import SetupChecklist from './SetupChecklist'
@@ -11,141 +11,138 @@ import {
   CenteredOverlay, SetupIntro, DonePanel,
   WalkthroughCaption, WalkthroughProgressBar,
 } from './WalkthroughChrome'
-import { T, ZachShell, Chip } from './zach/ZachShell'
 import card from '../../lib/featureKnowledge/utility-programs.js'
 
-const PROGRAMS = [
-  { id: 1, name: 'RMP Wattsmart',  state: 'UT', year: 2026, measures: 80, active: true },
-  { id: 2, name: 'SRP Custom',     state: 'AZ', year: 2026, measures: 42, active: true },
-  { id: 3, name: 'APS Solutions',  state: 'AZ', year: 2026, measures: 36, active: true },
-  { id: 4, name: 'PG&E EnergySmart', state: 'CA', year: 2026, measures: 64, active: true },
-  { id: 5, name: 'RMP Wattsmart',  state: 'UT', year: 2025, measures: 76, active: false },
+const T = {
+  bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
+  text: '#2c3530', textSecondary: '#4d5a52', textMuted: '#7d8a7f',
+  accent: '#5a6349', accentBg: 'rgba(90,99,73,0.12)',
+}
+
+const MOCK_PROGRAMS = [
+  { id: 1, program_name: 'Wattsmart Business Program',  utility_name: 'Rocky Mountain Power', state: 'UT', type: 'Prescriptive', effective: '2026-01-01', expires: '2026-12-31', pre_approval: true,  dlc: true  },
+  { id: 2, program_name: 'Business Energy Solutions',   utility_name: 'SRP',                  state: 'AZ', type: 'Prescriptive', effective: '2026-01-01', expires: '2026-12-31', pre_approval: false, dlc: true  },
+  { id: 3, program_name: 'Energy Savings Program',      utility_name: 'PacifiCorp',           state: 'UT', type: 'Custom',       effective: '2025-07-01', expires: '2026-06-30', pre_approval: true,  dlc: false },
+  { id: 4, program_name: 'Arizona Public Service',      utility_name: 'APS',                  state: 'AZ', type: 'Prescriptive', effective: '2026-01-01', expires: null,         pre_approval: false, dlc: true  },
 ]
 
 export default function UtilityProgramsWalkthrough() {
   const runner = useWalkthroughRunner(card)
-  const { phase, sceneKey, setupIdx, setupShowingIntro, elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+  const { phase, sceneKey, sceneElapsed, setupIdx, setupShowingIntro,
+    elapsed, totalMs, totalMarketingMs, voiceOn, setVoiceOn, replay } = runner
+
   return (
-    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: `linear-gradient(135deg, ${T.bg} 0%, #ece6d4 100%)`, overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', background: T.bg, overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0 }}>
         {phase === 'marketing' && <Stage scene={sceneKey} />}
         <AnimatePresence mode="wait">
           {phase === 'setup' && setupShowingIntro && <SetupIntro key="intro" />}
           {phase === 'setup' && !setupShowingIntro && (
-            <CenteredOverlay key="checklist"><SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} /></CenteredOverlay>
+            <CenteredOverlay key="checklist">
+              <SetupChecklist title={`Set it up in ${card.setup.steps.length} steps`} steps={card.setup.steps} currentIdx={setupIdx} />
+            </CenteredOverlay>
           )}
-          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="Pre-loaded for the big utilities. Maintenance is light." />}
+          {phase === 'done' && <DonePanel key="done" onReplay={replay} subtitle="All utility programs loaded." />}
         </AnimatePresence>
       </div>
       <VoiceToggle enabled={voiceOn} onToggle={() => setVoiceOn(v => !v)} theme={T} />
-      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro, card)} />
+      <WalkthroughCaption text={caption(phase, sceneKey, setupIdx, setupShowingIntro)} />
       <WalkthroughProgressBar elapsed={elapsed} total={totalMs} phaseBoundary={totalMarketingMs} />
     </div>
   )
 }
 
 function Stage({ scene }) {
-  if (scene === 'list') {
-    return (
-      <ZachShell title="Utility Programs" subtitle="Every active rebate program · pre-loaded" actionLabel="Add Program" actionIcon={FileCheck}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {PROGRAMS.map((p, i) => (
-            <motion.div key={p.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }} style={{ display: 'grid', gridTemplateColumns: '36px 1fr 80px 80px 70px', gap: 10, alignItems: 'center', padding: 10, background: T.bgCard, border: `1.5px solid ${p.active ? T.border : '#e5d5b8'}`, borderRadius: 9, opacity: p.active ? 1 : 0.6 }}>
-              <div style={{ width: 30, height: 30, borderRadius: '50%', background: T.purpleBg, color: T.purple, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Zap size={13} />
+  const showModal = scene === 'add'
+  const programs = scene === 'empty' ? [] : MOCK_PROGRAMS
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '11px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden', position: 'relative' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Zap size={15} style={{ color: T.accent }} />
+          <span style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>Utility Programs</span>
+        </div>
+        <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', border: 'none', borderRadius: '5px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', cursor: 'pointer' }}>
+          <Plus size={11} />Add Program
+        </button>
+      </div>
+
+      {/* Search */}
+      <div style={{ position: 'relative' }}>
+        <Search size={11} style={{ position: 'absolute', left: '7px', top: '50%', transform: 'translateY(-50%)', color: T.textMuted }} />
+        <input readOnly placeholder="Search programs..." style={{ width: '100%', boxSizing: 'border-box', padding: '5px 7px 5px 20px', border: `1px solid ${T.border}`, borderRadius: '5px', fontSize: '10px', backgroundColor: T.bgCard, color: T.text, outline: 'none' }} />
+      </div>
+
+      {/* Programs */}
+      {programs.length === 0 ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: T.bgCard, borderRadius: '10px', border: `1px solid ${T.border}` }}>
+          <Zap size={32} style={{ color: T.textMuted, marginBottom: '8px' }} />
+          <p style={{ color: T.textSecondary, fontSize: '11px', margin: 0 }}>No utility programs. Add your first program.</p>
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '7px', overflowY: 'auto' }}>
+          {programs.map((prog, i) => (
+            <motion.div key={prog.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07, duration: 0.25 }}
+              style={{ backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '9px', padding: '12px 14px', cursor: 'pointer' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: T.text, marginBottom: '1px' }}>{prog.program_name}</div>
+                  <div style={{ fontSize: '10px', color: T.textMuted }}>{prog.utility_name} · {prog.state}</div>
+                </div>
+                <div style={{ display: 'flex', gap: '4px', flexShrink: 0, marginLeft: '8px' }}>
+                  <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: '600', backgroundColor: prog.type === 'Prescriptive' ? 'rgba(59,130,246,0.12)' : 'rgba(139,92,246,0.12)', color: prog.type === 'Prescriptive' ? '#3b82f6' : '#8b5cf6' }}>{prog.type}</span>
+                </div>
               </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{p.name}</div>
-                <div style={{ fontSize: 10, color: T.textMuted }}>{p.state} · {p.measures} measures</div>
-              </div>
-              <Chip icon={Calendar}>{p.year}</Chip>
-              <div style={{ fontSize: 10, color: T.textMuted }}>source year</div>
-              <div style={{ padding: '3px 7px', background: p.active ? T.successBg : T.bg, color: p.active ? T.successDark : T.textMuted, borderRadius: 99, fontSize: 9, fontWeight: 700, textTransform: 'uppercase', textAlign: 'center' }}>
-                {p.active ? 'Active' : 'Locked'}
+              <div style={{ display: 'flex', gap: '10px', fontSize: '9px', color: T.textMuted, flexWrap: 'wrap' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Calendar size={9} />{prog.effective} → {prog.expires || 'ongoing'}</span>
+                {prog.pre_approval && <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#f59e0b' }}>⚠ Pre-approval req</span>}
+                {prog.dlc && <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#22c55e' }}><CheckCircle size={9} />DLC req</span>}
               </div>
             </motion.div>
           ))}
         </div>
-      </ZachShell>
-    )
-  }
+      )}
 
-  // Other scenes — single program detail
-  const p = PROGRAMS[0]
-  return (
-    <ZachShell title={`Utility Program · ${p.name}`} subtitle={`${p.state} · source year ${p.year}`} actionLabel="Save" actionIcon={CheckCircle2}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <Stat label="Source year" value={p.year} icon={Calendar} highlight={scene === 'detail' || scene === 'lock'} />
-          <Stat label="Measures" value={p.measures} icon={FileCheck} highlight={scene === 'measures'} />
-          <Stat label="Status" value="Active" icon={CheckCircle2} />
-          <Stat label="Form bound" value="Yes" icon={FileSignature} highlight={scene === 'form'} />
-        </div>
-
-        {(scene === 'measures' || scene === 'detail') && (
-          <div style={{ flex: 1, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9, padding: 10, overflow: 'auto' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 60px 60px 60px', fontSize: 9, color: T.textMuted, fontWeight: 700, paddingBottom: 6, borderBottom: `1px solid ${T.border}`, textTransform: 'uppercase' }}>
-              <div>Measure</div><div>Base W</div><div>Prop W</div><div>$/unit</div><div>Cap</div>
+      {/* Add Program modal */}
+      {showModal && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, padding: '16px' }}>
+          <motion.div initial={{ scale: 0.96 }} animate={{ scale: 1 }} style={{ backgroundColor: T.bgCard, borderRadius: '12px', border: `1px solid ${T.border}`, width: '280px', boxShadow: '0 8px 32px rgba(0,0,0,0.16)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderBottom: `1px solid ${T.border}` }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>Add Utility Program</span>
+              <X size={13} style={{ color: T.textMuted }} />
             </div>
-            {[
-              { c: 'LF-LED-2X4', base: 64, prop: 32, dpu: 45, cap: 45 },
-              { c: 'HB-LED-HIGHBAY', base: 400, prop: 150, dpu: 80, cap: 80 },
-              { c: 'WP-LED-WALL', base: 250, prop: 80, dpu: 120, cap: 120 },
-              { c: 'TUBE-LED-T8', base: 32, prop: 14, dpu: 8, cap: 8 },
-            ].map((row, i) => (
-              <motion.div key={row.c} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.1 }} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 60px 60px 60px', fontSize: 10, color: T.text, padding: '5px 0', borderBottom: `1px dashed ${T.border}` }}>
-                <div style={{ fontFamily: 'monospace' }}>{row.c}</div>
-                <div>{row.base}W</div>
-                <div>{row.prop}W</div>
-                <div>${row.dpu}</div>
-                <div>${row.cap}</div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-
-        {scene === 'form' && (
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ flex: 1, background: T.bgCard, border: `1.5px solid ${T.purple}`, borderRadius: 9, padding: 14, display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center', gap: 6 }}>
-            <FileSignature size={28} style={{ color: T.purple, margin: '0 auto' }} />
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>RMP-WATTSMART-2026.pdf</div>
-            <div style={{ fontSize: 10, color: T.textMuted }}>Field map configured · auto-fills on every audit</div>
+            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {[['Program Name', 'Wattsmart Business Program'], ['Utility', 'Rocky Mountain Power'], ['State', 'UT'], ['Type', 'Prescriptive'], ['Effective Date', '2026-01-01']].map(([l, v]) => (
+                <div key={l}>
+                  <label style={{ display: 'block', fontSize: '10px', fontWeight: '500', color: T.textSecondary, marginBottom: '3px' }}>{l}</label>
+                  <div style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: '5px', backgroundColor: T.bg, fontSize: '11px', color: T.text }}>{v}</div>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: '7px' }}>
+                <button style={{ flex: 1, padding: '7px', border: `1px solid ${T.border}`, borderRadius: '5px', backgroundColor: 'transparent', color: T.textSecondary, fontSize: '10px', cursor: 'pointer' }}>Cancel</button>
+                <button style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '5px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', fontWeight: '500', cursor: 'pointer' }}>Add</button>
+              </div>
+            </div>
           </motion.div>
-        )}
-
-        {scene === 'lock' && (
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ flex: 1, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 9, padding: 14, display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center', gap: 6 }}>
-            <Lock size={28} style={{ color: T.textMuted, margin: '0 auto' }} />
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>Old audits stay on source year 2025</div>
-            <div style={{ fontSize: 10, color: T.textMuted, maxWidth: 280, margin: '0 auto' }}>Load 2027 measures → old audits keep their 2025 / 2026 numbers. No drift.</div>
-          </motion.div>
-        )}
-      </div>
-    </ZachShell>
+        </motion.div>
+      )}
+    </div>
   )
 }
 
-function Stat({ label, value, icon: Icon, highlight }) {
-  return (
-    <motion.div animate={{ borderColor: highlight ? T.accent : T.border }} style={{ padding: 8, background: T.bgCard, border: `1.5px solid ${T.border}`, borderRadius: 7, display: 'flex', alignItems: 'center', gap: 8 }}>
-      {Icon && <Icon size={14} style={{ color: T.accent }} />}
-      <div>
-        <div style={{ fontSize: 9, color: T.textMuted, textTransform: 'uppercase', fontWeight: 700 }}>{label}</div>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>{value}</div>
-      </div>
-    </motion.div>
-  )
-}
-
-function caption(phase, sceneKey, setupIdx, setupShowingIntro, card) {
+function caption(phase, sceneKey, setupIdx, setupShowingIntro) {
   const m = {
-    list:     '1. Every program you might run · pre-loaded',
-    detail:   '2. RMP Wattsmart · source year 2026',
-    measures: '3. Per-measure baseline, proposed wattage, $/unit',
-    form:     '4. Official utility PDF bound · auto-fill ready',
-    lock:     '5. Old audits stay locked to their source year',
+    empty:  '1 · Utility Programs — list of rebate programs per utility provider',
+    add:    '2 · Add Program — program name, utility, state, type, effective date',
+    list:   '3 · Program cards — utility, state, Prescriptive/Custom, dates, pre-approval flag, DLC req',
+    rates:  '4 · Click → opens Rebate Measures (measure codes + $/unit for that program)',
+    lenard: '5 · Lenard reads these programs when building audit estimates for a customer',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
-  if (phase === 'setup' && setupShowingIntro) return 'Pre-loaded · light maintenance'
+  if (phase === 'setup' && setupShowingIntro) return 'How Utility Programs work'
   if (phase === 'setup') return `Setup ${setupIdx + 1}/${card.setup.steps.length} — ${card.setup.steps[setupIdx]?.title || ''}`
   if (phase === 'done') return "That's the loop. Replay anytime."
   return ''
