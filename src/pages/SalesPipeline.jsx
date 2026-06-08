@@ -659,15 +659,34 @@ export default function SalesPipeline() {
     // ESTIMATE STAGES: return one card per quote with matching status
     const quoteStatus = QUOTE_STATUS_MAP[stageId]
     if (quoteStatus) {
+      // For Won: pre-compute the date range cutoff so both the main loop
+      // guard and the delivery-lead block use the same window.
+      const wonCutoffStr    = stageId === 'Won' ? getDateCutoff(dateRange) : null
+      const wonCutoffEndStr = stageId === 'Won' && dateRange === 'custom' && customDateTo
+        ? new Date(customDateTo + 'T23:59:59').toISOString()
+        : null
+
       const estimateCards = []
       filteredPipelineLeads.forEach(lead => {
         if (!lead._quotes || lead._quotes.length === 0) {
           // Fallback: if lead has no quotes but status matches, show as lead card
-          if (lead.status === stageId) {
-            estimateCards.push(lead)
-          }
+          if (lead.status === stageId) estimateCards.push(lead)
           return
         }
+
+        // ── KEY FIX ─────────────────────────────────────────────────────
+        // For the Won stage, the main loop must ONLY process Won-status leads.
+        // Delivery-stage leads (Chillin, Scheduled, In Progress, etc.) are
+        // NOT terminal in filteredPipelineLeads, so they bypass the date
+        // filter entirely — their Approved quotes would show regardless of
+        // the date range, inflating the Won column with ALL historical deals.
+        //
+        // Delivery leads are handled below in the "extra block" which
+        // correctly date-filters by quote.approved_date. The dedup check
+        // (c._quoteId === q.id) prevents Won-status-lead quotes from
+        // appearing twice.
+        if (stageId === 'Won' && lead.status !== 'Won') return
+
         lead._quotes
           .filter(q => q.status === quoteStatus)
           .forEach(q => {
@@ -687,28 +706,22 @@ export default function SalesPipeline() {
           })
       })
 
-      // Won column: also include leads that are now in delivery whose quote
-      // was approved within the selected date range. These deals are "Won"
-      // even though the lead status moved to Chillin/Scheduled/In Progress.
-      // We use the user's actual dateRange cutoff — NOT a hardcoded firstOfMonth
-      // which was ignoring the date filter the user had selected.
+      // Won column extra block: delivery-stage leads whose quote was approved
+      // within the selected date range. These deals are "Won" even though the
+      // lead status has already moved to Chillin/Scheduled/In Progress/etc.
+      // This is the ONLY place delivery-lead Approved quotes enter the Won
+      // column — they're properly date-filtered by approved_date here.
       if (stageId === 'Won') {
-        const wonCutoffStr = getDateCutoff(dateRange)
-        const wonCutoffEndStr = dateRange === 'custom' && customDateTo
-          ? new Date(customDateTo + 'T23:59:59').toISOString()
-          : null
         filteredPipelineLeads.forEach(lead => {
           if (!lead._quotes) return
           lead._quotes
             .filter(q => {
               if (q.status !== 'Approved' || !q.approved_date) return false
-              // Respect the active date range filter
               if (wonCutoffStr && q.approved_date < wonCutoffStr) return false
               if (wonCutoffEndStr && q.approved_date > wonCutoffEndStr) return false
               return true
             })
             .forEach(q => {
-              // Don't duplicate if already in the list
               if (!estimateCards.find(c => c._quoteId === q.id)) {
                 estimateCards.push({
                   ...lead,
@@ -775,13 +788,13 @@ export default function SalesPipeline() {
   })()
 
   const getStageValue = (stageId) => {
-    const stage = stages.find(s => s.id === stageId)
-    if (stage?.isWon) return sumJobTotal(wonInRangeJobs)
+    // getLeadsForStage('Won') is now properly date-filtered (main loop skips
+    // delivery leads; extra block handles them with approved_date filter).
+    // Using it here means column dollar value = sum of cards shown. Safe.
     return getLeadsForStage(stageId).reduce((sum, l) => sum + getLeadAmount(l), 0)
   }
   const getStageCount = (stageId) => {
-    const stage = stages.find(s => s.id === stageId)
-    if (stage?.isWon) return wonInRangeJobs.length
+    // Badge count = exactly what's rendered. No more mismatch.
     return getLeadsForStage(stageId).length
   }
 
