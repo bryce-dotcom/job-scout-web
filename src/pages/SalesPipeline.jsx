@@ -775,13 +775,13 @@ export default function SalesPipeline() {
   })()
 
   const getStageValue = (stageId) => {
-    // Always use the rendered cards as the source — count/value/cards all agree.
-    // Previously the Won stage used sumJobTotal(wonInRangeJobs) which was a
-    // different dataset (jobs by created_at) and never matched the card list.
+    const stage = stages.find(s => s.id === stageId)
+    if (stage?.isWon) return sumJobTotal(wonInRangeJobs)
     return getLeadsForStage(stageId).reduce((sum, l) => sum + getLeadAmount(l), 0)
   }
   const getStageCount = (stageId) => {
-    // Count exactly what's rendered — no more badge/cards mismatch.
+    const stage = stages.find(s => s.id === stageId)
+    if (stage?.isWon) return wonInRangeJobs.length
     return getLeadsForStage(stageId).length
   }
 
@@ -1160,15 +1160,19 @@ export default function SalesPipeline() {
     // the header stat always matches what the rep sees in the pipeline.
     // Previously used wonJobsInRange(storeJobs) which counted jobs by
     // created_at — a different dataset that never agreed with the column.
-    const wonCards = getLeadsForStage('Won')
-    const salesWonTotal = wonCards.reduce((s, l) => s + getLeadAmount(l), 0)
-    const salesWonCount = wonCards.length
+    // "Sales Won" — jobs CREATED in the selected window (estimate→job
+    // approval OR fresh job). Source of truth: src/lib/jobMetrics.js.
+    // Honors the active owner filter via ownerFilteredJobs so the grand
+    // total only shows the selected rep's wins.
+    const rangeCutoff = getDateCutoff(dateRange)
+    const wonInRange = wonJobsInRange(ownerFilteredJobs, rangeCutoff, null)
+    const salesWonTotal = sumJobTotal(wonInRange)
+    const salesWonCount = wonInRange.length
 
-    // "Delivered" — leads in terminal delivery stages (Paid, Closed, or any
-    // status the company marks category='delivered' in settings), already
-    // date-filtered by filteredPipelineLeads. The old deliveredJobsInRange()
-    // returned 0 here because no statuses had category='delivered' configured.
-    // Using filteredPipelineLeads mirrors exactly what the pipeline columns show.
+    // "Delivered" — leads in terminal delivery stages (Paid, Closed),
+    // already date-filtered by filteredPipelineLeads (isPaid is now terminal).
+    // The old deliveredJobsInRange() returned 0 because no statuses had
+    // category='delivered' configured. filteredPipelineLeads is the correct source.
     const deliveredLeadsList = filteredPipelineLeads.filter(l => {
       const stage = stageMap.get(l.status)
       return stage?.isPaid || stage?.isClosed
@@ -1177,7 +1181,7 @@ export default function SalesPipeline() {
     const deliveredTotal = sumAmount(deliveredLeadsList)
 
     return {
-      salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} deal${salesWonCount !== 1 ? 's' : ''} closed`, color: '#16a34a', isFormatted: true },
+      salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} job${salesWonCount !== 1 ? 's' : ''} created`, color: '#16a34a', isFormatted: true },
       delivered: { value: formatCurrency(deliveredTotal), label: 'Delivered', sublabel: `${deliveredCount} paid/closed`, color: '#10b981', isFormatted: true },
       active: { value: activeLeads.length, label: 'Active', color: null },
       won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
