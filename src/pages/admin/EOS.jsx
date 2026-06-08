@@ -6,6 +6,7 @@ import { useIsMobile } from '../../hooks/useIsMobile'
 import { toast } from '../../lib/toast'
 import HelpBadge from '../../components/HelpBadge'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../../lib/jobMetrics'
+import { totalCustomerAR, totalUtilityAR, paymentsByInvoiceIndex } from '../../lib/arHelpers'
 import {
   Target, Eye, TrendingUp, Shield, Heart, Star, Zap,
   Users, CheckCircle, XCircle, Clock, Calendar, Plus, X,
@@ -171,19 +172,33 @@ const AUTO_SOURCES = {
     label: 'Accounts Receivable',
     category: 'Finance',
     format: 'currency',
-    compute: (d, s, e, sd, ed, ent) => filterInvoicesByEntity(d.invoices || [], d.jobs, ent).filter(i => ['Pending', 'Sent', 'Partial', 'Overdue'].includes(i.payment_status)).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0),
+    compute: (d, s, e, sd, ed, ent) => {
+      // Customer AR uses customer balance (gross − discount − applied
+      // payments), not gross. Plus utility AR (rebates owed). Mirrors
+      // Books / Dashboard / Frankie / Arnie / JobDetail — see arHelpers.
+      const filteredInvs = filterInvoicesByEntity(d.invoices || [], d.jobs, ent)
+      const filteredUtil = filterInvoicesByEntity(d.utilityInvoices || [], d.jobs, ent)
+      return totalCustomerAR(filteredInvs, d.payments || []) + totalUtilityAR(filteredUtil)
+    },
   },
   expenses_total: {
     label: 'Total Expenses',
     category: 'Finance',
     format: 'currency',
     compute: (d, s, e, sd, ed, ent) => {
+      // Combine manual expenses + Plaid debits. Most tenants record 0
+      // manual entries and have all real spend coming through bank-fed
+      // Plaid txns — reading expenses alone showed nearly $0.
       let exps = d.expenses || []
+      let plaid = (d.plaidTransactions || []).filter(t => (Number(t.amount) || 0) > 0 && !t.is_transfer)
       if (ent) {
         const jobIds = new Set(filterByEntity(d.jobs, ent).map(j => j.id))
         exps = exps.filter(x => x.job_id && jobIds.has(x.job_id))
+        plaid = plaid.filter(x => x.job_id && jobIds.has(x.job_id))
       }
-      return exps.filter(x => x.date >= sd && x.date <= ed).reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0)
+      const manualSum = exps.filter(x => x.date >= sd && x.date <= ed).reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0)
+      const plaidSum = plaid.filter(x => x.date >= sd && x.date <= ed).reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0)
+      return manualSum + plaidSum
     },
   },
   submittals_sent: {
@@ -2444,6 +2459,13 @@ export default function EOS() {
   const appointments = useStore(s => s.appointments) || []
   const timeLogs = useStore(s => s.timeLogs) || []
   const expenses = useStore(s => s.expenses) || []
+  // Utility invoices + Plaid debits: EOS was reporting AR using gross
+  // invoice.amount (which inflates Energy Scout projects by ~$200k/job)
+  // and reporting "Total Expenses" from manual entries only (which misses
+  // bank-fed debits — most tenants have $0 manual expenses + thousands of
+  // Plaid txns). Pull both here so the metrics match Books / Frankie.
+  const utilityInvoices = useStore(s => s.utilityInvoices) || []
+  const plaidTransactions = useStore(s => s.plaidTransactions) || []
   const quotes = useStore(s => s.quotes) || []
   const leadPayments = useStore(s => s.leadPayments) || []
   const businessUnits = useStore(s => s.businessUnits) || []
@@ -2463,8 +2485,8 @@ export default function EOS() {
   }, [companyId])
 
   const storeData = useMemo(() => ({
-    jobs, leads, invoices, payments, appointments, timeLogs, expenses, quotes, leadPayments, submittals, jobStatuses,
-  }), [jobs, leads, invoices, payments, appointments, timeLogs, expenses, quotes, leadPayments, submittals, jobStatuses])
+    jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses,
+  }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses])
 
   // Build entity list from service types + business units (deduplicated)
   const entities = useMemo(() => {

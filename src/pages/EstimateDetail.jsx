@@ -5724,6 +5724,13 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
               area_watts_reduced: a.area_watts_reduced || 0,
               ceiling_height: a.ceiling_height || '',
               fixture_category: a.fixture_category || '',
+              // Bryce flagged (May 19): product detail not pulling through.
+              // Proposal showed area name only, not the LED product chosen.
+              // Lenard stores it in override_notes ("SBE Product: …") and
+              // led_replacement_id (link to products_services). Pass both.
+              lighting_type: a.lighting_type || '',
+              led_replacement_id: a.led_replacement_id || null,
+              override_notes: a.override_notes || '',
               area_rebate_estimate: a.area_rebate_estimate || 0,
             }))
           }
@@ -6327,6 +6334,13 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
               area_watts_reduced: a.area_watts_reduced || 0,
               ceiling_height: a.ceiling_height || '',
               fixture_category: a.fixture_category || '',
+              // Bryce flagged (May 19): product detail not pulling through.
+              // Proposal showed area name only, not the LED product chosen.
+              // Lenard stores it in override_notes ("SBE Product: …") and
+              // led_replacement_id (link to products_services). Pass both.
+              lighting_type: a.lighting_type || '',
+              led_replacement_id: a.led_replacement_id || null,
+              override_notes: a.override_notes || '',
               area_rebate_estimate: a.area_rebate_estimate || 0,
             }))
           }
