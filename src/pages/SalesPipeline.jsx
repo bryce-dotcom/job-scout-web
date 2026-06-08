@@ -613,10 +613,21 @@ export default function SalesPipeline() {
       const isDeliveredJobStatus = deliveredJobStatusIds.includes(lead.status)
       const isTerminal = isTerminalStage || isDeliveredJobStatus
       if (isTerminal) {
+        // For Won/Lost: only use deal-closed timestamps. Job execution
+        // timestamps (job.updated_at, last_status_change_at) are WRONG
+        // here — a deal Won in 2022 whose job got a PO received today
+        // would pass MTD and pollute the Won column. The "when" of a
+        // Won/Lost deal is when the customer said yes/no, not when
+        // work happened later.
+        // For Delivered: job.last_status_change_at IS the right timestamp
+        // (it records when the job moved to a completed status).
+        const isWonOrLost = !!(stage?.isWon || stage?.isLost)
         const candidates = [
-          lead.last_updated, lead.converted_at,
+          lead.last_updated,
+          lead.converted_at,
           ...(lead._quotes || []).flatMap(q => [q.approved_date, q.rejected_date, q.updated_at]),
-          ...(lead.jobs || []).flatMap(j => [j.last_status_change_at, j.updated_at]),
+          // Only include job timestamps for delivery-stage leads, not Won/Lost
+          ...(isWonOrLost ? [] : (lead.jobs || []).flatMap(j => [j.last_status_change_at, j.updated_at])),
         ].filter(Boolean)
         const inRange = candidates.some(d => {
           if (d < cutoffStr) return false
@@ -673,13 +684,26 @@ export default function SalesPipeline() {
           })
       })
 
-      // Won column: also include quotes approved THIS MONTH that may have moved to delivery
+      // Won column: also include leads that are now in delivery whose quote
+      // was approved within the selected date range. These deals are "Won"
+      // even though the lead status moved to Chillin/Scheduled/In Progress.
+      // We use the user's actual dateRange cutoff — NOT a hardcoded firstOfMonth
+      // which was ignoring the date filter the user had selected.
       if (stageId === 'Won') {
-        const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+        const wonCutoffStr = getDateCutoff(dateRange)
+        const wonCutoffEndStr = dateRange === 'custom' && customDateTo
+          ? new Date(customDateTo + 'T23:59:59').toISOString()
+          : null
         filteredPipelineLeads.forEach(lead => {
           if (!lead._quotes) return
           lead._quotes
-            .filter(q => q.status === 'Approved' && q.approved_date && new Date(q.approved_date) >= firstOfMonth)
+            .filter(q => {
+              if (q.status !== 'Approved' || !q.approved_date) return false
+              // Respect the active date range filter
+              if (wonCutoffStr && q.approved_date < wonCutoffStr) return false
+              if (wonCutoffEndStr && q.approved_date > wonCutoffEndStr) return false
+              return true
+            })
             .forEach(q => {
               // Don't duplicate if already in the list
               if (!estimateCards.find(c => c._quoteId === q.id)) {
@@ -748,13 +772,13 @@ export default function SalesPipeline() {
   })()
 
   const getStageValue = (stageId) => {
-    const stage = stages.find(s => s.id === stageId)
-    if (stage?.isWon) return sumJobTotal(wonInRangeJobs)
+    // Always use the rendered cards as the source — count/value/cards all agree.
+    // Previously the Won stage used sumJobTotal(wonInRangeJobs) which was a
+    // different dataset (jobs by created_at) and never matched the card list.
     return getLeadsForStage(stageId).reduce((sum, l) => sum + getLeadAmount(l), 0)
   }
   const getStageCount = (stageId) => {
-    const stage = stages.find(s => s.id === stageId)
-    if (stage?.isWon) return wonInRangeJobs.length
+    // Count exactly what's rendered — no more badge/cards mismatch.
     return getLeadsForStage(stageId).length
   }
 
@@ -1129,21 +1153,20 @@ export default function SalesPipeline() {
     const todayAppointments = leadsWithAppointments.filter(l => new Date(l.appointment_time).toDateString() === today)
     const sumAmount = (arr) => arr.reduce((sum, l) => sum + getLeadAmount(l), 0)
 
-    // "Sales Won" — jobs CREATED in the selected window (estimate→job
-    // approval OR fresh job). Source of truth: src/lib/jobMetrics.js.
-    // Honors the active owner filter via ownerFilteredJobs so the grand
-    // total only shows the selected rep's wins (matches what they see
-    // in the Won column).
+    // "Sales Won" — now uses the SAME source as the Won column cards so
+    // the header stat always matches what the rep sees in the pipeline.
+    // Previously used wonJobsInRange(storeJobs) which counted jobs by
+    // created_at — a different dataset that never agreed with the column.
+    const wonCards = getLeadsForStage('Won')
+    const salesWonTotal = wonCards.reduce((s, l) => s + getLeadAmount(l), 0)
+    const salesWonCount = wonCards.length
     const rangeCutoff = getDateCutoff(dateRange)
-    const wonInRange = wonJobsInRange(ownerFilteredJobs, rangeCutoff, null)
-    const salesWonTotal = sumJobTotal(wonInRange)
-    const salesWonCount = wonInRange.length
     const deliveredInRange = deliveredJobsInRange(ownerFilteredJobs, storeJobStatuses, rangeCutoff, null)
     const deliveredTotal = sumJobTotal(deliveredInRange)
     const deliveredCount = deliveredInRange.length
 
     return {
-      salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} job${salesWonCount !== 1 ? 's' : ''} created`, color: '#16a34a', isFormatted: true },
+      salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} deal${salesWonCount !== 1 ? 's' : ''} closed`, color: '#16a34a', isFormatted: true },
       delivered: { value: formatCurrency(deliveredTotal), label: 'Delivered', sublabel: `${deliveredCount} completed`, color: '#10b981', isFormatted: true },
       active: { value: activeLeads.length, label: 'Active', color: null },
       won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
