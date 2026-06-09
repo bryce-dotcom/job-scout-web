@@ -125,6 +125,8 @@ function EstimateDetailInner() {
   const currentEmployee = useStore((state) => state.currentEmployee)
   const products = useStore((state) => state.products)
   const employees = useStore((state) => state.employees)
+  const defaultLaborWarrantyMonths = useStore((state) => state.defaultLaborWarrantyMonths)
+  const defaultPartsWarrantyMonths = useStore((state) => state.defaultPartsWarrantyMonths)
   const prescriptiveMeasures = useStore((state) => state.prescriptiveMeasures)
   const leads = useStore((state) => state.leads)
   const customers = useStore((state) => state.customers)
@@ -1573,14 +1575,15 @@ function EstimateDetailInner() {
             partsMonthsAdded += (Number(p.parts_coverage_months_added) || 0) * qty
           }
         }
-        // Company defaults — HHH ships every install with 12 months labor +
-        // 60 months parts (DLC-mandated minimum for rebate-eligible LED).
-        // If a tenant wants different defaults later, hoist these to a
-        // setting on the companies table.
-        const DEFAULT_LABOR_MONTHS = 12
-        const DEFAULT_PARTS_MONTHS = 60
-        const totalLaborMonths = DEFAULT_LABOR_MONTHS + laborMonthsAdded
-        const totalPartsMonths = DEFAULT_PARTS_MONTHS + partsMonthsAdded
+        // Company-level defaults come from the settings table per-tenant
+        // (keys: default_labor_warranty_months, default_parts_warranty_months).
+        // Falls back to 12/12 if the settings row was never seeded —
+        // a half-onboarded tenant still gets a sane conversion. Change
+        // the defaults from Settings → Warranty defaults, not from code.
+        const baseLaborMonths = Number(defaultLaborWarrantyMonths) || 12
+        const basePartsMonths = Number(defaultPartsWarrantyMonths) || 12
+        const totalLaborMonths = baseLaborMonths + laborMonthsAdded
+        const totalPartsMonths = basePartsMonths + partsMonthsAdded
         const addMonths = (months) => {
           const d = new Date()
           d.setMonth(d.getMonth() + months)

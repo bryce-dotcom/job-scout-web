@@ -91,6 +91,14 @@ export const useStore = create(
       jobCalendars: [],
       pipelineStages: [],
 
+      // Company-level defaults — the standard (no-upsell, included)
+      // warranty coverage every install carries. Drives the coverage_until
+      // dates stamped on a job at convert-to-job time. Per-tenant via
+      // settings rows so an HVAC shop can run 12/12 while a lighting
+      // contractor runs 12/60 etc.
+      defaultLaborWarrantyMonths: 12,
+      defaultPartsWarrantyMonths: 12,
+
       // Labor Rates
       laborRates: [],
 
@@ -198,6 +206,8 @@ export const useStore = create(
           rebateRates: [],
           communications: [],
           settings: [],
+          defaultLaborWarrantyMonths: 12,
+          defaultPartsWarrantyMonths: 12,
           serviceTypes: [],
           businessUnits: [],
           leadSources: [],
@@ -1105,6 +1115,16 @@ export const useStore = create(
           }
         };
 
+        // Parse a single numeric setting (e.g. warranty defaults).
+        // Returns the fallback when the row is missing or unparseable
+        // so a half-onboarded tenant still gets a sane convert-to-job.
+        const parseSettingNumber = (settingsData, key, fallback) => {
+          const setting = (settingsData || []).find(s => s.key === key);
+          if (!setting?.value) return fallback;
+          const n = Number(setting.value);
+          return Number.isFinite(n) && n >= 0 ? n : fallback;
+        };
+
         // Hydrate from cache
         const cached = await offlineDb.getAll('settings');
         if (cached.length > 0 && get().settings.length === 0) {
@@ -1119,7 +1139,9 @@ export const useStore = create(
             jobSectionStatuses: parseSettingList(cached, 'job_section_statuses'),
             employeeRoles: parseSettingList(cached, 'employee_roles'),
             jobCalendars: parseSettingList(cached, 'job_calendars'),
-            pipelineStages: parseSettingList(cached, 'pipeline_stages')
+            pipelineStages: parseSettingList(cached, 'pipeline_stages'),
+            defaultLaborWarrantyMonths: parseSettingNumber(cached, 'default_labor_warranty_months', 12),
+            defaultPartsWarrantyMonths: parseSettingNumber(cached, 'default_parts_warranty_months', 12),
           });
         }
 
@@ -1144,7 +1166,9 @@ export const useStore = create(
               jobSectionStatuses: parseSettingList(data, 'job_section_statuses'),
               employeeRoles: parseSettingList(data, 'employee_roles'),
               jobCalendars: parseSettingList(data, 'job_calendars'),
-              pipelineStages: parseSettingList(data, 'pipeline_stages')
+              pipelineStages: parseSettingList(data, 'pipeline_stages'),
+              defaultLaborWarrantyMonths: parseSettingNumber(data, 'default_labor_warranty_months', 12),
+              defaultPartsWarrantyMonths: parseSettingNumber(data, 'default_parts_warranty_months', 12),
             });
           }
         } catch (e) {

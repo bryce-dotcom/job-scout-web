@@ -2497,7 +2497,108 @@ function EstimateDefaultsTab({ theme, settings, saveSetting }) {
             {savingTargets ? 'Saving…' : 'Save Target Rates'}
           </button>
         </div>
+
+        {/* Warranty defaults — the STANDARD (no-upsell, included free)
+            coverage every install carries. Drives the coverage_until
+            dates stamped at convert-to-job. Extended Service Coverage
+            upsells then ADD to these baselines. Per-tenant so an HVAC
+            shop running 12/12 doesn't inherit lighting's 12/60. */}
+        <WarrantyDefaultsSection
+          theme={theme}
+          settings={settings}
+          saveSetting={saveSetting}
+          inputStyle={inputStyle}
+          labelStyle={labelStyle}
+        />
       </div>
+    </div>
+  )
+}
+
+// Warranty Defaults — a small subsection of EstimateDefaultsTab. Extracted
+// into its own component so the local state for the two inputs doesn't
+// leak into the parent's already-busy form state.
+function WarrantyDefaultsSection({ theme, settings, saveSetting, inputStyle, labelStyle }) {
+  const parseNum = (key, fallback) => {
+    const row = settings.find(s => s.key === key)
+    if (!row?.value) return fallback
+    // settings values are JSON-stringified — JSON.parse("12") = 12.
+    // Fall back to a raw Number() if parse fails so a manually-inserted
+    // row without surrounding quotes still works.
+    try { const v = JSON.parse(row.value); const n = Number(v); return Number.isFinite(n) ? n : fallback }
+    catch { const n = Number(row.value); return Number.isFinite(n) ? n : fallback }
+  }
+  const [labor, setLabor] = useState(parseNum('default_labor_warranty_months', 12))
+  const [parts, setParts] = useState(parseNum('default_parts_warranty_months', 12))
+  const [saving, setSaving] = useState(false)
+
+  // Re-sync after the parent's settings rehydrate (settings fetch races
+  // initial render). Same pattern as targetRates above.
+  useEffect(() => {
+    setLabor(parseNum('default_labor_warranty_months', 12))
+    setParts(parseNum('default_parts_warranty_months', 12))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.length])
+
+  const save = async () => {
+    setSaving(true)
+    await saveSetting('default_labor_warranty_months', Number(labor) || 0)
+    await saveSetting('default_parts_warranty_months', Number(parts) || 0)
+    setSaving(false)
+    toast.success('Warranty defaults saved')
+  }
+
+  return (
+    <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '20px', marginTop: '8px' }}>
+      <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Warranty defaults</h4>
+      <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px', lineHeight: 1.5 }}>
+        How many months of <strong>labor and parts coverage</strong> every install ships with — the
+        "standard" warranty before any upsell. When an Extended Service Coverage upsell is on
+        the quote, its months are <em>added</em> to these defaults to compute the job's
+        coverage_until dates. The Add-Service-Visit dialog reads those dates to decide whether
+        a warranty call gets billed to the customer, the manufacturer, or absorbed by you.
+      </p>
+      <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px', lineHeight: 1.5 }}>
+        <strong>Picking a number:</strong> 12/12 is a safe generic field-service baseline.
+        Commercial LED contractors typically run 12/60 (DLC requires LED fixtures to carry a
+        5-year manufacturer parts warranty for rebate eligibility, so 60 months parts is
+        effectively free coverage you can include).
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 140px', gap: '12px', alignItems: 'center', maxWidth: '480px' }}>
+        <label style={{ fontSize: '13px', color: theme.text }}>Default labor warranty</label>
+        <div style={{ position: 'relative' }}>
+          <input
+            type="number" step="1" min="0" value={labor}
+            onChange={(e) => setLabor(e.target.value)}
+            style={{ ...inputStyle, paddingRight: '48px', textAlign: 'right' }}
+          />
+          <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, fontSize: '12px' }}>months</span>
+        </div>
+        <label style={{ fontSize: '13px', color: theme.text }}>Default parts warranty</label>
+        <div style={{ position: 'relative' }}>
+          <input
+            type="number" step="1" min="0" value={parts}
+            onChange={(e) => setParts(e.target.value)}
+            style={{ ...inputStyle, paddingRight: '48px', textAlign: 'right' }}
+          />
+          <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, fontSize: '12px' }}>months</span>
+        </div>
+      </div>
+      <button
+        onClick={save}
+        disabled={saving}
+        style={{
+          marginTop: '12px',
+          display: 'inline-flex', alignItems: 'center', gap: '8px',
+          padding: '10px 18px',
+          backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px',
+          fontSize: '13px', fontWeight: '500',
+          cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
+        }}
+      >
+        <Save size={14} />
+        {saving ? 'Saving…' : 'Save warranty defaults'}
+      </button>
     </div>
   )
 }
