@@ -1,0 +1,32 @@
+{
+  "applied": true,
+  "ranAt": "2026-06-09T17:49:42.869Z",
+  "archived": [
+    {
+      "id": 2084,
+      "oldName": "Extended Warranty (3-year)",
+      "newName": "Extended Warranty (3-year) (ARCHIVED 2026-06-09)"
+    },
+    {
+      "id": 2085,
+      "oldName": "Extended Warranty (5-year)",
+      "newName": "Extended Warranty (5-year) (ARCHIVED 2026-06-09)"
+    },
+    {
+      "id": 2086,
+      "oldName": "Annual Lighting Tune-Up",
+      "newName": "Annual Lighting Tune-Up (ARCHIVED 2026-06-09)"
+    }
+  ],
+  "created": [
+    {
+      "id": 2205,
+      "name": "Extended Service Coverage — Tier A (+1 yr labor)"
+    },
+    {
+      "id": 2206,
+      "name": "Extended Service Coverage — Tier B (+2 yr labor, +2 yr parts)"
+    }
+  ],
+  "warnings": []
+}

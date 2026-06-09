@@ -10,6 +10,7 @@ import { resolveAllMappings } from '../lib/dataPathResolver'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
 import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
+import { pricePercentOfContractFor } from '../lib/pricingRules'
 
 // Light theme fallback
 const defaultTheme = {
@@ -213,13 +214,29 @@ export default function QuoteDetail() {
     setSaving(true)
     setShowProductPicker(false)
 
+    // Percent-of-contract products (e.g. Extended Service Coverage) compute
+    // their price from the sum of OTHER lines × pricing_percent, clamped to
+    // floor/ceiling. The breakdown is appended to the description so the
+    // salesperson knows where the number came from.
+    let finalPrice = totalPrice
+    let finalDescription = product.description || null
+    const pricingCalc = pricePercentOfContractFor(product, lineItems, null)
+    if (pricingCalc) {
+      finalPrice = pricingCalc.price
+      const tag = `[Auto-calculated: ${pricingCalc.breakdown}]`
+      finalDescription = finalDescription
+        ? `${finalDescription}\n\n${tag}`
+        : tag
+    }
+
     await createQuoteLine({
       company_id: companyId,
       quote_id: id,
       item_id: product.id,
       quantity: 1,
-      price: totalPrice,
-      line_total: totalPrice
+      price: finalPrice,
+      line_total: finalPrice,
+      description: finalDescription,
     })
 
     await updateQuoteTotal()

@@ -8399,6 +8399,21 @@ function AddServiceVisitModal({ parentJob, companyId, theme, onClose, onCreated 
   const [coverageNotes, setCoverageNotes] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // Parent's overall coverage window. Set at convert-to-job from the
+  // company default (1 yr labor / 5 yr parts) plus any Extended Service
+  // Coverage upsells on the original quote. We read these to pre-fill
+  // partsCoverage / laborCoverage based on whether the dueDate falls
+  // inside or outside the covered window — so dispatch doesn't have to
+  // remember whether Tier B was sold three years ago.
+  const partsUntil = parentJob?.parts_coverage_until_date
+  const laborUntil = parentJob?.labor_coverage_until_date
+  const isWithin = (untilDate, target) => {
+    if (!untilDate || !target) return false
+    return new Date(target) <= new Date(untilDate)
+  }
+  const partsWithin = isWithin(partsUntil, dueDate)
+  const laborWithin = isWithin(laborUntil, dueDate)
+
   const KIND_OPTIONS = [
     { value: 'annual',    label: 'Annual check-up',    hint: 'Yearly maintenance visit (typically prepaid as part of an upsell).' },
     { value: 'tune_up',   label: 'Tune-up',            hint: 'Tune / adjust / clean — billed per visit.' },
@@ -8416,15 +8431,36 @@ function AddServiceVisitModal({ parentJob, companyId, theme, onClose, onCreated 
     { value: 'na',           label: 'N/A' },
   ]
 
-  // Reasonable defaults per kind — saves clicks.
+  // Default coverage logic for kind=warranty:
+  //   - Parts: 'manufacturer' if within parent's parts_coverage_until_date
+  //     (DLC requires manufacturers to cover parts at least 5 yr on LED);
+  //     'customer' if past that window.
+  //   - Labor: 'company' if within parent's labor_coverage_until_date
+  //     (standard 1 yr + any Tier A/B extension); 'customer' if past that.
+  // For other kinds, leave the existing kind-based defaults alone.
   const handleKindChange = (newKind) => {
     setKind(newKind)
-    if (newKind === 'warranty')  { setPartsCoverage('manufacturer'); setLaborCoverage('company') }
+    if (newKind === 'warranty') {
+      setPartsCoverage(partsWithin ? 'manufacturer' : 'customer')
+      setLaborCoverage(laborWithin ? 'company' : 'customer')
+    }
     else if (newKind === 'callback') { setPartsCoverage('company'); setLaborCoverage('company') }
     else if (newKind === 'annual' || newKind === 'tune_up' || newKind === 'repair' || newKind === 'upsell') {
       setPartsCoverage('customer'); setLaborCoverage('customer')
     }
   }
+
+  // Re-evaluate coverage defaults when the due date moves across a
+  // coverage boundary (kind=warranty only — other kinds keep their
+  // intentional defaults). Without this, dispatch could change the date
+  // from "within coverage" to "after coverage expires" and the auto-
+  // filled coverage values would silently lie.
+  useEffect(() => {
+    if (kind !== 'warranty') return
+    setPartsCoverage(partsWithin ? 'manufacturer' : 'customer')
+    setLaborCoverage(laborWithin ? 'company' : 'customer')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dueDate, kind])
 
   const create = async () => {
     setSaving(true)
@@ -8495,10 +8531,44 @@ function AddServiceVisitModal({ parentJob, companyId, theme, onClose, onCreated 
         <h2 style={{ margin: '0 0 4px', fontSize: '17px', fontWeight: 700, color: theme.text }}>
           Add service visit
         </h2>
-        <p style={{ margin: '0 0 16px', fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+        <p style={{ margin: '0 0 12px', fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
           Creates a new job linked to <strong>{parentJob?.job_id || ('#' + parentJob?.id)}</strong>. The visit has its own
           schedule, line items, and invoice. Job costing rolls everything up under the parent.
         </p>
+
+        {/* Parent coverage window — shown above the form so dispatch knows
+            whether this visit falls inside HHH's warranty obligations or
+            past them. Drives the auto-fill on parts/labor coverage when
+            kind=warranty. Hidden when no coverage dates are set (older
+            jobs from before coverage tracking landed). */}
+        {(partsUntil || laborUntil) && (
+          <div style={{
+            padding: '10px 12px', marginBottom: '12px',
+            backgroundColor: 'rgba(90,99,73,0.06)',
+            border: `1px solid ${theme.border}`, borderRadius: '8px',
+            fontSize: '12px', color: theme.textSecondary, lineHeight: 1.6,
+          }}>
+            <div style={{ fontWeight: 600, color: theme.text, marginBottom: '2px' }}>Parent coverage window</div>
+            {laborUntil && (
+              <div>
+                <span style={{ color: theme.textMuted }}>Labor until</span>{' '}
+                <strong>{new Date(laborUntil).toLocaleDateString()}</strong>{' '}
+                <span style={{ color: laborWithin ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+                  {laborWithin ? '✓ visit is within window' : '✗ visit is past window'}
+                </span>
+              </div>
+            )}
+            {partsUntil && (
+              <div>
+                <span style={{ color: theme.textMuted }}>Parts until</span>{' '}
+                <strong>{new Date(partsUntil).toLocaleDateString()}</strong>{' '}
+                <span style={{ color: partsWithin ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
+                  {partsWithin ? '✓ visit is within window' : '✗ visit is past window'}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>

@@ -2820,44 +2820,53 @@ export default function PMJobSetter() {
               )}
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: '8px', overflow: 'hidden', maxHeight: isMobile ? 'none' : '520px', minHeight: '200px' }}>
+            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', overflowY: 'hidden', maxHeight: isMobile ? 'none' : '520px', minHeight: '200px', paddingBottom: '4px' }}>
               {jobStatuses.map(status => {
                 const StatusIcon = statusIcons[status.name] || Briefcase
                 return (
                   <div
                     key={status.id}
                     style={{
-                      flex: 1,
-                      minWidth: 0,
+                      flex: '0 0 auto',
+                      width: '220px',
                       display: 'flex',
                       flexDirection: 'column',
-                      overflow: 'hidden'
+                      overflow: 'hidden',
+                      borderRadius: '12px',
+                      border: `1px solid ${status.color}28`,
+                      borderTop: `3px solid ${status.color}`,
+                      backgroundColor: `${status.color}07`,
                     }}
                     onDragOver={(e) => handleStatusDragOver(e, status.id)}
                     onDrop={(e) => handleStatusDrop(e, status.id)}
                   >
                     {/* Status Header */}
                     <div style={{
-                      backgroundColor: status.color,
-                      color: '#fff',
-                      padding: '10px',
-                      borderRadius: '8px 8px 0 0',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      textAlign: 'center',
+                      padding: '10px 12px 8px',
+                      backgroundColor: `${status.color}0D`,
+                      borderBottom: `1px solid ${status.color}18`,
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '5px'
+                      gap: '7px'
                     }}>
-                      <StatusIcon size={14} />
-                      <span>{status.name}</span>
+                      <div style={{
+                        width: '24px', height: '24px', borderRadius: '7px',
+                        backgroundColor: `${status.color}22`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                      }}>
+                        <StatusIcon size={13} style={{ color: status.color }} />
+                      </div>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: theme.text, flex: 1, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {status.name}
+                      </span>
                       <span style={{
-                        marginLeft: '4px',
-                        backgroundColor: 'rgba(255,255,255,0.25)',
-                        padding: '2px 7px',
-                        borderRadius: '8px',
-                        fontSize: '11px'
+                        backgroundColor: status.color,
+                        color: '#fff',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        flexShrink: 0
                       }}>
                         {getJobsByStatus(status.id).length}
                       </span>
@@ -2866,13 +2875,12 @@ export default function PMJobSetter() {
                     {/* Status Content */}
                     <div style={{
                       flex: 1,
-                      backgroundColor: dragOverStatus === status.id ? theme.accentBg : 'rgba(0,0,0,0.02)',
-                      borderRadius: '0 0 8px 8px',
-                      padding: '8px',
+                      backgroundColor: dragOverStatus === status.id ? theme.accentBg : 'transparent',
+                      padding: '6px',
                       overflowY: 'auto',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '8px'
+                      gap: '6px'
                     }}>
                       {getJobsByStatus(status.id).map(job => {
                         const progress = calculateJobProgress(job.id)
@@ -2902,11 +2910,12 @@ export default function PMJobSetter() {
                                 onClick={() => setDetailJob(job)}
                                 onDoubleClick={() => navigate(`/jobs/${job.id}`)}
                                 style={{
-                                  padding: '10px 12px',
+                                  padding: '10px 12px 10px 10px',
                                   cursor: 'pointer',
                                   display: 'flex',
                                   alignItems: 'flex-start',
-                                  gap: '8px'
+                                  gap: '8px',
+                                  borderLeft: `3px solid ${status.color}`,
                                 }}
                               >
                                 <span
@@ -2938,36 +2947,45 @@ export default function PMJobSetter() {
                                     {job.job_title}
                                   </div>
 
-                                  {/* Progress Bar */}
-                                  <div style={{
-                                    height: '5px',
-                                    backgroundColor: theme.border,
-                                    borderRadius: '3px',
-                                    overflow: 'hidden',
-                                    marginBottom: '5px'
-                                  }}>
+                                  {/* Progress Bar — only shown when work has started */}
+                                  {progress > 0 && (
                                     <div style={{
-                                      height: '100%',
-                                      width: `${progress}%`,
-                                      backgroundColor: progress === 100 ? '#22c55e' : '#3b82f6',
+                                      height: '4px',
+                                      backgroundColor: theme.border,
                                       borderRadius: '3px',
-                                      transition: 'width 0.3s'
-                                    }} />
-                                  </div>
+                                      overflow: 'hidden',
+                                      marginBottom: '5px'
+                                    }}>
+                                      <div style={{
+                                        height: '100%',
+                                        width: `${progress}%`,
+                                        backgroundColor: progress === 100 ? '#22c55e' : status.color,
+                                        borderRadius: '3px',
+                                        transition: 'width 0.3s'
+                                      }} />
+                                    </div>
+                                  )}
 
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                                      {Math.round(progress)}% complete
-                                    </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                    {progress > 0 && (
+                                      <span style={{
+                                        fontSize: '10px', fontWeight: '600',
+                                        color: progress === 100 ? '#22c55e' : status.color,
+                                        backgroundColor: progress === 100 ? 'rgba(34,197,94,0.1)' : `${status.color}14`,
+                                        padding: '1px 6px', borderRadius: '6px'
+                                      }}>
+                                        {Math.round(progress)}%
+                                      </span>
+                                    )}
                                     {job.pm?.name && (
                                       <span style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', alignItems: 'center' }}>
-                                        <User size={11} style={{ marginRight: '3px' }} />
+                                        <User size={10} style={{ marginRight: '3px' }} />
                                         {job.pm.name}
                                       </span>
                                     )}
                                     {job.start_date && (
-                                      <span style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', alignItems: 'center' }}>
-                                        <Calendar size={11} style={{ marginRight: '3px' }} />
+                                      <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center' }}>
+                                        <Calendar size={10} style={{ marginRight: '3px' }} />
                                         {new Date(job.start_date).toLocaleDateString()}
                                       </span>
                                     )}

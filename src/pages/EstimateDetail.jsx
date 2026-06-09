@@ -20,6 +20,7 @@ import EstimateConversation from '../components/EstimateConversation'
 import { buildDefaultTerms, DEFAULT_DOWN_PAYMENT_LABEL } from '../components/proposal/formalProposalDefaults'
 import FormalTermsEditor from '../components/proposal/FormalTermsEditor'
 import useSmartBack from '../lib/useSmartBack'
+import { pricePercentOfContractFor } from '../lib/pricingRules'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -794,15 +795,30 @@ function EstimateDetailInner() {
     setSaving(true)
     setShowProductPicker(false)
 
+    // Percent-of-contract products (e.g. Extended Service Coverage Tier A/B)
+    // override the picker's `totalPrice` with `pricing_percent * sum(other
+    // lines)`, clamped to floor/ceiling. The salesperson sees the calc in
+    // the line's description so they trust the number.
+    let finalPrice = totalPrice
+    let finalDescription = product.description || null
+    const pricingCalc = pricePercentOfContractFor(product, lineItems, null)
+    if (pricingCalc) {
+      finalPrice = pricingCalc.price
+      const tag = `[Auto-calculated: ${pricingCalc.breakdown}]`
+      finalDescription = finalDescription
+        ? `${finalDescription}\n\n${tag}`
+        : tag
+    }
+
     await createQuoteLine({
       company_id: companyId,
       quote_id: id,
       item_id: product.id,
       item_name: product.name,
-      description: product.description || null,
+      description: finalDescription,
       quantity: 1,
-      price: totalPrice,
-      line_total: totalPrice,
+      price: finalPrice,
+      line_total: finalPrice,
       labor_cost: laborCost || 0
     })
 
@@ -1533,6 +1549,51 @@ function EstimateDetailInner() {
         console.error('[convertToJob] failed to fetch quote_lines for copy:', qlErr)
       }
       const linesToCopy = freshQuoteLines || []
+
+      // Coverage dates — sum the labor/parts coverage months added by any
+      // Extended Service Coverage upsells on the quote, plus the company
+      // default (1 yr labor / 5 yr parts), and stamp the resulting "until"
+      // dates on the new job. Service-visit dispatch later reads these to
+      // pre-fill parts_coverage / labor_coverage on each warranty call so
+      // nobody has to remember "we sold them Tier B in 2024."
+      try {
+        const itemIds = [...new Set(linesToCopy.map(l => l.item_id).filter(Boolean))]
+        let laborMonthsAdded = 0
+        let partsMonthsAdded = 0
+        if (itemIds.length) {
+          const { data: upsells } = await supabase
+            .from('products_services')
+            .select('id, labor_coverage_months_added, parts_coverage_months_added')
+            .in('id', itemIds)
+          for (const l of linesToCopy) {
+            const p = (upsells || []).find(u => u.id === l.item_id)
+            if (!p) continue
+            const qty = Number(l.quantity) || 1
+            laborMonthsAdded += (Number(p.labor_coverage_months_added) || 0) * qty
+            partsMonthsAdded += (Number(p.parts_coverage_months_added) || 0) * qty
+          }
+        }
+        // Company defaults — HHH ships every install with 12 months labor +
+        // 60 months parts (DLC-mandated minimum for rebate-eligible LED).
+        // If a tenant wants different defaults later, hoist these to a
+        // setting on the companies table.
+        const DEFAULT_LABOR_MONTHS = 12
+        const DEFAULT_PARTS_MONTHS = 60
+        const totalLaborMonths = DEFAULT_LABOR_MONTHS + laborMonthsAdded
+        const totalPartsMonths = DEFAULT_PARTS_MONTHS + partsMonthsAdded
+        const addMonths = (months) => {
+          const d = new Date()
+          d.setMonth(d.getMonth() + months)
+          return d.toISOString().slice(0, 10) // YYYY-MM-DD for the date column
+        }
+        await supabase.from('jobs').update({
+          labor_coverage_until_date: addMonths(totalLaborMonths),
+          parts_coverage_until_date: addMonths(totalPartsMonths),
+        }).eq('id', newJob.id)
+      } catch (covErr) {
+        console.warn('[convertToJob] coverage date stamp failed:', covErr?.message || covErr)
+      }
+
       if (linesToCopy.length > 0) {
         const jobLines = linesToCopy.map(line => ({
           company_id: companyId,
