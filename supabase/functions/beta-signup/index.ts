@@ -269,7 +269,14 @@ async function seedSampleData(supabase: any, companyId: number, ownerEmail: stri
   const settingsData = [
     { key: 'business_units', value: JSON.stringify(['Commercial', 'Industrial', 'Residential', 'Government']) },
     { key: 'lead_sources', value: JSON.stringify(['Website', 'Referral', 'Cold Call', 'Marketing', 'Trade Show', 'Other']) },
-    { key: 'service_types', value: JSON.stringify(['Lighting Retrofit', 'New Construction', 'Maintenance', 'Emergency Service', 'Audit']) }
+    { key: 'service_types', value: JSON.stringify(['Lighting Retrofit', 'New Construction', 'Maintenance', 'Emergency Service', 'Audit']) },
+    // Warranty defaults — drives convert-to-job's coverage_until stamping
+    // and AddServiceVisitModal coverage decisions. 12/12 is safe generic;
+    // tenants in trades with longer manufacturer parts warranties bump
+    // parts in Settings → Estimate Defaults later. Onboarding.jsx
+    // bumps parts to 60 when the user picks Lighting/Electrical industry.
+    { key: 'default_labor_warranty_months', value: JSON.stringify(12) },
+    { key: 'default_parts_warranty_months', value: JSON.stringify(12) }
   ];
 
   // Plain insert — the function above early-returns if seed already ran for this

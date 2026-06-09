@@ -188,6 +188,45 @@ export default function Onboarding() {
       return
     }
 
+    // Seed per-tenant defaults that the rest of the app expects to exist.
+    // These all live in the `settings` key/value table so the tenant can
+    // change them later in Settings → Estimate Defaults without redeploying.
+    //
+    // Warranty months: drives convert-to-job's coverage_until stamping
+    // and the AddServiceVisitModal's "is this covered?" logic.
+    //   - Lighting/Electrical defaults parts to 60 because DLC mandates a
+    //     5-yr LED fixture parts warranty for utility-rebate eligibility,
+    //     so 60 months of parts coverage is effectively free for that trade.
+    //   - Everything else gets 12/12 — a safe generic baseline. A roofer
+    //     with a 25-yr workmanship guarantee can bump it manually.
+    try {
+      const ind = (formData.industry || '').toLowerCase()
+      const isLightingOrElectrical = ind.includes('lighting') || ind.includes('electrical')
+      const partsMonths = isLightingOrElectrical ? 60 : 12
+      const laborMonths = 12
+      // Only insert if the row doesn't already exist (idempotent for users
+      // re-running onboarding). Skipping a row preserves a tenant's manual
+      // edit if they previously set this from the Settings page.
+      const seeds = [
+        { key: 'default_labor_warranty_months', value: JSON.stringify(laborMonths) },
+        { key: 'default_parts_warranty_months', value: JSON.stringify(partsMonths) },
+      ]
+      const { data: existing } = await supabase
+        .from('settings').select('key')
+        .eq('company_id', company.id)
+        .in('key', seeds.map(s => s.key))
+      const haveKeys = new Set((existing || []).map(r => r.key))
+      const toInsert = seeds
+        .filter(s => !haveKeys.has(s.key))
+        .map(s => ({ company_id: company.id, key: s.key, list_name: 'Warranty Defaults', value: s.value }))
+      if (toInsert.length) {
+        await supabase.from('settings').insert(toInsert)
+      }
+    } catch (seedErr) {
+      // Non-fatal — tenant can set defaults manually in Settings.
+      console.warn('[Onboarding] warranty defaults seed failed:', seedErr?.message || seedErr)
+    }
+
     // Auto-enable AI agents that match the chosen industry. Arnie is
     // useful everywhere; the trade-specific agent is the wedge that
     // makes the new tenant's first 5 minutes feel productive.
