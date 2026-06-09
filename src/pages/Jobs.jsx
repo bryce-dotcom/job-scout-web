@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
 import { companyNotify } from '../lib/companyNotify'
 import {
-  Plus, Search, Briefcase, X, Calendar, Clock, MapPin, Map,
+  Plus, Search, Briefcase, X, Calendar, Clock, MapPin, Map as MapIcon,
   Play, CheckCircle, FileText, ChevronRight, User, Users, Upload, Download,
   Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight, Coffee, ChevronDown, ChevronUp, Navigation, ExternalLink,
   Archive, RotateCcw
@@ -1333,7 +1333,7 @@ export default function Jobs() {
               borderRadius: '8px', fontSize: '13px', cursor: 'pointer'
             }}
           >
-            <Map size={16} />
+            <MapIcon size={16} />
             {!isMobile && 'Map'}
           </button>
           <button
@@ -1664,7 +1664,7 @@ export default function Jobs() {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Map size={16} color={theme.accent} />
+                  <MapIcon size={16} color={theme.accent} />
                   <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>
                     Job Map
                   </span>
