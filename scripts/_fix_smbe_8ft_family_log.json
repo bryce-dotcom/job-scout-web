@@ -1,0 +1,93 @@
+{
+  "applied": true,
+  "ranAt": "2026-06-09T02:26:37.575Z",
+  "renames": [
+    {
+      "id": 1432,
+      "from": "SMBE 40/50/64W Linear Strip - 8ft",
+      "to": "SMBE 40/53/68/80W Linear Strip - 8ft"
+    },
+    {
+      "id": 1433,
+      "from": "SMBE 40/50/64W Linear Strip - 8ft w/ Lift",
+      "to": "SMBE 40/53/68/80W Linear Strip - 8ft w/ Lift"
+    },
+    {
+      "id": 1434,
+      "from": "SMBE 40/50/64W Linear Strip - 8ft Relocate",
+      "to": "SMBE 40/53/68/80W Linear Strip - 8ft Relocate"
+    },
+    {
+      "id": 1435,
+      "from": "SMBE 40/50/64W Linear Strip - 8ft Relocate w/ Lift",
+      "to": "SMBE 40/53/68/80W Linear Strip - 8ft Relocate w/ Lift"
+    },
+    {
+      "id": 1437,
+      "from": "SMBE 40/50/64W Linear Strip - 8ft w/ Lift w/ Controls",
+      "to": "SMBE 40/53/68/80W Linear Strip - 8ft w/ Lift w/ Controls"
+    },
+    {
+      "id": 1438,
+      "from": "SMBE 40/50/64W Linear Strip - 8ft Relocate w/ Controls",
+      "to": "SMBE 40/53/68/80W Linear Strip - 8ft Relocate w/ Controls"
+    },
+    {
+      "id": 1439,
+      "from": "SMBE 40/50/64W Linear Strip - 8ft Relocate/Lift/Controls",
+      "to": "SMBE 40/53/68/80W Linear Strip - 8ft Relocate/Lift/Controls"
+    }
+  ],
+  "repoints": [
+    {
+      "edgeId": 1260,
+      "parent": 1432,
+      "oldChild": 2141,
+      "newChild": 2104
+    },
+    {
+      "edgeId": 1276,
+      "parent": 1433,
+      "oldChild": 2141,
+      "newChild": 2104
+    },
+    {
+      "edgeId": 1262,
+      "parent": 1434,
+      "oldChild": 2141,
+      "newChild": 2104
+    },
+    {
+      "edgeId": 1268,
+      "parent": 1435,
+      "oldChild": 2141,
+      "newChild": 2104
+    },
+    {
+      "edgeId": 1278,
+      "parent": 1437,
+      "oldChild": 2141,
+      "newChild": 2104
+    },
+    {
+      "edgeId": 1264,
+      "parent": 1438,
+      "oldChild": 2141,
+      "newChild": 2104
+    },
+    {
+      "edgeId": 1272,
+      "parent": 1439,
+      "oldChild": 2141,
+      "newChild": 2104
+    }
+  ],
+  "jobLineRefreshes": [
+    {
+      "jobLineId": 68,
+      "jobId": 12493,
+      "newSnapshot": "SMBE 40/53/68/80W Linear Strip - 8ft w/ Lift w/ Controls"
+    }
+  ],
+  "warnings": []
+}

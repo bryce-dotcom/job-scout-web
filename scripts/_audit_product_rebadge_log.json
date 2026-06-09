@@ -1,0 +1,252 @@
+{
+  "jobMismatches": [],
+  "qlMismatches": [
+    {
+      "quoteId": 4194,
+      "quoteLineId": 6757,
+      "itemId": 1374,
+      "snapshot": "Warehouse - LED Retrofit",
+      "current": "SMBE 50/60/70/90/110W Highbay - 2ft Lift/Controls",
+      "qty": 27,
+      "price": 469,
+      "diff": {
+        "aOnly": [],
+        "bOnly": [
+          "2F",
+          "110W",
+          "SMBE",
+          "HIGHBAY"
+        ],
+        "count": 4
+      }
+    },
+    {
+      "quoteId": 4194,
+      "quoteLineId": 6759,
+      "itemId": 1428,
+      "snapshot": "2x4 LED Troffer with Parabolic Louver - LED Retrofit",
+      "current": "SMBE 23/30/35/40/50W 2x4 Panel w/ Controls",
+      "qty": 41,
+      "price": 267,
+      "diff": {
+        "aOnly": [
+          "TROFFER"
+        ],
+        "bOnly": [
+          "50W",
+          "SMBE",
+          "PANEL"
+        ],
+        "count": 4
+      }
+    },
+    {
+      "quoteId": 4195,
+      "quoteLineId": 6760,
+      "itemId": 1374,
+      "snapshot": "Warehouse - LED Retrofit",
+      "current": "SMBE 50/60/70/90/110W Highbay - 2ft Lift/Controls",
+      "qty": 27,
+      "price": 581.66,
+      "diff": {
+        "aOnly": [],
+        "bOnly": [
+          "2F",
+          "110W",
+          "SMBE",
+          "HIGHBAY"
+        ],
+        "count": 4
+      }
+    },
+    {
+      "quoteId": 4195,
+      "quoteLineId": 6761,
+      "itemId": 1428,
+      "snapshot": "2x4 LED Troffer with Parabolic Louver - LED Retrofit",
+      "current": "SMBE 23/30/35/40/50W 2x4 Panel w/ Controls",
+      "qty": 41,
+      "price": 169.92,
+      "diff": {
+        "aOnly": [
+          "TROFFER"
+        ],
+        "bOnly": [
+          "50W",
+          "SMBE",
+          "PANEL"
+        ],
+        "count": 4
+      }
+    },
+    {
+      "quoteId": 4196,
+      "quoteLineId": 6768,
+      "itemId": 1441,
+      "snapshot": "Wall packs  - LED Retrofit",
+      "current": "SMBE 30/60/90/120W Wallpack",
+      "qty": 7,
+      "price": 301.14,
+      "diff": {
+        "aOnly": [],
+        "bOnly": [
+          "SMBE",
+          "WALLPACK"
+        ],
+        "count": 2
+      }
+    },
+    {
+      "quoteId": 4197,
+      "quoteLineId": 6786,
+      "itemId": 1493,
+      "snapshot": "SMBE Strip Light 60W/70W/80W w/ Lift",
+      "current": "SMBE 24/32/40W Linear Strip - 4ft w/ Lift",
+      "qty": 20,
+      "price": 409.98,
+      "diff": {
+        "aOnly": [
+          "60W",
+          "70W",
+          "80W"
+        ],
+        "bOnly": [
+          "4F",
+          "40W"
+        ],
+        "count": 5
+      }
+    },
+    {
+      "quoteId": 4197,
+      "quoteLineId": 6787,
+      "itemId": 1452,
+      "snapshot": "SMBE Wrap Fixture 30W/40W/50W/60W w/ Controls",
+      "current": "SMBE 30/40/50W Wrap Around w/ Controls",
+      "qty": 2,
+      "price": 343.28,
+      "diff": {
+        "aOnly": [
+          "40W",
+          "60W"
+        ],
+        "bOnly": [],
+        "count": 2
+      }
+    },
+    {
+      "quoteId": 4200,
+      "quoteLineId": 6794,
+      "itemId": 1432,
+      "snapshot": "400W Metal Halide High Bay - LED Retrofit",
+      "current": "SMBE 40/50/64W Linear Strip - 8ft",
+      "qty": 12,
+      "price": 293.04,
+      "diff": {
+        "aOnly": [
+          "HIGHBAY"
+        ],
+        "bOnly": [
+          "8F",
+          "64W",
+          "SMBE",
+          "STRIP"
+        ],
+        "count": 5
+      }
+    },
+    {
+      "quoteId": 4202,
+      "quoteLineId": 6800,
+      "itemId": 1428,
+      "snapshot": "SMBE Backlit Panels 30W/35W/40W (2X4) w/ Controls",
+      "current": "SMBE 23/30/35/40/50W 2x4 Panel w/ Controls",
+      "qty": 27,
+      "price": 324,
+      "diff": {
+        "aOnly": [
+          "40W"
+        ],
+        "bOnly": [
+          "50W",
+          "PANEL"
+        ],
+        "count": 3
+      }
+    },
+    {
+      "quoteId": 1309,
+      "quoteLineId": 1972,
+      "itemId": 1389,
+      "snapshot": "SMBE 180W/200W/220W Highbay LIFT w/ Controls",
+      "current": "SMBE 150/165/180/200/220W Highbay - 2ft LIFT w/ Controls",
+      "qty": 137,
+      "price": 581,
+      "diff": {
+        "aOnly": [
+          "180W",
+          "200W"
+        ],
+        "bOnly": [
+          "2F"
+        ],
+        "count": 3
+      }
+    },
+    {
+      "quoteId": 1310,
+      "quoteLineId": 1969,
+      "itemId": 1389,
+      "snapshot": "SMBE 180W/200W/220W Highbay LIFT w/ Controls",
+      "current": "SMBE 150/165/180/200/220W Highbay - 2ft LIFT w/ Controls",
+      "qty": 15,
+      "price": 552.41,
+      "diff": {
+        "aOnly": [
+          "180W",
+          "200W"
+        ],
+        "bOnly": [
+          "2F"
+        ],
+        "count": 3
+      }
+    },
+    {
+      "quoteId": 1332,
+      "quoteLineId": 2012,
+      "itemId": 1440,
+      "snapshot": "SMBE Adjustable Wall Packs 20W/30W/40W/50W",
+      "current": "SMBE 10/20/30/40W Slim Cutoff Wall Pack",
+      "qty": 3,
+      "price": 241.84,
+      "diff": {
+        "aOnly": [
+          "50W"
+        ],
+        "bOnly": [
+          "WALLPACK"
+        ],
+        "count": 2
+      }
+    },
+    {
+      "quoteId": 1332,
+      "quoteLineId": 2013,
+      "itemId": 1447,
+      "snapshot": "SMBE 75W/100W/120W/150W Cobra Head",
+      "current": "SMBE 120/135/150W Cobra Head ",
+      "qty": 12,
+      "price": 361.77,
+      "diff": {
+        "aOnly": [
+          "75W",
+          "100W"
+        ],
+        "bOnly": [],
+        "count": 2
+      }
+    }
+  ],
+  "ranAt": "2026-06-09T02:21:01.828Z"
+}

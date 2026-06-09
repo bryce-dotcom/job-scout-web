@@ -1,0 +1,66 @@
+{
+  "applied": true,
+  "ranAt": "2026-06-09T02:17:56.986Z",
+  "renames": [
+    {
+      "id": 2104,
+      "from": "Strip Light 60W/70W/80W (MES)",
+      "to": "MES 8ft Linear Strip 40/53/68/80W"
+    },
+    {
+      "id": 1436,
+      "from": "SMBE 40/50/64W Linear Strip - 8ft w/ Controls",
+      "to": "SMBE 40/53/68/80W Linear Strip - 8ft w/ Controls"
+    }
+  ],
+  "repoints": [
+    {
+      "edgeId": 1274,
+      "parent": 1436,
+      "oldChild": 2141,
+      "newChild": 2104,
+      "quantity": 1
+    }
+  ],
+  "jobLineFixes": [
+    {
+      "jobLineId": 12326,
+      "jobId": 23019,
+      "customer": "Green River (Dave Dj glass quote 4208)",
+      "qty": 58,
+      "price": 345
+    },
+    {
+      "jobLineId": 12330,
+      "jobId": 23286,
+      "customer": "Evergreen North America (quote 4227)",
+      "qty": 20,
+      "price": 324
+    },
+    {
+      "jobLineId": 12356,
+      "jobId": 23293,
+      "customer": "Biorge contractors (quote 4418)",
+      "qty": 2,
+      "price": 331.2
+    },
+    {
+      "kind": "quote_line",
+      "quoteLineId": 11130,
+      "quoteId": 4210,
+      "qty": 6,
+      "price": 249
+    }
+  ],
+  "warnings": [],
+  "auditFlagged": [
+    {
+      "quoteLineId": 6933,
+      "quoteId": 4227,
+      "name": "SMBE Strip Light 60W/70W/80W w/ Controls",
+      "description": "8'\nAdjustable Watt\n& CCT",
+      "qty": 20,
+      "price": 324
+    }
+  ]
+}

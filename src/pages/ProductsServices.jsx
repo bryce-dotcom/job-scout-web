@@ -1140,8 +1140,81 @@ export default function ProductsServices() {
     })
   }
 
+  // Rename guard: catches the "rebadge in place" mistake where someone
+  // renames a product enough that its dimensions/wattages/brand change.
+  // Background: in June 2026 someone renamed product 1496 from an 8ft strip
+  // to a 4ft strip without creating a new product. The model number / DLC
+  // listing / spec sheet stayed pointing at the 8ft variant, and four jobs
+  // ended up with the wrong product silently — including Cole's Evergreen
+  // and Green River crews showing up with 4ft strips when the estimate said
+  // 8ft. This guard surfaces that class of edit BEFORE save with a usage
+  // count so the user can make an informed call.
+  const checkNameRebadgeRisk = (oldName, newName) => {
+    if (!oldName || !newName || oldName === newName) return null
+    const RE = [
+      // dimensions
+      /\b(\d)\s*['ft]/gi,
+      // wattage callouts
+      /\b\d{2,3}W\b/gi,
+      // brand
+      /\b(MES|SMBE|LEDONE|LED ONE|JUNIPER|LILY|HAZEL|PINE)\b/gi,
+      // fixture family
+      /\b(highbay|high bay|wallpack|wall pack|area light|canopy|flood|strip|panel|troffer|wrap|vapor)\b/gi,
+    ]
+    const tokens = (s) => {
+      const out = new Set()
+      for (const re of RE) {
+        const matches = String(s).match(re) || []
+        for (const m of matches) out.add(m.toUpperCase().replace(/\s+/g, ''))
+      }
+      return out
+    }
+    const a = tokens(oldName)
+    const b = tokens(newName)
+    const removed = [...a].filter(t => !b.has(t))
+    const added = [...b].filter(t => !a.has(t))
+    if (removed.length === 0 && added.length === 0) return null
+    return { removed, added }
+  }
+
   const handleSaveProduct = async () => {
     if (!productForm.name) { alert('Product name is required'); return }
+
+    // Rename guard
+    if (editingProduct && editingProduct.name && editingProduct.name !== productForm.name) {
+      const risk = checkNameRebadgeRisk(editingProduct.name, productForm.name)
+      if (risk) {
+        // Count active usages
+        const [qlRes, jlRes] = await Promise.all([
+          supabase.from('quote_lines').select('id', { count: 'exact', head: true }).eq('item_id', editingProduct.id),
+          supabase.from('job_lines').select('id', { count: 'exact', head: true }).eq('item_id', editingProduct.id),
+        ])
+        const qlCount = qlRes.count || 0
+        const jlCount = jlRes.count || 0
+        const msg = `You're changing the product NAME in a way that affects its dimensions, wattages, or brand:
+
+Before: "${editingProduct.name}"
+After:  "${productForm.name}"
+
+Dropped from name: ${risk.removed.join(', ') || '(none)'}
+Added to name:    ${risk.added.join(', ') || '(none)'}
+
+This product is currently referenced by:
+  - ${qlCount} quote line(s)
+  - ${jlCount} job line(s)
+
+These lines store the product ID, so they will ALL silently display the new name — even on jobs already in the field or already invoiced.
+
+If this is a real product change (e.g. swapping vendor or fixture size), CANCEL this edit and create a NEW product instead. Then archive the old one once nothing references it.
+
+Click OK only if you're sure this is a label correction and not a different product.`
+        if (!confirm(msg)) {
+          setSaving(false)
+          return
+        }
+      }
+    }
+
     setSaving(true)
     const payload = {
       company_id: companyId, name: productForm.name,
