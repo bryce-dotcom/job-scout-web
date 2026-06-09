@@ -528,8 +528,12 @@ export default function CustomerDetail() {
 
   const handleSaveCustomer = async () => {
     const changes = { ...editForm, updated_at: new Date().toISOString() }
-    // Convert empty strings to null for optional fields
-    const optionalFields = ['business_name', 'job_title', 'phone', 'email', 'address', 'preferred_contact', 'secondary_contact_name', 'secondary_contact_role', 'secondary_contact_phone', 'secondary_contact_email', 'notes']
+    // Convert empty strings to null for optional fields. preferred_invoice_format
+    // has a DB CHECK constraint that requires NULL or IN ('itemized','summary') —
+    // sending '' breaks every save (4 separate feedback reports from Tracy +
+    // Christopher). Same trap for preferred_contact (no constraint but cleaner
+    // as NULL).
+    const optionalFields = ['business_name', 'job_title', 'phone', 'email', 'address', 'preferred_contact', 'secondary_contact_name', 'secondary_contact_role', 'secondary_contact_phone', 'secondary_contact_email', 'notes', 'preferred_invoice_format']
     optionalFields.forEach(f => { if (changes[f] === '') changes[f] = null })
     if (!changes.salesperson_id) changes.salesperson_id = null
 

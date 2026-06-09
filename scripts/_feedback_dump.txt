@@ -1,0 +1,323 @@
+=== tracy@hhh.services (22) ===
+  [7ec14011] 2026-04-17 | feedback | in_progress
+    SUBJECT: blank estimate page
+    MSG: When I am on a customer's job and click over to their estimate I am getting a blank page. I can search an estimate and open one that way.
+    PAGE: /
+    REPLIED: I shipped a safety net for this: estimates now have their own error boundary, so instead of a blank page you'll get an error card with the actual error message and a Reload button. /  / Next time it happe
+
+  [e8cccc81] 2026-04-22 | feedback | in_progress
+    SUBJECT: Lead setter
+    MSG: I have noticed that some of the leads I put into the right day and time will adjust to a different day. The time stays the same. I didn't know if this was a system thing or if I was somehow moving the lead that is scheduled. /  / Also, if I am chosing the same scheduled meeting time as another rep I can't choose that time when I am clicking into the cell. I have to chose and open cell put in the lead for a different rep and then change the time when I am scheduling their lead. Ex. I scheduled a lead
+    PAGE: /lead-setter
+    REPLIED: Looked at the LeadSetter drop / save code — it uses your local timezone consistently, so I can't reproduce a same-time-different-day shift here. Two things that would let me chase this: /  /   1) The lead
+
+  [3504e4cd] 2026-04-30 | feedback | in_progress
+    SUBJECT: iPad screen view
+    MSG: It would be nice to collapse or expand certain parts of the screen to view the areas you want to see bigger on a smaller screen. On an iPad it’s hard to see the whole calendar to eye what is available for each rep. It’s even harder on the job board when you want to see jobs completed.
+    PAGE: /lead-setter
+    REPLIED: Good call — the kanban + calendar fight for screen space on iPad. Adding a collapse-the-kanban toggle is a solid win, on the list. Will get to it after the current batch of bug fixes (line items, sche
+
+  [04942459] 2026-05-07 | question | in_progress
+    SUBJECT: Action needed: 6 utility-invoice cleanup questions
+    MSG: Tracy — I cleaned up 10 customer invoices that had the utility's portion mixed in (you'll see them at correct amounts now). 6 cases need your call. Please reply right here in this thread with answers and I'll execute.
+    PAGE: /invoices
+    REPLIED: Hi Tracy — I cleaned up 10 customer invoices that had the utility's portion mixed in. 6 more need your judgement before I touch them. Please READ the case below, then REPLY in this thread with your an
+
+  [1f14bba8] 2026-05-08 | feedback | in_progress
+    SUBJECT: Answer to Cases
+    MSG: CASE 1 — Kimball Investment / 175 W Warehouse (job 21004) 1a. Was inv#30279 ($35,000.00, Paid) a deposit on this job? If yes, that $0.00 counts toward the customer's $54,263.04 portion. The $35K payment is the down payment and should be counted toward the amount the client owes. 1b. Was inv#30281 ($217,052.18, Pending) created to bill the utility's portion? If yes I should DELETE it (utility billing happens on a separate utility_invoice, not on a customer invoice). If I created the utility invoi
+    PAGE: /lead-setter
+    REPLIED: Got your answers — will work through them case by case and reply to each in this thread, then execute the cleanups. Give me a day.
+
+  [127e85c6] 2026-05-18 | feedback | new
+    SUBJECT: sending Estimates
+    MSG: can you make availabe if an estimate is sent that it shows delivered? The client Natasha Luch did not receive the estimate that christopher sent. That's why he is requesting a resend button and a way to track and see if they receive it.
+    PAGE: /leads/3702
+
+  [7f82d032] 2026-05-26 | feedback | in_progress
+    SUBJECT: Stripe transaction report
+    MSG: Can you send me a stripe transaction report? Bart Strong paid by ACH online May 8.  /  / His invoice was still showing it has a balance so that’s why I’m hoping you can send me the transaction report of what we received. /  / Having faith that he did pay, I went ahead and cleared his invoice that he paid it on the date he received it. /  / I would like to zero out the balances on each invoice that should have already been paid. /  / Thank you, thank you, thankYou!
+    PAGE: /
+    REPLIED: New Stripe transactions report shipped — Books page now has a 'Stripe' tab. /  / What you'll find there: / • Itemized list of every Stripe charge (default last 90 days, adjustable to 30/180/365) / • Search by
+
+  [4d30fe3f] 2026-05-27 | feedback | new
+    SUBJECT: re: Damien
+    MSG: Can Damien be added as a Rep today so I can put him in meetings?
+    PAGE: /lead-setter
+
+  [5e38347d] 2026-05-27 | feedback | in_progress
+    SUBJECT: Stripe Deposits
+    MSG: I noticed another deposit onto Cameron‘s card from stripe. It’s not a bad spot to have it deposited into but it’s even nicer when it goes into the main checking account. /  / Thank you for taking care of this when you have a moment.
+    PAGE: /lead-setter
+    REPLIED: New 'Stripe' tab in Books should address this — open /books and click 'Stripe' in the tab strip. Lists every Stripe charge with date, amount, customer, and whether we matched it to an invoice on our s
+
+  [c5a19009] 2026-05-28 | feedback | new
+    SUBJECT: Stripe transaction mutiple times
+    MSG: Now that I see where the stripe transactions are I have noticed an issue. When someone pays an invoice whether it's myself or the client it doesn't automatically attach to the invoice showing it is paid. This does not happen with every transaction completed. Angie Haynie was charged 9 times for three different invoices. It's because the system showed unpaid when the client did it and then I went in and paid the invoices again not knowing.  This is for her Azalea location. How do I refund her and
+    PAGE: /lead-setter
+
+  [b30be0ac] 2026-05-28 | feedback | new
+    SUBJECT: Stripe transaction summary report
+    MSG: Thank you for showing where to look for transactions completed. I still need a report of transactions that was over $6000 worth when it deposited onto camerons card? It doesn't look to be complete in the books under stripe.  /  / also, is there a way to show more than the email associated with a stripe transaction? It takes longer to identify who the client/job is associated with that transaction.
+    PAGE: /lead-setter
+
+  [d21abb04] 2026-06-01 | feature | new
+    SUBJECT: Shared Notes
+    MSG: For this week we are using a shared notes document that will have a column for each Sales Rep.  They will fill in their column with  google mapped leads link for me to click on. I will then check mark each lead I set an appointment for so we can all see of them at a quick glance what I have done from the leads list. It will also help them to see when they need to add more to their list. It would be helpful to have this feature in job scout with  an AI added to help when they take a picture of th
+    PAGE: /lead-setter
+
+  [27da314d] 2026-06-03 | feedback | new
+    SUBJECT: Change Date on Invoice
+    MSG: When I delete and invoice and I have had to generate new invoices for jobs of HHH I noticed that I can't change the invoice date to reflect when the job is actually done. Is there a place to make a correction to the date of the invoice so it aligns with the date the job was done? /  / Maybe it's there but I have not noticed it. /  / Thank you!
+    PAGE: /invoices/32520
+
+  [36786deb] 2026-06-04 | feedback | new
+    SUBJECT: Contact information
+    MSG: Anytime I try to update a customer's address, email or anything else that needs to change this is the error I receive. /  / Example. Luke Weisman has moved. I put in the new address and pushed save. That is when I get that funny error. /  / Save failed: new row for relation "customers" violates check constraint "customers_preferred_invoice_format_check"
+    PAGE: /customers/1950
+
+  [2fdfdbc9] 2026-06-05 | feedback | new
+    SUBJECT: Haven Light
+    MSG: christopher does trade work for this company. He wants invoices left open so we know how much credit we have with them. When credit is used then we need to be able to show the new balance.  /  / Thank you for looking into another way to address this particular client.
+    PAGE: /jobs/12679
+
+  [f80a20a2] 2026-06-05 | feedback | new
+    SUBJECT: Invoice Due Date
+    MSG: Can we have the option to change the terms of the invoice? It would be nice to see different options. Some invoices we will need to shorten the terms of when they are due once the job is complete. /  / Thank you!
+    PAGE: /invoices/32505
+
+  [eb14afd2] 2026-06-08 | feedback | new
+    SUBJECT: Re:receipt for payment
+    MSG: I’ve had this asked a few times if I can send a receipt when I have pushed through an automatic payment. For some reason I thought the system would send a receipt for payment. I think the client receives a receipt or can take a screenshot to show a payment is accepted. Is there a way the system will auto trigger a receipt to go to their email without me doing it manually? /  / Thank you!
+    PAGE: /
+
+  [2fef03ae] 2026-06-08 | feedback | new
+    SUBJECT: Customer account information.
+    MSG: Save failed: new row for relation "customers" violates check constraint "customers_preferred_invoice_format_check" /  / Here is the error I get. I can't update information or add notes to any customer accounts.
+    PAGE: /customers/1841
+
+  [251cfc43] 2026-06-08 | feedback | new
+    SUBJECT: statement
+    MSG: I generated a statement for Motion & Flow controls client. It opend up a blank page. I don't think the statement is working to send to a client. Is there a way to show one that is generated and sent to the client just like an invoice?
+    PAGE: /invoices/30278
+
+  [53afdf13] 2026-06-09 | feedback | new
+    SUBJECT: stripe deposits
+    MSG: The deposits are still hitting Cameron's expense card. The newest is today.
+    PAGE: /invoices/32519
+
+  [9c34be3b] 2026-06-09 | feedback | new
+    SUBJECT: stripe transaction
+    MSG: 5/14/2026, 2:42:39 PM	 / Roquesann Fillerup / Roxyfillerup@mac.com / $229.27	succeeded	card /  / This client processed their payment on May 14,2026 and left their card on file. Because it didn't clear the invoice I thought I need to process the payment on 6.5.2026. It wasn't until I was reconcilling transactions that I realized the payment cleared on the May transaction. Is there a way that when I payment takes you to another window to pay it will tie back to that invoice and clear it? This doesn't always
+    PAGE: /books
+
+  [c1f5109e] 2026-06-09 | feedback | new
+    SUBJECT: blocking time
+    MSG: when the time block is set for a rep it shows you can do all day, the 8 hours. But what it really does is only lets you pick the max of two hours. Can this be corrected?
+    PAGE: /lead-setter
+
+=== bryce@hhh.services (13) ===
+  [547090ec] 2026-05-11 | feedback | in_progress
+    SUBJECT: EOS - Pulling numbers
+    MSG: When working in the EOS module the numbers are pulling incorrectly.
+    PAGE: /admin/eos
+    REPLIED: Need more info to fix this safely — EOS has 30+ different metric formulas, and I'd risk breaking working ones by guessing. /  / Could you reply with: / 1. Which specific metric is wrong? (e.g. "Cash Collect
+
+  [ba53dc52] 2026-05-19 | feedback | new
+    SUBJECT: Lernoard Vs Job Scout
+    MSG: When pulling a job or estimate over from lenoard it isn't capturing all of the data - heights or the product detail, it is only showing the place (possibily what notes are supposed to be)
+    PAGE: /estimates/4418
+
+  [c5b1f296] 2026-05-22 | feedback | new
+    SUBJECT: I can't get the utility invoice to match the customers.
+    MSG: The utility invoice matches the job but the customers invoice does not, it also  does not capture the clients down payment on their invoice - specifically on this job (175 W Warehouse) I already tried deleting the invoice & generating new ones & that is not working.
+    PAGE: /invoices/32498
+
+  [b261b3f6] 2026-05-26 | feedback | new
+    SUBJECT: Order Code
+    MSG: When adding new product the manufacturer has an order code. this would be super helpful to have in the product module.
+    PAGE: /products
+
+  [eed00203] 2026-05-29 | feedback | new
+    SUBJECT: Submittal Package
+    MSG: When sending the submittal package it still comes through as a zip. file. We need it to come up as attatchments like they do when sending an email with attatchments.
+    PAGE: /jobs/21004
+
+  [e749c6e8] 2026-06-02 | feature | new
+    SUBJECT: P.O. System
+    MSG: We need a P.O. system for ordering for Maverick/MES
+    PAGE: /products
+
+  [ebabeeb6] 2026-06-02 | feedback | new
+    SUBJECT: Pipeline
+    MSG: When on the pipeline it's not capturing some jobs that have been invoiced.
+    PAGE: /pipeline
+
+  [3b0a2f46] 2026-06-02 | feedback | new
+    SUBJECT: Christophers Jobs/HHH
+    MSG: The jobs aren't capturing the lift times.
+    PAGE: /pipeline
+
+  [bbd34235] 2026-06-08 | feedback | new
+    SUBJECT: Submitting
+    MSG: Submitting - When sending the submittal package there is a spot called format - we don't need that, I sent an email to RMP but CC-ed you on it for reference.
+    PAGE: /job-board
+
+  [d54271c2] 2026-06-08 | feedback | new
+    SUBJECT: Make LVL 10 Editable
+    MSG: When in the meeting is running we need to be able to edit the modules.
+    PAGE: /admin/eos
+
+  [8e2bdbd5] 2026-06-08 | feedback | new
+    SUBJECT: Time Off
+    MSG: When in the LVL 10 meeting - we need a module for time off.
+    PAGE: /admin/eos
+
+  [eca1a0c6] 2026-06-08 | bug | new
+    SUBJECT: Error - when trying to open jobs up
+    MSG: JobDetail Error / showAddServiceVisit is not defined /  / ReferenceError: showAddServiceVisit is not defined /     at bSt (https://jobscout.appsannex.com/assets/index-C2Wy-dDG.js:843:141571) /     at Kw (https://jobscout.appsannex.com/assets/index-C2Wy-dDG.js:9:49220) /     at FZ (https://jobscout.appsannex.com/assets/index-C2Wy-dDG.js:9:72541) /     at aae (https://jobscout.appsannex.com/assets/index-C2Wy-dDG.js:9:83251) /     at Pae (https://jobscout.appsannex.com/assets/index-C2Wy-dDG.js:9:119930) /     at Oje
+    PAGE: /jobs/23285
+
+  [6407e421] 2026-06-09 | feedback | new
+    SUBJECT: Western States Bonus
+    MSG: Western States only shows up on 1 pay period even if we haven't paid it out, it doesn't follow or show up on the next pay period, it also is showing up as 0, this may be because we corrected hours on the job.
+    PAGE: /payroll
+
+=== christopher@hhh.services (5) ===
+  [31f4871a] 2026-05-18 | bug | new
+    SUBJECT: Estimate pulled up is bigger than my Screen
+    MSG: I lose access to the add line items buttom becuase the estimate exceeds the screen size
+    PAGE: /job-board
+
+  [7c2e58cc] 2026-05-20 | bug | new
+    SUBJECT: Can't send estimate becase there is no send estimate on the estimate page
+    MSG: I can mark estimate as sent. I don't think that actually sends the estimate. I have been
+    PAGE: /estimates/4429
+
+  [7c7e401f] 2026-05-27 | feature | new
+    SUBJECT: ONE Spot - One Touch - Job Creation
+    MSG: This is by far the most difficult issue I am having with the new system. Most of the work that I put on the schedule is recurring work, with no estimante to convert. To do this I go to the customer, hit the new add job button. However, once entering all the information, I then need to go to the job board and update information. This is because the job times don't transfer. The date stays the same, the job times are radomaly assigned. The other issue when using the add job tab, you have to pick a
+    PAGE: /jobs
+
+  [7bbfcab8] 2026-05-27 | bug | new
+    SUBJECT: Start Time on Jobs defaults to 7 am when setting up job using the job tab
+    MSG: After setting a time on the job tab it defaults to 7 am when you open up the job on the job board. The date stays accurate but not the times when opened to edit more.
+    PAGE: /jobs/23309
+
+  [dcba8ea3] 2026-06-08 | bug | new
+    SUBJECT: Can't Edit Client Info
+    MSG: Getting this error message when I try to update info on a previous client.  / Save failed: new row for relation "customers" violates check constraint "customers_preferred_invoice_format_check"
+    PAGE: /customers/3256
+
+=== noah@hhh.services (4) ===
+  [e3eb8078] 2026-04-16 | bug | in_progress
+    SUBJECT: (none)
+    MSG: App keeps shutting down and saying a repeated error occurred
+    PAGE: /
+    REPLIED: Need more to chase this. Next time it crashes: /   1) Note the exact screen you were on (URL helps — it's in the address bar) /   2) Screenshot the error if any /   3) Tell me what you'd just done (clicked 
+
+  [13ab9ead] 2026-05-19 | feedback | new
+    SUBJECT: yearly savings
+    MSG: on the non interactive pdf it doesnt show yearly savings
+    PAGE: /estimates/4201
+
+  [24caf472] 2026-06-04 | feature | new
+    SUBJECT: search in lenard
+    MSG: be able to search specific projects in lenard
+    PAGE: /estimates/4420
+
+  [7fdc6918] 2026-06-04 | feedback | new
+    SUBJECT: Mobile device feedback
+    MSG: It seems like half the page can’t be seen and it’s cut off the add product button, or there just isn’t a add product button on mobile
+    PAGE: /estimates/4407
+
+=== cole@hhh.services (3) ===
+  [994d1ec9] 2026-05-13 | bug | new
+    SUBJECT: Estimate
+    MSG: I built a project and the total project price comes up but does not pull product in so when I make the proposal it doesn’t show anything
+    PAGE: /leads/3688
+
+  [869599b1] 2026-05-19 | feedback | new
+    SUBJECT: Lenard
+    MSG: Learned savings is showing low.
+    PAGE: /
+
+  [cf8dc259] 2026-05-20 | feature | new
+    SUBJECT: Sales data dash
+    MSG: I would like a dash board that tell me how many meetings Tracy set for each sales rep  and how many of those turned to take offs and of those how many were closed. I would also like to be a able to see average job size.
+    PAGE: /
+
+=== doug@hhh.services (3) ===
+  [93d841aa] 2026-06-01 | bug | new
+    SUBJECT: The contact name and number are not pulling through from Lead to Estimates to Jobs
+    MSG: The contact name and number are not pulling through from Lead to Estimates to Jobs
+    PAGE: /jobs/23286
+
+  [f448fc83] 2026-06-01 | bug | new
+    SUBJECT: Customer Contact not pulling through
+    MSG: I just verified on Capital lumber that all the account/contact info did not pull through on Capital Lumber. I am adding it now so we can install Wednesday
+    PAGE: /jobs/23272
+
+  [3ef73597] 2026-06-02 | bug | new
+    SUBJECT: Filter by Date
+    MSG: Colum's are pulling all projects verses MTD, YTD, 90d etc
+    PAGE: /pipeline
+
+=== london@hhh.services (3) ===
+  [5fbb9359] 2026-06-08 | feedback | new
+    SUBJECT: Switch jobs
+    MSG: Would be really nice to be able to Swiss jobs without having to clock out and clock back in
+    PAGE: /field-scout
+
+  [732b4963] 2026-06-08 | feedback | new
+    SUBJECT: Major clean up
+    MSG: Our product is clean items in photos are the customers tools and messy piles
+    PAGE: /field-scout
+
+  [36275fe6] 2026-06-09 | feedback | new
+    SUBJECT: Number on estimate only
+    MSG: Phone number and client info didn’t transfer to job
+    PAGE: /estimates/4220
+
+=== cameron.mcdonough31@gmail.com (2) ===
+  [4984abe2] 2026-06-03 | feedback | new
+    SUBJECT: Work order showing up on schedule
+    MSG: I’d like to be able to see the work orders of job that are on the schedule rather than having to bounce back and forth between the schedule and job scout
+    PAGE: /job-board
+
+  [1e2f10fc] 2026-06-04 | feedback | new
+    SUBJECT: Verification process
+    MSG: After getting a verification it doesn’t automatically clock me out, it just loops back to the same clock out screen as before. Is there a way to clock out of go to the next step without having to bypass?
+    PAGE: /field-scout
+
+=== damien.hargett@gmail.com (2) ===
+  [5d8bd15a] 2026-06-05 | feature | new
+    SUBJECT: project search
+    MSG: having a project search option in Lenard would be super useful to look at notes and info that didn't transfer to job scout correctly, I've run into a couple projects that I need notes off of in job scout that are old enough that they don't pull up In the recent projects in Lenard and I'm not sure how to find them
+    PAGE: /estimates/4436
+
+  [e140e8a8] 2026-06-05 | feature | new
+    SUBJECT: estimate filter
+    MSG: not sure if this is already a feature and I just don't know how to do it. but having the ability to filter through estimates the way you can on leads and the pipeline. so you are just seeing yours or ones assigned to you instead of having to go through everyones projects would be super nice
+    PAGE: /estimates
+
+=== aidanburr46@gmail.com (1) ===
+  [08c7f4cf] 2026-04-27 | feedback | in_progress
+    SUBJECT: I can clock out even if I force it to clock out
+    MSG: I can clock out even if I force it to clock out
+    PAGE: /field-scout
+    REPLIED: Want to make sure I read this right — "I can clock out even if I force it to clock out". Two possible meanings: /  /   A) "The Force Clock Out button works for me even though I'm not an admin" → that's ac
+
+=== alayda@hhh.services (1) ===
+  [5c94d73d] 2026-05-08 | feedback | in_progress
+    SUBJECT: Utility Invoice
+    MSG: this is what alison’s response was: / I’m going to need a different invoice. It should be a copy of what is sent to the customer, not a special invoice that says “Utility Invoice” at the top. It shouldn’t be something that is specially prepared for us. Also, the incentive amount needs to be shown as a deduction from the original total, not as an amount due.
+    PAGE: /
+    REPLIED: Quick status check — I want to confirm whether Alison's exact request is now met so we can mark this resolved. /  / WHAT'S SHIPPED SINCE THE LAST UPDATE: /  / 1) The utility-side URL redirects to the customer
+
+=== kaydenspiker@icloud.com (1) ===
+  [2a0511dd] 2026-06-08 | feedback | new
+    SUBJECT: Bonus section.
+    MSG: Hey Bryce. So we just finished a job today and we’re looking over the app a little bit and noticed the bonus $ accrued this pay period. We’ve noticed that the dollar amount always stays at zero and so we never see how much money in bonuses we make. Is that something that could be updated?
+    PAGE: /field-scout
+
