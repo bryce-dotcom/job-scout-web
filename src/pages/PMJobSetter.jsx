@@ -2417,7 +2417,7 @@ export default function PMJobSetter() {
   )
 
   return (
-    <div style={{ padding: isMobile ? '12px' : '12px 16px', minHeight: '100%', display: 'flex', flexDirection: 'column', overflowX: 'hidden', maxWidth: '100%' }}>
+    <div style={{ padding: isMobile ? '12px' : '12px 16px', minHeight: '100%', display: 'flex', flexDirection: 'column', overflowX: 'clip', maxWidth: '100%' }}>
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -2828,7 +2828,7 @@ export default function PMJobSetter() {
                     key={status.id}
                     style={{
                       flex: '0 0 auto',
-                      width: '220px',
+                      width: '190px',
                       display: 'flex',
                       flexDirection: 'column',
                       overflow: 'hidden',
