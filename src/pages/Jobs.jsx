@@ -254,51 +254,68 @@ function RecentWins({ wins, theme, isMobile, navigate, formatDate }) {
 // ============ KANBAN COLUMN ============
 function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigate, formatDate, scheduleJob, startJob, completeJob, openMap, archiveJob, parentJobById, serviceCountByParent }) {
   const [hoveredJobId, setHoveredJobId] = useState(null)
+  const columnTotal = jobs.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
+
   return (
     <div style={{
       flex: 1,
       minWidth: isMobile ? '100%' : '280px',
-      backgroundColor: theme.bg,
+      maxWidth: isMobile ? '100%' : '340px',
+      // Subtle color-tinted lane background
+      backgroundColor: `${color}07`,
       borderRadius: '14px',
-      border: `1px solid ${theme.border}`,
+      border: `1px solid ${color}28`,
+      // Bold colored top bar — the column's identity
+      borderTop: `3px solid ${color}`,
       display: 'flex',
       flexDirection: 'column',
-      maxHeight: isMobile ? 'none' : 'calc(100dvh - 420px)',
+      maxHeight: isMobile ? 'none' : 'calc(100dvh - 380px)',
       overflow: 'hidden'
     }}>
       {/* Column header */}
       <div style={{
-        padding: '14px 16px',
-        borderBottom: `1px solid ${theme.border}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        backgroundColor: theme.bgCard,
-        borderRadius: '14px 14px 0 0'
+        padding: '13px 16px 11px',
+        borderBottom: `1px solid ${color}18`,
+        backgroundColor: `${color}0C`,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Icon size={16} style={{ color: color }} />
-          <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{title}</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: columnTotal > 0 ? '4px' : '0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: '28px', height: '28px', borderRadius: '8px',
+              backgroundColor: `${color}22`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+            }}>
+              <Icon size={14} style={{ color }} />
+            </div>
+            <span style={{ fontSize: '14px', fontWeight: '700', color: theme.text, letterSpacing: '-0.01em' }}>{title}</span>
+          </div>
+          <span style={{
+            padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '700',
+            backgroundColor: color, color: '#fff'
+          }}>
+            {jobs.length}
+          </span>
         </div>
-        <span style={{
-          padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600',
-          backgroundColor: `${color}18`, color: color
-        }}>
-          {jobs.length}
-        </span>
+        {columnTotal > 0 && (
+          <p style={{ margin: 0, fontSize: '12px', fontWeight: '600', color, paddingLeft: '36px', opacity: 0.85 }}>
+            {formatCurrency(columnTotal)} total
+          </p>
+        )}
       </div>
 
       {/* Cards */}
       <div style={{
-        padding: '10px',
+        padding: '8px',
         overflowY: 'auto',
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        gap: '8px'
+        gap: '6px'
       }}>
         {jobs.length === 0 && (
           <div style={{
-            textAlign: 'center', padding: '24px 12px', color: theme.textMuted,
-            fontSize: '13px', fontStyle: 'italic'
+            textAlign: 'center', padding: '28px 12px',
+            fontSize: '13px', color: `${color}70`
           }}>
             No {title.toLowerCase()} jobs
           </div>
@@ -313,11 +330,16 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
               style={{
                 backgroundColor: theme.bgCard,
                 borderRadius: '10px',
-                border: `1px solid ${isHovered ? color : theme.border}`,
-                padding: '12px 14px',
+                border: `1px solid ${theme.border}`,
+                // Left accent bar binds card to its lane color
+                borderLeft: `3px solid ${color}`,
+                padding: '12px 14px 10px 12px',
                 cursor: 'pointer',
-                transition: 'all 0.12s ease',
-                boxShadow: isHovered ? `0 2px 8px ${color}15` : 'none',
+                transition: 'all 0.15s ease',
+                boxShadow: isHovered
+                  ? `0 4px 16px ${color}22, 0 1px 4px rgba(0,0,0,0.06)`
+                  : '0 1px 3px rgba(0,0,0,0.05)',
+                transform: isHovered ? 'translateY(-1px)' : 'none',
                 position: 'relative'
               }}
               onMouseEnter={() => setHoveredJobId(job.id)}
@@ -330,7 +352,7 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
                   title="Archive this job"
                   style={{
                     position: 'absolute', top: '8px', right: '8px',
-                    background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+                    background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.22)',
                     borderRadius: '6px', padding: '3px 6px', cursor: 'pointer',
                     display: 'flex', alignItems: 'center', gap: '3px',
                     fontSize: '10px', fontWeight: '600', color: '#dc2626',
@@ -340,36 +362,50 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
                   <Archive size={10} /> Archive
                 </button>
               )}
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span style={{ fontSize: '11px', fontWeight: '600', color: color, display: 'flex', alignItems: 'center', gap: '4px' }}>
+
+              {/* Job ID + amount */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                <span style={{ fontSize: '10px', fontWeight: '700', color, letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '3px' }}>
                   {job.job_id}
-                  <ExternalLink size={10} color={theme.textMuted} />
+                  <ExternalLink size={9} color={theme.textMuted} />
                 </span>
                 {job.job_total > 0 && (
-                  <span style={{ fontSize: '12px', fontWeight: '600', color: theme.accent, paddingRight: isHovered ? '60px' : '0' }}>
+                  <span style={{
+                    fontSize: '11px', fontWeight: '700', color: theme.accent,
+                    paddingRight: isHovered ? '58px' : '0',
+                    transition: 'padding-right 0.12s ease'
+                  }}>
                     {formatCurrency(job.job_total)}
                   </span>
                 )}
               </div>
+
+              {/* Job title */}
               <p style={{
-                fontSize: '13px', fontWeight: '600', color: theme.text, margin: '0 0 4px',
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                fontSize: '13px', fontWeight: '600', color: theme.text, margin: '0 0 2px',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3
               }}>
                 {job.job_title || 'Untitled Job'}
               </p>
+
+              {/* Customer */}
+              <p style={{ fontSize: '12px', color: theme.textSecondary, margin: '0 0 6px', fontWeight: '500' }}>
+                {job.customer?.name || 'No customer'}
+              </p>
+
               {/* Service-visit signals — badge for the kind + parent
                   pointer for child visits, child-count for parent
-                  installs. Rendered ABOVE the customer line so dispatch
+                  installs. Rendered ABOVE the footer so dispatch
                   can scan the board for these at a glance. */}
               {(job.parent_job_id || job.service_kind || serviceCountByParent?.get(job.id)) && (() => {
                 const kindStyle = job.service_kind ? serviceKindStyle(job.service_kind) : null
                 const parent = job.parent_job_id ? parentJobById?.get(job.parent_job_id) : null
                 const childCount = !job.parent_job_id ? (serviceCountByParent?.get(job.id) || 0) : 0
                 return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', margin: '0 0 4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', margin: '0 0 6px' }}>
                     {kindStyle && (
                       <span style={{
-                        padding: '1px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: 600,
+                        padding: '1px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600,
                         backgroundColor: kindStyle.bg, color: kindStyle.text, lineHeight: 1.5,
                       }}>
                         {kindStyle.label}
@@ -384,7 +420,7 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
                           textDecoration: 'underline', textUnderlineOffset: '2px',
                         }}
                       >
-                        ↪ child of {parent.job_id || `#${parent.id}`}
+                        ↪ {parent.job_id || `#${parent.id}`}
                       </span>
                     )}
                     {childCount > 0 && (
@@ -393,25 +429,25 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
                         padding: '1px 6px', borderRadius: '8px',
                         backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
                       }}>
-                        + {childCount} {childCount === 1 ? 'service' : 'services'}
+                        +{childCount} {childCount === 1 ? 'svc' : 'svcs'}
                       </span>
                     )}
                   </div>
                 )
               })()}
-              <p style={{ fontSize: '12px', color: theme.textSecondary, margin: '0 0 8px' }}>
-                {job.customer?.name || 'No customer'}
-              </p>
+
+              {/* Footer: date + team + invoice badge + action button */}
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                gap: '6px', flexWrap: 'wrap'
+                gap: '6px', flexWrap: 'wrap',
+                paddingTop: '8px',
+                borderTop: `1px solid ${theme.border}`,
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: theme.textMuted }}>
                   {(job.start_date || job.created_at) && (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                       <Calendar size={10} />
                       {job.start_date ? formatDate(job.start_date) : formatDate(job.created_at)}
-                      {!job.start_date && <span style={{ fontSize: '9px', opacity: 0.7 }}>(created)</span>}
                     </span>
                   )}
                   {(job.job_lead?.name || job.assigned_team) && (
@@ -421,10 +457,10 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
                     </span>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: '4px' }}>
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                   {job.invoice_status && (
                     <span style={{
-                      padding: '2px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: '500',
+                      padding: '2px 6px', borderRadius: '6px', fontSize: '10px', fontWeight: '500',
                       backgroundColor: invoiceStyle.bg, color: invoiceStyle.text
                     }}>
                       {job.invoice_status}
@@ -434,8 +470,9 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
                     <button
                       onClick={e => { e.stopPropagation(); scheduleJob(job) }}
                       style={{
-                        padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '600',
-                        backgroundColor: '#5a6349', color: '#fff', border: 'none', cursor: 'pointer',
+                        padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: '700',
+                        backgroundColor: 'transparent', color: '#5a6349',
+                        border: '1.5px solid #5a634960', cursor: 'pointer',
                         display: 'flex', alignItems: 'center', gap: '3px'
                       }}
                     >
@@ -446,21 +483,23 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
                     <button
                       onClick={e => { e.stopPropagation(); startJob(job) }}
                       style={{
-                        padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '600',
+                        padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: '700',
                         backgroundColor: '#c28b38', color: '#fff', border: 'none', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: '3px'
+                        display: 'flex', alignItems: 'center', gap: '3px',
+                        boxShadow: '0 1px 4px rgba(194,139,56,0.35)'
                       }}
                     >
-                      <Play size={9} /> Start
+                      <Play size={9} fill="#fff" /> Start
                     </button>
                   )}
                   {job.status === 'In Progress' && (
                     <button
                       onClick={e => { e.stopPropagation(); completeJob(job) }}
                       style={{
-                        padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: '600',
+                        padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: '700',
                         backgroundColor: '#4a7c59', color: '#fff', border: 'none', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: '3px'
+                        display: 'flex', alignItems: 'center', gap: '3px',
+                        boxShadow: '0 1px 4px rgba(74,124,89,0.35)'
                       }}
                     >
                       <CheckCircle size={9} /> Done
@@ -1457,47 +1496,10 @@ export default function Jobs() {
       {/* ============ BOARD VIEW ============ */}
       {viewMode === 'board' ? (
         <div>
-          {/* Colored status header bars — scrollable */}
+          {/* Kanban columns — color-coded lanes, horizontally scrollable */}
           <div style={{
             display: 'flex',
-            gap: '6px',
-            marginBottom: '16px',
-            overflowX: 'auto',
-            paddingBottom: '4px'
-          }}>
-            {boardColumns.map(col => {
-              const count = (jobsByStatus[col.id] || []).length
-              return (
-                <div key={col.id} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 14px',
-                  backgroundColor: col.color,
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  flex: '0 0 auto',
-                  minWidth: '100px',
-                  justifyContent: 'center'
-                }}>
-                  <span style={{ fontSize: '12px', fontWeight: '600', color: '#fff', whiteSpace: 'nowrap' }}>
-                    {col.name}
-                  </span>
-                  <span style={{
-                    padding: '1px 7px', borderRadius: '10px', fontSize: '11px', fontWeight: '700',
-                    backgroundColor: 'rgba(255,255,255,0.3)', color: '#fff'
-                  }}>
-                    {count}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Kanban columns — FULL WIDTH, horizontally scrollable */}
-          <div style={{
-            display: 'flex',
-            gap: '10px',
+            gap: '12px',
             flexDirection: isMobile ? 'column' : 'row',
             alignItems: 'flex-start',
             overflowX: isMobile ? 'visible' : 'auto',
