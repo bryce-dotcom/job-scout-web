@@ -71,6 +71,19 @@ const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount)
 }
 
+// Service visit color scheme — keep in sync with JobDetail.jsx Linked
+// Services panel + JobCalendar legend so the same kind always means the
+// same color across the app. Used for the small chip on board/list cards.
+const SERVICE_KIND_COLORS = {
+  warranty:  { bg: 'rgba(220,38,38,0.10)', text: '#dc2626', label: 'Warranty' },
+  annual:    { bg: 'rgba(34,197,94,0.10)',  text: '#16a34a', label: 'Annual' },
+  tune_up:   { bg: 'rgba(14,165,233,0.10)', text: '#0284c7', label: 'Tune-up' },
+  repair:    { bg: 'rgba(249,115,22,0.10)', text: '#ea580c', label: 'Repair' },
+  upsell:    { bg: 'rgba(168,85,247,0.10)', text: '#9333ea', label: 'Upsell' },
+  service:   { bg: 'rgba(107,114,128,0.10)',text: '#6b7280', label: 'Service' },
+}
+const serviceKindStyle = (kind) => SERVICE_KIND_COLORS[kind] || SERVICE_KIND_COLORS.service
+
 // ============ RECENT WINS CAROUSEL ============
 function RecentWins({ wins, theme, isMobile, navigate, formatDate }) {
   const scrollRef = useRef(null)
@@ -239,7 +252,7 @@ function RecentWins({ wins, theme, isMobile, navigate, formatDate }) {
 }
 
 // ============ KANBAN COLUMN ============
-function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigate, formatDate, scheduleJob, startJob, completeJob, openMap, archiveJob }) {
+function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigate, formatDate, scheduleJob, startJob, completeJob, openMap, archiveJob, parentJobById, serviceCountByParent }) {
   const [hoveredJobId, setHoveredJobId] = useState(null)
   return (
     <div style={{
@@ -344,6 +357,48 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
               }}>
                 {job.job_title || 'Untitled Job'}
               </p>
+              {/* Service-visit signals — badge for the kind + parent
+                  pointer for child visits, child-count for parent
+                  installs. Rendered ABOVE the customer line so dispatch
+                  can scan the board for these at a glance. */}
+              {(job.parent_job_id || job.service_kind || serviceCountByParent?.get(job.id)) && (() => {
+                const kindStyle = job.service_kind ? serviceKindStyle(job.service_kind) : null
+                const parent = job.parent_job_id ? parentJobById?.get(job.parent_job_id) : null
+                const childCount = !job.parent_job_id ? (serviceCountByParent?.get(job.id) || 0) : 0
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', margin: '0 0 4px' }}>
+                    {kindStyle && (
+                      <span style={{
+                        padding: '1px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: 600,
+                        backgroundColor: kindStyle.bg, color: kindStyle.text, lineHeight: 1.5,
+                      }}>
+                        {kindStyle.label}
+                      </span>
+                    )}
+                    {parent && (
+                      <span
+                        onClick={e => { e.stopPropagation(); navigate(`/jobs/${parent.id}`) }}
+                        title={`Parent: ${parent.job_title || ''}`}
+                        style={{
+                          fontSize: '10px', color: theme.textMuted, cursor: 'pointer',
+                          textDecoration: 'underline', textUnderlineOffset: '2px',
+                        }}
+                      >
+                        ↪ child of {parent.job_id || `#${parent.id}`}
+                      </span>
+                    )}
+                    {childCount > 0 && (
+                      <span style={{
+                        fontSize: '10px', color: theme.textMuted,
+                        padding: '1px 6px', borderRadius: '8px',
+                        backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+                      }}>
+                        + {childCount} {childCount === 1 ? 'service' : 'services'}
+                      </span>
+                    )}
+                  </div>
+                )
+              })()}
               <p style={{ fontSize: '12px', color: theme.textSecondary, margin: '0 0 8px' }}>
                 {job.customer?.name || 'No customer'}
               </p>
@@ -447,6 +502,9 @@ export default function Jobs() {
   const [statusFilter, setStatusFilter] = useState('active')
   const [teamFilter, setTeamFilter] = useState('all')
   const [buFilter, setBuFilter] = useState('all')
+  // 'all' (default) | 'installs' (parent_job_id IS NULL) | 'services' (parent_job_id IS NOT NULL)
+  // Lets dispatch see only the install backlog or only the service queue.
+  const [serviceFilter, setServiceFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
   const [customerSearchText, setCustomerSearchText] = useState('')
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
@@ -644,9 +702,31 @@ export default function Jobs() {
       : job.status === statusFilter
     const matchesTeam = teamFilter === 'all' || job.assigned_team === teamFilter
     const matchesBU = buFilter === 'all' || job.business_unit === buFilter
+    const matchesService = serviceFilter === 'all'
+      ? true
+      : serviceFilter === 'installs'
+        ? !job.parent_job_id
+        : !!job.parent_job_id
 
-    return matchesSearch && matchesStatus && matchesTeam && matchesBU
+    return matchesSearch && matchesStatus && matchesTeam && matchesBU && matchesService
   })
+
+  // Lookups for service-visit display on cards: parent header (for child
+  // service visit cards) and child count (for parent install cards).
+  // Built from the FULL jobs list — not the filtered list — so a parent
+  // hidden by a status filter still resolves its job_id for a visible child.
+  const parentJobById = (() => {
+    const m = new Map()
+    for (const j of jobs) m.set(j.id, j)
+    return m
+  })()
+  const serviceCountByParent = (() => {
+    const m = new Map()
+    for (const j of jobs) {
+      if (j.parent_job_id) m.set(j.parent_job_id, (m.get(j.parent_job_id) || 0) + 1)
+    }
+    return m
+  })()
 
   // Board view groups — dynamic from boardColumns
   const boardColumnIds = new Set(boardColumns.map(c => c.id))
@@ -1337,6 +1417,41 @@ export default function Jobs() {
             style={{ width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 'auto' : '160px' }}
           />
         )}
+        {/* Install / Service filter — small segmented control. Only
+            renders once there's at least one service visit in the
+            workspace so we don't add clutter for tenants who never use
+            this feature yet. */}
+        {jobs.some(j => j.parent_job_id) && (
+          <div style={{
+            display: 'flex', borderRadius: '8px', overflow: 'hidden',
+            border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard,
+          }}>
+            {[
+              { value: 'all',      label: 'All' },
+              { value: 'installs', label: 'Installs' },
+              { value: 'services', label: 'Services' },
+            ].map((opt, i) => (
+              <button
+                key={opt.value}
+                onClick={() => setServiceFilter(opt.value)}
+                style={{
+                  padding: '8px 12px', border: 'none', cursor: 'pointer',
+                  borderLeft: i === 0 ? 'none' : `1px solid ${theme.border}`,
+                  backgroundColor: serviceFilter === opt.value ? theme.accent : 'transparent',
+                  color: serviceFilter === opt.value ? '#fff' : theme.textMuted,
+                  fontSize: '13px', fontWeight: 500,
+                }}
+                title={opt.value === 'installs'
+                  ? 'Show only original install jobs (no parent)'
+                  : opt.value === 'services'
+                    ? 'Show only follow-up service visits (warranty, annual, repair, etc.)'
+                    : 'Show all jobs'}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ============ BOARD VIEW ============ */}
@@ -1404,6 +1519,8 @@ export default function Jobs() {
                 completeJob={completeJob}
                 openMap={openMap}
                 archiveJob={archiveJob}
+                parentJobById={parentJobById}
+                serviceCountByParent={serviceCountByParent}
               />
             ))}
           </div>
@@ -1959,6 +2076,47 @@ export default function Jobs() {
                       }}>
                         {job.job_title || 'Untitled Job'}
                       </p>
+                      {/* Service-visit signals (same shape as the board
+                          card) — surfaces the kind + parent for child
+                          visits and the child count for parent installs. */}
+                      {(job.parent_job_id || job.service_kind || serviceCountByParent?.get(job.id)) && (() => {
+                        const kindStyle = job.service_kind ? serviceKindStyle(job.service_kind) : null
+                        const parent = job.parent_job_id ? parentJobById?.get(job.parent_job_id) : null
+                        const childCount = !job.parent_job_id ? (serviceCountByParent?.get(job.id) || 0) : 0
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', margin: '0 0 6px' }}>
+                            {kindStyle && (
+                              <span style={{
+                                padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600,
+                                backgroundColor: kindStyle.bg, color: kindStyle.text,
+                              }}>
+                                {kindStyle.label}
+                              </span>
+                            )}
+                            {parent && (
+                              <span
+                                onClick={e => { e.stopPropagation(); navigate(`/jobs/${parent.id}`) }}
+                                title={`Parent: ${parent.job_title || ''}`}
+                                style={{
+                                  fontSize: '11px', color: theme.textMuted, cursor: 'pointer',
+                                  textDecoration: 'underline', textUnderlineOffset: '2px',
+                                }}
+                              >
+                                ↪ child of {parent.job_id || `#${parent.id}`}
+                              </span>
+                            )}
+                            {childCount > 0 && (
+                              <span style={{
+                                fontSize: '11px', color: theme.textMuted,
+                                padding: '1px 8px', borderRadius: '10px',
+                                backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
+                              }}>
+                                + {childCount} {childCount === 1 ? 'service' : 'services'}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })()}
                       <p style={{ fontSize: '14px', color: theme.textSecondary }}>
                         {job.customer?.name || 'No customer'}
                       </p>

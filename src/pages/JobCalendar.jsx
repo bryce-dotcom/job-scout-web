@@ -27,6 +27,21 @@ const statusColors = {
   'On Hold': '#7d8a7f'
 }
 
+// Service visit color scheme — must match Jobs.jsx + JobDetail.jsx so a
+// "warranty" looks the same everywhere. Shown as a thick left border on
+// calendar tiles for any job whose service_kind is set, regardless of
+// the colorBy mode — dispatch always sees "this is a warranty visit"
+// at a glance.
+const SERVICE_KIND_COLORS = {
+  warranty:  { color: '#dc2626', label: 'Warranty' },
+  annual:    { color: '#16a34a', label: 'Annual' },
+  tune_up:   { color: '#0284c7', label: 'Tune-up' },
+  repair:    { color: '#ea580c', label: 'Repair' },
+  upsell:    { color: '#9333ea', label: 'Upsell' },
+  service:   { color: '#6b7280', label: 'Service' },
+}
+const serviceKindStyle = (kind) => SERVICE_KIND_COLORS[kind] || SERVICE_KIND_COLORS.service
+
 // Distinct, readable palette for per-rep coloring
 const REP_PALETTE = [
   '#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed',
@@ -84,7 +99,7 @@ export default function JobCalendar() {
         const allJobs = []
         let offset = 0
         const pageSize = 1000
-        const selectFields = 'id, job_title, status, start_date, business_unit, customer_name, salesperson_id, customer:customers(name, business_name, calendar_display), salesperson:employees!jobs_salesperson_id_fkey(id, name), job_lead:employees!jobs_job_lead_id_fkey(id, name)'
+        const selectFields = 'id, job_title, status, start_date, business_unit, customer_name, salesperson_id, parent_job_id, service_kind, customer:customers(name, business_name, calendar_display), salesperson:employees!jobs_salesperson_id_fkey(id, name), job_lead:employees!jobs_job_lead_id_fkey(id, name)'
 
         while (true) {
           console.log(`[JobCalendar] Fetching page at offset ${offset}...`)
@@ -446,6 +461,29 @@ export default function JobCalendar() {
         </div>
       </div>
 
+      {/* Service-visit kinds legend — only rendered when at least one
+          visible job has a service_kind, so it doesn't add clutter for
+          tenants who never use this feature yet. The thick left bar on
+          each tile uses these same colors. */}
+      {filteredJobs.some(j => j.service_kind) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
+          marginBottom: '16px', padding: '8px 12px',
+          backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+          borderRadius: '8px',
+        }}>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Service visits
+          </span>
+          {Object.entries(SERVICE_KIND_COLORS).map(([kind, style]) => (
+            <div key={kind} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: '4px', height: '14px', borderRadius: '2px', backgroundColor: style.color }} />
+              <span style={{ fontSize: '13px', color: theme.textSecondary }}>{style.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Loading indicator */}
       {loading && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: theme.textMuted }}>
@@ -513,26 +551,37 @@ export default function JobCalendar() {
                       {day}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      {dayJobs.slice(0, 3).map(job => (
-                        <div
-                          key={job.id}
-                          onClick={() => navigate(`/jobs/${job.id}`)}
-                          style={{
-                            backgroundColor: getJobColor(job),
-                            color: '#ffffff',
-                            fontSize: '11px',
-                            padding: '4px 6px',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap'
-                          }}
-                          title={getJobDisplayName(job)}
-                        >
-                          {getJobCalendarName(job)}
-                        </div>
-                      ))}
+                      {dayJobs.slice(0, 3).map(job => {
+                        const kindStyle = job.service_kind ? serviceKindStyle(job.service_kind) : null
+                        return (
+                          <div
+                            key={job.id}
+                            onClick={() => navigate(`/jobs/${job.id}`)}
+                            style={{
+                              backgroundColor: getJobColor(job),
+                              color: '#ffffff',
+                              fontSize: '11px',
+                              padding: '4px 6px',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              // Thick left bar = service-visit kind. Visible
+                              // regardless of whether the user is coloring by
+                              // rep or status — so warranties, annuals, etc.
+                              // stand out at a glance.
+                              borderLeft: kindStyle ? `4px solid ${kindStyle.color}` : 'none',
+                              paddingLeft: kindStyle ? '4px' : '6px',
+                            }}
+                            title={kindStyle
+                              ? `${kindStyle.label} visit · ${getJobDisplayName(job)}`
+                              : getJobDisplayName(job)}
+                          >
+                            {getJobCalendarName(job)}
+                          </div>
+                        )
+                      })}
                       {dayJobs.length > 3 && (
                         <div style={{
                           fontSize: '11px',
