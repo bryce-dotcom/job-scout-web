@@ -5429,11 +5429,10 @@ function JobDetailInner() {
           )}
 
           {/* Linked Services — parent install + child service visits
-              (warranty, annual checkup, repair, etc.). Hidden when there's
-              nothing linked AND the user can't add (rare). Always shows
-              the "Add service visit" button when at least one invoice has
-              been created so it's discoverable. */}
-          {(parentJob || childServices.length > 0 || jobInvoices.length > 0) && (
+              (warranty, annual checkup, repair, etc.). Always visible so
+              the "Add service visit" button is reachable from any job,
+              regardless of whether an invoice has been created yet. */}
+          {true && (
             <div style={{
               backgroundColor: theme.bgCard,
               borderRadius: '12px',
