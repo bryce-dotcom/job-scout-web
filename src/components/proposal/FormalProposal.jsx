@@ -66,6 +66,9 @@ export default function FormalProposal({
   // Mirror the numbers the EstimateDetail summary shows — contract total is
   // subtotal minus discount; the utility incentive is a separate "net after
   // incentive" line below it, NOT a reduction of the contract price.
+  // Annual savings is shown as its own line under the totals so the formal
+  // proposal carries the energy-savings ROI the interactive proposal already
+  // shows (Noah filed feedback that the non-interactive PDF was missing it).
   const totals = useMemo(() => {
     const subtotal = lineItems.reduce((s, l) => s + (parseFloat(l.line_total || l.total) || 0), 0)
       || parseFloat(doc?.quote_amount) || 0
@@ -73,7 +76,10 @@ export default function FormalProposal({
     const incentive = parseFloat(doc?.utility_incentive) || 0
     const contractTotal = Math.max(0, subtotal - discount)
     const netAfterIncentive = Math.max(0, contractTotal - incentive)
-    return { subtotal, discount, incentive, total: contractTotal, netAfterIncentive }
+    // Annual savings — pull from the manual override first, fall back to the
+    // linked audit's projected savings. Mirrors estimatePdf.js + InteractiveProposal.
+    const annualSavings = parseFloat(doc?.manual_annual_savings || doc?.annual_savings_dollars || doc?.audit?.annual_savings_dollars) || 0
+    return { subtotal, discount, incentive, total: contractTotal, netAfterIncentive, annualSavings }
   }, [lineItems, doc])
 
   const displayName = businessUnit?.name || company?.company_name || 'Our Company'
@@ -232,6 +238,25 @@ export default function FormalProposal({
               <>
                 <TotalRow label="Utility Incentive" value={`- ${currency(totals.incentive)}`} />
                 <TotalRow label="Net After Incentive" value={currency(totals.netAfterIncentive)} strong />
+              </>
+            )}
+            {/* Estimated Annual Energy Savings — mirrors the line on the
+                interactive proposal + the email-layout PDF. Renders payback
+                period below it when a sensible cost basis is available. */}
+            {totals.annualSavings > 0 && (
+              <>
+                <div style={{ borderTop: '1px solid #d6cdb8', margin: '8px 0' }} />
+                <TotalRow label="Estimated Annual Energy Savings" value={`${currency(totals.annualSavings)} / yr`} strong />
+                {(() => {
+                  const netCost = totals.incentive > 0 ? totals.netAfterIncentive : totals.total
+                  if (netCost <= 0) return null
+                  const payback = netCost / totals.annualSavings
+                  if (!(payback > 0) || payback >= 30) return null
+                  const paybackStr = payback < 1
+                    ? `${Math.round(payback * 12)} months`
+                    : `${payback.toFixed(1)} years`
+                  return <TotalRow label="Payback Period" value={paybackStr} />
+                })()}
               </>
             )}
             {downPaymentAmount > 0 && (

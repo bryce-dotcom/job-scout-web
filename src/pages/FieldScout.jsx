@@ -3339,6 +3339,8 @@ export default function FieldScout() {
               onComplete={async (reportId) => {
                 const jobId = victorModal.jobId
                 const shouldMarkComplete = victorModal.markComplete
+                const wasBlocked = clockOutBlocked
+                const verifyType = victorModal.type
                 setVictorModal(null)
                 // Check the report score
                 const { data: report } = await supabase
@@ -3347,7 +3349,7 @@ export default function FieldScout() {
                   .eq('id', reportId)
                   .single()
                 if (report?.score >= 60) {
-                  if (victorModal.type === 'completion' && jobId) {
+                  if (verifyType === 'completion' && jobId) {
                     setVerifiedJobs(prev => new Set(prev).add(jobId))
                     setClockOutBlocked(false)
                     if (shouldMarkComplete) {
@@ -3363,13 +3365,46 @@ export default function FieldScout() {
                   // as daily-verified for today (so every crew member sees
                   // the button disappear). Otherwise fall back to the legacy
                   // general daily flag for no-job clock-ins.
-                  if (victorModal.type === 'daily') {
+                  if (verifyType === 'daily') {
                     if (jobId) {
                       setDailyVerifiedJobs(prev => new Set(prev).add(jobId))
                     } else {
                       setHasDailyVerification(true)
                     }
                     setClockOutBlocked(false)
+                  }
+
+                  // Cameron's request (1e2f10fc): "After getting verification
+                  // it doesn't automatically clock me out, it just loops back
+                  // to the same clock out screen." If the user was already
+                  // gated trying to clock out, the natural next step IS to
+                  // clock out — do it for them before navigating to the
+                  // report. handleClockOut re-checks the gate so we can't
+                  // race against the state update — pass force=true via
+                  // empty-string reason to skip the gate (since we KNOW
+                  // verification just passed).
+                  if (wasBlocked && activeEntry && !clockingOut) {
+                    try {
+                      // Inline clock-out — avoid handleClockOut's gate re-check
+                      // since state may not have flushed yet.
+                      const co = new Date()
+                      const ci = new Date(activeEntry.clock_in)
+                      let hours = (co - ci) / 3600000
+                      if (activeEntry.lunch_start && activeEntry.lunch_end) {
+                        hours -= (new Date(activeEntry.lunch_end) - new Date(activeEntry.lunch_start)) / 3600000
+                      }
+                      const { error: coErr } = await supabase
+                        .from('time_clock')
+                        .update({
+                          clock_out: co.toISOString(),
+                          total_hours: Math.round(hours * 100) / 100,
+                        })
+                        .eq('id', activeEntry.id)
+                      if (!coErr) {
+                        setActiveEntry(null)
+                        toast.success(`Verified + clocked out at ${co.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`)
+                      }
+                    } catch { /* fall back to manual flow */ }
                   }
                 }
                 navigate(`/agents/victor/report/${reportId}`)

@@ -3115,21 +3115,28 @@ function EstimateDetailInner() {
             border: `1px solid ${theme.border}`,
             overflow: 'hidden'
           }}>
+            {/* Header wraps to a second row on narrow viewports so the
+                Add Product + Custom Line buttons don't get pushed off
+                the right edge (Noah on iPhone 12 mini reported the +
+                Add Product button entirely cut off on /estimates/4407). */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '16px 20px',
-              borderBottom: `1px solid ${theme.border}`
+              borderBottom: `1px solid ${theme.border}`,
+              flexWrap: 'wrap',
+              rowGap: '10px',
             }}>
               <h3 style={{
                 fontSize: '15px',
                 fontWeight: '600',
-                color: theme.text
+                color: theme.text,
+                margin: 0,
               }}>
                 Line Items
               </h3>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-end' }}>
                 <button
                   onClick={() => setShowProductPicker(true)}
                   style={{
@@ -3143,7 +3150,8 @@ function EstimateDetailInner() {
                     borderRadius: '6px',
                     fontSize: '13px',
                     fontWeight: '500',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   <Plus size={16} />

@@ -1,0 +1,62 @@
+24276c86-ee32-49bd-a6e5-b003bf0824e5	tracy@hhh.services	2026-06-09	re: Find Prospect credit balance
+720fd701-77f3-46d5-98c0-4fd6865c5f31	bryce@hhh.services	2026-06-09	PO System
+c1f5109e-95e1-47c0-875f-3da946595f37	tracy@hhh.services	2026-06-09	blocking time
+9c34be3b-0e8c-4446-87b5-eee66ce9e70d	tracy@hhh.services	2026-06-09	stripe transaction
+53afdf13-2893-4458-aa22-9c164da38c9e	tracy@hhh.services	2026-06-09	stripe deposits
+6407e421-20dc-482f-9b99-7c49de5f56b1	bryce@hhh.services	2026-06-09	Western States Bonus
+36275fe6-0ca6-4e58-a16d-b5605059a10b	london@hhh.services	2026-06-09	Number on estimate only
+2a0511dd-85f4-4ed3-bf82-a5c9e54cb62b	kaydenspiker@icloud.com	2026-06-08	Bonus section.
+dcba8ea3-50bf-49e8-8597-1ef3b8463a7c	christopher@hhh.services	2026-06-08	Can't Edit Client Info
+eca1a0c6-342d-48a0-b81f-07bde002a16c	bryce@hhh.services	2026-06-08	Error - when trying to open jobs up
+732b4963-c010-469f-b925-2f0abdb6d064	london@hhh.services	2026-06-08	Major clean up
+251cfc43-6239-4258-a451-6cfb8df05855	tracy@hhh.services	2026-06-08	statement
+8e2bdbd5-ab2e-44ff-9b36-fa8c69465b3b	bryce@hhh.services	2026-06-08	Time Off
+d54271c2-c630-4c8b-96ce-8b9b0a3837e5	bryce@hhh.services	2026-06-08	Make LVL 10 Editable
+5fbb9359-ef02-4ce2-bc39-c64c12905bb5	london@hhh.services	2026-06-08	Switch jobs
+bbd34235-c819-4bd8-9f18-4338aaa04b21	bryce@hhh.services	2026-06-08	Submitting
+2fef03ae-c1db-4cf0-a1d8-865c735008da	tracy@hhh.services	2026-06-08	Customer account information.
+eb14afd2-c134-4019-abab-7ef128dfc7c7	tracy@hhh.services	2026-06-08	Re:receipt for payment
+f80a20a2-2a76-40e4-a0e6-2d5a7d00cab9	tracy@hhh.services	2026-06-05	Invoice Due Date
+e140e8a8-f71e-4955-9589-2b1b7f99ee73	damien.hargett@gmail.com	2026-06-05	estimate filter
+5d8bd15a-3e5b-4326-8cf2-5d776b5d6a5e	damien.hargett@gmail.com	2026-06-05	project search
+2fdfdbc9-ea7a-4466-8005-37a444c304e2	tracy@hhh.services	2026-06-05	Haven Light
+7fdc6918-9536-41fb-b9c9-5e190a6ba487	noah@hhh.services	2026-06-04	Mobile device feedback
+24caf472-a940-471f-9604-9b67d76315c7	noah@hhh.services	2026-06-04	search in lenard
+36786deb-495f-4ef1-a3a3-977983b25435	tracy@hhh.services	2026-06-04	Contact information
+1e2f10fc-3899-4bf3-b350-2722df4f3fee	cameron.mcdonough31@gmail.com	2026-06-04	Verification process
+4984abe2-ce56-4cbd-b060-02664b99891e	cameron.mcdonough31@gmail.com	2026-06-03	Work order showing up on schedule
+27da314d-7f70-405d-ba33-6099f56b2ac7	tracy@hhh.services	2026-06-03	Change Date on Invoice
+3b0a2f46-7cc4-4768-ad24-931acfcb818f	bryce@hhh.services	2026-06-02	Christophers Jobs/HHH
+ebabeeb6-cb88-4f03-b8ac-006260050e8f	bryce@hhh.services	2026-06-02	Pipeline
+3ef73597-730e-459a-9910-d660436a732b	doug@hhh.services	2026-06-02	Filter by Date
+e749c6e8-b85d-4e39-a217-567ffa131c31	bryce@hhh.services	2026-06-02	P.O. System
+f448fc83-d63d-4dd4-b9b1-e9e9b7a5ae1a	doug@hhh.services	2026-06-01	Customer Contact not pulling through
+93d841aa-50e7-40f1-b034-40568d171e3c	doug@hhh.services	2026-06-01	The contact name and number are not pulling through from Lea
+d21abb04-a6e5-4042-9f6c-0f13428bb7b6	tracy@hhh.services	2026-06-01	Shared Notes
+eed00203-ce24-4d86-ac79-b5d2c3fa9ac1	bryce@hhh.services	2026-05-29	Submittal Package
+b30be0ac-bec4-4088-a978-387023c50f00	tracy@hhh.services	2026-05-28	Stripe transaction summary report
+c5a19009-36cf-438c-aa9a-70db5e253395	tracy@hhh.services	2026-05-28	Stripe transaction mutiple times
+5e38347d-b963-45db-9cbc-22fb52552e4f	tracy@hhh.services	2026-05-27	Stripe Deposits
+7bbfcab8-fb0e-40c7-b5a7-9ca3814ce3b0	christopher@hhh.services	2026-05-27	Start Time on Jobs defaults to 7 am when setting up job usin
+7c7e401f-17e7-45a3-b666-74b6ff7325a9	christopher@hhh.services	2026-05-27	ONE Spot - One Touch - Job Creation
+4d30fe3f-b124-40f9-aab0-0c88371299fa	tracy@hhh.services	2026-05-27	re: Damien
+7f82d032-1b5b-4fb4-86b6-3fe3ac31a6cf	tracy@hhh.services	2026-05-26	Stripe transaction report
+b261b3f6-a5a6-4cab-8c4f-6afdf6caf666	bryce@hhh.services	2026-05-26	Order Code
+c5b1f296-e68c-4817-9192-c3fc3ee1461e	bryce@hhh.services	2026-05-22	I can't get the utility invoice to match the customers.
+cf8dc259-c32a-46af-9813-694572a9fc39	cole@hhh.services	2026-05-20	Sales data dash
+7c2e58cc-62ca-4cc1-9bc0-706abff313e9	christopher@hhh.services	2026-05-20	Can't send estimate becase there is no send estimate on the 
+869599b1-596b-493f-a31b-21a0a55a8d76	cole@hhh.services	2026-05-19	Lenard
+13ab9ead-e35e-45f1-b944-616a7c485c26	noah@hhh.services	2026-05-19	yearly savings
+ba53dc52-275b-4192-8eb4-8e6f1d6a0b1a	bryce@hhh.services	2026-05-19	Lernoard Vs Job Scout
+31f4871a-94b1-4fb4-9fa7-960de0ca6c84	christopher@hhh.services	2026-05-18	Estimate pulled up is bigger than my Screen
+127e85c6-a7c0-43cd-959f-1202096ce38d	tracy@hhh.services	2026-05-18	sending Estimates
+994d1ec9-14e5-432f-b546-3fbe27deda5e	cole@hhh.services	2026-05-13	Estimate
+547090ec-49f8-483f-9a29-28e52c88d889	bryce@hhh.services	2026-05-11	EOS - Pulling numbers
+1f14bba8-7783-463c-8b8d-3a373dee273b	tracy@hhh.services	2026-05-08	Answer to Cases
+5c94d73d-b2f4-447d-a81a-c83f22f8594d	alayda@hhh.services	2026-05-08	Utility Invoice
+04942459-13a9-495f-a283-1974c4e4a810	tracy@hhh.services	2026-05-07	Action needed: 6 utility-invoice cleanup questions
+3504e4cd-7585-4fff-8229-abd3907ff861	tracy@hhh.services	2026-04-30	iPad screen view
+08c7f4cf-8625-4cb9-a623-99507a2093e1	aidanburr46@gmail.com	2026-04-27	I can clock out even if I force it to clock out
+e8cccc81-ed55-48fb-8232-7be285b0c949	tracy@hhh.services	2026-04-22	Lead setter
+7ec14011-c10b-4121-98df-da03d93977a0	tracy@hhh.services	2026-04-17	blank estimate page
+e3eb8078-3016-45f6-b443-d0ddc128e182	noah@hhh.services	2026-04-16	
