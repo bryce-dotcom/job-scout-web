@@ -1412,7 +1412,10 @@ export default function Jobs() {
         paddingBottom: '4px'
       }}>
         {boardColumns.map(col => {
-          const count = jobs.filter(j => j.status === col.id).length
+          const colJobs = jobs.filter(j => j.status === col.id)
+          const count = colJobs.length
+          const value = colJobs.reduce((s, j) => s + (parseFloat(j.job_total) || 0), 0)
+          const fmtK = (n) => n >= 1000000 ? `$${(n/1000000).toFixed(1)}M` : n >= 1000 ? `$${(n/1000).toFixed(0)}k` : n > 0 ? `$${Math.round(n)}` : null
           return (
             <div key={col.id} style={{
               backgroundColor: theme.bgCard, borderRadius: '10px',
@@ -1420,6 +1423,11 @@ export default function Jobs() {
               minWidth: '80px', flex: '0 0 auto'
             }}>
               <p style={{ fontSize: '18px', fontWeight: '700', color: col.color, margin: 0 }}>{count}</p>
+              {fmtK(value) && (
+                <p style={{ fontSize: '11px', fontWeight: '600', color: col.color, margin: '1px 0 0', opacity: 0.75 }}>
+                  {fmtK(value)}
+                </p>
+              )}
               <p style={{ fontSize: '10px', color: theme.textMuted, margin: '2px 0 0', whiteSpace: 'nowrap' }}>
                 {col.name}
               </p>
