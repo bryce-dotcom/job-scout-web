@@ -2774,12 +2774,17 @@ export default function PMJobSetter() {
           return closedAt && new Date(closedAt) >= monthStart
         })
         const mtdRevenue = mtdJobs.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
-        const openCount = allJobs.filter(j => !terminalStatuses.includes(j.status)).length
+        const openJobs = allJobs.filter(j => !terminalStatuses.includes(j.status))
+        const openCount = openJobs.length
+        const openRevenue = openJobs.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
         const monthName = now.toLocaleDateString('en-US', { month: 'long' })
         const fmtK = (n) => n >= 1000000 ? `$${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `$${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}k` : `$${Math.round(n)}`
+        const allCompleted = allJobs.filter(j => terminalStatuses.includes(j.status))
+        const completedRevenue = allCompleted.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
         const stats = [
           { label: `${monthName} Closed`, value: fmtK(mtdRevenue), sub: `${mtdJobs.length} job${mtdJobs.length !== 1 ? 's' : ''}`, color: '#22c55e' },
-          { label: 'Open Jobs', value: openCount, sub: 'active & queued', color: theme.accent },
+          { label: 'Open Jobs', value: openCount, sub: fmtK(openRevenue) + ' in pipeline', color: theme.accent },
+          { label: 'Completed', value: fmtK(completedRevenue), sub: `${allCompleted.length} job${allCompleted.length !== 1 ? 's' : ''}`, color: '#8b5cf6' },
         ]
         return (
           <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
