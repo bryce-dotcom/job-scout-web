@@ -245,7 +245,7 @@ export default function PMJobSetter() {
   const [pmFilterLocked, setPmFilterLocked] = useState(false)
   const [filterBusinessUnit, _setFilterBusinessUnit] = useState(() => loadPref('filterBusinessUnit', ''))
   const [searchTerm, setSearchTerm] = useState('')
-  const [dateRange, _setDateRange] = useState(() => loadPref('dateRange', 'all'))
+  const [dateRange, _setDateRange] = useState(() => loadPref('dateRange', 'ytd'))
   // Persist custom range start/end too — Doug's complaint was that
   // switching to "Custom" + entering dates would reset on next load.
   // Without this only the dropdown choice survived a refresh.
