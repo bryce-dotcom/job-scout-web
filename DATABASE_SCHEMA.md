@@ -663,12 +663,22 @@
 | business_unit | text | |
 | customer_id | integer | FK customers.id |
 | job_id | integer | FK jobs.id |
-| amount | numeric | |
+| amount | numeric | gross total (line-item sum) |
 | payment_method | text | |
 | payment_status | text | 'Pending' |
-| discount_applied | numeric | |
+| discount_applied | numeric | TOTAL deduction (project discount + incentive + rolled-in deposit). Balance = amount − discount_applied |
+| project_discount | numeric | portion of discount_applied that is a whole-project discount (display breakout) |
 | credit_card_fee | numeric | |
 | job_description | text | |
+| parent_invoice_id | integer | FK invoices.id — deposit invoice rolled into discount_applied |
+| invoice_type | text | e.g. 'deposit' |
+| summary_format | boolean | PDF shows Parts/Labor totals instead of line items |
+| parts_total_override | numeric(12,2) | manual Parts total — with labor_total_override, wins over computed split everywhere |
+| labor_total_override | numeric(12,2) | manual Labor total (pair with parts_total_override; both NULL = auto-compute) |
+| due_date | date | |
+| sent_to_email | text | |
+| notes | text | |
+| is_locked | boolean | |
 | created_at | timestamptz | now() |
 | updated_at | timestamptz | |
 

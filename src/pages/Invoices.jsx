@@ -282,6 +282,10 @@ export default function Invoices() {
         payment_method: formData.payment_method || null,
         payment_status: formData.payment_status || 'Pending',
         discount_applied: formData.discount_applied || null,
+        // A discount typed at creation is a whole-project discount — tag it
+        // so InvoiceDetail labels it "Project Discount" even after a utility
+        // incentive is layered into discount_applied later.
+        project_discount: formData.discount_applied || null,
         credit_card_fee: formData.credit_card_fee || null,
         job_description: formData.job_description || null,
         due_date: formData.due_date || defaultDue.toISOString().split('T')[0],

@@ -1248,6 +1248,10 @@ function JobDetailInner() {
         customer_id: job.customer_id,
         amount: subtotal,
         discount_applied: discount,
+        // The job-level discount is a whole-project discount — record it as
+        // such so it stays labeled "Project Discount" if a utility incentive
+        // is later added on top (discount_applied remains the total).
+        project_discount: discount > 0 ? discount : null,
         payment_status: 'Pending',
         job_description: descParts.join('\n'),
         due_date: defaultDue.toISOString().split('T')[0],

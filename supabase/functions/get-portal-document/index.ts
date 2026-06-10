@@ -260,6 +260,26 @@ serve(async (req) => {
           .maybeSingle();
         if (linkedU) {
           (document as Record<string, unknown>).linked_utility_invoice = linkedU;
+        }
+
+        // Manual Parts/Labor override wins over the computed split — and a
+        // set override means the user wants the breakdown shown even when
+        // no utility invoice is linked. Mirrors resolveMatLabSplit in
+        // src/lib/materialLaborSplit.js; keep the two in sync.
+        const hasManualSplit = inv.parts_total_override != null && inv.labor_total_override != null;
+        if (hasManualSplit) {
+          const round2 = (n: number) => Math.round(n * 100) / 100;
+          const materials = round2(Number(inv.parts_total_override) || 0);
+          const labor = round2(Number(inv.labor_total_override) || 0);
+          (document as Record<string, unknown>).material_labor_split = {
+            materials,
+            labor,
+            total: round2(materials + labor),
+            fallbackLineCount: 0,
+            totalLineCount: 0,
+            source: 'manual',
+          };
+        } else if (linkedU) {
           const { data: lines } = await supabase
             .from('invoice_lines')
             .select('item_id, line_total, quantity')

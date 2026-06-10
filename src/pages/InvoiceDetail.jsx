@@ -10,7 +10,7 @@ import { toast } from '../lib/toast'
 import { jsPDF } from 'jspdf'
 import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
-import { computeMaterialLaborSplit, splitLinePartsLabor } from '../lib/materialLaborSplit'
+import { resolveMatLabSplit, splitLinePartsLabor } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 
 // Light theme fallback
@@ -74,7 +74,8 @@ export default function InvoiceDetail() {
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState({
     amount: '',
-    discount_applied: '',
+    project_discount: '',
+    discount_other: '',
     job_description: '',
     notes: '',
     parts_total_override: '',
@@ -257,36 +258,42 @@ export default function InvoiceDetail() {
       // Also feeds the Mode-B materials/labor split when there's a
       // linked utility invoice.
       const itemIds = [...new Set((linesData || []).map(l => l.item_id).filter(Boolean))]
+      let comps = []
+      let prods = []
       if (itemIds.length > 0) {
-        const { data: comps } = await supabase
+        const { data: compsData } = await supabase
           .from('product_components')
           .select('parent_product_id, component_product_id, quantity')
           .in('parent_product_id', itemIds)
+        comps = compsData || []
         const subIds = [...new Set([
           ...itemIds,
-          ...(comps || []).map(c => c.component_product_id),
+          ...comps.map(c => c.component_product_id),
         ])]
-        const { data: prods } = await supabase
+        const { data: prodsData } = await supabase
           .from('products_services')
           .select('id, cost, material_or_labor')
           .in('id', subIds)
+        prods = prodsData || []
+      }
 
-        const productMap = new Map((prods || []).map(p => [p.id, p]))
-        const componentsByParent = new Map()
-        for (const c of comps || []) {
-          const arr = componentsByParent.get(c.parent_product_id) || []
-          arr.push(c)
-          componentsByParent.set(c.parent_product_id, arr)
-        }
-        setComponentMaps({ productMap, componentsByParent })
+      const productMap = new Map(prods.map(p => [p.id, p]))
+      const componentsByParent = new Map()
+      for (const c of comps) {
+        const arr = componentsByParent.get(c.parent_product_id) || []
+        arr.push(c)
+        componentsByParent.set(c.parent_product_id, arr)
+      }
+      setComponentMaps({ productMap, componentsByParent })
 
-        if (linkedU) {
-          setMatLabSplit(computeMaterialLaborSplit(linesData || [], comps || [], prods || []))
-        } else {
-          setMatLabSplit(null)
-        }
+      // Show the breakdown when the invoice is utility-linked (Mode B) OR
+      // when a manual Parts/Labor override is set — the override means the
+      // user explicitly wants a breakdown on the document, so show THEIR
+      // numbers (resolveMatLabSplit gives the override top priority).
+      const hasManualSplit = invoiceData.parts_total_override != null && invoiceData.labor_total_override != null
+      if (linkedU || hasManualSplit) {
+        setMatLabSplit(resolveMatLabSplit(invoiceData, linesData || [], comps, prods))
       } else {
-        setComponentMaps({ productMap: new Map(), componentsByParent: new Map() })
         setMatLabSplit(null)
       }
 
@@ -799,10 +806,16 @@ export default function InvoiceDetail() {
 
   // Edit mode handlers
   const startEditing = () => {
+    // Split the stored total deduction into the project-discount portion
+    // and everything else (incentive and/or rolled-in deposit) so the two
+    // edit fields land pre-filled. Saving recombines them.
+    const totalDisc = parseFloat(invoice.discount_applied) || 0
+    const projDisc = Math.min(Math.max(0, parseFloat(invoice.project_discount) || 0), totalDisc)
     setEditForm({
       invoice_id: invoice.invoice_id || '',
       amount: invoice.amount || '',
-      discount_applied: invoice.discount_applied || '',
+      project_discount: projDisc > 0 ? projDisc : '',
+      discount_other: totalDisc - projDisc > 0 ? Math.round((totalDisc - projDisc) * 100) / 100 : '',
       credit_card_fee: invoice.credit_card_fee || '',
       job_description: invoice.job_description || '',
       notes: invoice.notes || '',
@@ -814,7 +827,7 @@ export default function InvoiceDetail() {
 
   const cancelEditing = () => {
     setIsEditing(false)
-    setEditForm({ invoice_id: '', amount: '', discount_applied: '', credit_card_fee: '', job_description: '', notes: '', parts_total_override: '', labor_total_override: '' })
+    setEditForm({ invoice_id: '', amount: '', project_discount: '', discount_other: '', credit_card_fee: '', job_description: '', notes: '', parts_total_override: '', labor_total_override: '' })
   }
 
   const saveEdits = async () => {
@@ -846,9 +859,15 @@ export default function InvoiceDetail() {
       ? null : parseFloat(editForm.parts_total_override)
     const laborOv = editForm.labor_total_override === '' || editForm.labor_total_override == null
       ? null : parseFloat(editForm.labor_total_override)
+    // discount_applied stays the TOTAL deduction (all balance math reads
+    // amount − discount_applied); project_discount records which part of
+    // it is a whole-project discount for display breakout.
+    const projDiscount = Math.max(0, parseFloat(editForm.project_discount) || 0)
+    const otherDiscount = Math.max(0, parseFloat(editForm.discount_other) || 0)
     const payload = {
       amount: parseFloat(editForm.amount) || 0,
-      discount_applied: parseFloat(editForm.discount_applied) || 0,
+      discount_applied: Math.round((projDiscount + otherDiscount) * 100) / 100,
+      project_discount: projDiscount > 0 ? projDiscount : null,
       credit_card_fee: parseFloat(editForm.credit_card_fee) || 0,
       job_description: editForm.job_description || null,
       notes: editForm.notes || null,
@@ -1231,17 +1250,22 @@ export default function InvoiceDetail() {
     if (pdfDiscount > 0) {
       if (pdfLegacyNet) {
         drawTotalLine('Utility Incentive (applied):', formatCurrency(pdfDiscount), { color: [120, 120, 120] })
-      } else if (hasDepositBreakout) {
-        // Split deposit credit and utility incentive into separate lines so
-        // the customer (and utility, if they ask) can see exactly where the
-        // discount came from. Sum is unchanged.
-        if (incentivePortion > 0) {
-          drawTotalLine('Utility Incentive:', `-${formatCurrency(incentivePortion)}`, { color: [200, 0, 0] })
+      } else if (hasDepositBreakout || hasProjectDiscountBreakout) {
+        // Split project discount, utility incentive, and deposit credit into
+        // separate lines so the customer (and utility, if they ask) can see
+        // exactly where each deduction came from. Sum is unchanged.
+        if (projectDiscountPortion > 0) {
+          drawTotalLine('Project Discount:', `-${formatCurrency(projectDiscountPortion)}`, { color: [200, 0, 0] })
         }
-        const depositLabel = depositPaidDate
-          ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
-          : 'Deposit Applied:'
-        drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
+        if (incentivePortion > 0) {
+          drawTotalLine(linkedUtilityInvoice ? 'Utility Incentive:' : 'Discount:', `-${formatCurrency(incentivePortion)}`, { color: [200, 0, 0] })
+        }
+        if (hasDepositBreakout) {
+          const depositLabel = depositPaidDate
+            ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
+            : 'Deposit Applied:'
+          drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
+        }
       } else {
         const incentiveLabel = linkedUtilityInvoice ? 'Utility Incentive:' : 'Discount:'
         drawTotalLine(incentiveLabel, `-${formatCurrency(pdfDiscount)}`, { color: [200, 0, 0] })
@@ -1709,8 +1733,18 @@ export default function InvoiceDetail() {
   const depositCredit = (parentInvoice && parentInvoice.invoice_type === 'deposit')
     ? (parseFloat(parentInvoice.amount) || 0)
     : 0
-  const incentivePortion = Math.max(0, discountApplied - depositCredit)
+  // Same breakout idea for a whole-project discount: discount_applied stays
+  // the TOTAL deduction (so balance math everywhere is untouched), and
+  // project_discount records how much of it is a project discount vs a
+  // utility incentive. Alayda's case: $971 project discount + $3,294
+  // incentive had to share one field, so one of them always got lost.
+  const projectDiscountPortion = Math.min(
+    Math.max(0, parseFloat(invoice.project_discount) || 0),
+    Math.max(0, discountApplied - depositCredit)
+  )
+  const incentivePortion = Math.max(0, discountApplied - depositCredit - projectDiscountPortion)
   const hasDepositBreakout = depositCredit > 0 && !isLegacyNetInvoice && discountApplied >= depositCredit
+  const hasProjectDiscountBreakout = projectDiscountPortion > 0 && !isLegacyNetInvoice
   const depositPaidDate = parentInvoice?.updated_at || parentInvoice?.created_at
   const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
 
@@ -2578,9 +2612,11 @@ export default function InvoiceDetail() {
                 )}
               </div>
 
-              {/* Materials / Labor breakdown — shown only on Mode B (incentive-
-                  bearing) invoices. Computed from each line's components +
-                  their material_or_labor classification. */}
+              {/* Materials / Labor breakdown — shown on Mode B (incentive-
+                  bearing) invoices and whenever a manual Parts/Labor
+                  override is set. resolveMatLabSplit gives the manual
+                  override top priority so the numbers here always match
+                  what was typed in Edit mode. */}
               {!isEditing && matLabSplit && matLabSplit.total > 0 && (
                 <div style={{ padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
@@ -2594,62 +2630,99 @@ export default function InvoiceDetail() {
                     <span style={{ color: theme.textSecondary }}>Labor</span>
                     <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(matLabSplit.labor)}</span>
                   </div>
-                  {matLabSplit.fallbackLineCount > 0 && (
+                  {matLabSplit.source === 'manual' ? (
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                      {matLabSplit.fallbackLineCount} of {matLabSplit.totalLineCount} line{matLabSplit.totalLineCount !== 1 ? 's' : ''} using 70/30 estimate — classify components in Products & Services for real numbers.
+                      Entered manually in Edit mode.
+                    </div>
+                  ) : matLabSplit.fallbackLineCount > 0 && (
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                      {matLabSplit.fallbackLineCount} of {matLabSplit.totalLineCount} line{matLabSplit.totalLineCount !== 1 ? 's' : ''} using 70/30 estimate — classify components in Products & Services for real numbers, or type the real split in Edit mode.
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Discount block — when a deposit is rolled in, split it out so
-                  the customer sees their deposit credit separately from the
-                  utility incentive. Editing keeps the combined field. */}
-              {isEditing || !hasDepositBreakout ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
-                  <span style={{ color: theme.textSecondary }}>
-                    {isLegacyNetInvoice
-                      ? 'Utility Incentive (already applied)'
-                      : (linkedUtilityInvoice ? 'Utility Incentive' : 'Discount')}
-                  </span>
-                  {isEditing ? (
+              {/* Discount block — discount_applied stays the TOTAL deduction
+                  (balance math everywhere reads amount − discount_applied);
+                  project_discount + the deposit parent let us break it out
+                  into Project Discount / Utility Incentive / Deposit lines
+                  so two real-world deductions no longer fight over one
+                  field (Alayda: $971 project discount + $3,294 incentive). */}
+              {isEditing ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                    <span style={{ color: theme.textSecondary }}>Project Discount</span>
                     <input
                       type="number"
                       step="0.01"
-                      value={editForm.discount_applied}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, discount_applied: e.target.value }))}
+                      value={editForm.project_discount}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, project_discount: e.target.value }))}
+                      placeholder="0.00"
                       style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
                     />
-                  ) : (
-                    invoice.discount_applied > 0 ? (
-                      isLegacyNetInvoice ? (
-                        <span style={{ color: theme.textMuted }}>{formatCurrency(invoice.discount_applied)}</span>
-                      ) : (
-                        <span style={{ color: '#dc2626' }}>-{formatCurrency(invoice.discount_applied)}</span>
-                      )
-                    ) : (
-                      <span style={{ color: theme.textMuted }}>$0.00</span>
-                    )
-                  )}
-                </div>
-              ) : (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
-                    <span style={{ color: theme.textSecondary }}>Utility Incentive</span>
-                    <span style={{ color: '#dc2626' }}>-{formatCurrency(incentivePortion)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
                     <span style={{ color: theme.textSecondary }}>
-                      Deposit Applied
-                      {depositPaidDate && (
-                        <span style={{ color: theme.textMuted, marginLeft: '6px', fontSize: '12px' }}>
-                          (paid {new Date(depositPaidDate).toLocaleDateString()})
-                        </span>
-                      )}
+                      {linkedUtilityInvoice ? 'Utility Incentive' : 'Utility Incentive / Other'}
                     </span>
-                    <span style={{ color: '#dc2626' }}>-{formatCurrency(depositCredit)}</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.discount_other}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, discount_other: e.target.value }))}
+                      placeholder="0.00"
+                      style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
+                    />
+                  </div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'right' }}>
+                    Total deductions: {formatCurrency((parseFloat(editForm.project_discount) || 0) + (parseFloat(editForm.discount_other) || 0))}
+                    {hasDepositBreakout ? ` (includes ${formatCurrency(depositCredit)} deposit credit)` : ''}
                   </div>
                 </>
+              ) : isLegacyNetInvoice ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                  <span style={{ color: theme.textSecondary }}>Utility Incentive (already applied)</span>
+                  <span style={{ color: theme.textMuted }}>{formatCurrency(invoice.discount_applied)}</span>
+                </div>
+              ) : (hasProjectDiscountBreakout || hasDepositBreakout) ? (
+                <>
+                  {projectDiscountPortion > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                      <span style={{ color: theme.textSecondary }}>Project Discount</span>
+                      <span style={{ color: '#dc2626' }}>-{formatCurrency(projectDiscountPortion)}</span>
+                    </div>
+                  )}
+                  {incentivePortion > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                      <span style={{ color: theme.textSecondary }}>{linkedUtilityInvoice ? 'Utility Incentive' : 'Discount'}</span>
+                      <span style={{ color: '#dc2626' }}>-{formatCurrency(incentivePortion)}</span>
+                    </div>
+                  )}
+                  {hasDepositBreakout && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                      <span style={{ color: theme.textSecondary }}>
+                        Deposit Applied
+                        {depositPaidDate && (
+                          <span style={{ color: theme.textMuted, marginLeft: '6px', fontSize: '12px' }}>
+                            (paid {new Date(depositPaidDate).toLocaleDateString()})
+                          </span>
+                        )}
+                      </span>
+                      <span style={{ color: '#dc2626' }}>-{formatCurrency(depositCredit)}</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                  <span style={{ color: theme.textSecondary }}>
+                    {linkedUtilityInvoice ? 'Utility Incentive' : 'Discount'}
+                  </span>
+                  {invoice.discount_applied > 0 ? (
+                    <span style={{ color: '#dc2626' }}>-{formatCurrency(invoice.discount_applied)}</span>
+                  ) : (
+                    <span style={{ color: theme.textMuted }}>$0.00</span>
+                  )}
+                </div>
               )}
 
               {(invoice.credit_card_fee > 0 || isEditing) && (
@@ -2707,8 +2780,51 @@ export default function InvoiceDetail() {
                     />
                   </div>
                   <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>
-                    Both blank = auto-compute from line items. Set both to force the PDF totals.
+                    Both blank = auto-compute from line items. Set both to force the breakdown everywhere (page, PDF, customer portal).
                   </p>
+                  {/* Consistency guard — Alayda's INV-MQ8C2T1X printed
+                      Parts+Labor that didn't add up to the Invoice Total
+                      and nothing flagged it. Surface the mismatch with a
+                      one-click fix instead of silently printing both. */}
+                  {(() => {
+                    const p = editForm.parts_total_override
+                    const l = editForm.labor_total_override
+                    if (p === '' || p == null || l === '' || l == null) return null
+                    const ovSum = Math.round(((parseFloat(p) || 0) + (parseFloat(l) || 0)) * 100) / 100
+                    const editAmount = parseFloat(editForm.amount) || 0
+                    if (Math.abs(ovSum - editAmount) <= 0.01) return null
+                    return (
+                      <div style={{
+                        padding: '8px 10px',
+                        backgroundColor: 'rgba(234,179,8,0.10)',
+                        border: '1px solid rgba(234,179,8,0.35)',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        color: '#92400e',
+                        lineHeight: '1.4',
+                      }}>
+                        Parts + Labor = {formatCurrency(ovSum)} but Invoice Total is {formatCurrency(editAmount)} — the document will show both.
+                        <button
+                          onClick={() => setEditForm(prev => ({ ...prev, amount: ovSum }))}
+                          style={{
+                            display: 'block',
+                            marginTop: '6px',
+                            padding: '6px 10px',
+                            backgroundColor: 'rgba(234,179,8,0.18)',
+                            color: '#92400e',
+                            border: '1px solid rgba(234,179,8,0.4)',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            minHeight: '32px',
+                          }}
+                        >
+                          Set Invoice Total to {formatCurrency(ovSum)}
+                        </button>
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
 

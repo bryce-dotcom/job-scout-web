@@ -1412,7 +1412,7 @@ export default function Jobs() {
         paddingBottom: '4px'
       }}>
         {boardColumns.map(col => {
-          const colJobs = jobs.filter(j => j.status === col.id)
+          const colJobs = (historyYear !== null ? filteredJobs : jobs).filter(j => j.status === col.id)
           const count = colJobs.length
           const value = colJobs.reduce((s, j) => s + (parseFloat(j.job_total) || 0), 0)
           const fmtK = (n) => n >= 1000000 ? `$${(n/1000000).toFixed(1)}M` : n >= 1000 ? `$${(n/1000).toFixed(0)}k` : n > 0 ? `$${Math.round(n)}` : null

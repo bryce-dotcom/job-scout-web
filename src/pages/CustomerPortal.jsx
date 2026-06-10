@@ -258,8 +258,16 @@ export default function CustomerPortal() {
   // show the deposit credit as its own line so the customer sees it.
   const depositParent = isInvoice && doc.parent_invoice?.invoice_type === 'deposit' ? doc.parent_invoice : null
   const depositCredit = depositParent ? (parseFloat(depositParent.amount) || 0) : 0
-  const incentivePortion = Math.max(0, invoiceDiscount - depositCredit)
+  // Project-discount breakout mirrors InvoiceDetail: discount_applied is the
+  // TOTAL deduction; project_discount says how much of it is a whole-project
+  // discount (the rest is incentive and/or deposit credit).
+  const projectDiscountPortion = Math.min(
+    Math.max(0, parseFloat(doc.project_discount) || 0),
+    Math.max(0, invoiceDiscount - depositCredit)
+  )
+  const incentivePortion = Math.max(0, invoiceDiscount - depositCredit - projectDiscountPortion)
   const hasDepositBreakout = isInvoice && depositCredit > 0 && !invoiceLegacyNet && invoiceDiscount >= depositCredit
+  const hasProjectDiscountBreakout = isInvoice && projectDiscountPortion > 0 && !invoiceLegacyNet
   const depositPaidDate = depositParent?.updated_at || depositParent?.created_at
 
   // Materials / Labor split — precomputed by the edge function for Mode B
@@ -559,7 +567,7 @@ export default function CustomerPortal() {
                     </div>
                   </div>
                 )}
-                {invoiceDiscount > 0 && !hasDepositBreakout && (
+                {invoiceDiscount > 0 && !hasDepositBreakout && !hasProjectDiscountBreakout && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: theme.textMuted, fontSize: '13px' }}>
                       {invoiceLegacyNet
@@ -571,25 +579,33 @@ export default function CustomerPortal() {
                     </span>
                   </div>
                 )}
-                {hasDepositBreakout && (
+                {(hasDepositBreakout || hasProjectDiscountBreakout) && !invoiceLegacyNet && (
                   <>
+                    {projectDiscountPortion > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: theme.textMuted, fontSize: '13px' }}>Project Discount</span>
+                        <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(projectDiscountPortion)}</span>
+                      </div>
+                    )}
                     {incentivePortion > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: theme.textMuted, fontSize: '13px' }}>Utility Incentive</span>
+                        <span style={{ color: theme.textMuted, fontSize: '13px' }}>{doc.linked_utility_invoice ? 'Utility Incentive' : 'Discount'}</span>
                         <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(incentivePortion)}</span>
                       </div>
                     )}
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: theme.textMuted, fontSize: '13px' }}>
-                        Deposit Applied
-                        {depositPaidDate && (
-                          <span style={{ color: theme.textMuted, marginLeft: '6px', fontSize: '12px', opacity: 0.8 }}>
-                            (paid {new Date(depositPaidDate).toLocaleDateString()})
-                          </span>
-                        )}
-                      </span>
-                      <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(depositCredit)}</span>
-                    </div>
+                    {hasDepositBreakout && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+                          Deposit Applied
+                          {depositPaidDate && (
+                            <span style={{ color: theme.textMuted, marginLeft: '6px', fontSize: '12px', opacity: 0.8 }}>
+                              (paid {new Date(depositPaidDate).toLocaleDateString()})
+                            </span>
+                          )}
+                        </span>
+                        <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(depositCredit)}</span>
+                      </div>
+                    )}
                   </>
                 )}
                 {totalPaid > 0 && (

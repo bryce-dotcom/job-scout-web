@@ -21,6 +21,34 @@
 const FALLBACK_MATERIAL_PCT = 0.7
 const FALLBACK_LABOR_PCT = 0.3
 
+// Single entry point for "what Materials/Labor numbers does this invoice
+// show?" — every renderer (invoice page box, PDF totals, customer portal
+// via the edge function) must go through this so a manual override entered
+// on the invoice wins EVERYWHERE, not just on one surface. Alayda typed
+// Parts/Labor on INV-MQ8C2T1X and the breakdown box kept showing the
+// computed 70/30 numbers — this is the fix.
+//
+// Returns the computeMaterialLaborSplit shape plus `source`:
+//   'manual'   — parts_total_override + labor_total_override (both set)
+//   'computed' — per-line component classification (with 70/30 fallback)
+export function resolveMatLabSplit(invoice, lines, components, products) {
+  const partsOv = invoice?.parts_total_override
+  const laborOv = invoice?.labor_total_override
+  if (partsOv != null && laborOv != null) {
+    const materials = round2(partsOv)
+    const labor = round2(laborOv)
+    return {
+      materials,
+      labor,
+      total: round2(materials + labor),
+      fallbackLineCount: 0,
+      totalLineCount: (lines || []).length,
+      source: 'manual',
+    }
+  }
+  return { ...computeMaterialLaborSplit(lines, components, products), source: 'computed' }
+}
+
 export function computeMaterialLaborSplit(lines, components, products) {
   const productMap = new Map((products || []).map(p => [p.id, p]))
   const componentsByParent = new Map()
