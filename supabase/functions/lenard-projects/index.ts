@@ -18,7 +18,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { leadOwnerId, leadSource } = body;
+    const { leadOwnerId, leadSource, search } = body;
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -32,7 +32,25 @@ serve(async (req) => {
     const defaultSource = leadSource || 'Lenard AZ SRP';
     let leads: any[] = [];
 
-    if (leadOwnerId) {
+    const searchTerm = (search ? String(search) : '').trim();
+    if (searchTerm) {
+      // SEARCH MODE — Damien / Noah / Bryce all asked for this: old
+      // projects fall off the recent-50 list and become unfindable.
+      // Search the whole company's leads by name / address / email /
+      // phone, no recency cutoff. Sanitize PostgREST or-syntax chars
+      // so a stray comma or paren can't break the filter expression.
+      const term = searchTerm.replace(/[%,()*]/g, ' ').trim();
+      if (term) {
+        const searchParams = new URLSearchParams({
+          company_id: `eq.${companyId}`,
+          select: selectFields,
+          order: 'created_at.desc',
+          limit: '50',
+        });
+        searchParams.append('or', `(customer_name.ilike.*${term}*,address.ilike.*${term}*,email.ilike.*${term}*,phone.ilike.*${term}*)`);
+        leads = await querySupabase(SUPABASE_URL!, 'leads', key, searchParams.toString());
+      }
+    } else if (leadOwnerId) {
       // "My Projects" — show ALL leads assigned to this person (any source)
       // plus any Lenard leads they created, merged and deduped
       const ownerParams = new URLSearchParams({

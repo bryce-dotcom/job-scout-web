@@ -28,6 +28,7 @@ const defaultTheme = {
 export default function Estimates() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  const user = useStore((state) => state.user)
   const quotes = useStore((state) => state.quotes)
   const leads = useStore((state) => state.leads)
   const customers = useStore((state) => state.customers)
@@ -60,6 +61,10 @@ export default function Estimates() {
   // Hide noise estimates by default (Draft + $0). Doug reported the
   // unfiltered list was full of $0 / unrelated drafts when he searched.
   const [hideNoise, setHideNoise] = useState(true)
+  // "Only mine" — show only estimates assigned to the logged-in rep.
+  // Damien's request: reps shouldn't have to scroll through everyone's
+  // projects to find their own. Matches the same toggle on LeadSetter.
+  const [onlyMine, setOnlyMine] = useState(false)
   const [showImportExport, setShowImportExport] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
 
@@ -123,6 +128,13 @@ export default function Estimates() {
       const isDraft = quote.status === 'Draft'
       const isZero = !quote.quote_amount || parseFloat(quote.quote_amount) === 0
       if (isDraft && isZero) return false
+    }
+
+    // "Only mine" — the logged-in user's employee record matched by email,
+    // compared against the estimate's salesperson.
+    if (onlyMine) {
+      const me = employees.find(e => e.email && user?.email && e.email.toLowerCase() === user.email.toLowerCase())
+      if (me && quote.salesperson_id !== me.id) return false
     }
 
     return matchesSearch && matchesStatus
@@ -390,6 +402,27 @@ export default function Estimates() {
             style={{ accentColor: theme.accent }}
           />
           Hide $0 drafts
+        </label>
+        <label
+          title="Show only estimates assigned to you as salesperson."
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 10px',
+            border: `1px solid ${onlyMine ? theme.accent : theme.border}`, borderRadius: 8,
+            backgroundColor: onlyMine ? theme.accentBg : 'transparent',
+            cursor: 'pointer', fontSize: 12,
+            color: onlyMine ? theme.accent : theme.textSecondary,
+            fontWeight: onlyMine ? 600 : 400,
+            userSelect: 'none', minHeight: isMobile ? '44px' : 'auto',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={onlyMine}
+            onChange={(e) => setOnlyMine(e.target.checked)}
+            style={{ accentColor: theme.accent }}
+          />
+          Only mine
         </label>
       </div>
 

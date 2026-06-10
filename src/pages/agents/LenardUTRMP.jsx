@@ -417,6 +417,7 @@ export default function LenardUTRMP() {
   const [showProjects, setShowProjects] = useState(false);
   const [projects, setProjects] = useState([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  const [projectSearch, setProjectSearch] = useState('');
   const [capturedPhotos, setCapturedPhotos] = useState([]);
   const [viewingPhoto, setViewingPhoto] = useState(null);
 
@@ -1288,12 +1289,12 @@ export default function LenardUTRMP() {
     }
   };
 
-  const loadProjects = async (ownerId = leadOwnerId) => {
+  const loadProjects = async (ownerId = leadOwnerId, search = null) => {
     setLoadingProjects(true);
     try {
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ leadOwnerId: ownerId || null, leadSource: 'Lenard UT RMP' }) });
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ leadOwnerId: ownerId || null, leadSource: 'Lenard UT RMP', search: search || null }) });
       const data = await resp.json();
       if (data.projects) setProjects(data.projects);
     } catch (_) { showToast('Could not load projects', '\u26A0\uFE0F'); }
@@ -4345,10 +4346,28 @@ export default function LenardUTRMP() {
           </div>
           {leadOwnerId && (
             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              <button onClick={() => loadProjects(leadOwnerId)} style={{ ...S.btnGhost, flex: 1, fontSize: '12px', background: T.accentDim, color: T.accent, borderColor: T.accent }}>My Projects</button>
-              <button onClick={() => loadProjects(null)} style={{ ...S.btnGhost, flex: 1, fontSize: '12px' }}>All Projects</button>
+              <button onClick={() => { setProjectSearch(''); loadProjects(leadOwnerId) }} style={{ ...S.btnGhost, flex: 1, fontSize: '12px', background: T.accentDim, color: T.accent, borderColor: T.accent }}>My Projects</button>
+              <button onClick={() => { setProjectSearch(''); loadProjects(null) }} style={{ ...S.btnGhost, flex: 1, fontSize: '12px' }}>All Projects</button>
             </div>
           )}
+          {/* Project search — finds ANY project by name/address/email/phone,
+              even old ones that fell off the recent list (Damien + Noah +
+              Bryce all asked). Enter or the button runs a server-side search
+              with no recency cutoff. */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <input
+              type="text"
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && projectSearch.trim()) loadProjects(null, projectSearch.trim()) }}
+              placeholder="Search all projects — name, address, phone…"
+              style={{ flex: 1, padding: '10px 12px', borderRadius: '10px', border: `1px solid ${T.border}`, background: T.bgInput, color: T.text, fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+            />
+            <button
+              onClick={() => projectSearch.trim() && loadProjects(null, projectSearch.trim())}
+              style={{ ...S.btnGhost, fontSize: '12px', whiteSpace: 'nowrap' }}
+            >Search</button>
+          </div>
           {loadingProjects && <div style={{ textAlign: 'center', padding: '20px', color: T.textMuted }}>Loading...</div>}
           {!loadingProjects && projects.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: T.textMuted }}>No saved projects yet</div>}
           {projects.map(p => {

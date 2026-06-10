@@ -180,6 +180,55 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     }).eq('id', invoice.id);
 
+    // Auto-send a payment receipt (Tracy's feedback eb14afd2: "Is there a
+    // way the system will auto trigger a receipt to go to their email
+    // without me doing it manually?"). Mirrors the manual-payment receipt
+    // in InvoiceDetail.addPayment. Fire-and-forget — a receipt failure
+    // must never fail the charge.
+    try {
+      const { data: invFull } = await supabase
+        .from('invoices')
+        .select('invoice_id, sent_to_email, business_unit, portal_token')
+        .eq('id', invoice.id).single();
+      const { data: custFull } = await supabase
+        .from('customers').select('email, name').eq('id', customer.id).single();
+      const recipientEmail = invFull?.sent_to_email || custFull?.email || '';
+      if (recipientEmail) {
+        const { data: companyRow } = await supabase
+          .from('companies').select('company_name, phone, owner_email, address, logo_url').eq('id', company_id).single();
+        let buObj: { name?: string; phone?: string; email?: string; address?: string; logo_url?: string } | null = null;
+        if (invFull?.business_unit) {
+          const { data: buRow } = await supabase
+            .from('settings').select('value').eq('company_id', company_id).eq('key', 'business_units').maybeSingle();
+          if (buRow?.value) {
+            try { buObj = JSON.parse(buRow.value).find((u: { name?: string }) => u.name === invFull.business_unit) || null; } catch { /* ignore */ }
+          }
+        }
+        await fetch(`${SUPABASE_URL}/functions/v1/send-receipt`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_ROLE_KEY}`, 'apikey': SERVICE_ROLE_KEY },
+          body: JSON.stringify({
+            recipient_email: recipientEmail,
+            customer_name: custFull?.name || '',
+            invoice_number: invFull?.invoice_id || `INV-${invoice.id}`,
+            payment_amount: balanceDue + ccFeeAmount,
+            payment_method: `${pm.brand || 'Card'} ****${pm.last_four || ''}`,
+            payment_date: new Date().toISOString().split('T')[0],
+            balance_remaining: Math.max(0, invoiceAmount - newTotalPaid),
+            invoice_total: invoiceAmount,
+            total_paid: newTotalPaid,
+            company_name: companyRow?.company_name || '',
+            business_unit_name: buObj?.name || invFull?.business_unit || '',
+            business_unit_phone: buObj?.phone || companyRow?.phone || '',
+            business_unit_email: buObj?.email || companyRow?.owner_email || '',
+            business_unit_address: buObj?.address || companyRow?.address || '',
+            logo_url: buObj?.logo_url || companyRow?.logo_url || '',
+            portal_url: invFull?.portal_token ? `https://jobscout.appsannex.com/portal/${invFull.portal_token}` : null,
+          }),
+        }).catch(() => { /* fire-and-forget */ });
+      }
+    } catch (_) { /* receipt is non-critical */ }
+
     return jsonResponse({
       success: true,
       payment_intent_id: piData.id,

@@ -527,6 +527,12 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborDat
                     <div style={{ fontSize: '13px', color: theme.text, fontWeight: '500' }}>{product.model_number}</div>
                   </div>
                 )}
+                {product.vendor_sku && (
+                  <div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted }}>Order Code</div>
+                    <div style={{ fontSize: '13px', color: theme.text, fontWeight: '500' }}>{product.vendor_sku}</div>
+                  </div>
+                )}
                 {product.product_category && (
                   <div>
                     <div style={{ fontSize: '11px', color: theme.textMuted }}>Category</div>
@@ -675,7 +681,7 @@ export default function ProductsServices() {
   const [productForm, setProductForm] = useState({
     name: '', description: '', unit_price: '', cost: '', markup_percent: '',
     taxable: true, active: true, image_url: '', allotted_time_hours: '', group_id: null, type: '', labor_rate_id: '',
-    manufacturer: '', model_number: '', product_category: '',
+    manufacturer: '', model_number: '', vendor_sku: '', product_category: '',
     dlc_listed: false, dlc_listing_number: '', warranty_years: '',
     spec_sheet_url: '', install_guide_url: '', dlc_document_url: '', datasheet_json: {},
     // Utility incentive scope — only items in_utility_scope=true count
@@ -1058,6 +1064,7 @@ export default function ProductsServices() {
         allotted_time_hours: product.allotted_time_hours || '', group_id: product.group_id,
         type: product.type || activeSection || serviceTypes[0] || '', labor_rate_id: product.labor_rate_id || '',
         manufacturer: product.manufacturer || '', model_number: product.model_number || '',
+        vendor_sku: product.vendor_sku || '',
         product_category: product.product_category || '', dlc_listed: product.dlc_listed ?? false,
         dlc_listing_number: product.dlc_listing_number || '', warranty_years: product.warranty_years || '',
         spec_sheet_url: product.spec_sheet_url || '', install_guide_url: product.install_guide_url || '', dlc_document_url: product.dlc_document_url || '',
@@ -1080,7 +1087,7 @@ export default function ProductsServices() {
         group_id: selectedGroup?.id || null,
         type: activeSection || serviceTypes[0] || '',
         labor_rate_id: '',
-        manufacturer: '', model_number: '', product_category: '',
+        manufacturer: '', model_number: '', vendor_sku: '', product_category: '',
         dlc_listed: false, dlc_listing_number: '', warranty_years: '',
         spec_sheet_url: '', install_guide_url: '', dlc_document_url: '', datasheet_json: {},
         in_utility_scope: true, floor_price: '', ceiling_price: '', suggest_in_lenard: false,
@@ -1225,6 +1232,7 @@ Click OK only if you're sure this is a label correction and not a different prod
       allotted_time_hours: productForm.allotted_time_hours || null,
       group_id: productForm.group_id, labor_rate_id: productForm.labor_rate_id || null,
       manufacturer: productForm.manufacturer || null, model_number: productForm.model_number || null,
+      vendor_sku: productForm.vendor_sku || null,
       product_category: productForm.product_category || null, dlc_listed: productForm.dlc_listed,
       dlc_listing_number: productForm.dlc_listing_number || null, warranty_years: productForm.warranty_years || null,
       spec_sheet_url: productForm.spec_sheet_url || null, install_guide_url: productForm.install_guide_url || null, dlc_document_url: productForm.dlc_document_url || null,
@@ -2656,6 +2664,13 @@ Click OK only if you're sure this is a label correction and not a different prod
                     <div>
                       <label style={labelStyle}>Model Number</label>
                       <input type="text" name="model_number" value={productForm.model_number} onChange={handleProductChange} style={inputStyle} placeholder="e.g., PL-LED-4x2" />
+                    </div>
+                  </div>
+                  <div style={{ marginTop: '12px' }}>
+                    <label style={labelStyle}>Order Code (vendor SKU)</label>
+                    <input type="text" name="vendor_sku" value={productForm.vendor_sku || ''} onChange={handleProductChange} style={inputStyle} placeholder="e.g., 6686 — the code you give the vendor when ordering" />
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                      The manufacturer/distributor order code. Shows on purchase orders so whoever places the order doesn't have to look it up.
                     </div>
                   </div>
                   <div style={{ marginTop: '12px' }}>

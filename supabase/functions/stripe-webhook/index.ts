@@ -389,6 +389,58 @@ serve(async (req) => {
           .from('invoices')
           .update({ payment_status: newStatus })
           .eq('id', invoice.id);
+
+        // Auto-send a payment receipt (Tracy's feedback eb14afd2). Mirrors
+        // the manual-payment receipt path in InvoiceDetail.addPayment.
+        // Fire-and-forget — receipt failure must never fail the webhook ack.
+        try {
+          const { data: invFull } = await supabase
+            .from('invoices')
+            .select('invoice_id, sent_to_email, business_unit, portal_token')
+            .eq('id', invoice.id).single();
+          let custEmail = invFull?.sent_to_email || '';
+          let custName = '';
+          if (invoice.customer_id) {
+            const { data: custFull } = await supabase
+              .from('customers').select('email, name').eq('id', invoice.customer_id).single();
+            if (!custEmail) custEmail = custFull?.email || '';
+            custName = custFull?.name || '';
+          }
+          if (custEmail) {
+            const { data: companyRow } = await supabase
+              .from('companies').select('company_name, phone, owner_email, address, logo_url').eq('id', companyId).single();
+            let buObj: { name?: string; phone?: string; email?: string; address?: string; logo_url?: string } | null = null;
+            if (invFull?.business_unit) {
+              const { data: buRow } = await supabase
+                .from('settings').select('value').eq('company_id', companyId).eq('key', 'business_units').maybeSingle();
+              if (buRow?.value) {
+                try { buObj = JSON.parse(buRow.value).find((u: { name?: string }) => u.name === invFull.business_unit) || null; } catch { /* ignore */ }
+              }
+            }
+            await fetch(`${SUPABASE_URL}/functions/v1/send-receipt`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_ROLE_KEY}`, 'apikey': SERVICE_ROLE_KEY },
+              body: JSON.stringify({
+                recipient_email: custEmail,
+                customer_name: custName,
+                invoice_number: invFull?.invoice_id || `INV-${invoice.id}`,
+                payment_amount: amountDollars,
+                payment_method: paymentMethodType,
+                payment_date: new Date().toISOString().split('T')[0],
+                balance_remaining: Math.max(0, customerBalance - totalPaid),
+                invoice_total: customerBalance,
+                total_paid: totalPaid,
+                company_name: companyRow?.company_name || '',
+                business_unit_name: buObj?.name || invFull?.business_unit || '',
+                business_unit_phone: buObj?.phone || companyRow?.phone || '',
+                business_unit_email: buObj?.email || companyRow?.owner_email || '',
+                business_unit_address: buObj?.address || companyRow?.address || '',
+                logo_url: buObj?.logo_url || companyRow?.logo_url || '',
+                portal_url: invFull?.portal_token ? `https://jobscout.appsannex.com/portal/${invFull.portal_token}` : null,
+              }),
+            }).catch(() => { /* fire-and-forget */ });
+          }
+        } catch (_) { /* receipt is non-critical */ }
       }
     } else if (paymentType === 'estimate_deposit' && documentType === 'estimate') {
       await supabase

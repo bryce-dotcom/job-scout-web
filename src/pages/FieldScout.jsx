@@ -13,7 +13,7 @@ import {
   CheckCircle, Timer, Briefcase, DollarSign, Star,
   AlertTriangle, Send, X, CreditCard, Banknote, Smartphone,
   Loader2, ShieldCheck, Shield, Search, FileText, Lock,
-  Camera, Calendar as CalendarIcon
+  Camera, Calendar as CalendarIcon, ArrowRight
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
 import ArnieFloatingPanel from '../components/ArnieFloatingPanel'
@@ -829,6 +829,83 @@ export default function FieldScout() {
   // Mark job complete → requires Victor verification
   const handleMarkComplete = (jobId) => {
     setVictorModal({ type: 'completion', jobId, markComplete: true })
+  }
+
+  // Switch jobs in one tap — closes the current punch and opens a new one
+  // on the target job (London: "Would be really nice to be able to switch
+  // jobs without having to clock out and clock back in"). No verification
+  // gate here: switching means the tech is CONTINUING work, not ending the
+  // day — the clock-out verification still applies when they actually
+  // leave. The closed punch is stamped so payroll can see it was a switch.
+  const handleSwitchJob = async (newJobId) => {
+    if (!activeEntry || clockingIn || clockingOut) return
+    if (activeEntry.job_id === newJobId) return
+    setClockingIn(true)
+    const switchedAt = new Date()
+    try {
+      const { lat, lng } = await getCoordsFast()
+
+      // 1) Close the current punch at the switch moment
+      const clockIn = new Date(activeEntry.clock_in)
+      let totalHours = (switchedAt - clockIn) / 3600000
+      if (activeEntry.lunch_start && activeEntry.lunch_end) {
+        totalHours -= (new Date(activeEntry.lunch_end) - new Date(activeEntry.lunch_start)) / 3600000
+      }
+      const stamp = `[SWITCHED JOBS at ${switchedAt.toISOString()} — continued on job ${newJobId}]`
+      const { error: outErr } = await supabase
+        .from('time_clock')
+        .update({
+          clock_out: switchedAt.toISOString(),
+          clock_out_lat: lat,
+          clock_out_lng: lng,
+          total_hours: Math.round(totalHours * 100) / 100,
+          notes: activeEntry.notes ? `${activeEntry.notes}\n${stamp}` : stamp,
+        })
+        .eq('id', activeEntry.id)
+      if (outErr) throw outErr
+
+      // 2) Open the new punch one second later so the two entries never
+      // overlap in payroll math.
+      const { data: inserted, error: inErr } = await supabase
+        .from('time_clock')
+        .insert({
+          company_id: companyId,
+          employee_id: currentEmployee.id,
+          job_id: newJobId || null,
+          clock_in: new Date(switchedAt.getTime() + 1000).toISOString(),
+          clock_in_lat: lat,
+          clock_in_lng: lng,
+          notes: `[Switched from job ${activeEntry.job_id || 'General'}]`,
+        })
+        .select()
+        .single()
+      if (inErr) throw inErr
+
+      // Auto-bump the new job to In Progress like a normal clock-in
+      if (newJobId) {
+        await supabase
+          .from('jobs')
+          .update({ status: 'In Progress', updated_at: new Date().toISOString() })
+          .eq('id', newJobId)
+          .eq('company_id', companyId)
+          .in('status', ['Chillin', 'Scheduled'])
+      }
+
+      await fetchEntries()
+      if (newJobId) {
+        setExpandedJob(newJobId)
+        fetchJobSections(newJobId)
+        setSelectedJobId('')
+        setJobSearchQuery('')
+      }
+      if (inserted?.id && lat != null) backfillAddress(inserted.id, lat, lng, 'in')
+      toast.success('Switched jobs — previous time saved')
+    } catch (err) {
+      alert('Error switching jobs: ' + err.message)
+    } finally {
+      setClockingIn(false)
+      setGpsStatus(null)
+    }
   }
 
   // Clock out. Pass `forceReason` (string) to bypass the verification gate —
@@ -2800,6 +2877,28 @@ export default function FieldScout() {
                           >
                             <Play size={20} />
                             {clockingIn ? 'Capturing location...' : 'Clock In to This Job'}
+                          </button>
+                        )}
+
+                        {/* Switch: clocked in elsewhere → one-tap move to this
+                            job. Closes the current punch + opens a new one
+                            (London's request — no separate clock-out/in dance). */}
+                        {activeEntry && activeEntry.job_id !== job.id && (
+                          <button
+                            onClick={() => handleSwitchJob(job.id)}
+                            disabled={clockingIn || clockingOut}
+                            style={{
+                              width: '100%', padding: '14px', minHeight: '50px',
+                              background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                              border: 'none', borderRadius: '12px', color: '#fff',
+                              fontSize: '15px', fontWeight: '700',
+                              cursor: (clockingIn || clockingOut) ? 'wait' : 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px'
+                            }}
+                            title="Ends your current punch and starts a new one on this job — your time on the previous job is saved."
+                          >
+                            <ArrowRight size={18} />
+                            {clockingIn ? 'Switching…' : 'Switch to This Job'}
                           </button>
                         )}
 
