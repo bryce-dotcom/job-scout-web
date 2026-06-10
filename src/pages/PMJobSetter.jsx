@@ -338,6 +338,18 @@ export default function PMJobSetter() {
   })
 
   const [isMobile, setIsMobile] = useState(false)
+  // Mobile accordion: which status lanes are expanded (by status id)
+  const [mobileExpandedStatuses, setMobileExpandedStatuses] = useState(
+    () => new Set(['Chillin', 'Scheduled', 'In Progress'])
+  )
+  const toggleMobileStatus = (statusId) => {
+    setMobileExpandedStatuses(prev => {
+      const next = new Set(prev)
+      if (next.has(statusId)) next.delete(statusId)
+      else next.add(statusId)
+      return next
+    })
+  }
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -2788,7 +2800,7 @@ export default function PMJobSetter() {
             </div>
           )}
 
-          {/* Kanban Columns */}
+          {/* Kanban Columns / Mobile Accordion */}
           {jobStatuses.length === 0 ? (
             <div style={{
               padding: '40px 20px',
@@ -2819,8 +2831,179 @@ export default function PMJobSetter() {
                 </button>
               )}
             </div>
+          ) : isMobile ? (
+
+            /* ── MOBILE: vertical accordion, one section per status ── */
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {jobStatuses.map(status => {
+                const StatusIcon = statusIcons[status.name] || Briefcase
+                const statusJobs = getJobsByStatus(status.id)
+                const isOpen = mobileExpandedStatuses.has(status.id)
+                return (
+                  <div
+                    key={status.id}
+                    style={{
+                      borderRadius: '12px',
+                      border: `1px solid ${status.color}28`,
+                      borderTop: `3px solid ${status.color}`,
+                      backgroundColor: isOpen ? `${status.color}07` : theme.bgCard,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {/* Accordion header — 48px touch target */}
+                    <div
+                      onClick={() => toggleMobileStatus(status.id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        padding: '10px 14px', cursor: 'pointer', minHeight: '48px',
+                        backgroundColor: isOpen ? `${status.color}0C` : 'transparent',
+                        borderBottom: isOpen ? `1px solid ${status.color}18` : 'none',
+                      }}
+                    >
+                      <div style={{
+                        width: '30px', height: '30px', borderRadius: '8px',
+                        backgroundColor: `${status.color}20`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                      }}>
+                        <StatusIcon size={15} style={{ color: status.color }} />
+                      </div>
+                      <span style={{ flex: 1, fontSize: '15px', fontWeight: '700', color: theme.text, letterSpacing: '-0.01em' }}>
+                        {status.name}
+                      </span>
+                      <span style={{
+                        backgroundColor: statusJobs.length > 0 ? status.color : theme.border,
+                        color: statusJobs.length > 0 ? '#fff' : theme.textMuted,
+                        padding: '2px 10px', borderRadius: '10px',
+                        fontSize: '12px', fontWeight: '700', flexShrink: 0
+                      }}>
+                        {statusJobs.length}
+                      </span>
+                      <ChevronDown size={18} style={{
+                        color: theme.textMuted, flexShrink: 0,
+                        transform: isOpen ? 'rotate(180deg)' : 'none',
+                        transition: 'transform 0.2s ease'
+                      }} />
+                    </div>
+
+                    {/* Accordion body */}
+                    {isOpen && (
+                      <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {statusJobs.length === 0 ? (
+                          <div style={{ textAlign: 'center', padding: '16px', color: `${status.color}70`, fontSize: '13px' }}>
+                            No {status.name.toLowerCase()} jobs
+                          </div>
+                        ) : statusJobs.map(job => {
+                          const progress = calculateJobProgress(job.id)
+                          const sections = getSectionsForJob(job.id)
+                          const isExpanded = expandedJobs[job.id]
+                          return (
+                            <div key={job.id}>
+                              <EntityCard
+                                name={job.customer?.name}
+                                businessName={job.customer?.business_name}
+                                style={{ padding: '0px', overflow: 'hidden' }}
+                              >
+                                <div
+                                  onClick={() => setDetailJob(job)}
+                                  onDoubleClick={() => navigate(`/jobs/${job.id}`)}
+                                  style={{
+                                    padding: '12px 14px 12px 12px',
+                                    cursor: 'pointer',
+                                    display: 'flex', alignItems: 'flex-start', gap: '8px',
+                                    borderLeft: `3px solid ${status.color}`,
+                                  }}
+                                >
+                                  <span
+                                    onClick={(e) => { e.stopPropagation(); toggleJobExpanded(job.id) }}
+                                    style={{ flexShrink: 0, marginTop: '2px', cursor: 'pointer', padding: '4px', margin: '-4px' }}
+                                  >
+                                    {isExpanded
+                                      ? <ChevronDown size={16} style={{ color: theme.textMuted }} />
+                                      : <ChevronRight size={16} style={{ color: theme.textMuted }} />}
+                                  </span>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '2px', lineHeight: '1.3' }}>
+                                      {job.customer?.name || `Job #${job.id}`}
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: progress > 0 ? '6px' : '0' }}>
+                                      {job.job_title}
+                                    </div>
+                                    {progress > 0 && (
+                                      <>
+                                        <div style={{ height: '4px', backgroundColor: theme.border, borderRadius: '3px', overflow: 'hidden', marginBottom: '5px' }}>
+                                          <div style={{ height: '100%', width: `${progress}%`, backgroundColor: progress === 100 ? '#22c55e' : status.color, borderRadius: '3px', transition: 'width 0.3s' }} />
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                          <span style={{ fontSize: '10px', fontWeight: '600', color: progress === 100 ? '#22c55e' : status.color, backgroundColor: progress === 100 ? 'rgba(34,197,94,0.1)' : `${status.color}14`, padding: '1px 6px', borderRadius: '6px' }}>
+                                            {Math.round(progress)}%
+                                          </span>
+                                          {job.pm?.name && (
+                                            <span style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', alignItems: 'center' }}>
+                                              <User size={10} style={{ marginRight: '3px' }} />{job.pm.name}
+                                            </span>
+                                          )}
+                                          {job.start_date && (
+                                            <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center' }}>
+                                              <Calendar size={10} style={{ marginRight: '3px' }} />{new Date(job.start_date).toLocaleDateString()}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </>
+                                    )}
+                                    {progress === 0 && (job.pm?.name || job.start_date) && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+                                        {job.pm?.name && (
+                                          <span style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', alignItems: 'center' }}>
+                                            <User size={10} style={{ marginRight: '3px' }} />{job.pm.name}
+                                          </span>
+                                        )}
+                                        {job.start_date && (
+                                          <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center' }}>
+                                            <Calendar size={10} style={{ marginRight: '3px' }} />{new Date(job.start_date).toLocaleDateString()}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                {isExpanded && (
+                                  <div style={{ borderTop: `1px solid ${theme.border}`, padding: '6px', backgroundColor: theme.bg }}>
+                                    {sections.length === 0 ? (
+                                      <div style={{ fontSize: '10px', color: theme.textMuted, textAlign: 'center', padding: '8px' }}>No sections yet</div>
+                                    ) : sections.map(section => {
+                                      const statusColor = getSectionStatusColor(section.status)
+                                      return (
+                                        <div key={section.id} style={{ backgroundColor: theme.bgCard, borderRadius: '6px', padding: '8px 10px', marginBottom: '4px', border: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                          <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontSize: '12px', fontWeight: '500', color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{section.name}</div>
+                                            <div style={{ fontSize: '11px', color: theme.textMuted }}>{section.percent_of_job || 0}%{section.assigned_employee?.name && ` · ${section.assigned_employee.name}`}</div>
+                                          </div>
+                                          <select value={section.status} onChange={(e) => { e.stopPropagation(); updateSectionStatus(section.id, e.target.value) }} onClick={(e) => e.stopPropagation()} style={{ padding: '3px 6px', fontSize: '10px', borderRadius: '4px', border: 'none', backgroundColor: statusColor.bg, color: statusColor.text, cursor: 'pointer', fontWeight: '500' }}>
+                                            {sectionStatuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                          </select>
+                                        </div>
+                                      )
+                                    })}
+                                    <button onClick={() => { setSelectedJob(job); setShowSectionModal(true) }} style={{ width: '100%', padding: '8px', backgroundColor: 'transparent', border: `1px dashed ${theme.border}`, borderRadius: '4px', color: theme.textMuted, cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', minHeight: '36px' }}>
+                                      <Plus size={11} /> Add Section
+                                    </button>
+                                  </div>
+                                )}
+                              </EntityCard>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
           ) : (
-            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', overflowY: 'hidden', maxHeight: isMobile ? 'none' : '520px', minHeight: '200px', paddingBottom: '4px' }}>
+
+            /* ── DESKTOP: horizontal scrolling kanban lanes ── */
+            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', overflowY: 'hidden', maxHeight: '520px', minHeight: '200px', paddingBottom: '4px' }}>
               {jobStatuses.map(status => {
                 const StatusIcon = statusIcons[status.name] || Briefcase
                 return (
@@ -2845,253 +3028,74 @@ export default function PMJobSetter() {
                       padding: '10px 12px 8px',
                       backgroundColor: `${status.color}0D`,
                       borderBottom: `1px solid ${status.color}18`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '7px'
+                      display: 'flex', alignItems: 'center', gap: '7px'
                     }}>
-                      <div style={{
-                        width: '24px', height: '24px', borderRadius: '7px',
-                        backgroundColor: `${status.color}22`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                      }}>
+                      <div style={{ width: '24px', height: '24px', borderRadius: '7px', backgroundColor: `${status.color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <StatusIcon size={13} style={{ color: status.color }} />
                       </div>
                       <span style={{ fontSize: '13px', fontWeight: '700', color: theme.text, flex: 1, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {status.name}
                       </span>
-                      <span style={{
-                        backgroundColor: status.color,
-                        color: '#fff',
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        flexShrink: 0
-                      }}>
+                      <span style={{ backgroundColor: status.color, color: '#fff', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '700', flexShrink: 0 }}>
                         {getJobsByStatus(status.id).length}
                       </span>
                     </div>
 
                     {/* Status Content */}
-                    <div style={{
-                      flex: 1,
-                      backgroundColor: dragOverStatus === status.id ? theme.accentBg : 'transparent',
-                      padding: '6px',
-                      overflowY: 'auto',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px'
-                    }}>
+                    <div style={{ flex: 1, backgroundColor: dragOverStatus === status.id ? theme.accentBg : 'transparent', padding: '6px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {getJobsByStatus(status.id).map(job => {
                         const progress = calculateJobProgress(job.id)
                         const sections = getSectionsForJob(job.id)
                         const isExpanded = expandedJobs[job.id]
-                        const calendar = getCalendarForJob(job)
 
                         return (
-                          <div
-                            key={job.id}
-                            draggable
-                            onDragStart={(e) => handleJobDragStart(e, job)}
-                            onDragEnd={handleDragEnd}
-                          >
-                            {/* Job Card */}
-                            <EntityCard
-                              name={job.customer?.name}
-                              businessName={job.customer?.business_name}
-                              style={{ padding: '0px', overflow: 'hidden', cursor: 'grab' }}
-                            >
-                              {/* Job Header — click anywhere on the card opens
-                                  the side detail panel (same one the calendar
-                                  uses; has Reschedule + Full View). The
-                                  chevron is the dedicated expand-sections
-                                  toggle so the two gestures don't conflict. */}
-                              <div
-                                onClick={() => setDetailJob(job)}
-                                onDoubleClick={() => navigate(`/jobs/${job.id}`)}
-                                style={{
-                                  padding: '10px 12px 10px 10px',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'flex-start',
-                                  gap: '8px',
-                                  borderLeft: `3px solid ${status.color}`,
-                                }}
-                              >
-                                <span
-                                  onClick={(e) => { e.stopPropagation(); toggleJobExpanded(job.id) }}
-                                  title={isExpanded ? 'Collapse sections' : 'Expand sections'}
-                                  style={{ flexShrink: 0, marginTop: '2px', cursor: 'pointer', padding: '2px', margin: '-2px' }}
-                                >
-                                  {isExpanded ? (
-                                    <ChevronDown size={16} style={{ color: theme.textMuted }} />
-                                  ) : (
-                                    <ChevronRight size={16} style={{ color: theme.textMuted }} />
-                                  )}
+                          <div key={job.id} draggable onDragStart={(e) => handleJobDragStart(e, job)} onDragEnd={handleDragEnd}>
+                            <EntityCard name={job.customer?.name} businessName={job.customer?.business_name} style={{ padding: '0px', overflow: 'hidden', cursor: 'grab' }}>
+                              <div onClick={() => setDetailJob(job)} onDoubleClick={() => navigate(`/jobs/${job.id}`)} style={{ padding: '10px 12px 10px 10px', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: '8px', borderLeft: `3px solid ${status.color}` }}>
+                                <span onClick={(e) => { e.stopPropagation(); toggleJobExpanded(job.id) }} title={isExpanded ? 'Collapse sections' : 'Expand sections'} style={{ flexShrink: 0, marginTop: '2px', cursor: 'pointer', padding: '2px', margin: '-2px' }}>
+                                  {isExpanded ? <ChevronDown size={16} style={{ color: theme.textMuted }} /> : <ChevronRight size={16} style={{ color: theme.textMuted }} />}
                                 </span>
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{
-                                    fontSize: '14px',
-                                    fontWeight: '700',
-                                    color: theme.text,
-                                    marginBottom: '3px',
-                                    lineHeight: '1.3',
-                                    display: '-webkit-box',
-                                    WebkitLineClamp: 2,
-                                    WebkitBoxOrient: 'vertical',
-                                    overflow: 'hidden'
-                                  }}>
+                                  <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '3px', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                     {job.customer?.name || `Job #${job.id}`}
                                   </div>
-                                  <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '6px' }}>
-                                    {job.job_title}
-                                  </div>
-
-                                  {/* Progress Bar — only shown when work has started */}
+                                  <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '6px' }}>{job.job_title}</div>
                                   {progress > 0 && (
-                                    <div style={{
-                                      height: '4px',
-                                      backgroundColor: theme.border,
-                                      borderRadius: '3px',
-                                      overflow: 'hidden',
-                                      marginBottom: '5px'
-                                    }}>
-                                      <div style={{
-                                        height: '100%',
-                                        width: `${progress}%`,
-                                        backgroundColor: progress === 100 ? '#22c55e' : status.color,
-                                        borderRadius: '3px',
-                                        transition: 'width 0.3s'
-                                      }} />
+                                    <div style={{ height: '4px', backgroundColor: theme.border, borderRadius: '3px', overflow: 'hidden', marginBottom: '5px' }}>
+                                      <div style={{ height: '100%', width: `${progress}%`, backgroundColor: progress === 100 ? '#22c55e' : status.color, borderRadius: '3px', transition: 'width 0.3s' }} />
                                     </div>
                                   )}
-
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                     {progress > 0 && (
-                                      <span style={{
-                                        fontSize: '10px', fontWeight: '600',
-                                        color: progress === 100 ? '#22c55e' : status.color,
-                                        backgroundColor: progress === 100 ? 'rgba(34,197,94,0.1)' : `${status.color}14`,
-                                        padding: '1px 6px', borderRadius: '6px'
-                                      }}>
+                                      <span style={{ fontSize: '10px', fontWeight: '600', color: progress === 100 ? '#22c55e' : status.color, backgroundColor: progress === 100 ? 'rgba(34,197,94,0.1)' : `${status.color}14`, padding: '1px 6px', borderRadius: '6px' }}>
                                         {Math.round(progress)}%
                                       </span>
                                     )}
-                                    {job.pm?.name && (
-                                      <span style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', alignItems: 'center' }}>
-                                        <User size={10} style={{ marginRight: '3px' }} />
-                                        {job.pm.name}
-                                      </span>
-                                    )}
-                                    {job.start_date && (
-                                      <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center' }}>
-                                        <Calendar size={10} style={{ marginRight: '3px' }} />
-                                        {new Date(job.start_date).toLocaleDateString()}
-                                      </span>
-                                    )}
+                                    {job.pm?.name && <span style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', alignItems: 'center' }}><User size={10} style={{ marginRight: '3px' }} />{job.pm.name}</span>}
+                                    {job.start_date && <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center' }}><Calendar size={10} style={{ marginRight: '3px' }} />{new Date(job.start_date).toLocaleDateString()}</span>}
                                   </div>
                                 </div>
                               </div>
-
-                              {/* Expanded Sections */}
                               {isExpanded && (
-                                <div style={{
-                                  borderTop: `1px solid ${theme.border}`,
-                                  padding: '6px',
-                                  backgroundColor: theme.bg
-                                }}>
+                                <div style={{ borderTop: `1px solid ${theme.border}`, padding: '6px', backgroundColor: theme.bg }}>
                                   {sections.length === 0 ? (
-                                    <div style={{ fontSize: '10px', color: theme.textMuted, textAlign: 'center', padding: '8px' }}>
-                                      No sections yet
-                                    </div>
-                                  ) : (
-                                    sections.map(section => {
-                                      const statusColor = getSectionStatusColor(section.status)
-                                      return (
-                                        <div
-                                          key={section.id}
-                                          draggable
-                                          onDragStart={(e) => handleSectionDragStart(e, section, job)}
-                                          onDragEnd={handleDragEnd}
-                                          style={{
-                                            backgroundColor: theme.bgCard,
-                                            borderRadius: '6px',
-                                            padding: '8px 10px',
-                                            marginBottom: '4px',
-                                            border: `1px solid ${theme.border}`,
-                                            cursor: 'grab',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px'
-                                          }}
-                                        >
-                                          <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{
-                                              fontSize: '12px',
-                                              fontWeight: '500',
-                                              color: theme.text,
-                                              whiteSpace: 'nowrap',
-                                              overflow: 'hidden',
-                                              textOverflow: 'ellipsis'
-                                            }}>
-                                              {section.name}
-                                            </div>
-                                            <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                                              {section.percent_of_job || 0}%
-                                              {section.assigned_employee?.name && ` · ${section.assigned_employee.name}`}
-                                            </div>
-                                          </div>
-                                          <select
-                                            value={section.status}
-                                            onChange={(e) => {
-                                              e.stopPropagation()
-                                              updateSectionStatus(section.id, e.target.value)
-                                            }}
-                                            onClick={(e) => e.stopPropagation()}
-                                            style={{
-                                              padding: '3px 6px',
-                                              fontSize: '10px',
-                                              borderRadius: '4px',
-                                              border: 'none',
-                                              backgroundColor: statusColor.bg,
-                                              color: statusColor.text,
-                                              cursor: 'pointer',
-                                              fontWeight: '500'
-                                            }}
-                                          >
-                                            {sectionStatuses.map(s => (
-                                              <option key={s.id} value={s.id}>{s.name}</option>
-                                            ))}
-                                          </select>
+                                    <div style={{ fontSize: '10px', color: theme.textMuted, textAlign: 'center', padding: '8px' }}>No sections yet</div>
+                                  ) : sections.map(section => {
+                                    const statusColor = getSectionStatusColor(section.status)
+                                    return (
+                                      <div key={section.id} draggable onDragStart={(e) => handleSectionDragStart(e, section, job)} onDragEnd={handleDragEnd} style={{ backgroundColor: theme.bgCard, borderRadius: '6px', padding: '8px 10px', marginBottom: '4px', border: `1px solid ${theme.border}`, cursor: 'grab', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ fontSize: '12px', fontWeight: '500', color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{section.name}</div>
+                                          <div style={{ fontSize: '11px', color: theme.textMuted }}>{section.percent_of_job || 0}%{section.assigned_employee?.name && ` · ${section.assigned_employee.name}`}</div>
                                         </div>
-                                      )
-                                    })
-                                  )}
-
-                                  {/* Add Section Button */}
-                                  <button
-                                    onClick={() => {
-                                      setSelectedJob(job)
-                                      setShowSectionModal(true)
-                                    }}
-                                    style={{
-                                      width: '100%',
-                                      padding: '6px',
-                                      backgroundColor: 'transparent',
-                                      border: `1px dashed ${theme.border}`,
-                                      borderRadius: '4px',
-                                      color: theme.textMuted,
-                                      cursor: 'pointer',
-                                      fontSize: '10px',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      gap: '4px',
-                                      minHeight: '28px'
-                                    }}
-                                  >
-                                    <Plus size={10} />
-                                    Add Section
+                                        <select value={section.status} onChange={(e) => { e.stopPropagation(); updateSectionStatus(section.id, e.target.value) }} onClick={(e) => e.stopPropagation()} style={{ padding: '3px 6px', fontSize: '10px', borderRadius: '4px', border: 'none', backgroundColor: statusColor.bg, color: statusColor.text, cursor: 'pointer', fontWeight: '500' }}>
+                                          {sectionStatuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                        </select>
+                                      </div>
+                                    )
+                                  })}
+                                  <button onClick={() => { setSelectedJob(job); setShowSectionModal(true) }} style={{ width: '100%', padding: '6px', backgroundColor: 'transparent', border: `1px dashed ${theme.border}`, borderRadius: '4px', color: theme.textMuted, cursor: 'pointer', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', minHeight: '28px' }}>
+                                    <Plus size={10} /> Add Section
                                   </button>
                                 </div>
                               )}
