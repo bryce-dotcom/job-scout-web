@@ -772,26 +772,69 @@ export default function CustomerDetail() {
     doc.setTextColor(balance > 0 ? 220 : 34, balance > 0 ? 50 : 160, balance > 0 ? 50 : 60)
     doc.text(currency(balance), rightEdge, y, { align: 'right' })
 
-    // Open in new tab — navigate the pre-opened window if we have one
-    // (popup-blocker workaround). Fall back to a fresh window.open if
-    // the pre-open was blocked entirely.
-    const blob = doc.output('blob')
-    const url = URL.createObjectURL(blob)
+    // Output + delivery — Tracy reported the new-tab open was leaving a
+    // blank window in some browsers (Chrome 124+ tightened blob-URL nav
+    // across a synchronously-opened about:blank). Belt-and-suspenders:
+    //   1) ALWAYS trigger a download so the file ends up on disk no
+    //      matter what
+    //   2) Also try to view in the pre-opened tab; close it if it's still
+    //      sitting on about:blank
+    //   3) If we end up downloading without a viewer, let the user know
+    let blob, url
+    try {
+      blob = doc.output('blob')
+      url = URL.createObjectURL(blob)
+    } catch (e) {
+      if (pdfWindow && !pdfWindow.closed) { try { pdfWindow.close() } catch { /* swallow */ } }
+      alert('Statement PDF generation failed: ' + (e?.message || 'unknown error') + '\n\nIf this keeps happening, send a screenshot to support and we will look into it.')
+      return
+    }
+
+    const filename = `statement-${(customer.business_name || customer.name || 'customer').replace(/[^a-z0-9]+/gi, '-')}.pdf`
+    // Always trigger download first — most reliable path
+    try {
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } catch { /* download fallback errors are non-fatal */ }
+
+    // Best-effort view-in-tab. If we pre-opened a window, navigate it;
+    // if the navigation works, great — if not, close the empty tab so
+    // the user isn't left staring at about:blank.
+    let viewerOpened = false
     if (pdfWindow && !pdfWindow.closed) {
-      try { pdfWindow.location.href = url } catch { window.open(url, '_blank') }
-    } else {
-      const opened = window.open(url, '_blank')
-      if (!opened) {
-        // Popup blocked — fall back to triggering a download so the user
-        // at least gets the PDF.
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `statement-${(customer.business_name || customer.name || 'customer').replace(/[^a-z0-9]+/gi, '-')}.pdf`
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-        alert('Statement downloaded — your browser blocked opening it in a new tab.')
+      try {
+        pdfWindow.location.href = url
+        viewerOpened = true
+        // Some browsers leave the tab at about:blank even after assignment
+        // succeeds. Schedule a sanity check; if we're still on about:blank
+        // after ~1.5s, close the tab so the download is the obvious path.
+        setTimeout(() => {
+          try {
+            if (pdfWindow.location.href === 'about:blank') {
+              pdfWindow.close()
+            }
+          } catch { /* cross-origin after navigation = success */ }
+        }, 1500)
+      } catch {
+        try { pdfWindow.close() } catch { /* swallow */ }
       }
+    } else {
+      // No pre-opened window — try a fresh one. If it fails the
+      // download already handled the user.
+      try { const w = window.open(url, '_blank'); if (w) viewerOpened = true } catch { /* swallow */ }
+    }
+
+    // Free the blob URL after a delay so the tab can finish loading it
+    setTimeout(() => { try { URL.revokeObjectURL(url) } catch { /* swallow */ } }, 60000)
+
+    if (!viewerOpened) {
+      // Soft notice — download definitely went; just no tab.
+      const { toast } = await import('../lib/toast')
+      try { toast.success(`Statement downloaded — ${filename}`) } catch { /* swallow */ }
     }
   }
 

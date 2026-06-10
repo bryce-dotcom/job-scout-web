@@ -1010,7 +1010,10 @@ export default function InvoiceDetail() {
     doc.setFont('helvetica', 'normal')
     let iy = 30
     doc.text(`Invoice #: ${invoice.invoice_id || ''}`, rightEdge, iy, { align: 'right' }); iy += 5
-    doc.text(`Date: ${formatDate(invoice.created_at)}`, rightEdge, iy, { align: 'right' }); iy += 5
+    // Honor the user's invoice_date override when set, otherwise default to
+    // created_at. Lets staff back-date a regenerated invoice to the actual
+    // work date when the customer expects that on the document.
+    doc.text(`Date: ${formatDate(invoice.invoice_date || invoice.created_at)}`, rightEdge, iy, { align: 'right' }); iy += 5
     if (invoice.due_date) {
       doc.text(`Due Date: ${formatDate(invoice.due_date)}`, rightEdge, iy, { align: 'right' })
     }
@@ -1784,6 +1787,51 @@ export default function InvoiceDetail() {
           <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
             {invoice.customer?.business_name || invoice.customer?.name || 'Invoice'}
           </h1>
+          {/* Editable invoice date + due date. Invoice date defaults to
+              created_at when blank (no override). Tracy needs to back-date
+              regenerated invoices to the actual work date and shorten or
+              extend terms on a per-invoice basis. */}
+          <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginTop: '8px' }}>
+            <label style={{ fontSize: '11px', color: theme.textMuted, fontWeight: 600 }}>
+              <span style={{ display: 'block', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Invoice date</span>
+              <input
+                type="date"
+                value={(invoice.invoice_date || invoice.created_at || '').slice(0, 10)}
+                disabled={invoice.is_locked}
+                onChange={async (e) => {
+                  const val = e.target.value || null
+                  // Local optimistic update so the input doesn't flicker
+                  setInvoice(prev => ({ ...prev, invoice_date: val }))
+                  await supabase.from('invoices').update({ invoice_date: val }).eq('id', invoice.id)
+                }}
+                style={{
+                  padding: '4px 8px', fontSize: 12, fontWeight: 500,
+                  color: theme.text, backgroundColor: theme.bgCard,
+                  border: `1px solid ${theme.border}`, borderRadius: 6,
+                  outline: 'none', cursor: invoice.is_locked ? 'not-allowed' : 'text',
+                }}
+              />
+            </label>
+            <label style={{ fontSize: '11px', color: theme.textMuted, fontWeight: 600 }}>
+              <span style={{ display: 'block', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Due date</span>
+              <input
+                type="date"
+                value={(invoice.due_date || '').slice(0, 10)}
+                disabled={invoice.is_locked}
+                onChange={async (e) => {
+                  const val = e.target.value || null
+                  setInvoice(prev => ({ ...prev, due_date: val }))
+                  await supabase.from('invoices').update({ due_date: val }).eq('id', invoice.id)
+                }}
+                style={{
+                  padding: '4px 8px', fontSize: 12, fontWeight: 500,
+                  color: theme.text, backgroundColor: theme.bgCard,
+                  border: `1px solid ${theme.border}`, borderRadius: 6,
+                  outline: 'none', cursor: invoice.is_locked ? 'not-allowed' : 'text',
+                }}
+              />
+            </label>
+          </div>
         </div>
         <span style={{
           padding: '6px 14px',

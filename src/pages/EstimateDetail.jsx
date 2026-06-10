@@ -4191,29 +4191,36 @@ function EstimateDetailInner() {
                 </div>
               )}
 
-              {/* Status Actions */}
+              {/* Status Actions — for the rare path where the estimate
+                  was delivered out-of-band (fax/mail/in-person) and the
+                  user just needs to flip status without emailing.
+                  Renamed from "Mark as Sent" → "Mark as Sent (no email)"
+                  because Christopher reported clicking it thinking it
+                  would actually email — the email path is the "Send
+                  Proposal" button above. */}
               {estimate.status === 'Draft' && (
                 <button
                   onClick={sendEstimate}
                   disabled={saving}
+                  title="Just flips the status to Sent. Does NOT email the customer. Use the green Send Proposal button above to actually send by email."
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '8px',
                     padding: '12px 16px',
-                    backgroundColor: theme.accent,
-                    color: '#ffffff',
-                    border: 'none',
+                    backgroundColor: 'transparent',
+                    color: theme.textSecondary,
+                    border: `1px solid ${theme.border}`,
                     borderRadius: '8px',
-                    fontSize: '14px',
+                    fontSize: '13px',
                     fontWeight: '500',
                     cursor: saving ? 'not-allowed' : 'pointer',
                     opacity: saving ? 0.6 : 1
                   }}
                 >
-                  <Send size={18} />
-                  Mark as Sent
+                  <CheckCircle size={16} />
+                  Mark as Sent (no email)
                 </button>
               )}
 
