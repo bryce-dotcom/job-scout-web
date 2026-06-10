@@ -24,15 +24,28 @@
 // field ('open' | 'delivered'). This helper resolves that config at call
 // time so custom pipelines work automatically.
 
-/** Pull the set of delivered status IDs from a company's job_statuses config. */
+// Standard delivered-status names, used as a fallback when a company has
+// never flagged category='delivered' on any of its job statuses. Without
+// this, every "Jobs Completed" / "Job Revenue" metric reads ZERO for that
+// tenant forever (HHH ran that way for months — the EOS scorecard showed 0
+// completed jobs while 18/week were actually delivering).
+const DEFAULT_DELIVERED_NAMES = [
+  'Completed', 'Job Complete', 'Verified Complete', 'Post Inspection (Req)',
+  'Invoiced', 'Paid', 'Closed', 'Done',
+]
+
+/** Pull the set of delivered status IDs from a company's job_statuses config.
+ *  Falls back to standard status names when no category flags are configured. */
 export function getDeliveredStatusIds(jobStatuses) {
-  if (!Array.isArray(jobStatuses)) return new Set()
-  return new Set(
+  if (!Array.isArray(jobStatuses)) return new Set(DEFAULT_DELIVERED_NAMES)
+  const configured = new Set(
     jobStatuses
       .filter(s => s && s.category === 'delivered')
       .map(s => s.id || s.name)
       .filter(Boolean)
   )
+  if (configured.size > 0) return configured
+  return new Set(DEFAULT_DELIVERED_NAMES)
 }
 
 /** Inverse — every status that is NOT delivered. Used for "open work" tallies. */

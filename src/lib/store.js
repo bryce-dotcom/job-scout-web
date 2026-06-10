@@ -731,17 +731,30 @@ export const useStore = create(
         const cached = await offlineDb.getAll('payments');
         if (cached.length > 0 && get().payments.length === 0) set({ payments: cached });
 
-        // Network refresh
+        // Network refresh — paginate like fetchInvoices. Supabase caps a
+        // single request at 1000 rows, and HHH already has 5,799 payments;
+        // without the loop the store silently held only the newest 1000,
+        // which undercounted every historical metric (EOS 13-week trend,
+        // Books history) that reads payments.
         try {
-          const { data, error } = await supabase
-            .from(TABLES.payments)
-            .select(QUERIES.payments)
-            .eq('company_id', companyId)
-            .order('date', { ascending: false });
-
-          if (!error) {
-            set({ payments: data || [] });
-            await offlineDb.putAll('payments', data || []);
+          let allData = [];
+          let from = 0;
+          const PAGE = 1000;
+          while (true) {
+            const { data, error } = await supabase
+              .from(TABLES.payments)
+              .select(QUERIES.payments)
+              .eq('company_id', companyId)
+              .order('date', { ascending: false })
+              .range(from, from + PAGE - 1);
+            if (error) break;
+            allData = allData.concat(data || []);
+            if (!data || data.length < PAGE) break;
+            from += PAGE;
+          }
+          if (allData.length > 0) {
+            set({ payments: allData });
+            await offlineDb.putAll('payments', allData);
           }
         } catch (e) {
           console.log('[fetchPayments] Offline, using cache');

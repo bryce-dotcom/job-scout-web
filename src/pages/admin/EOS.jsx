@@ -219,7 +219,12 @@ const AUTO_SOURCES = {
 function computeAutoValue(sourceKey, storeData, entity) {
   const src = AUTO_SOURCES[sourceKey]
   if (!src) return null
-  const week = getWeekRange(0)
+  // EOS convention: the scorecard reviews the most recently COMPLETED
+  // week (Mon–Sun). Using the current partial week meant a Monday-morning
+  // L10 read ~zero on every metric — the window was 2 hours old. The
+  // headline number is now last week; the comparison column is the week
+  // before that.
+  const week = getWeekRange(1)
   return src.compute(storeData, week.start, week.end, week.startDate, week.endDate, entity || null)
 }
 
@@ -851,9 +856,11 @@ function ScorecardTab({ data, save, theme, employees, storeData, entities, isMob
     return cur >= goal ? '#22c55e' : cur >= goal * 0.9 ? '#f59e0b' : '#ef4444'
   }
 
+  // Comparison column: the week BEFORE the reviewed week. (Headline column
+  // is the last completed week via computeAutoValue → getWeekRange(1).)
   const getLastWeek = (m) => {
     if (m.source && m.source !== 'manual' && AUTO_SOURCES[m.source]) {
-      const week = getWeekRange(1)
+      const week = getWeekRange(2)
       const src = AUTO_SOURCES[m.source]
       return src.compute(storeData, week.start, week.end, week.startDate, week.endDate, m.entity || null)
     }
@@ -863,14 +870,14 @@ function ScorecardTab({ data, save, theme, employees, storeData, entities, isMob
   return (
     <div>
       <Card theme={theme} style={{ marginBottom: '20px' }}>
-        <SectionHeader icon={BarChart3} title="Weekly Scorecard" subtitle="Track 5-15 activity metrics every week" color="#3b82f6" theme={theme} help="The Scorecard is a weekly pulse on your business — 5 to 15 numbers that tell you if you're on track. Each metric has an owner and a goal. Review these every week in your L10 meeting to catch problems early before they become crises. Use 'auto-sourced' metrics to pull data directly from your system."
+        <SectionHeader icon={BarChart3} title="Weekly Scorecard" subtitle="Track 5-15 activity metrics every week" color="#3b82f6" theme={theme} help="The Scorecard is a weekly pulse on your business — 5 to 15 numbers that tell you if you're on track. Each metric has an owner and a goal. Numbers show the most recently COMPLETED week (Mon–Sun) — the week you grade in your L10 meeting — compared against the week before it. The current in-progress week is never the headline; a half-finished week can't be graded against a weekly goal."
           action={!adding && <SmallBtn onClick={() => setAdding(true)} color="#3b82f6" theme={theme}><Plus size={12} /> Metric</SmallBtn>} />
 
         <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
           <div style={{ minWidth: isMobile ? '600px' : 'auto' }}>
             {scorecard.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 80px 90px 90px 40px', gap: '8px', padding: '8px 12px', fontSize: '10px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                <span>Metric</span><span>Owner</span><span>Goal</span><span>This Week</span><span>Last Week</span><span></span>
+                <span>Metric</span><span>Owner</span><span>Goal</span><span>Wk of {getWeekRange(1).label}</span><span>Wk of {getWeekRange(2).label}</span><span></span>
               </div>
             )}
 
@@ -1378,9 +1385,11 @@ function L10Tab({ data, save, theme, employees, storeData, entities, isMobile })
   const getMetricValues = (m) => {
     const isAuto = m.source && m.source !== 'manual' && AUTO_SOURCES[m.source]
     const ent = m.entity || null
+    // thisWeek = last COMPLETED week (computeAutoValue → getWeekRange(1));
+    // lastWeek = the week before that. The meeting grades a finished week.
     const thisWeek = isAuto ? computeAutoValue(m.source, storeData, ent) : parseFloat(m.current) || 0
     if (isAuto) {
-      const lw = getWeekRange(1)
+      const lw = getWeekRange(2)
       const src = AUTO_SOURCES[m.source]
       const lastWeek = src.compute(storeData, lw.start, lw.end, lw.startDate, lw.endDate, ent)
       return { thisWeek, lastWeek, format: src.format }
@@ -1455,14 +1464,14 @@ function L10Tab({ data, save, theme, employees, storeData, entities, isMobile })
 
         {/* 2. Scorecard */}
         <Card theme={theme}>
-          <SectionHeader icon={BarChart3} title="Scorecard" subtitle="5 min — are we hitting our numbers?" color="#3b82f6" theme={theme} help="Quick review of this week's numbers vs last week. Don't discuss — just report. If a number is off track, drop it down to the Issues List to IDS later." />
+          <SectionHeader icon={BarChart3} title="Scorecard" subtitle="5 min — are we hitting our numbers?" color="#3b82f6" theme={theme} help="Reviews the most recently COMPLETED week (Mon–Sun) vs the week before it — a finished week is the only one you can grade against a weekly goal. Don't discuss — just report. If a number is off track, drop it down to the Issues List to IDS later." />
           {Object.entries(groupedMetrics).map(([ownerName, metrics]) => (
             <div key={ownerName} style={{ marginBottom: '14px' }}>
               <div style={{ fontSize: '12px', fontWeight: '700', color: theme.accent, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{ownerName}</div>
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 70px 70px' : '2fr 80px 80px', gap: '4px' }}>
                 <div style={{ fontSize: '9px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', padding: '0 8px' }}>Metric</div>
-                <div style={{ fontSize: '9px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'center' }}>This Wk</div>
-                <div style={{ fontSize: '9px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'center' }}>Last Wk</div>
+                <div style={{ fontSize: '9px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'center' }}>Wk {getWeekRange(1).label}</div>
+                <div style={{ fontSize: '9px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'center' }}>Wk {getWeekRange(2).label}</div>
                 {metrics.map(m => {
                   const vals = getMetricValues(m)
                   const goal = parseFloat(m.goal)
@@ -1670,10 +1679,12 @@ function DashboardTab({ data, theme, employees, storeData, entities, isMobile })
   const scorecard = data.scorecard || []
   const [dashEntity, setDashEntity] = useState('')
 
-  // Compute 13-week history for each auto-sourced metric
+  // Compute 13-week history for each auto-sourced metric. Ends at the
+  // last COMPLETED week — including the current partial week made the
+  // newest bar look like a cliff every Monday.
   const weeklyData = useMemo(() => {
     const weeks = []
-    for (let i = 12; i >= 0; i--) weeks.push(getWeekRange(i))
+    for (let i = 13; i >= 1; i--) weeks.push(getWeekRange(i))
 
     return scorecard.map(m => {
       const isAuto = m.source && m.source !== 'manual' && AUTO_SOURCES[m.source]
