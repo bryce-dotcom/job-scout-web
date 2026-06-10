@@ -554,6 +554,8 @@ export default function Jobs() {
   const [newJobLines, setNewJobLines] = useState([])
   const [newLineDraft, setNewLineDraft] = useState({ item_id: '', quantity: 1 })
   const [viewMode, setViewMode] = useState('board')
+  const [historyYear, setHistoryYear] = useState(null)
+  const [historyMonth, setHistoryMonth] = useState(null)
   const [isMobile, setIsMobile] = useState(false)
   const [calendarMonth, setCalendarMonth] = useState(() => new Date())
   const [showMap, setShowMap] = useState(false)
@@ -714,6 +716,16 @@ export default function Jobs() {
   // Get unique teams for filter
   const teams = [...new Set(jobs.map(j => j.assigned_team).filter(Boolean))]
 
+  // Years present in the job dataset — drives history pills in list view
+  const availableYears = [...new Set(
+    jobs.flatMap(j =>
+      [j.start_date, j.completed_at, j.created_at]
+        .filter(Boolean)
+        .map(d => new Date(d).getFullYear())
+        .filter(y => y >= 2020 && y <= new Date().getFullYear())
+    )
+  )].sort((a, b) => b - a)
+
   // Recent wins: completed jobs from last 30 days, sorted most recent first
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -733,12 +745,20 @@ export default function Jobs() {
       job.business_name?.toLowerCase().includes(term) ||
       job.notes?.toLowerCase().includes(term)
 
-    // When searching, show results from ALL statuses so you can find completed jobs
-    const matchesStatus = searchTerm
-      ? true
-      : statusFilter === 'all' ? true
-      : statusFilter === 'active' ? !['Completed', 'Cancelled', 'Archived'].includes(job.status)
-      : job.status === statusFilter
+    // History mode: show all non-archived statuses filtered by year/month
+    // Search mode: show all statuses so completed jobs surface
+    // Active mode: use statusFilter dropdown
+    let matchesStatus
+    if (historyYear !== null) {
+      matchesStatus = job.status !== 'Archived'
+    } else if (searchTerm) {
+      matchesStatus = true
+    } else {
+      matchesStatus = statusFilter === 'all' ? true
+        : statusFilter === 'active' ? !['Completed', 'Cancelled', 'Archived'].includes(job.status)
+        : job.status === statusFilter
+    }
+
     const matchesTeam = teamFilter === 'all' || job.assigned_team === teamFilter
     const matchesBU = buFilter === 'all' || job.business_unit === buFilter
     const matchesService = serviceFilter === 'all'
@@ -747,7 +767,20 @@ export default function Jobs() {
         ? !job.parent_job_id
         : !!job.parent_job_id
 
-    return matchesSearch && matchesStatus && matchesTeam && matchesBU && matchesService
+    if (!matchesSearch || !matchesStatus || !matchesTeam || !matchesBU || !matchesService) return false
+
+    // Year/month filter: any of start_date, completed_at, updated_at, created_at must fall in window
+    if (historyYear !== null) {
+      const dates = [job.start_date, job.completed_at, job.updated_at, job.created_at].filter(Boolean)
+      return dates.some(d => {
+        const date = new Date(d)
+        if (date.getFullYear() !== historyYear) return false
+        if (historyMonth !== null && date.getMonth() + 1 !== historyMonth) return false
+        return true
+      })
+    }
+
+    return true
   })
 
   // Lookups for service-visit display on cards: parent header (for child
@@ -1419,6 +1452,32 @@ export default function Jobs() {
           />
         </div>
         {viewMode === 'list' && (
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              onClick={() => { setHistoryYear(null); setHistoryMonth(null) }}
+              style={{
+                padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
+                backgroundColor: historyYear === null ? theme.accent : 'transparent',
+                color: historyYear === null ? '#fff' : theme.textMuted,
+                fontSize: '13px', fontWeight: '500',
+                border: `1px solid ${historyYear === null ? theme.accent : theme.border}`
+              }}
+            >Active</button>
+            {availableYears.map(year => (
+              <button key={year}
+                onClick={() => { setHistoryYear(year); setHistoryMonth(null) }}
+                style={{
+                  padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
+                  backgroundColor: historyYear === year ? theme.accent : 'transparent',
+                  color: historyYear === year ? '#fff' : theme.textMuted,
+                  fontSize: '13px', fontWeight: '500',
+                  border: `1px solid ${historyYear === year ? theme.accent : theme.border}`
+                }}
+              >{year}</button>
+            ))}
+          </div>
+        )}
+        {viewMode === 'list' && historyYear === null && (
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -1432,6 +1491,26 @@ export default function Jobs() {
             <option value="On Hold">On Hold</option>
             <option value="Cancelled">Cancelled</option>
           </select>
+        )}
+        {viewMode === 'list' && historyYear !== null && (
+          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', width: '100%' }}>
+            {['All', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((m, i) => {
+              const monthNum = i === 0 ? null : i
+              const isActive = historyMonth === monthNum
+              return (
+                <button key={m}
+                  onClick={() => setHistoryMonth(monthNum)}
+                  style={{
+                    padding: '6px 10px', borderRadius: '7px', cursor: 'pointer',
+                    backgroundColor: isActive ? theme.accentBg : 'transparent',
+                    color: isActive ? theme.accent : theme.textMuted,
+                    fontSize: '12px', fontWeight: isActive ? '600' : '400',
+                    border: `1px solid ${isActive ? theme.accent : theme.border}`
+                  }}
+                >{m}</button>
+              )
+            })}
+          </div>
         )}
         {teams.length > 0 && (
           <SearchableSelect
@@ -2008,7 +2087,42 @@ export default function Jobs() {
         </div>
       ) : (
         /* ============ LIST VIEW ============ */
-        filteredJobs.length === 0 ? (
+        <>
+        {historyYear !== null && filteredJobs.length > 0 && (() => {
+          const terminalStatuses = ['Completed', 'Complete', 'Verified', 'Verified Complete']
+          const closed = filteredJobs.filter(j => terminalStatuses.includes(j.status))
+          const totalValue = filteredJobs.reduce((s, j) => s + (parseFloat(j.job_total) || 0), 0)
+          const closedRevenue = closed.reduce((s, j) => s + (parseFloat(j.job_total) || 0), 0)
+          const label = historyMonth
+            ? new Date(historyYear, historyMonth - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+            : String(historyYear)
+          return (
+            <div style={{
+              display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'center',
+              padding: '12px 18px', marginBottom: '12px',
+              backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px'
+            }}>
+              <div>
+                <div style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '500' }}>{label} — Jobs</div>
+                <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>{filteredJobs.length}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '500' }}>Total Value</div>
+                <div style={{ fontSize: '22px', fontWeight: '700', color: theme.accent }}>{formatCurrency(totalValue) || '$0'}</div>
+              </div>
+              {closed.length > 0 && (
+                <div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '500' }}>Closed Revenue</div>
+                  <div style={{ fontSize: '22px', fontWeight: '700', color: '#22c55e' }}>{formatCurrency(closedRevenue) || '$0'}</div>
+                </div>
+              )}
+              <div style={{ marginLeft: 'auto', fontSize: '12px', color: theme.textMuted }}>
+                {closed.length} closed · {filteredJobs.length - closed.length} open
+              </div>
+            </div>
+          )
+        })()}
+        {filteredJobs.length === 0 ? (
           <div style={{
             textAlign: 'center',
             padding: '48px 24px',
@@ -2220,6 +2334,8 @@ export default function Jobs() {
             })}
           </div>
         )
+        }
+        </>
       )}
 
       {/* Add/Edit Modal */}

@@ -923,6 +923,11 @@ export default function PMJobSetter() {
             const oneWeekOut = new Date(today.getTime() + 7 * 86400000)
             const startDt = j.start_date ? new Date(j.start_date) : null
             if (startDt && startDt > oneWeekOut) return false
+            // Board Completed column: rolling 60-day window.
+            // Historical closed jobs live on the /jobs list page.
+            const sixtyDaysAgo = new Date(today.getTime() - 60 * 86400000)
+            const closedAt = j.completed_at || j.updated_at || j.created_at
+            if (new Date(closedAt) < sixtyDaysAgo) return false
           }
           return true
         }
@@ -2756,6 +2761,44 @@ export default function PMJobSetter() {
           </button>
         )}
       </div>
+
+      {/* PM Stats Strip — always shows current-month numbers regardless of date filter */}
+      {(() => {
+        const now = new Date()
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+        const terminalStatuses = ['Complete', 'Completed', 'Verified', 'Verified Complete']
+        const allJobs = filteredJobList
+        const mtdJobs = allJobs.filter(j => {
+          if (!terminalStatuses.includes(j.status)) return false
+          const closedAt = j.completed_at || j.updated_at || j.created_at
+          return closedAt && new Date(closedAt) >= monthStart
+        })
+        const mtdRevenue = mtdJobs.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
+        const openCount = allJobs.filter(j => !terminalStatuses.includes(j.status)).length
+        const monthName = now.toLocaleDateString('en-US', { month: 'long' })
+        const fmtK = (n) => n >= 1000000 ? `$${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `$${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}k` : `$${Math.round(n)}`
+        const stats = [
+          { label: `${monthName} Closed`, value: fmtK(mtdRevenue), sub: `${mtdJobs.length} job${mtdJobs.length !== 1 ? 's' : ''}`, color: '#22c55e' },
+          { label: 'Open Jobs', value: openCount, sub: 'active & queued', color: theme.accent },
+        ]
+        return (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
+            {stats.map(s => (
+              <div key={s.label} style={{
+                backgroundColor: theme.bgCard,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '10px',
+                padding: '10px 16px',
+                minWidth: '130px'
+              }}>
+                <div style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{s.label}</div>
+                <div style={{ fontSize: '22px', fontWeight: '700', color: s.color, lineHeight: 1 }}>{s.value}</div>
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>{s.sub}</div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* Main Content */}
       {viewMode === 'kanban' ? (
