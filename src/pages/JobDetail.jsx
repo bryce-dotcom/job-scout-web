@@ -3765,7 +3765,11 @@ function JobDetailInner() {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 360px', gap: '24px' }}>
+      {/* minmax(0, …) on BOTH layouts: a plain 1fr track's min size is
+          content width, so the line-items grid (≈630px) silently widened
+          the column past the phone viewport and got clipped with no
+          scrollbar — London's "screen is still cutoff" ticket. */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 360px', gap: '24px' }}>
         {/* Main Content */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Customer-vs-Utility split — only shown when there's a utility

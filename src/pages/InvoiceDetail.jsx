@@ -1926,7 +1926,11 @@ export default function InvoiceDetail() {
         )
       })()}
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 360px', gap: '24px' }}>
+      {/* minmax(0, …) on both layouts — plain 1fr's min size is content
+          width, which let wide children push past phone viewports and get
+          clipped by the page-root overflowX:hidden (same bug as JobDetail
+          and EstimateDetail in the June-10 mobile-cutoff cluster). */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 360px', gap: '24px' }}>
         {/* Main Content */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Customer Info */}

@@ -2400,12 +2400,14 @@ function EstimateDetailInner() {
       {/* Hidden photo input for before/after/notes uploads */}
       <input type="file" ref={photoInputRef} accept="image/*" multiple style={{ display: 'none' }} onChange={handleUploadPhoto} />
 
-      {/* Header */}
+      {/* Header — wraps so the status/actions block drops below the title
+          on phones instead of being pushed past the right edge. */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         gap: '16px',
-        marginBottom: '24px'
+        marginBottom: '24px',
+        flexWrap: 'wrap'
       }}>
         <button
           onClick={goBack}
@@ -2503,7 +2505,10 @@ function EstimateDetailInner() {
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* flexWrap so the status pill + settings + snapshot + Send-to-Setter
+            buttons stack onto extra rows on phones instead of running past
+            the viewport edge (clipped by the page-root overflowX:hidden). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <select
             value={estimate.status}
             onChange={async (e) => {
@@ -2780,7 +2785,12 @@ function EstimateDetailInner() {
         // would push the whole grid past the viewport and shove the
         // right-rail cards ~800 px off-screen. minmax(0, 1fr) lets the
         // column shrink to fit so the right rail stays visible.
-        gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 360px',
+        // Mobile needs minmax(0, 1fr) for the SAME reason — plain 1fr let
+        // wide children (line-item grid, button rows) push the single
+        // column past the phone viewport, where the page-root
+        // overflowX:hidden clipped it unreachable (Noah: "half the page
+        // can't be seen").
+        gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 360px',
         gap: isMobile ? '16px' : '24px'
       }}>
         {/* Main Content */}
