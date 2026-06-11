@@ -570,41 +570,55 @@ export default function FieldScout() {
     setTimeout(() => linePhotoInputRef.current?.click(), 50)
   }
 
-  // Upload the captured photo to Supabase storage + file_attachments
+  // Upload the captured photo(s) to Supabase storage + file_attachments.
+  // The input is `multiple` (London: "Can only upload one photo at a time
+  // on the before and after photos") — loop every selected file and report
+  // how many made it.
   const handleLinePhotoUpload = async (e) => {
-    const file = e.target.files?.[0]
+    const files = Array.from(e.target.files || [])
     e.target.value = ''
-    if (!file || !linePhotoTarget || !activeEntry?.job_id) return
+    if (files.length === 0 || !linePhotoTarget || !activeEntry?.job_id) return
     const { lineId, context } = linePhotoTarget
     setLinePhotoUploading(true)
-    try {
-      const safeName = (file.name || `photo_${Date.now()}.jpg`).replace(/[^a-zA-Z0-9._-]/g, '_')
-      const filePath = `jobs/${activeEntry.job_id}/lines/${lineId}/${Date.now()}_${safeName}`
-      const { error: upErr } = await supabase.storage
-        .from('project-documents')
-        .upload(filePath, file, { contentType: file.type || 'image/jpeg', upsert: false })
-      if (upErr) throw upErr
-      const { error: dbErr } = await supabase.from('file_attachments').insert({
-        company_id: companyId,
-        job_id: activeEntry.job_id,
-        job_line_id: lineId,
-        file_name: safeName,
-        file_path: filePath,
-        file_type: file.type || 'image/jpeg',
-        file_size: file.size,
-        storage_bucket: 'project-documents',
-        photo_context: context,
-      })
-      if (dbErr) throw dbErr
-      toast.success(`${context === 'line_before' ? 'Before' : 'After'} photo added`)
-      await refreshBriefingPhotoCounts(activeEntry.job_id)
-    } catch (err) {
-      console.error('[FieldScout] line photo upload failed', err)
-      toast.error('Photo upload failed: ' + (err?.message || 'unknown'))
-    } finally {
-      setLinePhotoUploading(false)
-      setLinePhotoTarget(null)
+    let uploaded = 0
+    let lastErr = null
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      try {
+        const safeName = (file.name || `photo_${Date.now()}.jpg`).replace(/[^a-zA-Z0-9._-]/g, '_')
+        const filePath = `jobs/${activeEntry.job_id}/lines/${lineId}/${Date.now()}_${i}_${safeName}`
+        const { error: upErr } = await supabase.storage
+          .from('project-documents')
+          .upload(filePath, file, { contentType: file.type || 'image/jpeg', upsert: false })
+        if (upErr) throw upErr
+        const { error: dbErr } = await supabase.from('file_attachments').insert({
+          company_id: companyId,
+          job_id: activeEntry.job_id,
+          job_line_id: lineId,
+          file_name: safeName,
+          file_path: filePath,
+          file_type: file.type || 'image/jpeg',
+          file_size: file.size,
+          storage_bucket: 'project-documents',
+          photo_context: context,
+        })
+        if (dbErr) throw dbErr
+        uploaded++
+      } catch (err) {
+        console.error('[FieldScout] line photo upload failed', err)
+        lastErr = err
+      }
     }
+    const label = context === 'line_before' ? 'Before' : 'After'
+    if (uploaded > 0) {
+      toast.success(uploaded === 1 ? `${label} photo added` : `${uploaded} ${label.toLowerCase()} photos added`)
+      await refreshBriefingPhotoCounts(activeEntry.job_id)
+    }
+    if (lastErr) {
+      toast.error(`${files.length - uploaded} photo${files.length - uploaded === 1 ? '' : 's'} failed: ` + (lastErr?.message || 'unknown'))
+    }
+    setLinePhotoUploading(false)
+    setLinePhotoTarget(null)
   }
 
   // Fetch daily verification status for field roles (general / no-job path).
@@ -2063,6 +2077,7 @@ export default function FieldScout() {
                         ref={linePhotoInputRef}
                         type="file"
                         accept="image/*"
+                        multiple
                         onChange={handleLinePhotoUpload}
                         style={{ display: 'none' }}
                       />
