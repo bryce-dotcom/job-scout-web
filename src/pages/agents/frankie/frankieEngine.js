@@ -281,6 +281,45 @@ function assembleFinancialContext() {
   const activeEmps = employees.filter(e => e.status === 'Active' || e.status === 'active')
   context += `- Active: ${activeEmps.length}\n\n`
 
+  // Crew profitability — the hellofrank marquee question ("Which crew is
+  // actually profitable?"). Roll completed jobs (last 90 days) up by
+  // assigned_team, with real punched hours from time_clock entries.
+  // Labor cost uses each employee's pay_rate when present, otherwise a
+  // $35/hr blended placeholder (flagged in the context so Frankie says so).
+  const timeLogs = state.timeLogs || []
+  const ninetyDaysAgo90 = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+  const completed90 = jobs.filter(j => jobIsComplete(j) && (j.completed_at || j.last_status_change_at) && new Date(j.completed_at || j.last_status_change_at) >= ninetyDaysAgo90)
+  if (completed90.length > 0) {
+    const rateByEmp = new Map()
+    employees.forEach(e => rateByEmp.set(e.id, parseFloat(e.pay_rate) || parseFloat(e.hourly_rate) || 0))
+    const hoursByJob = new Map()
+    const laborByJob = new Map()
+    timeLogs.forEach(t => {
+      if (!t.job_id) return
+      const hrs = parseFloat(t.total_hours) || parseFloat(t.hours) || 0
+      if (!(hrs > 0)) return
+      hoursByJob.set(t.job_id, (hoursByJob.get(t.job_id) || 0) + hrs)
+      const rate = rateByEmp.get(t.employee_id) || 35
+      laborByJob.set(t.job_id, (laborByJob.get(t.job_id) || 0) + hrs * rate)
+    })
+    const crews = {}
+    completed90.forEach(j => {
+      const crew = (j.assigned_team || '').trim() || 'Unassigned'
+      if (!crews[crew]) crews[crew] = { jobs: 0, revenue: 0, hours: 0, labor: 0 }
+      crews[crew].jobs++
+      crews[crew].revenue += jobContractValue(j)
+      crews[crew].hours += hoursByJob.get(j.id) || 0
+      crews[crew].labor += laborByJob.get(j.id) || 0
+    })
+    context += `### Crew Profitability (completed jobs, last 90 days; labor = punched hours × pay rate, $35/hr placeholder when no rate on file)\n`
+    Object.entries(crews).sort(([, a], [, b]) => b.revenue - a.revenue).forEach(([crew, c]) => {
+      const marginPct = c.revenue > 0 ? (((c.revenue - c.labor) / c.revenue) * 100).toFixed(0) : '—'
+      const perHour = c.hours > 0 ? (c.revenue / c.hours).toFixed(0) : '—'
+      context += `- ${crew}: ${c.jobs} jobs, $${c.revenue.toFixed(0)} revenue, ${c.hours.toFixed(1)}h punched, $${c.labor.toFixed(0)} labor → ${marginPct}% gross margin after labor, $${perHour}/hr revenue\n`
+    })
+    context += '\n'
+  }
+
   return context
 }
 

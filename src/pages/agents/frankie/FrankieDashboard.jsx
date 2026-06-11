@@ -13,6 +13,7 @@ import {
   paymentDate, jobContractValue, jobIsComplete, jobCostFromLines, jobMargin,
   expenseCategoryName, hasMeaningfulData, unifiedExpenses,
 } from './frankieFields'
+import { supabase } from '../../../lib/supabase'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -56,11 +57,13 @@ export default function FrankieDashboard() {
   const payments = useStore(s => s.payments) || []
   const manualExpenses = useStore(s => s.expenses) || []
   const plaidTransactions = useStore(s => s.plaidTransactions) || []
+  const connectedAccounts = useStore(s => s.connectedAccounts) || []
   const jobs = useStore(s => s.jobs) || []
   const fetchInvoices = useStore(s => s.fetchInvoices)
   const fetchPayments = useStore(s => s.fetchPayments)
   const fetchExpenses = useStore(s => s.fetchExpenses)
   const fetchPlaidTransactions = useStore(s => s.fetchPlaidTransactions)
+  const fetchConnectedAccounts = useStore(s => s.fetchConnectedAccounts)
   const companyId = useStore(s => s.companyId)
 
   // The actual expense source — manual entries plus bank-fed debits.
@@ -81,19 +84,60 @@ export default function FrankieDashboard() {
       fetchPayments()
       fetchExpenses()
       if (fetchPlaidTransactions) fetchPlaidTransactions()
+      if (fetchConnectedAccounts) fetchConnectedAccounts()
     }
   }, [companyId])
 
   const handleRefresh = async () => {
     setRefreshing(true)
+    // Ask Plaid for fresh balances first (best-effort — works only when a
+    // bank is connected), then re-pull everything from our tables.
+    try {
+      await supabase.functions.invoke('plaid-link', {
+        body: { action: 'get_accounts', company_id: companyId },
+      })
+    } catch { /* no bank connected or Plaid hiccup — table data still loads */ }
     await Promise.all([
       fetchInvoices(),
       fetchPayments(),
       fetchExpenses(),
       fetchPlaidTransactions ? fetchPlaidTransactions() : Promise.resolve(),
+      fetchConnectedAccounts ? fetchConnectedAccounts() : Promise.resolve(),
     ])
     setRefreshing(false)
   }
+
+  // ── Cash hero (the hellofrank-style bank-first headline) ──
+  // Available Cash = sum of active depository accounts' current balance.
+  // Total Debt = sum of active credit/loan balances.
+  // Burn Rate = average monthly NET bank outflow over the last 90 days
+  //   (debits minus credits, transfers excluded). When the business is
+  //   cash-flow positive there is no burn — runway shows ∞.
+  // Runway = cash ÷ burn, in months.
+  const cashHero = useMemo(() => {
+    const active = connectedAccounts.filter(a => a.status === 'active')
+    const cash = active
+      .filter(a => a.account_type === 'depository')
+      .reduce((s, a) => s + (Number(a.current_balance) || 0), 0)
+    const debt = active
+      .filter(a => a.account_type === 'credit' || a.account_type === 'loan')
+      .reduce((s, a) => s + (Number(a.current_balance) || 0), 0)
+
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    let netOutflow90 = 0
+    for (const t of plaidTransactions) {
+      if (t.is_transfer) continue
+      if (!t.date || t.date < ninetyDaysAgo) continue
+      netOutflow90 += Number(t.amount) || 0 // Plaid: positive = money out, negative = money in
+    }
+    const monthlyNetBurn = netOutflow90 / 3
+    const runwayMonths = monthlyNetBurn > 0 && cash > 0 ? cash / monthlyNetBurn : null
+    const lastSynced = active.reduce((latest, a) => {
+      const t = a.last_synced || a.updated_at
+      return t && (!latest || t > latest) ? t : latest
+    }, null)
+    return { hasBank: active.length > 0, cash, debt, monthlyNetBurn, runwayMonths, accountCount: active.length, lastSynced }
+  }, [connectedAccounts, plaidTransactions])
 
   // Financial computations — go through frankieFields helpers so every
   // metric agrees with the rest of the app (Books, Invoices, Pipeline).
@@ -318,6 +362,93 @@ export default function FrankieDashboard() {
           </button>
         </div>
       </div>
+
+      {/* ── Cash hero — bank-first headline (Available Cash / Debt / Burn /
+          Runway). Live bank balances when a bank is connected; a connect
+          CTA otherwise. Sits ABOVE the operational stat cards because
+          "how much cash do we actually have" is the first question. ── */}
+      {cashHero.hasBank ? (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+          gap: '16px',
+          marginBottom: '16px',
+        }}>
+          {[
+            {
+              label: 'Available Cash',
+              value: formatCurrencyShort(cashHero.cash),
+              subtitle: `${cashHero.accountCount} bank account${cashHero.accountCount === 1 ? '' : 's'}`,
+              icon: Wallet,
+              color: '#22c55e',
+            },
+            {
+              label: 'Total Debt',
+              value: formatCurrencyShort(cashHero.debt),
+              subtitle: 'credit cards + loans',
+              icon: CreditCard,
+              color: cashHero.debt > 0 ? '#ef4444' : '#22c55e',
+            },
+            {
+              label: 'Burn Rate',
+              value: cashHero.monthlyNetBurn > 0 ? `${formatCurrencyShort(cashHero.monthlyNetBurn)}/mo` : 'Positive',
+              subtitle: cashHero.monthlyNetBurn > 0 ? 'net bank outflow, 90d avg' : 'bank inflow exceeds outflow',
+              icon: TrendingDown,
+              color: cashHero.monthlyNetBurn > 0 ? '#f59e0b' : '#22c55e',
+            },
+            {
+              label: 'Runway',
+              value: cashHero.runwayMonths != null
+                ? `${cashHero.runwayMonths < 10 ? cashHero.runwayMonths.toFixed(1) : Math.round(cashHero.runwayMonths)} mo`
+                : '∞',
+              subtitle: cashHero.runwayMonths != null ? 'at current burn' : 'cash-flow positive',
+              icon: Clock,
+              color: cashHero.runwayMonths != null && cashHero.runwayMonths < 3 ? '#ef4444' : '#3b82f6',
+            },
+          ].map((card, i) => {
+            const Icon = card.icon
+            return (
+              <div key={i} style={{
+                background: theme.bgCard,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '12px',
+                padding: '16px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <Icon size={15} style={{ color: card.color }} />
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{card.label}</span>
+                </div>
+                <div style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 700, color: card.color }}>{card.value}</div>
+                {card.subtitle && <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>{card.subtitle}</div>}
+              </div>
+            )
+          })}
+          {cashHero.lastSynced && (
+            <div style={{ gridColumn: '1 / -1', fontSize: '11px', color: theme.textMuted, marginTop: '-6px' }}>
+              Balances as of {new Date(cashHero.lastSynced).toLocaleString()} — hit Refresh to pull live from the bank.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{
+          marginBottom: '16px', padding: '14px 18px',
+          backgroundColor: theme.accentBg, border: `1px solid ${theme.border}`, borderRadius: '12px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap',
+        }}>
+          <div style={{ fontSize: '13px', color: theme.textSecondary }}>
+            <strong style={{ color: theme.text }}>Connect a bank account</strong> to unlock Available Cash, Total Debt, Burn Rate, and Runway — live from your bank, not last month's books.
+          </div>
+          <button
+            onClick={() => navigate('/books?tab=money')}
+            style={{
+              padding: '8px 14px', borderRadius: '8px', border: 'none',
+              backgroundColor: theme.accent, color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            Connect in Books
+          </button>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div style={{

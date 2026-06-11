@@ -26,6 +26,7 @@ const defaultTheme = {
 }
 
 const QUICK_ACTIONS = [
+  { label: 'Which crew is profitable?', icon: TrendingUp, prompt: 'Which crew is actually profitable? Break down revenue, labor hours, and margin by team for recent completed jobs.' },
   { label: 'Cash Flow', icon: DollarSign, prompt: 'What does our cash flow look like? Revenue vs expenses for the last 30 days.' },
   { label: 'Overdue Invoices', icon: AlertTriangle, prompt: 'Show me all overdue invoices. Who owes us money and how late are they?' },
   { label: 'Job Profitability', icon: TrendingUp, prompt: 'Break down profitability of our recent completed jobs. Which ones had the best and worst margins?' },

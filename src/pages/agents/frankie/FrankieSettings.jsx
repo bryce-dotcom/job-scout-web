@@ -33,6 +33,8 @@ const defaultSettings = {
   anomaly_threshold: 150,
   low_margin_threshold: 15,
   collection_footer: '',
+  daily_brief: false,
+  daily_brief_recipients: '',
 }
 
 export default function FrankieSettings() {
@@ -59,6 +61,20 @@ export default function FrankieSettings() {
     setSaved(false)
   }
 
+  // Upsert a key/value row in the settings table (the autopilot + daily
+  // brief edge functions read these — company_agents.settings is the UI
+  // store, the settings rows are what the crons act on).
+  const upsertSettingsRow = async (key, valueObj) => {
+    const valueStr = JSON.stringify(valueObj)
+    const { data: existing } = await supabase
+      .from('settings').select('id').eq('company_id', companyId).eq('key', key).maybeSingle()
+    if (existing) {
+      await supabase.from('settings').update({ value: valueStr, updated_at: new Date().toISOString() }).eq('id', existing.id)
+    } else {
+      await supabase.from('settings').insert({ company_id: companyId, key, list_name: 'Frankie Automations', value: valueStr })
+    }
+  }
+
   const handleSave = async () => {
     if (!companyAgent?.id) return
     setSaving(true)
@@ -67,12 +83,49 @@ export default function FrankieSettings() {
         .from('company_agents')
         .update({ settings, updated_at: new Date().toISOString() })
         .eq('id', companyAgent.id)
+
+      // Mirror the automation switches into the settings rows the daily
+      // crons read. The cron functions are DEFAULT OFF — they only act on
+      // companies whose row says enabled:true.
+      await upsertSettingsRow('collections_autopilot', {
+        enabled: !!settings.auto_reminders,
+        t1_days: Number(settings.friendly_days) || 7,
+        t2_days: Number(settings.firm_days) || 14,
+        t3_days: Number(settings.urgent_days) || 30,
+        sms_enabled: !!settings.sms_reminders,
+        max_per_run: 25,
+      })
+      await upsertSettingsRow('frankie_daily_brief', {
+        enabled: !!settings.daily_brief,
+        recipients: String(settings.daily_brief_recipients || '')
+          .split(',').map(s => s.trim()).filter(Boolean),
+      })
+
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e) {
       console.error('Error saving settings:', e)
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Preview what the autopilot WOULD send right now — no emails go out.
+  const [previewing, setPreviewing] = useState(false)
+  const [previewResult, setPreviewResult] = useState(null)
+  const handlePreviewAutopilot = async () => {
+    setPreviewing(true)
+    setPreviewResult(null)
+    try {
+      const { data } = await supabase.functions.invoke('collections-autopilot', {
+        body: { company_id: companyId, preview: true },
+      })
+      const r = data?.results?.[0]
+      setPreviewResult(r || { error: data?.error || 'No response' })
+    } catch (e) {
+      setPreviewResult({ error: e.message })
+    } finally {
+      setPreviewing(false)
     }
   }
 
@@ -234,6 +287,89 @@ export default function FrankieSettings() {
             <span>5%</span><span>20%</span><span>40%</span>
           </div>
         </div>
+      </div>
+
+      {/* Autopilot preview — see exactly what the daily run WOULD send,
+          without sending anything. Builds trust before flipping the
+          Automatic Reminders switch. */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+          <div>
+            <h2 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0 }}>
+              Autopilot Preview
+            </h2>
+            <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>
+              Dry-run the collections autopilot — shows who would get a reminder today. Nothing is sent.
+            </p>
+          </div>
+          <button
+            onClick={handlePreviewAutopilot}
+            disabled={previewing}
+            style={{
+              padding: '10px 16px', borderRadius: '8px', border: `1px solid ${theme.accent}`,
+              background: 'transparent', color: theme.accent, fontWeight: 600, fontSize: '13px',
+              cursor: previewing ? 'wait' : 'pointer',
+            }}
+          >
+            {previewing ? 'Checking…' : 'Run Preview'}
+          </button>
+        </div>
+        {previewResult && (
+          <div style={{ marginTop: '14px', borderTop: `1px solid ${theme.border}`, paddingTop: '12px' }}>
+            {previewResult.error ? (
+              <div style={{ fontSize: '13px', color: '#ef4444' }}>Preview failed: {String(previewResult.error)}</div>
+            ) : (
+              <>
+                <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '8px' }}>
+                  {(previewResult.wouldSend || []).length === 0
+                    ? 'Nothing to send — no invoices past the first reminder threshold.'
+                    : `${(previewResult.wouldSend || []).length} reminder${(previewResult.wouldSend || []).length === 1 ? '' : 's'} would go out (of ${previewResult.totalEligible} eligible, capped at ${previewResult.cap}/run):`}
+                </div>
+                {(previewResult.wouldSend || []).map((p, i) => (
+                  <div key={i} style={{
+                    display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap',
+                    fontSize: '12px', color: theme.text, padding: '6px 8px',
+                    backgroundColor: theme.bg, borderRadius: '6px', marginBottom: '4px',
+                  }}>
+                    <span><strong>{p.customerName || 'Unknown'}</strong> · {p.invoiceNumber}</span>
+                    <span>{'$' + Number(p.balance).toLocaleString()} · {p.daysOverdue}d late · Tier {p.tier} ({p.tone}{p.phone ? ' + SMS' : ''})</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Daily Brief */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <Clock size={20} style={{ color: theme.accent }} />
+          <h2 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0 }}>
+            Daily Brief
+          </h2>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div>
+            <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Morning email from Frankie</div>
+            <div style={{ fontSize: '13px', color: theme.textMuted }}>
+              Every morning at 7am: available cash, yesterday's money in/out, receivables, and what to focus on today.
+            </div>
+          </div>
+          <Toggle value={settings.daily_brief} onChange={v => updateSetting('daily_brief', v)} />
+        </div>
+        {settings.daily_brief && (
+          <div>
+            <label style={labelStyle}>Recipients (comma-separated — defaults to the owner email)</label>
+            <input
+              type="text"
+              value={settings.daily_brief_recipients || ''}
+              onChange={e => updateSetting('daily_brief_recipients', e.target.value)}
+              placeholder="bryce@hhh.services, tracy@hhh.services"
+              style={inputStyle}
+            />
+          </div>
+        )}
       </div>
 
       {/* Collection Message Footer */}
