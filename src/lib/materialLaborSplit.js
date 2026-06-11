@@ -59,30 +59,37 @@ export function computeMaterialLaborSplit(lines, components, products) {
   }
 
   let materials = 0
-  let labor = 0
+  let includedTotal = 0
   let fallbackLineCount = 0
   const totalLineCount = (lines || []).length
 
   for (const line of lines || []) {
     const lineTotal = Number(line.line_total) || 0
     if (lineTotal === 0) continue
+    includedTotal += lineTotal
 
     const lineMatLab = classifyLine(line.item_id, productMap, componentsByParent)
     if (lineMatLab.unclassified || lineMatLab.totalCost === 0) {
       materials += lineTotal * FALLBACK_MATERIAL_PCT
-      labor += lineTotal * FALLBACK_LABOR_PCT
       fallbackLineCount++
     } else {
-      const matPct = lineMatLab.materialCost / lineMatLab.totalCost
-      materials += lineTotal * matPct
-      labor += lineTotal * (1 - matPct)
+      materials += lineTotal * (lineMatLab.materialCost / lineMatLab.totalCost)
     }
   }
 
+  // Residual rounding: round materials, derive labor by subtraction so
+  // materials + labor ALWAYS equals the (rounded) line total. Rounding
+  // both halves independently drifted a cent when both landed on .xx5
+  // (Alayda's INV-MQ8CSSU5: 2,711.205 + 1,161.945 → 2,711.21 + 1,161.95
+  // = 3,873.16 on a $3,873.15 invoice).
+  const roundedTotal = round2(includedTotal)
+  const roundedMaterials = round2(materials)
+  const roundedLabor = Math.max(0, round2(roundedTotal - roundedMaterials))
+
   return {
-    materials: round2(materials),
-    labor: round2(labor),
-    total: round2(materials + labor),
+    materials: roundedMaterials,
+    labor: roundedLabor,
+    total: round2(roundedMaterials + roundedLabor),
     fallbackLineCount,
     totalLineCount,
   }
@@ -159,7 +166,7 @@ export function splitLinePartsLabor(line, productMap, componentsByParent) {
 
   const recordedLabor = Number(line.labor_cost) || 0
   if (recordedLabor > 0) {
-    return { parts: Math.max(0, total - recordedLabor), labor: recordedLabor }
+    return { parts: round2(Math.max(0, total - recordedLabor)), labor: round2(recordedLabor) }
   }
 
   const type = (line.item?.type || '').toLowerCase()
@@ -172,10 +179,12 @@ export function splitLinePartsLabor(line, productMap, componentsByParent) {
   if (line.item_id && componentsByParent && componentsByParent.size > 0) {
     const breakdown = classifyLine(line.item_id, productMap || new Map(), componentsByParent)
     if (!breakdown.unclassified && breakdown.totalCost > 0) {
-      const matPct = breakdown.materialCost / breakdown.totalCost
+      // Residual rounding — parts + labor must equal the line total
+      // exactly (rounding both sides independently can drift a cent).
+      const parts = round2(total * (breakdown.materialCost / breakdown.totalCost))
       return {
-        parts: round2(total * matPct),
-        labor: round2(total * (1 - matPct)),
+        parts,
+        labor: Math.max(0, round2(total - parts)),
       }
     }
   }

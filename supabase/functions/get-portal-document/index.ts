@@ -47,26 +47,31 @@ function computeMaterialLaborSplit(
     return result;
   }
 
-  let materials = 0, labor = 0, fallbackLineCount = 0;
+  let materials = 0, includedTotal = 0, fallbackLineCount = 0;
   for (const line of lines) {
     const lineTotal = Number(line.line_total) || 0;
     if (lineTotal === 0) continue;
+    includedTotal += lineTotal;
     const breakdown = classifyLine(line.item_id);
     if (breakdown.unclassified || breakdown.totalCost === 0) {
       materials += lineTotal * 0.7;
-      labor += lineTotal * 0.3;
       fallbackLineCount++;
     } else {
-      const matPct = breakdown.materialCost / breakdown.totalCost;
-      materials += lineTotal * matPct;
-      labor += lineTotal * (1 - matPct);
+      materials += lineTotal * (breakdown.materialCost / breakdown.totalCost);
     }
   }
+  // Residual rounding: round materials, derive labor by subtraction so
+  // materials + labor always equals the rounded line total (rounding both
+  // halves independently drifted a cent — keep in sync with
+  // src/lib/materialLaborSplit.js).
   const round2 = (n: number) => Math.round(n * 100) / 100;
+  const roundedTotal = round2(includedTotal);
+  const roundedMaterials = round2(materials);
+  const roundedLabor = Math.max(0, round2(roundedTotal - roundedMaterials));
   return {
-    materials: round2(materials),
-    labor: round2(labor),
-    total: round2(materials + labor),
+    materials: roundedMaterials,
+    labor: roundedLabor,
+    total: round2(roundedMaterials + roundedLabor),
     fallbackLineCount,
     totalLineCount: lines.length,
   };

@@ -355,12 +355,14 @@ export default function UtilityInvoiceDetail() {
     const pc = parseFloat(newPC) || 0
     const inc = parseFloat(form.incentive_amount) || 0
     const matP = parseFloat(form.material_pct) || 70
-    const labP = parseFloat(form.labor_pct) || 30
+    // Residual rounding — material + labor must equal project_cost exactly
+    // (rule #1 above). Rounding both from percentages drifted a cent.
+    const mat = Math.round(pc * matP / 100 * 100) / 100
     return {
       ...form,
       project_cost: newPC,
-      material_amount: Math.round(pc * matP / 100 * 100) / 100,
-      labor_amount: Math.round(pc * labP / 100 * 100) / 100,
+      material_amount: mat,
+      labor_amount: Math.max(0, Math.round((pc - mat) * 100) / 100),
       net_cost: Math.round((pc - inc) * 100) / 100,
     }
   }
@@ -392,9 +394,10 @@ export default function UtilityInvoiceDetail() {
     const pc = parseFloat(form.project_cost) || 0
     const updated = { ...form, [field]: newVal }
     const matP = parseFloat(field === 'material_pct' ? newVal : form.material_pct) || 0
-    const labP = parseFloat(field === 'labor_pct' ? newVal : form.labor_pct) || 0
+    // Residual rounding — labor is the remainder so the pair sums to
+    // project_cost exactly regardless of the percentages typed.
     updated.material_amount = Math.round(pc * matP / 100 * 100) / 100
-    updated.labor_amount = Math.round(pc * labP / 100 * 100) / 100
+    updated.labor_amount = Math.max(0, Math.round((pc - updated.material_amount) * 100) / 100)
     return updated
   }
 
@@ -500,10 +503,14 @@ export default function UtilityInvoiceDetail() {
   const rawLaborTotal = jobLines.reduce((sum, l) => sum + (parseFloat(l.labor_cost) || 0), 0)
   const hasLaborData = rawLaborTotal > 0
   const matPct = (parseFloat(isEditing ? editForm.material_pct : invoice?.material_pct) || 70) / 100
-  const labPct = (parseFloat(isEditing ? editForm.labor_pct : invoice?.labor_pct) || 30) / 100
   const totalBase = rawProductTotal > 0 ? rawProductTotal + rawLaborTotal : projectCost
+  // Residual rounding: material is rounded, labor is the remainder, so the
+  // two always sum to the project cost exactly (rounding both sides
+  // independently drifted a cent on .xx5 splits — Alayda's ".1 off" ticket).
   const materialTotal = hasLaborData ? rawProductTotal : Math.round(totalBase * matPct * 100) / 100
-  const laborTotal = hasLaborData ? rawLaborTotal : Math.round(totalBase * labPct * 100) / 100
+  const laborTotal = hasLaborData
+    ? rawLaborTotal
+    : Math.max(0, Math.round((totalBase - materialTotal) * 100) / 100)
 
   const generateUtilityPDF = () => {
     const doc = new jsPDF()
