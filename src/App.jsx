@@ -1,6 +1,7 @@
 // ALWAYS READ JOBSCOUT_PROJECT_RULES.md BEFORE MAKING CHANGES
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom'
+import { getWalkthrough } from './components/walkthroughs'
 import { supabase } from './lib/supabase'
 import { useStore } from './lib/store'
 import Login from './pages/Login'
@@ -204,6 +205,23 @@ function TimeClockRouteGuard() {
   return <TimeClock />
 }
 
+function DevWalkthroughPreview() {
+  const { id } = useParams()
+  const Component = getWalkthrough(id)
+  if (!Component) return (
+    <div style={{ padding: 40, fontFamily: 'system-ui', color: '#666' }}>
+      No walkthrough found for id: <strong>{id}</strong>
+    </div>
+  )
+  return (
+    <div style={{ minHeight: '100vh', background: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ width: '100%', maxWidth: 900 }}>
+        <Component />
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const companyId = useStore((state) => state.companyId)
   const setUser = useStore((state) => state.setUser)
@@ -342,6 +360,11 @@ function App() {
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
+
+        {/* Dev-only: render any walkthrough by id without auth */}
+        {import.meta.env.DEV && (
+          <Route path="/dev-preview/:id" element={<DevWalkthroughPreview />} />
+        )}
 
         {/* Onboarding (protected, full-screen, no layout) */}
         <Route path="/onboarding" element={
@@ -496,9 +519,44 @@ function App() {
           <Route path="/admin/videos" element={<VideoLibrary />} />
           <Route path="/admin/eos" element={<EOS />} />
           <Route path="/admin/data-console/*" element={<DataConsole />} />
+
+          {/* Catch-all — an unrouted path used to render a silent blank
+              page (Tracy hit one for weeks via a bad breadcrumb link and
+              had to restart the app). Show a way out instead. */}
+          <Route path="*" element={<RouteNotFound />} />
         </Route>
       </Routes>
     </BrowserRouter>
+  )
+}
+
+// Friendly dead-end for unrouted paths (replaces the silent blank page).
+// Lives inside the Layout route so the sidebar stays usable.
+function RouteNotFound() {
+  const navigate = useNavigate()
+  return (
+    <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+      <p style={{ fontSize: '18px', fontWeight: 600, color: '#2c3530', marginBottom: '8px' }}>
+        That page doesn't exist
+      </p>
+      <p style={{ fontSize: '14px', color: '#7d8a7f', marginBottom: '20px' }}>
+        The link that brought you here is broken ({window.location.pathname}). Use the Feedback button to report where you clicked it.
+      </p>
+      <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+        <button
+          onClick={() => navigate(-1)}
+          style={{ padding: '10px 18px', minHeight: '44px', backgroundColor: '#ffffff', color: '#2c3530', border: '1px solid #d6cdb8', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}
+        >
+          Go Back
+        </button>
+        <button
+          onClick={() => navigate('/')}
+          style={{ padding: '10px 18px', minHeight: '44px', backgroundColor: '#5a6349', color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}
+        >
+          Go to Dashboard
+        </button>
+      </div>
+    </div>
   )
 }
 

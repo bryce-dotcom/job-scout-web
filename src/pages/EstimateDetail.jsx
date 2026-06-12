@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense, Component } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { findMatchingCustomer } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
@@ -1354,15 +1355,17 @@ function EstimateDetailInner() {
       const businessName = customerInfo?.business_name || leadInfo?.business_name || null
 
       if (!customerId && customerName) {
-        const { data: existing } = await supabase
-          .from('customers')
-          .select('id')
-          .eq('company_id', companyId)
-          .ilike('name', customerName.trim())
-          .limit(1)
+        // Identity-safe match (email → phone → non-conflicting name). A bare
+        // name match used to attach the wrong person's record — Doug's
+        // estimate 4458 got Curley Construction's email (ticket 5406ff71).
+        const matchedId = await findMatchingCustomer(supabase, companyId, {
+          name: customerName,
+          email: customerInfo?.email || leadInfo?.email,
+          phone: customerInfo?.phone || leadInfo?.phone,
+        })
 
-        if (existing?.length > 0) {
-          customerId = existing[0].id
+        if (matchedId) {
+          customerId = matchedId
         } else {
           const { data: newCust, error: custErr } = await supabase
             .from('customers')

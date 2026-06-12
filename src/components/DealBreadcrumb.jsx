@@ -16,7 +16,10 @@ const defaultTheme = {
 
 const steps = [
   { key: 'lead', label: 'Lead', path: (id) => `/leads/${id}` },
-  { key: 'quote', label: 'Estimate', path: (id) => `/quotes/${id}` },
+  // Route is /estimates/:id — /quotes/:id doesn't exist in App.jsx, so this
+  // chip rendered a silent blank page (Tracy's "estimate link → blank page,
+  // have to get out of the system entirely", tickets ad8c4500 + 7ec14011).
+  { key: 'quote', label: 'Estimate', path: (id) => `/estimates/${id}` },
   { key: 'customer', label: 'Customer', path: (id) => `/customers/${id}` },
   { key: 'job', label: 'Job', path: (id) => `/jobs/${id}` },
   { key: 'invoice', label: 'Invoice', path: (id) => `/invoices/${id}` }
