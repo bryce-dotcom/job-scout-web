@@ -2971,9 +2971,10 @@ export default function PMJobSetter() {
                                   </span>
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     {/* Service visits lead with the SERVICE name (that's the
-                                        operative info for dispatch) + a kind chip; the contact
-                                        drops to the secondary line. Regular installs keep
-                                        contact-first — unchanged. */}
+                                        operative info for dispatch) + a kind chip and a pointer
+                                        to the PARENT JOB they belong to — not the contact name
+                                        (Bryce: "the cards read someone's name and not the job
+                                        they are related to"). Regular installs unchanged. */}
                                     {job.parent_job_id ? (
                                       <>
                                         <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '2px', lineHeight: '1.3' }}>
@@ -2982,13 +2983,23 @@ export default function PMJobSetter() {
                                         <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: progress > 0 ? '6px' : '0', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                           {(() => {
                                             const kc = { warranty: '#dc2626', annual: '#16a34a', tune_up: '#0284c7', repair: '#ea580c', upsell: '#9333ea' }[job.service_kind] || '#6b7280'
+                                            const parent = jobs.find(pj => pj.id === job.parent_job_id)
+                                            const parentLabel = parent?.job_title || parent?.quote?.estimate_name || parent?.job_id || `Job #${job.parent_job_id}`
                                             return (
-                                              <span style={{ padding: '1px 7px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, backgroundColor: kc + '1c', color: kc, textTransform: 'capitalize' }}>
-                                                {(job.service_kind || 'service').replace(/_/g, ' ')}
-                                              </span>
+                                              <>
+                                                <span style={{ padding: '1px 7px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, backgroundColor: kc + '1c', color: kc, textTransform: 'capitalize' }}>
+                                                  {(job.service_kind || 'service').replace(/_/g, ' ')}
+                                                </span>
+                                                <span
+                                                  onClick={(e) => { e.stopPropagation(); if (parent) navigate(`/jobs/${parent.id}`) }}
+                                                  title={parent ? `Open parent job: ${parentLabel}` : undefined}
+                                                  style={{ cursor: parent ? 'pointer' : 'default', textDecoration: parent ? 'underline' : 'none', textUnderlineOffset: '2px' }}
+                                                >
+                                                  ↪ {parentLabel}
+                                                </span>
+                                              </>
                                             )
                                           })()}
-                                          <span>{job.customer?.name || job.customer_name || ''}</span>
                                         </div>
                                       </>
                                     ) : (

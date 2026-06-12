@@ -420,7 +420,7 @@ function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigat
                           textDecoration: 'underline', textUnderlineOffset: '2px',
                         }}
                       >
-                        ↪ {parent.job_id || `#${parent.id}`}
+                        ↪ {parent.job_title || parent.job_id || `#${parent.id}`}
                       </span>
                     )}
                     {childCount > 0 && (
@@ -2226,7 +2226,7 @@ export default function Jobs() {
                                   textDecoration: 'underline', textUnderlineOffset: '2px',
                                 }}
                               >
-                                ↪ child of {parent.job_id || `#${parent.id}`}
+                                ↪ child of {parent.job_title || parent.job_id || `#${parent.id}`}
                               </span>
                             )}
                             {childCount > 0 && (
