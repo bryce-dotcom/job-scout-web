@@ -65,24 +65,23 @@ export function generatePoPdf({ po, lines, vendor, company, job, businessUnit })
       for (const l of lines) { doc.text(l, margin, vy); vy += 5 }
     }
   }
-  // Ship to: customer/project name first, then address, then job reference
+  // Ship to: customer/project name first, then address, then job reference.
+  // po.ship_to_address overrides job.job_address when explicitly set.
   if (job) {
-    // Customer name as primary recipient
     if (job.customer_name) {
       doc.setFont('helvetica', 'bold')
       doc.text(job.customer_name, margin + contentW * 0.5, sy); sy += 5
       doc.setFont('helvetica', 'normal')
     }
-    // Job title as project name (if different from customer name)
     if (job.job_title && job.job_title !== job.customer_name) {
       doc.text(job.job_title, margin + contentW * 0.5, sy); sy += 5
     }
   }
-  const shipTo = job?.job_address || job?.address || companyAddress
+  const shipTo = po.ship_to_address || job?.job_address || job?.address || companyAddress
   if (shipTo) {
     const shipLines = doc.splitTextToSize(shipTo, contentW * 0.45)
     for (const l of shipLines) { doc.text(l, margin + contentW * 0.5, sy); sy += 5 }
-  } else if (!job) {
+  } else {
     doc.text('(no ship-to address set)', margin + contentW * 0.5, sy); sy += 5
   }
   if (job) {
@@ -142,7 +141,9 @@ export function generatePoPdf({ po, lines, vendor, company, job, businessUnit })
         if (y > 270) { doc.addPage(); y = 20 }
         const link = line.jobLinks[i]
         const job = link.jobs || {}
-        const label = `${job.job_id || `Job ${link.job_id}`}${job.customer_name ? '  ' + job.customer_name : (job.job_title ? '  ' + job.job_title : '')} — qty ${link.quantity}`
+        // Warehouse reads the name, not the job number
+        const jobName = job.customer_name || job.job_title || job.job_id || `Job ${link.job_id}`
+        const label = `${jobName} — qty ${link.quantity}`
         doc.text(label, jobX, y)
         y += 5
       }

@@ -43,6 +43,7 @@ export default function PurchaseOrderDetail() {
   const [notes, setNotes] = useState('')
   const [internalNotes, setInternalNotes] = useState('')
   const [poBusinessUnit, setPoBusinessUnit] = useState('')  // BU name string
+  const [shipToAddress, setShipToAddress] = useState('')
 
   // New-line draft
   const [draft, setDraft] = useState({ product_id: '', description: '', quantity: 1, unit_cost: 0 })
@@ -121,8 +122,9 @@ export default function PurchaseOrderDetail() {
     setShipping(poRow.shipping || '')
     setNotes(poRow.notes || '')
     setInternalNotes(poRow.internal_notes || '')
-    // Seed BU: stored value → job's BU → blank (multi-job PO)
     setPoBusinessUnit(poRow.business_unit || poRow.job?.business_unit || '')
+    // Seed ship-to: explicit override → job address → blank
+    setShipToAddress(poRow.ship_to_address || poRow.job?.job_address || '')
     setLoading(false)
   }
 
@@ -148,6 +150,7 @@ export default function PurchaseOrderDetail() {
         notes: notes || null,
         internal_notes: internalNotes || null,
         business_unit: poBusinessUnit || null,
+        ship_to_address: shipToAddress || null,
         ...extra,
         updated_at: new Date().toISOString(),
       })
@@ -866,6 +869,29 @@ export default function PurchaseOrderDetail() {
                 {po.vendor.default_payment_terms}
               </div>
             )}
+
+            {/* Ship-to address — editable on draft/sent/partial_received */}
+            <div style={{ marginTop: 14 }}>
+              <Label theme={theme}>Ship To</Label>
+              {isLineEditable ? (
+                <textarea
+                  value={shipToAddress}
+                  onChange={(e) => setShipToAddress(e.target.value)}
+                  onBlur={() => saveHeader()}
+                  placeholder="Delivery address (defaults to job address)"
+                  rows={2}
+                  style={{
+                    ...inlineInput(theme),
+                    width: '100%', resize: 'vertical',
+                    fontFamily: 'inherit', lineHeight: 1.5,
+                  }}
+                />
+              ) : (
+                <p style={{ ...readonlyText(theme), whiteSpace: 'pre-wrap' }}>
+                  {shipToAddress || '—'}
+                </p>
+              )}
+            </div>
             {po.job && (
               <div style={{
                 marginTop: 14, padding: '10px 12px',
