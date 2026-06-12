@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,15 +21,9 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const companyId = Deno.env.get('LENARD_COMPANY_ID');
-
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ error: 'API key not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
 
     // Build image content blocks
     const imageBlocks = images.map((img: any, idx: number) => ([
@@ -105,15 +100,11 @@ Rules:
 - Do NOT add any interpretation or fixture names — just raw characters`;
 
     console.log('[Dougie] Starting Pass 1: OCR transcription');
-    const ocrResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+    // claude-sonnet-4-20250514 retires June 15, 2026 — moved to claude-sonnet-4-6.
+    const ocrAi = await callAnthropic(
+      { feature: 'dougie-analyze', companyId: companyId ? Number(companyId) : null },
+      {
+        model: 'claude-sonnet-4-6',
         max_tokens: 8192,
         messages: [
           {
@@ -121,15 +112,14 @@ Rules:
             content: [...imageBlocks, { type: 'text', text: ocrPrompt }],
           },
         ],
-      }),
-    });
+      },
+    );
 
-    const ocrData = await ocrResponse.json();
-    if (ocrData.error) {
-      console.error('[Dougie] OCR error:', ocrData.error);
-      return new Response(JSON.stringify({ error: ocrData.error.message || 'OCR failed' }),
+    if (!ocrAi.ok) {
+      return new Response(JSON.stringify({ error: ocrAi.friendly, ai_unavailable: ocrAi.unavailable === true }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+    const ocrData = ocrAi.data;
 
     const rawTranscription = ocrData.content?.map((c: any) => c.text || '').join('') || '';
     console.log('[Dougie] Pass 1 complete. Transcription length:', rawTranscription.length);
@@ -225,15 +215,10 @@ Return ONLY valid JSON (no markdown, no backticks):
 }`;
 
     console.log('[Dougie] Starting Pass 2: Structuring (with images)');
-    const structResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+    const structAi = await callAnthropic(
+      { feature: 'dougie-analyze', companyId: companyId ? Number(companyId) : null },
+      {
+        model: 'claude-sonnet-4-6',
         max_tokens: 8192,
         messages: [
           {
@@ -242,15 +227,14 @@ Return ONLY valid JSON (no markdown, no backticks):
             content: [...imageBlocks, { type: 'text', text: structurePrompt }],
           },
         ],
-      }),
-    });
+      },
+    );
 
-    const structData = await structResponse.json();
-    if (structData.error) {
-      console.error('[Dougie] Structure error:', structData.error);
-      return new Response(JSON.stringify({ error: structData.error.message || 'Structuring failed' }),
+    if (!structAi.ok) {
+      return new Response(JSON.stringify({ error: structAi.friendly, ai_unavailable: structAi.unavailable === true }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+    const structData = structAi.data;
 
     const structContent = structData.content?.map((c: any) => c.text || '').join('') || '';
     const jsonMatch = structContent.match(/\{[\s\S]*\}/);

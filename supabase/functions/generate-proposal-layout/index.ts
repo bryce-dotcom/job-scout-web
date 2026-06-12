@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,12 +10,6 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
     const {
       company_name,
       customer_name,
@@ -237,28 +232,22 @@ Return ONLY valid JSON (no markdown fences):
 Be specific to ${customer_name} and this project. Generic copy = lost deal. Sell it.`;
     }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
+    const ai = await callAnthropic(
+      { feature: 'generate-proposal-layout', companyId: null },
+      {
         model: 'claude-sonnet-4-6',
         max_tokens: 5000,
         messages: [{ role: 'user', content: prompt }],
-      }),
-    });
+      },
+    );
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Anthropic API error:', errText);
-      return new Response(JSON.stringify({ error: 'AI generation failed: ' + errText }),
+    if (!ai.ok) {
+      console.error('Anthropic API error:', ai.raw || ai.friendly);
+      return new Response(JSON.stringify({ error: ai.friendly, ai_unavailable: ai.unavailable === true }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const aiResult = await response.json();
+    const aiResult = ai.data;
     const content = aiResult.content?.[0]?.text || '';
 
     // Parse the JSON from Claude's response

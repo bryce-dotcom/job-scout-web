@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,12 +29,6 @@ serve(async (req) => {
     if (!headers || !Array.isArray(headers) || headers.length === 0) {
       return new Response(JSON.stringify({ error: 'No headers provided' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'AI not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Use dynamic fields if provided, otherwise fall back to hardcoded product fields
@@ -76,27 +71,21 @@ Response format (JSON only, no markdown):
   "notes": "Brief explanation of mapping choices"
 }`;
 
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
+    const ai = await callAnthropic(
+      { feature: 'ai-map-columns', companyId: null },
+      {
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }],
-      }),
-    });
+      },
+    );
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      return new Response(JSON.stringify({ error: `AI request failed: ${errText}` }),
+    if (!ai.ok) {
+      return new Response(JSON.stringify({ error: ai.friendly, ai_unavailable: ai.unavailable === true }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const aiData = await resp.json();
+    const aiData = ai.data;
     const text = aiData.content?.[0]?.text || '';
 
     // Extract JSON from response (handle potential markdown wrapping)

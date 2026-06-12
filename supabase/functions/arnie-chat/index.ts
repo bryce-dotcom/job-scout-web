@@ -1,5 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+import { callAnthropic, reportAnthropicFailure, logAnthropicSuccess } from '../_shared/anthropic.ts'
 
+// Still read directly here: the SSE streaming path keeps its own fetch
+// (the shared wrapper buffers responses, which would break streaming).
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -340,12 +343,16 @@ Deno.serve(async (req) => {
     })
   } catch (err: any) {
     console.error('[arnie-chat]', err)
-    return jsonError(err.message || 'Internal error', 500)
+    return jsonError(
+      err.message || 'Internal error',
+      500,
+      typeof err?.ai_unavailable === 'boolean' ? { ai_unavailable: err.ai_unavailable } : undefined,
+    )
   }
 })
 
-function jsonError(msg: string, status: number) {
-  return new Response(JSON.stringify({ error: msg }), {
+function jsonError(msg: string, status: number, extra?: Record<string, unknown>) {
+  return new Response(JSON.stringify({ error: msg, ...(extra || {}) }), {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
@@ -357,23 +364,23 @@ async function callWithTools(messages: any[], systemPrompt: string, companyId: n
   // Only advertise tools if we have a companyId to scope queries safely
   const includeTools = !!companyId
   for (let i = 0; i < 5; i++) { // up to 5 tool rounds
-    const res = await fetch(ANTHROPIC_URL, {
-      method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    const ai = await callAnthropic(
+      { feature: 'arnie-chat', companyId: companyId ?? null },
+      {
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 4096,
         system: systemPrompt || '',
         ...(includeTools ? { tools: TOOLS } : {}),
         messages: convo,
-      }),
-    })
-    if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`)
-    const data = await res.json()
+      },
+    )
+    if (!ai.ok) {
+      // Bubbles up to the main catch -> jsonError keeps the { error } shape.
+      const err = new Error(ai.friendly) as Error & { ai_unavailable?: boolean }
+      err.ai_unavailable = ai.unavailable === true
+      throw err
+    }
+    const data = ai.data
     const blocks = data.content || []
     const toolUses = blocks.filter((b: any) => b.type === 'tool_use')
     if (toolUses.length === 0) {
@@ -401,6 +408,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, companyId:
       try {
         let convo = [...messages]
         const includeTools = !!companyId
+        const aiMeta = { feature: 'arnie-chat', companyId: companyId ?? null }
         for (let round = 0; round < 5; round++) {
           const res = await fetch(ANTHROPIC_URL, {
             method: 'POST',
@@ -419,7 +427,8 @@ async function streamWithTools(messages: any[], systemPrompt: string, companyId:
             }),
           })
           if (!res.ok || !res.body) {
-            send('error', { message: `Anthropic ${res.status}: ${await res.text()}` })
+            const failure = await reportAnthropicFailure(aiMeta, res.status, await res.text())
+            send('error', { message: failure.friendly, ai_unavailable: failure.unavailable === true })
             controller.close()
             return
           }
@@ -430,6 +439,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, companyId:
           let buf = ''
           const blocks: any[] = []
           let stopReason = ''
+          let usage: any = null
 
           while (true) {
             const { value, done } = await reader.read()
@@ -464,12 +474,18 @@ async function streamWithTools(messages: any[], systemPrompt: string, companyId:
                     delete b.input_buf
                     send('tool_call', { name: b.name })
                   }
+                } else if (evt.type === 'message_start') {
+                  if (evt.message?.usage) usage = { ...(usage || {}), ...evt.message.usage }
                 } else if (evt.type === 'message_delta') {
                   if (evt.delta?.stop_reason) stopReason = evt.delta.stop_reason
+                  if (evt.usage) usage = { ...(usage || {}), ...evt.usage }
                 }
               } catch {}
             }
           }
+
+          // Usage metering for this streamed round — fire-and-forget.
+          if (usage) logAnthropicSuccess(aiMeta, 'claude-sonnet-4-5-20250929', usage).catch(() => {})
 
           const toolUses = blocks.filter((b: any) => b?.type === 'tool_use')
           if (stopReason !== 'tool_use' || toolUses.length === 0) {

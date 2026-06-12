@@ -17,6 +17,7 @@
 // table count (last hour). Tighten later if needed.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -95,7 +96,7 @@ function estimateProgram(turfSqft: number, p: any, freq = 'Weekly', startM = 4, 
   };
 }
 
-async function callClaudeVision(opts: { apiKey: string; image_base64: string; media_type: string; lat: number; lng: number; address?: string; zoom: number; image_width: number; image_height: number; scale: number; correctionsBlock: string }) {
+async function callClaudeVision(opts: { companyId: number | null; image_base64: string; media_type: string; lat: number; lng: number; address?: string; zoom: number; image_width: number; image_height: number; scale: number; correctionsBlock: string }) {
   const footprintSqft = imageAreaSqft({ lat: opts.lat, zoom: opts.zoom, width: opts.image_width, height: opts.image_height });
   const sys = `You are an expert lawn-care estimator analyzing a top-down satellite photo of a residential property. Identify the MOWABLE TURF AREA — the actual grass a crew would push a mower across. Exclude house, driveway, sidewalks, beds, pool, dirt, deck. Park-strip grass counts.
 
@@ -107,10 +108,9 @@ Total image footprint ≈ ${footprintSqft.toLocaleString()} sqft (so 25% lawn �
 
 Return JSON only.`;
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': opts.apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
+  const ai = await callAnthropic(
+    { feature: 'zach-instant-quote', companyId: opts.companyId },
+    {
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 700,
       system: sys,
@@ -118,13 +118,12 @@ Return JSON only.`;
         { type: 'image', source: { type: 'base64', media_type: opts.media_type, data: opts.image_base64 } },
         { type: 'text', text: user },
       ] }],
-    }),
-  });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error('Claude error: ' + t);
+    },
+  );
+  if (!ai.ok) {
+    throw new Error(ai.friendly);
   }
-  const j = await res.json();
+  const j = ai.data;
   const txt = j?.content?.[0]?.text || '';
   const m = txt.match(/\{[\s\S]*\}/);
   return JSON.parse(m ? m[0] : txt);
@@ -150,9 +149,7 @@ serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (!SUPABASE_URL || !SERVICE_KEY) return json({ error: 'supabase env missing' }, 500);
-    if (!ANTHROPIC_API_KEY) return json({ error: 'ANTHROPIC_API_KEY missing' }, 500);
 
     const sbHeaders = { 'Authorization': `Bearer ${SERVICE_KEY}`, 'apikey': SERVICE_KEY, 'Content-Type': 'application/json' };
 
@@ -191,7 +188,7 @@ serve(async (req) => {
     let aiResult: any;
     try {
       aiResult = await callClaudeVision({
-        apiKey: ANTHROPIC_API_KEY, image_base64, media_type,
+        companyId: company.id ?? null, image_base64, media_type,
         lat: Number(lat), lng: Number(lng), address, zoom, image_width, image_height, scale,
         correctionsBlock,
       });

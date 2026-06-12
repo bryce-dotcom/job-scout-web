@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,14 +13,6 @@ serve(async (req) => {
 
   try {
     const { image } = await req.json();
-
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ success: false, error: 'API key not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
 
     if (!image || !image.base64) {
       return new Response(JSON.stringify({ success: false, error: 'No image provided' }), {
@@ -53,15 +46,10 @@ Return ONLY valid JSON, no other text:
   "notes": "<string or null>"
 }`;
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+    const ai = await callAnthropic(
+      { feature: 'scan-receipt', companyId: null },
+      {
+        model: 'claude-sonnet-4-6',
         max_tokens: 1024,
         messages: [{
           role: 'user',
@@ -77,19 +65,17 @@ Return ONLY valid JSON, no other text:
             { type: 'text', text: promptText }
           ]
         }]
-      })
-    });
+      },
+    );
 
-    const data = await response.json();
-
-    if (data.error) {
-      console.error('[ScanReceipt] Claude API error:', data.error);
-      return new Response(JSON.stringify({ success: false, error: data.error.message || 'AI analysis failed' }), {
+    if (!ai.ok) {
+      return new Response(JSON.stringify({ success: false, error: ai.friendly, ai_unavailable: ai.unavailable === true }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
+    const data = ai.data;
     const content = data.content?.[0]?.text || '';
     const jsonMatch = content.match(/\{[\s\S]*\}/);
 

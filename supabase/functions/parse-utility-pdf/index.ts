@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { encode as base64Encode, decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -331,14 +332,6 @@ serve(async (req) => {
       });
     }
 
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ success: false, error: 'API key not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
     const systemPrompt = document_type === 'form_field_analysis'
       ? FORM_FIELD_ANALYSIS_PROMPT
       : document_type === 'rebate_program'
@@ -379,57 +372,34 @@ serve(async (req) => {
       });
     }
 
-    const apiHeaders: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01'
+    // PDF document blocks are GA on current models — the old
+    // 'pdfs-2024-09-25' beta header is no longer required.
+    // claude-sonnet-4-20250514 retires June 15, 2026 — moved to claude-sonnet-4-6.
+    const anthropicBody = {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 64000,
+      system: systemPrompt,
+      messages: [{
+        role: 'user',
+        content: userContent
+      }]
     };
-    if (pdfData) {
-      apiHeaders['anthropic-beta'] = 'pdfs-2024-09-25';
-    }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: apiHeaders,
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 64000,
-        system: systemPrompt,
-        messages: [{
-          role: 'user',
-          content: userContent
-        }]
-      })
-    });
+    const ai = await callAnthropic({ feature: 'parse-utility-pdf', companyId: null }, anthropicBody);
 
-    const data = await response.json();
-
-    if (data.error) {
-      // Retry once on rate limit
-      if (data.error.message?.includes('rate limit')) {
+    if (!ai.ok) {
+      // Retry once on rate limit (mirrors the old `error.message includes 'rate limit'` check)
+      if (ai.errorKind === 'rate_limit') {
         console.log('Rate limited, waiting 61s before retry...');
         await new Promise(r => setTimeout(r, 61000));
-        const retryResponse = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: apiHeaders,
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 64000,
-            system: systemPrompt,
-            messages: [{
-              role: 'user',
-              content: userContent
-            }]
-          })
-        });
-        const retryData = await retryResponse.json();
-        if (retryData.error) {
-          return new Response(JSON.stringify({ success: false, error: retryData.error.message || 'Anthropic API error (after retry)', storage_path: storagePath }), {
+        const retryAi = await callAnthropic({ feature: 'parse-utility-pdf', companyId: null }, anthropicBody);
+        if (!retryAi.ok) {
+          return new Response(JSON.stringify({ success: false, error: retryAi.friendly || 'Anthropic API error (after retry)', ai_unavailable: retryAi.unavailable === true, storage_path: storagePath }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
-        const retryContent = retryData.content?.[0]?.text || '';
+        const retryContent = retryAi.data.content?.[0]?.text || '';
         const retryJsonMatch = retryContent.match(/\{[\s\S]*\}/);
         if (retryJsonMatch) {
           const results = JSON.parse(retryJsonMatch[0]);
@@ -437,13 +407,16 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
+        // No parseable JSON in the retry — fall through to the error response below (same as before).
       }
 
-      return new Response(JSON.stringify({ success: false, error: data.error.message || 'Anthropic API error', storage_path: storagePath }), {
+      return new Response(JSON.stringify({ success: false, error: ai.friendly || 'Anthropic API error', ai_unavailable: ai.unavailable === true, storage_path: storagePath }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
+
+    const data = ai.data;
 
     const content = data.content?.[0]?.text || '';
 

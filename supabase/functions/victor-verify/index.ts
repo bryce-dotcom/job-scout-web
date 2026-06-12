@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,12 +22,7 @@ serve(async (req) => {
   }
 
   try {
-    const { images, jobContext, checklist, verificationType } = await req.json();
-
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!ANTHROPIC_API_KEY) {
-      return json({ success: false, error: 'API key not configured on the server' });
-    }
+    const { images, jobContext, checklist, verificationType, companyId } = await req.json();
 
     if (!images || images.length === 0) {
       return json({ success: false, error: 'No images provided' });
@@ -198,16 +194,13 @@ Score guide: A=90+ (excellent), B=80-89 (good, minor issues), C=70-79 (acceptabl
 Only return valid JSON, no other text.`;
     }
 
-    // Call Claude Vision API
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+    // Call Claude Vision API via the shared wrapper (usage metering, error
+    // taxonomy, admin alerting). claude-sonnet-4-20250514 retires June 15 —
+    // moved to claude-sonnet-4-6.
+    const ai = await callAnthropic(
+      { feature: 'victor-verify', companyId: companyId ?? jobContext?.companyId ?? null },
+      {
+        model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         messages: [{
           role: 'user',
@@ -216,15 +209,16 @@ Only return valid JSON, no other text.`;
             { type: 'text', text: promptText }
           ]
         }]
-      })
-    });
+      },
+    );
 
-    const data = await response.json();
-
-    if (data.error) {
-      console.error('[Victor] Claude API error:', data.error);
-      return json({ success: false, error: data.error.message || 'AI analysis failed' });
+    if (!ai.ok) {
+      // ai_unavailable=true means OUR billing/key problem — the client must
+      // NOT block clock-out/completion on it (Cameron was stuck in the field
+      // when the account ran out of credits).
+      return json({ success: false, error: ai.friendly, ai_unavailable: ai.unavailable === true });
     }
+    const data = ai.data;
 
     const content = data.content?.[0]?.text || '';
 

@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -98,14 +99,6 @@ serve(async (req) => {
 
     const effectiveTone = VALID_TONES.includes(tone) ? tone : 'professional';
 
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ success: false, error: 'ANTHROPIC_API_KEY not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const systemPrompt = buildSystemPrompt(type, effectiveTone, companyInfo || {});
 
     // Build user message with context
@@ -120,32 +113,25 @@ serve(async (req) => {
 
     console.log(`Generating ${type} email (tone: ${effectiveTone}), prompt: ${systemPrompt.length + userMessage.length} chars`);
 
-    // Call Claude API
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
+    // Call Claude API via the shared wrapper (usage metering, error taxonomy, admin alerting)
+    const ai = await callAnthropic(
+      { feature: 'cc-generate-email', companyId: null },
+      {
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 4096,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
-      }),
-    });
+      },
+    );
 
-    const data = await response.json();
-
-    if (data.error) {
-      const errMsg = data.error.message || 'Anthropic API error';
-      console.error('Claude API error:', errMsg);
-      return new Response(JSON.stringify({ success: false, error: errMsg }), {
+    if (!ai.ok) {
+      return new Response(JSON.stringify({ success: false, error: ai.friendly, ai_unavailable: ai.unavailable === true }), {
         status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    const data = ai.data;
 
     const content = (data.content || [])
       .filter((b: { type: string }) => b.type === 'text')

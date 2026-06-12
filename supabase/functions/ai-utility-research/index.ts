@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,14 +11,13 @@ const corsHeaders = {
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 async function callClaude(
-  apiKey: string,
   system: string,
   userMessage: string,
-  opts: { webSearch?: number; maxTokens?: number; beta?: string; retries?: number } = {}
+  opts: { webSearch?: number; maxTokens?: number; retries?: number } = {}
 ) {
-  const { webSearch = 0, maxTokens = 16000, beta, retries = 1 } = opts;
+  const { webSearch = 0, maxTokens = 16000, retries = 1 } = opts;
   const body: Record<string, unknown> = {
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: userMessage }],
@@ -25,31 +25,24 @@ async function callClaude(
   if (webSearch > 0) {
     body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: webSearch }];
   }
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'x-api-key': apiKey,
-    'anthropic-version': '2023-06-01',
-  };
-  if (beta) headers['anthropic-beta'] = beta;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
+    const ai = await callAnthropic({ feature: 'ai-utility-research', companyId: null }, body);
 
-    if (data.error) {
-      const msg = data.error.message || 'Anthropic API error';
-      if (msg.includes('rate limit') && attempt < retries) {
+    if (!ai.ok) {
+      if (ai.errorKind === 'rate_limit' && attempt < retries) {
         console.log(`Rate limited, waiting 61s before retry...`);
         await wait(61000);
         continue;
       }
-      throw new Error(msg);
+      // Carry the unavailable flag to the handler's catch so the client can
+      // tell our billing/key problems apart from ordinary failures.
+      const err = new Error(ai.friendly || 'Anthropic API error') as Error & { ai_unavailable?: boolean };
+      err.ai_unavailable = ai.unavailable === true;
+      throw err;
     }
 
+    const data = ai.data;
     const text = (data.content || [])
       .filter((b: { type: string }) => b.type === 'text')
       .map((b: { text: string }) => b.text)
@@ -246,21 +239,13 @@ serve(async (req) => {
       });
     }
 
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ success: false, error: 'API key not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
     const startTime = Date.now();
     const elapsed = () => Date.now() - startTime;
 
     // ─── Single-pass research with web search ───────────────────────────
     console.log(`[Research] Starting for ${state} with web search...`);
 
-    const text = await callClaude(ANTHROPIC_API_KEY, SYSTEM_PROMPT,
+    const text = await callClaude(SYSTEM_PROMPT,
       `Research ALL electric utility providers in ${state} with commercial energy efficiency rebate programs.
 
 For each provider, find:
@@ -344,7 +329,11 @@ Return the structured JSON.`,
     });
 
   } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: (error as Error).message }), {
+    return new Response(JSON.stringify({
+      success: false,
+      error: (error as Error).message,
+      ai_unavailable: (error as { ai_unavailable?: boolean })?.ai_unavailable === true,
+    }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

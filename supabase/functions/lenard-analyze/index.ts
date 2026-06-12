@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,15 +16,9 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const companyId = Deno.env.get('LENARD_COMPANY_ID');
-
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ error: 'API key not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
 
     // Fetch recent corrections for few-shot learning
     let correctionsBlock = '';
@@ -51,15 +46,11 @@ Pay close attention to these corrections. If you see a similar fixture, use the 
       }
     }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+    const ai = await callAnthropic(
+      { feature: 'lenard-analyze', companyId: companyId ? Number(companyId) : null },
+      {
+        // claude-sonnet-4-20250514 retires June 15, 2026 — moved to claude-sonnet-4-6.
+        model: 'claude-sonnet-4-6',
         max_tokens: 2048,
         messages: [{
           role: 'user',
@@ -107,14 +98,15 @@ ${correctionsBlock}
 Return ONLY a valid JSON array. No markdown, no backticks, no explanation.` }
           ]
         }]
-      })
-    });
+      },
+    );
 
-    const aiData = await response.json();
-    if (aiData.error) {
-      return new Response(JSON.stringify({ error: aiData.error.message || 'AI request failed' }),
+    if (!ai.ok) {
+      return new Response(JSON.stringify({ error: ai.friendly, ai_unavailable: ai.unavailable === true }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    const aiData = ai.data;
 
     const content = aiData.content?.map((c: any) => c.text || '').join('') || '';
     const jsonMatch = content.match(/\[[\s\S]*\]/);
