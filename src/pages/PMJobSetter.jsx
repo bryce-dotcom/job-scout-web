@@ -2970,12 +2970,37 @@ export default function PMJobSetter() {
                                       : <ChevronRight size={16} style={{ color: theme.textMuted }} />}
                                   </span>
                                   <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '2px', lineHeight: '1.3' }}>
-                                      {job.customer?.name || `Job #${job.id}`}
-                                    </div>
-                                    <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: progress > 0 ? '6px' : '0' }}>
-                                      {job.job_title}
-                                    </div>
+                                    {/* Service visits lead with the SERVICE name (that's the
+                                        operative info for dispatch) + a kind chip; the contact
+                                        drops to the secondary line. Regular installs keep
+                                        contact-first — unchanged. */}
+                                    {job.parent_job_id ? (
+                                      <>
+                                        <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '2px', lineHeight: '1.3' }}>
+                                          {job.job_title || `Service — Job #${job.id}`}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: progress > 0 ? '6px' : '0', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                          {(() => {
+                                            const kc = { warranty: '#dc2626', annual: '#16a34a', tune_up: '#0284c7', repair: '#ea580c', upsell: '#9333ea' }[job.service_kind] || '#6b7280'
+                                            return (
+                                              <span style={{ padding: '1px 7px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, backgroundColor: kc + '1c', color: kc, textTransform: 'capitalize' }}>
+                                                {(job.service_kind || 'service').replace(/_/g, ' ')}
+                                              </span>
+                                            )
+                                          })()}
+                                          <span>{job.customer?.name || job.customer_name || ''}</span>
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '2px', lineHeight: '1.3' }}>
+                                          {job.customer?.name || `Job #${job.id}`}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: progress > 0 ? '6px' : '0' }}>
+                                          {job.job_title}
+                                        </div>
+                                      </>
+                                    )}
                                     {progress > 0 && (
                                       <>
                                         <div style={{ height: '4px', backgroundColor: theme.border, borderRadius: '3px', overflow: 'hidden', marginBottom: '5px' }}>
@@ -4555,6 +4580,16 @@ export default function PMJobSetter() {
               </div>
 
               {/* Description / Notes */}
+              {detailJob.details && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {detailJob.parent_job_id ? 'Service Details' : 'Details'}
+                  </div>
+                  <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5', whiteSpace: 'pre-wrap', padding: '10px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    {detailJob.details}
+                  </div>
+                </div>
+              )}
               {detailJob.notes && (
                 <div style={{ marginBottom: '16px' }}>
                   <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Notes</div>

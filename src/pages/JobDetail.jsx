@@ -8401,6 +8401,7 @@ function AddServiceVisitModal({ parentJob, companyId, theme, onClose, onCreated 
     return base.toISOString().slice(0, 10)
   })
   const [title, setTitle] = useState('')
+  const [details, setDetails] = useState('')
   const [partsCoverage, setPartsCoverage] = useState('customer')
   const [laborCoverage, setLaborCoverage] = useState('customer')
   const [prepaidAmount, setPrepaidAmount] = useState('')
@@ -8485,6 +8486,10 @@ function AddServiceVisitModal({ parentJob, companyId, theme, onClose, onCreated 
         parts_coverage: partsCoverage,
         labor_coverage: laborCoverage,
         coverage_notes: coverageNotes.trim() || null,
+        // What the visit is actually for — crews were cramming this into
+        // the title because there was nowhere else to put it. Lands in
+        // jobs.details so it shows on the job page + board drawer.
+        details: details.trim() || null,
         prepaid_revenue: prepaidAmount ? Number(prepaidAmount) : null,
         // Carry over context from parent.
         customer_id: parentJob.customer_id,
@@ -8596,6 +8601,23 @@ function AddServiceVisitModal({ parentJob, companyId, theme, onClose, onCreated 
               placeholder={`${KIND_OPTIONS.find(o => o.value === kind)?.label} — ${parentJob?.job_title || ''}`}
               style={inputStyle}
             />
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+              Short label for the board/calendar. Put the full story in Details below.
+            </div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Details — what's this visit for?</label>
+            <textarea
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
+              placeholder="e.g., Photo cell not wired correctly — work with onsite electrician. Sensors in office not responding."
+              rows={3}
+              style={{ ...inputStyle, resize: 'vertical', minHeight: '64px', fontFamily: 'inherit' }}
+            />
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+              Shows on the service job's page so the crew knows exactly what they're walking into.
+            </div>
           </div>
 
           <div>
