@@ -870,27 +870,21 @@ export default function PurchaseOrderDetail() {
               </div>
             )}
 
-            {/* Ship-to address — editable on draft/sent/partial_received */}
+            {/* Ship-to address — always editable, no financial implications */}
             <div style={{ marginTop: 14 }}>
               <Label theme={theme}>Ship To</Label>
-              {isLineEditable ? (
-                <textarea
-                  value={shipToAddress}
-                  onChange={(e) => setShipToAddress(e.target.value)}
-                  onBlur={() => saveHeader()}
-                  placeholder="Delivery address (defaults to job address)"
-                  rows={2}
-                  style={{
-                    ...inlineInput(theme),
-                    width: '100%', resize: 'vertical',
-                    fontFamily: 'inherit', lineHeight: 1.5,
-                  }}
-                />
-              ) : (
-                <p style={{ ...readonlyText(theme), whiteSpace: 'pre-wrap' }}>
-                  {shipToAddress || '—'}
-                </p>
-              )}
+              <textarea
+                value={shipToAddress}
+                onChange={(e) => setShipToAddress(e.target.value)}
+                onBlur={() => saveHeader()}
+                placeholder="Delivery address (defaults to job address)"
+                rows={2}
+                style={{
+                  ...inlineInput(theme),
+                  width: '100%', resize: 'vertical',
+                  fontFamily: 'inherit', lineHeight: 1.5,
+                }}
+              />
             </div>
             {po.job && (
               <div style={{
