@@ -416,26 +416,37 @@ export default function Procurement() {
                                 Order {item.toOrder}
                               </strong>
                             </div>
-                            {/* Per-job breakdown */}
-                            <div style={{
-                              marginTop: 6, paddingLeft: 14,
-                              fontSize: 11, color: theme.textMuted,
-                              borderLeft: `2px solid ${theme.border}`,
-                            }}>
+                            {/* Per-job breakdown — name front and centre */}
+                            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                               {item.jobContributions.map(c => (
-                                <div key={c.jobLineId} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
-                                  <Briefcase size={10} style={{ flexShrink: 0 }} />
-                                  <button
-                                    onClick={() => navigate(`/jobs/${c.jobId}`)}
-                                    style={{
-                                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                                      color: theme.accent, fontSize: 11,
-                                    }}
-                                  >
-                                    {c.jobLabel}
-                                  </button>
-                                  <span>· qty {c.qty}</span>
-                                </div>
+                                <button
+                                  key={c.jobLineId}
+                                  onClick={() => navigate(`/jobs/${c.jobId}`)}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+                                    background: 'none', border: `1px solid ${theme.border}`,
+                                    textAlign: 'left', width: '100%',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                    <Briefcase size={12} style={{ flexShrink: 0, color: theme.accent }} />
+                                    <span style={{ fontSize: 13, fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {c.jobName}
+                                    </span>
+                                    <span style={{ fontSize: 11, color: theme.textMuted, flexShrink: 0 }}>
+                                      {c.jobLabel !== c.jobName ? c.jobLabel.split(' ')[0] : ''}
+                                    </span>
+                                  </div>
+                                  <span style={{
+                                    flexShrink: 0, marginLeft: 8,
+                                    padding: '2px 8px', borderRadius: 10,
+                                    fontSize: 11, fontWeight: 700,
+                                    backgroundColor: theme.accentBg, color: theme.accent,
+                                  }}>
+                                    qty {c.qty}
+                                  </span>
+                                </button>
                               ))}
                             </div>
                             {/* Inline vendor picker for no-vendor items */}
