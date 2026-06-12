@@ -24,10 +24,10 @@ export function generatePoPdf({ po, lines, vendor, company, job, businessUnit })
     const lines = doc.splitTextToSize(companyAddress, contentW * 0.5)
     for (const l of lines) { doc.text(l, margin, y); y += 5 }
   }
-  if (company?.phone) { doc.text(company.phone, margin, y); y += 5 }
-  if (company?.owner_email || company?.email) {
-    doc.text(company.owner_email || company.email, margin, y); y += 5
-  }
+  const headerPhone = businessUnit?.phone || company?.phone
+  const headerEmail = businessUnit?.email || company?.owner_email || company?.email
+  if (headerPhone) { doc.text(headerPhone, margin, y); y += 5 }
+  if (headerEmail) { doc.text(headerEmail, margin, y); y += 5 }
   y += 4
 
   // PO title block (right side)

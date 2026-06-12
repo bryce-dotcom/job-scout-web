@@ -24,6 +24,7 @@ export default function PurchaseOrderDetail() {
   const isMobile = useIsMobile()
   const companyId = useStore((s) => s.companyId)
   const company = useStore((s) => s.company)
+  const businessUnits = useStore((s) => s.businessUnits)
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
@@ -41,6 +42,7 @@ export default function PurchaseOrderDetail() {
   const [shipping, setShipping] = useState('')
   const [notes, setNotes] = useState('')
   const [internalNotes, setInternalNotes] = useState('')
+  const [poBusinessUnit, setPoBusinessUnit] = useState('')  // BU name string
 
   // New-line draft
   const [draft, setDraft] = useState({ product_id: '', description: '', quantity: 1, unit_cost: 0 })
@@ -79,7 +81,7 @@ export default function PurchaseOrderDetail() {
     setLoading(true)
     const [poRes, linesRes, vRes, pRes] = await Promise.all([
       supabase.from('purchase_orders')
-        .select('*, vendor:vendors(id, name, email, billing_address, default_payment_terms), job:jobs(id, job_id, job_title, customer_name, job_address)')
+        .select('*, vendor:vendors(id, name, email, billing_address, default_payment_terms), job:jobs(id, job_id, job_title, customer_name, job_address, business_unit)')
         .eq('id', id).eq('company_id', companyId).maybeSingle(),
       supabase.from('purchase_order_lines').select('*').eq('po_id', id).order('sort_order').order('id'),
       supabase.from('vendors').select('id, name').eq('company_id', companyId).eq('active', true).order('name'),
@@ -119,6 +121,8 @@ export default function PurchaseOrderDetail() {
     setShipping(poRow.shipping || '')
     setNotes(poRow.notes || '')
     setInternalNotes(poRow.internal_notes || '')
+    // Seed BU: stored value → job's BU → blank (multi-job PO)
+    setPoBusinessUnit(poRow.business_unit || poRow.job?.business_unit || '')
     setLoading(false)
   }
 
@@ -143,6 +147,7 @@ export default function PurchaseOrderDetail() {
         subtotal: t.subtotal, total: t.total,
         notes: notes || null,
         internal_notes: internalNotes || null,
+        business_unit: poBusinessUnit || null,
         ...extra,
         updated_at: new Date().toISOString(),
       })
@@ -248,9 +253,15 @@ export default function PurchaseOrderDetail() {
   // PDF + Send helpers ────────────────────────────────────────────────
 
   // Build a fresh PDF doc from current state (vendor + lines + job).
-  const buildPdf = () => generatePoPdf({
-    po, lines, vendor: po.vendor, company, job: po.job,
-  })
+  const buildPdf = () => {
+    // Resolve the full BU object (has name/address/phone/email) from the
+    // stored BU name so the PDF header shows the right division.
+    const buName = poBusinessUnit || po.job?.business_unit
+    const buObj = Array.isArray(businessUnits)
+      ? businessUnits.find(bu => (bu.name || bu) === buName) || null
+      : null
+    return generatePoPdf({ po, lines, vendor: po.vendor, company, job: po.job, businessUnit: buObj })
+  }
 
   const downloadPdf = () => {
     try {
@@ -806,6 +817,25 @@ export default function PurchaseOrderDetail() {
                   </select>
                 ) : (
                   <p style={readonlyText(theme)}>{po.vendor?.name || '—'}</p>
+                )}
+              </div>
+              <div>
+                <Label theme={theme}>Business Unit</Label>
+                {isEditable ? (
+                  <select
+                    value={poBusinessUnit}
+                    onChange={(e) => setPoBusinessUnit(e.target.value)}
+                    onBlur={() => saveHeader()}
+                    style={selectStyle(theme)}
+                  >
+                    <option value="">— Select business unit —</option>
+                    {(Array.isArray(businessUnits) ? businessUnits : []).map((bu, i) => {
+                      const name = bu.name || bu
+                      return <option key={i} value={name}>{name}</option>
+                    })}
+                  </select>
+                ) : (
+                  <p style={readonlyText(theme)}>{poBusinessUnit || '—'}</p>
                 )}
               </div>
               <div>

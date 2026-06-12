@@ -186,6 +186,7 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
             po_number: poNumber,
             vendor_id: vendorId,
             job_id: job.id,
+            business_unit: job.business_unit || null,
             status: 'draft',
           })
           .select().single()
