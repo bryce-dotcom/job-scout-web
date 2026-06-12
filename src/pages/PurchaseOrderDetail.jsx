@@ -123,6 +123,9 @@ export default function PurchaseOrderDetail() {
   }
 
   const isEditable = po && (po.status === 'draft')
+  // Line-level qty + delete is allowed on sent/partial_received too — lets
+  // users correct automation mistakes without voiding the whole PO.
+  const isLineEditable = po && ['draft', 'sent', 'partial_received'].includes(po.status)
   const status = po ? (PO_STATUS_LABELS[po.status] || PO_STATUS_LABELS.draft) : null
 
   const totals = useMemo(() => computePoTotals(lines, tax, shipping), [lines, tax, shipping])
@@ -880,6 +883,20 @@ export default function PurchaseOrderDetail() {
               )}
             </div>
 
+            {/* Warn when editing a live PO so the user knows to re-send */}
+            {isLineEditable && !isEditable && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 12px', marginBottom: 12, borderRadius: 8,
+                backgroundColor: 'rgba(234,179,8,0.12)',
+                border: '1px solid rgba(234,179,8,0.3)',
+                fontSize: 12, color: '#a16207',
+              }}>
+                <span style={{ fontWeight: 700 }}>PO already sent</span>
+                {' '}— qty and line changes won't auto-notify the vendor. Re-send the PDF after editing.
+              </div>
+            )}
+
             {lines.length === 0 ? (
               <p style={{ color: theme.textMuted, fontSize: 13, fontStyle: 'italic', margin: 0 }}>
                 No lines yet. {isEditable && 'Use Add from Catalog or the custom-line row below.'}
@@ -907,7 +924,7 @@ export default function PurchaseOrderDetail() {
                       gridTemplateColumns: '1fr 90px 110px 110px 36px',
                       gap: 8, alignItems: 'center',
                     }}>
-                      {isEditable ? (
+                      {isLineEditable ? (
                         <input
                           type="text" value={line.description || ''}
                           onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, description: e.target.value } : l))}
@@ -917,7 +934,7 @@ export default function PurchaseOrderDetail() {
                       ) : (
                         <span style={{ fontSize: 13, color: theme.text }}>{line.description}</span>
                       )}
-                      {isEditable ? (
+                      {isLineEditable ? (
                         <input
                           type="number" step="0.01" value={line.quantity_ordered}
                           onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, quantity_ordered: e.target.value } : l))}
@@ -927,7 +944,7 @@ export default function PurchaseOrderDetail() {
                       ) : (
                         <span style={{ fontSize: 13, textAlign: 'right' }}>{line.quantity_ordered}</span>
                       )}
-                      {isEditable ? (
+                      {isLineEditable ? (
                         <input
                           type="number" step="0.01" value={line.unit_cost}
                           onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, unit_cost: e.target.value } : l))}
@@ -940,7 +957,7 @@ export default function PurchaseOrderDetail() {
                       <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: theme.text }}>
                         {formatCurrency(line.line_total)}
                       </span>
-                      {isEditable && (
+                      {isLineEditable && (
                         <button
                           onClick={() => deleteLine(line.id)}
                           style={{
