@@ -47,6 +47,7 @@ export async function aggregateNeedsOrder(companyId) {
     .from('jobs')
     .select('id, job_id, job_title, customer_name, start_date, status, parts_status')
     .in('id', jobIds)
+    .eq('parts_status', 'needs_order')
     .not('status', 'in', `(${EXCLUDED_STATUSES.map(s => `"${s}"`).join(',')})`)
     .order('start_date', { ascending: true, nullsLast: true })
 
