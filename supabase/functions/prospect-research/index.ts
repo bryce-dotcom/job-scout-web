@@ -19,6 +19,7 @@
 // name + city + state) so re-searches dedupe + re-enriches are free.
 // =====================================================================
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { recordComputeUsage } from "../_shared/compute.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = {
@@ -174,6 +175,8 @@ Rules:
         system,
         userMsg,
         maxRounds: 6,
+        companyId: company_id,
+        feature: 'prospect_search',
       });
 
       let prospects: any[] = [];
@@ -305,6 +308,8 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
         system,
         userMsg,
         maxRounds: 5,
+        companyId: company_id,
+        feature: 'prospect_enrich',
       });
 
       let enriched: any = {};
@@ -433,8 +438,9 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
 // ─── Claude agent loop with web_search tool ─────────────────────────
 async function runClaudeAgent(args: {
   apiKey: string; system: string; userMsg: string; maxRounds: number;
+  companyId?: number | string | null; feature?: string;
 }): Promise<string> {
-  const { apiKey, system, userMsg, maxRounds } = args;
+  const { apiKey, system, userMsg, maxRounds, companyId, feature } = args;
   let messages: any[] = [{ role: 'user', content: userMsg }];
   const tools = [
     { type: 'web_search_20250305', name: 'web_search', max_uses: 8 },
@@ -461,6 +467,14 @@ async function runClaudeAgent(args: {
       throw new Error(`Anthropic ${res.status}: ${errText.slice(0, 500)}`);
     }
     const data = await res.json();
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md).
+    // Note: token cost only; web_search server-tool usage is billed separately
+    // and not yet captured here.
+    await recordComputeUsage({
+      supabaseUrl: Deno.env.get('SUPABASE_URL'), serviceKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
+      companyId, feature: feature || 'prospect_research', agentSlug: 'lead-setter',
+      model: CLAUDE_MODEL, usage: data?.usage,
+    });
     const blocks = data.content || [];
 
     // Claude's server-side web_search tool returns results as part of

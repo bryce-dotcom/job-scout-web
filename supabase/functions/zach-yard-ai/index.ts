@@ -17,6 +17,7 @@
 // Model: Anthropic Claude Sonnet 4.5 with vision.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { recordComputeUsage } from "../_shared/compute.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -175,6 +176,12 @@ Analyze this satellite image and return the JSON.`;
     }
 
     const claudeJson = await claudeRes.json();
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+    await recordComputeUsage({
+      supabaseUrl: Deno.env.get('SUPABASE_URL'), serviceKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
+      companyId: company_id, feature: 'zach_yard_ai', agentSlug: 'zach',
+      model: 'claude-sonnet-4-5-20250929', usage: claudeJson?.usage,
+    });
     const raw = claudeJson?.content?.[0]?.text || '';
 
     // Extract JSON from the response (Claude usually obeys but be defensive)

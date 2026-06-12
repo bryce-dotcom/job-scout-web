@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+import { recordComputeUsage } from "../_shared/compute.ts"
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
@@ -374,6 +375,12 @@ async function callWithTools(messages: any[], systemPrompt: string, companyId: n
     })
     if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`)
     const data = await res.json()
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+    await recordComputeUsage({
+      supabaseUrl: SUPABASE_URL, serviceKey: SUPABASE_SERVICE_ROLE_KEY,
+      companyId, feature: 'arnie_chat', agentSlug: 'arnie',
+      model: 'claude-sonnet-4-5-20250929', usage: data?.usage,
+    })
     const blocks = data.content || []
     const toolUses = blocks.filter((b: any) => b.type === 'tool_use')
     if (toolUses.length === 0) {
@@ -430,6 +437,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, companyId:
           let buf = ''
           const blocks: any[] = []
           let stopReason = ''
+          let mu: any = {}  // accumulates usage for shadow metering
 
           while (true) {
             const { value, done } = await reader.read()
@@ -464,12 +472,22 @@ async function streamWithTools(messages: any[], systemPrompt: string, companyId:
                     delete b.input_buf
                     send('tool_call', { name: b.name })
                   }
+                } else if (evt.type === 'message_start') {
+                  if (evt.message?.usage) mu = { ...evt.message.usage }
                 } else if (evt.type === 'message_delta') {
                   if (evt.delta?.stop_reason) stopReason = evt.delta.stop_reason
+                  if (evt.usage?.output_tokens != null) mu.output_tokens = evt.usage.output_tokens
                 }
               } catch {}
             }
           }
+
+          // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+          await recordComputeUsage({
+            supabaseUrl: SUPABASE_URL, serviceKey: SUPABASE_SERVICE_ROLE_KEY,
+            companyId, feature: 'arnie_chat', agentSlug: 'arnie',
+            model: 'claude-sonnet-4-5-20250929', usage: mu,
+          })
 
           const toolUses = blocks.filter((b: any) => b?.type === 'tool_use')
           if (stopReason !== 'tool_use' || toolUses.length === 0) {

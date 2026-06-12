@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { recordComputeUsage } from "../_shared/compute.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -125,6 +126,12 @@ Rules:
     });
 
     const ocrData = await ocrResponse.json();
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+    await recordComputeUsage({
+      supabaseUrl: SUPABASE_URL, serviceKey: SERVICE_KEY,
+      companyId, feature: 'dougie_ocr', agentSlug: 'dougie',
+      model: 'claude-sonnet-4-20250514', usage: ocrData?.usage,
+    });
     if (ocrData.error) {
       console.error('[Dougie] OCR error:', ocrData.error);
       return new Response(JSON.stringify({ error: ocrData.error.message || 'OCR failed' }),
@@ -246,6 +253,12 @@ Return ONLY valid JSON (no markdown, no backticks):
     });
 
     const structData = await structResponse.json();
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+    await recordComputeUsage({
+      supabaseUrl: SUPABASE_URL, serviceKey: SERVICE_KEY,
+      companyId, feature: 'dougie_structure', agentSlug: 'dougie',
+      model: 'claude-sonnet-4-20250514', usage: structData?.usage,
+    });
     if (structData.error) {
       console.error('[Dougie] Structure error:', structData.error);
       return new Response(JSON.stringify({ error: structData.error.message || 'Structuring failed' }),

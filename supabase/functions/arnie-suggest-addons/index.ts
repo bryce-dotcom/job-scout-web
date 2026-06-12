@@ -15,6 +15,7 @@
 // Uses Haiku — this is a ranking task, fast + cheap is right.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { recordComputeUsage } from "../_shared/compute.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
@@ -150,6 +151,12 @@ Reasons should be project-specific (reference the scope or size), not generic.`;
     }
 
     const claudeBody = await claudeRes.json();
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+    await recordComputeUsage({
+      supabaseUrl: Deno.env.get("SUPABASE_URL"), serviceKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+      companyId: company_id, feature: "arnie_suggest_addons", agentSlug: "arnie",
+      model: "claude-haiku-4-5-20251001", usage: claudeBody?.usage,
+    });
     const rawText = claudeBody?.content?.[0]?.text || "";
     // Extract the first {...} block — Haiku usually returns just JSON but
     // belt-and-suspenders against any surrounding prose.
