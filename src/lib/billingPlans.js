@@ -85,6 +85,29 @@ export const ADDONS = [
 
 export const TRIAL_DAYS = 30
 
+// ── Company compute wallet (see COMPUTE_WALLET_PLAN.md).
+// Customer-facing pricing for the UI (meter, packs, allowances). The COGS→credit
+// math lives canonically in supabase/functions/_shared/computeConfig.ts — keep
+// these allowance/pack numbers in sync with that file.
+//
+// Phase 0 ships shadow metering only; these values inform the Phase 1 meter UI
+// and will be re-baselined from real usage before any enforcement (Phase 3).
+export const COMPUTE = {
+  creditCostUsd: 0.02,        // 1 credit = $0.02 COGS (Light action ≈ 1 credit)
+  markup: 3.5,                // overage sold at markup× cost
+  tierIncludedCredits: { field_crew: 250, field_pro: 750, field_boss: 2000 },
+  agentIncludedCredits: 350,  // per active agent, added to the shared wallet
+  packs: [
+    { id: 'small',  price: 10,  credits: 140 },
+    { id: 'medium', price: 25,  credits: 350 },
+    { id: 'large',  price: 50,  credits: 700 },
+    { id: 'bulk',   price: 100, credits: 1600 },
+  ],
+  // Display-only estimate of credits per action class (real debit is computed
+  // from actual tokens server-side).
+  displayCredits: { light: 1, medium: 3, heavy: 9 },
+}
+
 // Returns the plan record for a given id; falls back to Crew if unknown.
 export function planById(id) {
   return PLANS.find(p => p.id === id) || PLANS[0]

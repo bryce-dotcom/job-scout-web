@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { recordComputeUsage } from "../_shared/compute.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -115,6 +116,13 @@ Return ONLY a valid JSON array. No markdown, no backticks, no explanation.` }
       return new Response(JSON.stringify({ error: aiData.error.message || 'AI request failed' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+    await recordComputeUsage({
+      supabaseUrl: SUPABASE_URL, serviceKey: SERVICE_KEY,
+      companyId, feature: 'lenard_fixture_analyze', agentSlug: 'lenard',
+      model: 'claude-sonnet-4-20250514', usage: aiData.usage,
+    });
 
     const content = aiData.content?.map((c: any) => c.text || '').join('') || '';
     const jsonMatch = content.match(/\[[\s\S]*\]/);

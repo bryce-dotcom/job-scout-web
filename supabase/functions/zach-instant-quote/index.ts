@@ -17,6 +17,7 @@
 // table count (last hour). Tighten later if needed.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { recordComputeUsage } from "../_shared/compute.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -127,7 +128,7 @@ Return JSON only.`;
   const j = await res.json();
   const txt = j?.content?.[0]?.text || '';
   const m = txt.match(/\{[\s\S]*\}/);
-  return JSON.parse(m ? m[0] : txt);
+  return { result: JSON.parse(m ? m[0] : txt), usage: j?.usage };
 }
 
 serve(async (req) => {
@@ -189,15 +190,25 @@ serve(async (req) => {
 
     // Vision analysis
     let aiResult: any;
+    let aiUsage: any;
     try {
-      aiResult = await callClaudeVision({
+      const vision = await callClaudeVision({
         apiKey: ANTHROPIC_API_KEY, image_base64, media_type,
         lat: Number(lat), lng: Number(lng), address, zoom, image_width, image_height, scale,
         correctionsBlock,
       });
+      aiResult = vision.result;
+      aiUsage = vision.usage;
     } catch (e) {
       return json({ error: 'Vision failed: ' + (e as Error).message }, 502);
     }
+
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+    await recordComputeUsage({
+      supabaseUrl: SUPABASE_URL, serviceKey: SERVICE_KEY,
+      companyId: company.id, feature: 'zach_instant_quote', agentSlug: 'zach',
+      model: 'claude-sonnet-4-5-20250929', usage: aiUsage,
+    });
     const rawSqft = Math.max(0, parseInt(aiResult.estimated_turf_sqft) || 0);
     const turfSqft = Math.round(rawSqft * calibrationFactor);
 
