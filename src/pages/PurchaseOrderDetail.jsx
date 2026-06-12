@@ -24,6 +24,7 @@ export default function PurchaseOrderDetail() {
   const isMobile = useIsMobile()
   const companyId = useStore((s) => s.companyId)
   const company = useStore((s) => s.company)
+  const businessUnits = useStore((s) => s.businessUnits)
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
@@ -41,6 +42,8 @@ export default function PurchaseOrderDetail() {
   const [shipping, setShipping] = useState('')
   const [notes, setNotes] = useState('')
   const [internalNotes, setInternalNotes] = useState('')
+  const [poBusinessUnit, setPoBusinessUnit] = useState('')  // BU name string
+  const [shipToAddress, setShipToAddress] = useState('')
 
   // New-line draft
   const [draft, setDraft] = useState({ product_id: '', description: '', quantity: 1, unit_cost: 0 })
@@ -79,7 +82,7 @@ export default function PurchaseOrderDetail() {
     setLoading(true)
     const [poRes, linesRes, vRes, pRes] = await Promise.all([
       supabase.from('purchase_orders')
-        .select('*, vendor:vendors(id, name, email, billing_address, default_payment_terms), job:jobs(id, job_id, job_title, job_address)')
+        .select('*, vendor:vendors(id, name, email, billing_address, default_payment_terms), job:jobs(id, job_id, job_title, customer_name, job_address, business_unit)')
         .eq('id', id).eq('company_id', companyId).maybeSingle(),
       supabase.from('purchase_order_lines').select('*').eq('po_id', id).order('sort_order').order('id'),
       supabase.from('vendors').select('id, name').eq('company_id', companyId).eq('active', true).order('name'),
@@ -119,10 +122,16 @@ export default function PurchaseOrderDetail() {
     setShipping(poRow.shipping || '')
     setNotes(poRow.notes || '')
     setInternalNotes(poRow.internal_notes || '')
+    setPoBusinessUnit(poRow.business_unit || poRow.job?.business_unit || '')
+    // Seed ship-to: explicit override → job address → blank
+    setShipToAddress(poRow.ship_to_address || poRow.job?.job_address || '')
     setLoading(false)
   }
 
   const isEditable = po && (po.status === 'draft')
+  // Line-level qty + delete is allowed on sent/partial_received too — lets
+  // users correct automation mistakes without voiding the whole PO.
+  const isLineEditable = po && ['draft', 'sent', 'partial_received'].includes(po.status)
   const status = po ? (PO_STATUS_LABELS[po.status] || PO_STATUS_LABELS.draft) : null
 
   const totals = useMemo(() => computePoTotals(lines, tax, shipping), [lines, tax, shipping])
@@ -140,6 +149,8 @@ export default function PurchaseOrderDetail() {
         subtotal: t.subtotal, total: t.total,
         notes: notes || null,
         internal_notes: internalNotes || null,
+        business_unit: poBusinessUnit || null,
+        ship_to_address: shipToAddress || null,
         ...extra,
         updated_at: new Date().toISOString(),
       })
@@ -245,9 +256,15 @@ export default function PurchaseOrderDetail() {
   // PDF + Send helpers ────────────────────────────────────────────────
 
   // Build a fresh PDF doc from current state (vendor + lines + job).
-  const buildPdf = () => generatePoPdf({
-    po, lines, vendor: po.vendor, company, job: po.job,
-  })
+  const buildPdf = () => {
+    // Resolve the full BU object (has name/address/phone/email) from the
+    // stored BU name so the PDF header shows the right division.
+    const buName = poBusinessUnit || po.job?.business_unit
+    const buObj = Array.isArray(businessUnits)
+      ? businessUnits.find(bu => (bu.name || bu) === buName) || null
+      : null
+    return generatePoPdf({ po, lines, vendor: po.vendor, company, job: po.job, businessUnit: buObj })
+  }
 
   const downloadPdf = () => {
     try {
@@ -806,6 +823,25 @@ export default function PurchaseOrderDetail() {
                 )}
               </div>
               <div>
+                <Label theme={theme}>Business Unit</Label>
+                {isEditable ? (
+                  <select
+                    value={poBusinessUnit}
+                    onChange={(e) => setPoBusinessUnit(e.target.value)}
+                    onBlur={() => saveHeader()}
+                    style={selectStyle(theme)}
+                  >
+                    <option value="">— Select business unit —</option>
+                    {(Array.isArray(businessUnits) ? businessUnits : []).map((bu, i) => {
+                      const name = bu.name || bu
+                      return <option key={i} value={name}>{name}</option>
+                    })}
+                  </select>
+                ) : (
+                  <p style={readonlyText(theme)}>{poBusinessUnit || '—'}</p>
+                )}
+              </div>
+              <div>
                 <Label theme={theme}>Expected delivery</Label>
                 {isEditable ? (
                   <input
@@ -833,6 +869,23 @@ export default function PurchaseOrderDetail() {
                 {po.vendor.default_payment_terms}
               </div>
             )}
+
+            {/* Ship-to address — always editable, no financial implications */}
+            <div style={{ marginTop: 14 }}>
+              <Label theme={theme}>Ship To</Label>
+              <textarea
+                value={shipToAddress}
+                onChange={(e) => setShipToAddress(e.target.value)}
+                onBlur={() => saveHeader()}
+                placeholder="Delivery address (defaults to job address)"
+                rows={2}
+                style={{
+                  ...inlineInput(theme),
+                  width: '100%', resize: 'vertical',
+                  fontFamily: 'inherit', lineHeight: 1.5,
+                }}
+              />
+            </div>
             {po.job && (
               <div style={{
                 marginTop: 14, padding: '10px 12px',
@@ -845,7 +898,7 @@ export default function PurchaseOrderDetail() {
                   onClick={() => navigate(`/jobs/${po.job.id}`)}
                   style={{ color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
                 >
-                  {po.job.job_id} — {po.job.job_title}
+                  {po.job.job_id}{po.job.customer_name ? ` — ${po.job.customer_name}` : po.job.job_title ? ` — ${po.job.job_title}` : ''}
                 </button>
               </div>
             )}
@@ -880,6 +933,20 @@ export default function PurchaseOrderDetail() {
               )}
             </div>
 
+            {/* Warn when editing a live PO so the user knows to re-send */}
+            {isLineEditable && !isEditable && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 12px', marginBottom: 12, borderRadius: 8,
+                backgroundColor: 'rgba(234,179,8,0.12)',
+                border: '1px solid rgba(234,179,8,0.3)',
+                fontSize: 12, color: '#a16207',
+              }}>
+                <span style={{ fontWeight: 700 }}>PO already sent</span>
+                {' '}— qty and line changes won't auto-notify the vendor. Re-send the PDF after editing.
+              </div>
+            )}
+
             {lines.length === 0 ? (
               <p style={{ color: theme.textMuted, fontSize: 13, fontStyle: 'italic', margin: 0 }}>
                 No lines yet. {isEditable && 'Use Add from Catalog or the custom-line row below.'}
@@ -907,7 +974,7 @@ export default function PurchaseOrderDetail() {
                       gridTemplateColumns: '1fr 90px 110px 110px 36px',
                       gap: 8, alignItems: 'center',
                     }}>
-                      {isEditable ? (
+                      {isLineEditable ? (
                         <input
                           type="text" value={line.description || ''}
                           onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, description: e.target.value } : l))}
@@ -917,7 +984,7 @@ export default function PurchaseOrderDetail() {
                       ) : (
                         <span style={{ fontSize: 13, color: theme.text }}>{line.description}</span>
                       )}
-                      {isEditable ? (
+                      {isLineEditable ? (
                         <input
                           type="number" step="0.01" value={line.quantity_ordered}
                           onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, quantity_ordered: e.target.value } : l))}
@@ -927,7 +994,7 @@ export default function PurchaseOrderDetail() {
                       ) : (
                         <span style={{ fontSize: 13, textAlign: 'right' }}>{line.quantity_ordered}</span>
                       )}
-                      {isEditable ? (
+                      {isLineEditable ? (
                         <input
                           type="number" step="0.01" value={line.unit_cost}
                           onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, unit_cost: e.target.value } : l))}
@@ -940,7 +1007,7 @@ export default function PurchaseOrderDetail() {
                       <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: theme.text }}>
                         {formatCurrency(line.line_total)}
                       </span>
-                      {isEditable && (
+                      {isLineEditable && (
                         <button
                           onClick={() => deleteLine(line.id)}
                           style={{

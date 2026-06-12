@@ -163,6 +163,18 @@ function AvatarStack({ names, accent = '#5a6349', size = 20, max = 3 }) {
   )
 }
 
+// Compact label for calendar cells / lists / tooltips. SERVICE VISITS are
+// explicitly tagged and lead with the service name — Bryce: cards were
+// reading "dave reed" / "Chris Reilley" with nothing saying it's a
+// service, not a job. Regular jobs stay contact-first (unchanged).
+function jobCellLabel(job) {
+  if (job?.parent_job_id) {
+    const kind = (job.service_kind || 'service').replace(/_/g, ' ')
+    return `Service (${kind}): ${job.job_title || `#${job?.id}`}`
+  }
+  return `${job?.customer?.name ? `${job.customer.name} — ` : ''}${job?.job_title || `Job #${job?.id}`}`
+}
+
 export default function PMJobSetter() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -865,7 +877,7 @@ export default function PMJobSetter() {
         const status = jobStatuses.find(s => s.id === job.status || s.name === job.status)
         const color = status?.color || '#5a6349'
         const marker = L.circleMarker([coords.lat, coords.lng], { radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9 }).addTo(map)
-        marker.bindTooltip(`<b>${job.job_title || 'Job'}</b><br/>${job.customer?.name || ''}<br/><small>${job.status}</small>`, { direction: 'top', offset: [0, -10] })
+        marker.bindTooltip(`<b>${job.parent_job_id ? 'Service: ' : ''}${job.job_title || 'Job'}</b><br/>${job.customer?.name || ''}<br/><small>${job.status}</small>`, { direction: 'top', offset: [0, -10] })
         marker.on('click', () => setDetailJob(job))
         bounds.push([coords.lat, coords.lng])
       })
@@ -1867,7 +1879,7 @@ export default function PMJobSetter() {
 
       const appointmentRows = assignedIds.map(empId => {
         const emp = employees.find(e => String(e.id) === String(empId))
-        const baseTitle = scheduleJob.job_title || `Job #${scheduleJob.job_id || scheduleJob.id}`
+        const baseTitle = (scheduleJob.parent_job_id ? `Service (${(scheduleJob.service_kind || 'service').replace(/_/g, ' ')}): ` : '') + (scheduleJob.job_title || `Job #${scheduleJob.job_id || scheduleJob.id}`)
         return {
           company_id: companyId,
           title: assignedIds.length > 1 && emp ? `${baseTitle} (${emp.name})` : baseTitle,
@@ -2970,12 +2982,48 @@ export default function PMJobSetter() {
                                       : <ChevronRight size={16} style={{ color: theme.textMuted }} />}
                                   </span>
                                   <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '2px', lineHeight: '1.3' }}>
-                                      {job.customer?.name || `Job #${job.id}`}
-                                    </div>
-                                    <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: progress > 0 ? '6px' : '0' }}>
-                                      {job.job_title}
-                                    </div>
+                                    {/* Service visits lead with the SERVICE name (that's the
+                                        operative info for dispatch) + a kind chip and a pointer
+                                        to the PARENT JOB they belong to — not the contact name
+                                        (Bryce: "the cards read someone's name and not the job
+                                        they are related to"). Regular installs unchanged. */}
+                                    {job.parent_job_id ? (
+                                      <>
+                                        <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '2px', lineHeight: '1.3' }}>
+                                          {job.job_title || `Service — Job #${job.id}`}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: progress > 0 ? '6px' : '0', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                          {(() => {
+                                            const kc = { warranty: '#dc2626', annual: '#16a34a', tune_up: '#0284c7', repair: '#ea580c', upsell: '#9333ea' }[job.service_kind] || '#6b7280'
+                                            const parent = jobs.find(pj => pj.id === job.parent_job_id)
+                                            const parentLabel = parent?.job_title || parent?.quote?.estimate_name || parent?.job_id || `Job #${job.parent_job_id}`
+                                            return (
+                                              <>
+                                                <span style={{ padding: '1px 7px', borderRadius: '8px', fontSize: '10px', fontWeight: 600, backgroundColor: kc + '1c', color: kc, textTransform: 'capitalize' }}>
+                                                  {(job.service_kind || 'service').replace(/_/g, ' ')}
+                                                </span>
+                                                <span
+                                                  onClick={(e) => { e.stopPropagation(); if (parent) navigate(`/jobs/${parent.id}`) }}
+                                                  title={parent ? `Open parent job: ${parentLabel}` : undefined}
+                                                  style={{ cursor: parent ? 'pointer' : 'default', textDecoration: parent ? 'underline' : 'none', textUnderlineOffset: '2px' }}
+                                                >
+                                                  ↪ {parentLabel}
+                                                </span>
+                                              </>
+                                            )
+                                          })()}
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '2px', lineHeight: '1.3' }}>
+                                          {job.customer?.name || `Job #${job.id}`}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: progress > 0 ? '6px' : '0' }}>
+                                          {job.job_title}
+                                        </div>
+                                      </>
+                                    )}
                                     {progress > 0 && (
                                       <>
                                         <div style={{ height: '4px', backgroundColor: theme.border, borderRadius: '3px', overflow: 'hidden', marginBottom: '5px' }}>
@@ -3410,9 +3458,9 @@ export default function PMJobSetter() {
                                           overflow: 'hidden',
                                           textOverflow: 'ellipsis'
                                         }}
-                                        title={`${job.customer?.name || ''}${job.customer?.name ? ' — ' : ''}${job.job_title || 'Untitled'}`}
+                                        title={jobCellLabel(job)}
                                       >
-                                        {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                                        {jobCellLabel(job)}
                                       </div>
                                     )
                                   })}
@@ -3502,7 +3550,7 @@ export default function PMJobSetter() {
                               onDragStart={(e) => handleJobDragStart(e, job)}
                               onDragEnd={handleDragEnd}
                               onClick={() => setDetailJob(job)}
-                              title={`${job.customer?.name || ''}${job.customer?.name ? ' — ' : ''}${job.job_title || `Job #${job.id}`}${span.continuesLeft || span.continuesRight ? ' (continues)' : ''}`}
+                              title={`${jobCellLabel(job)}${span.continuesLeft || span.continuesRight ? ' (continues)' : ''}`}
                               style={{
                                 position: 'absolute',
                                 top: `${top}px`,
@@ -3529,7 +3577,7 @@ export default function PMJobSetter() {
                               }}
                             >
                               {span.continuesLeft && <span style={{ marginRight: 4, opacity: 0.6 }}>‹</span>}
-                              {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                              {jobCellLabel(job)}
                               {span.continuesRight && <span style={{ marginLeft: 'auto', opacity: 0.6 }}>›</span>}
                             </div>
                           )
@@ -3643,7 +3691,7 @@ export default function PMJobSetter() {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                   <Briefcase size={9} style={{ flexShrink: 0, opacity: 0.7 }} />
                                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                                    {jobCellLabel(job)}
                                   </span>
                                 </div>
                               </div>
@@ -3952,7 +4000,7 @@ export default function PMJobSetter() {
                           }}>{idx + 1}</span>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <p style={{ fontSize: '12px', fontWeight: '500', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {job.job_title || 'Untitled'} — {job.customer?.name || 'No customer'}
+                              {jobCellLabel(job)}
                             </p>
                             <p style={{ fontSize: '10px', color: theme.textMuted, margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {job.job_address || job.customer?.address || 'No address'}
@@ -4206,7 +4254,7 @@ export default function PMJobSetter() {
                           overflow: 'hidden',
                           textOverflow: 'ellipsis'
                         }}>
-                          {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                          {jobCellLabel(job)}
                         </span>
                       </div>
                     ))}
@@ -4374,8 +4422,18 @@ export default function PMJobSetter() {
               justifyContent: 'space-between',
               gap: '12px'
             }}>
-              <h2 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {detailJob.job_title || `Job #${detailJob.id}`}
+              <h2 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {detailJob.parent_job_id && (
+                  <span style={{
+                    flexShrink: 0, padding: '2px 8px', borderRadius: '10px',
+                    fontSize: '10px', fontWeight: 800, letterSpacing: '0.5px', textTransform: 'uppercase',
+                    backgroundColor: 'rgba(234,88,12,0.12)', color: '#ea580c',
+                    border: '1px solid rgba(234,88,12,0.35)',
+                  }}>
+                    Service Visit
+                  </span>
+                )}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{detailJob.job_title || `Job #${detailJob.id}`}</span>
               </h2>
               <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                 {/* Reschedule — opens the Schedule modal pre-populated so
@@ -4555,6 +4613,16 @@ export default function PMJobSetter() {
               </div>
 
               {/* Description / Notes */}
+              {detailJob.details && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {detailJob.parent_job_id ? 'Service Details' : 'Details'}
+                  </div>
+                  <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5', whiteSpace: 'pre-wrap', padding: '10px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    {detailJob.details}
+                  </div>
+                </div>
+              )}
               {detailJob.notes && (
                 <div style={{ marginBottom: '16px' }}>
                   <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Notes</div>
@@ -4888,7 +4956,7 @@ export default function PMJobSetter() {
                     }}
                   >
                     <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text }}>
-                      {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                      {jobCellLabel(job)}
                     </div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: 2 }}>
                       {job.business_unit || '—'}

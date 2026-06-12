@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { recordComputeUsage } from "../_shared/compute.ts";
-import { resolveCompanyId } from "../_shared/auth.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,15 +32,6 @@ serve(async (req) => {
 
   try {
     const { imageBase64, auditContext, availableProducts, fixtureTypes, prescriptiveMeasures } = await req.json();
-
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ success: false, error: 'API key not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
 
     // Fetch wattage reference and visual guide (the two most useful tables)
     const [wattageRef, visualGuide] = await Promise.all([
@@ -173,15 +163,10 @@ Only return valid JSON, no other text.`;
     console.log(`Lenard prompt: ${promptText.length} chars, wattageRef: ${wattageRef.length} rows, visualGuide: ${visualGuide.length} rows`);
 
     // Call Claude Vision API
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+    const ai = await callAnthropic(
+      { feature: 'analyze-fixture', companyId: null },
+      {
+        model: 'claude-sonnet-4-6',
         max_tokens: 2048,
         messages: [{
           role: 'user',
@@ -200,18 +185,17 @@ Only return valid JSON, no other text.`;
             }
           ]
         }]
-      })
-    });
+      },
+    );
 
-    const data = await response.json();
-    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
-    {
-      const _u = Deno.env.get('SUPABASE_URL'); const _k = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-      await recordComputeUsage({ supabaseUrl: _u, serviceKey: _k,
-        companyId: await resolveCompanyId(req, _u, _k),
-        feature: 'analyze_fixture', agentSlug: 'lenard',
-        model: 'claude-sonnet-4-20250514', usage: data?.usage });
+    if (!ai.ok) {
+      return new Response(JSON.stringify({ success: false, error: ai.friendly, ai_unavailable: ai.unavailable === true }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
+
+    const data = ai.data;
     const content = data.content?.[0]?.text || '';
 
     // Parse JSON from response

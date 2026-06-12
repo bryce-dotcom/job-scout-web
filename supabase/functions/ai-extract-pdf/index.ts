@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { recordComputeUsage } from "../_shared/compute.ts";
-import { resolveCompanyId } from "../_shared/auth.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,12 +16,6 @@ serve(async (req) => {
     if (!pdfBase64 && (!pageImages || pageImages.length === 0)) {
       return new Response(JSON.stringify({ error: 'No PDF or image data provided' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'AI not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const fieldDescriptions = (targetFields || []).map((f: any) =>
@@ -64,46 +57,27 @@ Rules:
 
     contentBlocks.push({ type: 'text', text: userPrompt });
 
-    // Use beta header only when sending PDF document type (not needed for images)
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    };
-    if (!pageImages || pageImages.length === 0) {
-      headers['anthropic-beta'] = 'pdfs-2024-09-25';
-    }
-
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+    // PDF document blocks are GA on the Messages API — the old
+    // 'pdfs-2024-09-25' beta header is no longer needed for either path.
+    const ai = await callAnthropic(
+      { feature: 'ai-extract-pdf', companyId: null },
+      {
+        model: 'claude-sonnet-4-6',
         max_tokens: 8192,
         system: 'You are a data extraction assistant. Respond with ONLY a valid JSON object. No markdown fences, no explanation, no preamble. Structure: {"headers": ["col1", "col2", ...], "rows": [["val1", "val2", ...], ...]}',
         messages: [
           { role: 'user', content: contentBlocks },
           { role: 'assistant', content: '{"headers":' },
         ],
-      }),
-    });
+      },
+    );
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      console.error('AI API error:', resp.status, errText);
-      return new Response(JSON.stringify({ error: `AI request failed (${resp.status}). Try again or use CSV/Excel instead.` }),
+    if (!ai.ok) {
+      return new Response(JSON.stringify({ error: ai.friendly, ai_unavailable: ai.unavailable === true }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const aiData = await resp.json();
-    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
-    {
-      const _u = Deno.env.get('SUPABASE_URL'); const _k = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-      await recordComputeUsage({ supabaseUrl: _u, serviceKey: _k,
-        companyId: await resolveCompanyId(req, _u, _k),
-        feature: 'ai_extract_pdf', agentSlug: null,
-        model: 'claude-sonnet-4-20250514', usage: aiData?.usage });
-    }
+    const aiData = ai.data;
     const rawText = aiData.content?.[0]?.text || '';
 
     // We prefilled with '{"headers":', so prepend it

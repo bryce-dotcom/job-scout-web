@@ -371,7 +371,8 @@ export default function VictorVerify({
       const body = {
         images: allImages,
         checklist: checklist.map(c => ({ item: c.item, checked: c.checked, category: c.category })),
-        verificationType
+        verificationType,
+        companyId
       }
 
       if (!isDaily && selectedJob) {
@@ -402,6 +403,23 @@ export default function VictorVerify({
         throw new Error((aiError.message || 'AI verification failed') + detail)
       }
       if (aiResult && aiResult.success === false) {
+        if (aiResult.ai_unavailable) {
+          // AI outage (billing/key problem on OUR side) must never strand a
+          // tech in the field (Cameron 6/10: "credit balance too low … not
+          // able to complete a job"). Photos are already uploaded — record
+          // the verification as ai-skipped so the clock-out gates pass, and
+          // the photos stay on file for a later AI re-review.
+          const summary = 'AI review unavailable (service outage) — photos captured and stored. Verification recorded without an AI score.'
+          await supabase.from('verification_reports').update({
+            status: 'complete_ai_skipped',
+            summary,
+            ai_analysis: { skipped: true, reason: aiResult.error || 'AI unavailable' },
+            updated_at: new Date().toISOString()
+          }).eq('id', report.id)
+          setResult({ skipped: true, reportId: report.id, score: '—', grade: '—', summary })
+          setStep(3)
+          return
+        }
         throw new Error(aiResult.error || 'AI verification failed')
       }
 

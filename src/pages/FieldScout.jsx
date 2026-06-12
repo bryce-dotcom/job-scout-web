@@ -316,6 +316,8 @@ export default function FieldScout() {
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
 
+    // Gates accept a passing AI score OR an ai-skipped report (recorded when
+    // the AI service is down — billing/key outage must not block field work).
     const [compRes, dailyRes] = await Promise.all([
       // Completion: any time, any crew member, per job
       supabase
@@ -325,7 +327,7 @@ export default function FieldScout() {
         .eq('verification_type', 'completion')
         .in('job_id', jobIds)
         .eq('voided', false)
-        .gte('score', 60),
+        .or('score.gte.60,status.eq.complete_ai_skipped'),
       // Daily: today only, any crew member, per job
       supabase
         .from('verification_reports')
@@ -335,7 +337,7 @@ export default function FieldScout() {
         .in('job_id', jobIds)
         .gte('created_at', todayStart.toISOString())
         .eq('voided', false)
-        .gte('score', 60),
+        .or('score.gte.60,status.eq.complete_ai_skipped'),
     ])
     if (compRes.data) setVerifiedJobs(new Set(compRes.data.map(r => r.job_id)))
     if (dailyRes.data) setDailyVerifiedJobs(new Set(dailyRes.data.map(r => r.job_id).filter(Boolean)))
@@ -416,7 +418,7 @@ export default function FieldScout() {
         .eq('company_id', companyId)
         .in('job_id', myJobIds)
         .eq('voided', false)
-        .gte('score', 60)
+        .or('score.gte.60,status.eq.complete_ai_skipped')
 
       const verifiedJobIds = new Set(
         (verReports || [])
@@ -636,7 +638,7 @@ export default function FieldScout() {
       .eq('verification_type', 'daily')
       .is('job_id', null)
       .gte('created_at', todayStart.toISOString())
-      .gte('score', 60)
+      .or('score.gte.60,status.eq.complete_ai_skipped')
       .limit(1)
       .then(({ data }) => {
         if (data && data.length > 0) setHasDailyVerification(true)
@@ -3456,13 +3458,15 @@ export default function FieldScout() {
                 const wasBlocked = clockOutBlocked
                 const verifyType = victorModal.type
                 setVictorModal(null)
-                // Check the report score
+                // Check the report score. An ai-skipped report (recorded when
+                // the AI service is down) counts as passing — the outage is
+                // our problem, not the crew's.
                 const { data: report } = await supabase
                   .from('verification_reports')
-                  .select('score, grade')
+                  .select('score, grade, status')
                   .eq('id', reportId)
                   .single()
-                if (report?.score >= 60) {
+                if (report?.score >= 60 || report?.status === 'complete_ai_skipped') {
                   if (verifyType === 'completion' && jobId) {
                     setVerifiedJobs(prev => new Set(prev).add(jobId))
                     setClockOutBlocked(false)

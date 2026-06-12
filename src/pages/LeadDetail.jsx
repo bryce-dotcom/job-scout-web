@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { findMatchingCustomer } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
@@ -736,17 +737,17 @@ export default function LeadDetail() {
     if (!confirm('Convert this lead to a Job & Customer?')) return
     setConvertingToJob(true)
     try {
-      // 1. Find or create customer
-      let customerId = null
-      const { data: existingCustomers } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('company_id', companyId)
-        .ilike('name', lead.customer_name.trim())
-        .limit(1)
+      // 1. Find or create customer — identity-safe match (email → phone →
+      // non-conflicting name). Bare name matching attached the wrong
+      // person's record (Doug/Curley Construction, ticket 5406ff71).
+      let customerId = await findMatchingCustomer(supabase, companyId, {
+        name: lead.customer_name,
+        email: lead.email,
+        phone: lead.phone,
+      })
 
-      if (existingCustomers?.length > 0) {
-        customerId = existingCustomers[0].id
+      if (customerId) {
+        // matched an existing customer — use it as-is
       } else {
         const { data: newCustomer, error: custError } = await supabase
           .from('customers')

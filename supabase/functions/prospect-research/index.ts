@@ -19,8 +19,8 @@
 // name + city + state) so re-searches dedupe + re-enriches are free.
 // =====================================================================
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { recordComputeUsage } from "../_shared/compute.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -30,7 +30,6 @@ const cors = {
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } });
 
-const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages';
 const CLAUDE_MODEL   = 'claude-sonnet-4-5-20250929';
 
 // Tier quotas — monthly per-company. Stays in lockstep with the
@@ -53,8 +52,6 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
     const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!ANTHROPIC_API_KEY) return json({ error: 'ANTHROPIC_API_KEY not configured' }, 500);
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -171,12 +168,10 @@ Rules:
       const userMsg = `Find businesses matching: ${query}`;
 
       const claudeResponse = await runClaudeAgent({
-        apiKey: ANTHROPIC_API_KEY,
+        companyId: company_id ?? null,
         system,
         userMsg,
         maxRounds: 6,
-        companyId: company_id,
-        feature: 'prospect_search',
       });
 
       let prospects: any[] = [];
@@ -304,12 +299,10 @@ Notes so far: ${c.why_it_matches || ''}
 Find a decision-maker, their email + LinkedIn + phone, and the business's full address.`;
 
       const claudeResponse = await runClaudeAgent({
-        apiKey: ANTHROPIC_API_KEY,
+        companyId: company_id ?? null,
         system,
         userMsg,
         maxRounds: 5,
-        companyId: company_id,
-        feature: 'prospect_enrich',
       });
 
       let enriched: any = {};
@@ -437,44 +430,28 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
 
 // ─── Claude agent loop with web_search tool ─────────────────────────
 async function runClaudeAgent(args: {
-  apiKey: string; system: string; userMsg: string; maxRounds: number;
-  companyId?: number | string | null; feature?: string;
+  companyId: number | null; system: string; userMsg: string; maxRounds: number;
 }): Promise<string> {
-  const { apiKey, system, userMsg, maxRounds, companyId, feature } = args;
+  const { companyId, system, userMsg, maxRounds } = args;
   let messages: any[] = [{ role: 'user', content: userMsg }];
   const tools = [
     { type: 'web_search_20250305', name: 'web_search', max_uses: 8 },
   ];
   for (let round = 0; round < maxRounds; round++) {
-    const res = await fetch(ANTHROPIC_URL, {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'web-search-2025-03-05',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    const ai = await callAnthropic(
+      { feature: 'prospect-research', companyId },
+      {
         model: CLAUDE_MODEL,
         max_tokens: 8000,
         system,
         tools,
         messages,
-      }),
-    });
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Anthropic ${res.status}: ${errText.slice(0, 500)}`);
+      },
+    );
+    if (!ai.ok) {
+      throw new Error(ai.friendly);
     }
-    const data = await res.json();
-    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md).
-    // Note: token cost only; web_search server-tool usage is billed separately
-    // and not yet captured here.
-    await recordComputeUsage({
-      supabaseUrl: Deno.env.get('SUPABASE_URL'), serviceKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
-      companyId, feature: feature || 'prospect_research', agentSlug: 'lead-setter',
-      model: CLAUDE_MODEL, usage: data?.usage,
-    });
+    const data = ai.data;
     const blocks = data.content || [];
 
     // Claude's server-side web_search tool returns results as part of

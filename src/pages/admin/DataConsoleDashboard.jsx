@@ -24,11 +24,54 @@ export default function DataConsoleDashboard({ theme }) {
   })
   const [recentActivity, setRecentActivity] = useState([])
   const [loading, setLoading] = useState(true)
+  // AI usage metering (ai_usage table, fed by the shared edge-fn wrapper).
+  // Answers "what is AI costing us / is anything failing" without leaving
+  // the console — Tracy asked for a visible balance after the June 9-10
+  // credit outage.
+  const [aiUsage, setAiUsage] = useState(null)
 
   useEffect(() => {
     fetchStats()
     fetchRecentActivity()
+    fetchAiUsage()
   }, [])
+
+  const fetchAiUsage = async () => {
+    try {
+      const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+      const { data } = await supabase
+        .from('ai_usage')
+        .select('feature, est_cost_usd, success, error_kind, created_at')
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(20000)
+      if (!data) { setAiUsage({ rows: 0 }); return }
+      const byFeature = {}
+      let totalCost = 0
+      let failures = 0
+      let billing24h = 0
+      const dayAgo = Date.now() - 24 * 3600 * 1000
+      for (const r of data) {
+        totalCost += parseFloat(r.est_cost_usd) || 0
+        if (r.success === false) {
+          failures++
+          if ((r.error_kind === 'billing' || r.error_kind === 'auth') && new Date(r.created_at).getTime() > dayAgo) billing24h++
+        }
+        const f = byFeature[r.feature] || { calls: 0, cost: 0 }
+        f.calls++
+        f.cost += parseFloat(r.est_cost_usd) || 0
+        byFeature[r.feature] = f
+      }
+      const topFeatures = Object.entries(byFeature)
+        .map(([feature, v]) => ({ feature, ...v }))
+        .sort((a, b) => b.cost - a.cost)
+        .slice(0, 8)
+      setAiUsage({ rows: data.length, totalCost, failures, billing24h, topFeatures })
+    } catch (err) {
+      console.error('Error fetching ai usage:', err)
+      setAiUsage({ rows: 0 })
+    }
+  }
 
   const fetchStats = async () => {
     try {
@@ -320,6 +363,63 @@ export default function DataConsoleDashboard({ theme }) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* AI Usage — last 30 days (ai_usage table via the edge-fn wrapper) */}
+      <div style={{
+        backgroundColor: theme.bgCard,
+        border: `1px solid ${theme.border}`,
+        borderRadius: '12px',
+        padding: '20px',
+        marginBottom: '24px'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+          <h3 style={{ color: theme.text, fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Bot size={18} style={{ color: theme.accent }} />
+            AI Usage — Last 30 Days
+          </h3>
+          {aiUsage && aiUsage.rows > 0 && (
+            <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ color: theme.text, fontSize: '14px', fontWeight: '700' }}>
+                ${(aiUsage.totalCost || 0).toFixed(2)}
+                <span style={{ color: theme.textMuted, fontWeight: '400', fontSize: '12px' }}> est. spend</span>
+              </span>
+              <span style={{ color: theme.textMuted, fontSize: '13px' }}>{aiUsage.rows.toLocaleString()} calls</span>
+              <span style={{ color: aiUsage.failures > 0 ? theme.warning : theme.textMuted, fontSize: '13px' }}>
+                {aiUsage.failures} failed
+              </span>
+            </div>
+          )}
+        </div>
+        {aiUsage?.billing24h > 0 && (
+          <div style={{
+            padding: '10px 12px', marginBottom: '12px', borderRadius: '8px',
+            backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+            color: theme.error, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px'
+          }}>
+            <AlertCircle size={16} />
+            {aiUsage.billing24h} billing/key failure{aiUsage.billing24h === 1 ? '' : 's'} in the last 24h — check Anthropic credits (console.anthropic.com).
+          </div>
+        )}
+        {!aiUsage || aiUsage.rows === 0 ? (
+          <div style={{ padding: '16px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+            No AI calls logged yet. Usage appears here as features run.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {aiUsage.topFeatures.map(f => (
+              <div key={f.feature} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '8px 12px', backgroundColor: theme.bgHover, borderRadius: '8px'
+              }}>
+                <span style={{ color: theme.text, fontSize: '13px', fontWeight: '500' }}>{f.feature}</span>
+                <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+                  {f.calls.toLocaleString()} calls · ${f.cost.toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Recent Activity */}

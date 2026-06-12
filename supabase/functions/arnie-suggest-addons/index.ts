@@ -15,9 +15,8 @@
 // Uses Haiku — this is a ranking task, fast + cheap is right.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { recordComputeUsage } from "../_shared/compute.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -99,10 +98,6 @@ Deno.serve(async (req) => {
       return jsonRes({ recommendations: quote.arnie_addon_recommendations, cached: true, hash });
     }
 
-    if (!ANTHROPIC_API_KEY) {
-      return jsonRes({ error: "ANTHROPIC_API_KEY not configured", recommendations: [], cached: false });
-    }
-
     // Compose a tight prompt. Haiku doesn't need much priming.
     const total = Number(quote.calculated_quote_amount || quote.quote_amount || quote.job_total || 0);
     const linesText = lines
@@ -130,33 +125,20 @@ Respond with ONLY a JSON object, no prose:
 { "picks": [ { "addon_id": <id from catalog>, "reason": "one sentence why this fits this project" } ] }
 Reasons should be project-specific (reference the scope or size), not generic.`;
 
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
+    const ai = await callAnthropic(
+      { feature: "arnie-suggest-addons", companyId: company_id ?? null },
+      {
         model: "claude-haiku-4-5-20251001",
         max_tokens: 600,
         messages: [{ role: "user", content: userPrompt }],
-      }),
-    });
+      },
+    );
 
-    if (!claudeRes.ok) {
-      const err = await claudeRes.text();
-      console.log("[arnie-suggest-addons] claude error:", err);
-      return jsonRes({ error: "Arnie couldn't reach the model", recommendations: [], cached: false });
+    if (!ai.ok) {
+      return jsonRes({ error: ai.friendly, ai_unavailable: ai.unavailable === true, recommendations: [], cached: false });
     }
 
-    const claudeBody = await claudeRes.json();
-    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
-    await recordComputeUsage({
-      supabaseUrl: Deno.env.get("SUPABASE_URL"), serviceKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
-      companyId: company_id, feature: "arnie_suggest_addons", agentSlug: "arnie",
-      model: "claude-haiku-4-5-20251001", usage: claudeBody?.usage,
-    });
+    const claudeBody = ai.data;
     const rawText = claudeBody?.content?.[0]?.text || "";
     // Extract the first {...} block — Haiku usually returns just JSON but
     // belt-and-suspenders against any surrounding prose.

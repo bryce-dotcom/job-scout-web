@@ -17,7 +17,7 @@
 // Model: Anthropic Claude Sonnet 4.5 with vision.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { recordComputeUsage } from "../_shared/compute.ts";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -68,10 +68,8 @@ serve(async (req) => {
     if (!image_base64) return json({ error: 'image_base64 required' }, 400);
     if (lat == null || lng == null) return json({ error: 'lat and lng required' }, 400);
 
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!ANTHROPIC_API_KEY) return json({ error: 'ANTHROPIC_API_KEY not configured' }, 500);
 
     const imageFootprintSqft = imageAreaSqft({ lat, zoom, width: image_width, height: image_height, scale });
 
@@ -148,14 +146,9 @@ So if the lawn occupies, say, 25% of the visible image area, that's ~${Math.roun
 
 Analyze this satellite image and return the JSON.`;
 
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
+    const ai = await callAnthropic(
+      { feature: 'zach-yard-ai', companyId: company_id ?? null },
+      {
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 800,
         system: systemPrompt,
@@ -166,22 +159,15 @@ Analyze this satellite image and return the JSON.`;
             { type: 'text', text: userText },
           ],
         }],
-      }),
-    });
+      },
+    );
 
-    if (!claudeRes.ok) {
-      const errText = await claudeRes.text();
-      console.error('[zach-yard-ai] Claude error:', errText);
-      return json({ error: 'AI analysis failed', detail: errText }, 502);
+    if (!ai.ok) {
+      console.error('[zach-yard-ai] Claude error:', ai.raw || ai.friendly);
+      return json({ error: ai.friendly, ai_unavailable: ai.unavailable === true }, 502);
     }
 
-    const claudeJson = await claudeRes.json();
-    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
-    await recordComputeUsage({
-      supabaseUrl: Deno.env.get('SUPABASE_URL'), serviceKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
-      companyId: company_id, feature: 'zach_yard_ai', agentSlug: 'zach',
-      model: 'claude-sonnet-4-5-20250929', usage: claudeJson?.usage,
-    });
+    const claudeJson = ai.data;
     const raw = claudeJson?.content?.[0]?.text || '';
 
     // Extract JSON from the response (Claude usually obeys but be defensive)

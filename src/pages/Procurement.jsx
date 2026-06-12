@@ -138,22 +138,39 @@ export default function Procurement() {
     }
     setCreating(true)
     try {
-      // Group selected items by their effective vendor
-      const itemsByVendor = new Map()
+      // Expand ALL selected products into per-component order items first,
+      // then group by each component's own vendor. Bundle components that
+      // ship from a different vendor (e.g. extended warranty from the
+      // manufacturer) will land on a separate PO automatically.
+      const allOrderItems = []
       for (const g of data.groups) {
         for (const item of g.items) {
           if (!selected[item.product.id] || item.toOrder <= 0) continue
-          const vendorId = resolveVendor(item)
-          if (!itemsByVendor.has(vendorId)) itemsByVendor.set(vendorId, [])
-          itemsByVendor.get(vendorId).push(item)
+          const resolvedVendorId = resolveVendor(item)
+          const orderItems = await expandProductForPO(item.product.id, item.toOrder, companyId)
+          const totalContrib = item.jobContributions.reduce((s, c) => s + c.qty, 0)
+          for (const oi of orderItems) {
+            allOrderItems.push({ oi, item, totalContrib, resolvedVendorId })
+          }
         }
+      }
+
+      // Group expanded items by effective vendor (component vendor takes
+      // priority over the parent product's resolved vendor)
+      const byVendor = new Map()
+      for (const entry of allOrderItems) {
+        const vId = entry.oi.vendorId || entry.resolvedVendorId
+        if (!byVendor.has(vId)) byVendor.set(vId, [])
+        byVendor.get(vId).push(entry)
       }
 
       const createdPos = []
       const touchedJobs = new Set()
-      for (const [vendorId, items] of itemsByVendor.entries()) {
+      // Only set po_line_id on each job_line once (first PO line wins)
+      const taggedJobLines = new Set()
+
+      for (const [vendorId, entries] of byVendor.entries()) {
         const poNumber = await generatePoNumber(companyId)
-        // PO is multi-job — leave job_id null
         const { data: po, error: poErr } = await supabase
           .from('purchase_orders')
           .insert({
@@ -162,76 +179,62 @@ export default function Procurement() {
             vendor_id: vendorId,
             job_id: null,
             status: 'draft',
-            notes: `Aggregated from Procurement Queue · covers ${items.length} product${items.length === 1 ? '' : 's'} across multiple jobs`,
+            notes: `Aggregated from Procurement Queue · ${entries.length} line${entries.length === 1 ? '' : 's'} across multiple jobs`,
           })
           .select().single()
         if (poErr) throw poErr
 
-        // Bundles (cost=null) are expanded into per-component lines before
-        // inserting PO lines, so the vendor receives actual part names/quantities.
         let subtotal = 0
         let sortOrder = 0
-        for (const item of items) {
-          // Expand: direct-cost product → 1 line; bundle → N component lines
-          const orderItems = await expandProductForPO(item.product.id, item.toOrder, companyId)
 
-          // Pro-rate the job contributions across the expanded lines.
-          // Each component's quantity is already scaled (qty_per_bundle × toOrder),
-          // so we distribute proportionally to each job's share of toOrder.
-          const totalContrib = item.jobContributions.reduce((s, c) => s + c.qty, 0)
+        for (const { oi, item, totalContrib } of entries) {
+          const lineTotal = oi.unitCost * oi.quantity
+          subtotal += lineTotal
 
-          for (const oi of orderItems) {
-            const lineTotal = oi.unitCost * oi.quantity
-            subtotal += lineTotal
+          const { data: poLine } = await supabase
+            .from('purchase_order_lines')
+            .insert({
+              company_id: companyId,
+              po_id: po.id,
+              product_id: oi.productId,
+              description: oi.description,
+              quantity_ordered: oi.quantity,
+              quantity_received: 0,
+              unit_cost: oi.unitCost,
+              line_total: lineTotal,
+              sort_order: sortOrder++,
+            })
+            .select().single()
 
-            const { data: poLine } = await supabase
-              .from('purchase_order_lines')
-              .insert({
+          // Fan the PO line out to each contributing job_line, pro-rated
+          if (totalContrib > 0) {
+            let remaining = oi.quantity
+            const fanout = item.jobContributions.map((c, idx) => {
+              const isLast = idx === item.jobContributions.length - 1
+              const share = isLast ? remaining : Math.round((c.qty / totalContrib) * oi.quantity * 100) / 100
+              remaining -= share
+              return { ...c, share }
+            })
+            for (const c of fanout) {
+              if (c.share <= 0) continue
+              await supabase.from('purchase_order_line_jobs').insert({
                 company_id: companyId,
-                po_id: po.id,
-                product_id: oi.productId,
-                description: oi.description,
-                quantity_ordered: oi.quantity,
-                quantity_received: 0,
-                unit_cost: oi.unitCost,
-                line_total: lineTotal,
-                sort_order: sortOrder++,
+                po_line_id: poLine.id,
+                job_line_id: c.jobLineId,
+                job_id: c.jobId,
+                quantity: c.share,
               })
-              .select().single()
-
-            // Fan the PO line out to each contributing job_line,
-            // pro-rated by that job's share of the aggregate order.
-            if (totalContrib > 0) {
-              let remaining = oi.quantity
-              const fanout = item.jobContributions.map((c, idx) => {
-                const isLast = idx === item.jobContributions.length - 1
-                const share = isLast ? remaining : Math.round((c.qty / totalContrib) * oi.quantity * 100) / 100
-                remaining -= share
-                return { ...c, share }
-              })
-              for (const c of fanout) {
-                if (c.share <= 0) continue
-                await supabase.from('purchase_order_line_jobs').insert({
-                  company_id: companyId,
-                  po_line_id: poLine.id,
-                  job_line_id: c.jobLineId,
-                  job_id: c.jobId,
-                  quantity: c.share,
-                })
-                // Only set po_line_id on the job_line for the first component
-                // (marks it as "on order" without conflicting with other components)
-                if (oi === orderItems[0]) {
-                  await supabase.from('job_lines').update({
-                    po_line_id: poLine.id, updated_at: new Date().toISOString(),
-                  }).eq('id', c.jobLineId)
-                }
-                touchedJobs.add(c.jobId)
+              if (!taggedJobLines.has(c.jobLineId)) {
+                taggedJobLines.add(c.jobLineId)
+                await supabase.from('job_lines').update({
+                  po_line_id: poLine.id, updated_at: new Date().toISOString(),
+                }).eq('id', c.jobLineId)
               }
+              touchedJobs.add(c.jobId)
             }
           }
         }
 
-        // Update PO totals
         await supabase.from('purchase_orders').update({
           subtotal, total: subtotal, updated_at: new Date().toISOString(),
         }).eq('id', po.id)
@@ -413,26 +416,37 @@ export default function Procurement() {
                                 Order {item.toOrder}
                               </strong>
                             </div>
-                            {/* Per-job breakdown */}
-                            <div style={{
-                              marginTop: 6, paddingLeft: 14,
-                              fontSize: 11, color: theme.textMuted,
-                              borderLeft: `2px solid ${theme.border}`,
-                            }}>
+                            {/* Per-job breakdown — name front and centre */}
+                            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                               {item.jobContributions.map(c => (
-                                <div key={c.jobLineId} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
-                                  <Briefcase size={10} style={{ flexShrink: 0 }} />
-                                  <button
-                                    onClick={() => navigate(`/jobs/${c.jobId}`)}
-                                    style={{
-                                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                                      color: theme.accent, fontSize: 11,
-                                    }}
-                                  >
-                                    {c.jobLabel}
-                                  </button>
-                                  <span>· qty {c.qty}</span>
-                                </div>
+                                <button
+                                  key={c.jobLineId}
+                                  onClick={() => navigate(`/jobs/${c.jobId}`)}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+                                    background: 'none', border: `1px solid ${theme.border}`,
+                                    textAlign: 'left', width: '100%',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                    <Briefcase size={12} style={{ flexShrink: 0, color: theme.accent }} />
+                                    <span style={{ fontSize: 13, fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {c.jobName}
+                                    </span>
+                                    <span style={{ fontSize: 11, color: theme.textMuted, flexShrink: 0 }}>
+                                      {c.jobLabel !== c.jobName ? c.jobLabel.split(' ')[0] : ''}
+                                    </span>
+                                  </div>
+                                  <span style={{
+                                    flexShrink: 0, marginLeft: 8,
+                                    padding: '2px 8px', borderRadius: 10,
+                                    fontSize: 11, fontWeight: 700,
+                                    backgroundColor: theme.accentBg, color: theme.accent,
+                                  }}>
+                                    qty {c.qty}
+                                  </span>
+                                </button>
                               ))}
                             </div>
                             {/* Inline vendor picker for no-vendor items */}
