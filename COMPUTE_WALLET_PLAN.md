@@ -197,6 +197,15 @@ Rollout touchpoint: every function in `supabase/functions/*` that calls Anthropi
 analyze-fixture, scan-receipt, cc-generate-email, lenard-analyze, ai-extract-pdf,
 parse-utility-pdf, victor-verify, …) gets one wrapper line.
 
+**Attributing usage to a company without frontend churn.** Agent functions
+already carry `company_id`. Built-in functions (receipt scan, PDF import,
+proposal layout, …) don't — but rather than thread it through every frontend
+call site, `_shared/auth.ts:resolveCompanyId(req)` resolves it **server-side from
+the caller's JWT** (the `email` claim → `employees` table, mirroring the
+`current_user_company_ids()` RLS helper). Zero frontend changes, and it can't be
+spoofed by the client. Returns null on service-role/public calls, which makes the
+shadow log a safe no-op.
+
 ---
 
 ## 6. Pricing config (extend `billingPlans.js`)

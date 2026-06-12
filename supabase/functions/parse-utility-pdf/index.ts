@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { recordComputeUsage } from "../_shared/compute.ts";
+import { resolveCompanyId } from "../_shared/auth.ts";
 import { encode as base64Encode, decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
@@ -403,6 +405,14 @@ serve(async (req) => {
     });
 
     const data = await response.json();
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+    {
+      const _u = Deno.env.get('SUPABASE_URL'); const _k = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      await recordComputeUsage({ supabaseUrl: _u, serviceKey: _k,
+        companyId: await resolveCompanyId(req, _u, _k),
+        feature: 'parse_utility_pdf', agentSlug: 'lenard',
+        model: 'claude-sonnet-4-20250514', usage: data?.usage });
+    }
 
     if (data.error) {
       // Retry once on rate limit

@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { recordComputeUsage } from "../_shared/compute.ts";
+import { resolveCompanyId } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -259,6 +261,14 @@ Be specific to ${customer_name} and this project. Generic copy = lost deal. Sell
     }
 
     const aiResult = await response.json();
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+    {
+      const _u = Deno.env.get('SUPABASE_URL'); const _k = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      await recordComputeUsage({ supabaseUrl: _u, serviceKey: _k,
+        companyId: await resolveCompanyId(req, _u, _k),
+        feature: 'proposal_layout', agentSlug: null,
+        model: 'claude-sonnet-4-6', usage: aiResult?.usage });
+    }
     const content = aiResult.content?.[0]?.text || '';
 
     // Parse the JSON from Claude's response

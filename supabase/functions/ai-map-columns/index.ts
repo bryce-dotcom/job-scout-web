@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { recordComputeUsage } from "../_shared/compute.ts";
+import { resolveCompanyId } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -97,6 +99,14 @@ Response format (JSON only, no markdown):
     }
 
     const aiData = await resp.json();
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+    {
+      const _u = Deno.env.get('SUPABASE_URL'); const _k = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      await recordComputeUsage({ supabaseUrl: _u, serviceKey: _k,
+        companyId: await resolveCompanyId(req, _u, _k),
+        feature: 'ai_map_columns', agentSlug: null,
+        model: 'claude-haiku-4-5-20251001', usage: aiData?.usage });
+    }
     const text = aiData.content?.[0]?.text || '';
 
     // Extract JSON from response (handle potential markdown wrapping)

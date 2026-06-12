@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { recordComputeUsage } from "../_shared/compute.ts";
+import { resolveCompanyId } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -137,6 +139,14 @@ serve(async (req) => {
     });
 
     const data = await response.json();
+    // Phase 0 shadow metering — best-effort, never blocks (see COMPUTE_WALLET_PLAN.md)
+    {
+      const _u = Deno.env.get('SUPABASE_URL'); const _k = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      await recordComputeUsage({ supabaseUrl: _u, serviceKey: _k,
+        companyId: await resolveCompanyId(req, _u, _k),
+        feature: 'cc_generate_email', agentSlug: 'conrad',
+        model: 'claude-sonnet-4-5-20250929', usage: data?.usage });
+    }
 
     if (data.error) {
       const errMsg = data.error.message || 'Anthropic API error';
