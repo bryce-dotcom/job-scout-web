@@ -65,17 +65,29 @@ export function generatePoPdf({ po, lines, vendor, company, job, businessUnit })
       for (const l of lines) { doc.text(l, margin, vy); vy += 5 }
     }
   }
-  // Ship to: job address if PO is linked to a job, else company address
+  // Ship to: customer/project name first, then address, then job reference
+  if (job) {
+    // Customer name as primary recipient
+    if (job.customer_name) {
+      doc.setFont('helvetica', 'bold')
+      doc.text(job.customer_name, margin + contentW * 0.5, sy); sy += 5
+      doc.setFont('helvetica', 'normal')
+    }
+    // Job title as project name (if different from customer name)
+    if (job.job_title && job.job_title !== job.customer_name) {
+      doc.text(job.job_title, margin + contentW * 0.5, sy); sy += 5
+    }
+  }
   const shipTo = job?.job_address || job?.address || companyAddress
   if (shipTo) {
-    const lines = doc.splitTextToSize(shipTo, contentW * 0.45)
-    for (const l of lines) { doc.text(l, margin + contentW * 0.5, sy); sy += 5 }
-  } else {
+    const shipLines = doc.splitTextToSize(shipTo, contentW * 0.45)
+    for (const l of shipLines) { doc.text(l, margin + contentW * 0.5, sy); sy += 5 }
+  } else if (!job) {
     doc.text('(no ship-to address set)', margin + contentW * 0.5, sy); sy += 5
   }
   if (job) {
     doc.setFontSize(9); doc.setTextColor(120)
-    doc.text(`Job: ${job.job_id} ${job.job_title || ''}`, margin + contentW * 0.5, sy); sy += 5
+    doc.text(`Ref: ${job.job_id}`, margin + contentW * 0.5, sy); sy += 5
     doc.setFontSize(10); doc.setTextColor(0)
   }
   y = Math.max(vy, sy) + 6

@@ -144,24 +144,39 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
         setWorking(false); return
       }
 
-      // Group by vendor — products with no vendor go into a "no-vendor" bucket
-      // that uses the first active vendor as a placeholder.
       const { data: vendors } = await supabase
         .from('vendors').select('id, name').eq('company_id', companyId).eq('active', true).order('name')
       if (!vendors || vendors.length === 0) {
         toast.error('No active vendors yet — create one in /vendors first.')
         setWorking(false); return
       }
-      const placeholderVendor = vendors[0]
-      const groups = new Map()
-      for (const m of missing) {
-        const vId = m.line.item?.default_vendor_id || placeholderVendor.id
-        if (!groups.has(vId)) groups.set(vId, [])
-        groups.get(vId).push(m)
+      const placeholderVendorId = vendors[0].id
+
+      // Expand ALL missing lines into their per-component order items first,
+      // then group by each component's own vendor. This ensures bundle
+      // components that ship from a different vendor (e.g. an extended
+      // warranty direct from the manufacturer) land on the correct PO
+      // rather than being silently bundled with the parent product's vendor.
+      const allItems = []
+      for (const { line, toOrder } of missing) {
+        const orderItems = await expandProductForPO(line.item_id, toOrder, companyId)
+        for (const oi of orderItems) {
+          allItems.push({ ...oi, sourceLine: line })
+        }
       }
 
-      // Create one PO per vendor
-      let createdPos = []
+      // Group by effective vendor — fall back to placeholder for unassigned items
+      const groups = new Map()
+      for (const item of allItems) {
+        const vId = item.vendorId || placeholderVendorId
+        if (!groups.has(vId)) groups.set(vId, [])
+        groups.get(vId).push(item)
+      }
+
+      // Track which job_lines have been tagged (only set po_line_id once per job_line)
+      const taggedJobLines = new Set()
+      const createdPos = []
+
       for (const [vendorId, items] of groups.entries()) {
         const poNumber = await generatePoNumber(companyId)
         const { data: po, error } = await supabase
@@ -176,54 +191,42 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
           .select().single()
         if (error) throw error
 
-        // Insert lines + back-link via purchase_order_line_jobs.
-        // Bundles (cost=null) are expanded into per-component lines so the
-        // vendor receives a list of actual parts to pick, not an abstract name.
         let subtotal = 0
         let sortOrder = 0
-        for (const { line, toOrder } of items) {
-          // expandProductForPO handles direct-cost, bundle, and no-cost cases
-          const orderItems = await expandProductForPO(line.item_id, toOrder, companyId)
-          let firstPoLineId = null   // first PO line for this job_line → used for job_line.po_line_id
-
-          for (const oi of orderItems) {
-            const lineTotal = oi.unitCost * oi.quantity
-            subtotal += lineTotal
-            const { data: poLine } = await supabase
-              .from('purchase_order_lines')
-              .insert({
-                company_id: companyId,
-                po_id: po.id,
-                product_id: oi.productId,
-                description: oi.description,
-                quantity_ordered: oi.quantity,
-                quantity_received: 0,
-                unit_cost: oi.unitCost,
-                line_total: lineTotal,
-                sort_order: sortOrder++,
-              })
-              .select().single()
-
-            // Back-link so receiving fans qty out to this job_line
-            await supabase.from('purchase_order_line_jobs').insert({
+        for (const oi of items) {
+          const lineTotal = oi.unitCost * oi.quantity
+          subtotal += lineTotal
+          const { data: poLine } = await supabase
+            .from('purchase_order_lines')
+            .insert({
               company_id: companyId,
-              po_line_id: poLine.id,
-              job_line_id: line.id,
-              job_id: job.id,
-              quantity: oi.quantity,
+              po_id: po.id,
+              product_id: oi.productId,
+              description: oi.description,
+              quantity_ordered: oi.quantity,
+              quantity_received: 0,
+              unit_cost: oi.unitCost,
+              line_total: lineTotal,
+              sort_order: sortOrder++,
             })
+            .select().single()
 
-            if (!firstPoLineId) firstPoLineId = poLine.id
-          }
+          await supabase.from('purchase_order_line_jobs').insert({
+            company_id: companyId,
+            po_line_id: poLine.id,
+            job_line_id: oi.sourceLine.id,
+            job_id: job.id,
+            quantity: oi.quantity,
+          })
 
-          // Tag the job_line with the first PO line ID so it shows as "on order"
-          if (firstPoLineId) {
+          // Tag the job_line with the first PO line created for it
+          if (!taggedJobLines.has(oi.sourceLine.id)) {
+            taggedJobLines.add(oi.sourceLine.id)
             await supabase.from('job_lines').update({
-              po_line_id: firstPoLineId, updated_at: new Date().toISOString(),
-            }).eq('id', line.id)
+              po_line_id: poLine.id, updated_at: new Date().toISOString(),
+            }).eq('id', oi.sourceLine.id)
           }
         }
-        // Update PO totals
         await supabase.from('purchase_orders').update({
           subtotal, total: subtotal, updated_at: new Date().toISOString(),
         }).eq('id', po.id)

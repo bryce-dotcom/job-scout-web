@@ -138,22 +138,39 @@ export default function Procurement() {
     }
     setCreating(true)
     try {
-      // Group selected items by their effective vendor
-      const itemsByVendor = new Map()
+      // Expand ALL selected products into per-component order items first,
+      // then group by each component's own vendor. Bundle components that
+      // ship from a different vendor (e.g. extended warranty from the
+      // manufacturer) will land on a separate PO automatically.
+      const allOrderItems = []
       for (const g of data.groups) {
         for (const item of g.items) {
           if (!selected[item.product.id] || item.toOrder <= 0) continue
-          const vendorId = resolveVendor(item)
-          if (!itemsByVendor.has(vendorId)) itemsByVendor.set(vendorId, [])
-          itemsByVendor.get(vendorId).push(item)
+          const resolvedVendorId = resolveVendor(item)
+          const orderItems = await expandProductForPO(item.product.id, item.toOrder, companyId)
+          const totalContrib = item.jobContributions.reduce((s, c) => s + c.qty, 0)
+          for (const oi of orderItems) {
+            allOrderItems.push({ oi, item, totalContrib, resolvedVendorId })
+          }
         }
+      }
+
+      // Group expanded items by effective vendor (component vendor takes
+      // priority over the parent product's resolved vendor)
+      const byVendor = new Map()
+      for (const entry of allOrderItems) {
+        const vId = entry.oi.vendorId || entry.resolvedVendorId
+        if (!byVendor.has(vId)) byVendor.set(vId, [])
+        byVendor.get(vId).push(entry)
       }
 
       const createdPos = []
       const touchedJobs = new Set()
-      for (const [vendorId, items] of itemsByVendor.entries()) {
+      // Only set po_line_id on each job_line once (first PO line wins)
+      const taggedJobLines = new Set()
+
+      for (const [vendorId, entries] of byVendor.entries()) {
         const poNumber = await generatePoNumber(companyId)
-        // PO is multi-job — leave job_id null
         const { data: po, error: poErr } = await supabase
           .from('purchase_orders')
           .insert({
@@ -162,76 +179,62 @@ export default function Procurement() {
             vendor_id: vendorId,
             job_id: null,
             status: 'draft',
-            notes: `Aggregated from Procurement Queue · covers ${items.length} product${items.length === 1 ? '' : 's'} across multiple jobs`,
+            notes: `Aggregated from Procurement Queue · ${entries.length} line${entries.length === 1 ? '' : 's'} across multiple jobs`,
           })
           .select().single()
         if (poErr) throw poErr
 
-        // Bundles (cost=null) are expanded into per-component lines before
-        // inserting PO lines, so the vendor receives actual part names/quantities.
         let subtotal = 0
         let sortOrder = 0
-        for (const item of items) {
-          // Expand: direct-cost product → 1 line; bundle → N component lines
-          const orderItems = await expandProductForPO(item.product.id, item.toOrder, companyId)
 
-          // Pro-rate the job contributions across the expanded lines.
-          // Each component's quantity is already scaled (qty_per_bundle × toOrder),
-          // so we distribute proportionally to each job's share of toOrder.
-          const totalContrib = item.jobContributions.reduce((s, c) => s + c.qty, 0)
+        for (const { oi, item, totalContrib } of entries) {
+          const lineTotal = oi.unitCost * oi.quantity
+          subtotal += lineTotal
 
-          for (const oi of orderItems) {
-            const lineTotal = oi.unitCost * oi.quantity
-            subtotal += lineTotal
+          const { data: poLine } = await supabase
+            .from('purchase_order_lines')
+            .insert({
+              company_id: companyId,
+              po_id: po.id,
+              product_id: oi.productId,
+              description: oi.description,
+              quantity_ordered: oi.quantity,
+              quantity_received: 0,
+              unit_cost: oi.unitCost,
+              line_total: lineTotal,
+              sort_order: sortOrder++,
+            })
+            .select().single()
 
-            const { data: poLine } = await supabase
-              .from('purchase_order_lines')
-              .insert({
+          // Fan the PO line out to each contributing job_line, pro-rated
+          if (totalContrib > 0) {
+            let remaining = oi.quantity
+            const fanout = item.jobContributions.map((c, idx) => {
+              const isLast = idx === item.jobContributions.length - 1
+              const share = isLast ? remaining : Math.round((c.qty / totalContrib) * oi.quantity * 100) / 100
+              remaining -= share
+              return { ...c, share }
+            })
+            for (const c of fanout) {
+              if (c.share <= 0) continue
+              await supabase.from('purchase_order_line_jobs').insert({
                 company_id: companyId,
-                po_id: po.id,
-                product_id: oi.productId,
-                description: oi.description,
-                quantity_ordered: oi.quantity,
-                quantity_received: 0,
-                unit_cost: oi.unitCost,
-                line_total: lineTotal,
-                sort_order: sortOrder++,
+                po_line_id: poLine.id,
+                job_line_id: c.jobLineId,
+                job_id: c.jobId,
+                quantity: c.share,
               })
-              .select().single()
-
-            // Fan the PO line out to each contributing job_line,
-            // pro-rated by that job's share of the aggregate order.
-            if (totalContrib > 0) {
-              let remaining = oi.quantity
-              const fanout = item.jobContributions.map((c, idx) => {
-                const isLast = idx === item.jobContributions.length - 1
-                const share = isLast ? remaining : Math.round((c.qty / totalContrib) * oi.quantity * 100) / 100
-                remaining -= share
-                return { ...c, share }
-              })
-              for (const c of fanout) {
-                if (c.share <= 0) continue
-                await supabase.from('purchase_order_line_jobs').insert({
-                  company_id: companyId,
-                  po_line_id: poLine.id,
-                  job_line_id: c.jobLineId,
-                  job_id: c.jobId,
-                  quantity: c.share,
-                })
-                // Only set po_line_id on the job_line for the first component
-                // (marks it as "on order" without conflicting with other components)
-                if (oi === orderItems[0]) {
-                  await supabase.from('job_lines').update({
-                    po_line_id: poLine.id, updated_at: new Date().toISOString(),
-                  }).eq('id', c.jobLineId)
-                }
-                touchedJobs.add(c.jobId)
+              if (!taggedJobLines.has(c.jobLineId)) {
+                taggedJobLines.add(c.jobLineId)
+                await supabase.from('job_lines').update({
+                  po_line_id: poLine.id, updated_at: new Date().toISOString(),
+                }).eq('id', c.jobLineId)
               }
+              touchedJobs.add(c.jobId)
             }
           }
         }
 
-        // Update PO totals
         await supabase.from('purchase_orders').update({
           subtotal, total: subtotal, updated_at: new Date().toISOString(),
         }).eq('id', po.id)

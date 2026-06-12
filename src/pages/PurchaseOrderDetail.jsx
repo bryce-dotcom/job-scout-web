@@ -79,7 +79,7 @@ export default function PurchaseOrderDetail() {
     setLoading(true)
     const [poRes, linesRes, vRes, pRes] = await Promise.all([
       supabase.from('purchase_orders')
-        .select('*, vendor:vendors(id, name, email, billing_address, default_payment_terms), job:jobs(id, job_id, job_title, job_address)')
+        .select('*, vendor:vendors(id, name, email, billing_address, default_payment_terms), job:jobs(id, job_id, job_title, customer_name, job_address)')
         .eq('id', id).eq('company_id', companyId).maybeSingle(),
       supabase.from('purchase_order_lines').select('*').eq('po_id', id).order('sort_order').order('id'),
       supabase.from('vendors').select('id, name').eq('company_id', companyId).eq('active', true).order('name'),
@@ -845,7 +845,7 @@ export default function PurchaseOrderDetail() {
                   onClick={() => navigate(`/jobs/${po.job.id}`)}
                   style={{ color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
                 >
-                  {po.job.job_id} — {po.job.job_title}
+                  {po.job.job_id}{po.job.customer_name ? ` — ${po.job.customer_name}` : po.job.job_title ? ` — ${po.job.job_title}` : ''}
                 </button>
               </div>
             )}
