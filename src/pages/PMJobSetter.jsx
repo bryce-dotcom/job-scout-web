@@ -163,6 +163,18 @@ function AvatarStack({ names, accent = '#5a6349', size = 20, max = 3 }) {
   )
 }
 
+// Compact label for calendar cells / lists / tooltips. SERVICE VISITS are
+// explicitly tagged and lead with the service name — Bryce: cards were
+// reading "dave reed" / "Chris Reilley" with nothing saying it's a
+// service, not a job. Regular jobs stay contact-first (unchanged).
+function jobCellLabel(job) {
+  if (job?.parent_job_id) {
+    const kind = (job.service_kind || 'service').replace(/_/g, ' ')
+    return `Service (${kind}): ${job.job_title || `#${job?.id}`}`
+  }
+  return `${job?.customer?.name ? `${job.customer.name} — ` : ''}${job?.job_title || `Job #${job?.id}`}`
+}
+
 export default function PMJobSetter() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
@@ -865,7 +877,7 @@ export default function PMJobSetter() {
         const status = jobStatuses.find(s => s.id === job.status || s.name === job.status)
         const color = status?.color || '#5a6349'
         const marker = L.circleMarker([coords.lat, coords.lng], { radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9 }).addTo(map)
-        marker.bindTooltip(`<b>${job.job_title || 'Job'}</b><br/>${job.customer?.name || ''}<br/><small>${job.status}</small>`, { direction: 'top', offset: [0, -10] })
+        marker.bindTooltip(`<b>${job.parent_job_id ? 'Service: ' : ''}${job.job_title || 'Job'}</b><br/>${job.customer?.name || ''}<br/><small>${job.status}</small>`, { direction: 'top', offset: [0, -10] })
         marker.on('click', () => setDetailJob(job))
         bounds.push([coords.lat, coords.lng])
       })
@@ -1867,7 +1879,7 @@ export default function PMJobSetter() {
 
       const appointmentRows = assignedIds.map(empId => {
         const emp = employees.find(e => String(e.id) === String(empId))
-        const baseTitle = scheduleJob.job_title || `Job #${scheduleJob.job_id || scheduleJob.id}`
+        const baseTitle = (scheduleJob.parent_job_id ? `Service (${(scheduleJob.service_kind || 'service').replace(/_/g, ' ')}): ` : '') + (scheduleJob.job_title || `Job #${scheduleJob.job_id || scheduleJob.id}`)
         return {
           company_id: companyId,
           title: assignedIds.length > 1 && emp ? `${baseTitle} (${emp.name})` : baseTitle,
@@ -3446,9 +3458,9 @@ export default function PMJobSetter() {
                                           overflow: 'hidden',
                                           textOverflow: 'ellipsis'
                                         }}
-                                        title={`${job.customer?.name || ''}${job.customer?.name ? ' — ' : ''}${job.job_title || 'Untitled'}`}
+                                        title={jobCellLabel(job)}
                                       >
-                                        {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                                        {jobCellLabel(job)}
                                       </div>
                                     )
                                   })}
@@ -3538,7 +3550,7 @@ export default function PMJobSetter() {
                               onDragStart={(e) => handleJobDragStart(e, job)}
                               onDragEnd={handleDragEnd}
                               onClick={() => setDetailJob(job)}
-                              title={`${job.customer?.name || ''}${job.customer?.name ? ' — ' : ''}${job.job_title || `Job #${job.id}`}${span.continuesLeft || span.continuesRight ? ' (continues)' : ''}`}
+                              title={`${jobCellLabel(job)}${span.continuesLeft || span.continuesRight ? ' (continues)' : ''}`}
                               style={{
                                 position: 'absolute',
                                 top: `${top}px`,
@@ -3565,7 +3577,7 @@ export default function PMJobSetter() {
                               }}
                             >
                               {span.continuesLeft && <span style={{ marginRight: 4, opacity: 0.6 }}>‹</span>}
-                              {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                              {jobCellLabel(job)}
                               {span.continuesRight && <span style={{ marginLeft: 'auto', opacity: 0.6 }}>›</span>}
                             </div>
                           )
@@ -3679,7 +3691,7 @@ export default function PMJobSetter() {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                   <Briefcase size={9} style={{ flexShrink: 0, opacity: 0.7 }} />
                                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                                    {jobCellLabel(job)}
                                   </span>
                                 </div>
                               </div>
@@ -3988,7 +4000,7 @@ export default function PMJobSetter() {
                           }}>{idx + 1}</span>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <p style={{ fontSize: '12px', fontWeight: '500', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {job.job_title || 'Untitled'} — {job.customer?.name || 'No customer'}
+                              {jobCellLabel(job)}
                             </p>
                             <p style={{ fontSize: '10px', color: theme.textMuted, margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {job.job_address || job.customer?.address || 'No address'}
@@ -4242,7 +4254,7 @@ export default function PMJobSetter() {
                           overflow: 'hidden',
                           textOverflow: 'ellipsis'
                         }}>
-                          {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                          {jobCellLabel(job)}
                         </span>
                       </div>
                     ))}
@@ -4410,8 +4422,18 @@ export default function PMJobSetter() {
               justifyContent: 'space-between',
               gap: '12px'
             }}>
-              <h2 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {detailJob.job_title || `Job #${detailJob.id}`}
+              <h2 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {detailJob.parent_job_id && (
+                  <span style={{
+                    flexShrink: 0, padding: '2px 8px', borderRadius: '10px',
+                    fontSize: '10px', fontWeight: 800, letterSpacing: '0.5px', textTransform: 'uppercase',
+                    backgroundColor: 'rgba(234,88,12,0.12)', color: '#ea580c',
+                    border: '1px solid rgba(234,88,12,0.35)',
+                  }}>
+                    Service Visit
+                  </span>
+                )}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{detailJob.job_title || `Job #${detailJob.id}`}</span>
               </h2>
               <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                 {/* Reschedule — opens the Schedule modal pre-populated so
@@ -4934,7 +4956,7 @@ export default function PMJobSetter() {
                     }}
                   >
                     <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text }}>
-                      {job.customer?.name ? `${job.customer?.name} — ` : ''}{job.job_title || `Job #${job.id}`}
+                      {jobCellLabel(job)}
                     </div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: 2 }}>
                       {job.business_unit || '—'}
