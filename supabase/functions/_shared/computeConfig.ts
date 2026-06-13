@@ -29,6 +29,28 @@ export const COMPUTE = {
   alertThresholds: [0.5, 0.8, 1.0],
 }
 
+// Agent attribution by feature name. Feature slugs are the wrapper's
+// meta.feature values (same strings as ai_usage.feature, so the two tables
+// join cleanly). Features not listed are built-in AI → agent_slug NULL.
+const FEATURE_AGENTS: Record<string, string> = {
+  'analyze-fixture': 'lenard',
+  'lenard-analyze': 'lenard',
+  'parse-utility-pdf': 'lenard',
+  'ai-utility-research': 'lenard',
+  'prospect-research': 'lead-setter',
+  'cc-generate-email': 'conrad',
+  'dougie-analyze': 'dougie',
+  'victor-verify': 'victor',
+  'arnie-chat': 'arnie',
+  'arnie-suggest-addons': 'arnie',
+  'zach-instant-quote': 'zach',
+  'zach-yard-ai': 'zach',
+}
+
+export function agentFor(feature: string): string | null {
+  return FEATURE_AGENTS[feature] ?? null
+}
+
 // $/MTok by model family. Resolved by substring so dated aliases
 // (claude-sonnet-4-20250514, -4-5-..., -4-6) all map correctly.
 export function priceFor(model: string): { in: number; out: number; cacheRead: number } {

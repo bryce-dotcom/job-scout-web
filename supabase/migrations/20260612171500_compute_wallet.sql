@@ -54,10 +54,15 @@ create index if not exists compute_ledger_feature_idx
 alter table public.compute_wallet  enable row level security;
 alter table public.compute_ledger  enable row level security;
 
-create policy compute_wallet_select on public.compute_wallet
-  for select using (public.belongs_to_company(company_id));
-create policy compute_ledger_select on public.compute_ledger
-  for select using (public.belongs_to_company(company_id));
+do $$ begin
+  create policy compute_wallet_select on public.compute_wallet
+    for select using (company_id in (select public.current_user_company_ids()));
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy compute_ledger_select on public.compute_ledger
+    for select using (company_id in (select public.current_user_company_ids()));
+exception when duplicate_object then null; end $$;
 
 -- ── debit_compute: atomic enforce + ledger write. NOT called in Phase 0 —
 --    ships now so Phase 3 enforcement has a stable, audited path. Draws

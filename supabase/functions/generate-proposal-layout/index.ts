@@ -233,7 +233,7 @@ Be specific to ${customer_name} and this project. Generic copy = lost deal. Sell
     }
 
     const ai = await callAnthropic(
-      { feature: 'generate-proposal-layout', companyId: null },
+      { feature: 'generate-proposal-layout', companyId: null, req },
       {
         model: 'claude-sonnet-4-6',
         max_tokens: 5000,

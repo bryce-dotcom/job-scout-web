@@ -385,14 +385,14 @@ serve(async (req) => {
       }]
     };
 
-    const ai = await callAnthropic({ feature: 'parse-utility-pdf', companyId: null }, anthropicBody);
+    const ai = await callAnthropic({ feature: 'parse-utility-pdf', companyId: null, req }, anthropicBody);
 
     if (!ai.ok) {
       // Retry once on rate limit (mirrors the old `error.message includes 'rate limit'` check)
       if (ai.errorKind === 'rate_limit') {
         console.log('Rate limited, waiting 61s before retry...');
         await new Promise(r => setTimeout(r, 61000));
-        const retryAi = await callAnthropic({ feature: 'parse-utility-pdf', companyId: null }, anthropicBody);
+        const retryAi = await callAnthropic({ feature: 'parse-utility-pdf', companyId: null, req }, anthropicBody);
         if (!retryAi.ok) {
           return new Response(JSON.stringify({ success: false, error: retryAi.friendly || 'Anthropic API error (after retry)', ai_unavailable: retryAi.unavailable === true, storage_path: storagePath }), {
             status: 500,

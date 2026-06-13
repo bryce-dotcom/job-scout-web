@@ -115,7 +115,7 @@ serve(async (req) => {
 
     // Call Claude API via the shared wrapper (usage metering, error taxonomy, admin alerting)
     const ai = await callAnthropic(
-      { feature: 'cc-generate-email', companyId: null },
+      { feature: 'cc-generate-email', companyId: null, req },
       {
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 4096,
