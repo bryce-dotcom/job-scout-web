@@ -47,7 +47,7 @@ Return ONLY valid JSON, no other text:
 }`;
 
     const ai = await callAnthropic(
-      { feature: 'scan-receipt', companyId: null },
+      { feature: 'scan-receipt', companyId: null, req },
       {
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,

@@ -19,10 +19,17 @@
 //   const data = ai.data
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { recordComputeUsage } from './compute.ts'
+import { agentFor } from './computeConfig.ts'
+import { resolveCompanyId } from './auth.ts'
 
 export interface AiMeta {
   feature: string
   companyId?: number | null
+  // Pass the inbound Request when the call site has no company context — the
+  // wrapper resolves company_id from the caller's JWT (see _shared/auth.ts),
+  // attributing both ai_usage and the compute shadow ledger.
+  req?: Request
 }
 
 export interface AiResult {
@@ -161,6 +168,31 @@ async function logUsage(sb: any, meta: AiMeta, row: Record<string, unknown>) {
   }
 }
 
+// Compute wallet Phase 0 shadow row (see COMPUTE_WALLET_PLAN.md) — what this
+// call WOULD cost in credits. No-op when company is unknown; never throws.
+async function logCompute(meta: AiMeta, model: string, usage: any) {
+  await recordComputeUsage({
+    supabaseUrl: Deno.env.get('SUPABASE_URL'),
+    serviceKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
+    companyId: meta.companyId,
+    feature: meta.feature,
+    agentSlug: agentFor(meta.feature),
+    model,
+    usage,
+  })
+}
+
+// JWT-based company fallback for call sites that pass req instead of companyId.
+async function withResolvedCompany(meta: AiMeta): Promise<AiMeta> {
+  if (meta.companyId != null || !meta.req) return meta
+  const companyId = await resolveCompanyId(
+    meta.req,
+    Deno.env.get('SUPABASE_URL'),
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
+  )
+  return { ...meta, companyId }
+}
+
 // For call sites that must keep their own fetch (e.g. SSE streaming in
 // arnie-chat): classify + log + alert on a failed response without owning
 // the request. Success-path usage logging is the caller's job (or skipped
@@ -190,6 +222,7 @@ export async function reportAnthropicFailure(
 // stream events). Fire-and-forget.
 export async function logAnthropicSuccess(meta: AiMeta, model: string, usage: any) {
   const sb = adminClient()
+  meta = await withResolvedCompany(meta)
   await logUsage(sb, meta, {
     model,
     input_tokens: usage?.input_tokens ?? 0,
@@ -200,11 +233,13 @@ export async function logAnthropicSuccess(meta: AiMeta, model: string, usage: an
     success: true,
     status: 200,
   })
+  await logCompute(meta, model, usage)
 }
 
 export async function callAnthropic(meta: AiMeta, body: Record<string, unknown>): Promise<AiResult> {
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
   const sb = adminClient()
+  meta = await withResolvedCompany(meta)
 
   if (!apiKey) {
     await logUsage(sb, meta, { model: String(body?.model ?? ''), success: false, error_kind: 'auth', status: 0 })
@@ -245,16 +280,18 @@ export async function callAnthropic(meta: AiMeta, body: Record<string, unknown>)
   }
 
   if (resp.ok && data && !data.error) {
+    const model = data.model ?? String(body?.model ?? '')
     await logUsage(sb, meta, {
-      model: data.model ?? String(body?.model ?? ''),
+      model,
       input_tokens: data.usage?.input_tokens ?? 0,
       output_tokens: data.usage?.output_tokens ?? 0,
       cache_creation_input_tokens: data.usage?.cache_creation_input_tokens ?? 0,
       cache_read_input_tokens: data.usage?.cache_read_input_tokens ?? 0,
-      est_cost_usd: estimateCost(data.model ?? String(body?.model ?? ''), data.usage),
+      est_cost_usd: estimateCost(model, data.usage),
       success: true,
       status: resp.status,
     })
+    await logCompute(meta, model, data.usage)
     return { ok: true, status: resp.status, data }
   }
 

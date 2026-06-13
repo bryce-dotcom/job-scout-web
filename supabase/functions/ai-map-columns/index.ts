@@ -72,7 +72,7 @@ Response format (JSON only, no markdown):
 }`;
 
     const ai = await callAnthropic(
-      { feature: 'ai-map-columns', companyId: null },
+      { feature: 'ai-map-columns', companyId: null, req },
       {
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,

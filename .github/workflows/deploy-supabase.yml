@@ -1,0 +1,44 @@
+name: Deploy to Supabase
+
+# Deploys edge functions + database migrations to the Supabase project.
+#
+# Triggers:
+#   - push to main touching supabase/** (i.e. after this PR merges)
+#   - manual run (Actions tab → "Deploy to Supabase" → Run workflow → pick a branch)
+#     so you can deploy a branch BEFORE merging.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  — supabase.com → Account → Access Tokens
+#   SUPABASE_DB_PASSWORD   — the project's database password
+# Project ref is hard-coded below (not sensitive).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+      - 'supabase/migrations/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: tzrhfhisdeahrrmeksif
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Push database migrations
+        run: supabase db push
+
+      - name: Deploy edge functions
+        run: supabase functions deploy --project-ref "$PROJECT_REF"
