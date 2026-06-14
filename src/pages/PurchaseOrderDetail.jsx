@@ -986,7 +986,10 @@ export default function PurchaseOrderDetail() {
                       )}
                       {isLineEditable ? (
                         <input
-                          type="number" step="0.01" value={line.quantity_ordered}
+                          // Quantity is a COUNT — step=1 so the spinner moves
+                          // by whole units, not pennies (Doug, PO #21). Typing
+                          // fractional quantities still works.
+                          type="number" step="1" min="0" value={line.quantity_ordered}
                           onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, quantity_ordered: e.target.value } : l))}
                           onBlur={(e) => updateLineField(line.id, 'quantity_ordered', parseFloat(e.target.value) || 0)}
                           style={{ ...inlineInput(theme), textAlign: 'right' }}
@@ -1102,7 +1105,7 @@ export default function PurchaseOrderDetail() {
                   style={inlineInput(theme)}
                 />
                 <input
-                  type="number" placeholder="Qty" step="0.01" value={draft.quantity}
+                  type="number" placeholder="Qty" step="1" min="0" value={draft.quantity}
                   onChange={(e) => setDraft(d => ({ ...d, quantity: e.target.value }))}
                   style={{ ...inlineInput(theme), textAlign: 'right' }}
                 />

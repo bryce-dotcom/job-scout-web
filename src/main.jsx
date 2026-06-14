@@ -36,6 +36,23 @@ function ErrorFallback({ error }) {
   )
 }
 
+// Stale-deploy self-heal: we ship several times a day, and a tab opened
+// before a deploy holds an index.html whose hashed chunk URLs no longer
+// exist — every lazy route / dynamic import() then rejects ("Failed to
+// fetch dynamically imported module"). That's how Tracy's Generate
+// Statement died silently for days (the jspdf dynamic import failed
+// before any PDF code ran). Vite fires vite:preloadError for exactly
+// this; reload once to pick up the fresh build (guarded against loops).
+window.addEventListener('vite:preloadError', (event) => {
+  const key = 'chunk_reload_at'
+  const last = sessionStorage.getItem(key)
+  if (!last || Date.now() - Number(last) > 30000) {
+    event.preventDefault()
+    sessionStorage.setItem(key, String(Date.now()))
+    window.location.reload()
+  }
+})
+
 // Service worker management
 if ('serviceWorker' in navigator) {
   // Clean up conflicting sw-lenard.js registrations (now handled by main Vite PWA sw.js)

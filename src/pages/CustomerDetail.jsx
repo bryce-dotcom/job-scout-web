@@ -34,6 +34,12 @@ export default function CustomerDetail() {
   const goBack = useSmartBack('/customers')
   const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
+  // The statement PDF reads company name / remit-to address / phone from
+  // `company`, but it was never bound here — so Generate Statement threw
+  // "company is not defined" before drawing anything, leaving a blank tab
+  // every time (Tracy, Motion & Flow, reported twice). The feature never
+  // worked for anyone; this is the actual fix.
+  const company = useStore((state) => state.company)
   const employees = useStore((state) => state.employees)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
   const updateCustomer = useStore((state) => state.updateCustomer)
@@ -602,6 +608,26 @@ export default function CustomerDetail() {
     // the gesture is honored, then navigate it once the PDF is ready.
     let pdfWindow = null
     try { pdfWindow = window.open('about:blank', '_blank') } catch { /* blocked */ }
+    try {
+      await generateStatementInner(pdfWindow)
+    } catch (err) {
+      // Anything throwing before the output stage used to leave the
+      // pre-opened tab stranded on about:blank with no download and no
+      // message (Tracy, Motion & Flow — twice). The usual culprit is the
+      // jspdf dynamic import failing on a stale build after a deploy.
+      // Close the tab and say what actually happened.
+      console.error('[Statement] generation failed:', err)
+      if (pdfWindow && !pdfWindow.closed) { try { pdfWindow.close() } catch { /* swallow */ } }
+      const { toast } = await import('../lib/toast')
+      const stale = String(err?.message || '').includes('dynamically imported module')
+      toast.error(stale
+        ? 'The app updated since this page was opened — reloading to get the new version, then try again.'
+        : 'Statement failed: ' + (err?.message || 'unknown error'))
+      if (stale) setTimeout(() => window.location.reload(), 1500)
+    }
+  }
+
+  const generateStatementInner = async (pdfWindow) => {
     const { jsPDF } = await import('jspdf')
     const doc = new jsPDF()
     const pageWidth = doc.internal.pageSize.getWidth()
