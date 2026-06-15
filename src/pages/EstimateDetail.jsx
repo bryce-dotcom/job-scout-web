@@ -1428,6 +1428,13 @@ function EstimateDetailInner() {
           salesperson_id: estimateRow.salesperson_id || null,
           quote_id: estimateRow.id,
           job_address: customerInfo?.address || null,
+          // Carry the estimate's business unit onto the job. Without this
+          // every converted job landed with business_unit=null (816 of
+          // HHH's jobs), which made them vanish from the Job Board whenever
+          // a BU/calendar filter was active — alayda's "can't find NPT".
+          // The board now also protects null-BU jobs, but new jobs should
+          // inherit the unit so they're filed correctly from the start.
+          business_unit: estimateRow.business_unit || estimate?.business_unit || null,
           // Default to Chillin (the triage / new-jobs column) — matches
           // Jobs.jsx default and what Doug expects when an estimate is
           // approved. Schedule modal flips it to Scheduled when a date

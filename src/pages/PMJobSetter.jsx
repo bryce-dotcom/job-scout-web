@@ -686,7 +686,11 @@ export default function PMJobSetter() {
     if (selectedCalendar !== 'all') {
       const cal = jobCalendars.find(c => c.id === selectedCalendar)
       if (cal?.business_unit) {
-        filtered = filtered.filter(j => j.business_unit === cal.business_unit)
+        // Keep jobs with NO business unit set visible under every calendar —
+        // a "loose" job (e.g. NPT, status Need To Order, no BU yet) must
+        // never vanish from the board just because a calendar filter is on.
+        // alayda: "I cannot find NPT on my job board." (job 23319)
+        filtered = filtered.filter(j => !j.business_unit || j.business_unit === cal.business_unit)
       }
     }
 
@@ -716,7 +720,9 @@ export default function PMJobSetter() {
       })
     }
     if (filterBusinessUnit) {
-      filtered = filtered.filter(j => j.business_unit === filterBusinessUnit)
+      // Same rule as the calendar filter above: a job with no business unit
+      // set stays visible under any BU selection so it can't get lost.
+      filtered = filtered.filter(j => !j.business_unit || j.business_unit === filterBusinessUnit)
     }
     if (searchTerm) {
       // Broad search: title, customer name/business/contact-of-company,
