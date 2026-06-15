@@ -429,8 +429,13 @@ export default function SalesPipeline() {
       const jobSelect = 'id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, utility_incentive, assigned_team, invoice_status, lead_id, salesperson_id, pm_id, job_lead_id, customer:customers!customer_id(id, name)'
       const rangeCutoff = getDateCutoff(dateRange)
 
-      // Determine which statuses are "terminal" (completed-like) vs active
-      const terminalStatuses = ['Completed', 'Verified Complete']
+      // Determine which statuses are "terminal" (completed-like) vs active.
+      // Invoiced/Paid are real job statuses (54 such jobs in prod) but were
+      // in NEITHER list, so invoiced jobs silently vanished from the board
+      // (Doug #47). Treating them as terminal both surfaces them AND runs
+      // them through the date-filtered query, so the MTD/YTD/90d filter
+      // finally applies to them too (Doug #48).
+      const terminalStatuses = ['Completed', 'Verified Complete', 'Invoiced', 'Paid', 'Closed']
       const allJobStatuses = (storeJobStatuses || []).map(s => typeof s === 'string' ? s : s.name)
       const activeStatuses = allJobStatuses.filter(s => !terminalStatuses.includes(s))
 

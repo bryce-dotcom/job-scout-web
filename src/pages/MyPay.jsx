@@ -133,7 +133,7 @@ export default function MyPay() {
           for (let from = 0; ; from += pageSize) {
             const { data, error } = await supabase
               .from('jobs')
-              .select('id, job_id, salesperson_id, lead_id, status, customer_name, job_title, invoice_status')
+              .select('id, job_id, salesperson_id, lead_id, status, customer_name, job_title, invoice_status, allotted_time_hours')
               .eq('company_id', companyId)
               .or('salesperson_id.not.is.null,lead_id.not.is.null')
               .range(from, from + pageSize - 1)

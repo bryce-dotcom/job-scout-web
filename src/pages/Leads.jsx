@@ -405,15 +405,18 @@ export default function Leads() {
       onClick={() => navigate(`/leads/${lead.id}`)}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+        {/* Tracy: lead with a business should lead with the BUSINESS name;
+            the contact name drops to the secondary line. Falls back to the
+            contact name when there's no business. */}
         <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0, lineHeight: 1.3 }}>
-          {lead.customer_name}
+          {lead.business_name || lead.customer_name}
         </h3>
         <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0, ...getStatusStyle(lead.status) }}>
           {STATUS_LABELS[lead.status] || lead.status}
         </span>
       </div>
-      {lead.business_name && (
-        <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '10px' }}>{lead.business_name}</div>
+      {lead.business_name && lead.customer_name && (
+        <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '10px' }}>{lead.customer_name}</div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', color: theme.textMuted, marginBottom: '12px', flexWrap: 'wrap' }}>
         {lead.phone && (
@@ -627,10 +630,11 @@ export default function Leads() {
               businessName={lead.business_name}
               onClick={() => navigate(`/leads/${lead.id}`)}
             >
-              {/* TOP ROW: Name + Status Badge */}
+              {/* TOP ROW: Name + Status Badge — business name leads when
+                  present (Tracy); contact name moves to the line below. */}
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
                 <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0, lineHeight: 1.3 }}>
-                  {lead.customer_name}
+                  {lead.business_name || lead.customer_name}
                 </h3>
                 <span style={{
                   padding: '4px 10px',
@@ -645,10 +649,10 @@ export default function Leads() {
                 </span>
               </div>
 
-              {/* Business Name */}
-              {lead.business_name && (
+              {/* Contact name (shown under the business name) */}
+              {lead.business_name && lead.customer_name && (
                 <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '10px' }}>
-                  {lead.business_name}
+                  {lead.customer_name}
                 </div>
               )}
 
