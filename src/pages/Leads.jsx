@@ -404,6 +404,10 @@ export default function Leads() {
       businessName={lead.business_name}
       onClick={() => navigate(`/leads/${lead.id}`)}
     >
+      {/* Tracy: "flop the business name and customer name — we want to see
+          the business name first." Commercial leads now headline with the
+          business; the contact person drops to the secondary line.
+          Residential leads (no business) keep the person as the headline. */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
         {/* Tracy: lead with a business should lead with the BUSINESS name;
             the contact name drops to the secondary line. Falls back to the
