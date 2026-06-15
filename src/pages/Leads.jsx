@@ -404,16 +404,20 @@ export default function Leads() {
       businessName={lead.business_name}
       onClick={() => navigate(`/leads/${lead.id}`)}
     >
+      {/* Tracy: "flop the business name and customer name — we want to see
+          the business name first." Commercial leads now headline with the
+          business; the contact person drops to the secondary line.
+          Residential leads (no business) keep the person as the headline. */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
         <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0, lineHeight: 1.3 }}>
-          {lead.customer_name}
+          {lead.business_name || lead.customer_name}
         </h3>
         <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600', whiteSpace: 'nowrap', flexShrink: 0, ...getStatusStyle(lead.status) }}>
           {STATUS_LABELS[lead.status] || lead.status}
         </span>
       </div>
-      {lead.business_name && (
-        <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '10px' }}>{lead.business_name}</div>
+      {lead.business_name && lead.customer_name && (
+        <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '10px' }}>{lead.customer_name}</div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', color: theme.textMuted, marginBottom: '12px', flexWrap: 'wrap' }}>
         {lead.phone && (
