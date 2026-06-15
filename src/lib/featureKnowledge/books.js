@@ -23,11 +23,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'pnl',     baseDur: 4500, narration: 'Open Books. Profit and loss for the month, the quarter, the year.' },
-      { id: 'tx',      baseDur: 6500, narration: 'Every transaction lives here — bank feed, expense, invoice payment, payroll. Click one to drill in.' },
-      { id: 'edit',    baseDur: 6500, narration: 'Edit the row. Category, IRS Form ten sixty-five line, job allocation, taxable flag. All the metadata your CPA actually wants.' },
-      { id: 'recon',   baseDur: 6500, narration: 'Reconcile to your bank statement in two clicks — Plaid balance versus book balance, drift in green, done.' },
-      { id: 'export',  baseDur: 5500, narration: 'Export the P and L, the balance sheet, the trial balance. CPA loves you. Tax time is quiet.' },
+      { id: 'overview',     baseDur: 4500, narration: 'Open Books. Profit and loss for the month, the quarter, the year.' },
+      { id: 'transactions', baseDur: 6500, narration: 'Every transaction lives here — bank feed, expense, invoice payment, payroll. Click one to drill in.' },
+      { id: 'edit',         baseDur: 6500, narration: 'Edit the row. Category, IRS Form ten sixty-five line, job allocation, taxable flag. All the metadata your CPA actually wants.' },
+      { id: 'reconcile',    baseDur: 6500, narration: 'Reconcile to your bank statement in two clicks — Plaid balance versus book balance, drift in green, done.' },
+      { id: 'export',       baseDur: 5500, narration: 'Export the P and L, the balance sheet, the trial balance. CPA loves you. Tax time is quiet.' },
     ],
   },
 

@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'invite',   baseDur: 4500, narration: 'Admin clicks Send onboarding link. SMS lands on the new hire\'s phone with a magic URL.' },
-      { id: 'w4',       baseDur: 6500, narration: 'They tap through W-4 questions on the phone. Filing status, allowances, extra withholding. Form fills itself.' },
-      { id: 'i9',       baseDur: 6500, narration: 'I-9 Section 1 — citizenship, address, signature on glass. Section 2 deadline ticks onto your admin inbox.' },
-      { id: 'deposit',  baseDur: 6500, narration: 'Direct deposit. Account and routing encrypted with pgcrypto. You only see last four.' },
-      { id: 'handbook', baseDur: 6500, narration: 'Scroll the handbook, training videos at the end, finish. Signed PDFs land in the vault — W-4, I-9, deposit auth, handbook ack.' },
+      { id: 'send',     baseDur: 4500, narration: 'Admin clicks Send onboarding link. SMS lands on the new hire\'s phone with a magic URL.' },
+      { id: 'step',     baseDur: 6500, narration: 'They tap through W-4 questions on the phone. Filing status, allowances, extra withholding. Form fills itself.' },
+      { id: 'step',     baseDur: 6500, narration: 'I-9 Section 1 — citizenship, address, signature on glass. Section 2 deadline ticks onto your admin inbox.' },
+      { id: 'sign',     baseDur: 6500, narration: 'Direct deposit. Account and routing encrypted with pgcrypto. You only see last four.' },
+      { id: 'portal',   baseDur: 6500, narration: 'Scroll the handbook, training videos at the end, finish. Signed PDFs land in the vault — W-4, I-9, deposit auth, handbook ack.' },
     ],
   },
 

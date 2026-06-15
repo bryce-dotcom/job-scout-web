@@ -25,7 +25,7 @@ export default {
       { id: 'set',     baseDur: 4500, narration: 'Setter books an appointment. Commission posts as pending — twenty-five bucks.' },
       { id: 'quote',   baseDur: 6500, narration: 'Sales rep sends a quote. Qualification rule fires — quote-created. Setter commission moves to earned.' },
       { id: 'won',     baseDur: 6500, narration: 'Customer signs. Rep gets a slice of the gross profit — three hundred twenty dollars. Lead source gets twenty-five.' },
-      { id: 'rules',   baseDur: 6500, narration: 'Rules per role. Setter qualifies on quote, rep on signed deal, source on first invoice paid. You set them once.' },
+      { id: 'set',     baseDur: 6500, narration: 'Rules per role. Setter qualifies on quote, rep on signed deal, source on first invoice paid. You set them once.' },
       { id: 'payout',  baseDur: 5500, narration: 'Next payroll run, all earned commissions roll in. Itemized on the stub. No spreadsheet, no surprises.' },
     ],
   },

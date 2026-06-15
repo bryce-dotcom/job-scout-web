@@ -154,25 +154,25 @@ function Stage({ scene, sceneElapsed }) {
           </div>
         </div>
 
-        {/* ═══ SECTION 1.5: WEEK CARD (lines 1559-1618) ═════════════════ */}
-        <WeekCard scene={scene} />
+        {/* ═══ SECTION 1.5: WEEK CARD — only when not clocked in ════════ */}
+        {(scene === 'morning' || scene === 'bonus') && <WeekCard scene={scene} />}
 
-        {/* ═══ SECTION 2: ACTIVE CLOCK BANNER (scene: working/lunch/victor) */}
+        {/* ═══ SECTION 2: ACTIVE CLOCK BANNER (working/lunch/victor) ══ */}
         {(scene === 'working' || scene === 'lunch' || scene === 'victor') && (
-          <ActiveClockBanner scene={scene} sceneElapsed={sceneElapsed} />
+          <ActiveClockBanner scene={scene} sceneElapsed={sceneElapsed} showBriefing={scene !== 'victor'} />
         )}
 
-        {/* ═══ SECTION 3: QUICK STATS (lines 2222-2257) ═════════════════ */}
-        <QuickStats scene={scene} />
+        {/* ═══ SECTION 3: QUICK STATS — victor uses its gate instead ══ */}
+        {scene !== 'victor' && <QuickStats scene={scene} />}
 
-        {/* ═══ EFFICIENCY BONUS CARD (lines 2259-2343) ══════════════════ */}
-        {(scene === 'bonus' || scene === 'victor') && <BonusCard scene={scene} />}
+        {/* ═══ EFFICIENCY BONUS CARD — bonus scene only ═══════════════ */}
+        {scene === 'bonus' && <BonusCard scene={scene} />}
 
-        {/* ═══ VICTOR CHECK GATE (lines 2086-2146) ══════════════════════ */}
+        {/* ═══ VICTOR CHECK GATE ══════════════════════════════════════ */}
         {scene === 'victor' && <VictorGate />}
 
-        {/* ═══ SECTION 4: TODAY'S JOBS (lines 2535-end) ═════════════════ */}
-        <TodaysJobs scene={scene} />
+        {/* ═══ SECTION 4: TODAY'S JOBS — morning only ════════════════ */}
+        {scene === 'morning' && <TodaysJobs scene={scene} />}
 
       </div>
     </div>
@@ -181,7 +181,7 @@ function Stage({ scene, sceneElapsed }) {
 
 // ─── Week card ─────────────────────────────────────────────────────────────
 function WeekCard({ scene }) {
-  const clocked = scene === 'working' || scene === 'lunch' || scene === 'victor' || scene === 'bonus'
+  const clocked = scene === 'working' || scene === 'lunch' || scene === 'victor'
   const days = [
     { label: 'S', hours: 0,    today: false },
     { label: 'M', hours: 8.0,  today: true  },
@@ -200,7 +200,7 @@ function WeekCard({ scene }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: T.textMuted, fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           <Calendar size={12} />This Week
         </div>
-        <span style={{ fontSize: '10px', color: T.textMuted }}>Jun 2 – Jun 8</span>
+        <span style={{ fontSize: '10px', color: T.textMuted }}>Jun 9 – Jun 15</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '10px' }}>
         <span style={{ fontSize: '26px', fontWeight: 800, color: T.accent, lineHeight: 1 }}>15.50</span>
@@ -233,7 +233,7 @@ function WeekCard({ scene }) {
 
 // ─── Active Clock Banner — the green (or yellow) heart of Field Scout ─────
 // Mirrors FieldScout.jsx lines 1619-2083
-function ActiveClockBanner({ scene, sceneElapsed }) {
+function ActiveClockBanner({ scene, sceneElapsed, showBriefing = true }) {
   const isLunch = scene === 'lunch'
   const isVictor = scene === 'victor'
 
@@ -286,8 +286,8 @@ function ActiveClockBanner({ scene, sceneElapsed }) {
         <div style={{ width: '62%', height: '100%', backgroundColor: '#fff', opacity: 0.88, borderRadius: '5px' }} />
       </div>
 
-      {/* Job Briefing (collapsed header + expanded line items) */}
-      <div style={{
+      {/* Job Briefing — hidden in victor scene (gate is more important) */}
+      {showBriefing && <div style={{
         backgroundColor: 'rgba(255,255,255,0.13)',
         borderRadius: '12px', padding: '10px 12px', marginBottom: '12px',
         border: '1px solid rgba(255,255,255,0.2)',
@@ -326,7 +326,7 @@ function ActiveClockBanner({ scene, sceneElapsed }) {
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* Action buttons: Take Lunch + Clock Out */}
       <div style={{ display: 'flex', gap: '8px' }}>

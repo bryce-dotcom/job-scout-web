@@ -1,4 +1,149 @@
 {
+  "prospect-scout": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "filter",
+      "reveal",
+      "import",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "yard-measure": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "address",
+      "zoom",
+      "trace",
+      "quote",
+      "delivered",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "zach-properties": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "form",
+      "saved",
+      "detail",
+      "grid",
+      "fieldscout",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "zach-visits": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "form",
+      "predict",
+      "logged",
+      "history",
+      "fieldscout",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "zach-treatments": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "form",
+      "scheduled",
+      "done",
+      "program",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "zach-pricing": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "sections",
+      "mow",
+      "treat",
+      "preview",
+      "save",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "customers": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "form",
+      "card",
+      "detail",
+      "portal",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "leads": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "add",
+      "grid",
+      "schedule",
+      "city",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "sales-pipeline": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "overview",
+      "board",
+      "drag",
+      "won",
+      "delivery",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
   "lead-setter": {
     "voice": "Bill",
     "voiceId": "pqHfZKP75CvOlQylNhV4",
@@ -8,6 +153,772 @@
       "callback",
       "schedule",
       "commission",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "estimates": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "modal",
+      "grid",
+      "filter",
+      "approved",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "quote-followups": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "sent",
+      "signed",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "customer-portal": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "approved",
+      "invoice",
+      "sign",
+      "pay",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "public-quote": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "lead",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "communications-log": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "customer",
+      "email",
+      "reply",
+      "search",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "jobs": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "wins",
+      "board",
+      "actions",
+      "new",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "job-sections": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "add",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "job-board": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "detail",
+      "drag",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "field-scout": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "morning",
+      "working",
+      "lunch",
+      "victor",
+      "bonus",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "routes": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "unassigned",
+      "plan",
+      "optimize",
+      "assign",
+      "calendar",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "lighting-audits": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "walk",
+      "snap",
+      "catalog",
+      "rebate",
+      "proposal",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "lenard-public-pages": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "upload",
+      "photo",
+      "estimate",
+      "lead",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "utility-programs": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "add",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "rebate-measures": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "row",
+      "audit",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "books": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "overview",
+      "transactions",
+      "edit",
+      "reconcile",
+      "export",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "plaid-sync": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "connect",
+      "accounts",
+      "categorize",
+      "learn",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "invoices": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "send",
+      "overdue",
+      "filter",
+      "grid",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "frankie": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "question",
+      "answer",
+      "aging",
+      "remind",
+      "profit",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "onboarding-portal": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "send",
+      "step",
+      "sign",
+      "portal",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "payroll": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "period",
+      "employees",
+      "detail",
+      "run",
+      "inbox",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "time-clock": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "in",
+      "work",
+      "lunch",
+      "out",
+      "adjust",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "tax-filings": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "quarter",
+      "pdf",
+      "state",
+      "year",
+      "amend",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "fleet": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "list",
+      "truck",
+      "fuel",
+      "schedule",
+      "drivers",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "inventory": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "list",
+      "reorder",
+      "transfer",
+      "costing",
+      "count",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "products-services": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "catalog",
+      "edit",
+      "kit",
+      "override",
+      "quote",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "expenses": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "snap",
+      "ocr",
+      "approve",
+      "allocate",
+      "reimburse",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "conrad": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "list",
+      "write",
+      "segment",
+      "send",
+      "stats",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "victor": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "upload",
+      "grade",
+      "check",
+      "notes",
+      "block",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "dougie": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "upload",
+      "extract",
+      "review",
+      "learn",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "my-pay": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "stub",
+      "history",
+      "ytd",
+      "reimburse",
+      "taxdocs",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "utility-invoices": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "empty",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "job-calendar": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "month",
+      "week",
+      "day",
+      "drag",
+      "filter",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "reports": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "overview",
+      "sales",
+      "financial",
+      "revenue",
+      "drill",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "document-rules": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "rule",
+      "fire",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "fixture-types": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "add",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "commissions": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "set",
+      "quote",
+      "won",
+      "payout",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "employees": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "roster",
+      "detail",
+      "rates",
+      "certs",
+      "invite",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "appointments": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "list",
+      "detail",
+      "calendar",
+      "gcal",
+      "outcome",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "dashboard": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "kpis",
+      "jobs",
+      "revenue",
+      "ar",
+      "actions",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "arnie": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "chat",
+      "context",
+      "insight",
+      "action",
+      "history",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "bookings": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "page",
+      "slots",
+      "confirm",
+      "lead",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "freddy-tracking": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "map",
+      "detail",
+      "history",
+      "geofence",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "freddy-costs": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "overview",
+      "maintenance",
+      "fuel",
+      "alerts",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "freddy-trips": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "trips",
+      "trip",
+      "drivers",
+      "reimbursement",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2"
+    ]
+  },
+  "lead-payments": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "list",
+      "create",
+      "stripe",
+      "applied",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "bills": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "list",
+      "bill",
+      "pay",
+      "aging",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "frankie-insights": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "narrative",
+      "anomalies",
+      "margins",
+      "cashflow",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "payroll-inbox": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "inbox",
+      "item",
+      "approve",
+      "summary",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "time-log": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "log",
+      "entry",
+      "correction",
+      "summary",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "utility-providers": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "list",
+      "detail",
+      "rates",
+      "programs",
+      "setup-intro",
+      "setup-0",
+      "setup-1",
+      "setup-2",
+      "setup-3"
+    ]
+  },
+  "photos-signatures": {
+    "voice": "Bill",
+    "voiceId": "pqHfZKP75CvOlQylNhV4",
+    "lines": [
+      "photos",
+      "capture",
+      "signature",
+      "signed",
       "setup-intro",
       "setup-0",
       "setup-1",

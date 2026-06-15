@@ -25,7 +25,7 @@ export default {
     scenes: [
       { id: 'customer',  baseDur: 5500, narration: "Open a customer. Hit the Comms tab and you see every email and text you've exchanged." },
       { id: 'email',     baseDur: 6500, narration: 'Each row shows when it sent, when they opened it, and when they clicked — across every campaign.' },
-      { id: 'sms',       baseDur: 5500, narration: 'Outbound SMS reminders and appointment confirmations land in the same feed.' },
+      { id: 'email',     baseDur: 5500, narration: 'Outbound SMS reminders and appointment confirmations land in the same feed.' },
       { id: 'reply',     baseDur: 6500, narration: "When a customer replies to an invoice email, the thread shows up here — no inbox-spelunking." },
       { id: 'search',    baseDur: 6500, narration: "Search across all communications by customer, date, or content. No more 'what did we tell them last week?'" },
     ],

@@ -688,6 +688,7 @@ function VideoModal({ video, theme, onClose }) {
         position: 'fixed',
         top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
         width: '92%', maxWidth: '960px',
+        maxHeight: '92dvh',
         backgroundColor: theme.bgCard,
         borderRadius: '14px',
         border: `1px solid ${theme.border}`,
@@ -731,7 +732,9 @@ function VideoModal({ video, theme, onClose }) {
           </button>
         </div>
         {Walkthrough ? (
-          <Walkthrough />
+          <div style={{ width: '100%', maxWidth: 'calc((92dvh - 60px) * 16 / 9)', margin: '0 auto' }}>
+            <Walkthrough />
+          </div>
         ) : (
           <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, backgroundColor: '#000' }}>
             <iframe

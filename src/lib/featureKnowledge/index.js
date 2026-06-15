@@ -65,6 +65,21 @@ import documentRules      from './document-rules.js'
 import fixtureTypes       from './fixture-types.js'
 import commissions        from './commissions.js'
 import employees          from './employees.js'
+// — Round 5: appointments, dashboard, AI agents, fleet sub-features, financial sub-features —
+import appointments       from './appointments.js'
+import dashboard          from './dashboard.js'
+import arnie              from './arnie.js'
+import bookings           from './bookings.js'
+import freddyTracking     from './freddy-tracking.js'
+import freddyCosts        from './freddy-costs.js'
+import freddyTrips        from './freddy-trips.js'
+import leadPayments       from './lead-payments.js'
+import bills              from './bills.js'
+import frankieInsights    from './frankie-insights.js'
+import payrollInbox       from './payroll-inbox.js'
+import timeLog            from './time-log.js'
+import utilityProviders   from './utility-providers.js'
+import photosSignatures   from './photos-signatures.js'
 
 const CARDS = [
   prospectScout,
@@ -114,6 +129,21 @@ const CARDS = [
   fixtureTypes,
   commissions,
   employees,
+  // Round 5
+  appointments,
+  dashboard,
+  arnie,
+  bookings,
+  freddyTracking,
+  freddyCosts,
+  freddyTrips,
+  leadPayments,
+  bills,
+  frankieInsights,
+  payrollInbox,
+  timeLog,
+  utilityProviders,
+  photosSignatures,
 ]
 
 export const KNOWLEDGE_CARDS = Object.fromEntries(

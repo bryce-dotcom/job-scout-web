@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'connect', baseDur: 4500, narration: 'Connect your bank. Plaid OAuth. Thirty seconds. Twelve thousand banks supported.' },
-      { id: 'pull',    baseDur: 6500, narration: 'Overnight, Plaid pulls every transaction — checking, savings, credit cards.' },
-      { id: 'tag',     baseDur: 6500, narration: 'AI tags each one. Vehicle expense, utilities, materials. Each tag carries a confidence score.' },
-      { id: 'rule',    baseDur: 6500, narration: 'Override a tag and the system remembers. Next time Home Depot lands, it tags Materials automatically.' },
-      { id: 'match',   baseDur: 5500, narration: 'Incoming deposits match outstanding invoices. AR closes itself.' },
+      { id: 'connect',    baseDur: 4500, narration: 'Connect your bank. Plaid OAuth. Thirty seconds. Twelve thousand banks supported.' },
+      { id: 'accounts',   baseDur: 6500, narration: 'Overnight, Plaid pulls every transaction — checking, savings, credit cards.' },
+      { id: 'categorize', baseDur: 6500, narration: 'AI tags each one. Vehicle expense, utilities, materials. Each tag carries a confidence score.' },
+      { id: 'learn',      baseDur: 6500, narration: 'Override a tag and the system remembers. Next time Home Depot lands, it tags Materials automatically.' },
+      { id: 'categorize', baseDur: 5500, narration: 'Incoming deposits match outstanding invoices. AR closes itself.' },
     ],
   },
 

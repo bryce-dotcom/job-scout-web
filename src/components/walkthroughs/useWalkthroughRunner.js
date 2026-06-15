@@ -15,7 +15,7 @@
 // Returns everything the walkthrough needs to render itself.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNarration, resetNarrationCache } from './useNarration'
+import { useNarration, resetNarrationCache, playAudioNow } from './useNarration'
 import { getNarrationForCard } from '../../lib/featureKnowledge'
 import { audioUrlFor } from '../../lib/walkthroughScripts'
 
@@ -45,12 +45,25 @@ export function useWalkthroughRunner(card) {
     [BASE_SCENES, BASE_SETUP_STEP_DUR],
   )
 
-  const [elapsed, setElapsed] = useState(0)
-  const [running, setRunning] = useState(true)
-  const [voiceOn, setVoiceOn] = useState(true)
+  // Dev-only: sessionStorage key lets QA freeze the walkthrough at a specific
+  // elapsed (ms) for clean screenshots. Set via browser console then reload.
+  const _ssElapsed = typeof window !== 'undefined' && import.meta.env.DEV
+    ? sessionStorage.getItem('__dev_walkthrough_elapsed')
+    : null
+  const _staticMs = _ssElapsed != null ? parseInt(_ssElapsed, 10) : null
+
+  const [elapsed, setElapsed] = useState(_staticMs ?? 0)
+  const [running, setRunning] = useState(_staticMs == null)
+  const [voiceOn, _setVoiceOn] = useState(true)
   const [audioDurations, setAudioDurations] = useState({})
   const [audioElements, setAudioElements] = useState({})
-  const [audioReady, setAudioReady] = useState(false)
+  const voiceOnRef = useRef(true)
+  const audioElementsRef = useRef({})
+  const positionRef = useRef(null)
+  // Start the runner immediately; the audio-preload effect below extends
+  // scene durations once (and if) audio lands — avoids a stall on walkthroughs
+  // that have no MP3 files yet.
+  const [audioReady, setAudioReady] = useState(true)
   const timerRef = useRef(null)
   const startedAt = useRef(Date.now())
 
@@ -64,9 +77,7 @@ export function useWalkthroughRunner(card) {
     if (typeof window === 'undefined') return
     let cancelled = false
 
-    const loadOne = (key) => new Promise((resolve) => {
-      const url = audioUrlFor(card.id, key)
-      if (!url) return resolve({ key, audio: null, duration: null })
+    const loadAudio = (key, url) => new Promise((resolve) => {
       const audio = new Audio()
       audio.preload = 'auto'
       let done = false
@@ -86,6 +97,22 @@ export function useWalkthroughRunner(card) {
       // Trigger the network fetch (some browsers need this).
       audio.load()
     })
+
+    // Guard against SPA servers (e.g. Vite dev) returning index.html with
+    // 200/text-html for missing MP3s — the Audio element never fires 'error'
+    // for HTML content, so the runner would stall until the 6 s timeout per
+    // file. A HEAD request lets us bail immediately when the file isn't real.
+    const loadOne = (key) => {
+      const url = audioUrlFor(card.id, key)
+      if (!url) return Promise.resolve({ key, audio: null, duration: null })
+      return fetch(url, { method: 'HEAD', cache: 'no-store' })
+        .then(res => {
+          const ct = res.headers.get('content-type') || ''
+          if (!res.ok || ct.includes('html')) return { key, audio: null, duration: null }
+          return loadAudio(key, url)
+        })
+        .catch(() => ({ key, audio: null, duration: null }))
+    }
 
     Promise.all(ALL_SCENE_KEYS.map(loadOne)).then((results) => {
       if (cancelled) return
@@ -121,24 +148,23 @@ export function useWalkthroughRunner(card) {
     }
   }, [audioDurations, BASE_SCENES, BASE_SETUP_INTRO_MS, BASE_SETUP_STEP_DUR])
 
-  // RAF-driven elapsed tracker. Gated on audioReady so scene 1's
-  // narration plays in sync with scene 1's visuals.
+  // Interval-driven elapsed tracker. Uses setInterval (not rAF) so it
+  // continues advancing even when the tab is backgrounded or hidden.
   useEffect(() => {
     if (!running) return
     if (!audioReady) return
     startedAt.current = Date.now() - elapsed
-    const tick = () => {
+    timerRef.current = setInterval(() => {
       const now = Date.now() - startedAt.current
       if (now >= totalMs) {
         setElapsed(totalMs)
         setRunning(false)
+        clearInterval(timerRef.current)
         return
       }
       setElapsed(now)
-      timerRef.current = requestAnimationFrame(tick)
-    }
-    timerRef.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(timerRef.current)
+    }, 16)
+    return () => clearInterval(timerRef.current)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, totalMs, audioReady])
 
@@ -146,6 +172,23 @@ export function useWalkthroughRunner(card) {
     () => timelinePosition(elapsed, { scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs }),
     [elapsed, scenes, setupIntroMs, setupStepDur, totalMarketingMs, totalMs],
   )
+
+  // Keep refs in sync during render so the gesture handler below always
+  // reads the latest values without closing over stale state.
+  voiceOnRef.current = voiceOn
+  audioElementsRef.current = audioElements
+  positionRef.current = position
+
+  // Enhanced setter: when enabling voice, call playAudioNow synchronously
+  // while still on the iOS gesture stack so autoplay is permitted.
+  const setVoiceOn = (valueOrUpdater) => {
+    const next = typeof valueOrUpdater === 'function' ? valueOrUpdater(voiceOnRef.current) : valueOrUpdater
+    if (next && !voiceOnRef.current) {
+      const key = positionRef.current?.sceneKey
+      playAudioNow(audioElementsRef.current?.[key])
+    }
+    _setVoiceOn(next)
+  }
 
   useNarration({
     walkthroughId: card.id,

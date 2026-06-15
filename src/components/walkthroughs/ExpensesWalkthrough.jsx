@@ -3,7 +3,7 @@
 // DO NOT import ZachShell — reproduces real component structure with mock data.
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { Receipt, Plus, Camera, X, Upload, Download } from 'lucide-react'
+import { Receipt, Plus, Camera, X, Upload, Download, CheckCircle, Tag, Briefcase, ToggleRight } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
 import SetupChecklist from './SetupChecklist'
@@ -64,98 +64,127 @@ export default function ExpensesWalkthrough() {
 }
 
 function Stage({ scene }) {
-  const showModal = scene === 'add'
-  const expenses = scene === 'empty' ? [] : MOCK_EXPENSES
+  const showReceiptForm = scene === 'ocr' || scene === 'approve' || scene === 'allocate' || scene === 'reimburse'
 
   return (
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '12px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden', position: 'relative' }}>
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '11px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Receipt size={15} style={{ color: T.accent }} />
           <span style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>Expenses</span>
         </div>
-        <div style={{ display: 'flex', gap: '5px' }}>
-          <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px', border: `1px solid ${T.border}`, borderRadius: '5px', backgroundColor: 'transparent', color: T.accent, fontSize: '10px', cursor: 'pointer' }}>
-            <Upload size={10} />Import
-          </button>
-          <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px', border: 'none', borderRadius: '5px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', cursor: 'pointer' }}>
-            <Plus size={11} />Add Expense
-          </button>
-        </div>
+        <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px', border: 'none', borderRadius: '5px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', cursor: 'pointer' }}>
+          <Plus size={11} />Add Expense
+        </button>
       </div>
 
-      {/* Expense table */}
-      {expenses.length === 0 ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: T.bgCard, borderRadius: '10px', border: `1px solid ${T.border}` }}>
-          <Receipt size={36} style={{ color: T.textMuted, marginBottom: '10px', opacity: 0.5 }} />
-          <p style={{ color: T.textSecondary, fontSize: '12px', margin: 0 }}>No expenses yet. Add your first expense.</p>
-        </div>
-      ) : (
-        <div style={{ flex: 1, overflow: 'hidden', backgroundColor: T.bgCard, borderRadius: '10px', border: `1px solid ${T.border}` }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ backgroundColor: T.accentBg }}>
-                {['Date', 'Description', 'Vendor', 'Category', 'Job', 'Amount', 'Rcpt'].map(col => (
-                  <th key={col} style={{ padding: '7px 9px', textAlign: col === 'Amount' ? 'right' : 'left', fontSize: '9px', fontWeight: '600', color: T.textMuted, borderBottom: `1px solid ${T.border}` }}>{col}</th>
+      {/* snap: receipt upload zone + table below */}
+      {scene === 'snap' && (
+        <>
+          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+            style={{ padding: '18px', border: `2px dashed ${T.accent}`, borderRadius: '10px', backgroundColor: T.accentBg, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: 'pointer', flexShrink: 0 }}>
+            <Camera size={22} style={{ color: T.accent }} />
+            <span style={{ fontSize: '11px', fontWeight: '600', color: T.accent }}>Snap or upload a receipt</span>
+            <span style={{ fontSize: '9px', color: T.textMuted }}>Dougie reads vendor, amount, line items automatically</span>
+          </motion.div>
+          <div style={{ flex: 1, overflow: 'hidden', backgroundColor: T.bgCard, borderRadius: '10px', border: `1px solid ${T.border}` }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr style={{ backgroundColor: T.accentBg }}>
+                {['Date', 'Description', 'Category', 'Job', 'Amount'].map(c => (
+                  <th key={c} style={{ padding: '6px 9px', textAlign: c === 'Amount' ? 'right' : 'left', fontSize: '9px', fontWeight: '600', color: T.textMuted, borderBottom: `1px solid ${T.border}` }}>{c}</th>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {expenses.map((exp, i) => {
-                const catColor = CAT_COLORS[exp.category] || '#6b7280'
-                return (
-                  <motion.tr key={exp.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
-                    style={{ borderBottom: `1px solid ${T.border}` }}
-                  >
-                    <td style={{ padding: '7px 9px', fontSize: '10px', color: T.textMuted }}>{exp.date}</td>
-                    <td style={{ padding: '7px 9px', fontSize: '10px', color: T.text, maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exp.description}</td>
-                    <td style={{ padding: '7px 9px', fontSize: '9px', color: T.textSecondary }}>{exp.vendor}</td>
-                    <td style={{ padding: '7px 9px' }}>
-                      <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: '500', backgroundColor: catColor + '18', color: catColor }}>{exp.category}</span>
-                    </td>
-                    <td style={{ padding: '7px 9px', fontSize: '9px', color: exp.job ? T.accent : T.textMuted }}>{exp.job || '—'}</td>
-                    <td style={{ padding: '7px 9px', fontSize: '10px', fontWeight: '600', color: '#ef4444', textAlign: 'right' }}>−${exp.amount.toLocaleString()}</td>
-                    <td style={{ padding: '7px 9px', textAlign: 'center' }}>
-                      {exp.receipt ? <Camera size={11} style={{ color: T.accent }} /> : <span style={{ fontSize: '9px', color: T.textMuted }}>—</span>}
-                    </td>
-                  </motion.tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+              </tr></thead>
+              <tbody>
+                {MOCK_EXPENSES.slice(0, 3).map((exp, i) => {
+                  const cc = CAT_COLORS[exp.category] || '#6b7280'
+                  return (
+                    <tr key={exp.id} style={{ borderBottom: `1px solid ${T.border}` }}>
+                      <td style={{ padding: '6px 9px', fontSize: '10px', color: T.textMuted }}>{exp.date}</td>
+                      <td style={{ padding: '6px 9px', fontSize: '10px', color: T.text, maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exp.description}</td>
+                      <td style={{ padding: '6px 9px' }}><span style={{ padding: '2px 5px', borderRadius: '4px', fontSize: '9px', backgroundColor: cc + '18', color: cc }}>{exp.category}</span></td>
+                      <td style={{ padding: '6px 9px', fontSize: '9px', color: exp.job ? T.accent : T.textMuted }}>{exp.job || '—'}</td>
+                      <td style={{ padding: '6px 9px', fontSize: '10px', fontWeight: '600', color: '#ef4444', textAlign: 'right' }}>−${exp.amount}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
-      {/* Add Expense modal */}
-      {showModal && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, padding: '16px' }}>
-          <motion.div initial={{ scale: 0.96, y: -10 }} animate={{ scale: 1, y: 0 }} style={{ backgroundColor: T.bgCard, borderRadius: '12px', border: `1px solid ${T.border}`, width: '280px', boxShadow: '0 8px 32px rgba(0,0,0,0.16)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderBottom: `1px solid ${T.border}` }}>
-              <span style={{ fontSize: '13px', fontWeight: '600', color: T.text }}>Add Expense</span>
-              <X size={13} style={{ color: T.textMuted }} />
+      {/* ocr / approve / allocate / reimburse: receipt form card */}
+      {showReceiptForm && (
+        <motion.div key={scene} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {/* Dougie analyzing banner — only for ocr */}
+          {scene === 'ocr' && (
+            <div style={{ padding: '8px 12px', backgroundColor: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Camera size={13} style={{ color: '#3b82f6' }} />
+              <span style={{ fontSize: '10px', color: '#1d4ed8', fontWeight: '500' }}>Dougie reading receipt… vendor, amount, line items auto-filling</span>
             </div>
-            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {[['Description', 'LED fixtures — Northbridge'], ['Vendor', 'Home Depot'], ['Amount', '$847.32'], ['Category', 'Materials'], ['Job (optional)', 'JOB-041']].map(([l, v]) => (
-                <div key={l}>
-                  <label style={{ display: 'block', fontSize: '10px', fontWeight: '500', color: T.textSecondary, marginBottom: '3px' }}>{l}</label>
-                  <div style={{ padding: '5px 8px', border: `1px solid ${T.border}`, borderRadius: '5px', backgroundColor: T.bg, fontSize: '11px', color: T.text }}>{v}</div>
-                </div>
-              ))}
-              {/* Receipt upload */}
-              <div>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: '500', color: T.textSecondary, marginBottom: '3px' }}>Receipt</label>
-                <div style={{ padding: '8px', border: `1px dashed ${T.border}`, borderRadius: '5px', backgroundColor: T.bg, display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                  <Camera size={12} style={{ color: T.textMuted }} />
-                  <span style={{ fontSize: '10px', color: T.textMuted }}>Tap to attach receipt photo</span>
+          )}
+
+          <div style={{ backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '10px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* Receipt preview */}
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+              <div style={{ width: '54px', height: '68px', borderRadius: '6px', backgroundColor: T.bg, border: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Receipt size={20} style={{ color: T.textMuted }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                {[
+                  { label: 'Vendor',  value: 'Home Depot', filled: true },
+                  { label: 'Date',    value: 'Jun 8, 2026', filled: true },
+                  { label: 'Total',   value: '$847.32',     filled: scene !== 'ocr' },
+                  { label: 'Tax',     value: '$71.83',      filled: scene !== 'ocr' },
+                ].map(f => (
+                  <div key={f.label} style={{ display: 'flex', gap: '6px', marginBottom: '4px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '9px', color: T.textMuted, width: '40px', flexShrink: 0 }}>{f.label}</span>
+                    <span style={{ fontSize: '10px', color: f.filled ? T.text : T.textMuted, fontWeight: f.filled ? '500' : '400' }}>{f.filled ? f.value : '…'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* AI category chip — approve, allocate, reimburse */}
+            {(scene === 'approve' || scene === 'allocate' || scene === 'reimburse') && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 10px', backgroundColor: '#f97316' + '10', border: '1px solid #f97316' + '40', borderRadius: '7px' }}>
+                <Tag size={11} style={{ color: '#f97316' }} />
+                <span style={{ fontSize: '10px', fontWeight: '600', color: '#f97316' }}>Materials</span>
+                <span style={{ fontSize: '9px', color: T.textMuted }}>92% confidence</span>
+                {scene === 'approve' && (
+                  <button style={{ marginLeft: 'auto', padding: '3px 10px', border: 'none', borderRadius: '5px', backgroundColor: '#22c55e', color: '#fff', fontSize: '9px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    <CheckCircle size={9} />Approve
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Job allocation — allocate, reimburse */}
+            {(scene === 'allocate' || scene === 'reimburse') && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 10px', backgroundColor: scene === 'allocate' ? T.accentBg : T.bg, border: `1px solid ${scene === 'allocate' ? T.accent : T.border}`, borderRadius: '7px' }}>
+                <Briefcase size={11} style={{ color: scene === 'allocate' ? T.accent : T.textMuted }} />
+                <span style={{ fontSize: '10px', color: T.text }}>Allocate to job:</span>
+                <span style={{ fontSize: '10px', fontWeight: '600', color: T.accent }}>JOB-2147 — Northbridge LED</span>
+              </div>
+            )}
+
+            {/* Reimbursable toggle — reimburse */}
+            {scene === 'reimburse' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', backgroundColor: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '7px' }}>
+                <ToggleRight size={16} style={{ color: '#22c55e' }} />
+                <div>
+                  <div style={{ fontSize: '10px', fontWeight: '600', color: T.text }}>Flag as reimbursable</div>
+                  <div style={{ fontSize: '9px', color: T.textMuted }}>Appears in payroll inbox → paid on next paycheck</div>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '7px' }}>
-                <button style={{ flex: 1, padding: '7px', border: `1px solid ${T.border}`, borderRadius: '5px', backgroundColor: 'transparent', color: T.textSecondary, fontSize: '10px', cursor: 'pointer' }}>Cancel</button>
-                <button style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '5px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', fontWeight: '500', cursor: 'pointer' }}>Save</button>
-              </div>
-            </div>
-          </motion.div>
+            )}
+
+            <button style={{ padding: '8px', border: 'none', borderRadius: '6px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}>
+              Save Expense
+            </button>
+          </div>
         </motion.div>
       )}
     </div>
@@ -164,11 +193,11 @@ function Stage({ scene }) {
 
 function caption(phase, sceneKey, setupIdx, setupShowingIntro) {
   const m = {
-    empty:   '1 · Expenses — table view, Add Expense, Import',
-    add:     '2 · Add Expense modal — description, vendor, amount, category, job, receipt photo',
-    table:   '3 · Expense table — date, category chip (colored), job link, receipt camera icon',
-    receipt: '4 · Attach a receipt photo — camera capture lands in the expense record',
-    report:  '5 · Expenses roll into Books → CPA Package for the accountant',
+    snap:     '1 · Snap a receipt — photo uploads via Field Scout, lands in Expenses',
+    ocr:      '2 · Dougie reads it — vendor, amount, tax, line items auto-fill in 2 seconds',
+    approve:  '3 · AI tags "Materials" at 92% confidence — tech taps Approve',
+    allocate: '4 · Allocate to a job — expense rolls into that job\'s cost-of-goods',
+    reimburse:'5 · Flag as reimbursable — owner pays it back through payroll on next check',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
   if (phase === 'setup' && setupShowingIntro) return 'How Expenses tracking works'

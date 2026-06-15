@@ -200,8 +200,17 @@ function Stage({ scene }) {
       ]}
     >
       {scene === 'empty' && (
-        <EmptyState icon={Sprout} headline="No treatments scheduled yet."
-          hint="Schedule rounds at the start of the season — Zach tracks completion." />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '14px 16px', background: T.bgCard, border: `1px dashed ${T.border}`, borderRadius: 10, textAlign: 'center' }}>
+            <Sprout size={24} style={{ color: T.textMuted, opacity: 0.6 }} />
+            <div style={{ fontSize: 12, color: T.textSecondary, fontWeight: 600 }}>No treatments scheduled yet.</div>
+            <div style={{ fontSize: 10, color: T.textMuted }}>Schedule rounds at the start of the season — Zach tracks completion.</div>
+          </div>
+          <div style={{ fontSize: 10, color: T.textMuted, paddingLeft: 2 }}>Preview — a 6-round program looks like this:</div>
+          <div style={{ opacity: 0.28 }}>
+            {TREATMENTS_FULL.slice(0, 3).map(t => <TreatmentCard key={t.id} t={t} />)}
+          </div>
+        </div>
       )}
 
       {visible.length > 0 && (

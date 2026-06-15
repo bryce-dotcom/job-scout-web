@@ -202,9 +202,18 @@ function Stage({ scene, sceneElapsed }) {
       ]}
     >
       {scene === 'empty' && (
-        <EmptyState icon={MapPin} headline="No properties yet."
-          hint="Add your first lawn — Zach will start tracking visits and treatments against it."
-          ctaLabel="Add your first property" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '14px 16px', background: T.bgCard, border: `1px dashed ${T.border}`, borderRadius: 10, textAlign: 'center' }}>
+            <MapPin size={24} style={{ color: T.textMuted, opacity: 0.6 }} />
+            <div style={{ fontSize: 12, color: T.textSecondary, fontWeight: 600 }}>No properties yet.</div>
+            <div style={{ fontSize: 10, color: T.textMuted }}>Add your first lawn — Zach will track visits and treatments against it.</div>
+            <button style={{ marginTop: 4, padding: '6px 14px', background: T.accent, color: '#fff', border: 'none', borderRadius: 7, fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>Add your first property</button>
+          </div>
+          <div style={{ fontSize: 10, color: T.textMuted, paddingLeft: 2 }}>Preview — what your grid looks like once you add properties:</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8, opacity: 0.28 }}>
+            {PROPERTIES.slice(0, 3).map(p => <PropertyCard key={p.id} property={p} />)}
+          </div>
+        </div>
       )}
 
       {showGrid && (

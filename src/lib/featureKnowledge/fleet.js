@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'list',      baseDur: 4500, narration: "Open Fleet. Every truck in the company, with its odometer, fuel card, and who's behind the wheel." },
-      { id: 'detail',    baseDur: 6500, narration: 'Pick a truck — full history. Oil changes, tire rotations, repairs, accidents. Nothing slips through.' },
-      { id: 'fuel',      baseDur: 6500, narration: 'Fuel logs flow in from the cards. Freddy spots the spike — truck twelve burned twice what it should. Maybe a leak, maybe a thief.' },
-      { id: 'service',   baseDur: 6500, narration: 'Maintenance schedule by mileage or time. Freddy nudges your inbox when a truck is due for service.' },
-      { id: 'driver',    baseDur: 5500, narration: 'Driver assignments. Cole drives truck seven, Marcus has the dually. Insurance audit is easy now.' },
+      { id: 'list',     baseDur: 4500, narration: "Open Fleet. Every truck in the company, with its odometer, fuel card, and who's behind the wheel." },
+      { id: 'truck',    baseDur: 6500, narration: 'Pick a truck — full history. Oil changes, tire rotations, repairs, accidents. Nothing slips through.' },
+      { id: 'fuel',     baseDur: 6500, narration: 'Fuel logs flow in from the cards. Freddy spots the spike — truck twelve burned twice what it should. Maybe a leak, maybe a thief.' },
+      { id: 'schedule', baseDur: 6500, narration: 'Maintenance schedule by mileage or time. Freddy nudges your inbox when a truck is due for service.' },
+      { id: 'drivers',  baseDur: 5500, narration: 'Driver assignments. Cole drives truck seven, Marcus has the dually. Insurance audit is easy now.' },
     ],
   },
 

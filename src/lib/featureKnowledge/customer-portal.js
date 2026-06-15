@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'send',      baseDur: 5500, narration: "You send a portal link by text or email. No app to install, no password to remember." },
-      { id: 'open',      baseDur: 5500, narration: "Customer taps the link. Their quote opens on their phone, branded with your logo." },
+      { id: 'approved',  baseDur: 5500, narration: "You send a portal link by text or email. No app to install, no password to remember." },
+      { id: 'invoice',   baseDur: 5500, narration: "Customer taps the link. Their quote opens on their phone, branded with your logo." },
       { id: 'sign',      baseDur: 6500, narration: "They scroll, review, and sign with a finger. Your audit trail captures every detail." },
       { id: 'pay',       baseDur: 6500, narration: "Invoices show a one-click Pay button — Stripe handles the card. Your money is in the bank tomorrow." },
-      { id: 'statement', baseDur: 6500, narration: "And they can download a statement of every job, every invoice, every payment, anytime." },
+      { id: 'invoice',   baseDur: 6500, narration: "And they can download a statement of every job, every invoice, every payment, anytime." },
     ],
   },
 

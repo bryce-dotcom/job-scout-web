@@ -23,11 +23,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'big',       baseDur: 4500, narration: 'A two-week retrofit job. Too big to track as one row.' },
-      { id: 'split',     baseDur: 6500, narration: 'Split it into sections — Demo Day, Rough In, Trim Out, Punch List. Each one has its own crew and schedule.' },
-      { id: 'assign',    baseDur: 6000, narration: 'Assign a lead tech, pick a day, and set the budgeted hours.' },
-      { id: 'progress',  baseDur: 6500, narration: 'As techs clock in against a section, actuals rise. Green means on pace, red means trouble.' },
-      { id: 'verify',    baseDur: 5500, narration: 'PM walks the section, marks it Verified, and the job moves on to the next phase.' },
+      { id: 'add',       baseDur: 4500, narration: 'A two-week retrofit job. Too big to track as one row.' },
+      { id: 'add',       baseDur: 6500, narration: 'Split it into sections — Demo Day, Rough In, Trim Out, Punch List. Each one has its own crew and schedule.' },
+      { id: 'add',       baseDur: 6000, narration: 'Assign a lead tech, pick a day, and set the budgeted hours.' },
+      { id: 'add',       baseDur: 6500, narration: 'As techs clock in against a section, actuals rise. Green means on pace, red means trouble.' },
+      { id: 'add',       baseDur: 5500, narration: 'PM walks the section, marks it Verified, and the job moves on to the next phase.' },
     ],
   },
 

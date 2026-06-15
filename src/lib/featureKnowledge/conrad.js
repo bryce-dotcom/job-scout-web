@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'idea',     baseDur: 4500, narration: 'New campaign. "Tell our spring customers about the summer maintenance special."' },
-      { id: 'draft',    baseDur: 6500, narration: 'Conrad writes the subject line, the email body, the call to action. Tone matches your brand. Edit anywhere.' },
+      { id: 'list',     baseDur: 4500, narration: 'Conrad Connect. Campaign list — Sent, Scheduled, and Draft. Open rate and click rate right on the card.' },
+      { id: 'write',    baseDur: 6500, narration: 'New campaign. "Tell our spring customers about the summer maintenance special." Conrad writes the subject and body.' },
       { id: 'segment',  baseDur: 6500, narration: 'Pick the audience. Customers who had service in March or April. Conrad shows the count — eighty-six people.' },
-      { id: 'send',     baseDur: 6500, narration: 'Hit Send. SendGrid delivers. Open and click tracking starts feeding back in real time.' },
-      { id: 'auto',     baseDur: 6000, narration: 'Build a drip. Day one welcome, day seven check-in, day thirty review request. Set it once, runs forever.' },
+      { id: 'send',     baseDur: 6500, narration: 'Preview the email, check the recipient count, then send now or schedule.' },
+      { id: 'stats',    baseDur: 6000, narration: 'Open and click tracking updates live. Forty-four percent open rate, six reply leads.' },
     ],
   },
 

@@ -40,7 +40,7 @@ export default {
           'Type what you want in plain English. Industry, region, headcount — whatever filter you can describe.',
       },
       {
-        id: 'results',
+        id: 'filter',
         baseDur: 5000,
         narration:
           'Claude searches the live web and returns real businesses with cited sources.',

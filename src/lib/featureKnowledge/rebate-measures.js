@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'table',    baseDur: 4500, narration: 'Eighty measure codes for RMP Wattsmart alone. Every prescriptive fixture the utility pays on.' },
+      { id: 'row',      baseDur: 4500, narration: 'Eighty measure codes for RMP Wattsmart alone. Every prescriptive fixture the utility pays on.' },
       { id: 'row',      baseDur: 6500, narration: 'Each row: baseline wattage, proposed wattage, dollars per unit, cap. Same numbers the utility publishes.' },
       { id: 'audit',    baseDur: 6500, narration: 'Lenard finishes an audit, runs through the measure table, picks the right code per fixture. Math is automatic.' },
-      { id: 'cap',      baseDur: 6000, narration: 'Some measures cap per fixture or per project. The engine applies the cap so you never over-quote the rebate.' },
-      { id: 'update',   baseDur: 5500, narration: 'Utility republishes for the next year? You load the new measures, old audits stay locked to their year.' },
+      { id: 'audit',    baseDur: 6000, narration: 'Some measures cap per fixture or per project. The engine applies the cap so you never over-quote the rebate.' },
+      { id: 'row',      baseDur: 5500, narration: 'Utility republishes for the next year? You load the new measures, old audits stay locked to their year.' },
     ],
   },
 

@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'create',   baseDur: 4500, narration: 'Build the invoice. Lines from the job carry over. Deposit, progress, final — pick the type.' },
+      { id: 'empty',    baseDur: 4500, narration: 'Build the invoice. Lines from the job carry over. Deposit, progress, final — pick the type.' },
       { id: 'send',     baseDur: 6500, narration: 'Hit Send. SendGrid delivers. Email pixel reports back when they open it.' },
-      { id: 'pay',      baseDur: 6500, narration: 'Customer taps the pay link. Stripe takes the card or ACH. Money lands in your account.' },
-      { id: 'plan',     baseDur: 6000, narration: 'Big jobs get payment plans — deposit now, progress on install, final on completion.' },
-      { id: 'thread',   baseDur: 5500, narration: 'Every email and reply lives on the invoice itself. Nothing falls through the cracks.' },
+      { id: 'overdue',  baseDur: 6500, narration: 'Customer taps the pay link. Stripe takes the card or ACH. Money lands in your account.' },
+      { id: 'filter',   baseDur: 6000, narration: 'Big jobs get payment plans — deposit now, progress on install, final on completion.' },
+      { id: 'grid',     baseDur: 5500, narration: 'Every email and reply lives on the invoice itself. Nothing falls through the cracks.' },
     ],
   },
 

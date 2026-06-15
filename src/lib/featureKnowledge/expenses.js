@@ -24,8 +24,8 @@ export default {
     scenes: [
       { id: 'snap',     baseDur: 4500, narration: 'Tech buys parts at the supply house. Snaps the receipt on the way out the door.' },
       { id: 'ocr',      baseDur: 6500, narration: 'Dougie reads it — vendor, amount, tax, line items. Two seconds, fields auto-fill.' },
-      { id: 'category', baseDur: 6500, narration: 'AI tags Materials at ninety-two percent confidence. Tech taps Approve.' },
-      { id: 'job',      baseDur: 6500, narration: 'Allocate to Job JOB-twenty-one-forty-seven. The expense lands in that job\'s costing.' },
+      { id: 'approve',  baseDur: 6500, narration: 'AI tags Materials at ninety-two percent confidence. Tech taps Approve.' },
+      { id: 'allocate', baseDur: 6500, narration: 'Allocate to Job JOB-twenty-one-forty-seven. The expense lands in that job\'s costing.' },
       { id: 'reimburse',baseDur: 5500, narration: 'Flag as reimbursable. Owner sees it in payroll inbox. Tech gets it back on next paycheck.' },
     ],
   },

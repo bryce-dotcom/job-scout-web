@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'period',   baseDur: 4500, narration: 'Pick the pay period. Hours pull straight from the time clock.' },
-      { id: 'compute',  baseDur: 6500, narration: 'Regular hours, overtime, PTO, bonus, commission. Federal withholding via IRS Pub fifteen tee percentage method. State, FICA, Medicare.' },
-      { id: 'review',   baseDur: 6500, narration: 'Per-employee preview. Gross to net, with every deduction itemized. Adjust before posting.' },
-      { id: 'pay',      baseDur: 6500, narration: 'Approve. Direct deposits queue up, paystubs publish to My Pay, journal entries hit Books.' },
-      { id: 'tax',      baseDur: 5500, narration: 'Tax deposit deadlines auto-land in the payroll inbox. Nine forty one and W-twos generate themselves at quarter and year end.' },
+      { id: 'period',    baseDur: 4500, narration: 'Pick the pay period. Hours pull straight from the time clock.' },
+      { id: 'employees', baseDur: 6500, narration: 'Four employees this period. Regular hours, overtime, commission — all pulled in automatically.' },
+      { id: 'detail',    baseDur: 6500, narration: 'Click an employee. Gross to net, with every deduction itemized. Adjust before posting.' },
+      { id: 'run',       baseDur: 6500, narration: 'Approve. Direct deposits queue up, paystubs publish to My Pay, journal entries hit Books.' },
+      { id: 'inbox',     baseDur: 5500, narration: 'Tax deposit deadlines auto-land in the payroll inbox. Nine forty one and W-twos generate themselves at quarter and year end.' },
     ],
   },
 

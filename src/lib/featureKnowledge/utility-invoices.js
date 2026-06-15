@@ -23,11 +23,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'open',      baseDur: 4500, narration: 'Utility Invoices. Every rebate in flight — filed, pending, paid.' },
-      { id: 'split',     baseDur: 6500, narration: 'Open one. Project cost twenty-eight thousand four hundred. Utility owes fourteen thousand seven eighty.' },
-      { id: 'calc',      baseDur: 6500, narration: 'The math splits the rebate. Materials seventy percent, labor thirty. Customer portion adjusts. Honest accounting.' },
-      { id: 'aging',     baseDur: 6500, narration: 'AR aging by program. RMP pays in thirty. SRP drags ninety. You know where to push.' },
-      { id: 'paid',      baseDur: 5500, narration: 'Rebate hits. Invoice flips to paid. General ledger entry posts. Job profitability re-computes.' },
+      { id: 'empty',     baseDur: 4500, narration: 'Utility Invoices. Every rebate in flight — filed, pending, paid.' },
+      { id: 'empty',     baseDur: 6500, narration: 'Open one. Project cost twenty-eight thousand four hundred. Utility owes fourteen thousand seven eighty.' },
+      { id: 'empty',     baseDur: 6500, narration: 'The math splits the rebate. Materials seventy percent, labor thirty. Customer portion adjusts. Honest accounting.' },
+      { id: 'empty',     baseDur: 6500, narration: 'AR aging by program. RMP pays in thirty. SRP drags ninety. You know where to push.' },
+      { id: 'empty',     baseDur: 5500, narration: 'Rebate hits. Invoice flips to paid. General ledger entry posts. Job profitability re-computes.' },
     ],
   },
 

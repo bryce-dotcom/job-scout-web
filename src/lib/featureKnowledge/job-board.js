@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'unassigned', baseDur: 4500, narration: 'Monday morning. Twenty unassigned job sections in the queue.' },
-      { id: 'drop',       baseDur: 6500, narration: 'PM drags a section onto Cole on Tuesday. The slot fills, his day shows fourteen of sixteen hours booked.' },
-      { id: 'guardrail',  baseDur: 6500, narration: 'Try to overbook him to twenty hours? The board pushes back — red bar, you have to confirm or pick another day.' },
-      { id: 'shuffle',    baseDur: 6000, narration: 'Need to move Wednesday work to Thursday? Drag the whole stack. Crews and customers get auto-notified.' },
-      { id: 'overview',   baseDur: 5500, narration: 'One screen, the whole week. PM has the dispatch board they have been asking for.' },
+      { id: 'detail',     baseDur: 4500, narration: 'Monday morning. Twenty unassigned job sections in the queue.' },
+      { id: 'drag',       baseDur: 6500, narration: 'PM drags a section onto Cole on Tuesday. The slot fills, his day shows fourteen of sixteen hours booked.' },
+      { id: 'drag',       baseDur: 6500, narration: 'Try to overbook him to twenty hours? The board pushes back — red bar, you have to confirm or pick another day.' },
+      { id: 'drag',       baseDur: 6000, narration: 'Need to move Wednesday work to Thursday? Drag the whole stack. Crews and customers get auto-notified.' },
+      { id: 'detail',     baseDur: 5500, narration: 'One screen, the whole week. PM has the dispatch board they have been asking for.' },
     ],
   },
 

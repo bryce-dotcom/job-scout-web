@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'ask',       baseDur: 4500, narration: 'Ask Frankie: why is cash tight this month?' },
-      { id: 'answer',    baseDur: 6500, narration: 'He pulls the data. Three customers are sixty days late, materials spend is up eighteen percent. Plain English, with the receipts.' },
-      { id: 'aging',     baseDur: 6500, narration: 'AR aging by customer. Frankie ranks them by how long they have owed you.' },
-      { id: 'collect',   baseDur: 6500, narration: 'Hit Send Reminders. Frankie drafts the message, sends to all three, logs the touch on each invoice.' },
-      { id: 'profit',    baseDur: 5500, narration: 'Per-job profitability. He spots the one that bled margin and tells you why.' },
+      { id: 'question', baseDur: 4500, narration: 'Ask Frankie: why is cash tight this month?' },
+      { id: 'answer',   baseDur: 6500, narration: 'He pulls the data. Three customers are sixty days late, materials spend is up eighteen percent. Plain English, with the receipts.' },
+      { id: 'aging',    baseDur: 6500, narration: 'AR aging by customer. Frankie ranks them by how long they have owed you.' },
+      { id: 'remind',   baseDur: 6500, narration: 'Hit Send Reminders. Frankie drafts the message, sends to all three, logs the touch on each invoice.' },
+      { id: 'profit',   baseDur: 5500, narration: 'Per-job profitability. He spots the one that bled margin and tells you why.' },
     ],
   },
 

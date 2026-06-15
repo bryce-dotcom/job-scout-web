@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'open',      baseDur: 4500, narration: 'Reports. Every dashboard you need. Sales, jobs, money, team.' },
+      { id: 'overview',  baseDur: 4500, narration: 'Reports. Every dashboard you need. Sales, jobs, money, team.' },
       { id: 'sales',     baseDur: 6500, narration: 'Sales dashboard. Pipeline, win rate, average deal size, by salesperson. Monday morning huddle, ready.' },
-      { id: 'profit',    baseDur: 6500, narration: 'Profitability. Gross margin per crew, per job type, per month. Where the money is actually being made.' },
-      { id: 'cash',      baseDur: 6500, narration: 'Cash flow. AR aging, AP aging, fuel spend trend. Where it sits and where it goes.' },
-      { id: 'schedule',  baseDur: 5500, narration: 'Schedule any report to email. Owner gets the weekly P and L every Monday at six AM. No login.' },
+      { id: 'financial', baseDur: 6500, narration: 'Financial Report. Total invoiced, collected, outstanding, expenses, net income — all in one strip.' },
+      { id: 'revenue',   baseDur: 6500, narration: 'Revenue by month. Click any bar and see the jobs and payments behind that number.' },
+      { id: 'drill',     baseDur: 5500, narration: 'Click any stat to drill through to the individual records. From number to receipt in one tap.' },
     ],
   },
 

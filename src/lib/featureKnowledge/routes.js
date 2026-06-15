@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'jobs',     baseDur: 4500, narration: 'Twelve unassigned jobs across the valley. Whose route does each one go on?' },
-      { id: 'group',    baseDur: 6000, narration: 'Drag the four west-side jobs into a route. Map redraws — your sweep is 38 miles, four hours.' },
-      { id: 'optimize', baseDur: 6500, narration: 'Hit Optimize. The system reorders the stops to cut the drive time. Same four jobs, 31 miles now.' },
-      { id: 'assign',   baseDur: 6000, narration: 'Pick the crew, pick the day. Route lands on their Field Scout with turn-by-turn for every stop.' },
-      { id: 'calendar', baseDur: 5500, narration: 'Calendar view shows every route, every crew, color-coded. No double-booking, no missed stops.' },
+      { id: 'unassigned', baseDur: 4500, narration: 'Twelve unassigned jobs across the valley. Whose route does each one go on?' },
+      { id: 'plan',       baseDur: 6000, narration: 'Drag the four west-side jobs into a route. Map redraws — your sweep is 38 miles, four hours.' },
+      { id: 'optimize',   baseDur: 6500, narration: 'Hit Optimize. The system reorders the stops to cut the drive time. Same four jobs, 31 miles now.' },
+      { id: 'assign',     baseDur: 6000, narration: 'Pick the crew, pick the day. Route lands on their Field Scout with turn-by-turn for every stop.' },
+      { id: 'calendar',   baseDur: 5500, narration: 'Calendar view shows every route, every crew, color-coded. No double-booking, no missed stops.' },
     ],
   },
 

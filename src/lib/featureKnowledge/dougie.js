@@ -24,9 +24,9 @@ export default {
     scenes: [
       { id: 'upload',   baseDur: 4500, narration: 'Drop a utility bill into Dougie. Twelve pages, dense, ugly.' },
       { id: 'extract',  baseDur: 6500, narration: 'Dougie reads it. Account number, billing period, kWh used, demand peak, current charges, last twelve months — all structured.' },
-      { id: 'correct',  baseDur: 6500, narration: 'He got the demand wrong on page seven — service charge confused him. You fix it. Dougie records the correction.' },
+      { id: 'review',   baseDur: 6500, narration: 'He got the demand wrong on page seven — service charge confused him. You fix it. Dougie records the correction.' },
       { id: 'learn',    baseDur: 6500, narration: 'Next bill from the same utility — Dougie applies the correction automatically. He gets smarter every week.' },
-      { id: 'use',      baseDur: 6000, narration: 'Pre-fill rebate forms. Build energy baselines. Generate audit reports. The data flows everywhere.' },
+      { id: 'extract',  baseDur: 6000, narration: 'Pre-fill rebate forms. Build energy baselines. Generate audit reports. The data flows everywhere.' },
     ],
   },
 

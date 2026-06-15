@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'list',      baseDur: 4500, narration: 'Every product, every location. Warehouse, trucks, satellite shops — one screen.' },
-      { id: 'low',       baseDur: 6500, narration: 'Six items below the reorder threshold. Freddy highlights them in red. One click — order placed.' },
-      { id: 'transfer',  baseDur: 6500, narration: 'Tech needs parts on a job. Open Transfer. Pull from warehouse to truck twelve. Done.' },
-      { id: 'consume',   baseDur: 6500, narration: 'When a job uses parts, inventory ticks down automatically. Cost-of-goods rolls into job costing.' },
-      { id: 'count',     baseDur: 5500, narration: 'End of quarter, run a count. Scan barcodes on the phone, adjust variances, sign off.' },
+      { id: 'list',     baseDur: 4500, narration: 'Every product, every location. Warehouse, trucks, satellite shops — one screen.' },
+      { id: 'reorder',  baseDur: 6500, narration: 'Six items below the reorder threshold. Freddy highlights them in red. One click — order placed.' },
+      { id: 'transfer', baseDur: 6500, narration: 'Tech needs parts on a job. Open Transfer. Pull from warehouse to truck twelve. Done.' },
+      { id: 'costing',  baseDur: 6500, narration: 'When a job uses parts, inventory ticks down automatically. Cost-of-goods rolls into job costing.' },
+      { id: 'count',    baseDur: 5500, narration: 'End of quarter, run a count. Scan barcodes on the phone, adjust variances, sign off.' },
     ],
   },
 

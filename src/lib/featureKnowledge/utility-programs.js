@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'list',     baseDur: 4500, narration: 'Every utility program you might run, in one list.' },
-      { id: 'detail',   baseDur: 6500, narration: 'Open RMP Wattsmart. Source-year is 2026. The exact measure table the utility publishes is right here.' },
-      { id: 'measures', baseDur: 6500, narration: 'Per-measure code, baseline wattage, proposed wattage, dollars per unit, caps. Same numbers Lenard uses for math.' },
-      { id: 'form',     baseDur: 6000, narration: 'The official utility PDF form is bound to the program. Field map drives auto-fill on every audit.' },
-      { id: 'lock',     baseDur: 5500, narration: 'When the utility publishes new measures, you load the new year. Old audits lock to their original source year — no number drift.' },
+      { id: 'empty',    baseDur: 4500, narration: 'Every utility program you might run, in one list.' },
+      { id: 'add',      baseDur: 6500, narration: 'Open RMP Wattsmart. Source-year is 2026. The exact measure table the utility publishes is right here.' },
+      { id: 'add',      baseDur: 6500, narration: 'Per-measure code, baseline wattage, proposed wattage, dollars per unit, caps. Same numbers Lenard uses for math.' },
+      { id: 'add',      baseDur: 6000, narration: 'The official utility PDF form is bound to the program. Field map drives auto-fill on every audit.' },
+      { id: 'empty',    baseDur: 5500, narration: 'When the utility publishes new measures, you load the new year. Old audits lock to their original source year — no number drift.' },
     ],
   },
 

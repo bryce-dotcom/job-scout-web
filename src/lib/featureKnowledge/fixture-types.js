@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'catalog', baseDur: 4500, narration: 'Fixture catalog. Three hundred LED replacements ready for an audit.' },
-      { id: 'detail',  baseDur: 6500, narration: 'Open one. Forty-watt LED panel. DLC-listed. Replaces 64-watt fluorescent. Cost five bucks, retail fifteen.' },
-      { id: 'replace', baseDur: 6500, narration: 'Replaces mapping. When Lenard sees a fluorescent, he proposes this LED. Automatic.' },
-      { id: 'utility', baseDur: 6500, narration: 'Per-utility eligibility. RMP pays on this fixture. SRP does not. The rebate math knows.' },
-      { id: 'docs',    baseDur: 5500, narration: 'DLC sheet, install instructions, warranty — attached to the fixture. Flow into proposals automatically.' },
+      { id: 'add',     baseDur: 4500, narration: 'Fixture catalog. Three hundred LED replacements ready for an audit.' },
+      { id: 'add',     baseDur: 6500, narration: 'Open one. Forty-watt LED panel. DLC-listed. Replaces 64-watt fluorescent. Cost five bucks, retail fifteen.' },
+      { id: 'add',     baseDur: 6500, narration: 'Replaces mapping. When Lenard sees a fluorescent, he proposes this LED. Automatic.' },
+      { id: 'add',     baseDur: 6500, narration: 'Per-utility eligibility. RMP pays on this fixture. SRP does not. The rebate math knows.' },
+      { id: 'add',     baseDur: 5500, narration: 'DLC sheet, install instructions, warranty — attached to the fixture. Flow into proposals automatically.' },
     ],
   },
 

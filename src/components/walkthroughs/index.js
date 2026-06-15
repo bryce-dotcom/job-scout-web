@@ -55,6 +55,21 @@ import DocumentRulesWalkthrough      from './DocumentRulesWalkthrough'
 import FixtureTypesWalkthrough       from './FixtureTypesWalkthrough'
 import CommissionsWalkthrough        from './CommissionsWalkthrough'
 import EmployeesWalkthrough          from './EmployeesWalkthrough'
+// Round 5
+import AppointmentsWalkthrough      from './AppointmentsWalkthrough'
+import DashboardWalkthrough         from './DashboardWalkthrough'
+import ArnieWalkthrough             from './ArnieWalkthrough'
+import BookingsWalkthrough          from './BookingsWalkthrough'
+import FreddyTrackingWalkthrough    from './FreddyTrackingWalkthrough'
+import FreddyCostsWalkthrough       from './FreddyCostsWalkthrough'
+import FreddyTripsWalkthrough       from './FreddyTripsWalkthrough'
+import LeadPaymentsWalkthrough      from './LeadPaymentsWalkthrough'
+import BillsWalkthrough             from './BillsWalkthrough'
+import FrankieInsightsWalkthrough   from './FrankieInsightsWalkthrough'
+import PayrollInboxWalkthrough      from './PayrollInboxWalkthrough'
+import TimeLogWalkthrough           from './TimeLogWalkthrough'
+import UtilityProvidersWalkthrough  from './UtilityProvidersWalkthrough'
+import PhotosSignaturesWalkthrough  from './PhotosSignaturesWalkthrough'
 
 export const WALKTHROUGHS = {
   'yard-measure':        YardMeasureWalkthrough,
@@ -104,6 +119,21 @@ export const WALKTHROUGHS = {
   'fixture-types':       FixtureTypesWalkthrough,
   'commissions':         CommissionsWalkthrough,
   'employees':           EmployeesWalkthrough,
+  // Round 5
+  'appointments':        AppointmentsWalkthrough,
+  'dashboard':           DashboardWalkthrough,
+  'arnie':               ArnieWalkthrough,
+  'bookings':            BookingsWalkthrough,
+  'freddy-tracking':     FreddyTrackingWalkthrough,
+  'freddy-costs':        FreddyCostsWalkthrough,
+  'freddy-trips':        FreddyTripsWalkthrough,
+  'lead-payments':       LeadPaymentsWalkthrough,
+  'bills':               BillsWalkthrough,
+  'frankie-insights':    FrankieInsightsWalkthrough,
+  'payroll-inbox':       PayrollInboxWalkthrough,
+  'time-log':            TimeLogWalkthrough,
+  'utility-providers':   UtilityProvidersWalkthrough,
+  'photos-signatures':   PhotosSignaturesWalkthrough,
 }
 
 export function getWalkthrough(id) {

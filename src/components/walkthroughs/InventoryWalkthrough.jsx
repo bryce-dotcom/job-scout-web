@@ -3,7 +3,7 @@
 // DO NOT import ZachShell — reproduces real component structure with mock data.
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { Boxes, Plus, Search, AlertTriangle, Package, Wrench, X } from 'lucide-react'
+import { Boxes, Plus, Search, AlertTriangle, Package, ArrowRightLeft, ScanLine, Briefcase } from 'lucide-react'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
 import SetupChecklist from './SetupChecklist'
@@ -60,79 +60,198 @@ export default function InventoryWalkthrough() {
   )
 }
 
-function Stage({ scene }) {
-  const items = scene === 'empty' ? [] : MOCK_MATERIALS
-  const getStockColor = (q, min) => {
-    if (!min) return '#4a7c59'
-    const r = q / min
-    if (q === 0) return '#ef4444'
-    if (r < 1) return '#c25a5a'
-    if (r < 1.5) return '#c28b38'
-    return '#4a7c59'
-  }
+const EXTENDED_INVENTORY = [
+  ...MOCK_MATERIALS,
+  { id: 5, item_id: 'MAT-005', name: 'Mounting Brackets (pkg/10)', quantity: 8,  min_quantity: 5, location: 'Shelf A-3' },
+  { id: 6, item_id: 'MAT-006', name: '14-gauge Wire (25ft)',        quantity: 15, min_quantity: 8, location: 'Floor Rack' },
+]
 
+const JOB_USAGE = [
+  { job: 'JOB-041', name: 'Northbridge LED', item: '48" LED Strip (Type A)', qty: 6, cost: 1320 },
+  { job: 'JOB-041', name: 'Northbridge LED', item: 'LED Driver 100W',        qty: 4, cost: 400  },
+  { job: 'JOB-038', name: 'Solera Office',   item: '48" LED Strip (Type A)', qty: 3, cost: 660  },
+  { job: 'JOB-038', name: 'Solera Office',   item: 'Mounting Brackets',      qty: 2, cost: 44   },
+]
+
+function getStockColor(q, min) {
+  if (!min) return '#4a7c59'
+  if (q === 0) return '#ef4444'
+  if (q < min) return '#c25a5a'
+  if (q < min * 1.5) return '#c28b38'
+  return '#4a7c59'
+}
+
+function InvCard({ item, highlight }) {
+  const sc = getStockColor(item.quantity, item.min_quantity)
+  const isLow = item.quantity < item.min_quantity
+  const isOut = item.quantity === 0
   return (
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '12px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden' }}>
+    <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}
+      style={{ backgroundColor: T.bgCard, border: `1px solid ${highlight || isLow ? sc : T.border}`, borderRadius: '9px', padding: '10px', cursor: 'pointer' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '5px' }}>
+        <div style={{ flex: 1, overflow: 'hidden', paddingRight: '6px' }}>
+          <div style={{ fontSize: '10px', fontWeight: '600', color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
+          <div style={{ fontSize: '8px', color: T.textMuted }}>{item.item_id}</div>
+        </div>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div style={{ fontSize: '16px', fontWeight: '700', color: sc }}>{item.quantity}</div>
+          <div style={{ fontSize: '8px', color: T.textMuted }}>min {item.min_quantity}</div>
+        </div>
+      </div>
+      {(isLow || isOut) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 5px', backgroundColor: sc + '15', borderRadius: '4px', marginBottom: '4px' }}>
+          <AlertTriangle size={8} style={{ color: sc }} />
+          <span style={{ fontSize: '8px', fontWeight: '600', color: sc }}>{isOut ? 'OUT OF STOCK' : 'LOW STOCK'}</span>
+        </div>
+      )}
+      <div style={{ fontSize: '8px', color: T.textMuted }}>{item.location}</div>
+    </motion.div>
+  )
+}
+
+function Stage({ scene }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '11px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Boxes size={15} style={{ color: T.accent }} />
           <span style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>Inventory</span>
         </div>
-        <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', border: 'none', borderRadius: '5px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', cursor: 'pointer' }}>
-          <Plus size={11} />Add Item
-        </button>
+        <div style={{ display: 'flex', gap: '5px' }}>
+          {(scene === 'transfer' || scene === 'count') && (
+            <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px', border: `1px solid ${T.border}`, borderRadius: '5px', backgroundColor: scene === 'transfer' ? T.accent : T.bgCard, color: scene === 'transfer' ? '#fff' : T.textSecondary, fontSize: '10px', cursor: 'pointer' }}>
+              {scene === 'transfer' ? <><ArrowRightLeft size={10} />Transfer</> : <><ScanLine size={10} />Count</>}
+            </button>
+          )}
+          <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 9px', border: 'none', borderRadius: '5px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', cursor: 'pointer' }}>
+            <Plus size={10} />Add Item
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '3px', backgroundColor: T.bg, padding: '3px', borderRadius: '7px', width: 'fit-content' }}>
+      <div style={{ display: 'flex', gap: '3px', backgroundColor: T.bg, padding: '3px', borderRadius: '7px', width: 'fit-content', flexShrink: 0 }}>
         {['Material', 'Tool', 'Equipment'].map((tab, i) => (
-          <button key={tab} style={{ padding: '4px 10px', fontSize: '10px', fontWeight: i === 0 ? '600' : '400', backgroundColor: i === 0 ? T.bgCard : 'transparent', color: i === 0 ? T.text : T.textMuted, border: 'none', borderRadius: '5px', cursor: 'pointer' }}>{tab}</button>
+          <button key={tab} style={{ padding: '3px 9px', fontSize: '9px', fontWeight: i === 0 ? '600' : '400', backgroundColor: i === 0 ? T.bgCard : 'transparent', color: i === 0 ? T.text : T.textMuted, border: 'none', borderRadius: '5px', cursor: 'pointer' }}>{tab}</button>
         ))}
       </div>
 
-      {/* Search */}
-      <div style={{ position: 'relative' }}>
-        <Search size={11} style={{ position: 'absolute', left: '7px', top: '50%', transform: 'translateY(-50%)', color: T.textMuted }} />
-        <input readOnly placeholder="Search inventory..." style={{ width: '100%', boxSizing: 'border-box', padding: '5px 7px 5px 20px', border: `1px solid ${T.border}`, borderRadius: '5px', fontSize: '10px', backgroundColor: T.bgCard, color: T.text, outline: 'none' }} />
-      </div>
-
-      {/* Items */}
-      {items.length === 0 ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: T.bgCard, borderRadius: '10px', border: `1px solid ${T.border}` }}>
-          <Boxes size={36} style={{ color: T.textMuted, marginBottom: '10px' }} />
-          <p style={{ color: T.textSecondary, fontSize: '12px', margin: 0 }}>No inventory items. Add your first item.</p>
+      {/* list: full item grid */}
+      {scene === 'list' && (
+        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))', gap: '7px', alignContent: 'start', overflowY: 'auto' }}>
+          {EXTENDED_INVENTORY.map(item => <InvCard key={item.id} item={item} />)}
         </div>
-      ) : (
-        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px', alignContent: 'start', overflowY: 'auto' }}>
-          {items.map((item, i) => {
-            const sc = getStockColor(item.quantity, item.min_quantity)
-            const isLow = item.quantity < item.min_quantity
-            const isOut = item.quantity === 0
-            return (
-              <motion.div key={item.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06, duration: 0.25 }}
-                style={{ backgroundColor: T.bgCard, border: `1px solid ${isLow ? sc : T.border}`, borderRadius: '9px', padding: '12px', cursor: 'pointer' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <div style={{ flex: 1, overflow: 'hidden' }}>
-                    <div style={{ fontSize: '11px', fontWeight: '600', color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                    <div style={{ fontSize: '9px', color: T.textMuted }}>{item.item_id}</div>
+      )}
+
+      {/* reorder: grid + reorder prompt at top */}
+      {scene === 'reorder' && (
+        <>
+          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+            style={{ padding: '8px 12px', backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertTriangle size={12} style={{ color: '#ef4444' }} />
+              <div>
+                <div style={{ fontSize: '10px', fontWeight: '700', color: T.text }}>2 items below reorder threshold</div>
+                <div style={{ fontSize: '9px', color: T.textMuted }}>LED Driver 100W · Wire Nuts — Assorted</div>
+              </div>
+            </div>
+            <button style={{ padding: '5px 12px', border: 'none', borderRadius: '6px', backgroundColor: '#ef4444', color: '#fff', fontSize: '9px', fontWeight: '600', cursor: 'pointer' }}>Reorder</button>
+          </motion.div>
+          <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))', gap: '7px', alignContent: 'start', overflowY: 'auto' }}>
+            {EXTENDED_INVENTORY.map(item => <InvCard key={item.id} item={item} highlight={item.quantity < item.min_quantity} />)}
+          </div>
+        </>
+      )}
+
+      {/* transfer: transfer modal */}
+      {scene === 'transfer' && (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
+            style={{ backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '12px', width: '290px', boxShadow: '0 6px 24px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+            <div style={{ padding: '11px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <ArrowRightLeft size={12} style={{ color: T.accent }} />
+              <span style={{ fontSize: '12px', fontWeight: '700', color: T.text }}>Transfer Inventory</span>
+            </div>
+            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {[['Item', '48" LED Strip (Type A)'], ['Quantity', '4'], ['From', 'Main Warehouse — Shelf A-2'], ['To', 'VEH-001 (Marcus — F-250)'], ['Job', 'JOB-041 — Northbridge LED']].map(([l, v]) => (
+                <div key={l}>
+                  <label style={{ display: 'block', fontSize: '9px', color: T.textMuted, marginBottom: '2px' }}>{l}</label>
+                  <div style={{ padding: '5px 8px', border: `1px solid ${l === 'To' ? T.accent : T.border}`, borderRadius: '5px', backgroundColor: T.bg, fontSize: '10px', color: T.text, fontWeight: l === 'To' ? '600' : '400' }}>{v}</div>
+                </div>
+              ))}
+              <button style={{ padding: '8px', border: 'none', borderRadius: '7px', backgroundColor: T.accent, color: '#fff', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}>Confirm Transfer</button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* costing: job costing view */}
+      {scene === 'costing' && (
+        <div style={{ flex: 1, backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+          <div style={{ padding: '8px 12px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Briefcase size={12} style={{ color: T.accent }} />
+            <span style={{ fontSize: '11px', fontWeight: '700', color: T.text }}>Material Usage by Job</span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+            <thead>
+              <tr style={{ backgroundColor: T.accentBg }}>
+                {['Job', 'Item', 'Qty', 'Cost'].map(h => (
+                  <th key={h} style={{ padding: '6px 10px', textAlign: h === 'Cost' || h === 'Qty' ? 'right' : 'left', fontWeight: '600', color: T.textMuted, borderBottom: `1px solid ${T.border}` }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {JOB_USAGE.map((u, i) => (
+                <motion.tr key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.06 }}
+                  style={{ borderBottom: `1px solid ${T.border}` }}>
+                  <td style={{ padding: '6px 10px', color: T.accent, fontWeight: '600' }}>{u.job}</td>
+                  <td style={{ padding: '6px 10px', color: T.text, maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.item}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right', color: T.textSecondary }}>{u.qty}</td>
+                  <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: '700', color: T.accent }}>${u.cost.toLocaleString()}</td>
+                </motion.tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* count: barcode count view */}
+      {scene === 'count' && (
+        <div style={{ flex: 1, display: 'flex', gap: '8px', overflow: 'hidden' }}>
+          <div style={{ flex: 1, backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+            <div style={{ padding: '8px 12px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <ScanLine size={12} style={{ color: T.accent }} />
+              <span style={{ fontSize: '11px', fontWeight: '700', color: T.text }}>Cycle Count — Jun 9</span>
+            </div>
+            {EXTENDED_INVENTORY.slice(0, 4).map((item, i) => (
+              <motion.div key={item.id} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 12px', borderBottom: `1px solid ${T.border}` }}>
+                <div>
+                  <div style={{ fontSize: '10px', fontWeight: '600', color: T.text }}>{item.name}</div>
+                  <div style={{ fontSize: '8px', color: T.textMuted }}>{item.item_id} · {item.location}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '9px', color: T.textMuted }}>System</div>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: T.textSecondary }}>{item.quantity}</div>
                   </div>
-                  <div style={{ flexShrink: 0, marginLeft: '6px', textAlign: 'right' }}>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: sc }}>{item.quantity}</div>
-                    <div style={{ fontSize: '8px', color: T.textMuted }}>min {item.min_quantity}</div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '9px', color: T.textMuted }}>Counted</div>
+                    <div style={{ fontSize: '11px', fontWeight: '700', color: i < 2 ? '#22c55e' : T.accent }}>
+                      {i === 0 ? item.quantity : i === 1 ? item.quantity : i === 2 ? '2' : '—'}
+                    </div>
                   </div>
                 </div>
-                {(isLow || isOut) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 6px', backgroundColor: sc + '15', borderRadius: '4px', marginBottom: '5px' }}>
-                    <AlertTriangle size={9} style={{ color: sc }} />
-                    <span style={{ fontSize: '8px', fontWeight: '600', color: sc }}>{isOut ? 'OUT OF STOCK' : 'LOW STOCK'}</span>
-                  </div>
-                )}
-                <div style={{ fontSize: '9px', color: T.textMuted }}>{item.location}</div>
               </motion.div>
-            )
-          })}
+            ))}
+          </div>
+          {/* Scanner hint */}
+          <motion.div initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}
+            style={{ width: '130px', flexShrink: 0, backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '10px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '14px' }}>
+            <ScanLine size={26} style={{ color: T.accent }} />
+            <div style={{ fontSize: '9px', color: T.textMuted, textAlign: 'center', lineHeight: '1.4' }}>Scan barcode to count. Works with any USB or Bluetooth scanner.</div>
+          </motion.div>
         </div>
       )}
     </div>
@@ -141,11 +260,11 @@ function Stage({ scene }) {
 
 function caption(phase, sceneKey, setupIdx, setupShowingIntro) {
   const m = {
-    empty:  '1 · Inventory — Material / Tool / Equipment tabs, Add Item',
-    items:  '2 · Material cards — quantity (colored), min threshold, low stock badge',
-    low:    '3 · Low stock items show AlertTriangle + colored border + low/out-of-stock chip',
-    adjust: '4 · Click any item → adjust quantity +/- or scan barcode to look up',
-    order:  '5 · Low stock items drive reorder triggers — configure thresholds per item',
+    list:    '1 · Inventory grid — quantity (green/amber/red), min threshold, location per item',
+    reorder: '2 · Reorder alert — 2 items below threshold · one-click to order what you need',
+    transfer:'3 · Transfer modal — move items from warehouse to truck, link to a job',
+    costing: '4 · Material usage by job — every item pulled rolls into that job\'s cost',
+    count:   '5 · Cycle count — scan barcode, system compares to counted quantity',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
   if (phase === 'setup' && setupShowingIntro) return 'How Inventory tracking works'

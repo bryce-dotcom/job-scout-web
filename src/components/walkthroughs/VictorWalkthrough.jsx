@@ -66,7 +66,10 @@ export default function VictorWalkthrough() {
 }
 
 function Stage({ scene }) {
-  const showGrade = scene !== 'upload'
+  const showGrade  = scene === 'grade' || scene === 'check' || scene === 'notes' || scene === 'block'
+  const showChecks = scene === 'check' || scene === 'notes' || scene === 'block'
+  const showNotes  = scene === 'notes' || scene === 'block'
+  const showBlock  = scene === 'block'
   const gc = GRADE_COLORS[MOCK_REPORT.grade]
 
   return (
@@ -89,7 +92,48 @@ function Stage({ scene }) {
         )}
       </div>
 
-      {/* Grade card */}
+      {/* Upload zone — upload scene only */}
+      {scene === 'upload' && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.35 }}
+          style={{ flex: 1, display: 'flex', gap: '10px', overflow: 'hidden' }}
+        >
+          {/* Drop zone */}
+          <div style={{ flex: 1, border: `2px dashed #8b5cf680`, borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', backgroundColor: 'rgba(168,85,247,0.04)' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Camera size={20} color="#fff" />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', fontWeight: '700', color: T.text, marginBottom: '3px' }}>Drop photos here</div>
+              <div style={{ fontSize: '9px', color: T.textMuted }}>JPG, PNG, HEIC supported</div>
+            </div>
+            <button style={{ padding: '6px 16px', background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)', border: 'none', borderRadius: '7px', color: '#fff', fontSize: '10px', fontWeight: '600', cursor: 'pointer' }}>
+              Choose Files
+            </button>
+          </div>
+          {/* Photo categories Victor checks */}
+          <div style={{ width: '190px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ fontSize: '9px', fontWeight: '600', color: T.textMuted, marginBottom: '2px' }}>What Victor checks for:</div>
+            {[
+              { label: 'Before Photos',   icon: Camera, color: '#3b82f6', hint: 'Pre-work site shots'   },
+              { label: 'After Photos',    icon: Camera, color: '#22c55e', hint: 'Post-install evidence'  },
+              { label: 'Completed Work',  icon: CheckCircle, color: '#22c55e', hint: 'All fixtures live'   },
+              { label: 'Cleanliness',     icon: Star,   color: '#f59e0b', hint: 'Site cleanup, no debris' },
+              { label: 'Work Quality',    icon: Star,   color: '#8b5cf6', hint: 'Wiring, mounting, trim'  },
+              { label: 'General Site',    icon: Camera, color: '#6b7280', hint: 'Wide-angle overview'     },
+            ].map(({ label, icon: Icon, color, hint }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '6px 8px', backgroundColor: color + '10', border: `1px solid ${color}25`, borderRadius: '7px' }}>
+                <Icon size={11} style={{ color, flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: '9px', fontWeight: '600', color }}>{label}</div>
+                  <div style={{ fontSize: '8px', color: T.textMuted }}>{hint}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Grade card — grade + check + notes + block scenes */}
       {showGrade && (
         <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.35 }}
           style={{ backgroundColor: T.bgCard, border: `2px solid ${gc}`, borderRadius: '10px', padding: '14px', display: 'flex', alignItems: 'center', gap: '16px' }}
@@ -97,15 +141,24 @@ function Stage({ scene }) {
           <div style={{ width: '52px', height: '52px', borderRadius: '12px', backgroundColor: gc + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px', fontWeight: '900', color: gc, flexShrink: 0 }}>
             {MOCK_REPORT.grade}
           </div>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '12px', fontWeight: '700', color: T.text }}>Quality Score: {MOCK_REPORT.score}/100</div>
-            <div style={{ fontSize: '10px', color: T.textSecondary, marginTop: '3px' }}>{MOCK_REPORT.notes}</div>
+            {showNotes && (
+              <motion.div initial={{ opacity: 0, y: 2 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
+                style={{ fontSize: '10px', color: T.textSecondary, marginTop: '4px', padding: '5px 7px', backgroundColor: '#fef9c3', border: '1px solid #fde047', borderRadius: '5px', lineHeight: 1.5 }}
+              >
+                {MOCK_REPORT.notes}
+              </motion.div>
+            )}
+            {!showNotes && (
+              <div style={{ fontSize: '10px', color: T.textMuted, marginTop: '3px' }}>6 photo checks · submitted Jun 9</div>
+            )}
           </div>
         </motion.div>
       )}
 
-      {/* Check grid */}
-      {showGrade && (
+      {/* Check grid — check + notes + block scenes */}
+      {showChecks && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
           {MOCK_REPORT.checks.map((check, i) => {
             const color = check.status === 'pass' ? '#22c55e' : check.status === 'warn' ? '#f59e0b' : '#ef4444'
@@ -123,6 +176,21 @@ function Stage({ scene }) {
             )
           })}
         </div>
+      )}
+
+      {/* Payroll block banner — block scene only */}
+      {showBlock && (
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
+          style={{ backgroundColor: 'rgba(239,68,68,0.06)', border: '1.5px solid rgba(239,68,68,0.35)', borderRadius: '10px', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '12px' }}
+        >
+          <div style={{ width: '36px', height: '36px', borderRadius: '9px', backgroundColor: 'rgba(239,68,68,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <AlertTriangle size={18} style={{ color: '#ef4444' }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#ef4444', marginBottom: '2px' }}>Efficiency bonus held</div>
+            <div style={{ fontSize: '10px', color: T.textSecondary }}>Score below 80 threshold. PM review required before payroll closes.</div>
+          </div>
+        </motion.div>
       )}
     </div>
   )

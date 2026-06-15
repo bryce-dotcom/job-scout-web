@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'list',      baseDur: 4500, narration: 'Eight employees on the roster. Lead techs, setters, sales, admin.' },
-      { id: 'detail',    baseDur: 6500, narration: 'Open one. Role, hourly rate, commission, calendar color, hire date, allotted hours, certs.' },
-      { id: 'pay',       baseDur: 6500, narration: 'Per-employee pay rates. Cole at thirty-eight an hour, Marcus at thirty-two. Drives the payroll engine.' },
-      { id: 'certs',     baseDur: 6500, narration: "Certifications and expirations. Cole's electrical license expires in ninety days. Renewal task fires automatically." },
-      { id: 'invite',    baseDur: 5500, narration: 'New hire? Send Onboarding Link. Magic SMS lands on their phone. Two clicks and they\'re in the system.' },
+      { id: 'roster',  baseDur: 4500, narration: 'Eight employees on the roster. Lead techs, setters, sales, admin.' },
+      { id: 'detail',  baseDur: 6500, narration: 'Open one. Role, hourly rate, commission, calendar color, hire date, allotted hours, certs.' },
+      { id: 'rates',   baseDur: 6500, narration: 'Per-employee pay rates. Cole at thirty-eight an hour, Marcus at thirty-two. Drives the payroll engine.' },
+      { id: 'certs',   baseDur: 6500, narration: "Certifications and expirations. Cole's electrical license expires in ninety days. Renewal task fires automatically." },
+      { id: 'invite',  baseDur: 5500, narration: 'New hire? Send Onboarding Link. Magic SMS lands on their phone. Two clicks and they\'re in the system.' },
     ],
   },
 

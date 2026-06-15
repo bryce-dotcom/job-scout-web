@@ -23,10 +23,10 @@ export default {
     voice: 'Bill',
     scenes: [
       { id: 'upload',   baseDur: 4500, narration: 'Job is done. Tech opens Victor and uploads the photos.' },
-      { id: 'analyze',  baseDur: 6500, narration: 'Victor reads every shot. Counts fixtures. Pairs before with after. Spots gaps a tired PM would miss.' },
-      { id: 'grade',    baseDur: 6500, narration: 'Score: ninety-four out of one hundred. Grade A. Eight of eight bays photographed. Wiring tight, labels straight.' },
-      { id: 'flag',     baseDur: 6500, narration: 'Two missing shots — Bay six end-of-row, no after photo. Tech goes back and grabs them before he leaves the site.' },
-      { id: 'report',   baseDur: 5500, narration: 'Final report attaches to the job. Customer sees the grade. Insurance, rebate paperwork, future disputes — covered.' },
+      { id: 'grade',    baseDur: 6500, narration: 'Victor reads every shot. Counts fixtures. Pairs before with after. Score: eighty-two. Grade B.' },
+      { id: 'check',    baseDur: 6500, narration: 'Six checks: Before, After, Completed Work, Cleanliness, Work Quality, General. Green, yellow, or red for each.' },
+      { id: 'notes',    baseDur: 6500, narration: 'Two missing shots — Bay six end-of-row, no after photo. Tech goes back and grabs them before he leaves the site.' },
+      { id: 'block',    baseDur: 5500, narration: 'Below threshold? Payroll holds the efficiency bonus until the PM signs off. The gate pays for itself.' },
     ],
   },
 

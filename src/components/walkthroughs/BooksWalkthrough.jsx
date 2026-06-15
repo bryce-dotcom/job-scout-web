@@ -57,6 +57,8 @@ export default function BooksWalkthrough() {
 }
 
 function Stage({ scene }) {
+  const isTransactionView = scene === 'transactions' || scene === 'edit'
+
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '11px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden' }}>
       {/* Header */}
@@ -65,24 +67,26 @@ function Stage({ scene }) {
           <BookOpen size={16} style={{ color: T.accent }} />
           <span style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>Books</span>
         </div>
-        <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', border: `1px solid ${T.border}`, borderRadius: '6px', backgroundColor: T.bgCard, fontSize: '10px', cursor: 'pointer', color: T.textSecondary }}>
+        <button style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', border: `1px solid ${T.border}`, borderRadius: '6px', backgroundColor: scene === 'export' ? T.accent : T.bgCard, fontSize: '10px', cursor: 'pointer', color: scene === 'export' ? '#fff' : T.textSecondary }}>
           <Download size={10} />Download CPA Package
         </button>
       </div>
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '3px', backgroundColor: T.bg, padding: '3px', borderRadius: '8px', width: 'fit-content' }}>
-        {['Overview', 'Transactions 2', 'Expenses', 'Tax Summary'].map((tab, i) => (
-          <button key={tab} style={{ padding: '4px 10px', fontSize: '10px', fontWeight: (scene === 'transactions' || scene === 'reconcile') ? (i === 1 ? '600' : '400') : (i === 0 ? '600' : '400'), backgroundColor: (scene === 'transactions' || scene === 'reconcile') ? (i === 1 ? T.bgCard : 'transparent') : (i === 0 ? T.bgCard : 'transparent'), color: (scene === 'transactions' || scene === 'reconcile') ? (i === 1 ? T.text : T.textMuted) : (i === 0 ? T.text : T.textMuted), border: 'none', borderRadius: '6px', cursor: 'pointer', boxShadow: 'none', position: 'relative' }}>
-            {tab === 'Transactions 2' ? <>Transactions<span style={{ marginLeft: '4px', padding: '1px 5px', borderRadius: '8px', backgroundColor: '#ef4444', color: '#fff', fontSize: '8px', fontWeight: '700' }}>2</span></> : tab}
-          </button>
-        ))}
+        {['Overview', 'Transactions 2', 'Expenses', 'Tax Summary'].map((tab, i) => {
+          const active = isTransactionView ? i === 1 : i === 0
+          return (
+            <button key={tab} style={{ padding: '4px 10px', fontSize: '10px', fontWeight: active ? '600' : '400', backgroundColor: active ? T.bgCard : 'transparent', color: active ? T.text : T.textMuted, border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+              {tab === 'Transactions 2' ? <>Transactions<span style={{ marginLeft: '4px', padding: '1px 5px', borderRadius: '8px', backgroundColor: '#ef4444', color: '#fff', fontSize: '8px', fontWeight: '700' }}>2</span></> : tab}
+            </button>
+          )
+        })}
       </div>
 
-      {/* Overview content */}
+      {/* Overview / Reconcile */}
       {(scene === 'overview' || scene === 'reconcile') && (
         <>
-          {/* Metric cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
             {[
               { icon: Wallet,       color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  label: 'Cash Available', value: '$84,200' },
@@ -101,12 +105,9 @@ function Stage({ scene }) {
               </div>
             ))}
           </div>
-
-          {/* Income to reconcile alert */}
           {scene === 'reconcile' && (
             <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-              style={{ padding: '10px 12px', backgroundColor: 'rgba(234,179,8,0.05)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: '10px' }}
-            >
+              style={{ padding: '10px 12px', backgroundColor: 'rgba(234,179,8,0.05)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                 <AlertCircle size={13} style={{ color: '#eab308' }} />
                 <span style={{ fontSize: '11px', fontWeight: '700', color: T.text }}>Income to reconcile</span>
@@ -129,8 +130,8 @@ function Stage({ scene }) {
         </>
       )}
 
-      {/* Transactions tab */}
-      {scene === 'transactions' && (
+      {/* Transactions / Edit row */}
+      {isTransactionView && (
         <div style={{ flex: 1, overflow: 'hidden', backgroundColor: T.bgCard, borderRadius: '10px', border: `1px solid ${T.border}` }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -141,29 +142,60 @@ function Stage({ scene }) {
               </tr>
             </thead>
             <tbody>
-              {MOCK_TRANSACTIONS.map((txn, i) => (
-                <motion.tr key={txn.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
-                  style={{ borderBottom: `1px solid ${T.border}`, backgroundColor: txn.confirmed ? 'transparent' : 'rgba(234,179,8,0.04)' }}
-                >
-                  <td style={{ padding: '7px 10px', fontSize: '10px', color: T.textMuted }}>{txn.date}</td>
-                  <td style={{ padding: '7px 10px', fontSize: '10px', color: T.text, maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{txn.name}</td>
-                  <td style={{ padding: '7px 10px', fontSize: '10px', fontWeight: '600', textAlign: 'right', color: txn.amount > 0 ? '#22c55e' : '#ef4444' }}>
-                    {txn.amount > 0 ? '+' : ''}{txn.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                  </td>
-                  <td style={{ padding: '7px 10px' }}>
-                    <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', backgroundColor: T.accentBg, color: T.accent, fontWeight: '500' }}>{txn.ai_category}</span>
-                  </td>
-                  <td style={{ padding: '7px 10px', fontSize: '9px', color: T.textMuted, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{txn.tax_cat || '—'}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'center' }}>
-                    {txn.confirmed
-                      ? <CheckCircle size={12} style={{ color: '#22c55e' }} />
-                      : <div style={{ width: '12px', height: '12px', borderRadius: '3px', border: `1.5px solid ${T.border}`, cursor: 'pointer' }} />}
-                  </td>
-                </motion.tr>
-              ))}
+              {MOCK_TRANSACTIONS.map((txn, i) => {
+                const isEditing = scene === 'edit' && i === 1
+                return (
+                  <motion.tr key={txn.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
+                    style={{ borderBottom: `1px solid ${T.border}`, backgroundColor: isEditing ? 'rgba(90,99,73,0.08)' : txn.confirmed ? 'transparent' : 'rgba(234,179,8,0.04)', outline: isEditing ? `2px solid ${T.accent}` : 'none', outlineOffset: '-2px' }}
+                  >
+                    <td style={{ padding: '7px 10px', fontSize: '10px', color: T.textMuted }}>{txn.date}</td>
+                    <td style={{ padding: '7px 10px', fontSize: '10px', color: T.text, maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{txn.name}</td>
+                    <td style={{ padding: '7px 10px', fontSize: '10px', fontWeight: '600', textAlign: 'right', color: txn.amount > 0 ? '#22c55e' : '#ef4444' }}>
+                      {txn.amount > 0 ? '+' : ''}{txn.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                    </td>
+                    <td style={{ padding: '7px 10px' }}>
+                      {isEditing
+                        ? <select style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', border: `1px solid ${T.accent}`, color: T.accent, backgroundColor: T.bgCard, outline: 'none' }}><option>Vehicle — Fuel</option></select>
+                        : <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', backgroundColor: T.accentBg, color: T.accent, fontWeight: '500' }}>{txn.ai_category}</span>}
+                    </td>
+                    <td style={{ padding: '7px 10px', fontSize: '9px', color: isEditing ? T.accent : T.textMuted, fontWeight: isEditing ? '600' : '400', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {isEditing ? 'Line 20 — Auto expenses' : (txn.tax_cat || '—')}
+                    </td>
+                    <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                      {txn.confirmed ? <CheckCircle size={12} style={{ color: '#22c55e' }} /> : <div style={{ width: '12px', height: '12px', borderRadius: '3px', border: `1.5px solid ${T.border}`, cursor: 'pointer' }} />}
+                    </td>
+                  </motion.tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Export panel */}
+      {scene === 'export' && (
+        <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ backgroundColor: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '11px', fontWeight: '700', color: T.text, marginBottom: '12px' }}>CPA Package — June 2026</div>
+            {[
+              { label: 'Profit & Loss Statement', file: 'PnL_Jun2026.xlsx',      size: '48 KB' },
+              { label: 'Balance Sheet',           file: 'Balance_Jun2026.xlsx',  size: '32 KB' },
+              { label: 'Trial Balance',           file: 'TrialBal_Jun2026.xlsx', size: '28 KB' },
+              { label: 'Transaction Detail',      file: 'Txn_Jun2026.xlsx',      size: '124 KB' },
+            ].map((f, i) => (
+              <motion.div key={f.label} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 10px', borderRadius: '7px', border: `1px solid ${T.border}`, marginBottom: '6px', backgroundColor: T.bg }}>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: T.text }}>{f.label}</div>
+                  <div style={{ fontSize: '9px', color: T.textMuted }}>{f.file} · {f.size}</div>
+                </div>
+                <button style={{ padding: '4px 10px', border: 'none', borderRadius: '5px', backgroundColor: T.accent, color: '#fff', fontSize: '9px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                  <Download size={9} />Download
+                </button>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
       )}
     </div>
   )
@@ -172,10 +204,10 @@ function Stage({ scene }) {
 function caption(phase, sceneKey, setupIdx, setupShowingIntro) {
   const m = {
     overview:     '1 · Books Overview — Cash Available, Money In, Money Out, Net This Month',
-    reconcile:    '2 · Income to reconcile — amber alert when deposits have no matching invoice',
-    transactions: '3 · Transactions tab — Plaid transactions with AI category suggestions + confirm checkbox',
-    confirm:      '4 · Confirm a transaction — picks up AI category + tax line for the CPA export',
-    export:       '5 · Download CPA Package — categorized transactions, payroll, tax summary in one ZIP',
+    transactions: '2 · Transactions tab — Plaid feed with AI category suggestions + confirm checkbox',
+    edit:         '3 · Edit row — pick category, map to IRS Form 1065 line, allocate to a job',
+    reconcile:    '4 · Reconcile — match deposits to invoices, clear unmatched entries',
+    export:       '5 · CPA Package — P&L, Balance Sheet, Trial Balance in one download',
   }
   if (phase === 'marketing') return m[sceneKey] || ''
   if (phase === 'setup' && setupShowingIntro) return 'How to keep Books clean'

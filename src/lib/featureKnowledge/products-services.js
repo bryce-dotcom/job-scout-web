@@ -24,9 +24,9 @@ export default {
     scenes: [
       { id: 'catalog',  baseDur: 4500, narration: 'Your full catalog. Every product, every service, with cost, price, image, vendor.' },
       { id: 'edit',     baseDur: 6500, narration: 'Edit a product. Cost two dollars eighty cents, price six bucks. Margin shows live. Adjust pricing without guessing.' },
-      { id: 'bom',      baseDur: 6500, narration: 'Build a kit. The "Bay LED Retrofit" kit bundles a fixture, drivers, brackets, and wire — one click adds the whole bundle to a quote.' },
+      { id: 'kit',      baseDur: 6500, narration: 'Build a kit. The "Bay LED Retrofit" kit bundles a fixture, drivers, brackets, and wire — one click adds the whole bundle to a quote.' },
       { id: 'override', baseDur: 6500, narration: 'Per-customer price overrides. Big accounts get the volume rate. Surfaces automatically on their quotes.' },
-      { id: 'use',      baseDur: 5500, narration: 'Quote builder pulls right from here. Type the SKU, line drops in with the right cost and price.' },
+      { id: 'quote',    baseDur: 5500, narration: 'Quote builder pulls right from here. Type the SKU, line drops in with the right cost and price.' },
     ],
   },
 

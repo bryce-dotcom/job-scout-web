@@ -25,7 +25,7 @@ export default {
     scenes: [
       { id: 'walk',     baseDur: 4500, narration: 'Walk into a 60,000 square foot warehouse. Old metal-halide highbays everywhere.' },
       { id: 'snap',     baseDur: 6500, narration: 'Snap a photo of each area. Lenard reads the fixtures — make, wattage, lamp count — automatically.' },
-      { id: 'measure',  baseDur: 6500, narration: 'AI counts the bulbs and tags every fixture type. Two hundred forty fixtures cataloged in an afternoon.' },
+      { id: 'catalog',  baseDur: 6500, narration: 'AI counts the bulbs and tags every fixture type. Two hundred forty fixtures cataloged in an afternoon.' },
       { id: 'rebate',   baseDur: 6500, narration: 'Lenard pulls the right utility program, calculates the prescriptive rebate per fixture. Customer is owed eighteen thousand back.' },
       { id: 'proposal', baseDur: 6000, narration: 'One tap generates the proposal — payback period, rebate math, signed by the customer right there.' },
     ],

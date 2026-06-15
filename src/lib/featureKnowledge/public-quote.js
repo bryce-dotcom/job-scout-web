@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'visit',     baseDur: 5500, narration: "A prospect lands on your public quote page from a Google ad or your website." },
-      { id: 'fill',      baseDur: 7000, narration: "Name, phone, address, what they need. The form is short on purpose." },
-      { id: 'submit',    baseDur: 5500, narration: "They tap Submit. A polite thank-you appears with your phone number for urgent jobs." },
+      { id: 'lead',      baseDur: 5500, narration: "A prospect lands on your public quote page from a Google ad or your website." },
+      { id: 'lead',      baseDur: 7000, narration: "Name, phone, address, what they need. The form is short on purpose." },
+      { id: 'lead',      baseDur: 5500, narration: "They tap Submit. A polite thank-you appears with your phone number for urgent jobs." },
       { id: 'lead',      baseDur: 6500, narration: "Behind the scenes, a fresh lead lands in your pipeline with every field they filled in." },
-      { id: 'route',     baseDur: 6500, narration: "Your setter sees it on the board within seconds — same flow as any other lead from there." },
+      { id: 'lead',      baseDur: 6500, narration: "Your setter sees it on the board within seconds — same flow as any other lead from there." },
     ],
   },
 

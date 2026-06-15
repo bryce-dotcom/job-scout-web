@@ -22,11 +22,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'rules',    baseDur: 4500, narration: 'Three rules. B-two-B quotes need W-nine. Lighting jobs need warranty. School-district jobs need COI.' },
-      { id: 'trigger', baseDur: 6500, narration: 'New quote for a school district. Rule fires automatically — COI attached. No reminder needed.' },
-      { id: 'package', baseDur: 6500, narration: 'A package can hold multiple docs. The "Lighting Retrofit" package — DLC spec sheet, warranty, install instructions, rebate form.' },
-      { id: 'track',   baseDur: 6500, narration: 'Each attached doc tracks signature status. Three of four signed. The fourth — chase the customer.' },
-      { id: 'vault',   baseDur: 5500, narration: 'Signed docs land in the vault. Auditable, searchable, downloadable. CPAs, regulators, lawyers all happy.' },
+      { id: 'rule',    baseDur: 4500, narration: 'Three rules. B-two-B quotes need W-nine. Lighting jobs need warranty. School-district jobs need COI.' },
+      { id: 'fire',    baseDur: 6500, narration: 'New quote for a school district. Rule fires automatically — COI attached. No reminder needed.' },
+      { id: 'rule',    baseDur: 6500, narration: 'A package can hold multiple docs. The "Lighting Retrofit" package — DLC spec sheet, warranty, install instructions, rebate form.' },
+      { id: 'fire',    baseDur: 6500, narration: 'Each attached doc tracks signature status. Three of four signed. The fourth — chase the customer.' },
+      { id: 'rule',    baseDur: 5500, narration: 'Signed docs land in the vault. Auditable, searchable, downloadable. CPAs, regulators, lawyers all happy.' },
     ],
   },
 

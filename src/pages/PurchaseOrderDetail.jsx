@@ -123,8 +123,8 @@ export default function PurchaseOrderDetail() {
     setNotes(poRow.notes || '')
     setInternalNotes(poRow.internal_notes || '')
     setPoBusinessUnit(poRow.business_unit || poRow.job?.business_unit || '')
-    // Seed ship-to: explicit override → job address → blank
-    setShipToAddress(poRow.ship_to_address || poRow.job?.job_address || '')
+    // Seed ship-to: explicit override → job address → company address
+    setShipToAddress(poRow.ship_to_address || poRow.job?.job_address || company?.address || '')
     setLoading(false)
   }
 
@@ -986,7 +986,7 @@ export default function PurchaseOrderDetail() {
                       )}
                       {isLineEditable ? (
                         <input
-                          type="number" step="0.01" value={line.quantity_ordered}
+                          type="number" step="1" value={line.quantity_ordered}
                           onChange={(e) => setLines(prev => prev.map(l => l.id === line.id ? { ...l, quantity_ordered: e.target.value } : l))}
                           onBlur={(e) => updateLineField(line.id, 'quantity_ordered', parseFloat(e.target.value) || 0)}
                           style={{ ...inlineInput(theme), textAlign: 'right' }}
@@ -1102,7 +1102,7 @@ export default function PurchaseOrderDetail() {
                   style={inlineInput(theme)}
                 />
                 <input
-                  type="number" placeholder="Qty" step="0.01" value={draft.quantity}
+                  type="number" placeholder="Qty" step="1" value={draft.quantity}
                   onChange={(e) => setDraft(d => ({ ...d, quantity: e.target.value }))}
                   style={{ ...inlineInput(theme), textAlign: 'right' }}
                 />
@@ -1386,7 +1386,7 @@ export default function PurchaseOrderDetail() {
                 <div style={{ marginBottom: 12 }}>
                   <Label theme={theme}>Quantity to add for this job</Label>
                   <input
-                    type="number" step="0.01" value={linkQty}
+                    type="number" step="1" value={linkQty}
                     onChange={(e) => setLinkQty(e.target.value)}
                     style={selectStyle(theme)}
                   />
@@ -1484,7 +1484,7 @@ export default function PurchaseOrderDetail() {
                     <span style={{ fontSize: 13, textAlign: 'right', color: theme.textSecondary }}>{ordered}</span>
                     <span style={{ fontSize: 13, textAlign: 'right', color: theme.textMuted }}>{already}</span>
                     <input
-                      type="number" step="0.01" min="0" max={remaining}
+                      type="number" step="1" min="0" max={remaining}
                       value={item?.receivedQty ?? 0}
                       onChange={(e) => setReceiveItems(prev => prev.map(i =>
                         i.poLineId === line.id ? { ...i, receivedQty: e.target.value } : i

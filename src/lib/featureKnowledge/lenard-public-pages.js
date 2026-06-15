@@ -23,11 +23,11 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'landing', baseDur: 4500, narration: 'Prospect lands from your ad. Custom URL, your utility branding.' },
-      { id: 'upload',  baseDur: 6500, narration: 'They snap a photo of their existing fixtures. No login, no friction.' },
-      { id: 'analyze', baseDur: 6500, narration: 'Lenard identifies fixtures and runs the rebate math live — same engine that powers your full audits.' },
-      { id: 'quote',   baseDur: 6500, narration: 'Within seconds: estimated rebate, payback, savings per year. Prospect taps Get My Free Quote.' },
-      { id: 'lead',    baseDur: 5500, narration: 'A fresh lead lands in your pipeline with the photo, the fixture estimate, and contact info. Setter calls within the hour.' },
+      { id: 'upload',   baseDur: 4500, narration: 'Prospect lands from your ad. Custom URL, your utility branding.' },
+      { id: 'upload',   baseDur: 6500, narration: 'They snap a photo of their existing fixtures. No login, no friction.' },
+      { id: 'photo',    baseDur: 6500, narration: 'Lenard identifies fixtures and runs the rebate math live — same engine that powers your full audits.' },
+      { id: 'estimate', baseDur: 6500, narration: 'Within seconds: estimated rebate, payback, savings per year. Prospect taps Get My Free Quote.' },
+      { id: 'lead',     baseDur: 5500, narration: 'A fresh lead lands in your pipeline with the photo, the fixture estimate, and contact info. Setter calls within the hour.' },
     ],
   },
 

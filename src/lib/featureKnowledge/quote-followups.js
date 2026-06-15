@@ -26,9 +26,9 @@ export default {
     voice: 'Bill',
     scenes: [
       { id: 'sent',   baseDur: 5000, narration: "Estimate sent on June fifth. No response. Job Scout's nightly cron watches for exactly this — a Sent estimate with no signature after three days." },
-      { id: 'nudge1', baseDur: 6500, narration: 'Day three — the first follow-up fires. Subject: "Just checking in — Estimate EST-041". A friendly note with a View and Approve button pointing straight to the portal link.' },
-      { id: 'nudge2', baseDur: 6500, narration: 'Day seven — a second nudge. Different subject, more urgency. "Following up on your estimate. Our team is ready to get started as soon as you give the green light."' },
-      { id: 'nudge3', baseDur: 6000, narration: 'Day fourteen — the final touch. "Last chance to lock in your pricing." After this one, the sequence stops chasing regardless of response.' },
+      { id: 'sent',   baseDur: 6500, narration: 'Day three — the first follow-up fires. Subject: "Just checking in — Estimate EST-041". A friendly note with a View and Approve button pointing straight to the portal link.' },
+      { id: 'sent',   baseDur: 6500, narration: 'Day seven — a second nudge. Different subject, more urgency. "Following up on your estimate. Our team is ready to get started as soon as you give the green light."' },
+      { id: 'sent',   baseDur: 6000, narration: 'Day fourteen — the final touch. "Last chance to lock in your pricing." After this one, the sequence stops chasing regardless of response.' },
       { id: 'signed', baseDur: 6500, narration: "Customer clicks the Day 7 portal link and signs. EST-041 flips to Approved, the Day 14 nudge is cancelled automatically, and a Job record is created." },
     ],
   },

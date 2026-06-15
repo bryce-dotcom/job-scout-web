@@ -79,6 +79,21 @@ function stopAll() {
   }
 }
 
+// Call this synchronously inside a user-gesture handler (e.g. VoiceToggle
+// tap) to unlock iOS autoplay. audio.play() called here is still on the
+// synchronous gesture stack — React's useEffect chain is not.
+export function playAudioNow(audio) {
+  if (!audio) return
+  stopAll()
+  try {
+    audio.currentTime = 0
+    activeAudio = audio
+    audio.play().catch(() => {})
+  } catch (e) {
+    console.warn('[useNarration] playAudioNow failed:', e?.message)
+  }
+}
+
 function speakViaSpeechSynthesis(text, voices) {
   try {
     window.speechSynthesis.cancel()
@@ -111,6 +126,8 @@ export function useNarration({ walkthroughId, scene, script, enabled = true, pre
       // no new Audio(), no decode wait — play() is near-instant.
       if (preloadedAudio && preloadedAudio[scene]) {
         const audio = preloadedAudio[scene]
+        // Already playing via playAudioNow (iOS gesture unlock) — don't restart.
+        if (activeAudio === audio && !audio.paused) return true
         stopAll()
         try {
           audio.currentTime = 0
