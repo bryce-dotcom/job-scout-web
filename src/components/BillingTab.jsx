@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { PLANS } from '../lib/billingPlans'
+import ComputeUsagePanel from './ComputeUsagePanel'
 import { CheckCircle, AlertTriangle, CreditCard } from 'lucide-react'
 
 // Settings → Subscription panel.
@@ -210,6 +211,10 @@ export default function BillingTab({ theme, companyId }) {
       <div id="subscription" style={{ marginTop: 28 }}>
         <ProspectingPlanSection theme={theme} companyId={companyId} />
       </div>
+
+      {/* AI compute usage meter (Phase 1 — read-only, shadow data). Self-contained
+          and failure-safe: renders nothing if the ledger isn't available. */}
+      <ComputeUsagePanel theme={theme} companyId={companyId} />
     </div>
   )
 }
