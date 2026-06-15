@@ -62,7 +62,7 @@ export async function aggregateNeedsOrder(companyId) {
   const productIds = [...new Set(activeLines.map(l => l.item_id))]
   const { data: products } = await supabase
     .from('products_services')
-    .select('id, item_id, name, cost, vendor_sku, default_vendor_id, vendor:vendors(id, name)')
+    .select('id, item_id, name, cost, vendor_sku, default_vendor_id, vendor:vendors(id, name, is_internal)')
     .in('id', productIds)
   const productMap = new Map((products || []).map(p => [p.id, p]))
 
@@ -89,6 +89,7 @@ export async function aggregateNeedsOrder(companyId) {
           vendor_sku: product.vendor_sku,
           default_vendor_id: product.default_vendor_id,
           vendor: product.vendor || null,
+          isInternal: product.vendor?.is_internal || false,
         } : {
           id: l.item_id, name: l.item_name || l.description || `Item ${l.item_id}`,
           cost: 0, vendor_sku: null, default_vendor_id: null, vendor: null,
@@ -117,11 +118,18 @@ export async function aggregateNeedsOrder(companyId) {
     slot.toOrder = Math.max(0, slot.totalNeed - slot.totalAvailable)
   }
 
-  // 6) Group by vendor
+  // 6) Group by vendor — internal-vendor products go into a dedicated 'internal' group
   const byVendor = new Map()
   for (const slot of byProduct.values()) {
-    const key = slot.product.default_vendor_id ? String(slot.product.default_vendor_id) : 'no-vendor'
-    if (!byVendor.has(key)) byVendor.set(key, { vendor: slot.product.vendor || null, items: [] })
+    let key
+    if (slot.product.isInternal) {
+      key = 'internal'
+    } else {
+      key = slot.product.default_vendor_id ? String(slot.product.default_vendor_id) : 'no-vendor'
+    }
+    if (!byVendor.has(key)) {
+      byVendor.set(key, { vendor: slot.product.vendor || null, items: [], isInternal: key === 'internal' })
+    }
     byVendor.get(key).items.push(slot)
   }
 
@@ -131,6 +139,8 @@ export async function aggregateNeedsOrder(companyId) {
     groups.push({ ...group, key })
   }
   groups.sort((a, b) => {
+    if (a.key === 'internal') return 1
+    if (b.key === 'internal') return -1
     if (a.key === 'no-vendor') return 1
     if (b.key === 'no-vendor') return -1
     return (a.vendor?.name || '').localeCompare(b.vendor?.name || '')

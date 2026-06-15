@@ -25,6 +25,7 @@ const emptyVendor = {
   default_tax_rate: '',
   notes: '',
   active: true,
+  is_internal: false,
 }
 
 export default function Vendors() {
@@ -79,6 +80,7 @@ export default function Vendors() {
       default_tax_rate: v.default_tax_rate ?? '',
       notes: v.notes || '',
       active: v.active !== false,
+      is_internal: v.is_internal || false,
     })
     setShowModal(true)
   }
@@ -101,6 +103,7 @@ export default function Vendors() {
       default_tax_rate: formData.default_tax_rate === '' ? null : parseFloat(formData.default_tax_rate) || 0,
       notes: formData.notes || null,
       active: formData.active !== false,
+      is_internal: formData.is_internal || false,
       updated_at: new Date().toISOString(),
     }
     const op = editingVendor
@@ -229,6 +232,13 @@ export default function Vendors() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 600, color: theme.text }}>
                   {v.name}
+                  {v.is_internal && (
+                    <span style={{
+                      marginLeft: 8, fontSize: 11, padding: '2px 8px',
+                      borderRadius: 10, backgroundColor: 'rgba(124,58,237,0.12)',
+                      color: '#7c3aed', fontWeight: 600,
+                    }}>In-house</span>
+                  )}
                   {v.active === false && (
                     <span style={{
                       marginLeft: 8, fontSize: 11, padding: '2px 8px',
@@ -333,6 +343,17 @@ export default function Vendors() {
                   onChange={(e) => setFormData(p => ({ ...p, active: e.target.checked }))}
                 />
                 Active (uncheck to hide from PO dropdowns without deleting)
+              </label>
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                fontSize: 13, color: theme.textSecondary, cursor: 'pointer',
+              }}>
+                <input
+                  type="checkbox"
+                  checked={formData.is_internal || false}
+                  onChange={(e) => setFormData(p => ({ ...p, is_internal: e.target.checked }))}
+                />
+                In-house / Internal — products assigned here won't generate external POs
               </label>
             </div>
 

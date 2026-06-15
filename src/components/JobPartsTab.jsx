@@ -144,25 +144,32 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
         setWorking(false); return
       }
 
-      const { data: vendors } = await supabase
-        .from('vendors').select('id, name').eq('company_id', companyId).eq('active', true).order('name')
+      const [{ data: vendors }, { data: internalVendors }] = await Promise.all([
+        supabase.from('vendors').select('id, name').eq('company_id', companyId).eq('active', true).order('name'),
+        supabase.from('vendors').select('id').eq('company_id', companyId).eq('is_internal', true),
+      ])
       if (!vendors || vendors.length === 0) {
         toast.error('No active vendors yet — create one in /vendors first.')
         setWorking(false); return
       }
       const placeholderVendorId = vendors[0].id
+      const internalVendorIds = new Set((internalVendors || []).map(v => v.id))
 
       // Expand ALL missing lines into their per-component order items first,
-      // then group by each component's own vendor. This ensures bundle
-      // components that ship from a different vendor (e.g. an extended
-      // warranty direct from the manufacturer) land on the correct PO
-      // rather than being silently bundled with the parent product's vendor.
+      // then group by each component's own vendor. Skip components whose vendor
+      // is marked in-house — those are handled internally, no external PO needed.
       const allItems = []
       for (const { line, toOrder } of missing) {
         const orderItems = await expandProductForPO(line.item_id, toOrder, companyId)
         for (const oi of orderItems) {
+          if (oi.vendorId && internalVendorIds.has(oi.vendorId)) continue
           allItems.push({ ...oi, sourceLine: line })
         }
+      }
+
+      if (allItems.length === 0) {
+        toast.info('All missing parts are handled in-house — no external PO needed.')
+        setWorking(false); return
       }
 
       // Group by effective vendor — fall back to placeholder for unassigned items

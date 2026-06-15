@@ -9,7 +9,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { toast } from '../lib/toast'
-import { ShoppingCart, Building2, ChevronDown, ChevronRight, RefreshCw, Briefcase, AlertCircle } from 'lucide-react'
+import { ShoppingCart, Building2, ChevronDown, ChevronRight, RefreshCw, Briefcase, AlertCircle, Home } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import PageHeader from '../components/PageHeader'
 import { aggregateNeedsOrder } from '../lib/partsAggregator'
@@ -108,13 +108,14 @@ export default function Procurement() {
     return item.product.default_vendor_id || null
   }
 
-  // Selection summary for the action bar
+  // Selection summary for the action bar — internal groups excluded from PO count
   const summary = (() => {
     let selectedItems = 0
     let totalCost = 0
     const vendorsHit = new Set()
     const missingVendor = []
     for (const g of data.groups) {
+      if (g.isInternal) continue  // in-house items don't generate external POs
       for (const item of g.items) {
         if (!selected[item.product.id] || item.toOrder <= 0) continue
         selectedItems++
@@ -142,8 +143,10 @@ export default function Procurement() {
       // then group by each component's own vendor. Bundle components that
       // ship from a different vendor (e.g. extended warranty from the
       // manufacturer) will land on a separate PO automatically.
+      // Internal-vendor groups are skipped — they don't generate external POs.
       const allOrderItems = []
       for (const g of data.groups) {
+        if (g.isInternal) continue
         for (const item of g.items) {
           if (!selected[item.product.id] || item.toOrder <= 0) continue
           const resolvedVendorId = resolveVendor(item)
@@ -328,12 +331,13 @@ export default function Procurement() {
           {data.groups.map(group => {
             const expanded = expandedGroups.has(group.key)
             const isNoVendor = group.key === 'no-vendor'
+            const isInternal = group.isInternal
             const groupTotal = group.items.reduce((s, i) => s + i.toOrder * i.product.cost, 0)
-            const allSelected = group.items.filter(i => i.toOrder > 0).every(i => selected[i.product.id])
+            const allSelected = !isInternal && group.items.filter(i => i.toOrder > 0).every(i => selected[i.product.id])
             return (
               <div key={group.key} style={{
                 backgroundColor: theme.bgCard,
-                border: `1px solid ${isNoVendor ? '#ea580c' : theme.border}`,
+                border: `1px solid ${isNoVendor ? '#ea580c' : isInternal ? '#7c3aed' : theme.border}`,
                 borderRadius: 12, overflow: 'hidden',
               }}>
                 <button
@@ -346,9 +350,12 @@ export default function Procurement() {
                   }}
                 >
                   {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  <Building2 size={16} style={{ color: isNoVendor ? '#ea580c' : theme.accent }} />
+                  {isInternal
+                    ? <Home size={16} style={{ color: '#7c3aed' }} />
+                    : <Building2 size={16} style={{ color: isNoVendor ? '#ea580c' : theme.accent }} />
+                  }
                   <span style={{ fontSize: 15, fontWeight: 700, color: theme.text }}>
-                    {isNoVendor ? 'No-vendor parts' : group.vendor?.name || 'Unknown vendor'}
+                    {isInternal ? 'In-house / Internal' : isNoVendor ? 'No-vendor parts' : group.vendor?.name || 'Unknown vendor'}
                   </span>
                   {isNoVendor && (
                     <span style={{
@@ -358,25 +365,45 @@ export default function Procurement() {
                       PICK A VENDOR
                     </span>
                   )}
+                  {isInternal && (
+                    <span style={{
+                      padding: '2px 8px', borderRadius: 8, fontSize: 10, fontWeight: 700,
+                      backgroundColor: 'rgba(124,58,237,0.12)', color: '#7c3aed',
+                    }}>
+                      NO PO NEEDED
+                    </span>
+                  )}
                   <span style={{ fontSize: 12, color: theme.textMuted, marginLeft: 'auto' }}>
-                    {group.items.length} item{group.items.length === 1 ? '' : 's'} · {formatCurrency(groupTotal)}
+                    {group.items.length} item{group.items.length === 1 ? '' : 's'}{!isInternal && ` · ${formatCurrency(groupTotal)}`}
                   </span>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); toggleAllInGroup(group) }}
-                    style={{
-                      padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
-                      backgroundColor: 'transparent', border: `1px solid ${theme.border}`,
-                      color: theme.textSecondary, cursor: 'pointer',
-                    }}
-                  >
-                    {allSelected ? 'Deselect all' : 'Select all'}
-                  </button>
+                  {!isInternal && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleAllInGroup(group) }}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                        backgroundColor: 'transparent', border: `1px solid ${theme.border}`,
+                        color: theme.textSecondary, cursor: 'pointer',
+                      }}
+                    >
+                      {allSelected ? 'Deselect all' : 'Select all'}
+                    </button>
+                  )}
                 </button>
 
                 {expanded && (
                   <div style={{ padding: '0 18px 14px' }}>
+                    {isInternal && (
+                      <div style={{
+                        padding: '8px 12px', marginTop: 10, borderRadius: 8,
+                        backgroundColor: 'rgba(124,58,237,0.06)',
+                        border: '1px solid rgba(124,58,237,0.15)',
+                        fontSize: 12, color: '#7c3aed',
+                      }}>
+                        These items are handled in-house — no purchase order will be created for them.
+                      </div>
+                    )}
                     {group.items.map(item => {
-                      const isSel = !!selected[item.product.id]
+                      const isSel = !isInternal && !!selected[item.product.id]
                       const cost = item.toOrder * item.product.cost
                       const inStock = item.toOrder === 0
                       return (
@@ -385,13 +412,16 @@ export default function Procurement() {
                           display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 12,
                           alignItems: 'start', opacity: inStock ? 0.55 : 1,
                         }}>
-                          <input
-                            type="checkbox"
-                            checked={isSel}
-                            disabled={inStock}
-                            onChange={() => toggleProduct(item.product.id)}
-                            style={{ marginTop: 4, cursor: inStock ? 'not-allowed' : 'pointer' }}
-                          />
+                          {isInternal
+                            ? <div style={{ width: 16 }} />
+                            : <input
+                                type="checkbox"
+                                checked={isSel}
+                                disabled={inStock}
+                                onChange={() => toggleProduct(item.product.id)}
+                                style={{ marginTop: 4, cursor: inStock ? 'not-allowed' : 'pointer' }}
+                              />
+                          }
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
                               {item.product.name}
