@@ -405,6 +405,7 @@ serve(async (req) => {
               file_path: filePath,
               file_type: 'image/jpeg',
               storage_bucket: 'audit-photos',
+              photo_context: 'line_before',
             });
           } catch (_) { /* best-effort */ }
         }

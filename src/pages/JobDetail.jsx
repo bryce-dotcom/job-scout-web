@@ -275,7 +275,8 @@ function JobDetailInner() {
   // Photo state
   const [linePhotos, setLinePhotos] = useState({}) // { [lineId]: attachment[] }
   const [notesPhotos, setNotesPhotos] = useState([]) // attachment[]
-  const [auditPhotos, setAuditPhotos] = useState([]) // { url, name }[]
+  const [jobBeforePhotos, setJobBeforePhotos] = useState([]) // attachment[] — line_before with no job_line_id (Lenard audit photos)
+  const [auditPhotos, setAuditPhotos] = useState([]) // { url, name }[] — fallback for older audits without file_attachments
   const [expandedLineId, setExpandedLineId] = useState(null)
   const [viewingPhoto, setViewingPhoto] = useState(null) // { url, name }
   const photoInputRef = useRef(null)
@@ -546,34 +547,41 @@ function JobDetailInner() {
         .order('clock_in', { ascending: false })
       setJobTimeEntries(timeData || [])
 
-      // Fetch file attachments linked to this job (by job_id or by lead_id)
-      const jobIdFilter = supabase.from('file_attachments').select('*').eq('job_id', id).order('created_at', { ascending: false })
-      const { data: byJob } = await jobIdFilter
-      let allAttachments = byJob || []
-      if (!allAttachments.length && jobData.lead_id) {
-        const { data: byLead } = await supabase.from('file_attachments').select('*').eq('lead_id', jobData.lead_id).order('created_at', { ascending: false })
-        allAttachments = byLead || []
-      }
+      // Fetch file attachments linked to this job — always merge by job_id AND lead_id
+      // so Lenard audit photos (which only have lead_id at creation time) are never missed.
+      const [{ data: byJob }, { data: byLead }] = await Promise.all([
+        supabase.from('file_attachments').select('*').eq('job_id', id).order('created_at', { ascending: false }),
+        jobData.lead_id
+          ? supabase.from('file_attachments').select('*').eq('lead_id', jobData.lead_id).order('created_at', { ascending: false })
+          : Promise.resolve({ data: [] }),
+      ])
+      // Deduplicate by file_path — job_id query takes priority over lead_id query
+      const seenPaths = new Set((byJob || []).map(a => a.file_path))
+      const merged = [...(byJob || []), ...(byLead || []).filter(a => !seenPaths.has(a.file_path))]
 
-      // Separate photo attachments from document attachments
-      const isPhoto = (att) => att.photo_context && att.file_type?.startsWith('image/')
-      const docAttachments = allAttachments.filter(a => !isPhoto(a))
-      const photoAttachments = allAttachments.filter(a => isPhoto(a))
+      // Any image is a photo; photo_context is used for categorisation only (not as a gate)
+      const isPhoto = (att) => att.file_type?.startsWith('image/')
+      const docAttachments = merged.filter(a => !isPhoto(a))
+      const photoAttachments = merged.filter(a => isPhoto(a))
       setAttachments(docAttachments)
 
-      // Group line photos by job_line_id
+      // Group line photos by job_line_id; unmatched line_before photos (Lenard audit) go into jobBeforePhotos
       const grouped = {}
       const notePhotos = []
+      const beforeOrphans = []
       for (const p of photoAttachments) {
         if (p.photo_context === 'notes') {
           notePhotos.push(p)
         } else if (p.job_line_id) {
           if (!grouped[p.job_line_id]) grouped[p.job_line_id] = []
           grouped[p.job_line_id].push(p)
+        } else if (p.photo_context === 'line_before') {
+          beforeOrphans.push(p)
         }
       }
       setLinePhotos(grouped)
       setNotesPhotos(notePhotos)
+      setJobBeforePhotos(beforeOrphans)
 
       // Fetch audit photos if job has lead_id
       if (jobData.lead_id) {
@@ -6139,8 +6147,8 @@ function JobDetailInner() {
             )}
           </div>
 
-          {/* Audit Photos */}
-          {auditPhotos.length > 0 && (
+          {/* Before Photos from Lenard audit — prefer file_attachments records (have delete), fall back to storage listing for older audits */}
+          {(jobBeforePhotos.length > 0 || auditPhotos.length > 0) && (
             <div style={{
               backgroundColor: theme.bgCard,
               borderRadius: '12px',
@@ -6149,18 +6157,25 @@ function JobDetailInner() {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                 <Zap size={16} color={theme.textMuted} />
-                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>Audit Photos ({auditPhotos.length})</h3>
+                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>
+                  Before Photos — Lenard Audit ({jobBeforePhotos.length > 0 ? jobBeforePhotos.length : auditPhotos.length})
+                </h3>
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {auditPhotos.map((photo, idx) => (
-                  <img
-                    key={idx}
-                    src={photo.url}
-                    alt={photo.name}
-                    onClick={() => setViewingPhoto({ url: photo.url, name: photo.name })}
-                    style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px', cursor: 'pointer', border: `1px solid ${theme.border}` }}
-                  />
-                ))}
+                {jobBeforePhotos.length > 0
+                  ? jobBeforePhotos.map(att => (
+                      <PhotoThumbnail key={att.id} att={att} theme={theme} onView={setViewingPhoto} onDelete={handleDeletePhoto} />
+                    ))
+                  : auditPhotos.map((photo, idx) => (
+                      <img
+                        key={idx}
+                        src={photo.url}
+                        alt={photo.name}
+                        onClick={() => setViewingPhoto({ url: photo.url, name: photo.name })}
+                        style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px', cursor: 'pointer', border: `1px solid ${theme.border}` }}
+                      />
+                    ))
+                }
               </div>
             </div>
           )}
@@ -6722,7 +6737,7 @@ function JobDetailInner() {
               )}
 
               {/* No assets at all */}
-              {attachments.length === 0 && lineItems.length === 0 && verificationReports.length === 0 && notesPhotos.length === 0 && auditPhotos.length === 0 ? (
+              {attachments.length === 0 && lineItems.length === 0 && verificationReports.length === 0 && notesPhotos.length === 0 && auditPhotos.length === 0 && jobBeforePhotos.length === 0 ? (
                 <div style={{ padding: '32px 16px', textAlign: 'center', color: theme.textMuted }}>
                   <Info size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
                   <p style={{ fontSize: '14px', margin: 0 }}>No assets available for this job yet. Upload documents, add photos, or run Victor verifications first.</p>
