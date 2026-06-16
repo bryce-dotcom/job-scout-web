@@ -1804,9 +1804,19 @@ export default function CustomerDetail() {
                             {inv.payment_status || 'Pending'}
                           </span>
                         </div>
-                        <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
-                          {inv.job_description || ''}
-                        </div>
+                        {/* Job title under the invoice number so a customer
+                            with multiple jobs (Alayda: DJ Glass has two) can
+                            tell their invoices apart at a glance. Falls back
+                            to the job number, then the freeform description. */}
+                        {(() => {
+                          const lj = jobs.find(j => j.id === inv.job_id)
+                          const label = lj?.job_title || lj?.job_id || inv.job_description || ''
+                          return label ? (
+                            <div style={{ fontSize: '13px', color: theme.text, fontWeight: '500', marginTop: '4px' }}>
+                              {label}
+                            </div>
+                          ) : null
+                        })()}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '12px', color: theme.textMuted }}>
                           <span style={{ fontWeight: '600', fontSize: '14px', color: theme.text }}>
                             ${parseFloat(inv.amount || 0).toFixed(2)}
