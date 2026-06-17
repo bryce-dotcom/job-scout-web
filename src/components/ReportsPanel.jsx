@@ -24,7 +24,7 @@ const defaultTheme = {
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const ytdStart = () => `${new Date().getFullYear()}-01-01`
 
-export default function ReportsPanel({ theme = defaultTheme, isMobile = false, introHidden = false, hiddenReportIds = [] }) {
+export default function ReportsPanel({ theme = defaultTheme, isMobile = false, introHidden = false }) {
   const companyId = useStore(s => s.companyId)
   const invoices = useStore(s => s.invoices) || []
   const payments = useStore(s => s.payments) || []
@@ -181,7 +181,7 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
           <div style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
             Reports
           </div>
-          {STANDARD_REPORTS.filter(r => !hiddenReportIds.includes(r.id)).map(r => {
+          {STANDARD_REPORTS.map(r => {
             const Icon = ICONS[r.icon] || FileText
             const active = r.id === activeId
             return (
