@@ -60,7 +60,11 @@ export default function FrankieReports() {
         </p>
       </div>
 
-      <ReportsPanel theme={theme} isMobile={isMobile} introHidden />
+      {/* Bank Reconciliation is a bookkeeping artifact (line-item deposit
+          matching), so it lives in Books → Reports, not on the CFO's tab.
+          Frankie still surfaces the reconciliation *insight* — recorded
+          revenue vs bank cash-in and the unmatched gap — in chat. */}
+      <ReportsPanel theme={theme} isMobile={isMobile} introHidden hiddenReportIds={['bank-reconciliation']} />
     </div>
   )
 }
