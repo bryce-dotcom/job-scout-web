@@ -2064,23 +2064,45 @@ function EstimateDetailInner() {
         console.warn('[EstimateDetail] proposal snapshot failed:', snapErr)
       }
 
-      // Create portal token (new token every send so we can revoke old ones later)
-      const { data: portalToken, error: tokenErr } = await supabase
-        .from('customer_portal_tokens')
-        .insert({
-          document_type: 'estimate',
-          document_id: estimate.id,
-          company_id: companyId,
-          customer_id: estimate.customer_id || null,
-          expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days
-        })
-        .select('token')
-        .single()
-      if (tokenErr) throw new Error('Portal token creation failed: ' + tokenErr.message)
+      // Portal link: REFRESH the estimate's existing token rather than
+      // minting a brand-new one each send. Doug: "Can not resend proposal
+      // once expired — the link stays expired." The old behavior created a
+      // fresh token every send and orphaned the previous one, so the link
+      // the customer already had (in the original email) stayed dead even
+      // after a resend. Now resending an expired proposal extends the SAME
+      // token +30 days and un-revokes it, so the existing link works again.
+      // Only mint a new token when the estimate has none yet.
+      const newExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      let portalTokenValue = estimate.portal_token || null
+      if (portalTokenValue) {
+        const { data: refreshed, error: refreshErr } = await supabase
+          .from('customer_portal_tokens')
+          .update({ expires_at: newExpiry, is_revoked: false })
+          .eq('token', portalTokenValue)
+          .select('token')
+        // RLS can drop a non-matching row silently (0 rows, no error) — if
+        // nothing was refreshed, fall through and create a fresh token.
+        if (refreshErr || !refreshed || refreshed.length === 0) portalTokenValue = null
+      }
+      if (!portalTokenValue) {
+        const { data: portalToken, error: tokenErr } = await supabase
+          .from('customer_portal_tokens')
+          .insert({
+            document_type: 'estimate',
+            document_id: estimate.id,
+            company_id: companyId,
+            customer_id: estimate.customer_id || null,
+            expires_at: newExpiry,
+          })
+          .select('token')
+          .single()
+        if (tokenErr) throw new Error('Portal token creation failed: ' + tokenErr.message)
+        portalTokenValue = portalToken.token
+      }
 
       const siteUrl = 'https://jobscout.appsannex.com'
-      const portalUrl = portalToken?.token
-        ? `${siteUrl}/portal/${portalToken.token}`
+      const portalUrl = portalTokenValue
+        ? `${siteUrl}/portal/${portalTokenValue}`
         : null
 
       // Resolve customer display — business_name first, then individual name
@@ -2163,7 +2185,7 @@ function EstimateDetailInner() {
         last_sent_at: new Date().toISOString(),
         sent_to_email: sendEmail,
         sent_date: estimate.sent_date || new Date().toISOString(),
-        portal_token: portalToken?.token || null,
+        portal_token: portalTokenValue || null,
         email_id: sendData?.emailId || null,
         email_status: 'sent',
         email_status_at: new Date().toISOString(),
