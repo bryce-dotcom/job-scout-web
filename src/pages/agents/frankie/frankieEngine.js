@@ -3,7 +3,7 @@ import { useStore } from '../../../lib/store'
 import {
   invoiceBalance, invoiceCustomerTotal, invoiceDaysOverdue, invoiceStatus,
   isInvoiceOpen, paymentDate, jobIsComplete, jobContractValue,
-  jobCostFromLines, expenseCategoryName, unifiedExpenses,
+  jobCostFromLines, expenseCategoryName, unifiedExpenses, cashReconciliation,
 } from './frankieFields'
 
 function buildSystemPrompt(user, company, role) {
@@ -75,7 +75,8 @@ function assembleFinancialContext() {
   // frankieFields.unifiedExpenses — without this Frankie tells the AI
   // "you have $0 in expenses" for any tenant whose spend is auto-imported
   // from a bank (i.e., most of them).
-  const expenses = unifiedExpenses(state.expenses || [], state.plaidTransactions || [])
+  const plaidTransactions = state.plaidTransactions || []
+  const expenses = unifiedExpenses(state.expenses || [], plaidTransactions)
   const jobs = state.jobs || []
   const customers = state.customers || []
   const employees = state.employees || []
@@ -117,6 +118,25 @@ function assembleFinancialContext() {
   context += `- Last 30 days: $${revenue30d.toFixed(2)}\n`
   context += `- Previous 30 days: $${revenuePrev30d.toFixed(2)}\n`
   context += `- Total collected (all time): $${payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0).toFixed(2)}\n\n`
+
+  // Cash reconciliation — recorded revenue (books / payments table) vs bank
+  // cash-in (Plaid deposits). Revenue stays attributed to customers/jobs;
+  // the bank is the completeness check. "Unmatched" = money that hit the
+  // bank but was never booked as a payment — the reconciliation gap. Bank
+  // deposits load from the same plaid_transactions feed as expenses, so if
+  // it looks thin the feed may still be syncing.
+  const reconAll = cashReconciliation(payments, plaidTransactions, null, now)
+  const recon30 = cashReconciliation(payments, plaidTransactions, thirtyDaysAgo, now)
+  context += `### Cash Reconciliation (bank vs books)\n`
+  context += `- Recorded revenue is the books (payments table); bank cash-in is Plaid deposits (negative-amount transactions, transfers excluded).\n`
+  context += `- Last 30 days — recorded revenue: $${recon30.recordedRevenue.toFixed(2)}, bank cash-in: $${recon30.bankCashIn.toFixed(2)}, unmatched deposits: $${recon30.unmatchedTotal.toFixed(2)} (${recon30.unmatchedCount})\n`
+  context += `- All time — recorded revenue: $${reconAll.recordedRevenue.toFixed(2)}, bank cash-in: $${reconAll.bankCashIn.toFixed(2)}, unmatched deposits: $${reconAll.unmatchedTotal.toFixed(2)} (${reconAll.unmatchedCount})\n`
+  if (reconAll.unmatchedCount > 0) {
+    context += `- ${reconAll.unmatchedCount} bank deposits totaling $${reconAll.unmatchedTotal.toFixed(2)} haven't been matched to a recorded payment. That's cash in the bank not yet booked as revenue — recommend reconciling these in Books → Money.\n`
+  } else {
+    context += `- Every bank deposit is matched to a recorded payment — books and bank agree.\n`
+  }
+  context += '\n'
 
   // Payment methods breakdown — actual column is `method`, not `payment_method`.
   const methodBreakdown = {}

@@ -3,7 +3,7 @@ import { useStore } from '../lib/store'
 import { supabase } from '../lib/supabase'
 import {
   DollarSign, Clock, Users, User, PieChart, Building, TrendingUp,
-  Briefcase, Download, ChevronRight, Calendar, FileText,
+  Briefcase, Download, ChevronRight, Calendar, FileText, Scale,
 } from 'lucide-react'
 import {
   STANDARD_REPORTS, formatReportCell, downloadReportCsv,
@@ -13,7 +13,7 @@ import {
 // and Frankie → Reports. Pure-function reports library does the actual
 // math (src/lib/reports.js) so both surfaces show identical numbers.
 
-const ICONS = { DollarSign, Clock, Users, User, PieChart, Building, TrendingUp, Briefcase }
+const ICONS = { DollarSign, Clock, Users, User, PieChart, Building, TrendingUp, Briefcase, Scale }
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -255,7 +255,7 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
               {activeReport.summary && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
                   {Object.entries(activeReport.summary).map(([k, v]) => {
-                    const isMoney = ['revenue', 'expenses', 'netIncome', 'total', 'Current', '1-30', '31-60', '61-90', '90+', 'avgMonthlyRevenue', 'avgMonthlyExpenses'].includes(k)
+                    const isMoney = ['revenue', 'expenses', 'netIncome', 'total', 'Current', '1-30', '31-60', '61-90', '90+', 'avgMonthlyRevenue', 'avgMonthlyExpenses', 'recordedRevenue', 'bankCashIn', 'unmatchedTotal', 'difference'].includes(k)
                     const label = k
                       .replace(/([A-Z])/g, ' $1')
                       .replace(/^./, c => c.toUpperCase())
