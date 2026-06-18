@@ -205,6 +205,19 @@ serve(async (req) => {
       params.append('metadata[portal_token]', token);
       params.append('metadata[payment_type]', payment_type);
 
+      // ALSO stamp the PaymentIntent itself. Stripe does NOT copy Checkout
+      // Session metadata onto the PI, and the webhook treats
+      // payment_intent.succeeded as a first-class path — so without this,
+      // any payment resolved via the PI event arrives with empty metadata
+      // and never attaches to the invoice (Tracy: "Stripe captures the card
+      // but doesn't apply it to the invoice — not every transaction").
+      // Mirroring the linkage makes EITHER event able to record the payment;
+      // the webhook dedupes on the PI id so it's still recorded only once.
+      params.append('payment_intent_data[metadata][document_id]', String(tokenRow.document_id));
+      params.append('payment_intent_data[metadata][document_type]', tokenRow.document_type);
+      params.append('payment_intent_data[metadata][company_id]', String(tokenRow.company_id));
+      params.append('payment_intent_data[metadata][payment_type]', payment_type);
+
       // Attach Stripe customer (required for ACH, also used for save-card)
       if (stripeCustomerId) {
         params.append('customer', stripeCustomerId);

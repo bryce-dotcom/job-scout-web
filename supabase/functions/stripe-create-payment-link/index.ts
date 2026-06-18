@@ -138,6 +138,15 @@ serve(async (req) => {
     linkParams.append('metadata[document_type]', 'invoice');
     linkParams.append('metadata[payment_type]', 'invoice_payment');
     linkParams.append('metadata[job_id]', String(invoice.job_id || ''));
+    // Mirror the linkage onto the PaymentIntent too — Stripe does not copy
+    // a Payment Link's metadata onto the PI, so a payment_intent.succeeded
+    // event (which the webhook handles as a first-class path) would arrive
+    // metadata-less and the payment would never attach to the invoice.
+    linkParams.append('payment_intent_data[metadata][document_id]', String(invoice.id));
+    linkParams.append('payment_intent_data[metadata][invoice_id]', String(invoice.id));
+    linkParams.append('payment_intent_data[metadata][company_id]', String(company_id));
+    linkParams.append('payment_intent_data[metadata][document_type]', 'invoice');
+    linkParams.append('payment_intent_data[metadata][payment_type]', 'invoice_payment');
     if (customer?.email) linkParams.append('customer_creation', 'always');
     // Once paid, redirect customer to a thank-you page on JobScout
     linkParams.append('after_completion[type]', 'redirect');
