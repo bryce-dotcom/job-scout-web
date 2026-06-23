@@ -313,6 +313,91 @@ export function calculateInvoiceCommissions({
 // Flat-rate helper — a flat commission is earned once per qualifying event
 function fullCommissionFlat(rate) { return rate }
 
+// ── Persisted-bonus rows for ONE job ───────────────────────────────────
+// Pure function (no I/O) that turns a job + its crew's time + the gates
+// into the rows we persist in the job_bonuses ledger. Used by both the
+// client recompute (store.recomputeJobBonuses) and the backfill script so
+// the math never diverges.
+//
+// `moneyIn` is the key state change: a bonus only becomes OWED ("accrued",
+// shows in My Pay) once the job's money has come in (a paid invoice or paid
+// utility incentive). Before that it's "pending". Bonuses are tied to when
+// the money arrives, not to payday.
+//
+// Returns [{ employee_id, amount, saved_hours, allotted_hours,
+//            actual_hours, crew_size, release_reason }] — one row per crew
+// member who earned a non-zero share on this job. The caller maps these to
+// upserts and decides accrued-vs-pending from `moneyIn`, leaving any row
+// already marked `paid` frozen.
+export function computeJobBonusRows({
+  job,
+  timeClockRows = [],
+  employees = [],
+  skillLevels = [],
+  payrollConfig = {},
+  verifiedJobIds = null,
+  dailyVerifiedJobDays = null,
+  jobPaymentStatus = null,
+  bonusOverrides = [],
+}) {
+  if (!job?.id) return []
+  // Only this job's time, normalized the same way every other surface does.
+  const allEntries = timeClockToJobHours(timeClockRows)
+  const jobEntries = allEntries.filter(e => String(e.job_id) === String(job.id))
+  if (jobEntries.length === 0) return []
+
+  const crew = [...new Set(jobEntries.map(e => e.employee_id))].filter(Boolean)
+  const rows = []
+  for (const employeeId of crew) {
+    const { details } = calculateEfficiencyBonus({
+      employeeId,
+      timeLogEntries: jobEntries,
+      jobs: [job],
+      employees,
+      skillLevels,
+      payrollConfig,
+      verifiedJobIds,
+      dailyVerifiedJobDays,
+      timeClockRows,
+      jobPaymentStatus,
+      bonusOverrides,
+    })
+    // calculateEfficiencyBonus returns one detail per job; we scoped to one.
+    const d = details[0]
+    if (!d) continue
+    // A bonus is ALWAYS recorded at its REAL earned value if saved-hours earned
+    // it — verification is a flag, not a hide switch or a wipe (Bryce
+    // 2026-06-23). Two verification mechanisms used to silently zero a bonus:
+    //   1. completion gate  → calculateEfficiencyBonus returns the real amount
+    //      as `wouldHaveEarned` (no `bonusAmount`) when it blocks.
+    //   2. daily-coverage   → on a released job it multiplies the share by
+    //      coverageRatio; with no daily Victor reports that's ×0. The removed
+    //      amount is preserved as `coveragePenalty`, so the full earned share is
+    //      `bonusAmount + coveragePenalty`.
+    // The ledger stores the FULL earned share (no penalty) and flags
+    // needs_verification unless a passing Victor *completion* check exists.
+    const released = d.bonusAmount != null && !d.weightedOut
+    const amount = released
+      ? +(d.bonusAmount || 0) + +(d.coveragePenalty || 0)
+      : +(d.wouldHaveEarned || 0)
+    if (amount <= 0) continue
+    // Only a passing completion verification clears the flag. Money-threshold
+    // / gate-off releases still want a human or Victor to confirm the work.
+    const completionVerified = d.releaseReason === 'victor_verified'
+    rows.push({
+      employee_id: employeeId,
+      amount: +amount.toFixed(2),
+      saved_hours: d.savedHours != null ? +Number(d.savedHours).toFixed(2) : null,
+      allotted_hours: d.allottedHours != null ? +Number(d.allottedHours).toFixed(2) : null,
+      actual_hours: d.actualHours != null ? +Number(d.actualHours).toFixed(2) : null,
+      crew_size: d.crewSize ?? crew.length,
+      needs_verification: !completionVerified,
+      release_reason: d.releaseReason || d.blockedReason || 'no_completion_verification',
+    })
+  }
+  return rows
+}
+
 // ── Pay period window from payroll config ──────────────────────────────
 // weekly: Mon–Sun window containing today
 // bi-weekly: 14-day windows anchored on payroll_config.pay_anchor_date
@@ -535,7 +620,7 @@ export function calculateEfficiencyBonus({
         // describe the same project). Fall back to naive sum for older
         // callers.
         const total = (+s.total) || ((+s.standardTotal || 0) + (+s.utilityTotal || 0))
-        const paid = (+s.paid !== undefined) ? (+s.paid) : ((+s.standardPaid || 0) + (+s.utilityPaid || 0))
+        const paid = (s.paid !== undefined && s.paid !== null) ? (+s.paid) : ((+s.standardPaid || 0) + (+s.utilityPaid || 0))
         if (total > 0) {
           paidPercent = (paid / total) * 100
           if (paidPercent >= paidThresholdPct) paidOverrideApplies = true

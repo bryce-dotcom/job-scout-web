@@ -22,6 +22,7 @@ import JobCostingModal from '../components/JobCostingModal'
 import { companyNotify } from '../lib/companyNotify'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
 import { computeAllottedHours } from '../lib/allottedHours'
+import { fetchJobBonuses, bonusStatusLabel } from '../lib/bonusLedger'
 import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
 
@@ -235,6 +236,7 @@ function JobDetailInner() {
   const [jobInvoices, setJobInvoices] = useState([])
   const [jobUtilityInvoices, setJobUtilityInvoices] = useState([])
   const [jobTimeEntries, setJobTimeEntries] = useState([])
+  const [jobBonuses, setJobBonuses] = useState([])
 
   // Service visits attached to this job (children) + the parent job if
   // this IS a service visit. Loaded alongside the rest of the job data.
@@ -545,6 +547,10 @@ function JobDetailInner() {
         .eq('job_id', parseInt(id))
         .order('clock_in', { ascending: false })
       setJobTimeEntries(timeData || [])
+
+      // Efficiency-bonus ledger rows for this job (one per crew member).
+      // Always visible on the job, with status + verification + paid-on date.
+      fetchJobBonuses(supabase, companyId, parseInt(id)).then(setJobBonuses)
 
       // Fetch file attachments linked to this job (by job_id or by lead_id)
       const jobIdFilter = supabase.from('file_attachments').select('*').eq('job_id', id).order('created_at', { ascending: false })
@@ -5432,6 +5438,66 @@ function JobDetailInner() {
                     +{jobTimeEntries.length - 15} more entries
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Efficiency bonuses on this job — persistent ledger. Always
+              shows per crew member with status (Upcoming/Owed/Paid), a
+              needs-verification flag, and the paid-on date. */}
+          {jobBonuses.length > 0 && (
+            <div style={{
+              backgroundColor: theme.bgCard,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              padding: '20px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Zap size={16} style={{ color: '#8b5cf6' }} />
+                  Efficiency Bonuses
+                </h3>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#8b5cf6' }}>
+                  ${jobBonuses.reduce((s, b) => s + (parseFloat(b.amount) || 0), 0).toFixed(2)}
+                </span>
+              </div>
+              {jobBonuses[0] && (
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '10px' }}>
+                  Allotted {jobBonuses[0].allotted_hours}h · Actual {Number(jobBonuses[0].actual_hours || 0).toFixed(1)}h · Saved {Number(jobBonuses[0].saved_hours || 0).toFixed(1)}h
+                  {jobBonuses[0].crew_size > 1 ? ` · split ${jobBonuses[0].crew_size} ways` : ''}
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {jobBonuses.map(b => {
+                  const st = bonusStatusLabel(b)
+                  const emp = b.employees?.name || employees.find(em => em.id === b.employee_id)?.name || `Emp ${b.employee_id}`
+                  return (
+                    <div key={b.id} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+                      padding: '9px 11px', backgroundColor: theme.bg, borderRadius: '6px'
+                    }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 500, color: theme.text }}>{emp}</div>
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '3px', flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span style={{ fontSize: '10px', fontWeight: 700, color: st.color, backgroundColor: `${st.color}1f`, padding: '2px 7px', borderRadius: '999px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>{st.label}</span>
+                          {b.needs_verification && b.status !== 'paid' && (
+                            <span style={{ fontSize: '10px', fontWeight: 700, color: '#b45309', backgroundColor: 'rgba(245,158,11,0.15)', padding: '2px 7px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                              <AlertCircle size={10} /> Needs verification
+                            </span>
+                          )}
+                          {b.status === 'paid' && b.paid_at && (
+                            <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 600 }}>
+                              Paid {new Date(b.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: '14px', fontWeight: 700, color: st.color, whiteSpace: 'nowrap' }}>
+                        ${(parseFloat(b.amount) || 0).toFixed(2)}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}

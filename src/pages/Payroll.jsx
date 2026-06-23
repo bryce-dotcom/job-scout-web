@@ -9,7 +9,7 @@ import {
   DollarSign, Calendar, Clock, Users, Settings, Play, Check, X,
   ChevronRight, ChevronDown, ChevronLeft, AlertTriangle, TrendingUp, Zap,
   Award, Filter, ArrowLeft, Eye, Briefcase, MapPin, FileText,
-  Edit3, Save, Map as MapIcon, Plus, Minus, Printer, Mail, Send
+  Edit3, Save, Map as MapIcon, Plus, Minus, Printer, Mail, Send, AlertCircle
 } from 'lucide-react'
 import LocationTrailModal from '../components/LocationTrailModal'
 import SearchableSelect from '../components/SearchableSelect'
@@ -20,6 +20,7 @@ import {
   timeClockToJobHours,
   calculateInvoiceCommissions as sharedCalculateInvoiceCommissions,
 } from '../lib/bonusCalc'
+import { syncJobBonuses } from '../lib/bonusLedger'
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 
 // Roll the per-employee tax breakdowns up into one row per tax-kind +
@@ -269,6 +270,10 @@ export default function Payroll() {
     overtime_mode: 'overtime',
   })
   const [skillLevelSettings, setSkillLevelSettings] = useState([])
+  // Persistent bonus ledger (job_bonuses) — the OWED amounts. Payroll pays
+  // and freezes these; My Pay / the Job page read them. Loaded after each
+  // sync so the page shows the same numbers the techs see.
+  const [ledgerBonuses, setLedgerBonuses] = useState([])
 
   const isAdmin = checkAdmin(user)
   const isManagerPlus = checkManager(user)
@@ -1004,17 +1009,17 @@ export default function Payroll() {
   // Victor gates: jobs without a passing completion verification get skipped,
   // and employees lose a proportional share for any job-day they worked
   // without a daily verification (coverageRatio < 1 in bonusCalc).
-  const verifiedJobIds = new Set(
+  const verifiedJobIds = useMemo(() => new Set(
     (verificationReports || [])
       .filter(r => r.verification_type === 'completion')
       .map(r => r.job_id)
       .filter(Boolean)
-  )
-  const dailyVerifiedJobDays = new Set(
+  ), [verificationReports])
+  const dailyVerifiedJobDays = useMemo(() => new Set(
     (verificationReports || [])
       .filter(r => r.verification_type === 'daily' && r.created_at && r.job_id)
       .map(r => `${r.job_id}|${new Date(r.created_at).toISOString().split('T')[0]}`)
-  )
+  ), [verificationReports])
   // Build job -> { standardPaid, standardTotal, utilityPaid, utilityTotal }.
   // Used by the paid-threshold bonus gate.
   //
@@ -1026,7 +1031,7 @@ export default function Payroll() {
   //   paid = (utility incentive if utility is Paid) + (standard payments,
   //          capped at project_cost − utility paid)
   // Otherwise fall back to the standard-invoice sum.
-  const jobPaymentStatus = (() => {
+  const jobPaymentStatus = useMemo(() => {
     const map = new Map()
     // Group utility invoices by job_id first so we can detect overlap.
     const utilByJob = new Map()
@@ -1069,7 +1074,7 @@ export default function Payroll() {
       })
     })
     return map
-  })()
+  }, [invoices, utilityInvoicesState, allPaymentsByInvoiceId])
 
   const calculateEfficiencyBonus = (employeeId) => sharedCalculateEfficiencyBonus({
     employeeId,
@@ -1084,6 +1089,68 @@ export default function Payroll() {
     jobPaymentStatus,
     bonusOverrides,
   })
+
+  // Payroll is the WRITER for the persistent bonus ledger — it's the only
+  // surface with the full employees + skill-levels set needed to split crew
+  // bonuses correctly. Whenever the underlying data settles, recompute every
+  // non-paid bonus and upsert it (pending vs accrued by money-in). Paid rows
+  // are frozen. This keeps My Pay / the Job page fresh without those readers
+  // needing to recompute. Guarded so we don't write while data is still
+  // loading or when the bonus feature is off.
+  useEffect(() => {
+    if (loading) return
+    if (!companyId || !payrollConfig.efficiency_bonus_enabled) return
+    if (!jobs.length || !timeEntries.length) return
+    let cancelled = false
+    ;(async () => {
+      await syncJobBonuses({
+        supabase,
+        companyId,
+        jobs,
+        timeClockRows: timeEntries,
+        employees,
+        skillLevels: skillLevelSettings,
+        payrollConfig,
+        verifiedJobIds,
+        dailyVerifiedJobDays,
+        jobPaymentStatus,
+        bonusOverrides,
+      }).catch(e => console.error('bonus ledger sync', e))
+      // Re-read the ledger so the page shows exactly what techs are owed.
+      const { data } = await supabase
+        .from('job_bonuses')
+        .select('id, job_id, employee_id, amount, status, needs_verification, saved_hours, allotted_hours, actual_hours, crew_size, paid_at, jobs(job_title, job_id)')
+        .eq('company_id', companyId)
+      if (!cancelled) setLedgerBonuses(data || [])
+    })()
+    return () => { cancelled = true }
+  }, [loading, companyId, jobs, timeEntries, employees, skillLevelSettings, payrollConfig, verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides])
+
+  // Per-employee OWED (accrued, unpaid) bonus total from the ledger — the
+  // real amount a payroll run will pay out and freeze.
+  const accruedByEmployee = useMemo(() => {
+    const m = new Map()
+    for (const b of ledgerBonuses) {
+      if (b.status !== 'accrued') continue
+      m.set(b.employee_id, (m.get(b.employee_id) || 0) + (parseFloat(b.amount) || 0))
+    }
+    return m
+  }, [ledgerBonuses])
+
+  // All ledger rows grouped per employee (owed first, then upcoming, then
+  // paid) — drives the per-employee bonus breakdown card.
+  const bonusesByEmployee = useMemo(() => {
+    const rank = { accrued: 0, pending: 1, paid: 2, void: 3 }
+    const m = new Map()
+    for (const b of ledgerBonuses) {
+      if (!m.has(b.employee_id)) m.set(b.employee_id, [])
+      m.get(b.employee_id).push(b)
+    }
+    for (const rows of m.values()) {
+      rows.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0))
+    }
+    return m
+  }, [ledgerBonuses])
 
   // Full pay calculation per employee
   // YTD totals per employee from this year's paystubs. Drives Social
@@ -1137,13 +1204,22 @@ export default function Payroll() {
     const leadComm = calculateLeadCommissions(employee.id)
     const commissionPay = invoiceComm.available + leadComm.total
 
-    // Efficiency bonus
+    // Efficiency bonus. The live calc still drives the per-job breakdown UI
+    // (what was saved on each job, verification state), but the dollar amount
+    // that's actually PAID comes from the persistent ledger: the OWED total
+    // (accrued = the job's money has come in). That's the number that shows in
+    // the tech's My Pay, so paying it here keeps the two in lockstep and stops
+    // the old "bonus showed then vanished" drift.
     const efficiencyBonus = calculateEfficiencyBonus(employee.id)
+    const bonusOwed = accruedByEmployee.get(employee.id) || 0
 
-    const grossPay = hourlyPay + salaryPay + commissionPay + efficiencyBonus.bonus
+    const grossPay = hourlyPay + salaryPay + commissionPay + bonusOwed
 
-    // Payroll adjustments
-    const empAdjustments = adjustments.filter(a => a.employee_id === employee.id)
+    // Payroll adjustments. Exclude legacy 'bonus_override' additions — those
+    // were the old way to release a blocked bonus, but bonuses now pay in full
+    // from the ledger via bonusOwed, so counting an override addition too would
+    // double-pay.
+    const empAdjustments = adjustments.filter(a => a.employee_id === employee.id && a.category !== 'bonus_override')
     const totalAdditions = empAdjustments.filter(a => a.type === 'addition').reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0)
     const totalDeductions = empAdjustments.filter(a => a.type === 'deduction').reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0)
 
@@ -1188,6 +1264,7 @@ export default function Payroll() {
       invoiceCommissions: invoiceComm,
       leadCommissions: leadComm,
       efficiencyBonus,
+      bonusOwed: Math.round(bonusOwed * 100) / 100,
       grossPay: Math.round(grossPay * 100) / 100,
       totalAdditions: Math.round(totalAdditions * 100) / 100,
       totalDeductions: Math.round(totalDeductions * 100) / 100,
@@ -1222,7 +1299,7 @@ export default function Payroll() {
     // the memo could cache a result computed before those two finished
     // loading, so commissions stayed at $0 until something else re-triggered
     // a recompute.
-  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports, utilityInvoicesState, bonusOverrides])
+  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports, utilityInvoicesState, bonusOverrides, accruedByEmployee])
 
   const totalPayroll = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.grossPay, 0),
@@ -1235,7 +1312,7 @@ export default function Payroll() {
   )
 
   const totalBonuses = useMemo(() =>
-    Object.values(employeePayData).reduce((sum, d) => sum + d.efficiencyBonus.bonus, 0),
+    Object.values(employeePayData).reduce((sum, d) => sum + (d.bonusOwed || 0), 0),
     [employeePayData]
   )
 
@@ -1410,39 +1487,32 @@ export default function Payroll() {
     } catch (err) { alert('Error: ' + err.message) }
   }
 
-  // Release a blocked bonus for one employee/job. Stores the override as
-  // a payroll_adjustments row with category='bonus_override' and metadata
-  // { job_id, employee_id } so the calc picks it up on the next run.
-  // The raw job_id (numeric DB id) is on the bonus detail's jobId field
-  // as either the display job_id string or the numeric PK. We need the
-  // numeric PK so the calc can match.
-  const handleBonusOverride = async (employeeId, detail) => {
-    const amount = detail.wouldHaveEarned || 0
-    if (amount <= 0) { alert('Nothing to release on this bonus.'); return }
-    // Resolve numeric job id — detail.jobId may be either the display
-    // string (e.g. "JOB-MN...") or the PK.
-    const job = jobs.find(j => j.id === detail.jobId || j.job_id === detail.jobId)
-    if (!job) { alert('Could not resolve job for override.'); return }
-    if (!confirm(`Release this bonus?\n\n${detail.jobTitle}\nEmployee will receive ${fmt(amount)} this period.\n\nReason on file: "${detail.blockedReason || 'blocked'}".`)) return
+  // Override the verification flag on a ledger bonus. The amount is already
+  // OWED to the tech (the ledger pays the full earned amount regardless of
+  // verification — see bonusCalc.computeJobBonusRows); this just clears the
+  // "needs verification" flag so the bonus reads as confirmed. We do NOT add a
+  // payroll_adjustments row here — that would double-pay on top of bonusOwed.
+  const handleBonusVerify = async (bonusRow) => {
+    if (!bonusRow?.id) return
+    const jobLabel = bonusRow.jobs?.job_title || `Job ${bonusRow.job_id}`
+    if (!confirm(`Mark this bonus as verified?\n\n${jobLabel} — ${fmt(parseFloat(bonusRow.amount) || 0)}\n\nThe amount is already owed; this clears the "needs verification" flag.`)) return
     const adminEmp = employees.find(e => e.email === user?.email)
-    const { periodStart, periodEnd } = getCurrentPeriod()
     try {
-      const { error } = await supabase.from('payroll_adjustments').insert({
-        company_id: companyId,
-        employee_id: employeeId,
-        type: 'addition',
-        category: 'bonus_override',
-        amount,
-        reason: `Efficiency bonus released (admin override): ${detail.jobTitle}`,
-        pay_period_start: periodStart.toISOString().split('T')[0],
-        pay_period_end: periodEnd.toISOString().split('T')[0],
-        recurring: false,
-        created_by: adminEmp?.id || null,
-        metadata: { job_id: job.id, employee_id: employeeId, blocked_reason: detail.blockedReason || null, saved_hours: detail.savedHours, would_have_earned: amount },
-      })
+      const { error } = await supabase.from('job_bonuses')
+        .update({
+          needs_verification: false,
+          release_reason: 'admin_override',
+          verification_overridden_by: adminEmp?.id || null,
+          verification_overridden_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', bonusRow.id)
       if (error) throw error
-      await fetchData()
-    } catch (err) { alert('Override failed: ' + err.message) }
+      // Optimistic local update so the flag clears immediately.
+      setLedgerBonuses(prev => prev.map(b => b.id === bonusRow.id
+        ? { ...b, needs_verification: false, release_reason: 'admin_override' }
+        : b))
+    } catch (err) { alert('Verify failed: ' + err.message) }
   }
 
   const handleRunPayroll = async () => {
@@ -1482,7 +1552,7 @@ export default function Payroll() {
           gross_pay: data.grossPay,
           // Tax engine output — written to the per-employee paystub so
           // YTD aggregation (next period's wage-base capping) works.
-          bonus_pay:                data.efficiencyBonus?.bonus || 0,
+          bonus_pay:                data.bonusOwed || 0,
           commission_pay:           data.commissionPay || 0,
           taxable_wages:            t.taxableWages || data.grossPay,
           federal_income_tax:       t.federalIncomeTax || 0,
@@ -1502,6 +1572,34 @@ export default function Payroll() {
 
       const { error: stubsError } = await supabase.from('paystubs').insert(paystubs)
       if (stubsError) throw stubsError
+
+      // ── Mark the OWED (accrued) efficiency bonuses we just paid as `paid`.
+      //    This freezes them and drops them off the techs' My Pay, stamped
+      //    with the pay date so the "paid on X" indicator shows. We pay the
+      //    whole accrued-unpaid balance for each employee on this run — that's
+      //    the amount that went into bonusOwed / their gross above.
+      try {
+        const adminEmp = employees.find(e => e.email === user?.email)
+        const paidEmpIds = activeEmployees.map(e => e.id)
+        if (paidEmpIds.length) {
+          const { error: bonusErr } = await supabase
+            .from('job_bonuses')
+            .update({
+              status: 'paid',
+              paid_at: payDate.toISOString(),
+              paid_pay_period_start: periodStart.toISOString().split('T')[0],
+              paid_pay_period_end: periodEnd.toISOString().split('T')[0],
+              paid_by: adminEmp?.id || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('company_id', companyId)
+            .eq('status', 'accrued')
+            .in('employee_id', paidEmpIds)
+          if (bonusErr) console.warn('[runPayroll] bonus mark-paid failed:', bonusErr)
+        }
+      } catch (bonusErr) {
+        console.warn('[runPayroll] bonus mark-paid crashed:', bonusErr)
+      }
 
       // ── Write payroll_tax_liabilities so the Payroll Inbox knows
       //    what to deposit and when. Aggregates each tax kind across
@@ -1676,10 +1774,10 @@ export default function Payroll() {
           {payrollConfig.efficiency_bonus_enabled && (
             <div style={cardStyle}>
               <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>
-                <Zap size={14} style={{ verticalAlign: 'middle', marginRight: '4px' }} />Efficiency Bonus
+                <Zap size={14} style={{ verticalAlign: 'middle', marginRight: '4px' }} />Efficiency Bonus <span style={{ color: theme.textMuted }}>(owed)</span>
               </div>
-              <div style={{ fontSize: '20px', fontWeight: '600', color: data.efficiencyBonus.bonus > 0 ? '#8b5cf6' : theme.textMuted }}>
-                {data.efficiencyBonus.bonus > 0 ? fmt(data.efficiencyBonus.bonus) : '-'}
+              <div style={{ fontSize: '20px', fontWeight: '600', color: data.bonusOwed > 0 ? '#8b5cf6' : theme.textMuted }}>
+                {data.bonusOwed > 0 ? fmt(data.bonusOwed) : '-'}
               </div>
             </div>
           )}
@@ -1763,58 +1861,57 @@ export default function Payroll() {
           </div>
         )}
 
-        {/* Efficiency Bonus Detail */}
-        {data.efficiencyBonus.details.length > 0 && (
+        {/* Efficiency Bonus Detail — from the persistent ledger (same rows
+            the tech sees in My Pay). Owed/upcoming/paid, with a verify action
+            on anything still flagged. */}
+        {(bonusesByEmployee.get(emp.id) || []).length > 0 && (
           <div style={{ ...cardStyle, marginBottom: '20px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Zap size={18} style={{ color: '#8b5cf6' }} />
               Efficiency Bonuses
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {data.efficiencyBonus.details.map((d, i) => {
-                const blocked = !!d.blockedReason
+              {(bonusesByEmployee.get(emp.id) || []).map((b) => {
+                const statusMeta = {
+                  accrued: { label: 'Owed', color: '#8b5cf6' },
+                  pending: { label: 'Upcoming', color: '#f59e0b' },
+                  paid: { label: 'Paid', color: '#22c55e' },
+                  void: { label: 'Void', color: theme.textMuted },
+                }[b.status] || { label: b.status, color: theme.textMuted }
                 return (
-                <div key={i} style={{
+                <div key={b.id} style={{
                   display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px',
-                  padding: '12px', backgroundColor: blocked ? 'rgba(239,68,68,0.04)' : theme.bg,
-                  border: blocked ? '1px solid rgba(239,68,68,0.25)' : 'none',
-                  borderRadius: '8px'
+                  padding: '12px', backgroundColor: theme.bg, borderRadius: '8px'
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{d.jobTitle}</div>
+                    <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{b.jobs?.job_title || `Job ${b.job_id}`}</div>
                     <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                      Allotted: {d.allottedHours}h — Actual: {d.actualHours.toFixed(1)}h — Saved: {d.savedHours.toFixed(1)}h
-                      {d.crewSize > 1 && ` (split ${d.crewSize} ways: ${d.employeeShare.toFixed(1)}h)`}
+                      Allotted: {b.allotted_hours}h — Actual: {Number(b.actual_hours || 0).toFixed(1)}h — Saved: {Number(b.saved_hours || 0).toFixed(1)}h
+                      {b.crew_size > 1 && ` (split ${b.crew_size} ways)`}
                     </div>
-                    {blocked && (
-                      <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', fontWeight: '600' }}>
-                        {d.blockedReason === 'no_completion_verification' ? 'Blocked — completion verification missing' : 'Blocked'}
-                        {d.paidPercent != null && ` · ${d.paidPercent}% of billable paid (threshold ${d.paidThresholdPct}%)`}
-                      </div>
-                    )}
-                    {!blocked && d.releaseReason && d.releaseReason !== 'victor_verified' && (
-                      <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '4px', fontWeight: '600' }}>
-                        Released via {d.releaseReason === 'admin_override' ? 'admin override' : d.releaseReason === 'paid_threshold_met' ? `paid threshold (${d.paidPercent}%)` : 'gate off'}
-                      </div>
-                    )}
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '5px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: statusMeta.color, backgroundColor: `${statusMeta.color}1f`, padding: '2px 7px', borderRadius: '999px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>{statusMeta.label}</span>
+                      {b.needs_verification && b.status !== 'paid' && (
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: '#b45309', backgroundColor: 'rgba(245,158,11,0.15)', padding: '2px 7px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                          <AlertCircle size={10} /> Needs verification
+                        </span>
+                      )}
+                      {b.status === 'paid' && b.paid_at && (
+                        <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 600 }}>
+                          Paid {new Date(b.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                    {blocked ? (
-                      <>
-                        <div style={{ fontSize: '15px', fontWeight: '600', color: theme.textMuted, textDecoration: 'line-through' }}>
-                          {fmt(d.wouldHaveEarned || 0)}
-                        </div>
-                        {isAdmin && (
-                          <button
-                            onClick={() => handleBonusOverride(emp.id, d)}
-                            style={{ padding: '4px 10px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
-                          >
-                            Pay anyway
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <div style={{ fontSize: '15px', fontWeight: '600', color: '#8b5cf6' }}>{fmt(d.bonusAmount)}</div>
+                    <div style={{ fontSize: '15px', fontWeight: '600', color: statusMeta.color }}>{fmt(parseFloat(b.amount) || 0)}</div>
+                    {isAdmin && b.needs_verification && b.status !== 'paid' && (
+                      <button
+                        onClick={() => handleBonusVerify(b)}
+                        style={{ padding: '4px 10px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                      >
+                        Mark verified
+                      </button>
                     )}
                   </div>
                 </div>
@@ -2466,7 +2563,7 @@ export default function Payroll() {
             if (!d) return null
             return {
               emp,
-              bonus: d.efficiencyBonus?.bonus || 0,
+              bonus: d.bonusOwed || 0,
               jobs: d.efficiencyBonus?.details || [],
             }
           })
@@ -2994,8 +3091,8 @@ export default function Payroll() {
                 {/* Bonus or Adjustments */}
                 {payrollConfig.efficiency_bonus_enabled ? (
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontWeight: '600', color: data.efficiencyBonus.bonus > 0 ? '#8b5cf6' : theme.textMuted, fontSize: '14px' }}>
-                      {data.efficiencyBonus.bonus > 0 ? fmt(data.efficiencyBonus.bonus) : '-'}
+                    <div style={{ fontWeight: '600', color: data.bonusOwed > 0 ? '#8b5cf6' : theme.textMuted, fontSize: '14px' }}>
+                      {data.bonusOwed > 0 ? fmt(data.bonusOwed) : '-'}
                     </div>
                   </div>
                 ) : (
@@ -3870,12 +3967,12 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
                   <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.commissionPay)}</td>
                 </tr>
               )}
-              {data.efficiencyBonus.bonus > 0 && (
+              {data.bonusOwed > 0 && (
                 <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                   <td style={{ padding: '8px 0', color: theme.text }}>Efficiency Bonus</td>
                   <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
                   <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
-                  <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.efficiencyBonus.bonus)}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.bonusOwed)}</td>
                 </tr>
               )}
               {/* Additions */}
