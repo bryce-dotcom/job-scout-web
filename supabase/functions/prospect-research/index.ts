@@ -171,7 +171,7 @@ Rules:
         companyId: company_id ?? null,
         system,
         userMsg,
-        maxRounds: 6,
+        maxRounds: 4,
       });
 
       let prospects: any[] = [];
@@ -435,9 +435,19 @@ async function runClaudeAgent(args: {
   const { companyId, system, userMsg, maxRounds } = args;
   let messages: any[] = [{ role: 'user', content: userMsg }];
   const tools = [
-    { type: 'web_search_20250305', name: 'web_search', max_uses: 8 },
+    { type: 'web_search_20250305', name: 'web_search', max_uses: 6 },
   ];
+  // Wall-clock budget. Each web-search round is slow (10-40s), and an
+  // unbounded loop blew past the platform gateway's ~150s ceiling, so the
+  // request 504'd and Tracy got nothing. Return partial results before the
+  // gateway kills us rather than timing out empty-handed.
+  const startedAt = Date.now();
+  const MAX_AGENT_MS = 75000;
+  let lastText = '';
   for (let round = 0; round < maxRounds; round++) {
+    // Never START another slow round once we're out of budget — bail with
+    // whatever text we've gathered so far.
+    if (round > 0 && Date.now() - startedAt > MAX_AGENT_MS) break;
     const ai = await callAnthropic(
       { feature: 'prospect-research', companyId },
       {
@@ -453,14 +463,15 @@ async function runClaudeAgent(args: {
     }
     const data = ai.data;
     const blocks = data.content || [];
+    const text = blocks.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n');
+    if (text) lastText = text;
 
     // Claude's server-side web_search tool returns results as part of
     // its own response — there's no client-side tool-use loop needed.
     // We just collect the text blocks. If stop_reason is 'tool_use'
     // we may need to continue the loop for follow-up calls.
     if (data.stop_reason === 'end_turn' || data.stop_reason === 'stop_sequence') {
-      const text = blocks.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n');
-      return text;
+      return text || lastText;
     }
 
     // For other stop reasons (max_tokens, tool_use), append and continue
@@ -473,9 +484,8 @@ async function runClaudeAgent(args: {
     }
 
     // max_tokens or other — just return what we have
-    const text = blocks.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n');
-    return text;
+    return text || lastText;
   }
-  // Out of rounds — return whatever we have from the last turn
-  return '';
+  // Out of rounds or out of time — return best-effort text from the last turn
+  return lastText;
 }
