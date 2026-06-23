@@ -6609,16 +6609,25 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
     )
   }
 
+  // On a phone the modal was vertically centered in a non-scrolling
+  // overlay, so a tall modal had its top (the PDF/Interactive/Formal mode
+  // toggle) and bottom pushed off-screen with no way to reach them — Cole
+  // couldn't tap "Interactive" or send a proposal from the field. Pin the
+  // modal to the top on narrow screens, let the overlay scroll, and cap the
+  // height to the *dynamic* viewport (dvh) so mobile browser chrome doesn't
+  // eat the buttons.
+  const isNarrow = typeof window !== 'undefined' && window.innerWidth < 768
   return (
     <div style={{
       position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 50
+      display: 'flex', alignItems: isNarrow ? 'flex-start' : 'center', justifyContent: 'center',
+      padding: isNarrow ? '8px' : '16px', zIndex: 50, overflowY: 'auto'
     }}>
       <div style={{
         backgroundColor: theme.bgCard, borderRadius: '16px',
         boxShadow: '0 20px 40px rgba(0,0,0,0.15)', width: '100%',
         maxWidth: step === 'preview' ? (mode === 'formal' ? '1040px' : mode === 'interactive' && proposalLayout ? '960px' : '680px') : '420px',
-        maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+        maxHeight: isNarrow ? 'calc(100dvh - 16px)' : '90vh', display: 'flex', flexDirection: 'column',
         transition: 'max-width 0.2s ease'
       }}>
         {/* Header with mode toggle */}
