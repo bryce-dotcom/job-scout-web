@@ -354,7 +354,77 @@ serve(async (req) => {
     let createdJobId: number | null = null
     try {
       if (!estimate.job_id) {
-        const customerName = estimate.customer?.name || estimate.customer?.business_name || estimate.customer_name || 'Customer'
+        // Resolve a real customer to attach to the job. Estimates that came
+        // from a lead frequently have customer_id = null with all the
+        // contact info living on the LEAD — approving then created a job
+        // with no customer and blank name/phone/address (Doug: "customer
+        // info not pulling through estimate -> job"). Find-or-create a
+        // customer (identity-safe: email -> phone -> non-conflicting name,
+        // mirroring src/lib/customerMatch.js) and stamp the contact fields.
+        const digits = (v: unknown) => String(v ?? '').replace(/\D/g, '').slice(-10)
+        let resolvedCustomerId: number | null = estimate.customer_id || null
+        let contactName = estimate.customer_name || ''
+        let contactBusiness = ''
+        let contactPhone = ''
+        let contactAddress = ''
+
+        let lead: { id: number; customer_name?: string; business_name?: string; email?: string; phone?: string; address?: string; customer_id?: number | null } | null = null
+        if (estimate.lead_id) {
+          const { data: leadRow } = await supabase
+            .from('leads')
+            .select('id, customer_name, business_name, email, phone, address, customer_id')
+            .eq('id', estimate.lead_id)
+            .maybeSingle()
+          lead = leadRow || null
+        }
+
+        if (resolvedCustomerId) {
+          const { data: c } = await supabase
+            .from('customers').select('name, business_name, phone, address')
+            .eq('id', resolvedCustomerId).maybeSingle()
+          if (c) { contactName = c.name || contactName; contactBusiness = c.business_name || ''; contactPhone = c.phone || ''; contactAddress = c.address || '' }
+        } else if (lead) {
+          const e = String(lead.email || '').trim().toLowerCase()
+          const p = digits(lead.phone)
+          const nm = String(lead.customer_name || '').trim()
+          let matchId: number | null = null
+          if (e) {
+            const { data } = await supabase.from('customers').select('id').eq('company_id', tokenRow.company_id).ilike('email', e).limit(1)
+            if (data && data.length) matchId = data[0].id
+          }
+          if (!matchId && p.length >= 7) {
+            const { data } = await supabase.from('customers').select('id, phone').eq('company_id', tokenRow.company_id).ilike('phone', `%${p.slice(-4)}%`).limit(25)
+            const hit = (data || []).find((c: { phone?: string }) => digits(c.phone) === p)
+            if (hit) matchId = hit.id
+          }
+          if (!matchId && nm) {
+            const { data } = await supabase.from('customers').select('id, email, phone').eq('company_id', tokenRow.company_id).ilike('name', nm).limit(5)
+            const safe = (data || []).find((c: { email?: string; phone?: string }) =>
+              !(c.email && e && String(c.email).trim().toLowerCase() !== e) &&
+              !(digits(c.phone) && p && digits(c.phone) !== p))
+            if (safe) matchId = safe.id
+          }
+          if (matchId) {
+            resolvedCustomerId = matchId
+          } else {
+            const { data: nc } = await supabase.from('customers').insert({
+              company_id: tokenRow.company_id,
+              name: nm || lead.business_name || 'Customer',
+              business_name: lead.business_name || null,
+              email: lead.email || null,
+              phone: lead.phone || null,
+              address: lead.address || null,
+            }).select('id').single()
+            if (nc) resolvedCustomerId = nc.id
+          }
+          contactName = nm; contactBusiness = lead.business_name || ''; contactPhone = lead.phone || ''; contactAddress = lead.address || ''
+          // Link the lead to the customer so the rest of the system agrees.
+          if (resolvedCustomerId && !lead.customer_id) {
+            await supabase.from('leads').update({ customer_id: resolvedCustomerId }).eq('id', lead.id)
+          }
+        }
+
+        const customerName = contactBusiness || contactName || 'Customer'
         const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`
         const { data: newJob, error: jobErr } = await supabase
           .from('jobs')
@@ -362,7 +432,10 @@ serve(async (req) => {
             company_id: tokenRow.company_id,
             job_id: jobNumber,
             job_title: estimate.estimate_name || estimate.job_title || `${customerName} - Job`,
-            customer_id: estimate.customer_id || null,
+            customer_id: resolvedCustomerId,
+            customer_name: contactName || customerName || null,
+            job_address: contactAddress || null,
+            phone: contactPhone || null,
             lead_id: estimate.lead_id ? parseInt(String(estimate.lead_id)) : null,
             salesperson_id: estimate.salesperson_id || null,
             quote_id: estimate.id,
