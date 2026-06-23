@@ -1427,6 +1427,11 @@ function EstimateDetailInner() {
           lead_id: estimateRow.lead_id ? parseInt(estimateRow.lead_id) : null,
           salesperson_id: estimateRow.salesperson_id || null,
           quote_id: estimateRow.id,
+          // Carry the estimate's business unit so the job shows under the
+          // right Job Board calendar. A null business_unit makes the job
+          // invisible whenever a calendar/BU filter is active (Alayda's
+          // "NPT" job vanished for this reason).
+          business_unit: estimateRow.business_unit || null,
           job_address: customerInfo?.address || null,
           // Default to Chillin (the triage / new-jobs column) — matches
           // Jobs.jsx default and what Doug expects when an estimate is
@@ -2542,7 +2547,14 @@ function EstimateDetailInner() {
               if (newStatus === 'Approved') {
                 setShowDepositModal(true)
               } else if (newStatus === 'Sent') {
-                await sendEstimate()
+                // Christopher: picking "Sent" used to only flip the status
+                // and never email the customer ("I can mark as sent but it
+                // doesn't actually send"). Open the real Send flow instead so
+                // choosing Sent actually delivers the proposal. The modal
+                // still offers an explicit "mark as sent, no email" option
+                // for out-of-band delivery, and flips the status on send.
+                e.target.value = estimate.status // don't change the pill until the send completes
+                setShowSendModal(true)
               } else if (newStatus === 'Rejected') {
                 await rejectEstimate()
               } else {

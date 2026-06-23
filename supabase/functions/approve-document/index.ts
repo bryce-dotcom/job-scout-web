@@ -436,6 +436,10 @@ serve(async (req) => {
             customer_name: contactName || customerName || null,
             job_address: contactAddress || null,
             phone: contactPhone || null,
+            // Carry the estimate's business unit so the job is visible under
+            // the right Job Board calendar — a null business_unit hides the
+            // job whenever a calendar/BU filter is active (Alayda's "NPT").
+            business_unit: estimate.business_unit || null,
             lead_id: estimate.lead_id ? parseInt(String(estimate.lead_id)) : null,
             salesperson_id: estimate.salesperson_id || null,
             quote_id: estimate.id,
