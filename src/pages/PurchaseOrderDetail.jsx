@@ -175,7 +175,7 @@ export default function PurchaseOrderDetail() {
         company_id: companyId,
         po_id: parseInt(id),
         product_id: product.id,
-        description: product.vendor_sku ? `${product.name} (${product.vendor_sku})` : product.name,
+        description: product.name,
         quantity_ordered: qty,
         quantity_received: 0,
         unit_cost: unitCost,
@@ -257,13 +257,18 @@ export default function PurchaseOrderDetail() {
 
   // Build a fresh PDF doc from current state (vendor + lines + job).
   const buildPdf = () => {
-    // Resolve the full BU object (has name/address/phone/email) from the
-    // stored BU name so the PDF header shows the right division.
     const buName = poBusinessUnit || po.job?.business_unit
     const buObj = Array.isArray(businessUnits)
       ? businessUnits.find(bu => (bu.name || bu) === buName) || null
       : null
-    return generatePoPdf({ po, lines, vendor: po.vendor, company, job: po.job, businessUnit: buObj })
+    // Enrich lines with vendor_sku from the products catalog so the PDF
+    // can show it in the Product Number column without a separate DB join.
+    const productMap = new Map((products || []).map(p => [p.id, p]))
+    const enrichedLines = lines.map(l => ({
+      ...l,
+      vendor_sku: productMap.get(l.product_id)?.vendor_sku || l.vendor_sku || null,
+    }))
+    return generatePoPdf({ po, lines: enrichedLines, vendor: po.vendor, company, job: po.job, businessUnit: buObj })
   }
 
   const downloadPdf = () => {

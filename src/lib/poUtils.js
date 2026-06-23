@@ -93,11 +93,11 @@ export async function expandProductForPO(productId, bundleQty, companyId) {
 
   // Case A: product has a direct catalog cost — order as-is
   if (directCost > 0) {
-    const desc = prod.vendor_sku ? `${prod.name} (${prod.vendor_sku})` : prod.name
     return [{
       productId: prod.id,
       name: prod.name,
-      description: desc,
+      description: prod.name,
+      vendorSku: prod.vendor_sku || null,
       unitCost: directCost,
       quantity: bundleQty,
       vendorId: prod.default_vendor_id || null,
@@ -118,11 +118,11 @@ export async function expandProductForPO(productId, bundleQty, companyId) {
       const comp = c.component || {}
       const compQty = (parseFloat(c.quantity) || 1) * bundleQty
       const compCost = parseFloat(comp.cost) || 0
-      const desc = comp.vendor_sku ? `${comp.name} (${comp.vendor_sku})` : comp.name
       return {
         productId: comp.id,
         name: comp.name,
-        description: `${desc} [for ${prod.name}]`,
+        description: `${comp.name} [for ${prod.name}]`,
+        vendorSku: comp.vendor_sku || null,
         unitCost: compCost,
         quantity: compQty,
         vendorId: comp.default_vendor_id || prod.default_vendor_id || null,
@@ -133,11 +133,11 @@ export async function expandProductForPO(productId, bundleQty, companyId) {
   }
 
   // Case C: no cost, no components — create a $0 PO line as a placeholder
-  const desc = prod.vendor_sku ? `${prod.name} (${prod.vendor_sku})` : prod.name
   return [{
     productId: prod.id,
     name: prod.name,
-    description: desc,
+    description: prod.name,
+    vendorSku: prod.vendor_sku || null,
     unitCost: 0,
     quantity: bundleQty,
     vendorId: prod.default_vendor_id || null,
