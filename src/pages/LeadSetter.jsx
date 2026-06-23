@@ -178,7 +178,7 @@ export default function LeadSetter() {
       // fields are needed so the card has callback/contact info.
       supabase
         .from('appointments')
-        .select('*, lead:leads!lead_id(id, customer_name, phone, address, service_type, status, setter_owner_id, lead_owner_id, callback_date, created_at, contact_attempts, last_contact_at, notes), salesperson:employees!salesperson_id(id, name)')
+        .select('*, lead:leads!lead_id(id, customer_name, business_name, phone, address, service_type, status, setter_owner_id, lead_owner_id, callback_date, created_at, contact_attempts, last_contact_at, notes), salesperson:employees!salesperson_id(id, name)')
         .eq('company_id', companyId)
         .gte('start_time', weekStart.toISOString())
         .lte('start_time', weekEnd.toISOString())
@@ -1225,7 +1225,9 @@ export default function LeadSetter() {
                           color: theme.text,
                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1
                         }}>
-                          {lead.customer_name}
+                          {/* Tracy: show the COMPANY along with the contact
+                              on the Lead Setter, like the Leads tab. */}
+                          {lead.business_name ? `${lead.business_name} — ${lead.customer_name}` : lead.customer_name}
                         </div>
                         {lead.contact_attempts > 0 && (
                           <span style={{
@@ -1658,7 +1660,7 @@ export default function LeadSetter() {
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap'
                               }}>
-                                {apt.lead?.customer_name || apt.title}
+                                {apt.lead?.business_name ? `${apt.lead.business_name} — ${apt.lead.customer_name}` : (apt.lead?.customer_name || apt.title)}
                               </div>
                               {(() => {
                                 // Show all assigned reps. Falls back to the
@@ -2231,7 +2233,7 @@ export default function LeadSetter() {
           <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '440px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ flex: 1 }}>
-                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>{selectedEvent.lead?.customer_name || selectedEvent.title}</h2>
+                <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>{selectedEvent.lead?.business_name ? `${selectedEvent.lead.business_name} — ${selectedEvent.lead.customer_name}` : (selectedEvent.lead?.customer_name || selectedEvent.title)}</h2>
                 <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
                   {selectedEvent.lead?.service_type || 'Appointment'}{(() => {
                     const ids = Array.isArray(selectedEvent.salesperson_ids) && selectedEvent.salesperson_ids.length
