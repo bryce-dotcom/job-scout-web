@@ -440,7 +440,13 @@ serve(async (req) => {
             salesperson_id: estimate.salesperson_id || null,
             quote_id: estimate.id,
             status: 'Chillin',
-            start_date: estimate.service_date || new Date().toISOString(),
+            // A 'Chillin' (unscheduled/backlog) job must NOT carry a
+            // start_date, or the Job Board reroutes it into the Scheduled
+            // column while the Jobs list still shows Chillin — the two
+            // disagree (Doug). Only set a date if the estimate actually had
+            // a service date; otherwise leave it null until someone
+            // schedules it. Matches EstimateDetail.handleConvertToJob.
+            start_date: estimate.service_date || null,
             job_total: parseFloat(String(estimate.quote_amount || 0)) || 0,
             utility_incentive: parseFloat(String(estimate.utility_incentive || 0)) || 0,
             // Combine estimate summary + notes + message so the job
