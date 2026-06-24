@@ -222,6 +222,11 @@ export default function FieldScout() {
   //     unassigned exposure.
   const todayDate = new Date(); todayDate.setHours(23, 59, 59, 999)
   const catchUpStart = new Date(); catchUpStart.setHours(0, 0, 0, 0); catchUpStart.setDate(catchUpStart.getDate() - 7)
+  // Forward window — show jobs scheduled in the next 7 days too, so a field
+  // rep can open the work order (scope/checklist) BEFORE the assignment day
+  // instead of waiting for it to surface day-of (Cameron's request). These
+  // render read-only with an "Upcoming" date chip; clock-in stays day-of.
+  const forwardEnd = new Date(); forwardEnd.setHours(23, 59, 59, 999); forwardEnd.setDate(forwardEnd.getDate() + 7)
   const employeeName = currentEmployee?.name || ''
   const matchesEmployee = (j) => {
     if (!currentEmployee?.id) return false
@@ -242,18 +247,24 @@ export default function FieldScout() {
     if (activeEntry?.job_id && j.id === activeEntry.job_id) return true
     if (!matchesEmployee(j)) return false
     const jobDate = j.start_date ? new Date(j.start_date) : null
-    const inWindow = jobDate && jobDate >= catchUpStart && jobDate <= todayDate
+    const inWindow = jobDate && jobDate >= catchUpStart && jobDate <= forwardEnd
     const isActive = j.status === 'In Progress'
     return inWindow || isActive
   })
 
-  // Sort: working first, then upcoming (Scheduled/In Progress), then completed
+  // Sort: working first, then by scheduled date (today before upcoming),
+  // unscheduled last, completed/cancelled to the bottom.
   const sortedJobs = [...todaysJobs].sort((a, b) => {
     const aWorking = activeEntry?.job_id === a.id ? -1 : 0
     const bWorking = activeEntry?.job_id === b.id ? -1 : 0
     if (aWorking !== bWorking) return aWorking - bWorking
     const statusOrder = { 'In Progress': 0, 'Scheduled': 1, 'Completed': 2, 'Cancelled': 3 }
-    return (statusOrder[a.status] ?? 1) - (statusOrder[b.status] ?? 1)
+    const so = (statusOrder[a.status] ?? 1) - (statusOrder[b.status] ?? 1)
+    if (so !== 0) return so
+    if (!a.start_date && !b.start_date) return 0
+    if (!a.start_date) return 1
+    if (!b.start_date) return -1
+    return new Date(a.start_date) - new Date(b.start_date)
   })
 
   // Update clock every second
@@ -2630,7 +2641,7 @@ export default function FieldScout() {
       <div style={{ marginBottom: '16px' }}>
         <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Briefcase size={18} style={{ color: theme.accent }} />
-          Today's Jobs
+          Your Jobs
         </h2>
 
         {sortedJobs.length === 0 ? (
@@ -2642,7 +2653,7 @@ export default function FieldScout() {
             textAlign: 'center',
             color: theme.textMuted
           }}>
-            No jobs scheduled for today
+            No jobs scheduled
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -2652,6 +2663,12 @@ export default function FieldScout() {
               const sc = statusColor(job.status)
               const address = job.job_address || job.customer?.address
               const sections = jobSections[job.id]
+              // Scheduled after today → a preview of upcoming work (Cameron's
+              // ask). Show a date chip so it's clearly not on today's plate.
+              const isUpcoming = job.start_date && new Date(job.start_date) > todayDate
+              const upcomingLabel = isUpcoming
+                ? new Date(job.start_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                : null
 
               return (
                 <div
@@ -2697,6 +2714,19 @@ export default function FieldScout() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                        {upcomingLabel && (
+                          <span style={{
+                            padding: '3px 10px',
+                            borderRadius: '20px',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            backgroundColor: 'rgba(59,130,246,0.12)',
+                            color: '#2563eb',
+                            display: 'flex', alignItems: 'center', gap: '4px'
+                          }}>
+                            <CalendarIcon size={11} /> {upcomingLabel}
+                          </span>
+                        )}
                         <span style={{
                           padding: '3px 10px',
                           borderRadius: '20px',
@@ -2878,8 +2908,21 @@ export default function FieldScout() {
                       {/* ── Actions ── */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 
+                        {/* Upcoming preview — work order is visible but clock-in
+                            stays locked until the assignment day. */}
+                        {isUpcoming && (
+                          <div style={{
+                            width: '100%', padding: '14px', borderRadius: '12px',
+                            backgroundColor: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)',
+                            color: '#2563eb', fontSize: '14px', fontWeight: '600',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', textAlign: 'center'
+                          }}>
+                            <CalendarIcon size={16} /> Scheduled for {upcomingLabel} — clock in opens that day
+                          </div>
+                        )}
+
                         {/* Primary: Clock In (if not clocked in) */}
-                        {!activeEntry && (
+                        {!activeEntry && !isUpcoming && (
                           <button
                             onClick={() => handleClockIn(job.id)}
                             disabled={clockingIn}
@@ -2900,7 +2943,7 @@ export default function FieldScout() {
                         {/* Switch: clocked in elsewhere → one-tap move to this
                             job. Closes the current punch + opens a new one
                             (London's request — no separate clock-out/in dance). */}
-                        {activeEntry && activeEntry.job_id !== job.id && (
+                        {activeEntry && activeEntry.job_id !== job.id && !isUpcoming && (
                           <button
                             onClick={() => handleSwitchJob(job.id)}
                             disabled={clockingIn || clockingOut}
@@ -2954,6 +2997,7 @@ export default function FieldScout() {
                         </div>
 
                         {/* Primary: Collect Payment */}
+                        {!isUpcoming && (
                         <button
                           onClick={() => openPaymentModal(job)}
                           style={{
@@ -2967,9 +3011,10 @@ export default function FieldScout() {
                         >
                           <DollarSign size={18} /> Collect Payment
                         </button>
+                        )}
 
                         {/* Complete Job */}
-                        {job.status !== 'Completed' && (
+                        {job.status !== 'Completed' && !isUpcoming && (
                           <button
                             onClick={() => handleMarkComplete(job.id)}
                             style={{
@@ -2990,6 +3035,7 @@ export default function FieldScout() {
                         )}
 
                         {/* Secondary row: Receipt + Review */}
+                        {!isUpcoming && (
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button
                             onClick={() => triggerReceiptCapture(job.id)}
@@ -3026,6 +3072,7 @@ export default function FieldScout() {
                             {reviewSent.has(job.id) ? 'Review Sent' : 'Get Review'}
                           </button>
                         </div>
+                        )}
                       </div>
                     </div>
                   )}
