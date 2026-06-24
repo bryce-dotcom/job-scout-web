@@ -930,7 +930,41 @@ function EstimateDetailInner() {
     setSaving(true)
     setEstimate(prev => ({ ...prev, [field]: value }))
     await updateQuote(id, { [field]: value, updated_at: new Date().toISOString() })
+    // Keep a cached interactive proposal layout in lockstep with the savings
+    // the user just set. The layout is generated once and stored, so without
+    // this it keeps showing the savings baked in at generation time — Noah:
+    // "yearly savings is showing differently than what I set it as." Pure data
+    // patch (mirrors generate-proposal-layout's canonical forcing), no AI call.
+    if (field === 'manual_annual_savings') {
+      try { await syncProposalLayoutSavings(parseFloat(value) || 0) } catch (e) { console.warn('proposal savings sync', e) }
+    }
     setSaving(false)
+  }
+
+  // Overwrite annual_savings on every section/tier of the stored proposal
+  // layout with the canonical value (manual override wins; else the linked
+  // audit's annual savings), so the interactive proposal and the PDF agree
+  // with what's set on the estimate.
+  const syncProposalLayoutSavings = async (manualVal) => {
+    const so = estimate?.settings_overrides || {}
+    const layout = so.proposal_layout
+    if (!layout?.sections?.length) return
+    let canonical = manualVal > 0 ? manualVal : 0
+    if (!(canonical > 0) && estimate?.audit_id) {
+      const { data: aud } = await supabase
+        .from('lighting_audits').select('annual_savings_dollars').eq('id', estimate.audit_id).single()
+      canonical = parseFloat(aud?.annual_savings_dollars) || 0
+    }
+    if (!(canonical > 0)) return
+    const sections = layout.sections.map(section => {
+      if (section.type === 'savings_timeline') return { ...section, annual_savings: canonical }
+      if (section.type === 'roi_summary') return { ...section, metrics: { ...(section.metrics || {}), annual_savings: canonical } }
+      if (section.type === 'pricing_tiers' && Array.isArray(section.tiers)) {
+        return { ...section, tiers: section.tiers.map(t => ({ ...t, annual_savings: canonical })) }
+      }
+      return section
+    })
+    await saveSettingsOverrides({ ...so, proposal_layout: { ...layout, sections } }, { silent: true })
   }
 
   const updateMultipleFields = async (changes) => {
