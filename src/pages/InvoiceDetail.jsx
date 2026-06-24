@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle, CreditCard, ExternalLink, Paperclip } from 'lucide-react'
+import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle, CreditCard, ExternalLink, Paperclip, Receipt } from 'lucide-react'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { toast } from '../lib/toast'
@@ -61,6 +61,7 @@ export default function InvoiceDetail() {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [sendingReceipt, setSendingReceipt] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentData, setPaymentData] = useState({
     amount: '',
@@ -471,6 +472,81 @@ export default function InvoiceDetail() {
     }
   }
 
+  // Email a payment receipt to the client via the send-receipt edge function.
+  // Returns { ok } on send, { skipped } when there's no email on file, or
+  // { ok:false, error } on failure — so callers can give real feedback
+  // instead of the old fire-and-forget that left Tracy unsure it worked.
+  const sendReceiptEmail = async ({ amount, method, date, totalPaid }) => {
+    let receiptEmail = invoice.sent_to_email || ''
+    if (!receiptEmail && invoice.customer_id) {
+      const { data: cust } = await supabase.from('customers').select('email').eq('id', invoice.customer_id).single()
+      receiptEmail = cust?.email || ''
+    }
+    if (!receiptEmail) return { skipped: true }
+
+    const storeSettings = useStore.getState().settings
+    const buSetting = storeSettings.find(s => s.key === 'business_units')
+    let buObj = null
+    if (buSetting?.value && invoice.business_unit) {
+      try { buObj = JSON.parse(buSetting.value).find(u => u.name === invoice.business_unit) } catch { /* ignore */ }
+    }
+    let rLogoUrl = buObj?.logo_url || ''
+    if (!rLogoUrl) {
+      const logoSetting = storeSettings.find(s => s.key === 'company_logo_url')
+      rLogoUrl = logoSetting?.value || company?.logo_url || ''
+    }
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+    const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-receipt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON_KEY}`, 'apikey': ANON_KEY },
+        body: JSON.stringify({
+          recipient_email: receiptEmail,
+          customer_name: invoice.customer?.name || '',
+          invoice_number: invoice.invoice_id || `INV-${invoice.id}`,
+          payment_amount: amount,
+          payment_method: method,
+          payment_date: date,
+          balance_remaining: Math.max(0, (parseFloat(invoice.amount) || 0) - totalPaid),
+          invoice_total: invoice.amount,
+          total_paid: totalPaid,
+          company_name: company?.company_name || '',
+          business_unit_name: buObj?.name || invoice.business_unit || '',
+          business_unit_phone: buObj?.phone || company?.phone || '',
+          business_unit_email: buObj?.email || company?.owner_email || '',
+          business_unit_address: buObj?.address || company?.remit_to_address || company?.address || '',
+          logo_url: rLogoUrl,
+          portal_url: invoice.portal_token ? `https://jobscout.appsannex.com/portal/${invoice.portal_token}` : null
+        })
+      })
+      const j = await res.json().catch(() => ({}))
+      if (j?.success) return { ok: true, email: receiptEmail }
+      return { ok: false, error: j?.error || `send failed (${res.status})`, email: receiptEmail }
+    } catch (e) {
+      return { ok: false, error: e.message, email: receiptEmail }
+    }
+  }
+
+  // Manually (re)send a receipt for what's been paid so far — Tracy wanted to
+  // send a receipt on demand (e.g. after a card payment she applied manually).
+  const handleSendReceipt = async () => {
+    const totalPaid = (payments || []).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+    if (totalPaid <= 0) { toast.error('No payment recorded yet — nothing to receipt.'); return }
+    const latest = [...(payments || [])].sort((a, b) => new Date(b.date || b.created_at) - new Date(a.date || a.created_at))[0]
+    setSendingReceipt(true)
+    const r = await sendReceiptEmail({
+      amount: parseFloat(latest?.amount) || totalPaid,
+      method: latest?.method || 'Payment',
+      date: latest?.date || new Date().toISOString().split('T')[0],
+      totalPaid,
+    })
+    setSendingReceipt(false)
+    if (r.ok) toast.success(`Receipt emailed to ${r.email}`)
+    else if (r.skipped) toast.error('No email on file for this customer — add one to send a receipt.')
+    else toast.error('Receipt failed: ' + r.error)
+  }
+
   const addPayment = async () => {
     if (!paymentData.amount) return
 
@@ -519,51 +595,16 @@ export default function InvoiceDetail() {
     await fetchInvoiceData()
     await fetchInvoices()
 
-    // Send receipt email if customer has email
+    // Email the client a receipt — and tell the user what happened, so they
+    // aren't left guessing (Tracy's whole ticket was "I thought the system
+    // would send a receipt"). Non-blocking on the payment record itself.
     try {
-      let receiptEmail = invoice.sent_to_email || ''
-      if (!receiptEmail && invoice.customer_id) {
-        const { data: cust } = await supabase.from('customers').select('email,name').eq('id', invoice.customer_id).single()
-        receiptEmail = cust?.email || ''
-      }
-      if (receiptEmail) {
-        const storeSettings = useStore.getState().settings
-        const buSetting = storeSettings.find(s => s.key === 'business_units')
-        let buObj = null
-        if (buSetting?.value && invoice.business_unit) {
-          try { buObj = JSON.parse(buSetting.value).find(u => u.name === invoice.business_unit) } catch {}
-        }
-        let rLogoUrl = buObj?.logo_url || ''
-        if (!rLogoUrl) {
-          const logoSetting = storeSettings.find(s => s.key === 'company_logo_url')
-          rLogoUrl = logoSetting?.value || company?.logo_url || ''
-        }
-
-        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-        const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
-        fetch(`${SUPABASE_URL}/functions/v1/send-receipt`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON_KEY}`, 'apikey': ANON_KEY },
-          body: JSON.stringify({
-            recipient_email: receiptEmail,
-            customer_name: invoice.customer?.name || '',
-            invoice_number: invoice.invoice_id || `INV-${invoice.id}`,
-            payment_amount: paymentAmount,
-            payment_method: paymentData.method,
-            payment_date: paymentData.date,
-            balance_remaining: Math.max(0, (parseFloat(invoice.amount) || 0) - totalPaid),
-            invoice_total: invoice.amount,
-            total_paid: totalPaid,
-            company_name: company?.company_name || '',
-            business_unit_name: buObj?.name || invoice.business_unit || '',
-            business_unit_phone: buObj?.phone || company?.phone || '',
-            business_unit_email: buObj?.email || company?.owner_email || '',
-            business_unit_address: buObj?.address || company?.remit_to_address || company?.address || '',
-            logo_url: rLogoUrl,
-            portal_url: invoice.portal_token ? `https://jobscout.appsannex.com/portal/${invoice.portal_token}` : null
-          })
-        }).catch(() => {}) // Fire and forget — don't block payment on receipt
-      }
+      const r = await sendReceiptEmail({
+        amount: paymentAmount, method: paymentData.method, date: paymentData.date, totalPaid,
+      })
+      if (r.ok) toast.success(`Payment saved · receipt emailed to ${r.email}`)
+      else if (r.skipped) toast.success('Payment saved · no email on file, so no receipt was sent')
+      else toast.success('Payment saved · receipt failed to send (' + r.error + ')')
     } catch { /* receipt is non-critical */ }
 
     setPaymentData({
@@ -3049,6 +3090,20 @@ export default function InvoiceDetail() {
                 <Mail size={18} />
                 {invoice.last_sent_at ? 'Resend Invoice' : 'Send Invoice'}
               </button>
+
+              {/* Send Receipt — email the client a payment receipt on demand.
+                  Shown once any payment is recorded (Tracy: send a receipt
+                  after applying a card/manual payment). */}
+              {(payments && payments.length > 0) && (
+                <button
+                  onClick={handleSendReceipt}
+                  disabled={sendingReceipt}
+                  style={actionBtnStyle('#16a34a', '#ffffff')}
+                >
+                  <Receipt size={18} />
+                  {sendingReceipt ? 'Sending…' : 'Send Receipt'}
+                </button>
+              )}
 
               {/* Payment Portal — open portal to take payment over the phone */}
               {invoice.payment_status !== 'Paid' && (
