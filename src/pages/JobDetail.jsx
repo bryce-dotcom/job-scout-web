@@ -3298,14 +3298,6 @@ function JobDetailInner() {
             <div style="font-size:11px;color:#7d8a7f;margin-top:8px;">Each link downloads the original file in its native format.</div>
           </div>
           `}
-
-          <!-- What's inside -->
-          <div style="border-top:1px solid #eef2eb;padding-top:20px;">
-            <div style="font-size:12px;color:#7d8a7f;text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:10px;">Format</div>
-            <div style="font-size:14px;color:#2c3530;line-height:1.6;">
-              Original files in their native format &mdash; no ZIP, no folders, no merged PDF. Each PDF stays a PDF, each photo stays a photo.
-            </div>
-          </div>
         </td></tr>
 
         <!-- Footer -->
