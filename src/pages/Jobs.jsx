@@ -2680,6 +2680,11 @@ export default function Jobs() {
                       <option value="Bi-Annually">Bi-Annually (every 6 months)</option>
                       <option value="Annually">Annually</option>
                     </select>
+                    {formData.recurrence && formData.recurrence !== 'None' && (
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px', lineHeight: 1.4 }}>
+                        When this job is marked Completed, the next one is created automatically on the {formData.recurrence.toLowerCase()} date — same scope and crew, no re-entry.
+                      </div>
+                    )}
                   </div>
                 </div>
 
