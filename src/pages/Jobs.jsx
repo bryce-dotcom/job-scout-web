@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
 import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
 import { companyNotify } from '../lib/companyNotify'
@@ -32,16 +33,11 @@ const defaultTheme = {
 }
 
 // Render a UTC ISO timestamp from the DB into the bare "YYYY-MM-DDTHH:MM"
-// format an <input type="datetime-local"> expects — in the BROWSER's local
-// timezone. Avoids the "saves shift the time by your UTC offset on every
-// edit" bug Christopher hit (jobs/23309).
-const toLocalDateTimeInput = (isoString) => {
-  if (!isoString) return ''
-  const d = new Date(isoString)
-  if (isNaN(d.getTime())) return ''
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
+// format an <input type="datetime-local"> expects — anchored to the job's
+// REGION timezone (Utah/Mountain by default), not the browser's. Using the
+// browser tz made the same job read differently on different devices; tz is
+// resolved from the job's business unit. (Christopher's jobs/23309.)
+const toLocalDateTimeInput = (isoString, tz = DEFAULT_TZ) => toZonedInput(isoString, tz)
 
 const emptyJob = {
   job_title: '',
@@ -535,6 +531,9 @@ export default function Jobs() {
   const [showModal, setShowModal] = useState(false)
   const [editingJob, setEditingJob] = useState(null)
   const [formData, setFormData] = useState(emptyJob)
+  // Region tz for the job being edited (its business unit -> Mountain default).
+  // Anchors the start/end datetime inputs so they don't drift with the device.
+  const formTz = resolveTimezone(formData.business_unit, businessUnits, DEFAULT_TZ)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -943,8 +942,8 @@ export default function Jobs() {
       // so the input shows the wall-clock time the user originally picked.
       // Naively slicing the ISO would show UTC, which then gets re-saved
       // wrong on the next round-trip.
-      start_date: toLocalDateTimeInput(job.start_date),
-      end_date:   toLocalDateTimeInput(job.end_date),
+      start_date: toLocalDateTimeInput(job.start_date, resolveTimezone(job.business_unit, businessUnits, DEFAULT_TZ)),
+      end_date:   toLocalDateTimeInput(job.end_date, resolveTimezone(job.business_unit, businessUnits, DEFAULT_TZ)),
       allotted_time_hours: job.allotted_time_hours || '',
       details: job.details || '',
       notes: job.notes || '',
@@ -985,11 +984,15 @@ export default function Jobs() {
         next.status = 'Scheduled'
       }
       if (name === 'status' && value === 'Scheduled' && !prev.start_date) {
-        // Default to tomorrow 8 AM so the calendar has a date to render
+        // Default to tomorrow 8 AM as a bare wall-clock "YYYY-MM-DDTHH:MM"
+        // string — the form's invariant. The save converts it to UTC in the
+        // job's region tz (fromZonedInput), so 8 AM means 8 AM Mountain, not
+        // "8 AM on the server's clock." (The old `.toISOString().slice(0,16)`
+        // wrote a UTC wall-clock and the job landed offset hours off.)
         const tomorrow = new Date()
         tomorrow.setDate(tomorrow.getDate() + 1)
-        tomorrow.setHours(8, 0, 0, 0)
-        next.start_date = tomorrow.toISOString().slice(0, 16)
+        const pad = (n) => String(n).padStart(2, '0')
+        next.start_date = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T08:00`
       }
 
       return next
@@ -1021,16 +1024,12 @@ export default function Jobs() {
         : (formData.assigned_team || null),
       job_lead_id: formData.job_lead_id || (formData.assigned_employee_ids.length > 0 ? parseInt(formData.assigned_employee_ids[0]) : null),
       business_unit: formData.business_unit || null,
-      // datetime-local inputs emit a bare "YYYY-MM-DDTHH:MM" string with no
-      // timezone. If we pass that straight to a timestamptz column Postgres
-      // assumes UTC, so when the Job Board reads it back and renders in
-      // local time, the wall-clock time shifts by the TZ offset (Christopher
-      // saw 2:00 PM entries come back as 7:00 AM in MST). Round-tripping
-      // through new Date() (which parses the bare string as LOCAL) and
-      // .toISOString() (which serializes to UTC with offset baked in)
-      // preserves the wall-clock the user picked.
-      start_date: formData.start_date ? new Date(formData.start_date).toISOString() : null,
-      end_date:   formData.end_date   ? new Date(formData.end_date).toISOString()   : null,
+      // datetime-local inputs emit a bare "YYYY-MM-DDTHH:MM" wall-clock with no
+      // timezone. We interpret it in the job's REGION tz (Mountain by default)
+      // and store the correct UTC instant — so 2:00 PM saved in Utah comes back
+      // as 2:00 PM on every device, not 7:00 AM (Christopher's MST bug).
+      start_date: formData.start_date ? fromZonedInput(formData.start_date, formTz) : null,
+      end_date:   formData.end_date   ? fromZonedInput(formData.end_date, formTz)   : null,
       allotted_time_hours: formData.allotted_time_hours || null,
       details: formData.details || null,
       notes: formData.notes || null,

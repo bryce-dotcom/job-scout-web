@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, Component } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
+import { RecordHistoryButton } from '../components/RecordHistory'
 import { useTheme } from '../components/Layout'
 import HelpBadge from '../components/HelpBadge'
 import JobPartsTab from '../components/JobPartsTab'
@@ -84,23 +86,17 @@ class JobDetailErrorBoundary extends Component {
 // on blur. Prevents the entire JobDetail tree from re-rendering on every keystroke,
 // which was causing focus loss / "screen refresh" when tabbing between fields.
 // Convert a UTC ISO string -> the YYYY-MM-DDTHH:MM string a <input
-// type="datetime-local"> expects, in the user's local timezone.
-// Without this, Edit Job shows the literal UTC hour while the display
-// elsewhere uses toLocaleString — i.e. Doug's bug on /jobs/12607.
-function toLocalDateTime(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return ''
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+// type="datetime-local"> expects, anchored to the JOB's region timezone
+// (Utah/Mountain by default) rather than the viewer's device. Using the
+// device timezone is what made the same job read 7am on one screen and 1pm
+// on another (Christopher's ticket). tz is resolved from the business unit.
+function toLocalDateTime(iso, tz = DEFAULT_TZ) {
+  return toZonedInput(iso, tz)
 }
-// Inverse — turn what the datetime-local input emits (which JS reads as
-// local time) into a UTC ISO string for the DB.
-function fromLocalDateTime(local) {
-  if (!local) return null
-  const d = new Date(local)
-  if (isNaN(d.getTime())) return null
-  return d.toISOString()
+// Inverse — the wall-clock the input emits is in the job's region tz; turn it
+// back into a UTC ISO string for the DB.
+function fromLocalDateTime(local, tz = DEFAULT_TZ) {
+  return fromZonedInput(local, tz)
 }
 
 function LocalInput({ value, onCommit, ...rest }) {
@@ -208,6 +204,9 @@ function JobDetailInner() {
   }
 
   const [job, setJob] = useState(null)
+  // Region timezone for this job (business unit -> Mountain default). Anchors
+  // the start/end datetime inputs so they don't drift with the device tz.
+  const jobTz = resolveTimezone(job?.business_unit, businessUnits, DEFAULT_TZ)
   const [lineItems, setLineItems] = useState([])
   const [jobTimeLogs, setJobTimeLogs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -3482,6 +3481,8 @@ function JobDetailInner() {
             <Archive size={15} /> Archive Job
           </button>
         )}
+        {/* Salesforce-style activity history — who changed this job & when */}
+        <RecordHistoryButton tableName="jobs" recordId={job.id} tz={jobTz} style={{ fontSize: '13px', fontWeight: '500', padding: '8px 14px', minHeight: 'auto' }} />
       </div>
 
       {/* Deal Breadcrumb */}
@@ -3995,11 +3996,11 @@ function JobDetailInner() {
                   </div>
                   <div>
                     <label style={labelStyle}>Start Date</label>
-                    <LocalInput type="datetime-local" value={toLocalDateTime(formData.start_date)} onCommit={(v) => setFormData(prev => ({ ...prev, start_date: fromLocalDateTime(v) }))} style={inputStyle} />
+                    <LocalInput type="datetime-local" value={toLocalDateTime(formData.start_date, jobTz)} onCommit={(v) => setFormData(prev => ({ ...prev, start_date: fromLocalDateTime(v, jobTz) }))} style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>End Date</label>
-                    <LocalInput type="datetime-local" value={toLocalDateTime(formData.end_date)} onCommit={(v) => setFormData(prev => ({ ...prev, end_date: fromLocalDateTime(v) }))} style={inputStyle} />
+                    <LocalInput type="datetime-local" value={toLocalDateTime(formData.end_date, jobTz)} onCommit={(v) => setFormData(prev => ({ ...prev, end_date: fromLocalDateTime(v, jobTz) }))} style={inputStyle} />
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
