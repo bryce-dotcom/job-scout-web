@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { findMatchingCustomer } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
+import { RecordHistoryButton } from '../components/RecordHistory'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
@@ -2486,6 +2487,7 @@ function EstimateDetailInner() {
         >
           <ArrowLeft size={20} />
         </button>
+        <RecordHistoryButton tableName="quotes" recordId={estimate.id} style={{ marginRight: 8 }} />
         <div style={{ flex: 1 }}>
           <h1 style={{
             fontSize: isMobile ? '20px' : '24px',

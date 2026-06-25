@@ -81,6 +81,15 @@ export function formatZonedDate(iso, tz = DEFAULT_TZ, opts = {}) {
   }).format(d)
 }
 
+// Hour (0-23) of `iso` in `tz` — for bucketing an appointment onto an
+// hour row independent of the viewer's device.
+export function zonedHour(iso, tz = DEFAULT_TZ) {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return null
+  return new Date(d.getTime() + tzOffsetMs(d.getTime(), tz)).getUTCHours()
+}
+
 // "YYYY-MM-DD" for the day `iso` falls on IN `tz` — the key to bucket onto a
 // calendar day. Using device-local here is what shifted Tracy's evening leads.
 export function zonedDayKey(iso, tz = DEFAULT_TZ) {

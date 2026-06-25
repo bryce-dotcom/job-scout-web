@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { fromZonedInput, toZonedInput, zonedDayKey, zonedHour, DEFAULT_TZ } from '../lib/dateTz'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import {
@@ -308,24 +309,25 @@ export default function LeadSetter() {
     return filtered
   }
 
-  // Calendar helpers
+  // Calendar helpers — anchored to the company region tz (Mountain), NOT the
+  // viewer's device, so leads never jump a day on a non-Utah device or across a
+  // DST change (Tracy e8cccc81). Each grid day is the NOON-UTC instant of a
+  // Mountain calendar day, so the display getters (getDate/getDay/toDateString)
+  // still read the right day in any US timezone, while bucketing compares
+  // Mountain day-keys.
+  const MT = DEFAULT_TZ
+  const mtKey = (d) => zonedDayKey((d instanceof Date ? d : new Date(d)).toISOString(), MT)
+
   const getWeekStart = (date) => {
-    const d = new Date(date)
-    const day = d.getDay()
-    d.setDate(d.getDate() - day)
-    d.setHours(0, 0, 0, 0)
-    return d
+    const [y, m, d] = mtKey(date).split('-').map(Number)
+    const noon = Date.UTC(y, m - 1, d, 12)
+    const dow = new Date(noon).getUTCDay() // 0=Sun for that Mountain day
+    return new Date(noon - dow * 86400000)
   }
 
   const getWeekDays = () => {
     const start = getWeekStart(currentDate)
-    const days = []
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start)
-      d.setDate(d.getDate() + i)
-      days.push(d)
-    }
-    return days
+    return Array.from({ length: 7 }, (_, i) => new Date(start.getTime() + i * 86400000))
   }
 
   const getHourSlots = () => {
@@ -345,9 +347,8 @@ export default function LeadSetter() {
         const isMine = apt.salesperson_id === user.id || ids.includes(user.id)
         if (!isMine) return false
       }
-      const aptDate = new Date(apt.start_time)
-      const sameDay = aptDate.toDateString() === date.toDateString()
-      const aptHour = aptDate.getHours()
+      const sameDay = mtKey(apt.start_time) === mtKey(date)
+      const aptHour = zonedHour(apt.start_time, MT)
       const sameHour = aptHour === hour
       const isOutsideRange = aptHour < 7 || aptHour > 19
       const showInFirstSlot = isOutsideRange && hour === 7 && aptHour < 7
@@ -367,10 +368,7 @@ export default function LeadSetter() {
   }
 
 
-  const isToday = (date) => {
-    const today = new Date()
-    return date.toDateString() === today.toDateString()
-  }
+  const isToday = (date) => mtKey(date) === mtKey(new Date())
 
   const formatTime = (hour) => {
     const ampm = hour >= 12 ? 'PM' : 'AM'
@@ -546,15 +544,10 @@ export default function LeadSetter() {
     e.dataTransfer.setData('text/plain', `apt:${apt.id}`)
   }
 
-  // Helper to format date for datetime-local input (uses local time, not UTC)
-  const formatDateTimeLocal = (date) => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    return `${year}-${month}-${day}T${hours}:${minutes}`
-  }
+  // Format an instant as the Mountain wall-clock "YYYY-MM-DDTHH:MM" the
+  // datetime-local input shows — matches how appointments are saved (below), so
+  // a time entered as 2pm always means 2pm Mountain, not the device's tz.
+  const formatDateTimeLocal = (date) => toZonedInput((date instanceof Date ? date : new Date(date)).toISOString(), MT)
 
   const handleSlotDrop = async (e, date, hour) => {
     e.preventDefault()
@@ -564,11 +557,12 @@ export default function LeadSetter() {
     if (draggedAppointment) {
       const apt = draggedAppointment
       const oldStart = new Date(apt.start_time)
-      const newStart = new Date(date)
-      newStart.setHours(hour, 0, 0, 0)
+      // Build the new start from the dropped slot's Mountain wall-clock time.
+      const newStartIso = fromZonedInput(`${mtKey(date)}T${String(hour).padStart(2, '0')}:00`, MT)
+      const newStart = new Date(newStartIso)
 
       // Same slot — no-op
-      if (oldStart.toDateString() === newStart.toDateString() && oldStart.getHours() === hour) {
+      if (mtKey(oldStart) === mtKey(date) && zonedHour(apt.start_time, MT) === hour) {
         setDraggedAppointment(null)
         return
       }
@@ -582,7 +576,7 @@ export default function LeadSetter() {
 
       await supabase
         .from('appointments')
-        .update({ start_time: newStart.toISOString(), end_time: newEnd, updated_at: new Date().toISOString() })
+        .update({ start_time: newStartIso, end_time: newEnd, updated_at: new Date().toISOString() })
         .eq('id', apt.id)
 
       setDraggedAppointment(null)
@@ -592,13 +586,10 @@ export default function LeadSetter() {
 
     if (!draggedLead) return
 
-    // Open appointment modal with pre-filled time (in local timezone)
-    const startTime = new Date(date)
-    startTime.setHours(hour, 0, 0, 0)
-
+    // Open appointment modal pre-filled with the dropped slot's Mountain time.
     setSelectedLead(draggedLead)
     setAppointmentForm({
-      start_time: formatDateTimeLocal(startTime),
+      start_time: `${mtKey(date)}T${String(hour).padStart(2, '0')}:00`,
       duration_minutes: 60,
       salesperson_id: '',
       salesperson_ids: [],
@@ -621,9 +612,10 @@ export default function LeadSetter() {
     setSaving(true)
     setAppointmentError(null)
 
-    const startTime = new Date(appointmentForm.start_time)
-    const endTime = new Date(startTime)
-    endTime.setMinutes(endTime.getMinutes() + appointmentForm.duration_minutes)
+    // The form holds a Mountain wall-clock string; convert to the real UTC
+    // instant so the appointment lands on the same day/time for everyone.
+    const startTime = new Date(fromZonedInput(appointmentForm.start_time, MT))
+    const endTime = new Date(startTime.getTime() + appointmentForm.duration_minutes * 60000)
 
     // Resolve salesperson list. Primary id (salesperson_id) is the first in
     // the array — kept for backward compat with everything that reads only

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { findMatchingCustomer } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
+import { RecordHistoryButton } from '../components/RecordHistory'
 import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
 import {
@@ -985,6 +986,7 @@ export default function LeadDetail() {
             <ArrowLeft size={18} />
           </button>
 
+          <RecordHistoryButton tableName="leads" recordId={lead.id} style={{ marginRight: 8 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { RecordHistoryButton } from '../components/RecordHistory'
 import { useTheme } from '../components/Layout'
 import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle, CreditCard, ExternalLink, Paperclip, Receipt } from 'lucide-react'
 import DealBreadcrumb from '../components/DealBreadcrumb'
@@ -1806,6 +1807,7 @@ export default function InvoiceDetail() {
         >
           <ArrowLeft size={20} />
         </button>
+        <RecordHistoryButton tableName="invoices" recordId={invoice.id} style={{ marginRight: 8 }} />
         <div style={{ flex: 1 }}>
           <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {isEditing ? (
