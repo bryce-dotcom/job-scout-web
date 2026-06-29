@@ -1457,7 +1457,12 @@ function EstimateDetailInner() {
         .insert([{
           company_id: companyId,
           job_id: jobNumber,
-          job_title: estimateRow.estimate_name || estimateRow.service_type || `${customerName} - Job`,
+          // Prefer the BUSINESS name for the fallback title — a commercial
+          // lead with a split contact/business (e.g. contact "Casey",
+          // business "Electric 51 Speedshop") was landing as "Casey - Job"
+          // and flowing through to the job board + POs. Business name first,
+          // contact name only when there's no business.
+          job_title: estimateRow.estimate_name || estimateRow.service_type || `${businessName || customerName} - Job`,
           customer_id: customerId,
           lead_id: estimateRow.lead_id ? parseInt(estimateRow.lead_id) : null,
           salesperson_id: estimateRow.salesperson_id || null,
