@@ -6,6 +6,7 @@ import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../li
 import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
 import { companyNotify } from '../lib/companyNotify'
+import { isAdmin as checkAdmin } from '../lib/accessControl'
 import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin, Map as MapIcon,
   Play, CheckCircle, FileText, ChevronRight, User, Users, Upload, Download,
@@ -517,6 +518,7 @@ export default function Jobs() {
   const location = useLocation()
   const companyId = useStore((state) => state.companyId)
   const user = useStore((state) => state.user)
+  const isAdmin = checkAdmin(user) // only Admin+ may edit allotted hours (bonus driver)
   const jobs = useStore((state) => state.jobs)
   const customers = useStore((state) => state.customers)
   const employees = useStore((state) => state.employees)
@@ -2662,8 +2664,9 @@ export default function Jobs() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Allotted Hours</label>
-                    <input type="number" name="allotted_time_hours" value={formData.allotted_time_hours} onChange={handleChange} step="0.25" style={inputStyle} />
+                    <label style={labelStyle}>Allotted Hours{!isAdmin && <span style={{ fontWeight: 400, color: theme.textMuted, fontSize: '11px' }}> · admin only</span>}</label>
+                    {/* Allotted hours drives the efficiency-bonus math (saved = allotted - actual) — Admin+ only. */}
+                    <input type="number" name="allotted_time_hours" value={formData.allotted_time_hours} onChange={handleChange} step="0.25" disabled={!isAdmin} title={!isAdmin ? 'Only an admin can change allotted hours' : undefined} style={{ ...inputStyle, ...(!isAdmin ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }} />
                   </div>
                   <div>
                     <label style={labelStyle}>Recurrence</label>

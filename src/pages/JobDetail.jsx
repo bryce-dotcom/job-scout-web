@@ -4005,8 +4005,10 @@ function JobDetailInner() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div>
-                    <label style={labelStyle}>Allotted Hours</label>
-                    <LocalInput type="number" value={formData.allotted_time_hours || ''} onCommit={(v) => setFormData(prev => ({ ...prev, allotted_time_hours: v }))} step="0.25" style={inputStyle} />
+                    <label style={labelStyle}>Allotted Hours{!isAdmin && <span style={{ fontWeight: 400, color: theme.textMuted, fontSize: '11px' }}> · admin only</span>}</label>
+                    {/* Allotted hours drives the efficiency-bonus math (saved = allotted - actual),
+                        so only Admin+ may edit it. Non-admins see it read-only. */}
+                    <LocalInput type="number" value={formData.allotted_time_hours || ''} onCommit={(v) => setFormData(prev => ({ ...prev, allotted_time_hours: v }))} step="0.25" disabled={!isAdmin} title={!isAdmin ? 'Only an admin can change allotted hours' : undefined} style={{ ...inputStyle, ...(!isAdmin ? { opacity: 0.6, cursor: 'not-allowed', backgroundColor: theme.bgCardHover } : {}) }} />
                   </div>
                 </div>
                 <div>
