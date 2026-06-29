@@ -260,9 +260,12 @@ export default function PurchaseOrderDetail() {
     // Resolve the full BU object (has name/address/phone/email) from the
     // stored BU name so the PDF header shows the right division.
     const buName = poBusinessUnit || po.job?.business_unit
-    const buObj = Array.isArray(businessUnits)
-      ? businessUnits.find(bu => (bu.name || bu) === buName) || null
-      : null
+    // Fall back to a name-only object if the full BU (with address) isn't in
+    // the store yet — otherwise the header silently reverts to the parent
+    // company (HHH) even though the PO has a business unit set.
+    const buObj = (Array.isArray(businessUnits)
+      ? businessUnits.find(bu => (bu.name || bu) === buName)
+      : null) || (buName ? { name: buName } : null)
     return generatePoPdf({ po, lines, vendor: po.vendor, company, job: po.job, businessUnit: buObj })
   }
 
