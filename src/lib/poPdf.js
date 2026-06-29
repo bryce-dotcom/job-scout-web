@@ -65,29 +65,41 @@ export function generatePoPdf({ po, lines, vendor, company, job, businessUnit })
       for (const l of lines) { doc.text(l, margin, vy); vy += 5 }
     }
   }
-  // Ship to: customer/project name first, then address, then job reference.
-  // po.ship_to_address overrides job.job_address when explicitly set.
-  if (job) {
-    if (job.customer_name) {
+  // Ship To: defaults to the business unit (the warehouse). An explicit
+  // po.ship_to_address means the buyer chose "ship to job site" — show the
+  // customer/job with that address instead.
+  if (po.ship_to_address) {
+    if (job?.customer_name) {
       doc.setFont('helvetica', 'bold')
       doc.text(job.customer_name, margin + contentW * 0.5, sy); sy += 5
       doc.setFont('helvetica', 'normal')
     }
-    if (job.job_title && job.job_title !== job.customer_name) {
+    if (job?.job_title && job.job_title !== job?.customer_name) {
       doc.text(job.job_title, margin + contentW * 0.5, sy); sy += 5
     }
-  }
-  const shipTo = po.ship_to_address || job?.job_address || job?.address || companyAddress
-  if (shipTo) {
-    const shipLines = doc.splitTextToSize(shipTo, contentW * 0.45)
-    for (const l of shipLines) { doc.text(l, margin + contentW * 0.5, sy); sy += 5 }
+    for (const l of doc.splitTextToSize(po.ship_to_address, contentW * 0.45)) {
+      doc.text(l, margin + contentW * 0.5, sy); sy += 5
+    }
+    if (job) {
+      doc.setFontSize(9); doc.setTextColor(120)
+      doc.text(`Ref: ${job.job_id}`, margin + contentW * 0.5, sy); sy += 5
+      doc.setFontSize(10); doc.setTextColor(0)
+    }
   } else {
-    doc.text('(no ship-to address set)', margin + contentW * 0.5, sy); sy += 5
-  }
-  if (job) {
-    doc.setFontSize(9); doc.setTextColor(120)
-    doc.text(`Ref: ${job.job_id}`, margin + contentW * 0.5, sy); sy += 5
-    doc.setFontSize(10); doc.setTextColor(0)
+    doc.setFont('helvetica', 'bold')
+    doc.text(headerName, margin + contentW * 0.5, sy); sy += 5
+    doc.setFont('helvetica', 'normal')
+    if (companyAddress) {
+      for (const l of doc.splitTextToSize(companyAddress, contentW * 0.45)) {
+        doc.text(l, margin + contentW * 0.5, sy); sy += 5
+      }
+    }
+    if (headerPhone) { doc.text(headerPhone, margin + contentW * 0.5, sy); sy += 5 }
+    if (job) {
+      doc.setFontSize(9); doc.setTextColor(120)
+      doc.text(`For job: ${job.job_id}`, margin + contentW * 0.5, sy); sy += 5
+      doc.setFontSize(10); doc.setTextColor(0)
+    }
   }
   y = Math.max(vy, sy) + 6
 

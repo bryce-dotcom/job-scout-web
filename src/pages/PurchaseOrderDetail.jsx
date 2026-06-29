@@ -124,7 +124,9 @@ export default function PurchaseOrderDetail() {
     setInternalNotes(poRow.internal_notes || '')
     setPoBusinessUnit(poRow.business_unit || poRow.job?.business_unit || '')
     // Seed ship-to: explicit override → job address → blank
-    setShipToAddress(poRow.ship_to_address || poRow.job?.job_address || '')
+    // Blank ship-to = ship to the business unit (warehouse), the default.
+    // Shipping to the job site is an explicit choice (the button below).
+    setShipToAddress(poRow.ship_to_address || '')
     setLoading(false)
   }
 
@@ -873,14 +875,26 @@ export default function PurchaseOrderDetail() {
               </div>
             )}
 
-            {/* Ship-to address — always editable, no financial implications */}
+            {/* Ship-to address. Blank = ship to the business unit (warehouse),
+                which is the default. Button fills the job-site address. */}
             <div style={{ marginTop: 14 }}>
-              <Label theme={theme}>Ship To</Label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <Label theme={theme}>Ship To</Label>
+                {po.job?.job_address && (
+                  <button
+                    type="button"
+                    onClick={() => { setShipToAddress(po.job.job_address); saveHeader({ ship_to_address: po.job.job_address }) }}
+                    style={{ fontSize: 11, color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
+                  >
+                    Use job site address
+                  </button>
+                )}
+              </div>
               <textarea
                 value={shipToAddress}
                 onChange={(e) => setShipToAddress(e.target.value)}
                 onBlur={() => saveHeader()}
-                placeholder="Delivery address (defaults to job address)"
+                placeholder={`Blank → ships to ${poBusinessUnit || 'the business unit'}. Enter an address or use the job site.`}
                 rows={2}
                 style={{
                   ...inlineInput(theme),
