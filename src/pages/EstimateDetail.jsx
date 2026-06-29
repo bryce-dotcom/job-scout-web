@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { findMatchingCustomer } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { RecordHistoryButton } from '../components/RecordHistory'
+import { deriveBusinessUnit } from '../lib/businessUnitForWork'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
@@ -485,7 +486,7 @@ function EstimateDetailInner() {
       let lines = null
       const { data: l1, error: lErr } = await supabase
         .from('quote_lines')
-        .select('*, item:products_services(id, name, description, unit_price, cost, markup_percent, spec_sheet_url, install_guide_url, dlc_document_url)')
+        .select('*, item:products_services(id, name, type, suggest_in_lenard, description, unit_price, cost, markup_percent, spec_sheet_url, install_guide_url, dlc_document_url)')
         .eq('quote_id', id)
         .order('sort_order', { ascending: true })
       if (!lErr) {
@@ -493,7 +494,7 @@ function EstimateDetailInner() {
       } else {
         const { data: l2 } = await supabase
           .from('quote_lines')
-          .select('*, item:products_services(id, name, description, unit_price, cost, markup_percent, spec_sheet_url, install_guide_url, dlc_document_url)')
+          .select('*, item:products_services(id, name, type, suggest_in_lenard, description, unit_price, cost, markup_percent, spec_sheet_url, install_guide_url, dlc_document_url)')
           .eq('quote_id', id)
           .order('id')
         lines = l2
@@ -1470,8 +1471,12 @@ function EstimateDetailInner() {
           // Carry the estimate's business unit so the job shows under the
           // right Job Board calendar. A null business_unit makes the job
           // invisible whenever a calendar/BU filter is active (Alayda's
-          // "NPT" job vanished for this reason).
-          business_unit: estimateRow.business_unit || null,
+          // "NPT" job vanished for this reason). When the estimate has none,
+          // derive it from the TYPE OF WORK on the line items (lighting ->
+          // Energy Scout, cleaning -> HHH Building Services).
+          business_unit: estimateRow.business_unit
+            || deriveBusinessUnit({ products: (lineItems || []).map(l => l.item).filter(Boolean), text: estimateRow.estimate_name || estimateRow.service_type })
+            || null,
           job_address: customerInfo?.address || null,
           // Default to Chillin (the triage / new-jobs column) — matches
           // Jobs.jsx default and what Doug expects when an estimate is
