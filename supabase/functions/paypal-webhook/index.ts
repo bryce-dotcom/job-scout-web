@@ -167,7 +167,7 @@ serve(async (req) => {
       // Sales Won (which counts jobs, not approved quotes).
       const { data: estimate } = await supabase
         .from('quotes')
-        .select('id, company_id, lead_id, customer_id, customer_name, salesperson_id, estimate_name, job_title, quote_amount, quote_id, utility_incentive, summary, service_date, job_id')
+        .select('id, company_id, lead_id, customer_id, salesperson_id, estimate_name, job_title, quote_amount, quote_id, utility_incentive, summary, service_date, job_id, lead:leads(business_name, customer_name), customer:customers(business_name, name)')
         .eq('id', documentId)
         .single();
 
@@ -179,12 +179,17 @@ serve(async (req) => {
       if (estimate && !estimate.job_id) {
         try {
           const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`;
+          // Title the job business-name-first (customer → lead), matching
+          // EstimateDetail.convertToJob and approve-document. quotes has no
+          // customer_name column, so the name comes from the joined records.
+          const jobCustomerName = estimate.customer?.business_name || estimate.customer?.name
+            || estimate.lead?.business_name || estimate.lead?.customer_name || 'Customer';
           const { data: newJob, error: jobErr } = await supabase
             .from('jobs')
             .insert([{
               company_id: estimate.company_id,
               job_id: jobNumber,
-              job_title: estimate.estimate_name || estimate.job_title || `${estimate.customer_name || 'Customer'} - Job`,
+              job_title: estimate.estimate_name || estimate.job_title || `${jobCustomerName} - Job`,
               customer_id: estimate.customer_id || null,
               lead_id: estimate.lead_id ? parseInt(String(estimate.lead_id)) : null,
               salesperson_id: estimate.salesperson_id || null,
