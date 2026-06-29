@@ -108,10 +108,14 @@ export default function PurchaseOrderDetail() {
         .in('po_line_id', lineIds)
       lineJobs = data || []
     }
-    // Bucket by po_line_id for easy attachment to each line row
+    // Bucket by po_line_id for easy attachment to each line row. Also attach
+    // the product's vendor_sku (the Order Code) so the PDF can show it as its
+    // own "Product Number" column instead of buried in the description.
+    const prodById = new Map((pRes.data || []).map(p => [p.id, p]))
     const linesWithJobs = baseLines.map(l => ({
       ...l,
       jobLinks: lineJobs.filter(lj => lj.po_line_id === l.id),
+      vendor_sku: prodById.get(l.product_id)?.vendor_sku || null,
     }))
     setLines(linesWithJobs)
     setVendors(vRes.data || [])

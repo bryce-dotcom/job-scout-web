@@ -1,6 +1,14 @@
-// Purchase Order PDF generator. Visual style mirrors InvoiceDetail's
-// invoice PDF so vendor-facing documents and customer-facing documents
-// share the same brand identity.
+// Purchase Order PDF generator.
+//
+// Matches the field-requested format (HHH mockup): a three-column header —
+// Account (the business unit) / Job Name + PO# + note + need-by / Ship To —
+// then a line table with the Order Code (product.vendor_sku) as its own
+// "Product Number" column. Ship To defaults to the business unit (warehouse);
+// an explicit po.ship_to_address ships to the job site instead.
+//
+// Every value is a live DB record (purchase_orders, purchase_order_lines,
+// products_services.vendor_sku, the business_units setting, jobs, vendors) —
+// nothing here is hard-coded.
 
 import { jsPDF } from 'jspdf'
 import { formatCurrency } from './poUtils'
@@ -8,207 +16,130 @@ import { formatCurrency } from './poUtils'
 export function generatePoPdf({ po, lines, vendor, company, job, businessUnit }) {
   const doc = new jsPDF()
   const pageW = doc.internal.pageSize.getWidth()
-  const margin = 20
+  const pageH = doc.internal.pageSize.getHeight()
+  const margin = 15
   const rightEdge = pageW - margin
   const contentW = pageW - margin * 2
-  let y = 20
+  const cx = pageW / 2
 
-  // ── Header ──────────────────────────────────────────────────────────
-  const headerName = businessUnit?.name || company?.company_name || company?.name || 'Company'
-  doc.setFontSize(20); doc.setFont('helvetica', 'bold')
-  doc.text(headerName, margin, y); y += 8
+  const buName = businessUnit?.name || company?.company_name || company?.name || 'Company'
+  const buAddr = businessUnit?.address || company?.address || ''
+  const buPhone = businessUnit?.phone || company?.phone || ''
+  const jobName = job?.job_title || job?.customer_name || ''
 
-  doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(100)
-  const companyAddress = businessUnit?.address || company?.address
-  if (companyAddress) {
-    const lines = doc.splitTextToSize(companyAddress, contentW * 0.5)
-    for (const l of lines) { doc.text(l, margin, y); y += 5 }
-  }
-  const headerPhone = businessUnit?.phone || company?.phone
-  const headerEmail = businessUnit?.email || company?.owner_email || company?.email
-  if (headerPhone) { doc.text(headerPhone, margin, y); y += 5 }
-  if (headerEmail) { doc.text(headerEmail, margin, y); y += 5 }
-  y += 4
+  // ── Three-column header: Account / Job / Ship To ───────────────────
+  const top = 22
 
-  // PO title block (right side)
-  doc.setTextColor(90, 99, 73)
-  doc.setFontSize(20); doc.setFont('helvetica', 'bold')
-  doc.text('PURCHASE ORDER', rightEdge, 20, { align: 'right' })
-  doc.setTextColor(80); doc.setFontSize(10); doc.setFont('helvetica', 'normal')
-  let iy = 30
-  doc.text(`PO #: ${po.po_number}`, rightEdge, iy, { align: 'right' }); iy += 5
-  doc.text(`Date: ${formatDate(po.sent_at || po.created_at)}`, rightEdge, iy, { align: 'right' }); iy += 5
-  if (po.expected_delivery_date) {
-    doc.text(`Expected: ${formatDate(po.expected_delivery_date)}`, rightEdge, iy, { align: 'right' }); iy += 5
-  }
+  // Account (left) = the business unit
+  doc.setTextColor(0); doc.setFontSize(10); doc.setFont('helvetica', 'bold')
+  doc.text('Account:', margin, top)
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
+  let ly = top + 5
+  doc.text(buName, margin, ly); ly += 4
+  for (const l of doc.splitTextToSize(buAddr, contentW * 0.30)) { doc.text(l, margin, ly); ly += 4 }
+  if (buPhone) { doc.text(buPhone, margin, ly); ly += 4 }
 
-  // Divider
-  doc.setDrawColor(214, 205, 184)
-  doc.line(margin, y, rightEdge, y)
-  y += 10
-
-  // ── Vendor + Ship To ───────────────────────────────────────────────
-  doc.setTextColor(0); doc.setFontSize(11); doc.setFont('helvetica', 'bold')
-  doc.text('Vendor:', margin, y)
-  doc.text('Ship To:', margin + contentW * 0.5, y)
-  y += 6
-
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10)
-  let vy = y, sy = y
-  if (vendor) {
-    doc.text(vendor.name || '—', margin, vy); vy += 5
-    if (vendor.contact_name) { doc.text(vendor.contact_name, margin, vy); vy += 5 }
-    if (vendor.email) { doc.text(vendor.email, margin, vy); vy += 5 }
-    if (vendor.phone) { doc.text(vendor.phone, margin, vy); vy += 5 }
-    if (vendor.billing_address) {
-      const lines = doc.splitTextToSize(vendor.billing_address, contentW * 0.45)
-      for (const l of lines) { doc.text(l, margin, vy); vy += 5 }
-    }
-  }
-  // Ship To: defaults to the business unit (the warehouse). An explicit
-  // po.ship_to_address means the buyer chose "ship to job site" — show the
-  // customer/job with that address instead.
-  if (po.ship_to_address) {
-    if (job?.customer_name) {
-      doc.setFont('helvetica', 'bold')
-      doc.text(job.customer_name, margin + contentW * 0.5, sy); sy += 5
-      doc.setFont('helvetica', 'normal')
-    }
-    if (job?.job_title && job.job_title !== job?.customer_name) {
-      doc.text(job.job_title, margin + contentW * 0.5, sy); sy += 5
-    }
-    for (const l of doc.splitTextToSize(po.ship_to_address, contentW * 0.45)) {
-      doc.text(l, margin + contentW * 0.5, sy); sy += 5
-    }
-    if (job) {
-      doc.setFontSize(9); doc.setTextColor(120)
-      doc.text(`Ref: ${job.job_id}`, margin + contentW * 0.5, sy); sy += 5
-      doc.setFontSize(10); doc.setTextColor(0)
-    }
-  } else {
-    doc.setFont('helvetica', 'bold')
-    doc.text(headerName, margin + contentW * 0.5, sy); sy += 5
-    doc.setFont('helvetica', 'normal')
-    if (companyAddress) {
-      for (const l of doc.splitTextToSize(companyAddress, contentW * 0.45)) {
-        doc.text(l, margin + contentW * 0.5, sy); sy += 5
-      }
-    }
-    if (headerPhone) { doc.text(headerPhone, margin + contentW * 0.5, sy); sy += 5 }
-    if (job) {
-      doc.setFontSize(9); doc.setTextColor(120)
-      doc.text(`For job: ${job.job_id}`, margin + contentW * 0.5, sy); sy += 5
-      doc.setFontSize(10); doc.setTextColor(0)
-    }
-  }
-  y = Math.max(vy, sy) + 6
-
-  if (vendor?.default_payment_terms) {
-    doc.setFontSize(10); doc.setTextColor(80)
-    doc.text(`Terms: ${vendor.default_payment_terms}`, margin, y); y += 6
-    doc.setTextColor(0)
-  }
-
-  // ── Line items table ───────────────────────────────────────────────
-  // Header
-  const descColW = contentW * 0.5
-  const qtyX = margin + descColW + 4
-  const costX = qtyX + 30
-  const totalX = rightEdge - 4
-
-  doc.setFillColor(90, 99, 73)
-  doc.rect(margin, y - 4, contentW, 8, 'F')
-  doc.setTextColor(255); doc.setFontSize(10); doc.setFont('helvetica', 'bold')
-  doc.text('Description', margin + 4, y)
-  doc.text('Qty', qtyX, y, { align: 'left' })
-  doc.text('Unit Cost', costX, y, { align: 'left' })
-  doc.text('Total', totalX, y, { align: 'right' })
-  y += 8
-
-  doc.setTextColor(0); doc.setFont('helvetica', 'normal'); doc.setFontSize(10)
-  for (const line of lines || []) {
-    if (y > 250) { doc.addPage(); y = 20 }
-    const descLines = doc.splitTextToSize(line.description || 'Item', descColW)
-    const rowH = Math.max(6, descLines.length * 5)
-    for (let i = 0; i < descLines.length; i++) {
-      doc.text(descLines[i], margin + 4, y + (i * 5))
-    }
-    doc.text(String(line.quantity_ordered || 0), qtyX, y)
-    doc.text(formatCurrency(line.unit_cost), costX, y)
-    doc.text(formatCurrency(line.line_total), totalX, y, { align: 'right' })
-    y += rowH + 2
-
-    // Per-line job allocation — Bryce flagged: vendors pick + label by
-    // job, so they need to see which job each portion is for. Renders
-    // as muted italic block under the description, indented from the
-    // left margin, e.g.:
-    //   For:  JOB-2301 Capital Lumber — qty 5
-    //         JOB-2302 Evergreen      — qty 8
-    if (Array.isArray(line.jobLinks) && line.jobLinks.length > 0) {
-      doc.setFontSize(9); doc.setTextColor(110); doc.setFont('helvetica', 'italic')
-      const labelX = margin + 8
-      doc.text('For:', labelX, y)
-      const jobX = labelX + 14
-      for (let i = 0; i < line.jobLinks.length; i++) {
-        if (y > 270) { doc.addPage(); y = 20 }
-        const link = line.jobLinks[i]
-        const job = link.jobs || {}
-        // Warehouse reads the name, not the job number
-        const jobName = job.customer_name || job.job_title || job.job_id || `Job ${link.job_id}`
-        const label = `${jobName} — qty ${link.quantity}`
-        doc.text(label, jobX, y)
-        y += 5
-      }
-      doc.setFontSize(10); doc.setTextColor(0); doc.setFont('helvetica', 'normal')
-      y += 2  // breathing room before next line
-    }
-  }
-
-  // Bottom border
-  doc.setDrawColor(214, 205, 184)
-  doc.line(margin, y, rightEdge, y)
-  y += 8
-
-  // ── Totals ──────────────────────────────────────────────────────────
-  const totalsX = rightEdge - 70
-  const drawTotal = (label, amount, opts = {}) => {
-    doc.setFont('helvetica', opts.bold ? 'bold' : 'normal')
-    doc.setFontSize(opts.fontSize || 10)
-    if (opts.color) doc.setTextColor(...opts.color); else doc.setTextColor(0)
-    doc.text(label, totalsX, y)
-    doc.text(amount, rightEdge, y, { align: 'right' })
-    y += 6
-  }
-  drawTotal('Subtotal:', formatCurrency(po.subtotal))
-  if (parseFloat(po.tax) > 0) drawTotal('Tax:', formatCurrency(po.tax))
-  if (parseFloat(po.shipping) > 0) drawTotal('Shipping:', formatCurrency(po.shipping))
-  y += 2
-  doc.setDrawColor(90, 99, 73); doc.setLineWidth(0.5)
-  doc.line(totalsX, y, rightEdge, y); doc.setLineWidth(0.2)
-  y += 7
-  drawTotal('TOTAL:', formatCurrency(po.total), { bold: true, fontSize: 13 })
-  y += 10
-
-  // ── Notes ──────────────────────────────────────────────────────────
+  // Center: Job Name / PO # / note / need-by. Wrapped + sized to fit BETWEEN
+  // the Account and Ship To columns so a long job name can't overrun them.
+  doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(0)
+  let cy = top
+  for (const l of doc.splitTextToSize(`Job Name: ${jobName}`, contentW * 0.34)) { doc.text(l, cx, cy, { align: 'center' }); cy += 5 }
+  doc.setFontSize(10)
+  doc.text(`PO #: ${po.po_number}`, cx, cy, { align: 'center' }); cy += 6
   if (po.notes) {
-    if (y > 250) { doc.addPage(); y = 20 }
-    doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(0)
-    doc.text('Notes:', margin, y); y += 5
-    doc.setFont('helvetica', 'normal'); doc.setTextColor(80)
-    const notesLines = doc.splitTextToSize(po.notes, contentW)
-    for (const l of notesLines) {
-      if (y > 270) { doc.addPage(); y = 20 }
-      doc.text(l, margin, y); y += 5
-    }
-    y += 4
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10)
+    for (const l of doc.splitTextToSize(po.notes, contentW * 0.40)) { doc.text(l, cx, cy, { align: 'center' }); cy += 5 }
+  }
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
+  if (po.expected_delivery_date) { doc.text(`Need by: ${formatDate(po.expected_delivery_date)}`, cx, cy, { align: 'center' }); cy += 5 }
+
+  // Ship To (right) — defaults to the business unit; job site when overridden
+  const sx = margin + contentW * 0.70
+  doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(0)
+  doc.text('Ship To:', sx, top)
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
+  let ry = top + 5
+  if (po.ship_to_address) {
+    if (job?.customer_name) { doc.setFont('helvetica', 'bold'); doc.text(job.customer_name, sx, ry); ry += 4; doc.setFont('helvetica', 'normal') }
+    for (const l of doc.splitTextToSize(po.ship_to_address, contentW * 0.28)) { doc.text(l, sx, ry); ry += 4 }
+  } else {
+    doc.text(buName, sx, ry); ry += 4
+    for (const l of doc.splitTextToSize(buAddr, contentW * 0.28)) { doc.text(l, sx, ry); ry += 4 }
+    if (buPhone) { doc.text(buPhone, sx, ry); ry += 4 }
+  }
+
+  // Vendor — small line so the recipient is on the document (the mockup
+  // omits it, but a PO with no vendor is risky; kept muted under the header).
+  let y = Math.max(ly, cy, ry) + 5
+  if (vendor?.name) {
+    doc.setFontSize(9); doc.setTextColor(110)
+    doc.text(`Vendor: ${vendor.name}${vendor.default_payment_terms ? `  ·  Terms: ${vendor.default_payment_terms}` : ''}`, margin, y)
+    doc.setTextColor(0); y += 5
+  }
+  y += 3
+
+  // ── "Product:" section + line table ────────────────────────────────
+  doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(0)
+  doc.text('Product:', cx, y, { align: 'center' }); y += 8
+
+  const xNum = margin
+  const xQty = margin + contentW * 0.17
+  const xDesc = margin + contentW * 0.27
+  const xPrice = margin + contentW * 0.84   // right-aligned
+  const xTotal = rightEdge                   // right-aligned
+  const descW = contentW * 0.46
+
+  const headerRow = (yy) => {
+    doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(0)
+    doc.text('Product Number', xNum, yy)
+    doc.text('Quantity', xQty, yy)
+    doc.text('Description', xDesc, yy)
+    doc.text('Price Per Item', xPrice, yy, { align: 'right' })
+    doc.text('Total Price', xTotal, yy, { align: 'right' })
+    doc.setDrawColor(180); doc.line(margin, yy + 2, rightEdge, yy + 2)
+  }
+  headerRow(y); y += 7
+
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(0); doc.setFontSize(9)
+  let qtySum = 0
+  for (const line of lines || []) {
+    if (y > pageH - 35) { doc.addPage(); y = 20; headerRow(y); y += 7; doc.setFont('helvetica', 'normal'); doc.setFontSize(9) }
+    // Order code = product.vendor_sku (attached by the caller). Strip a
+    // trailing "(sku)" from the description so it isn't shown twice.
+    const code = line.vendor_sku || ''
+    let desc = line.description || 'Item'
+    if (code && desc.includes(`(${code})`)) desc = desc.replace(`(${code})`, '').replace(/\s{2,}/g, ' ').trim()
+    const descLines = doc.splitTextToSize(desc, descW)
+    doc.text(String(code), xNum, y)
+    doc.text(String(line.quantity_ordered || 0), xQty, y)
+    for (let i = 0; i < descLines.length; i++) doc.text(descLines[i], xDesc, y + i * 4)
+    doc.text(formatCurrency(line.unit_cost), xPrice, y, { align: 'right' })
+    doc.text(formatCurrency(line.line_total), xTotal, y, { align: 'right' })
+    qtySum += parseFloat(line.quantity_ordered) || 0
+    y += Math.max(5, descLines.length * 4) + 3
+  }
+
+  doc.setDrawColor(120); doc.line(margin, y, rightEdge, y); y += 6
+
+  // ── Total row ──────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(0)
+  doc.text('Total', xNum, y)
+  doc.text(String(qtySum), xQty, y)
+  doc.text(formatCurrency(po.total), xTotal, y, { align: 'right' })
+  y += 7
+  if (parseFloat(po.tax) > 0 || parseFloat(po.shipping) > 0) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(110)
+    const bits = [`Subtotal ${formatCurrency(po.subtotal)}`]
+    if (parseFloat(po.tax) > 0) bits.push(`Tax ${formatCurrency(po.tax)}`)
+    if (parseFloat(po.shipping) > 0) bits.push(`Shipping ${formatCurrency(po.shipping)}`)
+    doc.text(bits.join('    '), xTotal, y, { align: 'right' }); y += 5
   }
 
   // ── Footer ─────────────────────────────────────────────────────────
   doc.setFontSize(9); doc.setTextColor(140)
   doc.text(
-    `Generated ${new Date().toLocaleDateString()} · ${headerName} · PO ${po.po_number}`,
-    pageW / 2, doc.internal.pageSize.getHeight() - 10,
-    { align: 'center' }
+    `${buName} · PO ${po.po_number} · Generated ${new Date().toLocaleDateString()}`,
+    cx, pageH - 10, { align: 'center' }
   )
 
   return doc
