@@ -142,6 +142,7 @@ export default function Dashboard() {
   const [activeTimeLog, setActiveTimeLog] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [prefs, setPrefs] = useState(loadPrefs)
+  const [drill, setDrill] = useState(null) // metric drill-down: { title, items, total, page }
   const [pendingTimeOff, setPendingTimeOff] = useState([])
   // PO module stats — lazy-loaded so the Dashboard doesn't pay the cost
   // for companies that don't use the PO/Bills modules. Empty defaults
@@ -450,6 +451,58 @@ export default function Dashboard() {
     return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 
+  // Drill-down: the actual records BEHIND a metric number, so clicking a tile
+  // shows what it's made of (which jobs closed, which payments, etc.) instead
+  // of dumping you on a generic page.
+  const buildDrill = (id) => {
+    const mtdPayments = (payments || []).filter(p => isCollected(p) && isThisMonth(p.date || p.created_at))
+    const invById = (iid) => (invoices || []).find(i => i.id === iid)
+    switch (id) {
+      case 'mtdRevenue': return {
+        title: 'Cash collected this month', total: formatCurrency(thisMonthRevenue), page: '/books',
+        items: mtdPayments.sort((a, b) => new Date(b.date || b.created_at) - new Date(a.date || a.created_at))
+          .map(p => ({ primary: invById(p.invoice_id)?.invoice_id || 'Payment', secondary: `${p.method || ''} · ${formatDate(p.date || p.created_at)}`, amount: formatCurrency(p.amount), nav: p.invoice_id ? `/invoices/${p.invoice_id}` : null })),
+      }
+      case 'mtdSalesWon': return {
+        title: 'Jobs won this month', total: formatCurrency(mtdSalesWon), page: '/pipeline',
+        items: [...mtdWonJobs].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .map(j => ({ primary: j.job_title || j.job_id, secondary: formatDate(j.created_at), amount: formatCurrency(j.job_total), nav: `/jobs/${j.id}` })),
+      }
+      case 'mtdDelivered':
+      case 'completedJobs': return {
+        title: 'Jobs delivered this month', total: formatCurrency(mtdDelivered), page: '/jobs',
+        items: [...mtdDeliveredJobs].sort((a, b) => new Date(b.last_status_change_at || b.updated_at || 0) - new Date(a.last_status_change_at || a.updated_at || 0))
+          .map(j => ({ primary: j.job_title || j.job_id, secondary: formatDate(j.last_status_change_at || j.updated_at), amount: formatCurrency(j.job_total), nav: `/jobs/${j.id}` })),
+      }
+      case 'mtdDeposits': return {
+        title: 'Deposits collected this month', total: formatCurrency(thisMonthDeposits), page: '/lead-payments',
+        items: (leadPayments || []).filter(d => isThisMonth(d.date_created || d.created_at))
+          .map(d => ({ primary: d.customer_name || d.lead_name || 'Deposit', secondary: formatDate(d.date_created || d.created_at), amount: formatCurrency(d.amount), nav: '/lead-payments' })),
+      }
+      case 'mtdExpenses': return {
+        title: 'Expenses this month', total: formatCurrency(thisMonthExpenses), page: '/expenses',
+        items: (expenses || []).filter(e => e.date && isThisMonth(e.date)).sort((a, b) => new Date(b.date) - new Date(a.date))
+          .map(e => ({ primary: e.description || e.category || 'Expense', secondary: formatDate(e.date), amount: formatCurrency(e.amount), nav: '/expenses' })),
+      }
+      case 'pendingInvoices': return {
+        title: 'Unpaid invoices', total: formatCurrency(accountsReceivable), page: '/invoices',
+        items: [...unpaidInvoices].sort((a, b) => (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0))
+          .map(i => ({ primary: i.invoice_id || `INV-${i.id}`, secondary: i.payment_status, amount: formatCurrency(i.amount), nav: `/invoices/${i.id}` })),
+      }
+      case 'openJobs': return {
+        title: 'Open jobs', total: null, page: '/jobs',
+        items: jobs.filter(j => ['scheduled', 'in progress', 'needs scheduling', 'chillin', 'waiting product'].includes((j.status || '').toLowerCase()))
+          .map(j => ({ primary: j.job_title || j.job_id, secondary: j.status, amount: '', nav: `/jobs/${j.id}` })),
+      }
+      case 'activeLeads': return {
+        title: 'Active leads', total: null, page: '/leads',
+        items: leads.filter(l => !['Won', 'Lost', 'Converted', 'Not Qualified'].includes(l.status))
+          .map(l => ({ primary: l.customer_name || l.business_name || 'Lead', secondary: l.status, amount: '', nav: '/leads' })),
+      }
+      default: return null
+    }
+  }
+
   // ── Toggle helpers for settings ──
   const toggleMetric = (id) => {
     updatePrefs(p => ({
@@ -739,7 +792,7 @@ export default function Dashboard() {
                 label={def.label}
                 value={val}
                 color={def.color}
-                onClick={def.nav ? () => navigate(def.nav) : undefined}
+                onClick={() => { const d = buildDrill(id); if (d && d.items.length) setDrill(d); else if (def.nav) navigate(def.nav) }}
                 subtitle={mv.subtitle}
                 ytdValue={mv.ytdValue}
                 ytdLabel={mv.ytdLabel}
@@ -984,6 +1037,44 @@ export default function Dashboard() {
             <button onClick={handleClockToggle} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '12px 16px' : '12px 20px', backgroundColor: clockedIn ? 'rgba(194,90,90,0.1)' : 'rgba(74,124,89,0.15)', color: clockedIn ? '#c25a5a' : '#4a7c59', border: `1px solid ${clockedIn ? '#c25a5a' : '#4a7c59'}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', flex: isMobile ? '1 1 calc(50% - 6px)' : 'none', justifyContent: 'center', minHeight: '44px' }}>
               <Clock size={18} /> {clockedIn ? 'Clock Out' : 'Clock In'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Metric drill-down — the records behind a clicked number ═══ */}
+      {drill && (
+        <div onClick={() => setDrill(null)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 1100, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: isMobile ? '0' : '40px 16px' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: theme.bgCard, borderRadius: isMobile ? 0 : 12, width: isMobile ? '100%' : 'min(560px, 100%)', maxHeight: isMobile ? '100%' : '80vh', height: isMobile ? '100%' : 'auto', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.25)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>{drill.title}</div>
+                <div style={{ fontSize: 13, color: theme.textMuted }}>{drill.items.length} item{drill.items.length !== 1 ? 's' : ''}{drill.total ? ` · ${drill.total} total` : ''}</div>
+              </div>
+              <button onClick={() => setDrill(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: 4, flexShrink: 0 }}><X size={20} /></button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {drill.items.length === 0 ? (
+                <div style={{ padding: 24, textAlign: 'center', color: theme.textMuted }}>No records.</div>
+              ) : drill.items.map((it, idx) => (
+                <div key={idx} onClick={() => { if (it.nav) { setDrill(null); navigate(it.nav) } }}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 20px', borderBottom: `1px solid ${theme.border}`, cursor: it.nav ? 'pointer' : 'default' }}
+                  onMouseEnter={(e) => { if (it.nav) e.currentTarget.style.backgroundColor = theme.bgCardHover }}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.primary}</div>
+                    {it.secondary && <div style={{ fontSize: 12, color: theme.textMuted }}>{it.secondary}</div>}
+                  </div>
+                  {it.amount && <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, flexShrink: 0 }}>{it.amount}</div>}
+                </div>
+              ))}
+            </div>
+            {drill.page && (
+              <div style={{ padding: '12px 20px', borderTop: `1px solid ${theme.border}` }}>
+                <button onClick={() => { setDrill(null); navigate(drill.page) }} style={{ width: '100%', padding: '10px', backgroundColor: theme.accentBg, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', minHeight: 44 }}>
+                  Open full page
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
