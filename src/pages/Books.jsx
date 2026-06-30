@@ -7,7 +7,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import HelpBadge from '../components/HelpBadge'
 import EmptyState from '../components/EmptyState'
 import ReportsPanel from '../components/ReportsPanel'
-import { computeRevenue } from '../lib/revenueBasis'
+import { computeRevenue, cashExpenses } from '../lib/revenueBasis'
 import {
   BookOpen, Plus, X, DollarSign, TrendingUp, TrendingDown,
   Wallet, CreditCard, Building, PiggyBank, Pencil, Trash2,
@@ -761,7 +761,9 @@ export default function Books() {
   // Money out: expenses + positive plaid transactions
   const expensesMTD = (storeExpenses || []).filter(e => isThisMonth(e.date || e.created_at)).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
   const plaidOutMTD = plaidTransactions.filter(t => t.amount > 0 && isThisMonth(t.date) && !t.is_transfer).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0) // Plaid: positive = money out
-  const moneyOut = expensesMTD + plaidOutMTD
+  // Money Out — cash basis, deduped: bank outflows + manual expenses that
+  // aren't already a bank transaction (manual + all-bank double-counted).
+  const moneyOut = cashExpenses({ expenses: storeExpenses, plaidTransactions }, isThisMonth)
 
   // Utility incentives tracking — BU-filtered via the linked customer
   // invoice's business_unit when available (utility_invoices doesn't

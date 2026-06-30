@@ -8,7 +8,8 @@ import WhosWorking from '../components/WhosWorking'
 import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
-import { computeRevenue } from '../lib/revenueBasis'
+import { computeRevenue, cashExpenses } from '../lib/revenueBasis'
+import { toast } from '../lib/toast'
 import {
   UserPlus,
   Briefcase,
@@ -25,6 +26,7 @@ import {
   Plus,
   CreditCard,
   Settings,
+  RefreshCw,
   X,
   Eye,
   EyeOff,
@@ -136,8 +138,10 @@ export default function Dashboard() {
   const leadPayments = useStore((state) => state.leadPayments)
   const plaidTransactions = useStore((state) => state.plaidTransactions)
   const utilityInvoices = useStore((state) => state.utilityInvoices)
+  const syncPlaidTransactions = useStore((state) => state.syncPlaidTransactions)
 
   const currentEmployee = employees.find(e => e.email === user?.email)
+  const [syncing, setSyncing] = useState(false)
 
   const [clockedIn, setClockedIn] = useState(false)
   const [activeTimeLog, setActiveTimeLog] = useState(null)
@@ -270,6 +274,22 @@ export default function Dashboard() {
     }
   }
 
+  // Bank sync from the dashboard — the Plaid sync otherwise only lives on
+  // Books > Transactions, which is hard to reach on the phone (Bryce: "no way
+  // to sync on the phone app").
+  const handleSync = async () => {
+    if (syncing || !syncPlaidTransactions) return
+    setSyncing(true)
+    try {
+      const r = await syncPlaidTransactions()
+      if (r?.error) toast.error('Sync failed: ' + r.error)
+      else toast.success('Bank synced')
+    } catch (e) {
+      toast.error('Sync failed: ' + (e?.message || 'unknown error'))
+    }
+    setSyncing(false)
+  }
+
   // ── Calculate all metrics ──
   const today = new Date()
   const todayStr = today.toISOString().split('T')[0]
@@ -303,9 +323,12 @@ export default function Dashboard() {
   const collectedIncentiveMTD = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && isThisMonth(i.updated_at || i.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
   const thisMonthRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isThisMonth)
   // Expenses: manual expenses + Plaid outflows (match Books.jsx)
+  // Expenses — cash basis, deduped (bank outflows + manual not linked to a
+  // bank txn), so a manual expense that's also a bank transaction isn't counted
+  // twice. manualExpensesMTD/plaidOutMTD kept for the breakdown subtitle.
   const manualExpensesMTD = (expenses || []).filter(e => e.date && isThisMonth(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
   const plaidOutMTD = (plaidTransactions || []).filter(t => t.amount > 0 && isThisMonth(t.date) && !t.is_transfer).reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0)
-  const thisMonthExpenses = manualExpensesMTD + plaidOutMTD
+  const thisMonthExpenses = cashExpenses({ expenses, plaidTransactions }, isThisMonth)
 
   // Quote amounts by lead (for sales won + pipeline chart)
   const quoteByLead = {}
@@ -352,9 +375,7 @@ export default function Dashboard() {
   const collectedIncentiveYTD = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && isThisYear(i.updated_at || i.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
   const ytdRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isThisYear)
 
-  const manualExpensesYTD = (expenses || []).filter(e => e.date && isThisYear(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
-  const plaidOutYTD = (plaidTransactions || []).filter(t => t.amount > 0 && isThisYear(t.date) && !t.is_transfer).reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0)
-  const ytdExpenses = manualExpensesYTD + plaidOutYTD
+  const ytdExpenses = cashExpenses({ expenses, plaidTransactions }, isThisYear)
   const ytdNetIncome = ytdRevenue - ytdExpenses
 
   // YTD — same definitions as MTD, just a wider window.
@@ -374,9 +395,10 @@ export default function Dashboard() {
     ? 'Invoiced this month (accrual basis)'
     : (revenueParts.length > 0 ? revenueParts.join(' + ') : 'No payments collected this month')
 
+  const unmatchedManualMTD = (expenses || []).filter(e => !e.plaid_transaction_id && e.date && isThisMonth(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
   const expenseParts = []
-  if (manualExpensesMTD > 0) expenseParts.push(`${formatCurrency(manualExpensesMTD)} manual`)
   if (plaidOutMTD > 0) expenseParts.push(`${formatCurrency(plaidOutMTD)} bank`)
+  if (unmatchedManualMTD > 0) expenseParts.push(`${formatCurrency(unmatchedManualMTD)} manual`)
   const expenseSubtitle = expenseParts.length > 0 ? expenseParts.join(' + ') : 'No expenses this month'
 
   // Metric values map — subtitles explain exactly where each number comes from
@@ -497,10 +519,12 @@ export default function Dashboard() {
         items: (leadPayments || []).filter(d => isThisMonth(d.date_created || d.created_at))
           .map(d => ({ primary: d.customer_name || d.lead_name || 'Deposit', secondary: formatDate(d.date_created || d.created_at), amount: formatCurrency(d.amount), nav: '/lead-payments' })),
       }
-      case 'mtdExpenses': return {
-        title: 'Expenses this month', total: formatCurrency(thisMonthExpenses), page: '/expenses',
-        items: (expenses || []).filter(e => e.date && isThisMonth(e.date)).sort((a, b) => new Date(b.date) - new Date(a.date))
-          .map(e => ({ primary: e.description || e.category || 'Expense', secondary: formatDate(e.date), amount: formatCurrency(e.amount), nav: '/expenses' })),
+      case 'mtdExpenses': {
+        const bankOut = (plaidTransactions || []).filter(t => t.amount > 0 && !t.is_transfer && isThisMonth(t.date))
+          .map(t => ({ primary: t.name || 'Bank expense', secondary: `Bank · ${formatDate(t.date)}`, amount: formatCurrency(t.amount), nav: '/books', _amt: parseFloat(t.amount) || 0 }))
+        const manualOut = (expenses || []).filter(e => !e.plaid_transaction_id && e.date && isThisMonth(e.date))
+          .map(e => ({ primary: e.description || e.category || 'Expense', secondary: `Manual · ${formatDate(e.date)}`, amount: formatCurrency(e.amount), nav: '/expenses', _amt: parseFloat(e.amount) || 0 }))
+        return { title: 'Expenses this month', total: formatCurrency(thisMonthExpenses), page: '/expenses', items: [...bankOut, ...manualOut].sort((a, b) => b._amt - a._amt) }
       }
       case 'pendingInvoices': return {
         title: 'Unpaid invoices', total: formatCurrency(accountsReceivable), page: '/invoices',
@@ -1043,6 +1067,9 @@ export default function Dashboard() {
         <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '20px' }}>
           <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>Quick Actions</h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+            <button onClick={handleSync} disabled={syncing} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '12px 16px' : '12px 20px', backgroundColor: theme.accentBg, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: syncing ? 'not-allowed' : 'pointer', opacity: syncing ? 0.6 : 1, flex: isMobile ? '1 1 calc(50% - 6px)' : 'none', justifyContent: 'center', minHeight: '44px' }}>
+              <RefreshCw size={18} style={syncing ? { animation: 'spin 1s linear infinite' } : {}} /> {syncing ? 'Syncing…' : 'Sync Bank'}
+            </button>
             <button onClick={() => navigate('/leads')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '12px 16px' : '12px 20px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer', flex: isMobile ? '1 1 calc(50% - 6px)' : 'none', justifyContent: 'center', minHeight: '44px' }}>
               <Plus size={18} /> New Lead
             </button>

@@ -44,3 +44,15 @@ export function accrualRevenue({ invoices = [], utilityInvoices = [] }, inRange)
 export function computeRevenue(basis, data, inRange) {
   return basis === BASIS_ACCRUAL ? accrualRevenue(data, inRange) : cashRevenue(data, inRange)
 }
+
+// Cash-basis expenses (money actually paid out) — the mirror of the revenue
+// double-count. Bank outflows (Plaid positive, non-transfer) are the actual
+// money out; a manual expense carrying a plaid_transaction_id is the SAME
+// purchase as one of those bank rows, so only manual expenses with NO bank
+// link are added (cash purchases, receipts not yet reconciled). Counting
+// manual + all-bank together double-counted reconciled expenses.
+export function cashExpenses({ expenses = [], plaidTransactions = [] }, inRange) {
+  const bank = (plaidTransactions || []).filter(t => t.amount > 0 && !t.is_transfer && inRange(t.date)).reduce((s, t) => s + num(t.amount), 0)
+  const manualUnlinked = (expenses || []).filter(e => !e.plaid_transaction_id && inRange(e.date || e.created_at)).reduce((s, e) => s + num(e.amount), 0)
+  return bank + manualUnlinked
+}
