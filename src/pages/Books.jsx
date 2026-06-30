@@ -7,6 +7,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import HelpBadge from '../components/HelpBadge'
 import EmptyState from '../components/EmptyState'
 import ReportsPanel from '../components/ReportsPanel'
+import { computeRevenue } from '../lib/revenueBasis'
 import {
   BookOpen, Plus, X, DollarSign, TrendingUp, TrendingDown,
   Wallet, CreditCard, Building, PiggyBank, Pencil, Trash2,
@@ -233,6 +234,7 @@ export default function Books() {
   const syncPlaidTransactions = useStore((state) => state.syncPlaidTransactions)
   const jobs = useStore((state) => state.jobs)
   const employees = useStore((state) => state.employees)
+  const payments = useStore((state) => state.payments)
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || {
@@ -259,6 +261,7 @@ export default function Books() {
   // Pull configured business units from settings so the dropdown reflects
   // whatever the company has set up.
   const [businessUnits, setBusinessUnits] = useState([])
+  const [accountingBasis, setAccountingBasis] = useState('cash') // company revenue basis: 'cash' | 'accrual'
 
   // Entity type drives which tax form section shows on the Year-End tab.
   // Lives on companies.entity_type, set in Settings → Company Profile →
@@ -657,9 +660,10 @@ export default function Books() {
     if (!companyId) return
     let cancelled = false
     ;(async () => {
-      const [{ data: buRow }, { data: companyRow }] = await Promise.all([
+      const [{ data: buRow }, { data: companyRow }, { data: basisRow }] = await Promise.all([
         supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'business_units').maybeSingle(),
         supabase.from('companies').select('entity_type').eq('id', companyId).maybeSingle(),
+        supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'accounting_basis').maybeSingle(),
       ])
       if (cancelled) return
       if (buRow?.value) {
@@ -668,6 +672,11 @@ export default function Books() {
           try { arr = JSON.parse(arr) } catch { arr = [] }
         }
         if (Array.isArray(arr)) setBusinessUnits(arr)
+      }
+      if (basisRow?.value) {
+        let b = basisRow.value
+        if (typeof b === 'string') { try { b = JSON.parse(b) } catch { /* may be a bare string */ } }
+        if (b === 'cash' || b === 'accrual') setAccountingBasis(b)
       }
       setEntityType(companyRow?.entity_type || null)
     })()
@@ -683,6 +692,14 @@ export default function Books() {
     return recBu === selectedBu
   }
   const isFilteredByBu = selectedBu !== 'all'
+
+  // Company revenue basis — persisted to settings so the Dashboard agrees.
+  const saveAccountingBasis = async (val) => {
+    setAccountingBasis(val)
+    try {
+      await supabase.from('settings').upsert({ company_id: companyId, key: 'accounting_basis', value: JSON.stringify(val) }, { onConflict: 'company_id,key' })
+    } catch { /* non-fatal — UI already reflects the choice */ }
+  }
 
   // Lists derived from the raw store + payments map.
   const unmatchedDeposits = (plaidTransactions || [])
@@ -761,7 +778,14 @@ export default function Books() {
   const collectedIncentiveTotal = collectedIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
   const collectedIncentiveMTD = collectedIncentives.filter(i => isThisMonth(i.updated_at || i.created_at)).reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
 
-  const moneyIn = paidInvoicesMTD + depositsMTD + plaidInMTD + collectedIncentiveMTD
+  // Money In — respects the company accounting basis. CASH = payments actually
+  // collected (no longer double-counts paid invoices + the same money as a bank
+  // deposit, and drops internal transfers); ACCRUAL = invoices billed this
+  // month. BU-filtered like the rest of Books (payments via their invoice's BU).
+  const buPayments = (payments || []).filter(p => selectedBu === 'all' || invoiceBuMap.get(p.invoice_id) === selectedBu)
+  const buInvoicesForBasis = (invoices || []).filter(inv => matchesBu(inv.business_unit))
+  const buUtilityForBasis = (utilityInvoices || []).filter(i => utilityMatchesBu(i))
+  const moneyIn = computeRevenue(accountingBasis, { payments: buPayments, leadPayments, utilityInvoices: buUtilityForBasis, invoices: buInvoicesForBasis }, isThisMonth)
 
   const netMonth = moneyIn - moneyOut
 
@@ -1288,6 +1312,15 @@ export default function Books() {
               ))}
             </select>
           )}
+          <select
+            value={accountingBasis}
+            onChange={(e) => saveAccountingBasis(e.target.value)}
+            style={{ padding: '8px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.text, fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}
+            title="Cash basis = revenue counted when money is COLLECTED (payments). Accrual basis = revenue counted when BILLED (invoices issued). Company-wide — the Dashboard uses this too."
+          >
+            <option value="cash">Cash basis</option>
+            <option value="accrual">Accrual basis</option>
+          </select>
         </div>
 
         {/* Tab Navigation */}

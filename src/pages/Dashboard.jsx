@@ -8,6 +8,7 @@ import WhosWorking from '../components/WhosWorking'
 import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
+import { computeRevenue } from '../lib/revenueBasis'
 import {
   UserPlus,
   Briefcase,
@@ -143,6 +144,7 @@ export default function Dashboard() {
   const [showSettings, setShowSettings] = useState(false)
   const [prefs, setPrefs] = useState(loadPrefs)
   const [drill, setDrill] = useState(null) // metric drill-down: { title, items, total, page }
+  const [accountingBasis, setAccountingBasis] = useState('cash') // company revenue basis (set in Books)
   const [pendingTimeOff, setPendingTimeOff] = useState([])
   // PO module stats — lazy-loaded so the Dashboard doesn't pay the cost
   // for companies that don't use the PO/Bills modules. Empty defaults
@@ -163,6 +165,20 @@ export default function Dashboard() {
       .eq('company_id', companyId)
       .eq('status', 'pending')
       .then(({ data }) => { if (!cancelled) setPendingTimeOff(data || []) })
+    return () => { cancelled = true }
+  }, [companyId])
+
+  // Revenue basis (cash | accrual) — company setting controlled from Books.
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'accounting_basis').maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data?.value) return
+        let b = data.value
+        if (typeof b === 'string') { try { b = JSON.parse(b) } catch { /* bare string */ } }
+        if (b === 'cash' || b === 'accrual') setAccountingBasis(b)
+      })
     return () => { cancelled = true }
   }, [companyId])
 
@@ -285,7 +301,7 @@ export default function Dashboard() {
   const paymentsMTD = (payments || []).filter(p => isCollected(p) && isThisMonth(p.date || p.created_at)).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const thisMonthDeposits = (leadPayments || []).filter(d => isThisMonth(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
   const collectedIncentiveMTD = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && isThisMonth(i.updated_at || i.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
-  const thisMonthRevenue = paymentsMTD + thisMonthDeposits + collectedIncentiveMTD
+  const thisMonthRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isThisMonth)
   // Expenses: manual expenses + Plaid outflows (match Books.jsx)
   const manualExpensesMTD = (expenses || []).filter(e => e.date && isThisMonth(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
   const plaidOutMTD = (plaidTransactions || []).filter(t => t.amount > 0 && isThisMonth(t.date) && !t.is_transfer).reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0)
@@ -334,7 +350,7 @@ export default function Dashboard() {
   const paymentsYTD = (payments || []).filter(p => isCollected(p) && isThisYear(p.date || p.created_at)).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const depositsYTD = (leadPayments || []).filter(d => isThisYear(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
   const collectedIncentiveYTD = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && isThisYear(i.updated_at || i.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
-  const ytdRevenue = paymentsYTD + depositsYTD + collectedIncentiveYTD
+  const ytdRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isThisYear)
 
   const manualExpensesYTD = (expenses || []).filter(e => e.date && isThisYear(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
   const plaidOutYTD = (plaidTransactions || []).filter(t => t.amount > 0 && isThisYear(t.date) && !t.is_transfer).reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0)
@@ -354,7 +370,9 @@ export default function Dashboard() {
   if (paymentsMTD > 0) revenueParts.push(`${formatCurrency(paymentsMTD)} collected`)
   if (thisMonthDeposits > 0) revenueParts.push(`${formatCurrency(thisMonthDeposits)} deposits`)
   if (collectedIncentiveMTD > 0) revenueParts.push(`${formatCurrency(collectedIncentiveMTD)} incentives`)
-  const revenueSubtitle = revenueParts.length > 0 ? revenueParts.join(' + ') : 'No payments collected this month'
+  const revenueSubtitle = accountingBasis === 'accrual'
+    ? 'Invoiced this month (accrual basis)'
+    : (revenueParts.length > 0 ? revenueParts.join(' + ') : 'No payments collected this month')
 
   const expenseParts = []
   if (manualExpensesMTD > 0) expenseParts.push(`${formatCurrency(manualExpensesMTD)} manual`)
