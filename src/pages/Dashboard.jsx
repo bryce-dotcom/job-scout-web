@@ -65,7 +65,7 @@ const METRIC_DEFS = [
   { id: 'activeLeads', label: 'Active Leads', icon: UserPlus, color: null, nav: '/leads', hint: 'Leads currently in the pipeline (not Won, Lost, or Closed). These are prospects being worked.' },
   { id: 'openJobs', label: 'Open Jobs', icon: Briefcase, color: null, nav: '/jobs', hint: 'Jobs that are Scheduled, In Progress, or Chillin. Does not include Completed or Archived.' },
   { id: 'pendingInvoices', label: 'Pending Invoices', icon: Receipt, color: null, nav: '/invoices', hint: 'Invoices sent but not yet paid. The dollar amount is what customers owe you (accounts receivable).' },
-  { id: 'mtdRevenue', label: 'MTD Revenue', icon: DollarSign, color: '#4a7c59', nav: null, hint: 'Cash received this month = Paid Invoices (from Invoices page) + Deposits (from Lead Payments page) + Bank Deposits (from Plaid/Books) + Collected Incentives. This is actual money in, not estimates.' },
+  { id: 'mtdRevenue', label: 'MTD Revenue', icon: DollarSign, color: '#4a7c59', nav: null, hint: 'Cash collected this month (cash basis): actual payments recorded against invoices + lead/job deposits + collected utility incentives. Counts real money in once — no double-counting of bank deposits, no internal transfers.' },
   { id: 'mtdDeposits', label: 'MTD Deposits', icon: TrendingUp, color: '#4a7c59', nav: '/lead-payments', hint: 'Lead and job deposits collected this month within JobScout. These are pre-job payments logged in the system.' },
   { id: 'mtdExpenses', label: 'MTD Expenses', icon: CreditCard, color: '#c25a5a', nav: '/expenses', hint: 'Money spent this month: manually logged expenses + bank outflows from Plaid. Does not include transfers between accounts.' },
   { id: 'completedJobs', label: 'Jobs Completed (MTD)', icon: Briefcase, color: '#10b981', nav: '/jobs', hint: 'Jobs that moved into a delivered status this month (Completed, Verified Complete, Post Inspected, Invoiced, Closed — whichever your pipeline marks as category=delivered in /settings). Counts every job whose status changed into a delivered category this month.' },
@@ -275,12 +275,16 @@ export default function Dashboard() {
   const accountsReceivable = customerAR + utilityAR
 
   const isThisMonth = (dateStr) => dateStr && new Date(dateStr) >= firstOfMonth
-  // Revenue: match Books.jsx formula (paid invoices + deposits + Plaid bank deposits + collected incentives)
-  const paidInvoicesMTD = (invoices || []).filter(inv => inv.payment_status === 'Paid' && isThisMonth(inv.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
+  // Revenue — CASH BASIS (money actually collected). Uses the payments table
+  // (each row is a real, dated, invoice-linked payment) instead of the old
+  // "paid-invoice gross + bank deposits" formula, which double-counted — a
+  // check both marks the invoice Paid AND lands as a Plaid deposit — and swept
+  // in internal transfers. Bank deposits are computed separately, NOT added in.
+  const isCollected = (p) => (p.status || 'Completed') !== 'Refunded' && (p.status || '') !== 'Voided'
+  const paymentsMTD = (payments || []).filter(p => isCollected(p) && isThisMonth(p.date || p.created_at)).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const thisMonthDeposits = (leadPayments || []).filter(d => isThisMonth(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
-  const plaidInMTD = (plaidTransactions || []).filter(t => t.amount < 0 && isThisMonth(t.date) && !t.is_transfer).reduce((sum, t) => sum + Math.abs(parseFloat(t.amount) || 0), 0)
   const collectedIncentiveMTD = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && isThisMonth(i.updated_at || i.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
-  const thisMonthRevenue = paidInvoicesMTD + thisMonthDeposits + plaidInMTD + collectedIncentiveMTD
+  const thisMonthRevenue = paymentsMTD + thisMonthDeposits + collectedIncentiveMTD
   // Expenses: manual expenses + Plaid outflows (match Books.jsx)
   const manualExpensesMTD = (expenses || []).filter(e => e.date && isThisMonth(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
   const plaidOutMTD = (plaidTransactions || []).filter(t => t.amount > 0 && isThisMonth(t.date) && !t.is_transfer).reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0)
@@ -326,11 +330,10 @@ export default function Dashboard() {
   const firstOfYear = new Date(today.getFullYear(), 0, 1)
   const isThisYear = (dateStr) => dateStr && new Date(dateStr) >= firstOfYear
 
-  const paidInvoicesYTD = (invoices || []).filter(inv => inv.payment_status === 'Paid' && isThisYear(inv.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0)
+  const paymentsYTD = (payments || []).filter(p => isCollected(p) && isThisYear(p.date || p.created_at)).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const depositsYTD = (leadPayments || []).filter(d => isThisYear(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
-  const plaidInYTD = (plaidTransactions || []).filter(t => t.amount < 0 && isThisYear(t.date) && !t.is_transfer).reduce((sum, t) => sum + Math.abs(parseFloat(t.amount) || 0), 0)
   const collectedIncentiveYTD = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && isThisYear(i.updated_at || i.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
-  const ytdRevenue = paidInvoicesYTD + depositsYTD + plaidInYTD + collectedIncentiveYTD
+  const ytdRevenue = paymentsYTD + depositsYTD + collectedIncentiveYTD
 
   const manualExpensesYTD = (expenses || []).filter(e => e.date && isThisYear(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
   const plaidOutYTD = (plaidTransactions || []).filter(t => t.amount > 0 && isThisYear(t.date) && !t.is_transfer).reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0)
@@ -347,11 +350,10 @@ export default function Dashboard() {
 
   // ── Build revenue/expense breakdown descriptions ──
   const revenueParts = []
-  if (paidInvoicesMTD > 0) revenueParts.push(`${formatCurrency(paidInvoicesMTD)} invoices`)
+  if (paymentsMTD > 0) revenueParts.push(`${formatCurrency(paymentsMTD)} collected`)
   if (thisMonthDeposits > 0) revenueParts.push(`${formatCurrency(thisMonthDeposits)} deposits`)
-  if (plaidInMTD > 0) revenueParts.push(`${formatCurrency(plaidInMTD)} bank`)
   if (collectedIncentiveMTD > 0) revenueParts.push(`${formatCurrency(collectedIncentiveMTD)} incentives`)
-  const revenueSubtitle = revenueParts.length > 0 ? revenueParts.join(' + ') : 'No revenue this month'
+  const revenueSubtitle = revenueParts.length > 0 ? revenueParts.join(' + ') : 'No payments collected this month'
 
   const expenseParts = []
   if (manualExpensesMTD > 0) expenseParts.push(`${formatCurrency(manualExpensesMTD)} manual`)
