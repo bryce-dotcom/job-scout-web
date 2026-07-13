@@ -812,7 +812,23 @@ export default function InvoiceDetail() {
     if (!confirm(`Rescind ${formatCurrency(payment.amount)} payment from ${formatDate(payment.date)}? This will delete the payment record and update the invoice balance.`)) return
 
     setSaving(true)
-    await supabase.from('payments').delete().eq('id', payment.id)
+
+    // If this payment came from a matched bank deposit, unmatch the plaid
+    // transaction FIRST. Its matched_payment_id foreign key otherwise BLOCKS
+    // the delete (this is why a bank-matched payment couldn't be rescinded —
+    // it errored on the FK), and clearing it returns the deposit to the
+    // unmatched pool so it can be re-matched to the correct invoice.
+    const { error: unmatchErr } = await supabase.from('plaid_transactions')
+      .update({ matched_invoice_id: null, matched_payment_id: null, matched_at: null })
+      .eq('matched_payment_id', payment.id)
+    if (unmatchErr) console.warn('Unmatch before rescind failed (non-fatal):', unmatchErr)
+
+    const { error: delErr } = await supabase.from('payments').delete().eq('id', payment.id)
+    if (delErr) {
+      toast.error('Failed to rescind payment: ' + delErr.message)
+      setSaving(false)
+      return
+    }
 
     // If this was a CC payment, subtract its CC fee from the invoice
     if (payment.method === 'Credit Card' && ccFeeEnabled) {

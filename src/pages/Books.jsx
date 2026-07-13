@@ -571,9 +571,24 @@ export default function Books() {
     const { deposit, selectedId, invoices } = matchModal
     const inv = invoices.find(i => i.id === selectedId)
     if (!inv) { toast.error('Pick an invoice first'); return }
-    setMatchModal(m => ({ ...m, saving: true }))
     const depAmount = Math.abs(parseFloat(deposit.amount) || 0)
     const payAmount = Math.min(depAmount, inv._open)
+
+    // Guard against wrong-invoice matches. A deposit that's LARGER than the
+    // invoice's remaining balance is the classic mismatch (a $615 deposit
+    // landing on a $489 invoice, matched only by a loose name overlap between
+    // two different properties). Only the balance would apply and the invoice
+    // would flip to Paid — so make the user confirm the amount gap on purpose.
+    if (depAmount - inv._open > 0.01) {
+      const ok = window.confirm(
+        `Heads up: this deposit is $${depAmount.toFixed(2)} but ${inv.invoice_id || `invoice ${inv.id}`} only has $${inv._open.toFixed(2)} owing` +
+        `${inv.customer?.name ? ` (${inv.customer.name})` : ''}.\n\n` +
+        `Only $${payAmount.toFixed(2)} will be applied and the invoice will be marked Paid. ` +
+        `If this deposit is actually for a different customer/invoice, cancel and pick the right one.\n\nMatch anyway?`
+      )
+      if (!ok) return
+    }
+    setMatchModal(m => ({ ...m, saving: true }))
     const { data: payRow, error: payErr } = await supabase.from('payments').insert([{
       company_id: companyId,
       invoice_id: inv.id,
