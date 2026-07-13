@@ -4206,8 +4206,14 @@ function JobDetailInner() {
                     the minWidth from 700 → 520 so it fits most phones
                     without forcing horizontal scroll; pinch-zoom is now
                     enabled in index.html if users still need to see detail. */}
-                <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
-                <div style={{ minWidth: isMobile ? '520px' : 'auto' }}>
+                {/* Always allow horizontal scroll — iPad (>=768px) gets the
+                    desktop layout but a narrower viewport, so the fixed
+                    columns used to overflow and clip the right-most Delete
+                    column with no way to reach it (Tracy, iPad). overflowX
+                    auto + a real min-width keeps the columns full-size and
+                    scrolls when they don't fit, instead of squishing/clipping. */}
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <div style={{ minWidth: isMobile ? '520px' : '680px' }}>
                 <div style={{
                   display: 'grid',
                   // Phone-friendlier column widths: tighter qty/price/discount,
