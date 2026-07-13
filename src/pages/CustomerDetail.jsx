@@ -394,22 +394,39 @@ export default function CustomerDetail() {
       return
     }
 
-    // Create quote lines
-    const linesToInsert = quoteLines.map(line => ({
+    // Create quote lines. Match the standard shape EstimateDetail writes
+    // (company_id, sort_order, labor_cost) so lines created from the customer
+    // page are first-class — same columns, same ordering, same tenant scoping.
+    const linesToInsert = quoteLines.map((line, index) => ({
+      company_id: companyId,
       quote_id: quote.id,
       item_id: line.product_id,
       item_name: line.description,
       quantity: parseFloat(line.quantity) || 1,
       price: parseFloat(line.unit_price) || 0,
-      line_total: line.line_total || 0
+      line_total: line.line_total || 0,
+      labor_cost: parseFloat(line.labor_cost) || 0,
+      sort_order: index,
     }))
 
     const { error: linesError } = await supabase
       .from('quote_lines')
       .insert(linesToInsert)
 
+    // Never swallow a failed line insert — that's how you end up with an
+    // estimate that saved with zero products (the "it doesn't follow over"
+    // report). Surface it so the user knows to retry instead of trusting a
+    // silent partial save.
     if (linesError) {
       console.error('Error creating quote lines:', linesError)
+      setSavingQuote(false)
+      alert(
+        `The estimate was created but its ${quoteLines.length} line item${quoteLines.length === 1 ? '' : 's'} did NOT save:\n\n` +
+        `${linesError.message}\n\n` +
+        `Open the estimate and re-add them, or try again.`
+      )
+      navigate(`/estimates/${quote.id}`)
+      return
     }
 
     // Auto-create tracking lead so this quote appears in the pipeline
