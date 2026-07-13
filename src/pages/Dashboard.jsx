@@ -6,7 +6,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import WhosWorking from '../components/WhosWorking'
 import { canViewHR } from '../lib/accessControl'
-import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
+import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
 import { computeRevenue, cashExpenses } from '../lib/revenueBasis'
 import { toast } from '../lib/toast'
@@ -336,6 +336,9 @@ export default function Dashboard() {
     const amt = parseFloat(q.quote_amount) || 0
     if (q.lead_id && amt > (quoteByLead[q.lead_id] || 0)) quoteByLead[q.lead_id] = amt
   })
+  // Estimate value by quote id — a job with a blank job_total falls back to its
+  // estimate's value in Sales Won so closed jobs stop reading $0 (Bryce).
+  const quoteAmountById = new Map((quotes || []).map(q => [q.id, q.quote_amount]))
 
   // ─── Sales Won + Jobs Delivered ─────────────────────────────────────────
   // Single source of truth: src/lib/jobMetrics.js. See that file for the
@@ -348,14 +351,14 @@ export default function Dashboard() {
   //        company's settings (Completed, Verified Complete, etc.).
   //        Timestamp = jobs.last_status_change_at (set by DB trigger).
   const mtdWonJobs = wonJobsInRange(jobs, firstOfMonth, null)
-  const mtdSalesWon = sumJobTotal(mtdWonJobs)
+  const mtdSalesWon = sumJobTotal(mtdWonJobs, quoteAmountById)
   const mtdDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, firstOfMonth, null)
   const completedJobsMTD = mtdDeliveredJobs.length
-  const mtdDelivered = sumJobTotal(mtdDeliveredJobs)
+  const mtdDelivered = sumJobTotal(mtdDeliveredJobs, quoteAmountById)
 
   // Avg-job-value uses ALL delivered jobs (not just MTD)
   const allDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, null, null)
-  const avgJobValue = allDeliveredJobs.length > 0 ? sumJobTotal(allDeliveredJobs) / allDeliveredJobs.length : 0
+  const avgJobValue = allDeliveredJobs.length > 0 ? sumJobTotal(allDeliveredJobs, quoteAmountById) / allDeliveredJobs.length : 0
 
   // Win rate still measured at the LEAD level — it answers "of the leads
   // that got a decision, what % were wins?" — which is a sales-funnel
@@ -380,11 +383,11 @@ export default function Dashboard() {
 
   // YTD — same definitions as MTD, just a wider window.
   const ytdWonJobs = wonJobsInRange(jobs, firstOfYear, null)
-  const ytdSalesWon = sumJobTotal(ytdWonJobs)
+  const ytdSalesWon = sumJobTotal(ytdWonJobs, quoteAmountById)
   const ytdDeposits = depositsYTD
   const ytdDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, firstOfYear, null)
   const completedJobsYTD = ytdDeliveredJobs.length
-  const ytdDelivered = sumJobTotal(ytdDeliveredJobs)
+  const ytdDelivered = sumJobTotal(ytdDeliveredJobs, quoteAmountById)
 
   // ── Build revenue/expense breakdown descriptions ──
   const revenueParts = []
@@ -448,7 +451,7 @@ export default function Dashboard() {
   // means "delivered in the last 90 days" not "scheduled to start in".
   const rollingCutoff = daysAgo(prefs.rollingDays, today)
   const rollingCompletedJobs = deliveredJobsInRange(jobs, jobStatuses, rollingCutoff, null)
-  const rollingWonTotal = sumJobTotal(rollingCompletedJobs)
+  const rollingWonTotal = sumJobTotal(rollingCompletedJobs, quoteAmountById)
   const rollingWonCount = rollingCompletedJobs.length
   const rollingAvgPerMonth = prefs.rollingDays > 0 ? (rollingWonTotal / prefs.rollingDays) * 30 : 0
 
@@ -506,13 +509,13 @@ export default function Dashboard() {
       case 'mtdSalesWon': return {
         title: 'Jobs won this month', total: formatCurrency(mtdSalesWon), page: '/pipeline',
         items: [...mtdWonJobs].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-          .map(j => ({ primary: j.job_title || j.job_id, secondary: formatDate(j.created_at), amount: formatCurrency(j.job_total), nav: `/jobs/${j.id}` })),
+          .map(j => ({ primary: j.job_title || j.job_id, secondary: formatDate(j.created_at), amount: formatCurrency(jobValue(j, quoteAmountById)), nav: `/jobs/${j.id}` })),
       }
       case 'mtdDelivered':
       case 'completedJobs': return {
         title: 'Jobs delivered this month', total: formatCurrency(mtdDelivered), page: '/jobs',
         items: [...mtdDeliveredJobs].sort((a, b) => new Date(b.last_status_change_at || b.updated_at || 0) - new Date(a.last_status_change_at || a.updated_at || 0))
-          .map(j => ({ primary: j.job_title || j.job_id, secondary: formatDate(j.last_status_change_at || j.updated_at), amount: formatCurrency(j.job_total), nav: `/jobs/${j.id}` })),
+          .map(j => ({ primary: j.job_title || j.job_id, secondary: formatDate(j.last_status_change_at || j.updated_at), amount: formatCurrency(jobValue(j, quoteAmountById)), nav: `/jobs/${j.id}` })),
       }
       case 'mtdDeposits': return {
         title: 'Deposits collected this month', total: formatCurrency(thisMonthDeposits), page: '/lead-payments',

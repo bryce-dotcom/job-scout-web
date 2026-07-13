@@ -113,9 +113,24 @@ export function deliveredJobsInRange(jobs, jobStatuses, startDate, endDate) {
   })
 }
 
-/** Sum job_total over a list of jobs. */
-export function sumJobTotal(jobs) {
-  return (jobs || []).reduce((s, j) => s + (parseFloat(j.job_total) || 0), 0)
+/** Dollar value of a job for revenue metrics: its own `job_total`, or the
+ *  linked estimate's `quote_amount` when job_total is blank — so a job created
+ *  without a total (or converted before pricing) doesn't silently count as $0
+ *  in Sales Won. Pass `quoteAmountById` = Map(quote_id -> quote_amount). */
+export function jobValue(job, quoteAmountById) {
+  const own = parseFloat(job?.job_total) || 0
+  if (own > 0) return own
+  if (quoteAmountById && job?.quote_id != null) {
+    const est = parseFloat(quoteAmountById.get(job.quote_id)) || 0
+    if (est > 0) return est
+  }
+  return 0
+}
+
+/** Sum job value over a list. Optional `quoteAmountById` enables the estimate
+ *  fallback for jobs with a blank job_total (back-compatible without it). */
+export function sumJobTotal(jobs, quoteAmountById) {
+  return (jobs || []).reduce((s, j) => s + jobValue(j, quoteAmountById), 0)
 }
 
 // ── Common date windows ─────────────────────────────────────────────────────
