@@ -117,6 +117,10 @@ export default function FieldScout() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [activeEntry, setActiveEntry] = useState(null)
   const [todayEntries, setTodayEntries] = useState([])
+  // Open clock-ins left dangling from a PREVIOUS day (missed clock-out). The
+  // today-only fetch below can't see these, so a forgotten clock-out was
+  // invisible on the tech's phone and silently dropped from pay. Surface them.
+  const [staleOpens, setStaleOpens] = useState([])
   // Week-to-date entries (Sun 00:00 → end of Sat) for the current employee.
   // Used by the "This Week" hours card so field techs can see their
   // running weekly total without leaving FieldScout.
@@ -291,6 +295,31 @@ export default function FieldScout() {
       setTodayEntries(data)
       const active = data.find(e => !e.clock_out)
       setActiveEntry(active || null)
+    }
+
+    // Prior-day dangling clock-ins: open (no clock_out) with a clock_in before
+    // today. These are missed clock-outs — surface them and flag for review so
+    // payroll corrects them instead of the hours silently vanishing.
+    const { data: stale } = await supabase
+      .from('time_clock')
+      .select('id, clock_in, clock_in_address, job_id, flagged_for_review')
+      .eq('company_id', companyId)
+      .eq('employee_id', currentEmployee.id)
+      .is('clock_out', null)
+      .lt('clock_in', todayStart.toISOString())
+      .order('clock_in', { ascending: false })
+    if (stale && stale.length) {
+      setStaleOpens(stale)
+      // Flag any not-yet-flagged so they appear in the manager's review queue.
+      const unflagged = stale.filter(e => !e.flagged_for_review).map(e => e.id)
+      if (unflagged.length) {
+        supabase.from('time_clock')
+          .update({ flagged_for_review: true, review_reason: 'Missed clock-out — needs correction' })
+          .in('id', unflagged)
+          .then(() => {}, () => {})
+      }
+    } else {
+      setStaleOpens([])
     }
   }, [companyId, currentEmployee])
 
@@ -1651,6 +1680,27 @@ export default function FieldScout() {
           {currentTime.toLocaleTimeString()}
         </div>
       </div>
+
+      {/* ===== SECTION 1.2: UNFINISHED CLOCK-IN WARNING =====
+          A clock-in from a previous day that never got a clock-out. Without
+          this, it was invisible on the tech's phone (today-only fetch) and
+          silently dropped from pay. Flagged for the manager on load. */}
+      {staleOpens.length > 0 && (
+        <div style={{
+          padding: '12px 14px', marginBottom: '16px', borderRadius: '12px',
+          background: 'rgba(249,115,22,0.10)', border: '1px solid rgba(249,115,22,0.4)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+            <AlertTriangle size={16} style={{ color: '#f97316', flexShrink: 0 }} />
+            <span style={{ fontSize: '13px', fontWeight: '700', color: '#f97316' }}>
+              {staleOpens.length} unfinished clock-in{staleOpens.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: staleOpens.length ? '8px' : 0 }}>
+            You clocked in but never clocked out on {staleOpens.map(e => new Date(e.clock_in).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })).join(', ')}. Your manager has been notified to fix {staleOpens.length === 1 ? 'it' : 'them'} so you get paid — no action needed.
+          </div>
+        </div>
+      )}
 
       {/* ===== SECTION 1.5: WEEK-TO-DATE HOURS CARD =====
           Kayden requested (feedback c590a6cb) the ability to see total

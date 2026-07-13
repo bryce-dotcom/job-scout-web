@@ -202,6 +202,10 @@ export default function Payroll() {
 
   // Data state
   const [timeEntries, setTimeEntries] = useState([])
+  // Open/dangling clock-ins (missed clock-out) — fetched separately from the
+  // pay-calc entries so a forgotten clock-out surfaces for correction instead
+  // of silently counting as zero hours (London lost her whole AZ week this way).
+  const [openEntries, setOpenEntries] = useState([])
   const [timeLogEntries, setTimeLogEntries] = useState([])
   const [leadCommissions, setLeadCommissions] = useState([])
   const [payments, setPayments] = useState([])
@@ -383,8 +387,11 @@ export default function Payroll() {
     }
     setSavingEntry(true)
     try {
-      // Find the original entry to store original values
+      // Find the original entry to store original values. Look in openEntries
+      // too — a missed-clock-out fix targets a row that isn't in the pay-calc set.
       const original = timeEntries.find(e => e.id === editingEntry.id)
+        || openEntries.find(e => e.id === editingEntry.id)
+        || {}
       const newClockIn = new Date(editingEntry.clock_in)
       const newClockOut = editingEntry.clock_out ? new Date(editingEntry.clock_out) : null
       const newTotalHours = newClockOut ? Math.round((newClockOut - newClockIn) / 36e5 * 100) / 100 : null
@@ -428,6 +435,40 @@ export default function Payroll() {
       await fetchData()
     } catch (err) {
       alert('Error saving adjustment: ' + err.message)
+    } finally {
+      setSavingEntry(false)
+    }
+  }
+
+  // Dismiss an open entry as "not a real shift" — closes it at 0 hours
+  // (clock_out = clock_in) so it stops showing as incomplete without crediting
+  // phantom time. Used for duplicate/accidental clock-ins that overlap a shift
+  // that's already been recorded elsewhere.
+  const dismissOpenEntry = async () => {
+    if (!editingEntry?.reason?.trim()) { alert('Add a reason (e.g. "duplicate of reconstructed shift")'); return }
+    setSavingEntry(true)
+    try {
+      const original = openEntries.find(e => e.id === editingEntry.id) || {}
+      const adminEmp = employees.find(e => e.email === user?.email)
+      const updateData = {
+        clock_out: original.clock_in, // 0-hour close
+        total_hours: 0,
+        flagged_for_review: false,
+        adjusted_by: adminEmp?.id || null,
+        adjusted_at: new Date().toISOString(),
+        adjustment_reason: `Dismissed (not a real shift): ${editingEntry.reason.trim()}`,
+      }
+      if (!original.original_clock_in) {
+        updateData.original_clock_in = original.clock_in
+        updateData.original_clock_out = original.clock_out
+        updateData.original_total_hours = original.total_hours
+      }
+      const { error } = await supabase.from('time_clock').update(updateData).eq('id', editingEntry.id)
+      if (error) throw error
+      setEditingEntry(null)
+      await fetchData()
+    } catch (err) {
+      alert('Error dismissing entry: ' + err.message)
     } finally {
       setSavingEntry(false)
     }
@@ -585,6 +626,22 @@ export default function Payroll() {
       ])
 
       setTimeEntries(entriesRes.data || [])
+      // Incomplete shifts: any clock-in with no clock-out older than 12h is a
+      // missed clock-out (not someone actively on the clock right now). These
+      // never enter the pay calc — surface them so a manager sets the real
+      // clock-out. Company-wide + period-independent so a ghost from a past
+      // period can't hide once we've rolled into the next one.
+      try {
+        const cutoff = new Date(Date.now() - 12 * 3600 * 1000).toISOString()
+        const { data: openData } = await supabase
+          .from('time_clock')
+          .select('*')
+          .eq('company_id', companyId)
+          .is('clock_out', null)
+          .lt('clock_in', cutoff)
+          .order('clock_in', { ascending: false })
+        setOpenEntries(openData || [])
+      } catch { setOpenEntries([]) }
       setTimeLogEntries(timeLogRes.data || [])
       setLeadCommissions(commRes.data || [])
       setPayments(paymentsRes.data || [])
@@ -2476,6 +2533,65 @@ export default function Payroll() {
         </div>
       )}
 
+      {/* Incomplete shifts alert — missed clock-outs that never entered the pay
+          calc. A forgotten clock-out used to silently vanish (null hours,
+          excluded from payroll). Surface them so a manager sets the real
+          clock-out and the tech gets paid. */}
+      {isAdmin && openEntries.length > 0 && (
+        <div style={{
+          padding: '14px 16px', marginBottom: '16px', borderRadius: '10px',
+          background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.35)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+            <AlertTriangle size={18} style={{ color: '#f97316' }} />
+            <span style={{ fontSize: '14px', fontWeight: '700', color: '#f97316' }}>
+              {openEntries.length} incomplete shift{openEntries.length === 1 ? '' : 's'} — missed clock-out
+            </span>
+          </div>
+          <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
+            These clock-ins never got a clock-out, so they count as <strong>zero hours</strong> and aren't in anyone's pay. Set the real clock-out time to fix it.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {openEntries.map((entry) => {
+              const emp = employees.find(e => e.id === entry.employee_id)
+              const ci = new Date(entry.clock_in)
+              const job = entry.job_id ? jobs.find(j => j.id === entry.job_id) : null
+              return (
+                <div key={entry.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+                  padding: '8px 12px', background: theme.bgCard, borderRadius: '8px', border: `1px solid ${theme.border}`
+                }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
+                      {emp?.name || `Employee ${entry.employee_id}`}
+                    </div>
+                    <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                      Clocked in {ci.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} at {ci.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      {job ? ` · ${job.job_title || job.customer_name || `Job ${job.job_id}`}` : ''}
+                      {entry.clock_in_address ? ` · ${String(entry.clock_in_address).split(',').slice(0, 2).join(',')}` : ''}
+                    </div>
+                  </div>
+                  <button onClick={() => {
+                    const pad = (n) => String(n).padStart(2, '0')
+                    const toLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+                    setEditingEntry({
+                      id: entry.id,
+                      clock_in: toLocal(ci),
+                      clock_out: '',
+                      reason: '',
+                      job_id: entry.job_id || '',
+                    })
+                  }} style={{
+                    flexShrink: 0, fontSize: '12px', fontWeight: '600', color: '#fff', background: '#f97316',
+                    border: 'none', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer', minHeight: '32px'
+                  }}>Fix</button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: isMobile ? '12px' : '16px', marginBottom: '24px' }}>
         {/* Pay Period with navigation */}
@@ -3554,6 +3670,62 @@ export default function Payroll() {
       )}
 
       {/* ── Run Payroll Modal ──────────────────────────── */}
+      {/* Fix incomplete shift modal — the inline editor lives inside the pay-calc
+          entry list, but open entries aren't in that set, so they get their own
+          modal. Reuses saveTimeAdjustment (writes clock_out + total_hours). */}
+      {editingEntry && openEntries.some(e => e.id === editingEntry.id) && (() => {
+        const openRow = openEntries.find(e => e.id === editingEntry.id)
+        const emp = employees.find(e => e.id === openRow?.employee_id)
+        const inMs = editingEntry.clock_in ? new Date(editingEntry.clock_in).getTime() : null
+        const outMs = editingEntry.clock_out ? new Date(editingEntry.clock_out).getTime() : null
+        const previewH = inMs && outMs && outMs > inMs ? Math.round((outMs - inMs) / 36e5 * 100) / 100 : null
+        return (
+          <div style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: '20px'
+          }}>
+            <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '440px', overflow: 'hidden' }}>
+              <div style={{ padding: '20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Fix incomplete shift</div>
+                <button onClick={() => setEditingEntry(null)} style={{ padding: '8px', backgroundColor: theme.border, border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}><X size={18} /></button>
+              </div>
+              <div style={{ padding: '20px' }}>
+                <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '16px' }}>
+                  <strong style={{ color: theme.text }}>{emp?.name || 'Employee'}</strong> clocked in but never clocked out. Set the real clock-out time.
+                </div>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: theme.textSecondary, display: 'block', marginBottom: '4px' }}>Clock in</label>
+                <input type="datetime-local" value={editingEntry.clock_in || ''}
+                  onChange={e => setEditingEntry(prev => ({ ...prev, clock_in: e.target.value }))}
+                  style={{ ...inputStyle, marginBottom: '14px' }} />
+                <label style={{ fontSize: '12px', fontWeight: 600, color: theme.textSecondary, display: 'block', marginBottom: '4px' }}>Clock out</label>
+                <input type="datetime-local" value={editingEntry.clock_out || ''}
+                  onChange={e => setEditingEntry(prev => ({ ...prev, clock_out: e.target.value }))}
+                  style={{ ...inputStyle, marginBottom: '6px' }} />
+                <div style={{ fontSize: '13px', fontWeight: 600, color: previewH ? '#22c55e' : theme.textMuted, marginBottom: '14px' }}>
+                  {previewH ? `${previewH.toFixed(2)} hours` : 'Enter a clock-out after the clock-in'}
+                </div>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: theme.textSecondary, display: 'block', marginBottom: '4px' }}>Reason</label>
+                <input type="text" value={editingEntry.reason || ''}
+                  onChange={e => setEditingEntry(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="e.g. Missed clock-out, confirmed with employee"
+                  style={{ ...inputStyle, marginBottom: '18px' }} />
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={() => setEditingEntry(null)} style={{ flex: 1, padding: '10px', background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px', cursor: 'pointer', color: theme.textSecondary, fontWeight: 600 }}>Cancel</button>
+                  <button onClick={saveTimeAdjustment} disabled={savingEntry || !previewH || !editingEntry.reason?.trim()}
+                    style={{ flex: 2, padding: '10px', background: (!previewH || !editingEntry.reason?.trim()) ? theme.border : '#f97316', border: 'none', borderRadius: '8px', cursor: (!previewH || !editingEntry.reason?.trim()) ? 'default' : 'pointer', color: '#fff', fontWeight: 700 }}>
+                    {savingEntry ? 'Saving…' : 'Save clock-out'}
+                  </button>
+                </div>
+                <button onClick={dismissOpenEntry} disabled={savingEntry || !editingEntry.reason?.trim()}
+                  style={{ width: '100%', marginTop: '10px', padding: '8px', background: 'none', border: 'none', cursor: editingEntry.reason?.trim() ? 'pointer' : 'default', color: theme.textMuted, fontSize: '12px', textDecoration: 'underline' }}>
+                  Not a real shift — dismiss (0 hrs)
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {showRunPayrollModal && (
         <div style={{
           position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
