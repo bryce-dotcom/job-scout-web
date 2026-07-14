@@ -1279,6 +1279,13 @@ function JobDetailInner() {
           discount: parseFloat(l.discount) || 0,
           line_total: parseFloat(l.total) || ((l.quantity || 1) * (parseFloat(l.price) || 0)),
           sort_order: idx,
+          // Preserve the in_utility_scope flag so out-of-scope add-ons
+          // (Extended Service Coverage, warranties, etc.) render in the
+          // customer invoice's "Additional Services" section instead of
+          // silently collapsing into the utility project. Default true
+          // unless explicitly marked false — matches createBothInvoices
+          // and the products_services / line-table column default.
+          in_utility_scope: l.in_utility_scope !== false,
           // Carry through the labor portion so summary-mode PDFs can
           // legitimately split Parts vs Labor from per-line data
           // (instead of guessing by product type).

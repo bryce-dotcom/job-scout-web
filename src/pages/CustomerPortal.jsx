@@ -1,6 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -269,6 +270,46 @@ export default function CustomerPortal() {
   const hasDepositBreakout = isInvoice && depositCredit > 0 && !invoiceLegacyNet && invoiceDiscount >= depositCredit
   const hasProjectDiscountBreakout = isInvoice && projectDiscountPortion > 0 && !invoiceLegacyNet
   const depositPaidDate = depositParent?.updated_at || depositParent?.created_at
+
+  // Two-section model (in-scope utility project + out-of-scope add-ons),
+  // shared with InvoiceDetail + the PDF via invoiceSections.js. Only drives
+  // the grouped layout when the invoice actually has out-of-scope add-on
+  // lines; otherwise the classic totals view stands. line_items is now
+  // populated for invoices by get-portal-document (display columns only).
+  const invoiceSections = isInvoice
+    ? buildInvoiceSections(doc, line_items || [], {
+        parentInvoice: depositParent,
+        utilityIncentive: doc.linked_utility_invoice ? (parseFloat(doc.linked_utility_invoice.amount) || 0) : null,
+      })
+    : null
+  const useSectionLayout = !!invoiceSections?.applicable && invoiceSections.hasOutScope
+  const portalIncentiveLabel = doc.linked_utility_invoice
+    ? incentiveLineLabel(doc.linked_utility_invoice.utility_name)
+    : 'Discount'
+
+  // One invoice line row (name, qty × unit, line total). Reused for both
+  // the in-scope and add-on groups.
+  const renderPortalInvoiceLine = (li, i) => {
+    const lt = parseFloat(li.line_total ?? li.total) || 0
+    const q = parseFloat(li.quantity) || 1
+    const u = parseFloat(li.unit_price ?? li.price) || (q > 0 ? lt / q : 0)
+    return (
+      <div key={li.id || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '6px 0' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontWeight: '500', color: theme.text, margin: 0, fontSize: '14px' }}>
+            {li.item_name || li.item?.name || li.description || 'Item'}
+          </p>
+          {li.description && (li.item_name || li.item?.name) && (
+            <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0' }}>{li.description}</p>
+          )}
+          <p style={{ color: theme.textMuted, fontSize: '12px', margin: '2px 0 0' }}>{q} x {formatCurrency(u)}</p>
+        </div>
+        <p style={{ fontWeight: '600', color: theme.text, margin: 0, fontSize: '14px', whiteSpace: 'nowrap', marginLeft: '12px' }}>
+          {formatCurrency(lt)}
+        </p>
+      </div>
+    )
+  }
 
   // Materials / Labor split — precomputed by the edge function for Mode B
   // (incentive-bearing) invoices. Null when the invoice is a standard
@@ -548,51 +589,55 @@ export default function CustomerPortal() {
                 <p style={{ color: theme.textSecondary, fontSize: '14px', lineHeight: '1.6', margin: '0 0 16px', whiteSpace: 'pre-wrap' }}>{doc.job_description}</p>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: theme.textMuted, fontSize: '13px' }}>Subtotal</span>
-                  <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(invoiceAmount)}</span>
-                </div>
-                {matLabSplit && matLabSplit.total > 0 && (
-                  <div style={{ padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px', marginBottom: '2px' }}>
-                    <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Project Total Breakdown
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                      <span style={{ color: theme.textMuted }}>Materials</span>
-                      <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(matLabSplit.materials)}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                      <span style={{ color: theme.textMuted }}>Labor</span>
-                      <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(matLabSplit.labor)}</span>
-                    </div>
-                  </div>
-                )}
-                {invoiceDiscount > 0 && !hasDepositBreakout && !hasProjectDiscountBreakout && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: theme.textMuted, fontSize: '13px' }}>
-                      {invoiceLegacyNet
-                        ? 'Utility Incentive (applied)'
-                        : (doc.linked_utility_invoice ? 'Utility Incentive' : 'Discount')}
-                    </span>
-                    <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>
-                      {invoiceLegacyNet ? formatCurrency(invoiceDiscount) : `-${formatCurrency(invoiceDiscount)}`}
-                    </span>
-                  </div>
-                )}
-                {(hasDepositBreakout || hasProjectDiscountBreakout) && !invoiceLegacyNet && (
+                {useSectionLayout ? (
                   <>
-                    {projectDiscountPortion > 0 && (
+                    {/* In-scope utility project: line items → project subtotal
+                        → utility incentive → (project discount) → net project.
+                        The incentive visually reduces only the utility-
+                        qualifying work; add-ons are billed on top below. */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: theme.accent, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Utility Project</span>
+                      {doc.linked_utility_invoice?.utility_name && (
+                        <span style={{ fontSize: '12px', color: theme.textMuted, fontStyle: 'italic', textAlign: 'right' }}>
+                          Incentive paid by {doc.linked_utility_invoice.utility_name}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ borderTop: `1px solid ${theme.border}` }}>
+                      {invoiceSections.inScope.map(renderPortalInvoiceLine)}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px' }}>
+                      <span style={{ color: theme.textMuted, fontSize: '13px' }}>Project Subtotal</span>
+                      <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(invoiceSections.inScopeSubtotal)}</span>
+                    </div>
+                    {invoiceSections.incentive > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: theme.textMuted, fontSize: '13px' }}>{portalIncentiveLabel}</span>
+                        <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(invoiceSections.incentive)}</span>
+                      </div>
+                    )}
+                    {invoiceSections.projectDiscount > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: theme.textMuted, fontSize: '13px' }}>Project Discount</span>
-                        <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(projectDiscountPortion)}</span>
+                        <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(invoiceSections.projectDiscount)}</span>
                       </div>
                     )}
-                    {incentivePortion > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: theme.textMuted, fontSize: '13px' }}>{doc.linked_utility_invoice ? 'Utility Incentive' : 'Discount'}</span>
-                        <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(incentivePortion)}</span>
-                      </div>
-                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '6px', borderBottom: `1px solid ${theme.border}` }}>
+                      <span style={{ color: theme.text, fontSize: '14px', fontWeight: '700' }}>Net Project</span>
+                      <span style={{ fontWeight: '700', color: theme.text, fontSize: '15px' }}>{formatCurrency(invoiceSections.netInScope)}</span>
+                    </div>
+                    {/* Out-of-scope add-ons — billed at full price, no incentive. */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', marginTop: '6px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: theme.accent, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Additional Services</span>
+                      <span style={{ fontSize: '12px', color: theme.textMuted, fontStyle: 'italic' }}>Not covered by utility</span>
+                    </div>
+                    <div style={{ borderTop: `1px solid ${theme.border}` }}>
+                      {invoiceSections.outScope.map(renderPortalInvoiceLine)}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px' }}>
+                      <span style={{ color: theme.textMuted, fontSize: '13px' }}>Add-ons Subtotal</span>
+                      <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(invoiceSections.outScopeSubtotal)}</span>
+                    </div>
                     {hasDepositBreakout && (
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: theme.textMuted, fontSize: '13px' }}>
@@ -605,6 +650,69 @@ export default function CustomerPortal() {
                         </span>
                         <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(depositCredit)}</span>
                       </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: theme.textMuted, fontSize: '13px' }}>Subtotal</span>
+                      <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(invoiceAmount)}</span>
+                    </div>
+                    {matLabSplit && matLabSplit.total > 0 && (
+                      <div style={{ padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px', marginBottom: '2px' }}>
+                        <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Project Total Breakdown
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                          <span style={{ color: theme.textMuted }}>Materials</span>
+                          <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(matLabSplit.materials)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                          <span style={{ color: theme.textMuted }}>Labor</span>
+                          <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(matLabSplit.labor)}</span>
+                        </div>
+                      </div>
+                    )}
+                    {invoiceDiscount > 0 && !hasDepositBreakout && !hasProjectDiscountBreakout && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+                          {invoiceLegacyNet
+                            ? 'Utility Incentive (applied)'
+                            : (doc.linked_utility_invoice ? 'Utility Incentive' : 'Discount')}
+                        </span>
+                        <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>
+                          {invoiceLegacyNet ? formatCurrency(invoiceDiscount) : `-${formatCurrency(invoiceDiscount)}`}
+                        </span>
+                      </div>
+                    )}
+                    {(hasDepositBreakout || hasProjectDiscountBreakout) && !invoiceLegacyNet && (
+                      <>
+                        {projectDiscountPortion > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: theme.textMuted, fontSize: '13px' }}>Project Discount</span>
+                            <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(projectDiscountPortion)}</span>
+                          </div>
+                        )}
+                        {incentivePortion > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: theme.textMuted, fontSize: '13px' }}>{doc.linked_utility_invoice ? 'Utility Incentive' : 'Discount'}</span>
+                            <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(incentivePortion)}</span>
+                          </div>
+                        )}
+                        {hasDepositBreakout && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+                              Deposit Applied
+                              {depositPaidDate && (
+                                <span style={{ color: theme.textMuted, marginLeft: '6px', fontSize: '12px', opacity: 0.8 }}>
+                                  (paid {new Date(depositPaidDate).toLocaleDateString()})
+                                </span>
+                              )}
+                            </span>
+                            <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(depositCredit)}</span>
+                          </div>
+                        )}
+                      </>
                     )}
                   </>
                 )}

@@ -13,6 +13,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
 import { resolveMatLabSplit, splitLinePartsLabor } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
+import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
 
 // Light theme fallback
 const defaultTheme = {
@@ -1118,6 +1119,90 @@ export default function InvoiceDetail() {
     if (invoice.customer?.phone) { doc.text(invoice.customer?.phone, margin, y); y += 5 }
     y += 8
 
+    // Shared totals-line drawer (label at totalsX, amount right-aligned at
+    // rightEdge). Defined up here so the two-section subtotals AND the final
+    // totals block below both use it.
+    const totalsX = rightEdge - 70
+    const drawTotalLine = (label, amount, opts = {}) => {
+      checkPage(8)
+      doc.setFont('helvetica', opts.bold ? 'bold' : 'normal')
+      doc.setFontSize(opts.fontSize || 10)
+      if (opts.color) doc.setTextColor(...opts.color)
+      else doc.setTextColor(0)
+      doc.text(label, totalsX, y)
+      doc.text(amount, rightEdge, y, { align: 'right' })
+      y += 6
+    }
+
+    // Draw a line-items table (green column header + rows) for a subset of
+    // lines. Extracted from the flat table so the two-section layout can
+    // render the in-scope and add-on groups with identical formatting.
+    const drawItemRows = (lines) => {
+      const qtyColX = rightEdge - 90
+      const priceColX = rightEdge - 60
+      const totalColX = rightEdge - 4
+      const descColMaxWidth = qtyColX - margin - 8
+      doc.setFillColor(90, 99, 73)
+      doc.rect(margin, y - 4, contentWidth, 8, 'F')
+      doc.setTextColor(255)
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Description', margin + 4, y)
+      doc.text('Qty', qtyColX, y, { align: 'right' })
+      doc.text('Unit Price', priceColX, y, { align: 'right' })
+      doc.text('Total', totalColX, y, { align: 'right' })
+      y += 8
+      doc.setTextColor(0)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(10)
+      lines.forEach((line, idx) => {
+        const description = line.description || 'Item'
+        const qty = parseFloat(line.quantity) || 1
+        const unitPrice = parseFloat(line.unit_price) || 0
+        const lineTotal = parseFloat(line.line_total) || (qty * unitPrice)
+        const descLines = doc.splitTextToSize(description, descColMaxWidth)
+        checkPage(descLines.length * lineHeight + 4)
+        for (let i = 0; i < descLines.length; i++) {
+          checkPage(lineHeight + 2)
+          doc.text(descLines[i], margin + 4, y)
+          if (i === 0) {
+            doc.text(String(qty), qtyColX, y, { align: 'right' })
+            doc.text(formatCurrency(unitPrice), priceColX, y, { align: 'right' })
+            doc.text(formatCurrency(lineTotal), totalColX, y, { align: 'right' })
+          }
+          y += lineHeight
+        }
+        if (idx < lines.length - 1) {
+          y += 1
+          doc.setDrawColor(230, 225, 210)
+          doc.line(margin, y, rightEdge, y)
+          y += 3
+        }
+      })
+      y += 3
+      doc.setDrawColor(214, 205, 184)
+      doc.line(margin, y, rightEdge, y)
+      y += 8
+    }
+
+    // Section title above a group's table, with an optional right-aligned
+    // italic caption (used to name the utility paying the incentive).
+    const drawSectionTitle = (title, caption) => {
+      checkPage(12)
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(90, 99, 73)
+      doc.text(title, margin, y)
+      if (caption) {
+        doc.setFontSize(8.5)
+        doc.setFont('helvetica', 'italic')
+        doc.setTextColor(120)
+        doc.text(caption, rightEdge, y, { align: 'right' })
+      }
+      doc.setTextColor(0)
+      y += 6
+    }
+
     // ── Line items table ──
     // Branch: summary_format renders Parts/Labor totals instead of
     // the per-line breakdown. Same total either way — just collapsed.
@@ -1173,67 +1258,34 @@ export default function InvoiceDetail() {
       y += 8
     } else if (invoiceLines && invoiceLines.length > 0) {
       checkPage(30)
-
-      // Column layout: Description | Qty | Unit Price | Total
-      const qtyColX = rightEdge - 90
-      const priceColX = rightEdge - 60
-      const totalColX = rightEdge - 4
-      const descColMaxWidth = qtyColX - margin - 8
-
-      // Table header
-      doc.setFillColor(90, 99, 73)
-      doc.rect(margin, y - 4, contentWidth, 8, 'F')
-      doc.setTextColor(255)
-      doc.setFontSize(10)
-      doc.setFont('helvetica', 'bold')
-      doc.text('Description', margin + 4, y)
-      doc.text('Qty', qtyColX, y, { align: 'right' })
-      doc.text('Unit Price', priceColX, y, { align: 'right' })
-      doc.text('Total', totalColX, y, { align: 'right' })
-      y += 8
-
-      // Table rows
-      doc.setTextColor(0)
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(10)
-
-      invoiceLines.forEach((line, idx) => {
-        const description = line.description || 'Item'
-        const qty = parseFloat(line.quantity) || 1
-        const unitPrice = parseFloat(line.unit_price) || 0
-        const lineTotal = parseFloat(line.line_total) || (qty * unitPrice)
-
-        const descLines = doc.splitTextToSize(description, descColMaxWidth)
-        checkPage(descLines.length * lineHeight + 4)
-
-        // Subtle alternating row separator
-        const rowStartY = y - 4
-
-        for (let i = 0; i < descLines.length; i++) {
-          checkPage(lineHeight + 2)
-          doc.text(descLines[i], margin + 4, y)
-          if (i === 0) {
-            doc.text(String(qty), qtyColX, y, { align: 'right' })
-            doc.text(formatCurrency(unitPrice), priceColX, y, { align: 'right' })
-            doc.text(formatCurrency(lineTotal), totalColX, y, { align: 'right' })
-          }
-          y += lineHeight
+      if (useSectionLayout) {
+        // ── Two-section layout: in-scope utility project + add-ons ──
+        // In-scope work: line items → project subtotal → utility incentive
+        // → (project discount) → net project. The incentive visually
+        // reduces ONLY the utility-qualifying project, then the add-ons are
+        // billed on top at full price.
+        const payer = linkedUtilityInvoice?.utility_name
+        drawSectionTitle('Utility Project', payer ? `Incentive paid by ${payer}` : 'Eligible for utility incentive')
+        drawItemRows(sections.inScope)
+        drawTotalLine('Project Subtotal:', formatCurrency(sections.inScopeSubtotal))
+        if (sections.incentive > 0) {
+          drawTotalLine('Utility Incentive:', `-${formatCurrency(sections.incentive)}`, { color: [200, 0, 0] })
         }
-
-        // Light divider between rows
-        if (idx < invoiceLines.length - 1) {
-          y += 1
-          doc.setDrawColor(230, 225, 210)
-          doc.line(margin, y, rightEdge, y)
-          y += 3
+        if (sections.projectDiscount > 0) {
+          drawTotalLine('Project Discount:', `-${formatCurrency(sections.projectDiscount)}`, { color: [200, 0, 0] })
         }
-      })
-      y += 3
+        drawTotalLine('Net Project:', formatCurrency(sections.netInScope), { bold: true })
+        y += 6
 
-      // Bottom border
-      doc.setDrawColor(214, 205, 184)
-      doc.line(margin, y, rightEdge, y)
-      y += 8
+        // Out-of-scope add-ons: billed at full price, no incentive.
+        drawSectionTitle('Additional Services', 'Customer add-ons — not covered by utility')
+        drawItemRows(sections.outScope)
+        drawTotalLine('Add-ons Subtotal:', formatCurrency(sections.outScopeSubtotal), { bold: true })
+        y += 4
+      } else {
+        // ── Classic flat table (single group, all line items) ──
+        drawItemRows(invoiceLines)
+      }
     } else if (invoice.job_description) {
       // Fallback for invoices created before invoice_lines were tracked
       checkPage(30)
@@ -1275,19 +1327,7 @@ export default function InvoiceDetail() {
 
     // ── Totals section ──
     checkPage(50)
-    const totalsX = rightEdge - 70
     doc.setFontSize(10)
-
-    const drawTotalLine = (label, amount, opts = {}) => {
-      checkPage(8)
-      doc.setFont('helvetica', opts.bold ? 'bold' : 'normal')
-      doc.setFontSize(opts.fontSize || 10)
-      if (opts.color) doc.setTextColor(...opts.color)
-      else doc.setTextColor(0)
-      doc.text(label, totalsX, y)
-      doc.text(amount, rightEdge, y, { align: 'right' })
-      y += 6
-    }
 
     // Mirror the same legacy-vs-new detection used by the page summary
     // so PDF balance math matches what the customer sees on screen.
@@ -1296,47 +1336,60 @@ export default function InvoiceDetail() {
     const pdfCcFee = parseFloat(invoice.credit_card_fee) || 0
     const pdfLegacyNet = pdfDiscount > 0 && pdfDiscount >= pdfGross
     const pdfCustomerTotal = pdfLegacyNet ? pdfGross : (pdfGross - pdfDiscount)
-
-    drawTotalLine('Subtotal:', formatCurrency(pdfGross))
-
-    // Materials / Labor breakdown — Mode B invoices only
-    if (matLabSplit && matLabSplit.total > 0) {
-      drawTotalLine('  Materials:', formatCurrency(matLabSplit.materials), { color: [120, 120, 120] })
-      drawTotalLine('  Labor:', formatCurrency(matLabSplit.labor), { color: [120, 120, 120] })
-    }
-
-    if (pdfDiscount > 0) {
-      if (pdfLegacyNet) {
-        drawTotalLine('Utility Incentive (applied):', formatCurrency(pdfDiscount), { color: [120, 120, 120] })
-      } else if (hasDepositBreakout || hasProjectDiscountBreakout) {
-        // Split project discount, utility incentive, and deposit credit into
-        // separate lines so the customer (and utility, if they ask) can see
-        // exactly where each deduction came from. Sum is unchanged.
-        if (projectDiscountPortion > 0) {
-          drawTotalLine('Project Discount:', `-${formatCurrency(projectDiscountPortion)}`, { color: [200, 0, 0] })
-        }
-        if (incentivePortion > 0) {
-          drawTotalLine(linkedUtilityInvoice ? 'Utility Incentive:' : 'Discount:', `-${formatCurrency(incentivePortion)}`, { color: [200, 0, 0] })
-        }
-        if (hasDepositBreakout) {
-          const depositLabel = depositPaidDate
-            ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
-            : 'Deposit Applied:'
-          drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
-        }
-      } else {
-        const incentiveLabel = linkedUtilityInvoice ? 'Utility Incentive:' : 'Discount:'
-        drawTotalLine(incentiveLabel, `-${formatCurrency(pdfDiscount)}`, { color: [200, 0, 0] })
-      }
-    }
-
-    if (pdfCcFee > 0) {
-      drawTotalLine('CC Processing Fee:', formatCurrency(pdfCcFee))
-    }
-
     const totalPaidAmt = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
-    if (totalPaidAmt > 0) {
-      drawTotalLine('Paid:', formatCurrency(totalPaidAmt), { color: [0, 128, 0] })
+
+    if (useSectionLayout) {
+      // Project subtotal, incentive, and add-on subtotal are already printed
+      // inside the two sections above. Only whole-invoice credits remain:
+      // the deposit already paid, a CC fee, and prior payments.
+      if (hasDepositBreakout) {
+        const depositLabel = depositPaidDate
+          ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
+          : 'Deposit Applied:'
+        drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
+      }
+      if (pdfCcFee > 0) drawTotalLine('CC Processing Fee:', formatCurrency(pdfCcFee))
+      if (totalPaidAmt > 0) drawTotalLine('Paid:', formatCurrency(totalPaidAmt), { color: [0, 128, 0] })
+    } else {
+      drawTotalLine('Subtotal:', formatCurrency(pdfGross))
+
+      // Materials / Labor breakdown — Mode B invoices only
+      if (matLabSplit && matLabSplit.total > 0) {
+        drawTotalLine('  Materials:', formatCurrency(matLabSplit.materials), { color: [120, 120, 120] })
+        drawTotalLine('  Labor:', formatCurrency(matLabSplit.labor), { color: [120, 120, 120] })
+      }
+
+      if (pdfDiscount > 0) {
+        if (pdfLegacyNet) {
+          drawTotalLine('Utility Incentive (applied):', formatCurrency(pdfDiscount), { color: [120, 120, 120] })
+        } else if (hasDepositBreakout || hasProjectDiscountBreakout) {
+          // Split project discount, utility incentive, and deposit credit into
+          // separate lines so the customer (and utility, if they ask) can see
+          // exactly where each deduction came from. Sum is unchanged.
+          if (projectDiscountPortion > 0) {
+            drawTotalLine('Project Discount:', `-${formatCurrency(projectDiscountPortion)}`, { color: [200, 0, 0] })
+          }
+          if (incentivePortion > 0) {
+            drawTotalLine(linkedUtilityInvoice ? 'Utility Incentive:' : 'Discount:', `-${formatCurrency(incentivePortion)}`, { color: [200, 0, 0] })
+          }
+          if (hasDepositBreakout) {
+            const depositLabel = depositPaidDate
+              ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
+              : 'Deposit Applied:'
+            drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
+          }
+        } else {
+          drawTotalLine(linkedUtilityInvoice ? 'Utility Incentive:' : 'Discount:', `-${formatCurrency(pdfDiscount)}`, { color: [200, 0, 0] })
+        }
+      }
+
+      if (pdfCcFee > 0) {
+        drawTotalLine('CC Processing Fee:', formatCurrency(pdfCcFee))
+      }
+
+      if (totalPaidAmt > 0) {
+        drawTotalLine('Paid:', formatCurrency(totalPaidAmt), { color: [0, 128, 0] })
+      }
     }
 
     y += 2
@@ -1805,6 +1858,20 @@ export default function InvoiceDetail() {
   const hasProjectDiscountBreakout = projectDiscountPortion > 0 && !isLegacyNetInvoice
   const depositPaidDate = parentInvoice?.updated_at || parentInvoice?.created_at
   const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
+
+  // Two-section model (in-scope utility project + out-of-scope add-ons).
+  // Single source of truth in invoiceSections.js; reconciles to the same
+  // customerTotal computed above. Only drives a NEW layout when there are
+  // out-of-scope add-on lines — otherwise the classic flat layout stands.
+  // The linked utility invoice's amount is the authoritative incentive.
+  const sections = buildInvoiceSections(invoice, invoiceLines, {
+    parentInvoice,
+    utilityIncentive: linkedUtilityInvoice ? (parseFloat(linkedUtilityInvoice.amount) || 0) : null,
+  })
+  const useSectionLayout = sections.applicable && sections.hasOutScope
+  const incentiveLabel = linkedUtilityInvoice
+    ? incentiveLineLabel(linkedUtilityInvoice.utility_name)
+    : 'Discount'
 
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
@@ -2660,20 +2727,71 @@ export default function InvoiceDetail() {
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
-                <span style={{ color: theme.textSecondary }}>Invoice Total</span>
-                {isEditing ? (
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editForm.amount}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, amount: e.target.value }))}
-                    style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
-                  />
-                ) : (
-                  <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(invoice.amount)}</span>
-                )}
-              </div>
+              {useSectionLayout && !isEditing ? (
+                <>
+                  {/* Two-section breakdown — mirrors the customer PDF/portal:
+                      utility-qualifying project (incentive applied) + add-ons
+                      billed on top. Reconciles to the same Balance Due. */}
+                  <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Utility Project
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                    <span style={{ color: theme.textSecondary }}>Project Subtotal</span>
+                    <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(sections.inScopeSubtotal)}</span>
+                  </div>
+                  {sections.incentive > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                      <span style={{ color: theme.textSecondary }}>{incentiveLabel}</span>
+                      <span style={{ color: '#dc2626' }}>-{formatCurrency(sections.incentive)}</span>
+                    </div>
+                  )}
+                  {sections.projectDiscount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                      <span style={{ color: theme.textSecondary }}>Project Discount</span>
+                      <span style={{ color: '#dc2626' }}>-{formatCurrency(sections.projectDiscount)}</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                    <span style={{ color: theme.textSecondary, fontWeight: '600' }}>Net Project</span>
+                    <span style={{ fontWeight: '600', color: theme.text }}>{formatCurrency(sections.netInScope)}</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '4px' }}>
+                    Additional Services
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                    <span style={{ color: theme.textSecondary }}>Add-ons Subtotal</span>
+                    <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(sections.outScopeSubtotal)}</span>
+                  </div>
+                  {hasDepositBreakout && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                      <span style={{ color: theme.textSecondary }}>
+                        Deposit Applied
+                        {depositPaidDate && (
+                          <span style={{ color: theme.textMuted, marginLeft: '6px', fontSize: '12px' }}>
+                            (paid {new Date(depositPaidDate).toLocaleDateString()})
+                          </span>
+                        )}
+                      </span>
+                      <span style={{ color: '#dc2626' }}>-{formatCurrency(depositCredit)}</span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                  <span style={{ color: theme.textSecondary }}>Invoice Total</span>
+                  {isEditing ? (
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.amount}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, amount: e.target.value }))}
+                      style={{ ...inputStyle, width: '140px', textAlign: 'right' }}
+                    />
+                  ) : (
+                    <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(invoice.amount)}</span>
+                  )}
+                </div>
+              )}
 
               {/* Materials / Labor breakdown — shown on Mode B (incentive-
                   bearing) invoices and whenever a manual Parts/Labor
@@ -2742,7 +2860,7 @@ export default function InvoiceDetail() {
                     {hasDepositBreakout ? ` (includes ${formatCurrency(depositCredit)} deposit credit)` : ''}
                   </div>
                 </>
-              ) : isLegacyNetInvoice ? (
+              ) : useSectionLayout ? null : isLegacyNetInvoice ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
                   <span style={{ color: theme.textSecondary }}>Utility Incentive (already applied)</span>
                   <span style={{ color: theme.textMuted }}>{formatCurrency(invoice.discount_applied)}</span>

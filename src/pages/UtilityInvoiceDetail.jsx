@@ -88,17 +88,12 @@ export default function UtilityInvoiceDetail() {
     fetchInvoiceData()
   }, [companyId, id, navigate])
 
-  // One canonical invoice document — customer + utility see the same PDF.
-  // When this utility AR row is linked to a customer invoice, route to it
-  // so the team only maintains a single template. The utility_invoices row
-  // continues to track utility-side AR (amount, payment_status, paid_at)
-  // in the background, but the visible page IS the customer invoice.
-  // Legacy utility invoices without a linked invoice_id keep the old view.
-  useEffect(() => {
-    if (invoice && invoice.invoice_id) {
-      navigate(`/invoices/${invoice.invoice_id}`, { replace: true })
-    }
-  }, [invoice, navigate])
+  // The utility incentive is its OWN in-house document now — an internal,
+  // incentive-only books record that is never sent to the customer or the
+  // utility. It intentionally does NOT redirect to the linked customer
+  // invoice (which carries the customer-facing two-section payable view).
+  // Keeping them separate is what the "clean books" requirement asks for:
+  // customer AR lives on the customer invoice, utility AR lives here.
 
   const fetchInvoiceData = async () => {
     setLoading(true)
@@ -544,19 +539,17 @@ export default function UtilityInvoiceDetail() {
     // for filtering.
     const displayInvoiceNumber = invoice.linked_invoice_number || linkedInvoice?.invoice_id || `UTL-${invoice.id}`
     doc.setTextColor(90, 99, 73)
-    doc.setFontSize(18)
+    doc.setFontSize(15)
     doc.setFont('helvetica', 'bold')
-    doc.text('INVOICE', rightEdge, 20, { align: 'right' })
+    doc.text('UTILITY INCENTIVE', rightEdge, 20, { align: 'right' })
     doc.setTextColor(80)
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     let iy = 30
-    doc.text(`Invoice #: ${displayInvoiceNumber}`, rightEdge, iy, { align: 'right' }); iy += 5
-    if (invoice.linked_invoice_number) {
-      doc.setFontSize(8); doc.setTextColor(140)
-      doc.text('(Utility copy — matches customer invoice)', rightEdge, iy, { align: 'right' }); iy += 4
-      doc.setFontSize(10); doc.setTextColor(80)
-    }
+    doc.text(`Ref: ${displayInvoiceNumber}`, rightEdge, iy, { align: 'right' }); iy += 5
+    doc.setFontSize(8); doc.setTextColor(140)
+    doc.text('(Internal record — not for distribution)', rightEdge, iy, { align: 'right' }); iy += 4
+    doc.setFontSize(10); doc.setTextColor(80)
     doc.text(`Date: ${formatDate(invoice.created_at)}`, rightEdge, iy, { align: 'right' })
 
     doc.setDrawColor(214, 205, 184)
@@ -588,266 +581,57 @@ export default function UtilityInvoiceDetail() {
     if (jobData?.customer?.email) { doc.text(jobData.customer?.email, margin, y); y += 5 }
     y += 8
 
-    // ---- Line items (Phase-5: split into in-scope + customer add-ons) ----
-    // Source of truth: invoice_lines from the linked customer invoice
-    // when present (carries the locked in_utility_scope flag). Falls
-    // back to job_lines for legacy utility invoices that pre-date the
-    // linkage. For very old invoices with neither, falls back to the
-    // material/labor split.
-    const allLines = invoiceLines.length > 0 ? invoiceLines : jobLines
-    const useLineItems = allLines.length > 0
-    let inScopeLines = []
-    let addOnLines   = []
-    if (useLineItems) {
-      // For job_lines fall back to the product's catalog flag if the line
-      // itself doesn't have in_utility_scope set yet (transition period).
-      for (const l of allLines) {
-        const lineScope = l.in_utility_scope ?? l.item?.in_utility_scope ?? true
-        if (lineScope === false) addOnLines.push(l)
-        else                     inScopeLines.push(l)
-      }
-    }
+    // NOTE: Customer line items, the in-scope/add-on split, and the
+    // material/labor cost breakdown were intentionally removed here. This
+    // is an internal incentive-only record (never sent), so it shows only
+    // the incentive summary below — no customer-facing itemization.
 
-    const drawLineRow = (label, qty, amount) => {
-      const lineHeight = 6
-      // Wrap long labels
-      const labelLines = doc.splitTextToSize(label, contentWidth * 0.55)
-      const rowHeight = Math.max(lineHeight, labelLines.length * 5 + 1)
-      for (let i = 0; i < labelLines.length; i++) {
-        doc.text(labelLines[i], margin + 2, y + (i * 5))
-      }
-      if (qty != null) doc.text(String(qty), margin + contentWidth * 0.65, y, { align: 'right' })
-      doc.text(formatCurrency(amount), rightEdge - 2, y, { align: 'right' })
-      y += rowHeight + 1
-    }
+    // ---- Utility incentive summary (INTERNAL books record) ----
+    // This document is an internal record of the utility incentive ONLY.
+    // It is never sent to the customer or the utility, so it deliberately
+    // omits customer line items, add-ons, and any payable/balance-due
+    // framing (that all lives on the customer invoice). It shows just the
+    // incentive and its accounting basis, for clean books.
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(0)
+    doc.text('Utility Incentive Summary', margin, y); y += 8
 
-    // Summary mode: collapse both sections into Parts + Labor totals.
-    // Same in-scope vs add-on math still drives the footer totals; the
-    // body just doesn't show per-line detail.
-    if (useLineItems && invoice.summary_format) {
-      // Compute Parts vs Labor with the 3-tier hierarchy (highest first):
-      //   1) Manual override on invoice.parts_total_override + labor_total_override (both set)
-      //   2) Sum of per-line labor_cost (real split — labor_cost = labor, rest = parts)
-      //   3) Fallback type heuristic for legacy invoices without labor_cost data
-      let partsTotal = 0
-      let laborTotal = 0
-      const hasOverride = invoice.parts_total_override != null && invoice.labor_total_override != null
-
-      if (hasOverride) {
-        partsTotal = parseFloat(invoice.parts_total_override) || 0
-        laborTotal = parseFloat(invoice.labor_total_override) || 0
-      } else {
-        // Use the shared bundle-aware splitter — handles per-line
-        // labor_cost, Service/Labor types, and bundles with labor
-        // priced into their components.
-        for (const l of allLines) {
-          const { parts, labor } = splitLinePartsLabor(l, componentMaps.productMap, componentMaps.componentsByParent)
-          partsTotal += parts
-          laborTotal += labor
-        }
-      }
-
-      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(0)
-      doc.text('Cost Breakdown', margin, y); y += 7
-
-      doc.setFillColor(247, 245, 239)
-      doc.rect(margin, y - 4, contentWidth, 7, 'F')
-      doc.setFontSize(9); doc.setTextColor(80)
-      doc.text('Description', margin + 2, y)
-      doc.text('Amount', rightEdge - 2, y, { align: 'right' })
-      y += 8
-
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(0)
-      doc.text('Parts', margin + 2, y)
-      doc.text(formatCurrency(partsTotal), rightEdge - 2, y, { align: 'right' })
-      y += 7
-      doc.text('Labor', margin + 2, y)
-      doc.text(formatCurrency(laborTotal), rightEdge - 2, y, { align: 'right' })
-      y += 4
-      doc.setDrawColor(214, 205, 184); doc.line(margin, y, rightEdge, y); y += 10
-    } else if (useLineItems) {
-      // SECTION 1: In-utility-scope items
-      doc.setFontSize(11)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(0)
-      doc.text('In-utility-scope items (eligible for incentive)', margin, y)
-      y += 7
-
-      // Table header
-      doc.setFillColor(247, 245, 239)
-      doc.rect(margin, y - 4, contentWidth, 7, 'F')
-      doc.setFontSize(9)
-      doc.setTextColor(80)
-      doc.text('Description', margin + 2, y)
-      doc.text('Qty', margin + contentWidth * 0.65, y, { align: 'right' })
-      doc.text('Amount', rightEdge - 2, y, { align: 'right' })
-      y += 8
-
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(10)
-      doc.setTextColor(0)
-      let inScopeSubtotal = 0
-      if (inScopeLines.length === 0) {
-        doc.setTextColor(140)
-        doc.text('(no in-scope line items)', margin + 2, y); y += 7
-        doc.setTextColor(0)
-      }
-      for (const l of inScopeLines) {
-        const label = l.description || l.item?.name || l.item_name || 'Item'
-        const qty   = l.quantity || 1
-        const amt   = parseFloat(l.line_total ?? l.total) || 0
-        drawLineRow(label, qty, amt); inScopeSubtotal += amt
-      }
-      doc.setDrawColor(214, 205, 184)
-      doc.line(margin, y, rightEdge, y); y += 4
-      doc.setFont('helvetica', 'bold')
-      doc.text('In-scope subtotal:', margin + contentWidth * 0.55, y, { align: 'right' })
-      doc.text(formatCurrency(inScopeSubtotal), rightEdge - 2, y, { align: 'right' })
-      y += 10
-
-      // SECTION 2: Customer add-ons
-      if (addOnLines.length > 0) {
-        doc.setFontSize(11)
-        doc.setFont('helvetica', 'bold')
-        doc.setTextColor(0)
-        doc.text('Customer add-ons (NOT part of utility scope)', margin, y)
-        y += 7
-        doc.setFontSize(9)
-        doc.setFont('helvetica', 'italic')
-        doc.setTextColor(140)
-        doc.text('These items are paid in full by the customer and are not eligible for utility incentive.', margin, y); y += 7
-        doc.setFont('helvetica', 'normal')
-
-        doc.setFillColor(252, 240, 230)
-        doc.rect(margin, y - 4, contentWidth, 7, 'F')
-        doc.setFontSize(9)
-        doc.setTextColor(80)
-        doc.text('Description', margin + 2, y)
-        doc.text('Qty', margin + contentWidth * 0.65, y, { align: 'right' })
-        doc.text('Amount', rightEdge - 2, y, { align: 'right' })
-        y += 8
-
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(10)
-        doc.setTextColor(0)
-        let addOnSubtotal = 0
-        for (const l of addOnLines) {
-          const label = l.description || l.item?.name || l.item_name || 'Item'
-          const qty   = l.quantity || 1
-          const amt   = parseFloat(l.line_total ?? l.total) || 0
-          drawLineRow(label, qty, amt); addOnSubtotal += amt
-        }
-        doc.setDrawColor(214, 205, 184)
-        doc.line(margin, y, rightEdge, y); y += 4
-        doc.setFont('helvetica', 'bold')
-        doc.text('Customer add-ons subtotal:', margin + contentWidth * 0.55, y, { align: 'right' })
-        doc.text(formatCurrency(addOnSubtotal), rightEdge - 2, y, { align: 'right' })
-        y += 10
-      }
-    } else {
-      // Legacy fallback: no line items at all → original material/labor split
-      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(0)
-      doc.text('Cost Breakdown', margin, y); y += 8
-      doc.setFillColor(247, 245, 239)
-      doc.rect(margin, y - 4, contentWidth, 7, 'F')
-      doc.setFontSize(9); doc.setTextColor(80)
-      doc.text('Description', margin + 2, y); doc.text('Amount', rightEdge - 2, y, { align: 'right' })
-      y += 8
-      doc.setFont('helvetica', 'normal'); doc.setTextColor(0); doc.setFontSize(10)
-      doc.text('Material', margin + 2, y); doc.text(formatCurrency(materialTotal), rightEdge - 2, y, { align: 'right' }); y += 7
-      doc.text('Labor', margin + 2, y); doc.text(formatCurrency(laborTotal), rightEdge - 2, y, { align: 'right' }); y += 4
-      doc.setDrawColor(214, 205, 184); doc.line(margin, y, rightEdge, y); y += 10
-    }
-
-    // ---- Financial summary (footer) ----
-    // Mirrors the customer-copy PDF's reconciliation rows when there's
-    // a linked customer invoice — same subtotal, deposit credit,
-    // utility incentive, CC fee, paid, and balance due — so the two
-    // summary PDFs reconcile to the same Balance Due number.
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(0)
+    const incAmount = parseFloat(invoice.incentive_amount) || parseFloat(invoice.amount) || 0
+    const projCostPdf = parseFloat(invoice.project_cost) || parseFloat(invoice.amount) || 0
+    const netCostPdf = (invoice.net_cost != null && invoice.net_cost !== '')
+      ? (parseFloat(invoice.net_cost) || 0)
+      : Math.max(0, projCostPdf - incAmount)
 
     const summaryX = margin + 80
-    const valX = rightEdge
-
-    if (linkedInvoice) {
-      // Use the customer invoice's amount / discount as the source of
-      // truth — same fields InvoiceDetail uses to render its footer.
-      const gross = parseFloat(linkedInvoice.amount) || 0
-      const disc  = parseFloat(linkedInvoice.discount_applied) || 0
-      const ccFee = parseFloat(linkedInvoice.credit_card_fee) || 0
-      const isLegacyNet = disc > 0 && disc >= gross
-      const customerTotal = isLegacyNet ? gross : (gross - disc)
-
-      const depositCredit = (parentInvoice && parentInvoice.invoice_type === 'deposit')
-        ? (parseFloat(parentInvoice.amount) || 0) : 0
-      const incentivePortion = Math.max(0, disc - depositCredit)
-      const hasDepositBreakout = depositCredit > 0 && !isLegacyNet && disc >= depositCredit
-      const depositPaidDate = parentInvoice?.updated_at || parentInvoice?.created_at
-
-      const totalPaidAmt = (linkedInvoicePayments || [])
-        .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
-
-      const drawTotalLine = (label, amount, opts = {}) => {
-        doc.setFont('helvetica', opts.bold ? 'bold' : 'normal')
-        doc.setFontSize(opts.fontSize || 10)
-        if (opts.color) doc.setTextColor(...opts.color); else doc.setTextColor(0)
-        doc.text(label, summaryX, y)
-        doc.text(amount, valX, y, { align: 'right' })
-        y += 6
-      }
-
-      drawTotalLine('Subtotal:', formatCurrency(gross))
-
-      if (disc > 0) {
-        if (isLegacyNet) {
-          drawTotalLine('Utility Incentive (applied):', formatCurrency(disc), { color: [120, 120, 120] })
-        } else if (hasDepositBreakout) {
-          if (incentivePortion > 0) {
-            drawTotalLine('Utility Incentive:', `-${formatCurrency(incentivePortion)}`, { color: [200, 0, 0] })
-          }
-          const depositLabel = depositPaidDate
-            ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
-            : 'Deposit Applied:'
-          drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
-        } else {
-          drawTotalLine('Utility Incentive:', `-${formatCurrency(disc)}`, { color: [200, 0, 0] })
-        }
-      }
-
-      if (ccFee > 0) drawTotalLine('CC Processing Fee:', formatCurrency(ccFee))
-
-      if (totalPaidAmt > 0) drawTotalLine('Paid:', formatCurrency(totalPaidAmt), { color: [0, 128, 0] })
-
-      y += 2
-      doc.setDrawColor(90, 99, 73); doc.setLineWidth(0.5)
-      doc.line(summaryX, y, valX, y)
-      doc.setLineWidth(0.2)
-      y += 7
-
-      const balDue = customerTotal + ccFee - totalPaidAmt
-      drawTotalLine('Balance Due:', formatCurrency(Math.max(0, balDue)), { bold: true, fontSize: 13 })
-      y += 10
-    } else {
-      // Legacy utility-only invoices (no linked customer invoice) keep
-      // the original "Project Cost / Customer Portion / Utility Owes"
-      // rollup. Nothing to reconcile against in this branch.
-      doc.setFont('helvetica', 'bold')
-      doc.text('Total Project Cost:', summaryX, y)
-      doc.text(formatCurrency(invoice.project_cost || invoice.amount || (materialTotal + laborTotal)), valX, y, { align: 'right' }); y += 6
-
-      doc.setFont('helvetica', 'normal'); doc.setTextColor(100)
-      doc.text('Customer Portion:', summaryX, y)
-      doc.text(formatCurrency(invoice.net_cost), valX, y, { align: 'right' }); y += 8
-
-      doc.setDrawColor(214, 205, 184); doc.line(summaryX, y - 2, rightEdge, y - 2)
-
-      doc.setTextColor(212, 148, 10); doc.setFontSize(14); doc.setFont('helvetica', 'bold')
-      doc.text('Utility Incentive:', summaryX, y + 5)
-      doc.text(formatCurrency(invoice.incentive_amount || invoice.amount), valX, y + 5, { align: 'right' })
-      y += 18
+    const drawRow = (label, amount, opts = {}) => {
+      doc.setFont('helvetica', opts.bold ? 'bold' : 'normal')
+      doc.setFontSize(opts.fontSize || 10)
+      if (opts.color) doc.setTextColor(...opts.color)
+      else doc.setTextColor(opts.muted ? 100 : 0)
+      doc.text(label, summaryX, y)
+      doc.text(amount, rightEdge, y, { align: 'right' })
+      y += opts.gap || 6
     }
+
+    if (projCostPdf > 0) drawRow('Project Cost:', formatCurrency(projCostPdf), { muted: true })
+    if (netCostPdf > 0) drawRow('Customer Portion (net of incentive):', formatCurrency(netCostPdf), { muted: true, gap: 8 })
+
+    doc.setDrawColor(214, 205, 184); doc.line(summaryX, y - 2, rightEdge, y - 2)
+    doc.setTextColor(212, 148, 10); doc.setFontSize(14); doc.setFont('helvetica', 'bold')
+    doc.text('Utility Incentive:', summaryX, y + 5)
+    doc.text(formatCurrency(incAmount), rightEdge, y + 5, { align: 'right' })
+    y += 18
+
+    // Utility-side payment status (this is utility AR, not a customer bill).
+    doc.setTextColor(0); doc.setFont('helvetica', 'normal'); doc.setFontSize(10)
+    const utilStatus = invoice.payment_status === 'Paid'
+      ? `Utility payment: Received${invoice.paid_at ? ' ' + formatDate(invoice.paid_at) : ''}`
+      : `Utility payment: ${invoice.payment_status || 'Pending'}`
+    doc.text(utilStatus, margin, y); y += 9
+
+    doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(150)
+    doc.text('Internal books record — not a customer or utility statement. Do not distribute.', margin, y)
+    doc.setTextColor(0); doc.setFont('helvetica', 'normal')
+    y += 10
 
     // Notes
     if (invoice.notes) {
@@ -864,7 +648,7 @@ export default function UtilityInvoiceDetail() {
     setGeneratingPdf(true)
     try {
       const doc = generateUtilityPDF()
-      doc.save(`Invoice-${invoice.id}-${invoice.customer_name || 'customer'}.pdf`)
+      doc.save(`Utility-Incentive-${invoice.id}-${invoice.customer_name || 'customer'}.pdf`)
       toast.success('PDF downloaded')
     } catch (err) {
       toast.error('Failed to generate PDF: ' + err.message)
@@ -968,7 +752,7 @@ export default function UtilityInvoiceDetail() {
         </button>
         <div style={{ flex: 1 }}>
           <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '600', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span>UTILITY COPY ·</span>
+            <span>UTILITY INCENTIVE ·</span>
             {isEditing ? (
               <input
                 type="text"
@@ -989,14 +773,14 @@ export default function UtilityInvoiceDetail() {
           </p>
           {invoice.linked_invoice_number && (
             <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-              Mirrors customer invoice {invoice.linked_invoice_number}
+              Internal books record for customer invoice {invoice.linked_invoice_number}
             </p>
           )}
           <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: '700', color: theme.text }}>
             {invoice.customer_name || 'Customer Invoice'}
           </h1>
           <p style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-            Utility incentive applied as a deduction
+            In-house incentive record — for the books, never sent
           </p>
         </div>
         <span style={{
@@ -1441,50 +1225,9 @@ export default function UtilityInvoiceDetail() {
                 {generatingPdf ? 'Generating...' : 'Download PDF'}
               </button>
 
-              {/* Format toggle — Itemized (two-section line list) vs
-                  Summary (just Parts + Labor totals). Same pattern as
-                  the customer invoice. */}
-              <div style={{
-                display: 'inline-flex', alignItems: 'center', gap: 0,
-                padding: 3,
-                backgroundColor: theme.bg,
-                border: `1px solid ${theme.border}`,
-                borderRadius: 8,
-                alignSelf: 'stretch',
-              }}>
-                {['itemized', 'summary'].map(mode => {
-                  const isActive = (mode === 'summary') === !!invoice.summary_format
-                  return (
-                    <button
-                      key={mode}
-                      onClick={async () => {
-                        if (isActive) return
-                        const nextValue = mode === 'summary'
-                        const { error } = await supabase
-                          .from('utility_invoices')
-                          .update({ summary_format: nextValue, updated_at: new Date().toISOString() })
-                          .eq('id', invoice.id)
-                        if (error) { toast.error('Could not save format: ' + error.message); return }
-                        setInvoice(prev => ({ ...prev, summary_format: nextValue }))
-                        toast.success(`Utility invoice: ${mode === 'summary' ? 'Parts & Labor summary' : 'Itemized'}`)
-                      }}
-                      title={mode === 'summary' ? 'Show one Parts + one Labor total instead of every line' : 'Show every line item with in-scope / customer-add-on split'}
-                      style={{
-                        flex: 1,
-                        padding: '6px 12px', minHeight: 32,
-                        backgroundColor: isActive ? '#fff' : 'transparent',
-                        color: isActive ? theme.text : theme.textMuted,
-                        border: 'none', borderRadius: 6,
-                        fontSize: 12, fontWeight: 600,
-                        cursor: isActive ? 'default' : 'pointer',
-                        boxShadow: isActive ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
-                      }}
-                    >
-                      {mode === 'summary' ? 'Summary' : 'Itemized'}
-                    </button>
-                  )
-                })}
-              </div>
+              {/* The Itemized/Summary format toggle was removed: this is an
+                  incentive-only internal record with no line items to
+                  itemize. The PDF always renders the incentive summary. */}
 
               <div style={{ borderTop: `1px solid ${theme.border}`, margin: '2px 0' }} />
 

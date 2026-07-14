@@ -241,6 +241,17 @@ serve(async (req) => {
 
         if (!customer && inv.customer) customer = inv.customer;
 
+        // Invoice line items for the two-section customer view (in-scope
+        // utility project vs out-of-scope add-ons). Display columns only —
+        // no cost/margin data is exposed on the public portal. Mirrors the
+        // estimate line_items shape so the portal renders both the same way.
+        const { data: invLines } = await supabase
+          .from('invoice_lines')
+          .select('id, description, quantity, unit_price, line_total, in_utility_scope, sort_order, item:products_services(id, name)')
+          .eq('invoice_id', inv.id)
+          .order('sort_order', { ascending: true });
+        lineItems = invLines || [];
+
         // If this invoice has a parent (typically a deposit invoice rolled
         // into the customer balance invoice via discount_applied), fetch the
         // parent so the portal can show the deposit credit as its own line
