@@ -1256,6 +1256,16 @@ export default function InvoiceDetail() {
       doc.setDrawColor(214, 205, 184)
       doc.line(margin, y, rightEdge, y)
       y += 8
+
+      // Summary mode collapses the in-scope project into Parts/Labor, but
+      // the out-of-scope add-ons are the customer's discretionary upsells —
+      // itemize them so they see exactly what they're paying full price for.
+      // Their subtotal + the incentive are reconciled in the totals below.
+      if (useSectionLayout && sections.outScope.length > 0) {
+        y += 2
+        drawSectionTitle('Additional Services', 'Customer add-ons — not covered by utility')
+        drawItemRows(sections.outScope)
+      }
     } else if (invoiceLines && invoiceLines.length > 0) {
       checkPage(30)
       if (useSectionLayout) {
