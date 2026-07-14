@@ -1338,10 +1338,32 @@ export default function InvoiceDetail() {
     const pdfCustomerTotal = pdfLegacyNet ? pdfGross : (pdfGross - pdfDiscount)
     const totalPaidAmt = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
 
-    if (useSectionLayout) {
-      // Project subtotal, incentive, and add-on subtotal are already printed
-      // inside the two sections above. Only whole-invoice credits remain:
-      // the deposit already paid, a CC fee, and prior payments.
+    if (useSectionLayout && !invoice.summary_format) {
+      // Itemized two-section layout already printed the project subtotal,
+      // utility incentive, and add-on subtotal inline above. Only whole-
+      // invoice credits remain: deposit paid, CC fee, prior payments.
+      if (hasDepositBreakout) {
+        const depositLabel = depositPaidDate
+          ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
+          : 'Deposit Applied:'
+        drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
+      }
+      if (pdfCcFee > 0) drawTotalLine('CC Processing Fee:', formatCurrency(pdfCcFee))
+      if (totalPaidAmt > 0) drawTotalLine('Paid:', formatCurrency(totalPaidAmt), { color: [0, 128, 0] })
+    } else if (useSectionLayout && invoice.summary_format) {
+      // Summary (Parts/Labor) mode collapses the line items, so the split
+      // can't be shown inline. Render the section breakdown here in the
+      // totals — otherwise the utility incentive vanishes and the numbers
+      // don't add up (Parts+Labor jumping straight to Balance Due).
+      drawTotalLine('Project Subtotal:', formatCurrency(sections.inScopeSubtotal))
+      if (sections.incentive > 0) {
+        drawTotalLine('Utility Incentive:', `-${formatCurrency(sections.incentive)}`, { color: [200, 0, 0] })
+      }
+      if (sections.projectDiscount > 0) {
+        drawTotalLine('Project Discount:', `-${formatCurrency(sections.projectDiscount)}`, { color: [200, 0, 0] })
+      }
+      drawTotalLine('Net Project:', formatCurrency(sections.netInScope), { bold: true })
+      drawTotalLine('Add-ons Subtotal:', formatCurrency(sections.outScopeSubtotal), { bold: true })
       if (hasDepositBreakout) {
         const depositLabel = depositPaidDate
           ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
