@@ -1134,6 +1134,14 @@ export default function InvoiceDetail() {
       y += 6
     }
 
+    // Line-item label mode. When invoice.hide_line_descriptions is set, rows
+    // show only the product NAME (e.g. "100W Wall Pack w/ Lift"); otherwise
+    // the name is followed by the longer description detail (e.g. "Parts &
+    // Labor / Adjustable, Cut Off..."). "(ARCHIVED …)" is stripped from names
+    // so retired products still read cleanly on the customer's invoice.
+    const hideLineDesc = !!invoice.hide_line_descriptions
+    const cleanLineName = (l) => (l?.item?.name || '').replace(/\s*\(ARCHIVED[^)]*\)/i, '').trim()
+
     // Draw a line-items table (green column header + rows) for a subset of
     // lines. Extracted from the flat table so the two-section layout can
     // render the in-scope and add-on groups with identical formatting.
@@ -1156,21 +1164,37 @@ export default function InvoiceDetail() {
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(10)
       lines.forEach((line, idx) => {
-        const description = line.description || 'Item'
         const qty = parseFloat(line.quantity) || 1
         const unitPrice = parseFloat(line.unit_price) || 0
         const lineTotal = parseFloat(line.line_total) || (qty * unitPrice)
-        const descLines = doc.splitTextToSize(description, descColMaxWidth)
-        checkPage(descLines.length * lineHeight + 4)
-        for (let i = 0; i < descLines.length; i++) {
+        const name = cleanLineName(line)
+        const rawDesc = (line.description || '').trim()
+        const primary = name || rawDesc || 'Item'
+        const showDesc = !hideLineDesc && rawDesc && rawDesc !== primary
+        const primaryLines = doc.splitTextToSize(primary, descColMaxWidth)
+        const descLines = showDesc ? doc.splitTextToSize(rawDesc, descColMaxWidth) : []
+        checkPage((primaryLines.length + descLines.length) * lineHeight + 4)
+        // Primary label (product name, or the description when there is no name)
+        doc.setTextColor(0)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(10)
+        for (let i = 0; i < primaryLines.length; i++) {
           checkPage(lineHeight + 2)
-          doc.text(descLines[i], margin + 4, y)
+          doc.text(primaryLines[i], margin + 4, y)
           if (i === 0) {
             doc.text(String(qty), qtyColX, y, { align: 'right' })
             doc.text(formatCurrency(unitPrice), priceColX, y, { align: 'right' })
             doc.text(formatCurrency(lineTotal), totalColX, y, { align: 'right' })
           }
           y += lineHeight
+        }
+        // Optional description detail (smaller, muted, indented)
+        if (descLines.length) {
+          doc.setFontSize(8.5)
+          doc.setTextColor(120)
+          for (const dl of descLines) { checkPage(5); doc.text(dl, margin + 6, y); y += 4.5 }
+          doc.setFontSize(10)
+          doc.setTextColor(0)
         }
         if (idx < lines.length - 1) {
           y += 1
@@ -1490,6 +1514,17 @@ export default function InvoiceDetail() {
     }
 
     return doc
+  }
+
+  // Toggle whether the longer line-item descriptions are shown on the
+  // invoice PDF + customer portal (persisted per invoice). When off, rows
+  // show just the product name for a cleaner document.
+  const toggleHideDescriptions = async () => {
+    const next = !invoice.hide_line_descriptions
+    const { error } = await supabase.from('invoices').update({ hide_line_descriptions: next }).eq('id', invoice.id)
+    if (error) { toast.error('Could not save: ' + error.message); return }
+    setInvoice(prev => ({ ...prev, hide_line_descriptions: next }))
+    toast.success(next ? 'Line descriptions hidden' : 'Line descriptions shown')
   }
 
   // Preview PDF before saving
@@ -2650,27 +2685,48 @@ export default function InvoiceDetail() {
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>
                 PDF Snapshot {pdfHistory.length > 0 ? `(${pdfHistory.length})` : ''}
               </h3>
-              <button
-                onClick={handleGenerateAndUploadPDF}
-                disabled={generatingPdf}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 12px',
-                  backgroundColor: 'rgba(59,130,246,0.12)',
-                  color: '#3b82f6',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  cursor: generatingPdf ? 'not-allowed' : 'pointer',
-                  opacity: generatingPdf ? 0.6 : 1
-                }}
-              >
-                <FileText size={16} />
-                {generatingPdf ? 'Saving...' : 'Preview PDF'}
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={toggleHideDescriptions}
+                  title="Show or hide the longer line-item descriptions on the invoice PDF and customer portal. When off, rows show just the product name."
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 12px',
+                    backgroundColor: invoice.hide_line_descriptions ? theme.bg : 'rgba(90,99,73,0.12)',
+                    color: invoice.hide_line_descriptions ? theme.textMuted : theme.accent,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {invoice.hide_line_descriptions ? 'Descriptions: Off' : 'Descriptions: On'}
+                </button>
+                <button
+                  onClick={handleGenerateAndUploadPDF}
+                  disabled={generatingPdf}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 12px',
+                    backgroundColor: 'rgba(59,130,246,0.12)',
+                    color: '#3b82f6',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    cursor: generatingPdf ? 'not-allowed' : 'pointer',
+                    opacity: generatingPdf ? 0.6 : 1
+                  }}
+                >
+                  <FileText size={16} />
+                  {generatingPdf ? 'Saving...' : 'Preview PDF'}
+                </button>
+              </div>
             </div>
 
             {latestPdfSignedUrl ? (

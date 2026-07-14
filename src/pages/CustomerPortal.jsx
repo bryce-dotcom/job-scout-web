@@ -287,20 +287,30 @@ export default function CustomerPortal() {
     ? incentiveLineLabel(doc.linked_utility_invoice.utility_name)
     : 'Discount'
 
+  // When the invoice hides line descriptions, portal rows show just the
+  // product name; otherwise the name is followed by the description detail.
+  // "(ARCHIVED …)" is stripped so retired products still read cleanly.
+  const hideLineDesc = !!doc.hide_line_descriptions
+  const cleanLineName = (l) => ((l?.item_name || l?.item?.name) || '').replace(/\s*\(ARCHIVED[^)]*\)/i, '').trim()
+
   // One invoice line row (name, qty × unit, line total). Reused for both
   // the in-scope and add-on groups.
   const renderPortalInvoiceLine = (li, i) => {
     const lt = parseFloat(li.line_total ?? li.total) || 0
     const q = parseFloat(li.quantity) || 1
     const u = parseFloat(li.unit_price ?? li.price) || (q > 0 ? lt / q : 0)
+    const name = cleanLineName(li)
+    const rawDesc = (li.description || '').trim()
+    const primary = name || rawDesc || 'Item'
+    const showDesc = !hideLineDesc && rawDesc && rawDesc !== primary
     return (
       <div key={li.id || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '6px 0' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontWeight: '500', color: theme.text, margin: 0, fontSize: '14px' }}>
-            {li.item_name || li.item?.name || li.description || 'Item'}
+            {primary}
           </p>
-          {li.description && (li.item_name || li.item?.name) && (
-            <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0' }}>{li.description}</p>
+          {showDesc && (
+            <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0' }}>{rawDesc}</p>
           )}
           <p style={{ color: theme.textMuted, fontSize: '12px', margin: '2px 0 0' }}>{q} x {formatCurrency(u)}</p>
         </div>
