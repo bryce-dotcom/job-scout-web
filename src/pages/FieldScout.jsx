@@ -1100,7 +1100,15 @@ export default function FieldScout() {
 
       // 2. If no invoice, auto-create one from the job
       if (!invoice) {
+        // job_total is already NET of the rep's whole-project discount (jobs
+        // satisfy lines == job_total + discount), and the gap between it and
+        // the gross lines copied below surfaces as a "Project discount" line
+        // via buildInvoiceSections — so the discount is handled. The utility
+        // incentive is NOT: without deducting it, a tech on a lighting job
+        // would be asking the customer for the full project total when the
+        // utility is covering it.
         const jobTotal = parseFloat(job.job_total) || 0
+        const jobIncentive = parseFloat(job.utility_incentive) || 0
         // Get business unit from settings
         const storeSettings = useStore.getState().settings
         const buSetting = storeSettings.find(s => s.key === 'business_units')
@@ -1121,6 +1129,11 @@ export default function FieldScout() {
             job_id: job.id,
             customer_id: job.customer_id || null,
             amount: jobTotal,
+            // Deduct the utility incentive so the balance the tech collects is
+            // the customer's actual share. Not project_discount — that's
+            // already baked into job_total, so tagging it here would
+            // double-count it.
+            discount_applied: jobIncentive > 0 ? jobIncentive : null,
             payment_status: 'Pending',
             business_unit: buName || null,
             job_description: job.job_title || null
