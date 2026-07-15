@@ -41,6 +41,21 @@ serve(async (req) => {
     const canonicalAnnualSavings = manualSavingsNum > 0
       ? manualSavingsNum
       : (hasAudit ? (audit_data.annual_savings_dollars || 0) : 0);
+    // Do we have a savings figure that a HUMAN or a certified audit stands
+    // behind? If not, the model must not produce one.
+    //
+    // This prompt used to tell the AI, when no audit was linked, to "estimate
+    // annual_savings based on ... 15-30% of project cost/yr" and that "every
+    // project saves money somehow — find the angle." It did exactly that:
+    // of 77 estimates carrying a savings figure, ZERO matched their audit, 38
+    // overstated it by 2x-35x, and ~48 landed inside that 15-30% band. Those
+    // are energy-savings promises on proposals sent to customers, implying
+    // electricity rates up to $2.80/kWh against a real $0.08/kWh. Damien
+    // reported it as "completely wrong ... no idea where the numbers are
+    // coming from" — because a model invented them to satisfy a heuristic.
+    //
+    // No measured data => no dollar claim. Qualitative framing only.
+    const hasRealSavings = canonicalAnnualSavings > 0;
 
     // Build context for Claude
     const lineItemsSummary = (line_items || []).map((li: any) =>
@@ -128,7 +143,7 @@ ${eosBlock}
 USER'S DIRECTION:
 ${user_direction}
 
-Revise the proposal layout according to the user's direction. Keep the same JSON structure. Only change what the user asked for — preserve sections and content they didn't mention.${hasAudit ? ' IMPORTANT: Always use the exact audit numbers provided — never estimate or replace them with guesses.' : ''} Return ONLY valid JSON (no markdown fences) with the same structure as the current layout.`;
+Revise the proposal layout according to the user's direction. Keep the same JSON structure. Only change what the user asked for — preserve sections and content they didn't mention.${hasAudit ? ' IMPORTANT: Always use the exact audit numbers provided — never estimate or replace them with guesses.' : hasRealSavings ? ` IMPORTANT: The annual savings figure is ${canonicalAnnualSavings}. Use it exactly — never estimate or replace it with a guess.` : ' IMPORTANT: This estimate has no audit and no savings figure. Do NOT introduce any annual savings, kWh, payback or ROI number — not even if the direction seems to ask for one. There is no measured basis for it.'} Return ONLY valid JSON (no markdown fences) with the same structure as the current layout.`;
     } else {
       // Fresh generation — sell hard, every project type
       const netCostCalc = hasAudit
@@ -175,7 +190,9 @@ Create 3 pricing tiers. CRITICAL RULES:
 - net_price for ALL tiers = price - incentive (same incentive amount subtracted from each).
 - The recommended tier should be "better".
 - NEVER use the word "rebate" — always say "incentive."
-- annual_savings MUST BE THE SAME on all 3 tiers${canonicalAnnualSavings > 0 ? ` and EQUAL TO ${canonicalAnnualSavings}` : ''}. Annual energy savings come from the lighting (same scope across tiers), so the savings figure does not change between Good / Better / Best.
+${hasRealSavings
+  ? `- annual_savings MUST BE THE SAME on all 3 tiers and EQUAL TO ${canonicalAnnualSavings}. Annual energy savings come from the lighting (same scope across tiers), so the savings figure does not change between Good / Better / Best.`
+  : `- OMIT annual_savings and payback_months from every tier. There is no measured savings figure for this estimate and you must not invent one.`}
 ` : ''}
 ${hasAudit ? `
 INVESTMENT GRADE AUDIT DATA (these are REAL certified numbers — use them EXACTLY):
@@ -184,15 +201,25 @@ You MUST use these exact figures in savings_timeline and roi_summary. Do NOT est
 - Calculate payback_months from: ($${netCostCalc.toFixed(2)} net cost) / $${audit_data.annual_savings_dollars}/yr * 12
 - Calculate roi_percent from: (($${audit_data.annual_savings_dollars} * 5) - $${netCostCalc.toFixed(2)}) / $${netCostCalc.toFixed(2)} * 100
 - Reference the specific audit findings in your copy: ${audit_data.watts_reduced}W reduction, ${audit_data.annual_savings_kwh.toLocaleString()} kWh/yr, ${audit_data.total_fixtures} fixtures.
-- Include a "warranty" section with content from the company notes above.` : `
+- Include a "warranty" section with content from the company notes above.` : hasRealSavings ? `
+ANNUAL SAVINGS (a real figure entered on the estimate — use it EXACTLY):
+- annual_savings for savings_timeline AND roi_summary.metrics → ${canonicalAnnualSavings}
+- Do NOT estimate, round, adjust or re-derive this number. It is the only savings figure you may state.
+- Calculate payback_months from: ($${netCostCalc.toFixed(2)} net cost) / $${canonicalAnnualSavings}/yr * 12` : `
 COST ANALYSIS APPROACH:
-Even without a formal energy audit, frame this as a smart investment:
-- For maintenance/repair work: calculate the cost of emergency repairs, downtime, liability. A $5,000 preventative fix beats a $25,000 emergency.
-- For upgrades/installations: calculate operational savings, reduced maintenance, extended equipment life. New equipment runs cheaper.
+There is NO audit and NO savings figure on this estimate, so you have no measured
+data. Frame the value QUALITATIVELY and make no numeric savings claim:
+- For maintenance/repair work: the cost of emergency repairs, downtime, liability. A $5,000 preventative fix beats a $25,000 emergency.
+- For upgrades/installations: operational reliability, reduced maintenance, extended equipment life.
 - For any project: property value improvement, code compliance, safety, insurance implications.
-- Use the savings_timeline to show how the investment pays back over 3-5 years. Be conservative but real.
-- Estimate annual_savings based on: reduced maintenance costs (15-30% of project cost/yr is common for preventative work), energy efficiency gains, avoided emergency repair costs.
-- ALWAYS include savings_timeline and roi_summary — every project saves money somehow. Find the angle.`}
+
+HARD RULE — DO NOT INVENT A SAVINGS NUMBER:
+- Do NOT state, estimate, infer or imply any annual savings, kWh figure, payback
+  period or ROI percentage. Not as a number, not as a range, not "up to".
+- Do NOT derive savings from a percentage of project cost. There is no basis for it.
+- OMIT the savings_timeline and roi_summary sections entirely. Their absence is
+  correct — an unmeasured guess printed next to our logo is a promise we cannot keep.
+- Sell on the qualitative value above. That is enough.`}
 
 Return ONLY valid JSON (no markdown fences):
 {
@@ -204,14 +231,14 @@ Return ONLY valid JSON (no markdown fences):
     ${eosBlock ? '{ "type": "why_us", "heading": "Why [company name]", "content": "compelling narrative about what makes this company different — weave in core values, proven process, guarantee, and 3 uniques. Do NOT just list bullet points — tell a story.", "highlights": ["differentiator 1", "differentiator 2", "differentiator 3"] },' : ''}
     { "type": "line_items", "show_images": true },
     { "type": "cost_breakdown", "chart_type": "donut" },
-    { "type": "savings_timeline", "years": 5, "annual_savings": <real number>, "content": "specific description of WHERE the savings come from"${hasAudit ? `, "annual_kwh_savings": ${audit_data.annual_savings_kwh}, "watts_reduced": ${audit_data.watts_reduced}, "total_fixtures": ${audit_data.total_fixtures}` : ''} },
-    { "type": "roi_summary", "content": "a line that frames the ROI as obvious", "metrics": { "annual_savings": <real number>, "payback_months": <calculated number>, "roi_percent": <calculated number> } },
+    ${hasRealSavings ? `{ "type": "savings_timeline", "years": 5, "annual_savings": ${canonicalAnnualSavings}, "content": "specific description of WHERE the savings come from"${hasAudit ? `, "annual_kwh_savings": ${audit_data.annual_savings_kwh}, "watts_reduced": ${audit_data.watts_reduced}, "total_fixtures": ${audit_data.total_fixtures}` : ''} },
+    { "type": "roi_summary", "content": "a line that frames the ROI as obvious", "metrics": { "annual_savings": ${canonicalAnnualSavings}, "payback_months": <calculated number>, "roi_percent": <calculated number> } },` : '/* no savings_timeline and no roi_summary — there is no measured savings figure for this estimate, so none may be stated */'}
     ${proposal_notes ? '{ "type": "warranty", "content": "write this based on the company notes above — make it feel like extra protection, not fine print" },' : ''}
     ${incentiveNum > 0 ? '{ "type": "utility_incentive", "content": "This is free money — explain why they need to claim it now" },' : ''}
     ${include_tiers ? `{ "type": "pricing_tiers", "heading": "Choose Your Package", "content": "compelling subheading about options", "recommended": "better", "tiers": [
-      { "id": "good", "name": "descriptive name", "price": ${totalNum.toFixed(2)}, "net_price": ${(totalNum - incentiveNum).toFixed(2)}, "description": "the base scope — everything in the estimate", "features": ["feature 1", "feature 2", "feature 3"], "annual_savings": <number>, "payback_months": <number> },
-      { "id": "better", "name": "descriptive name", "price": <good price + warranty & value-add cost>, "net_price": <price - ${incentiveNum.toFixed(2)} (SAME incentive)>, "description": "base scope + 2-year extended warranty + value-adds like recycling old fixtures, priority scheduling", "features": ["everything in Good", "2-Year Extended Warranty", "Old Fixture Recycling & Disposal", "Priority Scheduling"], "annual_savings": <number>, "payback_months": <number> },
-      { "id": "best", "name": "descriptive name", "price": <better price + premium extras cost>, "net_price": <price - ${incentiveNum.toFixed(2)} (SAME incentive)>, "description": "the premium experience — 3-year warranty, remote monitoring, everything in Better plus more", "features": ["everything in Better", "3-Year Extended Warranty", "Remote Monitoring", "Annual Maintenance Check", "Emergency Priority Service"], "annual_savings": <number>, "payback_months": <number> }
+      { "id": "good", "name": "descriptive name", "price": ${totalNum.toFixed(2)}, "net_price": ${(totalNum - incentiveNum).toFixed(2)}, "description": "the base scope — everything in the estimate", "features": ["feature 1", "feature 2", "feature 3"]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} },
+      { "id": "better", "name": "descriptive name", "price": <good price + warranty & value-add cost>, "net_price": <price - ${incentiveNum.toFixed(2)} (SAME incentive)>, "description": "base scope + 2-year extended warranty + value-adds like recycling old fixtures, priority scheduling", "features": ["everything in Good", "2-Year Extended Warranty", "Old Fixture Recycling & Disposal", "Priority Scheduling"]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} },
+      { "id": "best", "name": "descriptive name", "price": <better price + premium extras cost>, "net_price": <price - ${incentiveNum.toFixed(2)} (SAME incentive)>, "description": "the premium experience — 3-year warranty, remote monitoring, everything in Better plus more", "features": ["everything in Better", "3-Year Extended Warranty", "Remote Monitoring", "Annual Maintenance Check", "Emergency Priority Service"]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} }
     ] },` : ''}
     { "type": "team" },
     { "type": "approval", "cta_text": "Approve & Schedule", "content": "create urgency — pricing, scheduling, incentive deadlines, seasonal timing. Make them feel like waiting costs money." }
@@ -259,6 +286,29 @@ Be specific to ${customer_name} and this project. Generic copy = lost deal. Sell
       console.error('Failed to parse AI response:', content);
       return new Response(JSON.stringify({ error: 'Failed to parse AI response' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // ENFORCEMENT: with no measured savings figure, strip anything the model
+    // produced anyway. The prompt forbids it, but a prompt is a request, not a
+    // guarantee — and the cost of the model ignoring it is a fabricated energy
+    // promise printed on a proposal under the company's logo. Belt and braces.
+    if (!hasRealSavings && proposalLayout.sections) {
+      const before = proposalLayout.sections.length;
+      proposalLayout.sections = proposalLayout.sections.filter(
+        (s: { type?: string }) => s?.type !== 'savings_timeline' && s?.type !== 'roi_summary'
+      );
+      for (const section of proposalLayout.sections) {
+        if (section.type === 'pricing_tiers' && Array.isArray(section.tiers)) {
+          for (const tier of section.tiers) {
+            delete tier.annual_savings;
+            delete tier.payback_months;
+          }
+        }
+      }
+      delete proposalLayout.audit_summary;
+      if (before !== proposalLayout.sections.length) {
+        console.warn('[generate-proposal-layout] stripped invented savings sections — no audit and no manual figure');
+      }
     }
 
     // Force the canonical annual savings number across every section that displays it,

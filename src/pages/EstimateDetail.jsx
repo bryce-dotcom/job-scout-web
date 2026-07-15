@@ -4031,6 +4031,36 @@ function EstimateDetailInner() {
                 />
               </div>
 
+              {/* This field OVERRIDES the certified audit on the proposal, silently.
+                  Across 77 estimates carrying an override, not one matched its audit
+                  and 38 overstated it 2x-35x — savings promises that went to
+                  customers. Show the contradiction where the number is set. */}
+              {(() => {
+                const manual = parseFloat(estimate.manual_annual_savings) || 0
+                if (!(manual > 0) || !estimate.audit_id) return null
+                const linked = (availableAudits || []).find(a => a.id === estimate.audit_id)
+                const audited = parseFloat(linked?.annual_savings_dollars) || 0
+                if (!(audited > 0)) return null
+                if (Math.abs(manual - audited) < Math.max(1, audited * 0.02)) return null
+                const times = (manual / audited).toFixed(1)
+                return (
+                  <div style={{
+                    marginTop: '-4px', marginBottom: '4px', padding: '8px 10px', borderRadius: '8px',
+                    background: 'rgba(249,115,22,0.10)', border: '1px solid rgba(249,115,22,0.35)',
+                    fontSize: '12px', color: theme.textSecondary, lineHeight: 1.45
+                  }}>
+                    <strong style={{ color: '#f97316' }}>
+                      Overriding the audit ({manual > audited ? `${times}× higher` : `${(audited / manual).toFixed(1)}× lower`})
+                    </strong>
+                    <div style={{ marginTop: '2px' }}>
+                      The certified audit calculates <strong>${audited.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr</strong>.
+                      This proposal will promise the customer <strong>${manual.toLocaleString(undefined, { maximumFractionDigits: 0 })}/yr</strong>.
+                      {' '}Clear the field to use the audit figure.
+                    </div>
+                  </div>
+                )
+              })()}
+
               {/* Audit Link */}
               <div style={{
                 borderTop: `1px solid ${theme.border}`,
