@@ -28,7 +28,7 @@
 //      (any gap surfaces as an honest "Project discount" line).
 // Both hold by construction for every invoice shape — see buildInvoiceSections.
 
-import { invoiceCustomerTotal } from './arHelpers'
+import { invoiceCustomerTotal, isLegacyNetShape } from './arHelpers'
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -62,12 +62,12 @@ export function lineInScope(l) {
 export function invoiceDiscountBreakout(invoice, parentInvoice = null) {
   const gross = Number(invoice?.amount) || 0
   const discountApplied = Number(invoice?.discount_applied) || 0
-  // Strictly greater — must match arHelpers.invoiceCustomerTotal. When the
-  // incentive + project discount FULLY cover the project, discountApplied
-  // equals gross exactly and the customer owes $0; that's the modern shape,
-  // not a legacy-net invoice. Using >= here made a fully-covered invoice fall
-  // back to the flat layout and bill the whole project.
-  const isLegacyNet = discountApplied > 0 && discountApplied > gross
+  // Shared predicate — strictly greater. When the incentive + project discount
+  // FULLY cover the project, discountApplied equals gross exactly and the
+  // customer owes $0; that's the modern shape, not a legacy-net invoice. A >=
+  // test made a fully-covered invoice fall back to the flat layout and bill
+  // the whole project.
+  const isLegacyNet = isLegacyNetShape(gross, discountApplied)
   const depositCredit = (parentInvoice && parentInvoice.invoice_type === 'deposit')
     ? (Number(parentInvoice.amount) || 0)
     : 0

@@ -162,9 +162,13 @@ serve(async (req) => {
         if (inv.customer_id && optOut.has(Number(inv.customer_id))) continue;
         // Customer balance — same shape as arHelpers (gross − discount,
         // legacy-net guard) minus applied payments.
+        // The guard is STRICTLY greater, matching arHelpers.invoiceCustomerTotal.
+        // A fully-covered invoice has disc === gross and is owed $0; the old >=
+        // test read that as legacy-net and returned the whole gross, which would
+        // have this autopilot dunning a customer for money they don't owe.
         const gross = Number(inv.amount) || 0;
         const disc = Number(inv.discount_applied) || 0;
-        const base = disc > 0 && disc >= gross ? gross : Math.max(0, gross - disc);
+        const base = disc > 0 && disc > gross ? gross : Math.max(0, gross - disc);
         const balance = base - (payByInv.get(inv.id) || 0);
         if (balance <= 0.01) continue;
         // Due date: explicit, else Net-30 from created_at

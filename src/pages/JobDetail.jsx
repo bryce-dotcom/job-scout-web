@@ -11,6 +11,7 @@ import DealBreadcrumb from '../components/DealBreadcrumb'
 import SignedProposalCard from '../components/SignedProposalCard'
 import { jobStatusColors as statusColors } from '../lib/statusColors'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
+import { isLegacyNetShape } from '../lib/arHelpers'
 import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
@@ -5680,8 +5681,7 @@ function JobDetailInner() {
                 const customerBal = customerOpen.reduce((s, i) => {
                   const gross = Number(i.amount) || 0
                   const disc = Number(i.discount_applied) || 0
-                  const isLegacy = disc >= gross
-                  const customer = isLegacy ? gross : Math.max(0, gross - disc)
+                  const customer = isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
                   const paid = (payments || []).filter(p => p.invoice_id === i.id).reduce((ps, p) => ps + (Number(p.amount) || 0), 0)
                   return s + Math.max(0, customer - paid)
                 }, 0)
@@ -5768,8 +5768,7 @@ function JobDetailInner() {
                           // the customer was on the hook for the full project.
                           const gross = Number(inv.amount) || 0
                           const disc = Number(inv.discount_applied) || 0
-                          const isLegacy = disc >= gross
-                          const customer = isLegacy ? gross : Math.max(0, gross - disc)
+                          const customer = isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
                           const paid = (payments || []).filter(p => p.invoice_id === inv.id).reduce((ps, p) => ps + (Number(p.amount) || 0), 0)
                           const balance = Math.max(0, customer - paid)
                           const showBreakdown = disc > 0

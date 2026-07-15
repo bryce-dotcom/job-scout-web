@@ -452,6 +452,10 @@ serve(async (req) => {
             // schedules it. Matches EstimateDetail.handleConvertToJob.
             start_date: estimate.service_date || null,
             job_total: parseFloat(String(estimate.quote_amount || 0)) || 0,
+            // Carry the rep's whole-project discount, or the invoice later has
+            // nothing to deduct and bills the customer for money that was
+            // discounted away. Matches EstimateDetail.handleConvertToJob.
+            discount: parseFloat(String(estimate.discount || 0)) || 0,
             utility_incentive: parseFloat(String(estimate.utility_incentive || 0)) || 0,
             // Combine estimate summary + notes + message so the job
             // page shows what was promised. Doug + Alayda's bug.

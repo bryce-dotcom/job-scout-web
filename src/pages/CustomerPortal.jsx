@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
+import { isLegacyNetShape } from '../lib/arHelpers'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -244,10 +245,12 @@ export default function CustomerPortal() {
   // Older invoices stored amount as the NET customer portion and put
   // the rebate in discount_applied (informational). Newer invoices
   // store the gross project as amount and the rebate in discount_applied
-  // (a real deduction). Detect by discount >= amount.
+  // (a real deduction). Detect by discount > amount — strictly greater, since
+  // an equal discount means the incentive/project discount fully covers the
+  // project and the customer owes $0. Shared predicate, never re-derived.
   const invoiceAmount = isInvoice ? parseFloat(doc.amount) || 0 : 0
   const invoiceDiscount = isInvoice ? parseFloat(doc.discount_applied) || 0 : 0
-  const invoiceLegacyNet = invoiceDiscount > 0 && invoiceDiscount >= invoiceAmount
+  const invoiceLegacyNet = isLegacyNetShape(invoiceAmount, invoiceDiscount)
   const totalPaid = isInvoice ? (payments || []).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) : 0
   const existingCcFee = isInvoice ? (parseFloat(doc.credit_card_fee) || 0) : 0
   const invoiceCustomerTotal = invoiceLegacyNet ? invoiceAmount : (invoiceAmount - invoiceDiscount)

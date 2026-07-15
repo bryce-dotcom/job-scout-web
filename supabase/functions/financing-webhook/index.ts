@@ -189,7 +189,7 @@ async function recordFinancingPayment(
   } else if (documentType === 'estimate') {
     const { data: estimate } = await supabase
       .from('quotes')
-      .select('id, company_id, lead_id, customer_id, salesperson_id, estimate_name, job_title, quote_amount, quote_id, utility_incentive, summary, service_date, job_id, lead:leads(business_name, customer_name), customer:customers(business_name, name)')
+      .select('id, company_id, lead_id, customer_id, salesperson_id, estimate_name, job_title, quote_amount, discount, quote_id, utility_incentive, summary, service_date, job_id, lead:leads(business_name, customer_name), customer:customers(business_name, name)')
       .eq('id', documentId)
       .single();
 
@@ -230,6 +230,9 @@ async function recordFinancingPayment(
               status: 'Chillin',
               start_date: estimate.service_date || new Date().toISOString(),
               job_total: parseFloat(String(estimate.quote_amount || 0)) || 0,
+              // Carry the rep's whole-project discount — without it the invoice
+              // has nothing to deduct and over-bills the customer.
+              discount: parseFloat(String(estimate.discount || 0)) || 0,
               utility_incentive: parseFloat(String(estimate.utility_incentive || 0)) || 0,
               details: estimate.summary || null,
               updated_at: new Date().toISOString(),

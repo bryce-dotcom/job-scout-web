@@ -1491,6 +1491,15 @@ function EstimateDetailInner() {
           // Doug reported as "jobs show up in Scheduled when approved."
           start_date: estimateRow.service_date || null,
           job_total: parseFloat(estimateRow.quote_amount) || (subtotal - discount),
+          // Carry the rep's whole-project discount onto the job. Without this
+          // it died at the estimate→job boundary (0 of 2 real conversions kept
+          // it), so the invoice had no discount to apply and the customer got
+          // billed for money the rep had discounted away.
+          // Safe against double-subtracting: quote_amount (→ job_total) is the
+          // NET, while the copied lines are GROSS — jobs consistently satisfy
+          // lines == job_total + discount, and the invoice math subtracts the
+          // discount from the GROSS line sum, not from job_total.
+          discount: parseFloat(estimateRow.discount) || 0,
           utility_incentive: parseFloat(estimateRow.utility_incentive) || 0,
           // Carry the estimate's notes / summary onto the job so the
           // installers see what was promised. Doug + Alayda flagged that

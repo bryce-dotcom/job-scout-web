@@ -8,6 +8,7 @@ import HelpBadge from '../components/HelpBadge'
 import EmptyState from '../components/EmptyState'
 import ReportsPanel from '../components/ReportsPanel'
 import { computeRevenue, cashExpenses } from '../lib/revenueBasis'
+import { isLegacyNetShape } from '../lib/arHelpers'
 import {
   BookOpen, Plus, X, DollarSign, TrendingUp, TrendingDown,
   Wallet, CreditCard, Building, PiggyBank, Pencil, Trash2,
@@ -97,8 +98,7 @@ async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTrans
   const customerBalance = (i) => {
     const gross = parseFloat(i.amount) || 0
     const disc = parseFloat(i.discount_applied) || 0
-    const isLegacyNet = disc > 0 && disc >= gross
-    return isLegacyNet ? gross : Math.max(0, gross - disc)
+    return isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
   }
   const today = new Date()
   const ageBucket = (d) => {
@@ -621,8 +621,7 @@ export default function Books() {
     // the invoice stuck as "Partially Paid".
     const grossAmt = parseFloat(inv.amount) || 0
     const discApplied = parseFloat(inv.discount_applied) || 0
-    const isLegacyNet = discApplied > 0 && discApplied >= grossAmt
-    const customerBalance = isLegacyNet ? grossAmt : Math.max(0, grossAmt - discApplied)
+    const customerBalance = isLegacyNetShape(grossAmt, discApplied) ? grossAmt : Math.max(0, grossAmt - discApplied)
     const totalPaidAfter = payAmount + (paymentsByInvoiceId.get(inv.id) || 0)
     if (totalPaidAfter >= customerBalance - 0.01) {
       await supabase.from('invoices').update({ payment_status: 'Paid', updated_at: new Date().toISOString() }).eq('id', inv.id)
@@ -730,8 +729,7 @@ export default function Books() {
   const invoiceCustomerBalance = (inv) => {
     const gross = parseFloat(inv.amount) || 0
     const disc = parseFloat(inv.discount_applied) || 0
-    const isLegacyNet = disc > 0 && disc >= gross
-    return isLegacyNet ? gross : Math.max(0, gross - disc)
+    return isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
   }
 
   const paidWithoutPayment = paymentsLoaded

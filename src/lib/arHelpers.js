@@ -29,16 +29,32 @@
 
 // ────────────────────────────── invoices ──────────────────────────────
 
+/**
+ * Is this invoice stored in the LEGACY shape (amount already net of the
+ * incentive) rather than the modern one (amount = gross)?
+ *
+ * THE ONE definition — every surface must use this, never re-derive it.
+ * It was open-coded in ~8 places (Books x3, InvoiceDetail x2, JobDetail x2,
+ * CustomerPortal, collections-autopilot) and drifted, which is how a
+ * fully-covered invoice ended up billing the whole project on some screens.
+ *
+ * STRICTLY greater. A modern invoice whose discounts fully cover the project
+ * has disc === gross and owes $0; only a legacy row (amount = NET) carries a
+ * discount larger than its own amount.
+ */
+export function isLegacyNetShape(gross, disc) {
+  const g = Number(gross) || 0
+  const d = Number(disc) || 0
+  return d > 0 && d > g
+}
+
 // What this customer-facing invoice is asking the customer to pay AFTER
 // netting out the utility incentive + any deposit credit. This is the
 // number that should print on a statement of account.
 export function invoiceCustomerTotal(inv) {
   const gross = Number(inv?.amount) || 0
   const disc = Number(inv?.discount_applied) || 0
-  // Strictly greater — see the header note. disc === gross is a fully-covered
-  // modern invoice ($0 due), NOT a legacy-net one.
-  const isLegacyNet = disc > 0 && disc > gross
-  return isLegacyNet ? gross : Math.max(0, gross - disc)
+  return isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
 }
 
 // Outstanding customer balance: customer total minus payments applied to

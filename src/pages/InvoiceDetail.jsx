@@ -14,6 +14,7 @@ import useSmartBack from '../lib/useSmartBack'
 import { resolveMatLabSplit, splitLinePartsLabor } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
+import { isLegacyNetShape } from '../lib/arHelpers'
 
 // Light theme fallback
 const defaultTheme = {
@@ -785,8 +786,7 @@ export default function InvoiceDetail() {
         const totalPaid = (pays || []).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
         const gross = parseFloat(inv.amount) || 0
         const discount = parseFloat(inv.discount_applied) || 0
-        const isLegacyNet = discount > 0 && discount >= gross
-        const customerTotal = isLegacyNet ? gross : Math.max(0, gross - discount)
+        const customerTotal = isLegacyNetShape(gross, discount) ? gross : Math.max(0, gross - discount)
         let newStatus = 'Pending'
         if (totalPaid >= customerTotal - 0.01) newStatus = 'Paid'
         else if (totalPaid > 0) newStatus = 'Partially Paid'
@@ -1897,10 +1897,12 @@ export default function InvoiceDetail() {
   //   LEGACY: amount = net customer portion (already after incentive),
   //        discount = incentive amount (informational), so customer
   //        total = amount and discount must NOT be subtracted again
-  // If discount >= amount, the row was saved under the legacy shape —
+  // If discount > amount, the row was saved under the legacy shape —
   // double-subtracting would produce a phantom negative balance (e.g.
-  // Redman INV-MNRW9RBU, Tracy INV-MNJD9UQN).
-  const isLegacyNetInvoice = discountApplied > 0 && discountApplied >= grossAmount
+  // Redman INV-MNRW9RBU, Tracy INV-MNJD9UQN). Strictly greater: an equal
+  // discount means the incentive/project discount fully covers the project
+  // and the customer owes $0. Shared predicate so this can't drift again.
+  const isLegacyNetInvoice = isLegacyNetShape(grossAmount, discountApplied)
   const customerTotal = isLegacyNetInvoice ? grossAmount : (grossAmount - discountApplied)
   const balanceDue = customerTotal + ccFeeOnInvoice - totalPaid
 
