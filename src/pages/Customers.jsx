@@ -63,6 +63,14 @@ export default function Customers() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [showImportExport, setShowImportExport] = useState(false)
+  // Business-unit filter (Tracy: "filter customers that are either HHH or
+  // Energy Scout"). A customer has no business_unit of its own — the division
+  // is a property of the WORK, so we derive it from their jobs. The store's
+  // jobs are capped and exclude Archived, and most of a customer's history is
+  // archived, so we pull a lightweight customer_id→business_unit map directly.
+  const [buFilter, setBuFilter] = useState('all')
+  const [custBuMap, setCustBuMap] = useState(null) // Map<customer_id, Set<bu>>
+  const [buOptions, setBuOptions] = useState([])
 
   // Guard clause - redirect if no company
   useEffect(() => {
@@ -72,6 +80,38 @@ export default function Customers() {
     }
     fetchCustomers()
   }, [companyId, navigate, fetchCustomers])
+
+  // Build the customer→business-unit map in the background. Only the two
+  // columns, paged past the 1000-row cap. Non-blocking: the list renders
+  // immediately and the filter lights up when this lands.
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      const map = new Map()
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('customer_id, business_unit')
+          .eq('company_id', companyId)
+          .not('business_unit', 'is', null)
+          .not('customer_id', 'is', null)
+          .range(from, from + 999)
+        if (error || !data) break
+        for (const j of data) {
+          if (!map.has(j.customer_id)) map.set(j.customer_id, new Set())
+          map.get(j.customer_id).add(j.business_unit)
+        }
+        if (data.length < 1000) break
+      }
+      if (cancelled) return
+      const units = new Set()
+      for (const set of map.values()) for (const bu of set) units.add(bu)
+      setCustBuMap(map)
+      setBuOptions([...units].sort())
+    })()
+    return () => { cancelled = true }
+  }, [companyId])
 
   const filteredCustomers = (() => {
     const term = searchTerm.toLowerCase().trim()
@@ -84,7 +124,15 @@ export default function Customers() {
 
       const matchesStatus = statusFilter === 'all' || customer.status === statusFilter
 
-      return matchesSearch && matchesStatus
+      // Business unit, derived from the customer's jobs. 'none' = we've never
+      // done work for them (no classified job), which is its own useful view.
+      let matchesBu = true
+      if (buFilter !== 'all') {
+        const units = custBuMap?.get(customer.id)
+        matchesBu = buFilter === 'none' ? !units?.size : !!units?.has(buFilter)
+      }
+
+      return matchesSearch && matchesStatus && matchesBu
     })
 
     // Sort: exact name start first, then business name start, then the rest alphabetically
@@ -338,10 +386,29 @@ export default function Customers() {
           <option value="Inactive">Inactive</option>
           <option value="Prospect">Prospect</option>
         </select>
+        {/* Business unit — which division has done work for this customer */}
+        <select
+          value={buFilter}
+          onChange={(e) => setBuFilter(e.target.value)}
+          disabled={!custBuMap}
+          title={custBuMap ? 'Filter by which division has done work for them' : 'Loading business units…'}
+          style={{
+            ...inputStyle,
+            width: 'auto',
+            minWidth: '170px',
+            backgroundColor: theme.bgCard,
+            opacity: custBuMap ? 1 : 0.6,
+            cursor: custBuMap ? 'pointer' : 'default'
+          }}
+        >
+          <option value="all">All Business Units</option>
+          {buOptions.map(bu => <option key={bu} value={bu}>{bu}</option>)}
+          <option value="none">— No work yet —</option>
+        </select>
       </div>
 
       {/* Result count */}
-      {(searchTerm || statusFilter !== 'all') && (
+      {(searchTerm || statusFilter !== 'all' || buFilter !== 'all') && (
         <div style={{ marginBottom: '12px', fontSize: '13px', color: theme.textMuted }}>
           {filteredCustomers.length} of {customers.length} customers
         </div>
@@ -358,7 +425,7 @@ export default function Customers() {
         }}>
           <Building2 size={48} style={{ color: theme.textMuted, marginBottom: '16px' }} />
           <p style={{ color: theme.textSecondary }}>
-            {searchTerm || statusFilter !== 'all'
+            {searchTerm || statusFilter !== 'all' || buFilter !== 'all'
               ? 'No customers match your search.'
               : 'No customers yet. Add your first customer to get started.'}
           </p>
