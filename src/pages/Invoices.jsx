@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
+import { isLegacyNetShape } from '../lib/arHelpers'
 import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle, Pencil, Trash2, Zap, Upload, Download, Settings as SettingsIcon, Sliders, CreditCard, Mail } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import SearchableSelect from '../components/SearchableSelect'
@@ -468,8 +469,7 @@ export default function Invoices() {
   const customerBalance = (i) => {
     const gross = parseFloat(i.amount) || 0
     const disc = parseFloat(i.discount_applied) || 0
-    const isLegacyNet = disc > 0 && disc >= gross
-    return isLegacyNet ? gross : Math.max(0, gross - disc)
+    return isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
   }
   const isUnpaid = (i) => i.payment_status !== 'Paid'
   const customerTotalCount = invoices.length

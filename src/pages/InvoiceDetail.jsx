@@ -1365,10 +1365,14 @@ export default function InvoiceDetail() {
 
     // Mirror the same legacy-vs-new detection used by the page summary
     // so PDF balance math matches what the customer sees on screen.
+    // Shared predicate — this was the ninth open-coded copy of the rule and
+    // the last one still using `>=`, so a fully-covered invoice printed the
+    // whole project as Balance Due even after the screen was fixed (SMC Auto:
+    // $32,143.06 due on an invoice the customer owes $0 on). Alayda caught it.
     const pdfGross = parseFloat(invoice.amount) || 0
     const pdfDiscount = parseFloat(invoice.discount_applied) || 0
     const pdfCcFee = parseFloat(invoice.credit_card_fee) || 0
-    const pdfLegacyNet = pdfDiscount > 0 && pdfDiscount >= pdfGross
+    const pdfLegacyNet = isLegacyNetShape(pdfGross, pdfDiscount)
     const pdfCustomerTotal = pdfLegacyNet ? pdfGross : (pdfGross - pdfDiscount)
     const totalPaidAmt = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
 
