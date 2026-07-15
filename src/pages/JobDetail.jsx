@@ -1224,6 +1224,11 @@ function JobDetailInner() {
     const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
     const subtotal = lineItems.reduce((sum, line) => sum + (parseFloat(line.total) || 0), 0)
     const discount = parseFloat(job.discount) || 0
+    // The mirror of the bug in createCustomerInvoice: this path read only the
+    // rep's discount and ignored the utility incentive, so a job carrying both
+    // billed the customer for the incentive. discount_applied is the TOTAL
+    // deduction; project_discount is the rep's share of it.
+    const incentive = parseFloat(job.utility_incentive) || 0
 
     // Build job_description as a readable summary of all line items so the
     // invoice PDF actually reflects what was sold instead of just showing
@@ -1239,6 +1244,7 @@ function JobDetailInner() {
       descParts.push(`${qty} × ${name} @ $${price.toFixed(2)} = $${lineTotal.toFixed(2)}`)
     }
     if (discount > 0) descParts.push(`Discount: -$${discount.toFixed(2)}`)
+    if (incentive > 0) descParts.push(`Utility incentive: -$${incentive.toFixed(2)}`)
 
     // Default Net-30 due date so the invoice appears in due-soon / overdue
     // quick views in Invoices page and Frankie Collections.
@@ -1252,10 +1258,10 @@ function JobDetailInner() {
         job_id: parseInt(id),
         customer_id: job.customer_id,
         amount: subtotal,
-        discount_applied: discount,
+        discount_applied: discount + incentive,
         // The job-level discount is a whole-project discount — record it as
-        // such so it stays labeled "Project Discount" if a utility incentive
-        // is later added on top (discount_applied remains the total).
+        // such so it stays labeled "Project Discount" separately from the
+        // utility incentive (discount_applied remains the total of both).
         project_discount: discount > 0 ? discount : null,
         payment_status: 'Pending',
         job_description: descParts.join('\n'),
@@ -1483,6 +1489,13 @@ function JobDetailInner() {
 
       // Calculate invoice amounts — use audit data if available, otherwise use job data
       const incentiveAmt = parseFloat(job.utility_incentive) || 0
+      // A job can carry TWO deductions: the utility incentive AND a whole-
+      // project discount from the sales rep (job.discount). This path only
+      // ever read the incentive, so the rep's discount silently vanished and
+      // the customer got billed for it (SMC Auto job 23375: $2,143.06
+      // discount dropped, customer invoiced $2,143.06 on a fully-covered
+      // project). Both must reduce the customer's share.
+      const projectDiscountAmt = parseFloat(job.discount) || 0
       let projectCost, customerIncentive, customerOOP
 
       if (audit) {
@@ -1505,6 +1518,12 @@ function JobDetailInner() {
         customerOOP = jobTotal - incentiveAmt
       }
 
+      // Apply the rep's whole-project discount on top of whichever source
+      // above produced the customer's share. Uniform across both branches —
+      // a discount entered on the job reduces what the customer owes whether
+      // or not a lighting audit is driving the numbers.
+      customerOOP = Math.max(0, customerOOP - projectDiscountAmt)
+
       // Subtract any deposit invoices already on this job so the customer
       // copayment invoice is strictly the balance due after the deposit.
       // Link the latest deposit via parent_invoice_id for traceability.
@@ -1513,12 +1532,17 @@ function JobDetailInner() {
       const remainingCustomerOOP = Math.max(0, customerOOP - depositTotal)
       const parentDepositId = depositInvoices[0]?.id || null
 
-      if (remainingCustomerOOP <= 0) {
+      // A project fully covered by the incentive and/or the rep's discount
+      // nets to exactly $0 — that still needs an invoice: it documents the
+      // work and shows the customer the deductions that zeroed it out. Only
+      // refuse when a deposit already covers the balance (a balance invoice
+      // really is redundant then) or the math went negative.
+      if (remainingCustomerOOP < 0 || (remainingCustomerOOP <= 0 && depositTotal > 0)) {
         const { toast } = await import('../lib/toast')
         toast.error(
           depositTotal > 0
             ? `Deposit of $${Math.round(depositTotal).toLocaleString()} already covers the customer portion — no balance invoice needed`
-            : 'Customer copayment is $0 or less — no invoice needed'
+            : 'Customer portion is negative — check the discount and incentive amounts on the job'
         )
         setSaving(false)
         return
@@ -1540,9 +1564,11 @@ function JobDetailInner() {
       // was reduced.
       const rebateDiscount = projectCost - customerOOP
       const totalDiscount = rebateDiscount + depositTotal
-      const description = depositTotal > 0
-        ? `Lighting Project Balance — $${Math.round(projectCost).toLocaleString()} project, $${Math.round(customerIncentive).toLocaleString()} incentive, $${Math.round(depositTotal).toLocaleString()} deposit credit`
-        : `Lighting Project — $${Math.round(projectCost).toLocaleString()} project, $${Math.round(customerIncentive).toLocaleString()} incentive`
+      const descBits = [`$${Math.round(projectCost).toLocaleString()} project`]
+      if (projectDiscountAmt > 0) descBits.push(`$${Math.round(projectDiscountAmt).toLocaleString()} discount`)
+      if (customerIncentive > 0) descBits.push(`$${Math.round(customerIncentive).toLocaleString()} incentive`)
+      if (depositTotal > 0) descBits.push(`$${Math.round(depositTotal).toLocaleString()} deposit credit`)
+      const description = `Lighting Project${depositTotal > 0 ? ' Balance' : ''} — ${descBits.join(', ')}`
 
       const { data: invoice, error } = await supabase
         .from('invoices')
@@ -1553,6 +1579,11 @@ function JobDetailInner() {
           customer_id: resolvedCustomerId,
           amount: projectCost,
           discount_applied: Math.max(0, totalDiscount),
+          // Break out the rep's discount so the PDF/portal can show it as its
+          // own "Project discount" line. Without this, invoiceDiscountBreakout
+          // attributes the ENTIRE discount_applied to the utility incentive
+          // and the two get grouped into one line.
+          project_discount: projectDiscountAmt > 0 ? projectDiscountAmt : null,
           payment_status: 'Pending',
           parent_invoice_id: parentDepositId,
           job_description: description,

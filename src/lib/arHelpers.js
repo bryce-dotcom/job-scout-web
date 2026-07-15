@@ -16,7 +16,16 @@
 //   NEW shape: amount = gross project, discount = incentive + deposit credit
 //   LEGACY shape: amount = net customer portion, discount = informational
 //
-// Detected by: discount >= amount → treat as legacy.
+// Detected by: discount > amount → treat as legacy.
+//
+// STRICTLY greater, not >=. A modern invoice whose discounts FULLY cover the
+// project has discount_applied == amount exactly and the customer owes $0.
+// The old >= test misread that as legacy and returned the full gross, billing
+// the customer for the entire project (AZ Upark We Sell, inv 32610: $14,162.93
+// incentive on a $14,162.93 job — its own utility invoice says net_cost $0 —
+// was showing $14,162.93 due). Legacy invoices have amount = NET, so their
+// informational discount is strictly larger; equality only happens on the
+// modern fully-covered shape.
 
 // ────────────────────────────── invoices ──────────────────────────────
 
@@ -26,7 +35,9 @@
 export function invoiceCustomerTotal(inv) {
   const gross = Number(inv?.amount) || 0
   const disc = Number(inv?.discount_applied) || 0
-  const isLegacyNet = disc > 0 && disc >= gross
+  // Strictly greater — see the header note. disc === gross is a fully-covered
+  // modern invoice ($0 due), NOT a legacy-net one.
+  const isLegacyNet = disc > 0 && disc > gross
   return isLegacyNet ? gross : Math.max(0, gross - disc)
 }
 

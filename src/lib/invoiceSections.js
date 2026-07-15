@@ -62,7 +62,12 @@ export function lineInScope(l) {
 export function invoiceDiscountBreakout(invoice, parentInvoice = null) {
   const gross = Number(invoice?.amount) || 0
   const discountApplied = Number(invoice?.discount_applied) || 0
-  const isLegacyNet = discountApplied > 0 && discountApplied >= gross
+  // Strictly greater — must match arHelpers.invoiceCustomerTotal. When the
+  // incentive + project discount FULLY cover the project, discountApplied
+  // equals gross exactly and the customer owes $0; that's the modern shape,
+  // not a legacy-net invoice. Using >= here made a fully-covered invoice fall
+  // back to the flat layout and bill the whole project.
+  const isLegacyNet = discountApplied > 0 && discountApplied > gross
   const depositCredit = (parentInvoice && parentInvoice.invoice_type === 'deposit')
     ? (Number(parentInvoice.amount) || 0)
     : 0
