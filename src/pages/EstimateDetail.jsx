@@ -759,28 +759,40 @@ function EstimateDetailInner() {
   }
 
   const handleLinePhotoUpload = async (lineId, e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    e.target.value = '' // let the same file be re-picked if needed
 
-    const ext = file.name.split('.').pop()
-    const path = `estimates/${id}/lines/${lineId}/${Date.now()}.${ext}`
-
-    const { error: uploadErr } = await supabase.storage
-      .from('project-documents')
-      .upload(path, file)
-    if (uploadErr) {
-      toast.error('Photo upload failed: ' + uploadErr.message)
-      return
+    // These render via getPublicUrl, so they MUST live in a public bucket.
+    // They used to go to project-documents (private) — getPublicUrl there
+    // returns a URL that 400s, so the photo uploaded but never displayed and
+    // looked like it "didn't take" (reported on mobile). audit-photos is the
+    // public bucket meant for exactly these fixture/site photos.
+    const newUrls = []
+    for (const file of files) {
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+      const path = `estimates/${id}/lines/${lineId}/${Date.now()}_${Math.round(Math.random() * 1e6)}.${ext}`
+      const { error: uploadErr } = await supabase.storage
+        .from('audit-photos')
+        // contentType is important for phone camera files (HEIC/no-extension),
+        // or the browser serves them as octet-stream and won't render inline.
+        .upload(path, file, { contentType: file.type || 'image/jpeg' })
+      if (uploadErr) {
+        toast.error('Photo upload failed: ' + uploadErr.message)
+        continue
+      }
+      const { data: urlData } = supabase.storage.from('audit-photos').getPublicUrl(path)
+      newUrls.push(urlData.publicUrl)
     }
-
-    const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(path)
-    const photoUrl = urlData.publicUrl
+    if (newUrls.length === 0) return
 
     const line = lineItems.find(l => l.id === lineId)
-    const updatedPhotos = [...(line?.photos || []), photoUrl]
+    const updatedPhotos = [...(line?.photos || []), ...newUrls]
 
     setLineItems(prev => prev.map(l => l.id === lineId ? { ...l, photos: updatedPhotos } : l))
-    await supabase.from('quote_lines').update({ photos: updatedPhotos }).eq('id', lineId)
+    const { error: saveErr } = await supabase.from('quote_lines').update({ photos: updatedPhotos }).eq('id', lineId)
+    if (saveErr) toast.error('Photo saved to storage but not linked: ' + saveErr.message)
+    else toast.success(newUrls.length === 1 ? 'Photo added' : `${newUrls.length} photos added`)
   }
 
   const handleLinePhotoDelete = async (lineId, photoUrl) => {
