@@ -953,6 +953,7 @@ _empty table — columns unavailable_
 - `expense_amount`
 - `generate_work_order`
 - `gps_location`
+- `has_callback`
 - `id`
 - `incentive_amount`
 - `incentive_status`
@@ -1187,6 +1188,7 @@ _empty table — columns unavailable_
 - `meter_number`
 - `notes`
 - `phone`
+- `quote_amount`
 - `quote_generated`
 - `quote_id`
 - `sales_calendar_web_link`

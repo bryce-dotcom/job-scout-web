@@ -563,7 +563,7 @@ export default function Payroll() {
         // ~30%+ of jobs that have neither and never produce commission.
         fetchAllPages(() => supabase
           .from('jobs')
-          .select('id, company_id, job_id, salesperson_id, lead_id, allotted_time_hours, status, customer_name, job_title, assigned_team')
+          .select('id, company_id, job_id, salesperson_id, lead_id, allotted_time_hours, status, customer_name, job_title, assigned_team, has_callback')
           .eq('company_id', companyId)
           .or('salesperson_id.not.is.null,lead_id.not.is.null')),
 

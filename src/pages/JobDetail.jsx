@@ -862,6 +862,21 @@ function JobDetailInner() {
     await supabase.from('jobs').update({ job_total: computedJobTotal }).eq('id', id)
   }
 
+  // Mark/unmark a customer callback (rework/warranty) on this job. When the
+  // payroll bonus quality gate is on, a callback withholds the efficiency bonus
+  // for this job (bonusCalc.computeJobBonusRows reads jobs.has_callback).
+  const toggleCallback = async (next) => {
+    setJob(prev => prev ? { ...prev, has_callback: next } : prev)
+    const { error } = await supabase.from('jobs').update({ has_callback: next }).eq('id', id)
+    const { toast } = await import('../lib/toast')
+    if (error) {
+      setJob(prev => prev ? { ...prev, has_callback: !next } : prev)
+      toast.error('Could not update callback flag')
+    } else {
+      toast.success(next ? 'Marked as callback — bonus withheld while the quality gate is on' : 'Callback cleared')
+    }
+  }
+
   const handleJobLineNotesChange = async (lineId, newNotes) => {
     setLineItems(prev => prev.map(l => l.id === lineId ? { ...l, notes: newNotes } : l))
     await supabase.from('job_lines').update({ notes: newNotes || null }).eq('id', lineId)
@@ -4869,6 +4884,32 @@ function JobDetailInner() {
                     {bonusConfig.bonus_quality_gate && <> No bonus if the job has callbacks.</>}
                     {' '}Finish early, get paid more.
                   </div>
+
+                  {/* Callback flag — admins only. When the quality gate is on,
+                      flagging a callback withholds this job's efficiency bonus. */}
+                  {isAdmin && (
+                    <label style={{
+                      display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
+                      padding: '10px 14px', marginBottom: '16px', borderRadius: '10px',
+                      background: job?.has_callback ? 'rgba(239,68,68,0.08)' : theme.bg,
+                      border: `1px solid ${job?.has_callback ? 'rgba(239,68,68,0.35)' : theme.border}`
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={!!job?.has_callback}
+                        onChange={(e) => toggleCallback(e.target.checked)}
+                        style={{ width: '18px', height: '18px', accentColor: '#ef4444', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '13px', color: theme.text, fontWeight: 600 }}>
+                        Customer callback / rework on this job
+                        <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted, fontWeight: 400 }}>
+                          {bonusConfig.bonus_quality_gate
+                            ? 'Quality gate is ON — checking this withholds the efficiency bonus for this job.'
+                            : 'Quality gate is off, so this is a record only. Turn it on in Payroll settings to withhold bonuses on callbacks.'}
+                        </span>
+                      </span>
+                    </label>
+                  )}
 
                   {/* Progress bar */}
                   <div style={{ marginBottom: '16px' }}>
