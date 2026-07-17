@@ -364,6 +364,13 @@ function EstimateDetailInner() {
 
   // Audit linking
   const [availableAudits, setAvailableAudits] = useState([])
+  // Inline run-hours editor (local draft + onBlur save, per the input pattern).
+  const [auditHoursDraft, setAuditHoursDraft] = useState('')
+  const [savingAuditHours, setSavingAuditHours] = useState(false)
+  useEffect(() => {
+    const a = (availableAudits || []).find(x => x.id === estimate?.audit_id)
+    if (a && a.operating_hours != null) setAuditHoursDraft(String(a.operating_hours))
+  }, [availableAudits, estimate?.audit_id])
 
   // Expense state
   const [quoteExpenses, setQuoteExpenses] = useState([])
@@ -942,6 +949,38 @@ function EstimateDetailInner() {
       setEstimate(prev => prev ? { ...prev, quote_amount: total } : prev)
     }
     await safeWriteQuoteAmount(total, 'updateEstimateTotalFromLines')
+  }
+
+  // Change the linked audit's operating hours right from the estimate and
+  // recompute its savings, so a rep doesn't have to leave to fix a low number.
+  // Recomputes from the audit's stored watts_reduced (× hrs × days ÷ 1000 × rate)
+  // — no need to re-read areas.
+  const saveAuditHours = async (rawHours) => {
+    const a = (availableAudits || []).find(x => x.id === estimate.audit_id)
+    if (!a) return
+    const hours = Math.max(1, Math.min(24, parseInt(rawHours) || 0))
+    if (!hours || hours === Number(a.operating_hours)) return
+    setSavingAuditHours(true)
+    const days = Number(a.operating_days) || 312
+    const rate = Number(a.electric_rate) || 0.12
+    const wr = Number(a.watts_reduced) || 0
+    const kwh = Math.round((wr * hours * days) / 1000)
+    const dollars = Math.round(kwh * rate * 100) / 100
+    const { error } = await supabase.from('lighting_audits')
+      .update({ operating_hours: hours, annual_savings_kwh: kwh, annual_savings_dollars: dollars })
+      .eq('id', a.id)
+    if (error) { toast.error('Could not update run hours: ' + error.message); setSavingAuditHours(false); return }
+    // Reflect in local audit state so the savings line updates immediately.
+    setAvailableAudits(prev => prev.map(x => x.id === a.id
+      ? { ...x, operating_hours: hours, annual_savings_kwh: kwh, annual_savings_dollars: dollars } : x))
+    setAuditHoursDraft(String(hours))
+    // If no manual override, the audit figure IS the proposal figure — keep the
+    // stored proposal layout in sync so the interactive proposal + PDF match.
+    if (!(parseFloat(estimate.manual_annual_savings) > 0)) {
+      try { await syncProposalLayoutSavings(0) } catch { /* non-fatal */ }
+    }
+    setSavingAuditHours(false)
+    toast.success(`Run hours set to ${hours}/day — savings ${dollars ? '$' + Math.round(dollars).toLocaleString() + '/yr' : 'updated'}`)
   }
 
   const updateEstimateField = async (field, value) => {
@@ -4048,23 +4087,34 @@ function EstimateDetailInner() {
               </div>
 
               {/* Show what the savings number is based on, so it isn't a black
-                  box. The figure is annual ENERGY savings = watts reduced × run
-                  time × rate; if it looks low, the run-time assumptions (editable
-                  on the audit) are usually why — not the calc. */}
+                  box, and let the rep change the run hours right here — the run
+                  time is what usually makes the figure look low, not the calc. */}
               {(() => {
                 if (!estimate.audit_id) return null
                 const a = (availableAudits || []).find(x => x.id === estimate.audit_id)
                 if (!a || !(Number(a.annual_savings_dollars) > 0)) return null
-                const hrs = Number(a.operating_hours) || 0
                 const days = Number(a.operating_days) || 0
                 const rate = Number(a.electric_rate) || 0
                 const kwh = Number(a.annual_savings_kwh) || 0
-                if (!hrs || !days) return null
+                if (!(Number(a.operating_hours) > 0) || !days) return null
                 return (
-                  <div style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'right', marginTop: '-6px', lineHeight: 1.5 }}>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'right', marginTop: '-6px', lineHeight: 1.6 }}>
                     ${Math.round(Number(a.annual_savings_dollars)).toLocaleString()}/yr from the audit
-                    {kwh ? ` = ${Math.round(kwh).toLocaleString()} kWh` : ''} at {hrs} hrs/day × {days} days/yr{rate ? ` × $${rate}/kWh` : ''}.
-                    <br />Runs longer? Edit the hours on the audit and it recalculates.
+                    {kwh ? ` = ${Math.round(kwh).toLocaleString()} kWh` : ''}, at{' '}
+                    <input
+                      type="number" min="1" max="24"
+                      value={auditHoursDraft}
+                      disabled={savingAuditHours}
+                      onChange={(e) => setAuditHoursDraft(e.target.value)}
+                      onBlur={(e) => saveAuditHours(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
+                      style={{
+                        width: '38px', padding: '1px 4px', textAlign: 'center', fontSize: '11px',
+                        border: `1px solid ${theme.accent}`, borderRadius: '4px',
+                        color: theme.text, backgroundColor: theme.bgCard
+                      }}
+                    /> hrs/day × {days} days/yr{rate ? ` × $${rate}/kWh` : ''}.
+                    <br />Change the hours to match how long the site actually runs — it recalculates.
                   </div>
                 )
               })()}

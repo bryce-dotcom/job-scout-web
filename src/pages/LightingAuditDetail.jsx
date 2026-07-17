@@ -202,14 +202,22 @@ export default function LightingAuditDetail() {
     navigate(`/estimates/${quoteTempId}`)
   }
 
-  const recalculateAudit = async () => {
+  // Pass fresh assumptions in `opts` when recomputing right after a save — the
+  // `audit` in state is still last render's value at that point, so reading the
+  // hours/rate from it recomputes with the OLD numbers and the savings never
+  // matches the hours the rep just entered. Callers with no fresh values (area
+  // edits) fall back to current audit state.
+  const recalculateAudit = async (opts = {}) => {
+    const operating_hours = Number(opts.operating_hours ?? audit.operating_hours) || 12
+    const operating_days = Number(opts.operating_days ?? audit.operating_days) || 312
+    const electric_rate = Number(opts.electric_rate ?? audit.electric_rate) || 0.12
     const total_fixtures = areas.reduce((sum, a) => sum + (a.fixture_count || 0), 0)
     const total_existing_watts = areas.reduce((sum, a) => sum + (a.total_existing_watts || 0), 0)
     const total_proposed_watts = areas.reduce((sum, a) => sum + (a.total_led_watts || 0), 0)
     const watts_reduced = total_existing_watts - total_proposed_watts
-    const annual_hours = (audit.operating_hours || 12) * (audit.operating_days || 312)
+    const annual_hours = operating_hours * operating_days
     const annual_savings_kwh = (watts_reduced * annual_hours) / 1000
-    const annual_savings_dollars = annual_savings_kwh * (audit.electric_rate || 0.12)
+    const annual_savings_dollars = annual_savings_kwh * electric_rate
 
     await updateLightingAudit(id, {
       total_fixtures: Math.round(total_fixtures) || 0,
@@ -226,6 +234,9 @@ export default function LightingAuditDetail() {
   }
 
   const handleSaveAudit = async (editData) => {
+    const electric_rate = parseFloat(editData.electric_rate) || 0.12
+    const operating_hours = parseInt(editData.operating_hours) || 12
+    const operating_days = parseInt(editData.operating_days) || 312
     await updateLightingAudit(id, {
       customer_id: editData.customer_id ? parseInt(editData.customer_id) : null,
       address: editData.address,
@@ -233,12 +244,13 @@ export default function LightingAuditDetail() {
       state: editData.state,
       zip: editData.zip,
       utility_provider_id: editData.utility_provider_id ? parseInt(editData.utility_provider_id) : null,
-      electric_rate: parseFloat(editData.electric_rate) || 0.12,
-      operating_hours: parseInt(editData.operating_hours) || 12,
-      operating_days: parseInt(editData.operating_days) || 312
+      electric_rate,
+      operating_hours,
+      operating_days
     })
     setShowEditModal(false)
-    recalculateAudit()
+    // Recompute with the values just entered, not the stale audit state.
+    recalculateAudit({ electric_rate, operating_hours, operating_days })
   }
 
   const handleDeleteAudit = async () => {
