@@ -566,7 +566,7 @@ function EstimateDetailInner() {
         // whole query, so availableAudits was always empty (which also silently
         // killed the savings-override warning that reads it). The audit is
         // identified by #id + fixtures in the dropdown; no name column needed.
-        let auditQuery = supabase.from('lighting_audits').select('id, total_fixtures, annual_savings_dollars, watts_reduced, created_at').eq('company_id', companyId)
+        let auditQuery = supabase.from('lighting_audits').select('id, total_fixtures, annual_savings_dollars, annual_savings_kwh, watts_reduced, operating_hours, operating_days, electric_rate, created_at').eq('company_id', companyId)
         if (leadId && custId) {
           auditQuery = auditQuery.or(`lead_id.eq.${leadId},customer_id.eq.${custId}`)
         } else if (leadId) {
@@ -1923,7 +1923,7 @@ function EstimateDetailInner() {
         try {
           const { data: aud } = await supabase
             .from('lighting_audits')
-            .select('id,annual_savings_kwh,annual_savings_dollars,estimated_rebate,total_existing_watts,total_proposed_watts,watts_reduced,payback_months,est_project_cost,net_cost')
+            .select('id,annual_savings_kwh,annual_savings_dollars,estimated_rebate,total_existing_watts,total_proposed_watts,watts_reduced,payback_months,est_project_cost,net_cost,operating_hours,operating_days,electric_rate')
             .eq('id', estimate.audit_id)
             .single()
           if (aud) auditExtras = { audit: aud, annual_savings_dollars: aud.annual_savings_dollars, annual_savings_kwh: aud.annual_savings_kwh }
@@ -2084,7 +2084,7 @@ function EstimateDetailInner() {
           try {
             const { data: aud } = await supabase
               .from('lighting_audits')
-              .select('id,annual_savings_kwh,annual_savings_dollars,estimated_rebate,total_existing_watts,total_proposed_watts,watts_reduced,payback_months,est_project_cost,net_cost')
+              .select('id,annual_savings_kwh,annual_savings_dollars,estimated_rebate,total_existing_watts,total_proposed_watts,watts_reduced,payback_months,est_project_cost,net_cost,operating_hours,operating_days,electric_rate')
               .eq('id', estimate.audit_id)
               .single()
             if (aud) auditExtrasForSnap = { audit: aud, annual_savings_dollars: aud.annual_savings_dollars, annual_savings_kwh: aud.annual_savings_kwh }
@@ -4046,6 +4046,28 @@ function EstimateDetailInner() {
                   step="0.01"
                 />
               </div>
+
+              {/* Show what the savings number is based on, so it isn't a black
+                  box. The figure is annual ENERGY savings = watts reduced × run
+                  time × rate; if it looks low, the run-time assumptions (editable
+                  on the audit) are usually why — not the calc. */}
+              {(() => {
+                if (!estimate.audit_id) return null
+                const a = (availableAudits || []).find(x => x.id === estimate.audit_id)
+                if (!a || !(Number(a.annual_savings_dollars) > 0)) return null
+                const hrs = Number(a.operating_hours) || 0
+                const days = Number(a.operating_days) || 0
+                const rate = Number(a.electric_rate) || 0
+                const kwh = Number(a.annual_savings_kwh) || 0
+                if (!hrs || !days) return null
+                return (
+                  <div style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'right', marginTop: '-6px', lineHeight: 1.5 }}>
+                    ${Math.round(Number(a.annual_savings_dollars)).toLocaleString()}/yr from the audit
+                    {kwh ? ` = ${Math.round(kwh).toLocaleString()} kWh` : ''} at {hrs} hrs/day × {days} days/yr{rate ? ` × $${rate}/kWh` : ''}.
+                    <br />Runs longer? Edit the hours on the audit and it recalculates.
+                  </div>
+                )
+              })()}
 
               {/* This field OVERRIDES the certified audit on the proposal, silently.
                   Across 77 estimates carrying an override, not one matched its audit

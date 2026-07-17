@@ -143,8 +143,12 @@ export default function NewLightingAudit() {
     rate_schedule_id: '',
     rate_schedule: '',
     electric_rate: 0.12,
-    operating_hours: 10,
-    operating_days: 260
+    // Standard commercial profile: 12 hrs/day, 6 days/week (312 days/yr). The
+    // old 10h/260d (weekday business hours) understated savings for HHH's
+    // typical warehouse/shop/highbay jobs, so reps saw a low number and had to
+    // correct it every time. Editable per facility below.
+    operating_hours: 12,
+    operating_days: 312
   })
   const [showBuildingSizeTooltip, setShowBuildingSizeTooltip] = useState(false)
   const [rateSchedules, setRateSchedules] = useState([])

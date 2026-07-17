@@ -207,7 +207,7 @@ export default function LightingAuditDetail() {
     const total_existing_watts = areas.reduce((sum, a) => sum + (a.total_existing_watts || 0), 0)
     const total_proposed_watts = areas.reduce((sum, a) => sum + (a.total_led_watts || 0), 0)
     const watts_reduced = total_existing_watts - total_proposed_watts
-    const annual_hours = (audit.operating_hours || 10) * (audit.operating_days || 260)
+    const annual_hours = (audit.operating_hours || 12) * (audit.operating_days || 312)
     const annual_savings_kwh = (watts_reduced * annual_hours) / 1000
     const annual_savings_dollars = annual_savings_kwh * (audit.electric_rate || 0.12)
 
@@ -234,8 +234,8 @@ export default function LightingAuditDetail() {
       zip: editData.zip,
       utility_provider_id: editData.utility_provider_id ? parseInt(editData.utility_provider_id) : null,
       electric_rate: parseFloat(editData.electric_rate) || 0.12,
-      operating_hours: parseInt(editData.operating_hours) || 10,
-      operating_days: parseInt(editData.operating_days) || 260
+      operating_hours: parseInt(editData.operating_hours) || 12,
+      operating_days: parseInt(editData.operating_days) || 312
     })
     setShowEditModal(false)
     recalculateAudit()
@@ -1702,8 +1702,8 @@ function EditAuditModal({ audit, customers, utilityProviders, theme, onSave, onC
     zip: audit.zip || '',
     utility_provider_id: audit.utility_provider_id || '',
     electric_rate: audit.electric_rate || 0.12,
-    operating_hours: audit.operating_hours || 10,
-    operating_days: audit.operating_days || 260
+    operating_hours: audit.operating_hours || 12,
+    operating_days: audit.operating_days || 312
   })
   const [saving, setSaving] = useState(false)
 

@@ -598,6 +598,17 @@ function drawTotals(doc, estimate, lineItems, startY, m, pw, ph) {
         y += 6
       }
     }
+    // Basis line — only when the figure comes from the audit (not a manual
+    // override, which isn't derived from these assumptions). Keeps the customer-
+    // facing savings number from looking like a black box.
+    const a = estimate.audit
+    if (!parseFloat(estimate.manual_annual_savings) && a?.operating_hours && a?.operating_days) {
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(...C.muted)
+      doc.text(`Based on ${a.operating_hours} hrs/day, ${a.operating_days} days/yr${a.electric_rate ? ` at $${a.electric_rate}/kWh` : ''}`, boxX, y)
+      y += 5
+    }
     y += 2
   }
 
