@@ -444,10 +444,14 @@ export default function FieldScout() {
         .not('clock_out', 'is', null)
       const allLogs = timeClockToJobHours(allClockRows || [])
 
-      // 5. Load the jobs themselves (need allotted_time_hours + has_callback)
+      // 5. Load the jobs themselves (allotted_time_hours for the hours card).
+      // NB: there is no jobs.has_callback column — selecting it 400'd this whole
+      // query, so it returned nothing. Removed. (The bonus "callback" quality
+      // gate in bonusCalc reads job.has_callback too and is therefore inert;
+      // that's a separate feature-data gap, flagged, not a query error.)
       const { data: jobRows } = await supabase
         .from('jobs')
-        .select('id, job_id, job_title, customer_name, allotted_time_hours, has_callback')
+        .select('id, job_id, job_title, customer_name, allotted_time_hours')
         .in('id', myJobIds)
 
       // 5b. Victor verification gates: load completion + daily reports for these jobs.
@@ -576,7 +580,10 @@ export default function FieldScout() {
         try {
           const { data: audit } = await supabase
             .from('lighting_audits')
-            .select('id, audit_id, facility_name, total_fixtures, notes')
+            // No facility_name column — use the audit's address as the location
+            // label (aliased so the briefing render stays unchanged). Selecting
+            // facility_name 400'd this, so the briefing showed no audit info.
+            .select('id, audit_id, facility_name:address, total_fixtures, notes')
             .eq('company_id', companyId)
             .eq('job_id', jobId)
             .order('created_at', { ascending: false })
@@ -1154,7 +1161,7 @@ export default function FieldScout() {
           try {
             const { data: jobLines } = await supabase
               .from('job_lines')
-              .select('item_id, description, quantity, price, discount, line_total, in_utility_scope')
+              .select('item_id, description, quantity, price, discount, line_total:total, in_utility_scope')
               .eq('job_id', job.id)
               .order('id', { ascending: true })
             if (jobLines && jobLines.length > 0) {

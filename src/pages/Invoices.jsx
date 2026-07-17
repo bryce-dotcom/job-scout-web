@@ -310,7 +310,7 @@ export default function Invoices() {
       try {
         const { data: jobLines } = await supabase
           .from('job_lines')
-          .select('item_id, description, quantity, price, discount, line_total, in_utility_scope')
+          .select('item_id, description, quantity, price, discount, line_total:total, in_utility_scope')
           .eq('job_id', formData.job_id)
           .order('id', { ascending: true })
         if (jobLines && jobLines.length > 0) {

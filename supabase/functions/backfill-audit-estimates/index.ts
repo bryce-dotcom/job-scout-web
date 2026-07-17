@@ -29,36 +29,11 @@ serve(async (req) => {
       details: [] as string[],
     };
 
-    // ─── Fix 1: Leads with quote_id but missing/zero quote_amount ───
-    const { data: leadsWithQuote } = await supabase
-      .from('leads')
-      .select('id, customer_name, quote_id, quote_amount')
-      .eq('company_id', company_id)
-      .not('quote_id', 'is', null);
-
-    for (const lead of (leadsWithQuote || [])) {
-      if (lead.quote_amount && parseFloat(lead.quote_amount) > 0) continue;
-
-      // Look up the linked quote's amount
-      const { data: quote } = await supabase
-        .from('quotes')
-        .select('id, quote_amount')
-        .eq('id', lead.quote_id)
-        .single();
-
-      if (quote?.quote_amount && parseFloat(quote.quote_amount) > 0) {
-        if (!dry_run) {
-          await supabase
-            .from('leads')
-            .update({ quote_amount: quote.quote_amount })
-            .eq('id', lead.id);
-        }
-        results.leads_updated_quote_amount++;
-        results.details.push(
-          `Lead "${lead.customer_name}" (${lead.id}): set quote_amount = ${quote.quote_amount} from quote ${quote.id}`
-        );
-      }
-    }
+    // ─── Fix 1 (removed): there is no leads.quote_amount column ───
+    // This synced a quote's amount onto the lead, but the select + update both
+    // 400'd against a column that doesn't exist, so it never ran. The lead
+    // links to its quote via quote_id; read the amount from quotes when needed.
+    // leads_updated_quote_amount stays 0.
 
     // ─── Fix 2: Audits linked to leads that have no estimate yet ───
     const { data: auditsWithLeads } = await supabase
@@ -131,12 +106,12 @@ serve(async (req) => {
           results.quote_lines_created++;
         }
 
-        // Update lead with quote_id and quote_amount
+        // Link the quote to the lead. (No quote_amount on leads — the amount
+        // lives on the quote created above.)
         await supabase
           .from('leads')
           .update({
             quote_id: newQuote.id,
-            quote_amount: quoteAmount,
           })
           .eq('id', audit.lead_id);
       }

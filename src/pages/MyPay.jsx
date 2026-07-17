@@ -237,7 +237,7 @@ export default function MyPay() {
         // requests for time off?" — give every employee a self-view).
         const ptoPromise = supabase
           .from('time_off_requests')
-          .select('id, start_date, end_date, request_type, status, reason, created_at, decided_at')
+          .select('id, start_date, end_date, request_type, status, reason, created_at, approved_at')
           .eq('company_id', companyId)
           .eq('employee_id', effectiveUserId)
           .order('created_at', { ascending: false })

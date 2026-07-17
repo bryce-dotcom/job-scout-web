@@ -25,8 +25,8 @@ export default function DataConsoleUsers() {
     setLoading(true)
     try {
       const [usersRes, companiesRes] = await Promise.all([
-        supabase.from('employees').select('*, company:companies(id, name)').order('first_name'),
-        supabase.from('companies').select('id, name').order('name')
+        supabase.from('employees').select('*, company:companies(id, name:company_name)').order('first_name'),
+        supabase.from('companies').select('id, name:company_name').order('company_name')
       ])
 
       setUsers(usersRes.data || [])

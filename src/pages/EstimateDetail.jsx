@@ -562,7 +562,11 @@ function EstimateDetailInner() {
       const leadId = estimateData.lead_id
       const custId = estimateData.customer_id
       if (leadId || custId) {
-        let auditQuery = supabase.from('lighting_audits').select('id, facility_name, total_fixtures, annual_savings_dollars, watts_reduced, created_at').eq('company_id', companyId)
+        // lighting_audits has no facility_name column — selecting it 400'd this
+        // whole query, so availableAudits was always empty (which also silently
+        // killed the savings-override warning that reads it). The audit is
+        // identified by #id + fixtures in the dropdown; no name column needed.
+        let auditQuery = supabase.from('lighting_audits').select('id, total_fixtures, annual_savings_dollars, watts_reduced, created_at').eq('company_id', companyId)
         if (leadId && custId) {
           auditQuery = auditQuery.or(`lead_id.eq.${leadId},customer_id.eq.${custId}`)
         } else if (leadId) {
@@ -4107,11 +4111,13 @@ function EstimateDetailInner() {
                     <button onClick={async () => {
                       // Create a new audit from the line items
                       const customer = estimate.customer || estimate.lead
+                      // No facility_name column exists — writing it 400'd this
+                      // insert, so "+ New Audit" always failed. The facility is
+                      // identified by the linked customer/lead + address.
                       const { data: newAudit, error } = await supabase.from('lighting_audits').insert({
                         company_id: companyId,
                         lead_id: estimate.lead_id || null,
                         customer_id: estimate.customer_id || null,
-                        facility_name: customer?.business_name || customer?.customer_name || customer?.name || 'Facility',
                         address: customer?.address || '',
                         status: 'In Progress',
                         total_fixtures: lineItems.reduce((sum, li) => sum + (parseInt(li.quantity) || 0), 0),

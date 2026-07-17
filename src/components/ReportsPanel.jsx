@@ -62,7 +62,7 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
     setJobCostingLoading(true)
     ;(async () => {
       const [{ data: lines }, { data: prods }, { data: comps }] = await Promise.all([
-        supabase.from('job_lines').select('id, job_id, item_id, quantity, line_total, labor_cost').eq('company_id', companyId).limit(20000),
+        supabase.from('job_lines').select('id, job_id, item_id, quantity, line_total:total, labor_cost').eq('company_id', companyId).limit(20000),
         // material_or_labor needed so classifyProduct credits each
         // component cost to the right column (parts vs labor).
         supabase.from('products_services').select('id, cost, material_or_labor').eq('company_id', companyId).limit(10000),

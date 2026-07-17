@@ -139,7 +139,7 @@ serve(async (req) => {
       // Fetch company info for branding
       const { data: company } = await supabase
         .from('companies')
-        .select('name')
+        .select('name:company_name')
         .eq('id', est.company_id)
         .single();
 

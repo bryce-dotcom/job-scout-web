@@ -634,13 +634,16 @@ export default function Jobs() {
     if (!companyId) return
     setArchivedJobsLoading(true)
     const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
+    // jobs has no archived_at column — archiving is a status change, and
+    // last_status_change_at (trigger-set on any status change) is when it
+    // happened. Aliased to archived_at so the render below stays unchanged.
     const { data } = await supabase
       .from('jobs')
-      .select('id, job_id, job_title, status, archived_at, updated_at, customer:customers!customer_id(name)')
+      .select('id, job_id, job_title, status, archived_at:last_status_change_at, updated_at, customer:customers!customer_id(name)')
       .eq('company_id', companyId)
       .eq('status', 'Archived')
-      .gte('archived_at', cutoff)
-      .order('archived_at', { ascending: false })
+      .gte('last_status_change_at', cutoff)
+      .order('last_status_change_at', { ascending: false })
       .limit(50)
     setArchivedJobs(data || [])
     setArchivedJobsLoading(false)
@@ -1263,7 +1266,7 @@ export default function Jobs() {
   const archiveJob = async (job) => {
     const { error } = await supabase
       .from('jobs')
-      .update({ status: 'Archived', archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .update({ status: 'Archived', updated_at: new Date().toISOString() })
       .eq('id', job.id)
     if (error) { toast.error('Failed to archive job'); return }
     toast.success(`"${job.job_title || job.job_id}" archived — restore it from Recently Archived below`)
@@ -1274,7 +1277,7 @@ export default function Jobs() {
   const restoreJob = async (job) => {
     const { error } = await supabase
       .from('jobs')
-      .update({ status: 'Chillin', archived_at: null, updated_at: new Date().toISOString() })
+      .update({ status: 'Chillin', updated_at: new Date().toISOString() })
       .eq('id', job.id)
     if (error) { toast.error('Failed to restore job'); return }
     toast.success(`"${job.job_title || job.job_id}" restored to Chillin`)

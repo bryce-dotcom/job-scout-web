@@ -401,26 +401,12 @@ export default function Settings() {
   const runAuditBackfill = async (cid, dryRun) => {
     const results = { dry_run: dryRun, leads_synced: 0, estimates_created: 0, estimates_fixed: 0, lines_created: 0, details: [] }
 
-    // Fix 1: Leads with quote_id but missing/zero quote_amount
-    const { data: leadsWithQuote } = await supabase
-      .from('leads')
-      .select('id, customer_name, quote_id, quote_amount')
-      .eq('company_id', cid)
-      .not('quote_id', 'is', null)
-
-    for (const lead of (leadsWithQuote || [])) {
-      if (lead.quote_amount && parseFloat(lead.quote_amount) > 0) continue
-      const { data: quote } = await supabase
-        .from('quotes').select('id, quote_amount').eq('id', lead.quote_id).single()
-
-      if (quote?.quote_amount && parseFloat(quote.quote_amount) > 0) {
-        if (!dryRun) {
-          await supabase.from('leads').update({ quote_amount: quote.quote_amount }).eq('id', lead.id)
-        }
-        results.leads_synced++
-        results.details.push(`Lead "${lead.customer_name}": set quote_amount = $${quote.quote_amount}`)
-      }
-    }
+    // Fix 1 (removed): there is no leads.quote_amount column. This block used to
+    // "sync" a quote's amount onto the lead, but the select + update both 400'd
+    // against a column that doesn't exist, so it never did anything. The lead
+    // links to its quote via quote_id; read the amount from quotes when needed.
+    // leads_synced stays 0. If a lead-level quote_amount is ever wanted, add the
+    // column first — don't reintroduce writes to a phantom one.
 
     // Fix 2: Audits linked to leads — create missing estimates OR fix bad line items
     const { data: auditsWithLeads } = await supabase
@@ -489,9 +475,8 @@ export default function Settings() {
               })
               results.lines_created++
             }
-            // Ensure quote_amount is correct
+            // Ensure quote_amount is correct (on the quote — leads has no such column)
             await supabase.from('quotes').update({ quote_amount: quoteAmount }).eq('id', existingQuote.id)
-            await supabase.from('leads').update({ quote_amount: quoteAmount }).eq('id', audit.lead_id)
           }
           results.estimates_fixed++
           results.details.push(`"${leadName}" → fixed line items ($${linesSum.toFixed(0)} → $${quoteAmount})`)
@@ -529,8 +514,10 @@ export default function Settings() {
           results.lines_created++
         }
 
+        // Link the quote to the lead. (No quote_amount on leads — the amount
+        // lives on the quote we just created.)
         await supabase.from('leads').update({
-          quote_id: newQuote.id, quote_amount: quoteAmount
+          quote_id: newQuote.id
         }).eq('id', audit.lead_id)
       }
 

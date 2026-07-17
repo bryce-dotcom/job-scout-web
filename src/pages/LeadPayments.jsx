@@ -71,8 +71,11 @@ export default function LeadPayments() {
     }
     fetchLeadPayments()
     // Fetch invoices and jobs for linking
-    supabase.from('invoices').select('id, invoice_number, customer_name, total, job_id').eq('company_id', companyId).order('created_at', { ascending: false }).then(({ data }) => { if (data) setInvoices(data) })
-    supabase.from('jobs').select('id, title, customer_name').eq('company_id', companyId).order('created_at', { ascending: false }).then(({ data }) => { if (data) setJobs(data) })
+    // invoices has invoice_id/amount (not invoice_number/total) and no
+    // customer_name column — the name comes from the joined customer. Aliased
+    // so the dropdown labels below stay unchanged. jobs uses job_title, not title.
+    supabase.from('invoices').select('id, invoice_number:invoice_id, total:amount, job_id, customer:customers(name, business_name)').eq('company_id', companyId).order('created_at', { ascending: false }).then(({ data }) => { if (data) setInvoices(data) })
+    supabase.from('jobs').select('id, job_title, customer_name').eq('company_id', companyId).order('created_at', { ascending: false }).then(({ data }) => { if (data) setJobs(data) })
   }, [companyId, navigate, fetchLeadPayments])
 
   const filteredPayments = leadPayments.filter(p => {
@@ -719,7 +722,7 @@ export default function LeadPayments() {
                     <div>
                       <label style={{ ...labelStyle, fontSize: '12px' }}>Invoice</label>
                       <SearchableSelect
-                        options={invoices.map(inv => ({ value: inv.id, label: `#${inv.invoice_number || inv.id} - ${inv.customer_name || 'Unknown'} (${formatCurrency(inv.total)})` }))}
+                        options={invoices.map(inv => ({ value: inv.id, label: `#${inv.invoice_number || inv.id} - ${inv.customer?.business_name || inv.customer?.name || 'Unknown'} (${formatCurrency(inv.total)})` }))}
                         value={formData.invoice_id}
                         onChange={(val) => setFormData(prev => ({ ...prev, invoice_id: val }))}
                         placeholder="None"
@@ -729,7 +732,7 @@ export default function LeadPayments() {
                     <div>
                       <label style={{ ...labelStyle, fontSize: '12px' }}>Job</label>
                       <SearchableSelect
-                        options={jobs.map(job => ({ value: job.id, label: `#${job.id} - ${job.title || job.customer_name || 'Untitled'}` }))}
+                        options={jobs.map(job => ({ value: job.id, label: `#${job.id} - ${job.job_title || job.customer_name || 'Untitled'}` }))}
                         value={formData.job_id}
                         onChange={(val) => setFormData(prev => ({ ...prev, job_id: val }))}
                         placeholder="None"

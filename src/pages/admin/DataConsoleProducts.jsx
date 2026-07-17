@@ -34,7 +34,7 @@ export default function DataConsoleProducts() {
     try {
       const [productsRes, companiesRes] = await Promise.all([
         supabase.from('products_services').select('*').eq('type', 'Product').order('name'),
-        supabase.from('companies').select('id, name').order('name')
+        supabase.from('companies').select('id, name:company_name').order('company_name')
       ])
       setProducts(productsRes.data || [])
       setCompanies(companiesRes.data || [])
