@@ -14,6 +14,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { invoiceCustomerTotal } from "../_shared/money.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -81,7 +82,9 @@ serve(async (req) => {
       const now = Date.now();
       for (const i of openInv || []) {
         const gross = Number(i.amount) || 0, disc = Number(i.discount_applied) || 0;
-        const bal = disc > 0 && disc >= gross ? gross : Math.max(0, gross - disc);
+        // Shared predicate — a `>=` copy here counted a fully-covered invoice's
+        // whole gross as receivable in the brief.
+        const bal = invoiceCustomerTotal(gross, disc);
         ar += bal;
         const due = i.due_date ? new Date(i.due_date).getTime() : new Date(i.created_at).getTime() + 30 * 86400000;
         if (now > due && bal > 0.01) { overdueCount++; overdueTotal += bal; }

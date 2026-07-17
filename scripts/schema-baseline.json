@@ -1,0 +1,21 @@
+{
+  "note": "Known column drift, recorded so schema:check can fail on NEW drift only. Fix an entry then delete it from this list — do not add to it without a reason.",
+  "generated_from": "https://tzrhfhisdeahrrmeksif.supabase.co",
+  "known": [
+    "src/components/ReportsPanel.jsx|job_lines|line_total",
+    "src/pages/EstimateDetail.jsx|lighting_audits|facility_name",
+    "src/pages/FieldScout.jsx|job_lines|line_total",
+    "src/pages/FieldScout.jsx|jobs|has_callback",
+    "src/pages/FieldScout.jsx|lighting_audits|facility_name",
+    "src/pages/Invoices.jsx|job_lines|line_total",
+    "src/pages/Jobs.jsx|jobs|archived_at",
+    "src/pages/LeadPayments.jsx|invoices|invoice_number,customer_name,total",
+    "src/pages/LeadPayments.jsx|jobs|title",
+    "src/pages/MyPay.jsx|time_off_requests|decided_at",
+    "src/pages/Settings.jsx|leads|quote_amount",
+    "src/pages/admin/DataConsoleProducts.jsx|companies|name",
+    "src/pages/admin/DataConsoleUsers.jsx|companies|name",
+    "supabase/functions/backfill-audit-estimates/index.ts|leads|quote_amount",
+    "supabase/functions/estimate-followup/index.ts|companies|name"
+  ]
+}

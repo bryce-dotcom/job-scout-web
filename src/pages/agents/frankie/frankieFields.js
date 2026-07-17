@@ -13,15 +13,13 @@
 // ──────────────────────────── invoices ────────────────────────────
 
 // Customer balance = gross - discount_applied (utility incentive + deposit
-// credit are netted out) then minus payments already applied. Mirrors the
-// math used by InvoiceDetail, CustomerPortal, Stripe webhook, and Books.
-export function invoiceCustomerTotal(inv) {
-  const gross = Number(inv?.amount) || 0
-  const disc = Number(inv?.discount_applied) || 0
-  // Legacy net-shape: amount = net customer portion, discount is informational
-  const isLegacyNet = disc > 0 && disc >= gross
-  return isLegacyNet ? gross : Math.max(0, gross - disc)
-}
+// credit are netted out) then minus payments already applied.
+//
+// This used to be a local copy whose comment said it "mirrors the math used by
+// InvoiceDetail, CustomerPortal, Stripe webhook, and Books" — and it stopped
+// mirroring them the moment that math was corrected, because a comment can't
+// keep two implementations in sync. Re-export the one definition instead.
+export { invoiceCustomerTotal } from '../../../lib/arHelpers'
 
 // Total a customer still owes on this invoice after applied payments.
 // Pass in either a paymentsByInvoiceId Map (preferred) or a flat payments

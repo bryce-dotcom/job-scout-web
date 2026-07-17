@@ -13,6 +13,8 @@
 // All inputs are plain arrays already scoped to the company / business unit by
 // the caller; `inRange(dateString)` decides which period a record falls in.
 
+import { isLegacyNetShape } from './arHelpers'
+
 export const BASIS_CASH = 'cash'
 export const BASIS_ACCRUAL = 'accrual'
 
@@ -22,10 +24,13 @@ const isCollected = (p) => (p.status || 'Completed') !== 'Refunded' && (p.status
 // Customer-net of an invoice = gross minus the total deduction (utility
 // incentive + project discount + deposit credit). Legacy-net invoices already
 // store the net in `amount`, so don't subtract again.
+// Uses the shared predicate — this file had its own `disc >= gross` copy, which
+// counted a fully-covered invoice's ENTIRE gross as accrual revenue instead of
+// $0. Never re-derive the legacy-net test.
 export function invoiceNet(inv) {
   const gross = num(inv.amount)
   const disc = num(inv.discount_applied)
-  return (disc > 0 && disc >= gross) ? gross : Math.max(0, gross - disc)
+  return isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
 }
 
 export function cashRevenue({ payments = [], leadPayments = [], utilityInvoices = [] }, inRange) {

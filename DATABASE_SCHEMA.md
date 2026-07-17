@@ -1,1785 +1,2039 @@
-# Job Scout - Database Schema Reference
+# Database Schema (generated)
 
-**Single source of truth for all Supabase column names.**
-**Queried from live database: February 6, 2026**
+**Do not hand-edit.** Regenerate with `npm run schema:dump`.
 
-> Before writing ANY Supabase query, verify column names exist in this file.
-> If a column is not listed here, it does not exist in the database.
+This file is written from the LIVE database. The previous hand-maintained
+version drifted out of date and omitted real columns, which made the rule
+"if a column is not listed here, it does not exist" actively misleading.
 
----
+Generated from https://tzrhfhisdeahrrmeksif.supabase.co
 
 ## agents
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| slug | text | |
-| name | text | |
-| title | text | |
-| full_name | text | |
-| tagline | text | |
-| description | text | |
-| icon | text | |
-| avatar_url | text | |
-| trade_category | text | |
-| ai_capabilities | text[] | |
-| price_monthly | numeric | 29.99 |
-| price_yearly | numeric | 299.99 |
-| is_free | boolean | false |
-| status | text | 'coming_soon' |
-| display_order | integer | 100 |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | now() |
+- `ai_capabilities`
+- `avatar_url`
+- `created_at`
+- `description`
+- `display_order`
+- `full_name`
+- `icon`
+- `id`
+- `is_free`
+- `name`
+- `price_monthly`
+- `price_yearly`
+- `slug`
+- `status`
+- `tagline`
+- `title`
+- `trade_category`
+- `updated_at`
 
----
+## ai_alerts
+
+- `created_at`
+- `detail`
+- `id`
+- `kind`
 
 ## ai_messages
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| message_id | text | |
-| session_id | text | |
-| timestamp | timestamptz | |
-| role | text | |
-| content | text | |
-| intent_detected | text | |
-| module_used | text | |
-| entities_json | text | |
-| actions_taken | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `actions_taken`
+- `company_id`
+- `content`
+- `created_at`
+- `entities_json`
+- `id`
+- `intent_detected`
+- `message_id`
+- `module_used`
+- `role`
+- `session_id`
+- `timestamp`
+- `updated_at`
 
 ## ai_modules
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| module_name | text | |
-| display_name | text | |
-| description | text | |
-| icon | text | 'Bot' |
-| status | text | 'active' |
-| default_menu_section | text | |
-| default_menu_parent | text | |
-| user_menu_section | text | |
-| user_menu_parent | text | |
-| sort_order | integer | 0 |
-| capabilities_json | jsonb | |
-| config_json | jsonb | |
-| route_path | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | now() |
-
----
+- `capabilities_json`
+- `company_id`
+- `config_json`
+- `created_at`
+- `default_menu_parent`
+- `default_menu_section`
+- `description`
+- `display_name`
+- `icon`
+- `id`
+- `module_name`
+- `route_path`
+- `sort_order`
+- `status`
+- `updated_at`
+- `user_menu_parent`
+- `user_menu_section`
 
 ## ai_sessions
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| session_id | text | |
-| user_email | text | |
-| started | text | |
-| last_activity | text | |
-| status | text | |
-| current_module | text | |
-| context_json | text | |
-| pending_action | text | |
-| pending_data | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
+- `company_id`
+- `context_json`
+- `created_at`
+- `current_module`
+- `id`
+- `last_activity`
+- `pending_action`
+- `pending_data`
+- `session_id`
+- `started`
+- `status`
+- `updated_at`
+- `user_email`
 
----
+## ai_usage
+
+- `cache_creation_input_tokens`
+- `cache_read_input_tokens`
+- `company_id`
+- `created_at`
+- `error_kind`
+- `est_cost_usd`
+- `feature`
+- `id`
+- `input_tokens`
+- `model`
+- `output_tokens`
+- `status`
+- `success`
 
 ## appointments
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| lead_id | integer | FK leads.id |
-| customer_id | integer | FK customers.id |
-| title | text | |
-| start_time | timestamptz | |
-| end_time | timestamptz | |
-| duration_minutes | integer | 60 |
-| location | text | |
-| employee_id | integer | FK employees.id |
-| salesperson_id | integer | FK employees.id |
-| setter_id | integer | FK employees.id |
-| lead_owner_id | integer | FK employees.id |
-| status | text | 'Scheduled' |
-| appointment_type | text | |
-| outcome | text | |
-| notes | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | now() |
-
----
+- `appointment_type`
+- `company_id`
+- `created_at`
+- `customer_id`
+- `duration_minutes`
+- `employee_id`
+- `end_time`
+- `id`
+- `lead_id`
+- `lead_owner_id`
+- `location`
+- `notes`
+- `outcome`
+- `salesperson_id`
+- `salesperson_ids`
+- `setter_id`
+- `start_time`
+- `status`
+- `title`
+- `updated_at`
 
 ## assets
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| name | text | |
-| asset_type | text | |
-| purchase_price | numeric | |
-| current_value | numeric | |
-| status | text | 'active' |
-| created_at | timestamptz | now() |
-
----
+_empty table — columns unavailable_
 
 ## audit_areas
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| area_id | text | |
-| audit_id | integer | FK lighting_audits.id |
-| area_name | text | |
-| photos_url | text | |
-| ceiling_height | numeric | |
-| ai_analysis_json | text | |
-| fixture_type_detected | text | |
-| fixture_category | text | |
-| lighting_type | text | |
-| fixture_count | integer | |
-| existing_wattage | integer | |
-| total_existing_watts | integer | |
-| led_replacement_id | integer | FK products_services.id |
-| led_wattage | integer | |
-| total_led_watts | integer | |
-| confirmed | boolean | false |
-| override_notes | text | |
-| area_watts_reduced | integer | |
-| area_rebate_estimate | numeric | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| photos | text[] | |
-| led_replacement | integer | FK products_services.id |
-
----
+- `ai_analysis_json`
+- `area_id`
+- `area_name`
+- `area_rebate_estimate`
+- `area_watts_reduced`
+- `audit_id`
+- `ceiling_height`
+- `company_id`
+- `confirmed`
+- `created_at`
+- `existing_wattage`
+- `fixture_category`
+- `fixture_count`
+- `fixture_type_detected`
+- `id`
+- `led_replacement`
+- `led_replacement_id`
+- `led_wattage`
+- `lighting_type`
+- `override_notes`
+- `photo_path`
+- `photos`
+- `photos_url`
+- `total_existing_watts`
+- `total_led_watts`
+- `updated_at`
 
 ## audit_log
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | uuid | gen_random_uuid() |
-| company_id | integer | |
-| user_email | text | |
-| action | text | |
-| table_name | text | |
-| record_id | text | |
-| old_values | jsonb | |
-| new_values | jsonb | |
-| created_at | timestamptz | now() |
-| old_data | jsonb | |
-| new_data | jsonb | |
-| user_id | uuid | |
-
----
+- `action`
+- `company_id`
+- `created_at`
+- `id`
+- `new_data`
+- `new_values`
+- `old_data`
+- `old_values`
+- `record_id`
+- `table_name`
+- `user_email`
+- `user_id`
 
 ## bank_accounts
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| name | text | |
-| account_type | text | 'checking' |
-| current_balance | numeric | 0 |
-| last_synced | timestamptz | |
-| created_at | timestamptz | now() |
+- `account_type`
+- `available_balance`
+- `company_id`
+- `connected_account_id`
+- `created_at`
+- `current_balance`
+- `id`
+- `last_synced`
+- `name`
+- `pending_balance`
+- `provider`
+- `provider_account_id`
 
----
+## beta_invite_codes
 
-## bookings
+- `code`
+- `created_at`
+- `created_by`
+- `expires_at`
+- `id`
+- `max_uses`
+- `times_used`
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| booking_id | text | |
-| business_unit | text | |
-| customer_name | text | |
-| email | text | |
-| phone | text | |
-| address | text | |
-| service_type | text | |
-| preferred_date | date | |
-| status | text | 'Pending' |
-| suggested_slots | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
+## bill_payments
 
----
+_empty table — columns unavailable_
+
+## bills
+
+_empty table — columns unavailable_
+
+## category_rules
+
+- `assigned_category`
+- `assigned_tax_category`
+- `company_id`
+- `created_at`
+- `id`
+- `match_type`
+- `merchant_pattern`
+- `priority`
+
+## cc_contact_map
+
+_empty table — columns unavailable_
+
+## cc_integrations
+
+_empty table — columns unavailable_
+
+## collection_reminders
+
+_empty table — columns unavailable_
 
 ## communications_log
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| communication_id | text | |
-| business_unit | text | |
-| type | text | |
-| trigger | text | |
-| customer_id | integer | FK customers.id |
-| recipient | text | |
-| sent_date | date | |
-| status | text | |
-| response | text | |
-| employee_id | integer | FK employees.id |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+_empty table — columns unavailable_
 
 ## companies
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_name | text | |
-| owner_email | text | |
-| phone | text | |
-| address | text | |
-| logo_url | text | |
-| subscription_tier | text | 'free' |
-| active | boolean | true |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| pay_frequency | text | 'bi-weekly' |
-| pay_day_1 | text | '20' |
-| pay_day_2 | text | '5' |
-| setter_pay_per_appointment | numeric | 25 |
-| marketer_pay_per_appointment | numeric | 10 |
-| commission_requires_quote | boolean | true |
-
----
+- `active`
+- `address`
+- `billing_email`
+- `billing_notes`
+- `billing_payment_method_brand`
+- `billing_payment_method_last4`
+- `billing_status`
+- `bond_amount`
+- `bond_cert_url`
+- `bonded`
+- `bso_user_id`
+- `business_license_url`
+- `business_type`
+- `city`
+- `commission_requires_quote`
+- `company_name`
+- `created_at`
+- `duns_number`
+- `efile_efin`
+- `ein`
+- `entity_type`
+- `federal_deposit_schedule`
+- `fiscal_year_end`
+- `futa_rate_pct`
+- `google_place_id`
+- `id`
+- `industry`
+- `insurance_cert_url`
+- `insurance_expiration`
+- `insurance_policy_number`
+- `insurance_provider`
+- `legal_name`
+- `license_number`
+- `logo_url`
+- `marketer_pay_per_appointment`
+- `master_stripe_customer_id`
+- `master_stripe_subscription_id`
+- `naics_code`
+- `operating_agreement_url`
+- `owner_email`
+- `pay_day_1`
+- `pay_day_2`
+- `pay_frequency`
+- `phone`
+- `primary_color`
+- `prospecting_stripe_sub_id`
+- `prospecting_subscription_cancel_at`
+- `prospecting_subscription_canceled_at`
+- `prospecting_subscription_interval`
+- `prospecting_tier`
+- `prospecting_tier_canceled`
+- `prospecting_tier_renews_at`
+- `public_quote_slug`
+- `remit_to_address`
+- `remit_to_email`
+- `setter_pay_per_appointment`
+- `setter_qualification_rule`
+- `setup_complete`
+- `source_pay_per_lead`
+- `state`
+- `state_deposit_schedule`
+- `state_employer_id`
+- `state_employer_id_state`
+- `state_of_incorporation`
+- `subscription_tier`
+- `sui_account_number`
+- `sui_rate_pct`
+- `sui_wage_base`
+- `tax_exempt_cert_url`
+- `tax_exempt_number`
+- `timezone`
+- `tos_accepted_at`
+- `tos_accepted_ip`
+- `tos_version`
+- `trial_ends_at`
+- `updated_at`
+- `w9_url`
+- `website`
+- `workers_comp_cert_url`
+- `workers_comp_class_codes`
+- `workers_comp_expiration`
+- `workers_comp_policy`
+- `zip`
 
 ## company_agents
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| agent_id | integer | FK agents.id |
-| custom_name | text | |
-| activated_at | timestamptz | now() |
-| expires_at | timestamptz | |
-| subscription_status | text | 'active' |
-| settings | jsonb | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | now() |
+- `activated_at`
+- `agent_id`
+- `company_id`
+- `created_at`
+- `custom_name`
+- `expires_at`
+- `id`
+- `settings`
+- `subscription_status`
+- `updated_at`
 
----
+## connected_accounts
 
-## custom_forms
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| form_id | text | |
-| business_unit | text | |
-| job_id | integer | FK jobs.id |
-| field_name | text | |
-| field_value | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
-
-## customers
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| customer_id | text | |
-| name | text | |
-| email | text | |
-| phone | text | |
-| address | text | |
-| salesperson_id | integer | FK employees.id |
-| status | text | 'Active' |
-| preferred_contact | text | 'Phone' |
-| tags | text | |
-| notes | text | |
-| secondary_contact_name | text | |
-| secondary_contact_email | text | |
-| secondary_contact_phone | text | |
-| secondary_contact_role | text | |
-| marketing_opt_in | boolean | false |
-| business_name | text | |
-| job_title | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| salesperson | text | |
-| stripe_customer_id | text | |
-
----
+- `account_name`
+- `account_subtype`
+- `account_type`
+- `available_balance`
+- `company_id`
+- `created_at`
+- `currency_code`
+- `current_balance`
+- `id`
+- `institution_id`
+- `institution_name`
+- `last_synced`
+- `mask`
+- `plaid_account_id`
+- `plaid_item_id`
+- `status`
+- `sync_cursor`
 
 ## customer_payment_methods
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | NOT NULL |
-| customer_id | integer | FK customers.id |
-| stripe_payment_method_id | text | NOT NULL |
-| stripe_customer_id | text | NOT NULL |
-| brand | text | |
-| last_four | text | |
-| exp_month | integer | |
-| exp_year | integer | |
-| is_default | boolean | false |
-| status | text | 'active' |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
+- `brand`
+- `company_id`
+- `created_at`
+- `customer_id`
+- `exp_month`
+- `exp_year`
+- `id`
+- `is_default`
+- `last_four`
+- `status`
+- `stripe_customer_id`
+- `stripe_payment_method_id`
+- `updated_at`
 
----
+## customer_portal_tokens
 
-## deal_activities
+- `access_count`
+- `accessed_at`
+- `company_id`
+- `created_at`
+- `customer_id`
+- `document_id`
+- `document_type`
+- `expires_at`
+- `id`
+- `is_revoked`
+- `token`
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | uuid | gen_random_uuid() |
-| company_id | integer | FK companies.id |
-| deal_id | uuid | |
-| activity_type | text | |
-| subject | text | |
-| description | text | |
-| from_stage_id | uuid | FK pipeline_stages.id |
-| to_stage_id | uuid | FK pipeline_stages.id |
-| scheduled_at | timestamptz | |
-| completed_at | timestamptz | |
-| is_completed | boolean | false |
-| created_by | integer | FK employees.id |
-| created_at | timestamptz | now() |
+## customers
 
----
+- `address`
+- `business_name`
+- `calendar_display`
+- `company_id`
+- `created_at`
+- `customer_id`
+- `email`
+- `id`
+- `job_title`
+- `marketing_opt_in`
+- `name`
+- `notes`
+- `phone`
+- `preferred_contact`
+- `preferred_invoice_format`
+- `salesperson`
+- `salesperson_id`
+- `secondary_contact_email`
+- `secondary_contact_name`
+- `secondary_contact_phone`
+- `secondary_contact_role`
+- `source_id`
+- `source_system`
+- `status`
+- `stripe_customer_id`
+- `tags`
+- `updated_at`
+- `utility_invoicing_enabled`
 
-## document_packages
+## doc_package_items
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| name | text | |
-| deal_type | text | |
-| description | text | |
-| form_ids | integer[] | |
-| docs | jsonb | |
-| dealer_id | integer | |
-| created_at | timestamptz | now() |
+- `company_id`
+- `created_at`
+- `id`
+- `service_type`
+- `sort_order`
+- `source_table`
+- `template_id`
 
----
+## document_approvals
+
+- `approved_at`
+- `approver_email`
+- `approver_name`
+- `company_id`
+- `document_hash`
+- `document_id`
+- `document_type`
+- `id`
+- `ip_address`
+- `legal_terms_hash`
+- `portal_token_id`
+- `signature_image_path`
+- `signature_method`
+- `signature_typed_text`
+- `user_agent`
+
+## document_templates
+
+- `category`
+- `company_id`
+- `created_at`
+- `field_count`
+- `field_mapping`
+- `file_name`
+- `file_path`
+- `file_size`
+- `form_code`
+- `form_name`
+- `id`
+- `is_custom`
+- `signature_fields`
+- `status`
+- `updated_at`
+
+## email_automations
+
+_empty table — columns unavailable_
+
+## email_campaigns
+
+_empty table — columns unavailable_
+
+## email_templates
+
+_empty table — columns unavailable_
+
+## employee_onboarding_packets
+
+- `company_id`
+- `completed_at`
+- `created_at`
+- `created_by`
+- `draft_data`
+- `employee_id`
+- `expires_at`
+- `i9_section2_completed_at`
+- `i9_section2_completed_by`
+- `i9_section2_due_date`
+- `id`
+- `is_revoked`
+- `opened_at`
+- `sent_at`
+- `sent_via`
+- `status`
+- `step_background_check_completed_at`
+- `step_direct_deposit_completed_at`
+- `step_emergency_contact_completed_at`
+- `step_handbook_completed_at`
+- `step_i9_section1_completed_at`
+- `step_personal_completed_at`
+- `step_signed_completed_at`
+- `step_state_w4_completed_at`
+- `step_training_completed_at`
+- `step_w4_completed_at`
+- `step_w9_completed_at`
+- `step_workers_comp_completed_at`
+- `token`
+- `updated_at`
 
 ## employees
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| employee_id | text | |
-| name | text | |
-| email | text | |
-| role | text | 'Field Tech' |
-| headshot_url | text | |
-| phone | text | |
-| gusto_uuid | text | |
-| gps_opt_in | boolean | false |
-| business_unit | text | |
-| user_role | text | 'User' |
-| active | boolean | true |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| headshot | text | |
-| is_developer | boolean | false |
-| is_admin | boolean | false |
-| hourly_rate | numeric | 0 |
-| salary | numeric | 0 |
-| pay_type | text[] | |
-| pto_days_per_year | numeric | 10 |
-| pto_accrued | numeric | 0 |
-| pto_used | numeric | 0 |
-| annual_salary | numeric | 0 |
-| commission_goods_rate | numeric | 0 |
-| commission_goods_type | text | 'percent' |
-| commission_services_rate | numeric | 0 |
-| commission_services_type | text | 'percent' |
-| commission_software_rate | numeric | 0 |
-| commission_software_type | text | 'percent' |
-| commission_leads_rate | numeric | 0 |
-| commission_leads_type | text | 'flat' |
-| commission_setter_rate | numeric | 25 |
-| commission_setter_type | text | 'flat' |
-| is_hourly | boolean | false |
-| is_salary | boolean | false |
-| is_commission | boolean | false |
-| tax_classification | text | 'W2' |
+- `active`
+- `annual_salary`
+- `business_unit`
+- `celebration_opt_out`
+- `commission_goods_rate`
+- `commission_goods_type`
+- `commission_leads_rate`
+- `commission_leads_type`
+- `commission_processor_rate`
+- `commission_processor_type`
+- `commission_services_rate`
+- `commission_services_type`
+- `commission_setter_rate`
+- `commission_setter_type`
+- `commission_software_rate`
+- `commission_software_type`
+- `company_id`
+- `created_at`
+- `date_of_birth`
+- `dd_account_encrypted`
+- `dd_account_last4`
+- `dd_account_type`
+- `dd_routing_encrypted`
+- `email`
+- `employee_id`
+- `gps_opt_in`
+- `gusto_uuid`
+- `has_hr_access`
+- `headshot`
+- `headshot_url`
+- `hire_date`
+- `home_address`
+- `home_city`
+- `home_state`
+- `home_zip`
+- `hourly_rate`
+- `id`
+- `is_admin`
+- `is_commission`
+- `is_developer`
+- `is_hourly`
+- `is_salary`
+- `last_login`
+- `name`
+- `new_hire_report_method`
+- `new_hire_reported_at`
+- `overtime_mode`
+- `pay_type`
+- `phone`
+- `pto_accrued`
+- `pto_days_per_year`
+- `pto_used`
+- `role`
+- `salary`
+- `skill_level`
+- `ssn_encrypted`
+- `ssn_last4`
+- `state_allowances`
+- `state_extra_withholding`
+- `state_filing_status`
+- `tax_classification`
+- `termination_date`
+- `updated_at`
+- `user_role`
+- `w4_deductions`
+- `w4_dependents_amount`
+- `w4_extra_withholding`
+- `w4_filing_status`
+- `w4_multiple_jobs`
+- `w4_other_income`
+- `w4_signed_at`
+- `w9_backup_withholding`
+- `w9_business_name`
+- `w9_ein_encrypted`
+- `w9_ein_last4`
+- `w9_exempt_fatca_code`
+- `w9_exempt_payee_code`
+- `w9_federal_classification`
+- `w9_legal_name`
+- `w9_other_classification`
+- `w9_signed_at`
+- `w9_tin_type`
 
----
+## estimate_messages
+
+- `body`
+- `channel`
+- `company_id`
+- `created_at`
+- `from_email`
+- `from_name`
+- `from_role`
+- `id`
+- `is_internal`
+- `metadata`
+- `quote_id`
+- `read_at`
+- `subject`
+- `to_email`
 
 ## expense_categories
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | |
-| name | text | |
-| icon | text | |
-| color | text | '#6b7280' |
-| type | text | 'expense' |
-| sort_order | integer | 0 |
+- `color`
+- `company_id`
+- `default_tax_category`
+- `icon`
+- `id`
+- `name`
+- `sort_order`
+- `type`
 
----
+## expense_splits
+
+- `amount`
+- `category_id`
+- `company_id`
+- `created_at`
+- `expense_id`
+- `id`
+- `note`
+- `plaid_transaction_id`
+- `tax_category`
+- `updated_at`
 
 ## expenses
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| expense_id | text | |
-| business_unit | text | |
-| job_id | integer | FK jobs.id |
-| amount | numeric | |
-| description | text | |
-| date | timestamptz | |
-| category | text | |
-| status | text | 'Pending' |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `account`
+- `amount`
+- `business`
+- `business_unit`
+- `category`
+- `client`
+- `company_id`
+- `created_at`
+- `date`
+- `description`
+- `expense_id`
+- `form_1065_category`
+- `id`
+- `job_id`
+- `lead_id`
+- `merchant`
+- `notes`
+- `plaid_transaction_id`
+- `quote_id`
+- `receipt`
+- `receipt_storage_path`
+- `receipt_url`
+- `source`
+- `status`
+- `tax_category`
+- `updated_at`
+- `vendor`
 
 ## feedback
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | uuid | gen_random_uuid() |
-| company_id | integer | FK companies.id |
-| user_email | text | |
-| page_url | text | |
-| feedback_type | text | |
-| message | text | |
-| screenshot_url | text | |
-| status | text | 'new' |
-| created_at | timestamptz | now() |
-| resolved_at | timestamptz | |
-| resolved_by | text | |
-| notes | text | |
+- `company_id`
+- `created_at`
+- `feedback_type`
+- `id`
+- `message`
+- `notes`
+- `page_url`
+- `replied_at`
+- `reply_history`
+- `reply_message`
+- `resolved_at`
+- `resolved_by`
+- `screenshot_url`
+- `status`
+- `subject`
+- `user_email`
 
----
+## file_attachments
+
+- `company_id`
+- `created_at`
+- `created_by`
+- `file_name`
+- `file_path`
+- `file_size`
+- `file_type`
+- `id`
+- `job_id`
+- `job_line_id`
+- `lead_id`
+- `photo_context`
+- `quote_id`
+- `quote_line_id`
+- `storage_bucket`
 
 ## fixture_types
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| fixture_id | text | |
-| fixture_name | text | |
-| category | text | |
-| lamp_type | text | |
-| lamp_count | integer | |
-| system_wattage | integer | |
-| visual_characteristics | text | |
-| led_replacement_watts | integer | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
+- `category`
+- `company_id`
+- `created_at`
+- `fixture_id`
+- `fixture_name`
+- `id`
+- `lamp_count`
+- `lamp_type`
+- `led_replacement_watts`
+- `system_wattage`
+- `updated_at`
+- `visual_characteristics`
 
----
+## fleet_fuel_logs
 
-## fleet
+_empty table — columns unavailable_
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| asset_id | text | |
-| type | text | |
-| name | text | |
-| last_pm_date | date | |
-| next_pm_due | date | |
-| mileage_hours | numeric | |
-| status | text | 'Available' |
-| maintenance_alert | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| business_unit | text | |
-| repair_id | text | |
-| repair_date | date | |
-| repair_description | text | |
-| repair_cost | numeric | |
-| rental_id | text | |
-| rental_start_date | date | |
-| rental_end_date | date | |
-| rental_customer | text | |
-| rental_rate | numeric | |
-| description | text | |
+## google_calendar_tokens
 
----
+_empty table — columns unavailable_
 
-## fleet_maintenance
+## incentive_measures
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| maintenance_id | text | |
-| asset_id | integer | FK fleet.id |
-| type | text | |
-| date | timestamptz | |
-| mileage_hours | numeric | |
-| description | text | |
-| cost | numeric | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
-
-## fleet_rentals
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| rental_id | text | |
-| asset_id | integer | FK fleet.id |
-| rental_customer | text | |
-| start_date | timestamptz | |
-| end_date | timestamptz | |
-| rental_rate | text | |
-| status | text | 'Active' |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
-
-## form_registry
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| state | text | |
-| county | text | |
-| form_number | text | |
-| form_name | text | |
-| category | text | 'deal' |
-| required_for | text[] | |
-| source_url | text | |
-| download_url | text | |
-| description | text | |
-| is_fillable | boolean | false |
-| storage_bucket | text | |
-| storage_path | text | |
-| detected_fields | jsonb | |
-| field_mappings | jsonb | |
-| ai_discovered | boolean | false |
-| ai_confidence | numeric | |
-| last_verified | date | |
-| dealer_id | integer | |
-| created_at | timestamptz | now() |
-
----
-
-## helpers
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| list_name | text | |
-| dynamic_list | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
-
-## incentives
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| incentive_id | text | |
-| job_id | integer | FK jobs.id |
-| incentive_amount | numeric | |
-| utility_name | text | |
-| status | text | 'Pending' |
-| notes | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `baseline_description`
+- `calc_method`
+- `cap_amount`
+- `cap_percent`
+- `company_id`
+- `control_level`
+- `created_at`
+- `effective_date`
+- `equipment_requirements`
+- `expiration_date`
+- `fixture_category`
+- `id`
+- `installation_requirements`
+- `location_type`
+- `max_watts`
+- `measure_category`
+- `measure_subcategory`
+- `measure_type`
+- `min_watts`
+- `notes`
+- `pdf_verified`
+- `per_unit_cap`
+- `program_id`
+- `project_cap_percent`
+- `rate`
+- `rate_id`
+- `rate_unit`
+- `rate_value`
+- `replacement_description`
+- `requirements`
+- `source_pdf_url`
+- `tier`
+- `updated_at`
+- `useful_life_years`
 
 ## inventory
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| item_id | text | |
-| name | text | |
-| quantity | numeric | |
-| min_quantity | numeric | |
-| available | boolean | true |
-| location | text | |
-| last_updated | date | |
-| ordering_trigger | text | |
-| product_id | integer | FK products_services.id |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| inventory_type | text | 'Material' |
-| barcode | text | |
-| image_url | text | |
-| condition | text | 'Good' |
-| assigned_to | integer | FK employees.id |
-| serial_number | text | |
-| group_id | integer | FK product_groups.id |
+- `allocated_qty`
+- `assigned_to`
+- `available`
+- `barcode`
+- `company_id`
+- `condition`
+- `created_at`
+- `group_id`
+- `id`
+- `image_url`
+- `inventory_type`
+- `item_id`
+- `last_updated`
+- `location`
+- `min_quantity`
+- `name`
+- `ordering_trigger`
+- `product_id`
+- `quantity`
+- `serial_number`
+- `updated_at`
 
----
+## invoice_lines
+
+- `company_id`
+- `created_at`
+- `description`
+- `discount`
+- `id`
+- `in_utility_scope`
+- `invoice_id`
+- `item_id`
+- `labor_cost`
+- `line_number`
+- `line_total`
+- `quantity`
+- `sort_order`
+- `unit_price`
+- `updated_at`
 
 ## invoices
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| invoice_id | text | |
-| business_unit | text | |
-| customer_id | integer | FK customers.id |
-| job_id | integer | FK jobs.id |
-| amount | numeric | gross total (line-item sum) |
-| payment_method | text | |
-| payment_status | text | 'Pending' |
-| discount_applied | numeric | TOTAL deduction (project discount + incentive + rolled-in deposit). Balance = amount − discount_applied |
-| project_discount | numeric | portion of discount_applied that is a whole-project discount (display breakout) |
-| credit_card_fee | numeric | |
-| job_description | text | |
-| parent_invoice_id | integer | FK invoices.id — deposit invoice rolled into discount_applied |
-| invoice_type | text | e.g. 'deposit' |
-| summary_format | boolean | PDF shows Parts/Labor totals instead of line items |
-| parts_total_override | numeric(12,2) | manual Parts total — with labor_total_override, wins over computed split everywhere |
-| labor_total_override | numeric(12,2) | manual Labor total (pair with parts_total_override; both NULL = auto-compute) |
-| due_date | date | |
-| sent_to_email | text | |
-| notes | text | |
-| is_locked | boolean | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
+- `amount`
+- `business_unit`
+- `company_id`
+- `conversation_log`
+- `created_at`
+- `credit_card_fee`
+- `customer_id`
+- `discount_applied`
+- `due_date`
+- `email_bounce_reason`
+- `email_clicked_at`
+- `email_id`
+- `email_opened_at`
+- `email_status`
+- `email_status_at`
+- `hide_line_descriptions`
+- `id`
+- `invoice_date`
+- `invoice_id`
+- `invoice_type`
+- `is_locked`
+- `job_description`
+- `job_id`
+- `labor_total_override`
+- `last_sent_at`
+- `notes`
+- `parent_invoice_id`
+- `parts_total_override`
+- `payment_method`
+- `payment_status`
+- `pdf_url`
+- `portal_token`
+- `project_discount`
+- `sent_to_email`
+- `source_id`
+- `source_system`
+- `stripe_payment_link_id`
+- `stripe_payment_link_url`
+- `summary_format`
+- `updated_at`
 
----
+## job_bonuses
+
+- `accrued_at`
+- `actual_hours`
+- `allotted_hours`
+- `amount`
+- `company_id`
+- `created_at`
+- `crew_size`
+- `employee_id`
+- `id`
+- `job_id`
+- `needs_verification`
+- `paid_at`
+- `paid_by`
+- `paid_pay_period_end`
+- `paid_pay_period_start`
+- `release_reason`
+- `saved_hours`
+- `status`
+- `updated_at`
+- `verification_overridden_at`
+- `verification_overridden_by`
 
 ## job_lines
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| job_line_id | text | |
-| job_id | integer | FK jobs.id |
-| item_id | integer | FK products_services.id |
-| quantity | integer | 1 |
-| price | numeric | |
-| total | numeric | |
-| description | text | |
-| notes | text | |
-| totals | numeric | |
-| photos | text[] | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `allocated_qty`
+- `company_id`
+- `consumed_qty`
+- `created_at`
+- `description`
+- `discount`
+- `id`
+- `in_utility_scope`
+- `item_id`
+- `item_name`
+- `job_id`
+- `job_line_id`
+- `kind`
+- `labor_cost`
+- `notes`
+- `photos`
+- `po_line_id`
+- `price`
+- `quantity`
+- `source_id`
+- `source_system`
+- `taxable`
+- `total`
+- `totals`
+- `unit_of_measure`
+- `updated_at`
 
 ## job_sections
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| job_id | integer | FK jobs.id |
-| name | text | |
-| description | text | |
-| sort_order | integer | 0 |
-| percent_of_job | numeric | 0 |
-| status | text | 'Not Started' |
-| assigned_to | integer | FK employees.id |
-| scheduled_date | date | |
-| start_time | timestamptz | |
-| end_time | timestamptz | |
-| estimated_hours | numeric | |
-| actual_hours | numeric | |
-| notes | text | |
-| verified_by | integer | FK employees.id |
-| verified_at | timestamptz | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | now() |
-
----
+- `actual_hours`
+- `assigned_to`
+- `company_id`
+- `created_at`
+- `description`
+- `end_time`
+- `estimated_hours`
+- `id`
+- `job_id`
+- `name`
+- `notes`
+- `percent_of_job`
+- `scheduled_date`
+- `sort_order`
+- `start_time`
+- `status`
+- `updated_at`
+- `verified_at`
+- `verified_by`
 
 ## jobs
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| job_id | text | |
-| business_unit | text | |
-| allotted_time_hours | numeric | |
-| customer_id | integer | FK customers.id |
-| salesperson_id | integer | FK employees.id |
-| status | text | 'Scheduled' |
-| assigned_team | text | |
-| start_date | timestamptz | |
-| end_date | timestamptz | |
-| details | text | |
-| invoice_status | text | 'Not Invoiced' |
-| time_tracked | numeric | 0 |
-| recurrence | text | |
-| expense_amount | numeric | |
-| job_address | text | |
-| gps_location | text | |
-| profit_margin | numeric | |
-| incentive_amount | numeric | |
-| utility_name | text | |
-| incentive_status | text | |
-| quote_id | integer | FK quotes.id |
-| job_title | text | |
-| utility_incentive | numeric | 0 |
-| discount | numeric | 0 |
-| discount_description | text | |
-| work_order_pdf_url | text | |
-| calculated_allotted_time | numeric | |
-| job_total | numeric | |
-| out_of_pocket_total | numeric | |
-| lead_id | text | |
-| customer_name | text | |
-| email | text | |
-| phone | text | |
-| address | text | |
-| service_type | text | |
-| lead_source | text | |
-| notes | text | |
-| quote_generated | boolean | false |
-| business_name | text | |
-| last_updated | timestamptz | |
-| lead_source_name | text | |
-| appointment_edit_link | boolean | false |
-| calendar_embed_url | text | |
-| sales_meeting_calendar_url | text | |
-| sales_calendar_web_link | text | |
-| unique_temp | text | |
-| computed_status | text | |
-| appointment_time | timestamptz | |
-| event_id | text | |
-| edit_link | text | |
-| route_id | integer | |
-| team | text | |
-| date | timestamptz | |
-| job_ids | text | |
-| route_order | text | |
-| total_distance | numeric | |
-| total_time | numeric | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| work_order_pdf | text | |
-| generate_work_order | boolean | false |
-| salesperson | text | |
-| audit_id | integer | |
-| pm_id | integer | FK employees.id |
-| job_lead_id | integer | FK employees.id |
-
----
+- `address`
+- `allotted_time_hours`
+- `appointment_edit_link`
+- `appointment_time`
+- `assigned_team`
+- `audit_id`
+- `business_name`
+- `business_unit`
+- `calculated_allotted_time`
+- `calendar_embed_url`
+- `company_id`
+- `completed_at`
+- `computed_status`
+- `coverage_notes`
+- `created_at`
+- `customer_id`
+- `customer_name`
+- `customer_signature_captured_at`
+- `customer_signature_method`
+- `customer_signature_path`
+- `customer_signature_typed`
+- `date`
+- `details`
+- `discount`
+- `discount_description`
+- `edit_link`
+- `email`
+- `end_date`
+- `event_id`
+- `expense_amount`
+- `generate_work_order`
+- `gps_location`
+- `id`
+- `incentive_amount`
+- `incentive_status`
+- `invoice_status`
+- `job_address`
+- `job_id`
+- `job_ids`
+- `job_lead_id`
+- `job_title`
+- `job_total`
+- `labor_coverage`
+- `labor_coverage_until_date`
+- `last_status_change_at`
+- `last_updated`
+- `lawn_property_id`
+- `lead_id`
+- `lead_source`
+- `lead_source_name`
+- `notes`
+- `out_of_pocket_total`
+- `parent_job_id`
+- `parts_coverage`
+- `parts_coverage_until_date`
+- `parts_status`
+- `phone`
+- `pm_id`
+- `prepaid_revenue`
+- `profit_margin`
+- `quote_generated`
+- `quote_id`
+- `recurrence`
+- `recurrence_parent_id`
+- `route_id`
+- `route_order`
+- `sales_calendar_web_link`
+- `sales_meeting_calendar_url`
+- `salesperson`
+- `salesperson_id`
+- `service_due_date`
+- `service_kind`
+- `service_type`
+- `signed_proposal_attachment_id`
+- `source_id`
+- `source_system`
+- `start_date`
+- `status`
+- `team`
+- `time_tracked`
+- `total_distance`
+- `total_time`
+- `unique_temp`
+- `updated_at`
+- `utility_incentive`
+- `utility_name`
+- `work_order_pdf`
+- `work_order_pdf_url`
 
 ## labor_rates
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| name | text | |
-| rate_per_hour | numeric | |
-| cost_per_hour | numeric | 0 |
-| description | text | |
-| multiplier | numeric | 1 |
-| active | boolean | true |
-| is_default | boolean | false |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | now() |
+- `active`
+- `company_id`
+- `cost_per_hour`
+- `created_at`
+- `description`
+- `id`
+- `is_default`
+- `multiplier`
+- `name`
+- `rate_per_hour`
+- `updated_at`
 
----
+## lawn_estimates
+
+_empty table — columns unavailable_
+
+## lawn_pricing
+
+- `aeration_minimum`
+- `aeration_per_1000sqft`
+- `ai_calibration_factor`
+- `ai_sample_n`
+- `cleanup_per_hour`
+- `company_id`
+- `created_at`
+- `edging_default_lin_ft`
+- `edging_per_lin_ft`
+- `fert_per_1000sqft`
+- `grub_per_1000sqft`
+- `id`
+- `iron_per_1000sqft`
+- `lime_per_1000sqft`
+- `margin_multiplier`
+- `mow_minimum`
+- `mow_minutes_per_1000sqft`
+- `mow_per_sqft`
+- `overseed_per_1000sqft`
+- `pre_emergent_per_1000sqft`
+- `tax_rate`
+- `travel_per_visit`
+- `updated_at`
+- `weed_per_1000sqft`
+
+## lawn_properties
+
+- `active`
+- `address`
+- `ai_confidence`
+- `ai_estimated_at`
+- `ai_estimated_sqft`
+- `ai_image_url`
+- `ai_obstacles`
+- `ai_reasoning`
+- `city`
+- `company_id`
+- `created_at`
+- `customer_id`
+- `dog_notes`
+- `dog_on_premises`
+- `effort_factor`
+- `effort_sample_n`
+- `gate_code`
+- `hazards`
+- `id`
+- `irrigation_notes`
+- `latitude`
+- `lead_id`
+- `longitude`
+- `lot_size_sqft`
+- `map_static_url`
+- `mow_day`
+- `mow_frequency`
+- `mow_height_inches`
+- `notes`
+- `obstacles`
+- `preferred_crew`
+- `property_name`
+- `service_end_month`
+- `service_start_month`
+- `state`
+- `turf_polygon`
+- `turf_size_sqft`
+- `turf_type`
+- `updated_at`
+- `zip`
+
+## lawn_treatments
+
+_empty table — columns unavailable_
+
+## lawn_visits
+
+_empty table — columns unavailable_
 
 ## lead_commissions
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| lead_id | integer | FK leads.id |
-| appointment_id | integer | FK appointments.id |
-| commission_type | text | |
-| employee_id | integer | FK employees.id |
-| amount | numeric | 0 |
-| rate_type | text | 'flat' |
-| payment_status | text | 'pending' |
-| notes | text | |
-| created_at | timestamptz | now() |
-
----
+- `amount`
+- `appointment_id`
+- `commission_type`
+- `company_id`
+- `created_at`
+- `employee_id`
+- `id`
+- `lead_id`
+- `notes`
+- `payment_status`
+- `rate_type`
 
 ## lead_payments
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| payment_id | text | |
-| lead_id | integer | FK leads.id |
-| lead_source | text | |
-| amount | numeric | |
-| payment_status | text | 'Pending' |
-| date_created | date | |
-| notes | text | |
-| setter_pay_per_appointment | numeric | |
-| marketer_pay_per_appointment | numeric | |
-| lead_customer_name | text | |
-| receipt_photo | text | |
-| invoice_id | integer | FK invoices.id |
-| job_id | integer | FK jobs.id |
-| payment_method | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `account`
+- `amount`
+- `business`
+- `company_id`
+- `created_at`
+- `date_created`
+- `description`
+- `id`
+- `invoice_id`
+- `job_id`
+- `lead_customer_name`
+- `lead_id`
+- `lead_source`
+- `marketer_pay_per_appointment`
+- `notes`
+- `payment_id`
+- `payment_method`
+- `payment_status`
+- `receipt`
+- `receipt_photo`
+- `setter_pay_per_appointment`
+- `updated_at`
 
 ## leads
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| lead_id | text | |
-| business_unit | text | |
-| customer_name | text | |
-| email | text | |
-| phone | text | |
-| address | text | |
-| service_type | text | |
-| lead_source | text | |
-| status | text | 'New' |
-| salesperson_id | integer | FK employees.id |
-| notes | text | |
-| created_date | timestamptz | now() |
-| quote_generated | boolean | false |
-| business_name | text | |
-| job_title | text | |
-| last_updated | timestamptz | |
-| lead_source_name | text | |
-| appointment_edit_link | boolean | false |
-| calendar_embed_url | text | |
-| sales_meeting_calendar_url | text | |
-| sales_calendar_web_link | text | |
-| unique_temp | text | |
-| computed_status | text | |
-| appointment_time | timestamptz | |
-| event_id | text | |
-| edit_link | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| salesperson | text | |
-| setter_id | integer | FK employees.id |
-| appointment_id | integer | FK appointments.id |
-| last_contact_at | timestamptz | |
-| contact_attempts | integer | 0 |
-| callback_date | date | |
-| callback_notes | text | |
-| lead_owner_id | integer | FK employees.id |
-| setter_owner_id | integer | FK employees.id |
-| customer_id | integer | |
-| converted_at | timestamptz | |
-| quote_id | integer | |
-
----
+- `address`
+- `appointment_edit_link`
+- `appointment_id`
+- `appointment_time`
+- `business_name`
+- `business_unit`
+- `calendar_embed_url`
+- `callback_date`
+- `callback_notes`
+- `company_id`
+- `computed_status`
+- `contact_attempts`
+- `converted_at`
+- `converted_customer_id`
+- `created_at`
+- `created_date`
+- `customer_id`
+- `customer_name`
+- `customer_signature_captured_at`
+- `customer_signature_method`
+- `customer_signature_path`
+- `customer_signature_typed`
+- `edit_link`
+- `ein`
+- `email`
+- `enrichment_data`
+- `event_id`
+- `external_prospect_id`
+- `id`
+- `job_title`
+- `last_contact_at`
+- `last_updated`
+- `lead_id`
+- `lead_owner_id`
+- `lead_source`
+- `lead_source_employee_id`
+- `lead_source_name`
+- `meter_number`
+- `notes`
+- `phone`
+- `quote_generated`
+- `quote_id`
+- `sales_calendar_web_link`
+- `sales_meeting_calendar_url`
+- `salesperson`
+- `salesperson_id`
+- `salesperson_ids`
+- `service_type`
+- `setter_id`
+- `setter_owner_id`
+- `source_id`
+- `source_system`
+- `status`
+- `unique_temp`
+- `updated_at`
 
 ## liabilities
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| name | text | |
-| liability_type | text | |
-| current_balance | numeric | |
-| monthly_payment | numeric | |
-| lender | text | |
-| status | text | 'active' |
-| created_at | timestamptz | now() |
-
----
+_empty table — columns unavailable_
 
 ## lighting_audits
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| audit_id | text | |
-| customer_id | integer | FK customers.id |
-| job_id | integer | FK jobs.id |
-| created_by | text | |
-| created_date | date | |
-| status | text | 'Draft' |
-| address | text | |
-| city | text | |
-| state | text | |
-| zip | text | |
-| utility_provider_id | integer | FK utility_providers.id |
-| electric_rate | numeric | |
-| operating_hours | integer | |
-| operating_days | integer | |
-| total_existing_watts | integer | |
-| total_proposed_watts | integer | |
-| total_fixtures | integer | |
-| annual_savings_kwh | integer | |
-| annual_savings_dollars | numeric | |
-| estimated_rebate | numeric | |
-| est_project_cost | numeric | |
-| net_cost | numeric | |
-| payback_months | numeric | |
-| proposal_pdf_url | text | |
-| notes | text | |
-| watts_reduced | integer | |
-| applicable_rebate_rate | numeric | |
-| calculated_rebate | numeric | |
-| rebate_capped | integer | |
-| rebate_source | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| proposal_pdf | text | |
-| lead_id | integer | |
+- `address`
+- `annual_savings_dollars`
+- `annual_savings_kwh`
+- `applicable_rebate_rate`
+- `audit_id`
+- `calculated_rebate`
+- `city`
+- `company_id`
+- `created_at`
+- `created_by`
+- `created_date`
+- `customer_id`
+- `customer_signature`
+- `electric_rate`
+- `est_project_cost`
+- `estimated_rebate`
+- `id`
+- `job_id`
+- `lead_id`
+- `net_cost`
+- `notes`
+- `operating_days`
+- `operating_hours`
+- `payback_months`
+- `proposal_pdf`
+- `proposal_pdf_url`
+- `rate_schedule`
+- `rebate_capped`
+- `rebate_source`
+- `state`
+- `status`
+- `total_existing_watts`
+- `total_fixtures`
+- `total_proposed_watts`
+- `updated_at`
+- `utility_provider_id`
+- `watts_reduced`
+- `zip`
 
----
+## location_pings
+
+- `accuracy`
+- `company_id`
+- `created_at`
+- `employee_id`
+- `id`
+- `lat`
+- `lng`
+- `pinged_at`
+- `time_clock_id`
 
 ## manual_expenses
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| description | text | |
-| amount | numeric | |
-| expense_date | date | |
-| vendor | text | |
-| category_id | integer | FK expense_categories.id |
-| created_at | timestamptz | now() |
+_empty table — columns unavailable_
 
----
+## migration_jobs
+
+- `company_id`
+- `counts`
+- `created_at`
+- `error`
+- `finished_at`
+- `id`
+- `report`
+- `source`
+- `started_at`
+- `status`
+- `triggered_by`
+
+## payment_plans
+
+_empty table — columns unavailable_
 
 ## payments
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| payment_id | text | |
-| invoice_id | integer | FK invoices.id |
-| amount | numeric | |
-| date | date | |
-| method | text | |
-| status | text | 'Pending' |
-| notes | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
+- `amount`
+- `company_id`
+- `created_at`
+- `customer_id`
+- `date`
+- `id`
+- `invoice_id`
+- `is_deposit`
+- `job_id`
+- `method`
+- `notes`
+- `payment_id`
+- `quote_id`
+- `receipt_photo`
+- `refund_reason`
+- `refunded_amount`
+- `refunded_at`
+- `source`
+- `source_id`
+- `source_system`
+- `source_transaction_id`
+- `status`
+- `stripe_payment_intent_id`
+- `stripe_refund_id`
+- `updated_at`
 
----
+## payroll_adjustments
 
-## payroll_runs
+- `amount`
+- `category`
+- `company_id`
+- `created_at`
+- `created_by`
+- `employee_id`
+- `id`
+- `metadata`
+- `pay_period_end`
+- `pay_period_start`
+- `reason`
+- `recurring`
+- `type`
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| period_start | date | |
-| period_end | date | |
-| pay_date | date | |
-| status | text | 'completed' |
-| total_gross | numeric | |
-| employee_count | integer | |
-| created_by | integer | FK employees.id |
-| created_at | timestamptz | now() |
+## payroll_tax_filings
 
----
+_empty table — columns unavailable_
+
+## payroll_tax_liabilities
+
+_empty table — columns unavailable_
 
 ## paystubs
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| employee_id | integer | FK employees.id |
-| payroll_run_id | integer | FK payroll_runs.id |
-| period_start | date | |
-| period_end | date | |
-| pay_date | date | |
-| regular_hours | numeric | 0 |
-| overtime_hours | numeric | 0 |
-| pto_hours | numeric | 0 |
-| hourly_rate | numeric | |
-| salary_amount | numeric | |
-| gross_pay | numeric | |
-| created_at | timestamptz | now() |
+- `additional_medicare`
+- `amendment_reason`
+- `amends_paystub_id`
+- `bonus_pay`
+- `commission_pay`
+- `company_id`
+- `created_at`
+- `employee_id`
+- `federal_income_tax`
+- `futa`
+- `gross_pay`
+- `hourly_rate`
+- `id`
+- `medicare_employee`
+- `medicare_employer`
+- `net_pay`
+- `overtime_hours`
+- `pay_date`
+- `payroll_run_id`
+- `period_end`
+- `period_start`
+- `post_tax_deductions`
+- `pre_tax_deductions`
+- `pto_hours`
+- `regular_hours`
+- `reimbursement_pay`
+- `salary_amount`
+- `social_security_employee`
+- `social_security_employer`
+- `state_income_tax`
+- `sui`
+- `taxable_wages`
 
----
+## plaid_transactions
+
+- `ai_category`
+- `ai_confidence`
+- `ai_form_1065_line`
+- `ai_job_confidence`
+- `ai_job_id`
+- `ai_tax_category`
+- `amount`
+- `authorized_date`
+- `company_id`
+- `confirmed`
+- `connected_account_id`
+- `created_at`
+- `date`
+- `expense_id`
+- `id`
+- `is_transfer`
+- `job_id`
+- `matched_at`
+- `matched_by`
+- `matched_invoice_id`
+- `matched_payment_id`
+- `merchant_name`
+- `name`
+- `notes`
+- `pending`
+- `plaid_category`
+- `plaid_personal_finance_category`
+- `plaid_transaction_id`
+- `user_category`
+- `user_tax_category`
 
 ## prescriptive_measures
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| program_id | integer | FK utility_programs.id, NOT NULL |
-| measure_code | text | |
-| measure_name | text | NOT NULL |
-| measure_category | text | 'Lighting' |
-| measure_subcategory | text | |
-| baseline_equipment | text | |
-| baseline_wattage | numeric | |
-| baseline_lamp_count | integer | |
-| baseline_condition | text | |
-| replacement_equipment | text | |
-| replacement_wattage | numeric | |
-| replacement_lamp_count | integer | |
-| watts_reduced | numeric | GENERATED (baseline_wattage - replacement_wattage) |
-| incentive_amount | numeric | NOT NULL |
-| incentive_unit | text | 'per_fixture' |
-| incentive_formula | text | |
-| max_incentive | numeric | |
-| max_project_percent | numeric | |
-| min_quantity | integer | |
-| max_quantity | integer | |
-| location_type | text | |
-| application_type | text | 'retrofit' |
-| building_type | text | |
-| hours_requirement | integer | |
-| dlc_required | boolean | false |
-| dlc_tier | text | |
-| energy_star_required | boolean | false |
-| other_certification | text | |
-| effective_date | date | |
-| expiration_date | date | |
-| is_active | boolean | true |
-| source_page | text | |
-| source_url | text | |
-| source_notes | text | |
-| needs_pdf_upload | boolean | false |
-| source_pdf_url | text | |
-| notes | text | |
-| ai_match_keywords | text[] | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
+- `ai_match_keywords`
+- `annual_kwh_per_unit`
+- `application_type`
+- `baseline_condition`
+- `baseline_equipment`
+- `baseline_lamp_count`
+- `baseline_wattage`
+- `building_type`
+- `company_id`
+- `created_at`
+- `dlc_required`
+- `dlc_tier`
+- `effective_date`
+- `energy_star_required`
+- `expiration_date`
+- `hours_requirement`
+- `id`
+- `incentive_amount`
+- `incentive_formula`
+- `incentive_unit`
+- `incremental_cost_per_unit`
+- `is_active`
+- `location_type`
+- `max_incentive`
+- `max_project_percent`
+- `max_quantity`
+- `measure_category`
+- `measure_code`
+- `measure_name`
+- `measure_subcategory`
+- `min_quantity`
+- `needs_pdf_upload`
+- `notes`
+- `other_certification`
+- `program_id`
+- `replacement_equipment`
+- `replacement_lamp_count`
+- `replacement_wattage`
+- `rmp_business_type`
+- `rmp_controls_tier`
+- `rmp_is_sbe`
+- `source_notes`
+- `source_page`
+- `source_pdf_url`
+- `source_url`
+- `updated_at`
+- `watts_reduced`
 
----
+## product_components
 
-## pipeline_stages
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | uuid | gen_random_uuid() |
-| company_id | integer | FK companies.id |
-| name | text | |
-| position | integer | 0 |
-| win_probability | integer | 0 |
-| color | text | '#5a6349' |
-| is_won | boolean | false |
-| is_lost | boolean | false |
-| rotting_days | integer | 14 |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | now() |
-
----
+- `company_id`
+- `component_product_id`
+- `created_at`
+- `id`
+- `parent_product_id`
+- `quantity`
 
 ## product_groups
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| service_type | text | |
-| name | text | |
-| description | text | |
-| image_url | text | |
-| icon | text | 'Package' |
-| sort_order | integer | 0 |
-| active | boolean | true |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | now() |
-
----
+- `active`
+- `company_id`
+- `created_at`
+- `description`
+- `icon`
+- `id`
+- `image_url`
+- `name`
+- `service_type`
+- `sort_order`
+- `updated_at`
 
 ## products_services
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| item_id | text | |
-| business_unit | text | |
-| type | text | 'Service' |
-| name | text | |
-| description | text | |
-| unit_price | numeric | |
-| cost | numeric | |
-| markup_percent | numeric | |
-| taxable | boolean | true |
-| image_url | text | |
-| active | boolean | true |
-| allotted_time_hours | numeric | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| image | text | |
-| group_id | integer | FK product_groups.id |
-| labor_rate_id | integer | FK labor_rates.id |
-| manufacturer | text | |
-| model_number | text | |
-| product_category | text | |
-| dlc_listed | boolean | false |
-| dlc_listing_number | text | |
-| warranty_years | numeric | |
-| spec_sheet_url | text | |
-| install_guide_url | text | |
-| datasheet_json | jsonb | {} |
+- `active`
+- `allotted_time_hours`
+- `business_unit`
+- `ceiling_price`
+- `company_id`
+- `cost`
+- `created_at`
+- `datasheet_json`
+- `default_vendor_id`
+- `description`
+- `dlc_document_url`
+- `dlc_listed`
+- `dlc_listing_number`
+- `floor_price`
+- `group_id`
+- `id`
+- `image`
+- `image_url`
+- `in_utility_scope`
+- `install_guide_url`
+- `item_id`
+- `labor_coverage_months_added`
+- `labor_rate_id`
+- `lead_time_days`
+- `manufacturer`
+- `markup_percent`
+- `material_or_labor`
+- `model_number`
+- `name`
+- `parts_coverage_months_added`
+- `pricing_ceiling`
+- `pricing_floor`
+- `pricing_model`
+- `pricing_percent`
+- `product_category`
+- `reorder_point`
+- `reorder_qty`
+- `spec_sheet_url`
+- `suggest_in_lenard`
+- `taxable`
+- `type`
+- `unit_price`
+- `updated_at`
+- `vendor_sku`
+- `warranty_years`
 
----
+## prospect_enrichments
+
+- `company_id`
+- `company_name`
+- `created_at`
+- `email`
+- `external_org_id`
+- `external_prospect_id`
+- `full_name`
+- `id`
+- `imported_as_lead_id`
+- `imported_at`
+- `linkedin_url`
+- `payload`
+- `phone`
+- `revealed_at`
+- `source`
+- `title`
+
+## prospecting_usage
+
+- `company_id`
+- `created_at`
+- `enrichments`
+- `enrichments_overage`
+- `id`
+- `period`
+- `searches`
+- `searches_overage`
+- `updated_at`
+
+## purchase_order_line_jobs
+
+- `company_id`
+- `created_at`
+- `id`
+- `job_id`
+- `job_line_id`
+- `po_line_id`
+- `quantity`
+
+## purchase_order_lines
+
+- `company_id`
+- `created_at`
+- `description`
+- `id`
+- `line_total`
+- `po_id`
+- `product_id`
+- `quantity_ordered`
+- `quantity_received`
+- `sort_order`
+- `unit_cost`
+- `updated_at`
+
+## purchase_orders
+
+- `business_unit`
+- `closed_at`
+- `company_id`
+- `created_at`
+- `created_by`
+- `expected_delivery_date`
+- `id`
+- `internal_notes`
+- `job_id`
+- `notes`
+- `pdf_url`
+- `po_number`
+- `received_at`
+- `sent_at`
+- `ship_to_address`
+- `shipping`
+- `status`
+- `subtotal`
+- `tax`
+- `total`
+- `updated_at`
+- `vendor_acknowledgement_ref`
+- `vendor_id`
 
 ## quote_lines
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| line_id | text | |
-| quote_id | integer | FK quotes.id |
-| item_id | integer | FK products_services.id |
-| quantity | integer | 1 |
-| price | numeric | |
-| line_total | numeric | |
-| total | numeric | |
-| item_name | text | |
-| notes | text | |
-| photos | text[] | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `company_id`
+- `created_at`
+- `description`
+- `discount`
+- `id`
+- `image_url`
+- `in_utility_scope`
+- `item_id`
+- `item_name`
+- `kind`
+- `labor_cost`
+- `line_id`
+- `line_total`
+- `notes`
+- `photos`
+- `price`
+- `quantity`
+- `quote_id`
+- `sort_order`
+- `source_id`
+- `source_system`
+- `taxable`
+- `total`
+- `unit_of_measure`
+- `updated_at`
 
 ## quotes
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| quote_id | text | |
-| business_unit | text | |
-| lead_id | integer | FK leads.id |
-| customer_id | integer | FK customers.id |
-| salesperson_id | integer | FK employees.id |
-| quote_amount | numeric | |
-| sent_date | timestamptz | |
-| status | text | 'Draft' |
-| contract_required | boolean | false |
-| contract_signed | boolean | false |
-| follow_up_1 | timestamptz | |
-| follow_up_2 | timestamptz | |
-| temp_customer_id | text | |
-| temp_job_id | text | |
-| job_title | text | |
-| utility_incentive | numeric | 0 |
-| discount | numeric | 0 |
-| discount_description | text | |
-| service_type | text | |
-| calculated_quote_amount | numeric | |
-| job_total | numeric | |
-| out_of_pocket_total | numeric | |
-| metric | text | |
-| value | numeric | |
-| category | text | |
-| date | timestamptz | |
-| profit | numeric | |
-| notes | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| salesperson | text | |
-| audit_id | integer | |
-| audit_type | text | |
-
----
-
-## incentive_measures (renamed from rebate_rates)
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| rate_id | text | |
-| program_id | integer | FK utility_programs.id |
-| location_type | text | |
-| fixture_category | text | |
-| control_level | text | |
-| calc_method | text | |
-| rate | numeric | |
-| rate_unit | text | |
-| min_watts | integer | |
-| max_watts | integer | |
-| notes | text | |
-| measure_type | text | |
-| rate_value | numeric | |
-| cap_amount | numeric | |
-| cap_percent | numeric | |
-| requirements | text | |
-| measure_category | text | 'Lighting' |
-| measure_subcategory | text | |
-| equipment_requirements | text | |
-| installation_requirements | text | |
-| baseline_description | text | |
-| replacement_description | text | |
-| useful_life_years | integer | |
-| tier | text | |
-| effective_date | date | |
-| expiration_date | date | |
-| per_unit_cap | numeric | |
-| project_cap_percent | numeric | |
-| source_pdf_url | text | |
-| pdf_verified | boolean | false |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
-
-## rebate_update_log
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| log_id | text | |
-| timestamp | timestamptz | |
-| program_id | integer | FK utility_programs.id |
-| action | text | |
-| old_value | text | |
-| new_value | text | |
-| source_url | text | |
-| verified_by | text | |
-| status | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
-
-## reports
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | uuid | gen_random_uuid() |
-| company_id | integer | FK companies.id |
-| metric | text | |
-| business_unit | text | |
-| value | numeric | |
-| category | text | |
-| date | date | |
-| profit | numeric | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | now() |
-
----
-
-## routes
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| route_id | text | |
-| team | text | |
-| date | timestamptz | |
-| job_ids | text | |
-| route_order | text | |
-| total_distance | numeric | |
-| total_time | numeric | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| business_unit | text | |
-
----
-
-## sales_pipeline
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| lead_id | integer | FK leads.id |
-| business_unit | text | |
-| customer_id | integer | FK customers.id |
-| salesperson_id | integer | FK employees.id |
-| stage | text | 'New Lead' |
-| quote_amount | numeric | |
-| date_created | date | |
-| last_updated | date | |
-| quote_sent_date | date | |
-| quote_status | text | |
-| contract_required | boolean | false |
-| contract_signed | boolean | false |
-| notes | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-| salesperson | text | |
-
----
+- `approved_date`
+- `arnie_addon_recommendations`
+- `arnie_addon_recs_at`
+- `arnie_addon_recs_hash`
+- `audit_id`
+- `audit_type`
+- `business_unit`
+- `calculated_quote_amount`
+- `category`
+- `company_id`
+- `contract_required`
+- `contract_signed`
+- `created_at`
+- `customer_id`
+- `date`
+- `deposit_amount`
+- `deposit_date`
+- `deposit_method`
+- `deposit_notes`
+- `deposit_photo`
+- `discount`
+- `discount_description`
+- `email_bounce_reason`
+- `email_clicked_at`
+- `email_id`
+- `email_opened_at`
+- `email_status`
+- `email_status_at`
+- `estimate_message`
+- `estimate_name`
+- `expiration_date`
+- `follow_up_1`
+- `follow_up_2`
+- `follow_up_3`
+- `followup_count`
+- `id`
+- `job_id`
+- `job_title`
+- `job_total`
+- `last_sent_at`
+- `lead_id`
+- `manual_annual_savings`
+- `metric`
+- `notes`
+- `out_of_pocket_total`
+- `pdf_layout`
+- `pdf_url`
+- `portal_token`
+- `profit`
+- `quote_amount`
+- `quote_id`
+- `rejected_date`
+- `salesperson`
+- `salesperson_id`
+- `sent_date`
+- `sent_snapshot_pdf_at`
+- `sent_snapshot_pdf_path`
+- `sent_to_email`
+- `service_date`
+- `service_type`
+- `settings_overrides`
+- `signed_proposal_attachment_id`
+- `source_id`
+- `source_system`
+- `status`
+- `summary`
+- `technician_id`
+- `temp_customer_id`
+- `temp_job_id`
+- `updated_at`
+- `utility_incentive`
+- `value`
 
 ## saved_queries
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | uuid | gen_random_uuid() |
-| name | text | |
-| query | text | |
-| created_by | uuid | |
-| created_at | timestamptz | now() |
-
----
-
-## search_index
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| search_id | text | |
-| business_unit | text | |
-| type | text | |
-| name | text | |
-| status | text | |
-| salesperson_id | integer | FK employees.id |
-| details | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+_empty table — columns unavailable_
 
 ## setter_commissions
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| lead_id | integer | FK leads.id |
-| appointment_id | integer | |
-| setter_id | integer | FK employees.id |
-| marketer_id | integer | FK employees.id |
-| setter_amount | numeric | 0 |
-| marketer_amount | numeric | 0 |
-| payment_status | text | 'pending' |
-| requires_quote | boolean | true |
-| quote_generated | boolean | false |
-| quote_id | integer | |
-| approved_by | integer | FK employees.id |
-| approved_at | timestamptz | |
-| paid_at | timestamptz | |
-| notes | text | |
-| created_at | timestamptz | now() |
-
----
+- `appointment_id`
+- `approved_at`
+- `approved_by`
+- `company_id`
+- `created_at`
+- `id`
+- `lead_id`
+- `marketer_amount`
+- `marketer_id`
+- `notes`
+- `paid_at`
+- `payment_status`
+- `quote_generated`
+- `quote_id`
+- `requires_quote`
+- `setter_amount`
+- `setter_id`
 
 ## settings
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| key | text | |
-| list_name | text | |
-| value | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
+- `company_id`
+- `created_at`
+- `id`
+- `key`
+- `list_name`
+- `updated_at`
+- `value`
 
----
+## signed_documents
 
-## sync_log
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| timestamp | timestamptz | |
-| action | text | |
-| event_id | text | |
-| status | text | |
-| details | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `company_id`
+- `consent_text`
+- `created_at`
+- `document_kind`
+- `document_label`
+- `employee_id`
+- `id`
+- `onboarding_packet_id`
+- `pdf_storage_path`
+- `signature_image_base64`
+- `signature_typed_name`
+- `signed_at`
+- `signer_ip`
+- `signer_user_agent`
+- `status`
+- `superseded_by`
+- `values_snapshot`
 
 ## system_settings
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | uuid | gen_random_uuid() |
-| key | text | |
-| value | jsonb | |
-| description | text | |
-| updated_at | timestamptz | now() |
-| updated_by | text | |
-
----
+- `description`
+- `id`
+- `key`
+- `updated_at`
+- `updated_by`
+- `value`
 
 ## time_clock
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| employee_id | integer | FK employees.id |
-| clock_in | timestamptz | |
-| clock_out | timestamptz | |
-| clock_in_lat | numeric | |
-| clock_in_lng | numeric | |
-| clock_in_address | text | |
-| clock_out_lat | numeric | |
-| clock_out_lng | numeric | |
-| clock_out_address | text | |
-| lunch_start | timestamptz | |
-| lunch_end | timestamptz | |
-| total_hours | numeric | |
-| notes | text | |
-| created_at | timestamptz | now() |
-
----
+- `adjusted_at`
+- `adjusted_by`
+- `adjustment_reason`
+- `clock_in`
+- `clock_in_address`
+- `clock_in_lat`
+- `clock_in_lng`
+- `clock_out`
+- `clock_out_address`
+- `clock_out_lat`
+- `clock_out_lng`
+- `company_id`
+- `created_at`
+- `employee_id`
+- `flagged_for_review`
+- `id`
+- `job_id`
+- `last_lat`
+- `last_lng`
+- `last_ping_at`
+- `lunch_end`
+- `lunch_start`
+- `notes`
+- `original_clock_in`
+- `original_clock_out`
+- `original_total_hours`
+- `review_reason`
+- `total_hours`
 
 ## time_log
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| time_log_id | text | |
-| business_unit | text | |
-| job_id | integer | FK jobs.id |
-| category | text | |
-| hours | numeric | |
-| date | timestamptz | |
-| employee_email | text | |
-| gusto_synced | boolean | false |
-| clock_in_time | timestamptz | |
-| clock_out_time | timestamptz | |
-| is_clocked_in | boolean | false |
-| employee_id | integer | FK employees.id |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `business_unit`
+- `category`
+- `clock_in_time`
+- `clock_out_time`
+- `company_id`
+- `created_at`
+- `date`
+- `employee_email`
+- `employee_id`
+- `gusto_synced`
+- `hours`
+- `id`
+- `is_clocked_in`
+- `job_id`
+- `notes`
+- `time_log_id`
+- `updated_at`
 
 ## time_off_requests
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| employee_id | integer | FK employees.id |
-| start_date | date | |
-| end_date | date | |
-| request_type | text | 'pto' |
-| reason | text | |
-| status | text | 'pending' |
-| approved_by | integer | FK employees.id |
-| approved_at | timestamptz | |
-| created_at | timestamptz | now() |
+- `approved_at`
+- `approved_by`
+- `company_id`
+- `created_at`
+- `employee_id`
+- `end_date`
+- `id`
+- `reason`
+- `request_type`
+- `start_date`
+- `status`
 
----
+## transaction_job_allocations
+
+- `amount`
+- `company_id`
+- `created_at`
+- `id`
+- `job_id`
+- `notes`
+- `transaction_id`
 
 ## utility_forms
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| provider_id | integer | FK utility_providers.id |
-| program_id | integer | FK utility_programs.id |
-| form_name | text | |
-| form_type | text | 'Application' |
-| form_url | text | |
-| form_file | text | |
-| version_year | integer | |
-| is_required | boolean | false |
-| form_notes | text | |
-| field_mapping | jsonb | Maps PDF form field names to data paths (e.g. {"Customer Name": "customer.name"}) |
-| status | text | 'dev' |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `company_id`
+- `created_at`
+- `field_mapping`
+- `form_file`
+- `form_name`
+- `form_notes`
+- `form_type`
+- `form_url`
+- `id`
+- `is_required`
+- `program_id`
+- `provider_id`
+- `signature_fields`
+- `status`
+- `updated_at`
+- `version_year`
 
 ## utility_invoices
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| utility_invoice_id | text | |
-| business_unit | text | |
-| utility_name | text | |
-| job_id | integer | FK jobs.id |
-| amount | numeric | |
-| payment_status | text | 'Pending' |
-| notes | text | |
-| job_description | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `amount`
+- `business_unit`
+- `claim_type`
+- `company_id`
+- `created_at`
+- `customer_name`
+- `id`
+- `incentive_amount`
+- `invoice_id`
+- `job_description`
+- `job_id`
+- `labor_pct`
+- `labor_total_override`
+- `lead_id`
+- `linked_invoice_number`
+- `material_pct`
+- `net_cost`
+- `notes`
+- `paid_at`
+- `parts_total_override`
+- `payment_status`
+- `processor_id`
+- `project_cost`
+- `summary_format`
+- `updated_at`
+- `utility_invoice_id`
+- `utility_name`
 
 ## utility_programs
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| program_id | text | |
-| utility_name | text | |
-| state | text | |
-| program_name | text | |
-| program_type | text | |
-| effective_date | date | |
-| expiration_date | date | |
-| max_cap_percent | integer | |
-| annual_cap_dollars | numeric | |
-| business_size | text | |
-| dlc_required | boolean | false |
-| pre_approval_required | boolean | false |
-| contact_phone | text | |
-| program_url | text | |
-| pdf_url | text | |
-| last_verified | date | |
-| ai_can_update | boolean | false |
-| source_year | integer | |
-| program_category | text | 'Lighting' |
-| delivery_mechanism | text | |
-| eligible_sectors | text[] | |
-| eligible_building_types | text[] | |
-| min_demand_kw | numeric | |
-| max_demand_kw | numeric | |
-| min_annual_kwh | numeric | |
-| application_required | boolean | false |
-| post_inspection_required | boolean | false |
-| contractor_prequalification | boolean | false |
-| required_documents | text[] | |
-| stacking_allowed | boolean | true |
-| stacking_rules | text | |
-| stacking_exclusions | text[] | |
-| funding_status | text | 'Open' |
-| funding_budget | numeric | |
-| processing_time_days | integer | |
-| rebate_payment_method | text | |
-| program_notes_ai | text | |
-| pdf_enrichment_status | text | 'pending' |
-| pdf_enriched_at | timestamptz | |
-| pdf_storage_path | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `ai_can_update`
+- `annual_cap_dollars`
+- `application_required`
+- `business_size`
+- `company_id`
+- `contact_phone`
+- `contractor_prequalification`
+- `created_at`
+- `delivery_mechanism`
+- `dlc_required`
+- `effective_date`
+- `eligible_building_types`
+- `eligible_sectors`
+- `expiration_date`
+- `funding_budget`
+- `funding_status`
+- `id`
+- `last_verified`
+- `max_cap_percent`
+- `max_demand_kw`
+- `min_annual_kwh`
+- `min_demand_kw`
+- `pdf_enriched_at`
+- `pdf_enrichment_status`
+- `pdf_storage_path`
+- `pdf_url`
+- `post_inspection_required`
+- `pre_approval_required`
+- `processing_time_days`
+- `program_category`
+- `program_id`
+- `program_name`
+- `program_notes_ai`
+- `program_type`
+- `program_url`
+- `rebate_payment_method`
+- `required_documents`
+- `source_year`
+- `stacking_allowed`
+- `stacking_exclusions`
+- `stacking_rules`
+- `state`
+- `updated_at`
+- `utility_name`
 
 ## utility_providers
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| provider_id | text | |
-| provider_name | text | |
-| state | text | |
-| service_territory | text | |
-| has_rebate_program | boolean | false |
-| rebate_program_url | text | |
-| contact_phone | text | |
-| notes | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
+- `company_id`
+- `contact_phone`
+- `created_at`
+- `has_rebate_program`
+- `id`
+- `notes`
+- `provider_id`
+- `provider_name`
+- `rebate_program_url`
+- `service_territory`
+- `state`
+- `updated_at`
 
 ## utility_rate_schedules
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| provider_id | integer | FK utility_providers.id |
-| schedule_name | text | NOT NULL |
-| customer_category | text | |
-| rate_per_kwh | numeric | |
-| demand_charge | numeric | |
-| time_of_use | boolean | false |
-| description | text | |
-| effective_date | date | |
-| notes | text | |
-| rate_type | text | 'Flat' |
-| peak_rate_per_kwh | numeric | |
-| off_peak_rate_per_kwh | numeric | |
-| summer_rate_per_kwh | numeric | |
-| winter_rate_per_kwh | numeric | |
-| min_demand_charge | numeric | |
-| customer_charge | numeric | |
-| source_url | text | |
-| pdf_storage_path | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
+- `company_id`
+- `created_at`
+- `customer_category`
+- `customer_charge`
+- `demand_charge`
+- `description`
+- `effective_date`
+- `id`
+- `min_demand_charge`
+- `notes`
+- `off_peak_rate_per_kwh`
+- `pdf_storage_path`
+- `peak_rate_per_kwh`
+- `provider_id`
+- `rate_per_kwh`
+- `rate_type`
+- `schedule_name`
+- `source_url`
+- `summer_rate_per_kwh`
+- `time_of_use`
+- `updated_at`
+- `winter_rate_per_kwh`
 
----
+## vendors
 
-## webhook_form
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| company_id | integer | FK companies.id |
-| action | text | |
-| lead_id | text | |
-| customer_name | text | |
-| appointment_time | timestamptz | |
-| service_type | text | |
-| address | text | |
-| event_id | text | |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | |
-
----
-
-## fixture_categories (GLOBAL — no company_id)
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| category_code | text | UNIQUE NOT NULL |
-| category_name | text | NOT NULL |
-| description | text | |
-| typical_mounting | text | |
-| typical_ceiling_height | text | |
-| typical_applications | text[] | |
-| created_at | timestamptz | now() |
-
----
-
-## lamp_types (GLOBAL — no company_id)
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| lamp_code | text | UNIQUE NOT NULL |
-| lamp_name | text | NOT NULL |
-| technology | text | NOT NULL |
-| description | text | |
-| visual_characteristics | text | |
-| typical_life_hours | integer | |
-| warmup_time | text | |
-| dimmable | boolean | false |
-| contains_mercury | boolean | false |
-| ballast_required | boolean | false |
-| ballast_type | text | |
-| being_phased_out | boolean | false |
-| created_at | timestamptz | now() |
-
----
-
-## fixture_wattage_reference (GLOBAL — no company_id)
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| fixture_id | text | UNIQUE NOT NULL |
-| category_code | text | FK fixture_categories.category_code |
-| lamp_code | text | FK lamp_types.lamp_code |
-| fixture_description | text | NOT NULL |
-| lamp_count | integer | |
-| lamp_length | text | |
-| system_wattage | integer | NOT NULL |
-| ballast_type | text | |
-| lumens_initial | integer | |
-| lumens_mean | integer | |
-| led_replacement_watts | integer | NOT NULL |
-| led_replacement_description | text | |
-| visual_identification | text | |
-| notes | text | |
-| created_at | timestamptz | now() |
-
----
-
-## visual_identification_guide (GLOBAL — no company_id)
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | integer | PK |
-| category_code | text | FK fixture_categories.category_code |
-| feature_name | text | NOT NULL |
-| feature_description | text | |
-| identification_tips | text | |
-| common_mistakes | text | |
-| photo_clues | text[] | |
-| created_at | timestamptz | now() |
-
----
-
-## verification_reports
-
-| Column | Type | Default |
-|--------|------|---------|
-| id | uuid | PK (gen_random_uuid()) |
-| company_id | integer | FK companies.id |
-| job_id | integer | FK jobs.id |
-| verified_by | integer | FK employees.id |
-| verification_type | text | 'completion' |
-| industry | text | 'general' |
-| checklist_items | jsonb | '[]' |
-| status | text | 'pending' |
-| ai_analysis | jsonb | |
-| score | integer | |
-| grade | text | |
-| summary | text | |
-| issues_found | jsonb | '[]' |
-| created_at | timestamptz | now() |
-| updated_at | timestamptz | now() |
-
----
+- `active`
+- `billing_address`
+- `business_name`
+- `company_id`
+- `contact_name`
+- `created_at`
+- `default_payment_terms`
+- `default_tax_rate`
+- `email`
+- `id`
+- `is_internal`
+- `name`
+- `notes`
+- `phone`
+- `qb_sync_at`
+- `qb_vendor_id`
+- `updated_at`
 
 ## verification_photos
 
-| Column | Type | Default |
-|--------|------|---------|
-| id | uuid | PK (gen_random_uuid()) |
-| company_id | integer | FK companies.id |
-| verification_id | uuid | FK verification_reports.id |
-| job_id | integer | FK jobs.id |
-| file_path | text | NOT NULL |
-| storage_bucket | text | 'project-documents' |
-| photo_type | text | 'general' |
-| ai_analysis | jsonb | |
-| ai_score | integer | |
-| created_at | timestamptz | now() |
+- `ai_analysis`
+- `ai_score`
+- `company_id`
+- `created_at`
+- `file_path`
+- `id`
+- `photo_type`
+- `storage_bucket`
+- `verification_id`
 
----
+## verification_reports
 
-*75 tables total. Victor verification tables added March 10, 2026. Updated March 10, 2026.*
+- `ai_analysis`
+- `checklist_items`
+- `company_id`
+- `created_at`
+- `grade`
+- `id`
+- `industry`
+- `issues_found`
+- `job_id`
+- `original_grade`
+- `original_score`
+- `override_at`
+- `override_by`
+- `override_reason`
+- `score`
+- `status`
+- `summary`
+- `updated_at`
+- `verification_type`
+- `verified_by`
+- `voided`

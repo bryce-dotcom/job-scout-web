@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { invoiceCustomerTotal } from "../_shared/money.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -379,10 +380,11 @@ serve(async (req) => {
         // $197k of credits has a real customer balance of $19k, not $217k.
         const gross = parseFloat(String(invoice.amount)) || 0;
         const discount = parseFloat(String((invoice as { discount_applied?: number | string }).discount_applied ?? 0)) || 0;
-        // Legacy-shape invoices (discount stored >= amount) already have
-        // amount = net customer portion; don't subtract again.
-        const isLegacyNet = discount > 0 && discount >= gross;
-        const customerBalance = isLegacyNet ? gross : Math.max(0, gross - discount);
+        // Legacy-shape invoices (discount stored > amount) already have
+        // amount = net customer portion; don't subtract again. Shared predicate
+        // — this had its own `>=` copy, which computed a fully-covered
+        // invoice's balance as the whole gross and so could never mark it Paid.
+        const customerBalance = invoiceCustomerTotal(gross, discount);
         const newStatus = totalPaid >= customerBalance - 0.01 ? 'Paid' : 'Partially Paid';
 
         await supabase

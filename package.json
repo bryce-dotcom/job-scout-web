@@ -5,7 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run guard && vite build",
+    "build:only": "vite build",
+    "guard": "node scripts/guard.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "schema:check": "node scripts/schema-check.mjs",
+    "schema:dump": "node scripts/schema-check.mjs --dump",
+    "check": "npm run guard && npm test",
     "lint": "eslint .",
     "preview": "vite preview",
     "import-data": "node scripts/importData.js"
@@ -53,6 +60,7 @@
     "postcss": "^8.5.6",
     "sharp": "^0.34.5",
     "tailwindcss": "^4.1.18",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "^4.1.10"
   }
 }

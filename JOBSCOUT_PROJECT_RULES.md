@@ -22,8 +22,70 @@ Users should understand how to use Job Scout without training. Every page, butto
 
 ## ARCHITECTURE RULES
 
-### Verify Column Names Before Querying
-Before writing ANY Supabase query, reference `DATABASE_SCHEMA.md` to verify column names exist. If a column is not listed in that file, it does not exist. This prevents 400 errors from misspelled or assumed column names.
+### Don't Trust This File. Run The Checks.
+
+Everything below is advice, and advice is what we had when all of this broke.
+The rules in this file were already written, in bold, and still got violated —
+because a rule you have to *remember* is a rule you will *forget*, and because
+the doc it told you to trust had itself gone stale.
+
+So the rules that actually matter are enforced by commands. Run them:
+
+```
+npm run check          # guard + tests — do this before you push (~2s)
+npm run guard          # fails on patterns that have caused real customer bugs
+npm test               # money-model invariants, ~0.3s
+npm run schema:check   # every .select() column, checked against the LIVE database
+npm run schema:dump    # regenerate DATABASE_SCHEMA.md from the live database
+```
+
+`npm run build` runs the guard automatically. You cannot ship past it.
+
+`check` is deliberately just guard + tests, so it is **green today** and any red
+means *you* broke something. `npm run lint` is not in it: there are ~890
+pre-existing lint problems, and a gate that is red on day one is a gate everyone
+learns to ignore — which is the exact habit that let all of this through.
+Same reasoning behind `scripts/schema-baseline.json`: known drift is recorded so
+the check can fail on *new* drift only. Both lists are debt to pay down, not
+permission to add more.
+
+### Verify Column Names Before Querying — `npm run schema:check`
+A wrong column name doesn't throw. PostgREST 400s the **entire** query, and our
+usual `const { data } = await ...; return data || []` turns that into an empty
+array — the screen renders zero and nobody is told. That is how every commission
+on the Payroll page silently became $0, and how a report written to find problems
+announced it had found none while 38 sat in the database.
+
+Do not eyeball `DATABASE_SCHEMA.md` (it is now generated — `npm run schema:dump`).
+Run `npm run schema:check`. It reads the live schema and fails on any column the
+database doesn't have.
+
+### Never Re-Derive A Money Rule — `npm run guard`
+Business rules live in ONE place and get imported:
+
+- `src/lib/arHelpers.js` — `isLegacyNetShape`, `invoiceCustomerTotal`, AR totals
+- `src/lib/invoiceSections.js` — the customer-facing invoice breakdown
+- `supabase/functions/_shared/money.ts` — the same rules for edge functions
+
+The legacy-net invoice rule drifted into **fifteen** open-coded copies — screens,
+the PDF, the customer portal, reports, revenue, collections, the Stripe webhook,
+Frankie. Fixing some left the rest wrong, so one invoice reported different
+balances depending on which screen you opened, and a customer-facing PDF billed
+$32,143.06 on an invoice that owed $0. One of those copies carried a comment
+saying it "mirrors the math used by InvoiceDetail, CustomerPortal, Stripe
+webhook, and Books" — the comment was true when written and false forever after.
+
+A comment cannot keep two implementations in sync. Import the function.
+
+### Surface Failures, Never Swallow Them
+`data || []` on a query whose error you never checked converts a hard failure
+into a plausible-looking zero. If a script or screen exists to find problems,
+make it throw — "found nothing" and "the query broke" must never look the same.
+
+### Verify By Looking, Not By Reasoning
+The invoice PDF stayed wrong after the screen was fixed, and the code read fine.
+It took rendering the actual PDF and looking at it. For anything customer-facing,
+produce the artifact and inspect it.
 
 ### Multi-Tenant
 Every single query filters by `company_id`. No exceptions. Guard clause if no company_id.

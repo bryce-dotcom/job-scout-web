@@ -17,12 +17,11 @@
 
 // ─────────────────────── helpers (mirror frankieFields) ───────────────────────
 
-function invoiceCustomerTotal(inv) {
-  const gross = Number(inv?.amount) || 0
-  const disc = Number(inv?.discount_applied) || 0
-  const isLegacyNet = disc > 0 && disc >= gross
-  return isLegacyNet ? gross : Math.max(0, gross - disc)
-}
+// invoiceCustomerTotal used to be re-implemented here. It drifted: this copy
+// still used the `disc >= gross` legacy-net test after arHelpers was corrected
+// to `>`, so a fully-covered invoice reported its whole gross as owed. Import
+// the one definition instead of keeping a private twin.
+import { invoiceCustomerTotal } from './arHelpers'
 
 function paymentsByInvoiceIndex(payments) {
   const map = new Map()
