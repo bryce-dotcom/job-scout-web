@@ -90,7 +90,13 @@ export function invoiceBalance(inv, paymentsArrOrMap = []) {
 export function invoicePaymentStatus(inv, totalPaid, extraFee = 0) {
   const owed = invoiceCustomerTotal(inv) + (Number(extraFee) || 0)
   const paid = Number(totalPaid) || 0
-  // owed <= 0 (fully incentive-covered) → nothing to collect → Paid.
+  // Nothing owed — an empty $0 invoice OR one fully covered by the incentive.
+  // Only call it Paid if money actually came in. Auto-marking these Paid with
+  // $0 collected would (a) flip 850+ empty shell invoices on their next payment
+  // event and (b) trip the "Paid + no payments" fallback in bonusCalc into
+  // paying commission on the full gross. When nothing was collected, leave the
+  // status alone by reporting Pending — matches the old record/rescind paths.
+  if (owed <= 0.01) return paid > 0 ? 'Paid' : 'Pending'
   if (paid >= owed - 0.01) return 'Paid'
   if (paid > 0) return 'Partially Paid'
   return 'Pending'

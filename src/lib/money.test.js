@@ -115,8 +115,14 @@ describe('invoicePaymentStatus', () => {
     expect(invoicePaymentStatus({ amount: 1000, discount_applied: 250 }, 750, 25)).toBe('Partially Paid')
     expect(invoicePaymentStatus({ amount: 1000, discount_applied: 250 }, 775, 25)).toBe('Paid')
   })
-  it('a fully incentive-covered invoice is Paid with $0 collected', () => {
-    expect(invoicePaymentStatus(SMC_AUTO, 0)).toBe('Paid')
+  it('nothing owed + nothing collected stays Pending (do not auto-Paid $0/fully-covered)', () => {
+    // Guards two things: 850+ empty $0 shell invoices, and the bonusCalc
+    // "Paid + no payments" fallback that would pay commission on the gross.
+    expect(invoicePaymentStatus(SMC_AUTO, 0)).toBe('Pending')          // fully incentive-covered, uncollected
+    expect(invoicePaymentStatus({ amount: 0, discount_applied: 0 }, 0)).toBe('Pending') // empty shell
+  })
+  it('nothing owed but money did come in reads Paid', () => {
+    expect(invoicePaymentStatus(SMC_AUTO, 50)).toBe('Paid')
   })
 })
 
