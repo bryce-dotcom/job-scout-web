@@ -74,6 +74,28 @@ export function invoiceBalance(inv, paymentsArrOrMap = []) {
   return Math.max(0, customer - paid)
 }
 
+// The stored payment_status an invoice SHOULD carry given how much has been
+// paid against it. THE ONE definition — every write path must use this instead
+// of open-coding a `totalPaid >= invoice.amount` test, which compares against
+// the GROSS amount and ignores discount_applied (the utility incentive + any
+// deposit credit the customer never owes). That gross comparison is why
+// Energy Scout invoices sat on "Partially Paid" forever after the customer
+// paid their full net portion (Biorge inv 32597: $1,778.44 net paid on a
+// $7,113.77 gross read as half-paid), which in turn kept setter/rep
+// commissions and money-in bonuses off payroll. HHH invoices carry no
+// discount, so invoiceCustomerTotal === gross and their behavior is unchanged.
+//
+// extraFee: a CC processing fee added ON TOP of the customer total (the card
+// payer owes their net portion plus the fee). Pass 0 for cash/check.
+export function invoicePaymentStatus(inv, totalPaid, extraFee = 0) {
+  const owed = invoiceCustomerTotal(inv) + (Number(extraFee) || 0)
+  const paid = Number(totalPaid) || 0
+  // owed <= 0 (fully incentive-covered) → nothing to collect → Paid.
+  if (paid >= owed - 0.01) return 'Paid'
+  if (paid > 0) return 'Partially Paid'
+  return 'Pending'
+}
+
 // Open = not Paid / Void / Cancelled. Treats anything else as still owed
 // so legacy statuses like "Sent" / "Pending" / "Overdue" / "Partially Paid"
 // all count.

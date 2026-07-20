@@ -14,7 +14,7 @@ import useSmartBack from '../lib/useSmartBack'
 import { resolveMatLabSplit, splitLinePartsLabor } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
-import { isLegacyNetShape } from '../lib/arHelpers'
+import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
 
 // Light theme fallback
 const defaultTheme = {
@@ -580,20 +580,15 @@ export default function InvoiceDetail() {
       notes: paymentData.notes || (ccFeeAmount > 0 ? `Includes $${ccFeeAmount.toFixed(2)} CC processing fee` : null)
     }])
 
-    // Update payment status based on total paid vs invoice amount + CC fees
+    // Update payment status vs the customer's NET total (gross − incentive/
+    // discount) plus any CC fee — never gross alone, or Energy Scout invoices
+    // stick on "Partially Paid" after the customer pays their full portion.
     const totalPaid = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) + paymentAmount
-    const invoiceAmount = (parseFloat(invoice.amount) || 0) + (parseFloat(invoice.credit_card_fee) || 0) + ccFeeAmount
-    if (totalPaid >= invoiceAmount) {
-      await supabase.from('invoices').update({
-        payment_status: 'Paid',
-        updated_at: new Date().toISOString()
-      }).eq('id', id)
-    } else if (totalPaid > 0) {
-      await supabase.from('invoices').update({
-        payment_status: 'Partially Paid',
-        updated_at: new Date().toISOString()
-      }).eq('id', id)
-    }
+    const ccFeeTotal = (parseFloat(invoice.credit_card_fee) || 0) + ccFeeAmount
+    await supabase.from('invoices').update({
+      payment_status: invoicePaymentStatus(invoice, totalPaid, ccFeeTotal),
+      updated_at: new Date().toISOString()
+    }).eq('id', id)
 
     await fetchInvoiceData()
     await fetchInvoices()
@@ -784,15 +779,9 @@ export default function InvoiceDetail() {
           .select('amount')
           .eq('invoice_id', invId)
         const totalPaid = (pays || []).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
-        const gross = parseFloat(inv.amount) || 0
-        const discount = parseFloat(inv.discount_applied) || 0
-        const customerTotal = isLegacyNetShape(gross, discount) ? gross : Math.max(0, gross - discount)
-        let newStatus = 'Pending'
-        if (totalPaid >= customerTotal - 0.01) newStatus = 'Paid'
-        else if (totalPaid > 0) newStatus = 'Partially Paid'
         await supabase
           .from('invoices')
-          .update({ payment_status: newStatus, updated_at: new Date().toISOString() })
+          .update({ payment_status: invoicePaymentStatus(inv, totalPaid, parseFloat(inv.credit_card_fee) || 0), updated_at: new Date().toISOString() })
           .eq('id', invId)
       }
       await Promise.all([recalcInvoice(parseInt(id)), recalcInvoice(target.id)])
@@ -842,18 +831,13 @@ export default function InvoiceDetail() {
       }).eq('id', id)
     }
 
-    // Recalculate remaining total
+    // Recalculate status off the remaining payments vs the customer's NET total.
     const remainingPaid = payments
       .filter(p => p.id !== payment.id)
       .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
-    const invoiceAmount = parseFloat(invoice.amount) || 0
-
-    let newStatus = 'Pending'
-    if (remainingPaid >= invoiceAmount) newStatus = 'Paid'
-    else if (remainingPaid > 0) newStatus = 'Partially Paid'
 
     await supabase.from('invoices').update({
-      payment_status: newStatus,
+      payment_status: invoicePaymentStatus(invoice, remainingPaid),
       updated_at: new Date().toISOString()
     }).eq('id', id)
 

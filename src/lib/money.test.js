@@ -8,7 +8,7 @@
 // Run: npm test
 
 import { describe, it, expect } from 'vitest'
-import { isLegacyNetShape, invoiceCustomerTotal, invoiceBalance } from './arHelpers'
+import { isLegacyNetShape, invoiceCustomerTotal, invoiceBalance, invoicePaymentStatus } from './arHelpers'
 import { buildInvoiceSections, invoiceDiscountBreakout } from './invoiceSections'
 import { invoiceNet } from './revenueBasis'
 
@@ -85,6 +85,38 @@ describe('invoiceBalance', () => {
   it('never returns a negative balance on an overpayment', () => {
     const inv = { id: 9, amount: 1000, discount_applied: 250 }
     expect(invoiceBalance(inv, [{ invoice_id: 9, amount: 900 }])).toBe(0)
+  })
+})
+
+describe('invoicePaymentStatus', () => {
+  // Biorge inv 32597 — the ticket. $7,113.77 gross, $5,335.33 incentive, so the
+  // customer owes $1,778.44, which they paid in full. Must read "Paid", not
+  // "Partially Paid" (which kept Damien's commission off payroll).
+  const BIORGE = { amount: 7113.77, discount_applied: 5335.33 } // customer owes 1778.44
+  it('marks an Energy Scout invoice Paid once the NET portion is covered', () => {
+    expect(invoicePaymentStatus(BIORGE, 1778.44)).toBe('Paid')
+  })
+  it('does not require the gross amount to be paid', () => {
+    expect(invoicePaymentStatus(BIORGE, 7113.77)).toBe('Paid') // overpay still Paid
+  })
+  it('is Partially Paid when less than the net portion is in', () => {
+    expect(invoicePaymentStatus(BIORGE, 1000)).toBe('Partially Paid')
+  })
+  it('is Pending with nothing paid', () => {
+    expect(invoicePaymentStatus(BIORGE, 0)).toBe('Pending')
+  })
+  it('an ordinary (no-discount) HHH invoice still needs its full amount', () => {
+    const HHH = { amount: 1000, discount_applied: 0 }
+    expect(invoicePaymentStatus(HHH, 999)).toBe('Partially Paid')
+    expect(invoicePaymentStatus(HHH, 1000)).toBe('Paid')
+  })
+  it('adds a CC fee on top of the net total', () => {
+    // owes 750 + 25 fee = 775
+    expect(invoicePaymentStatus({ amount: 1000, discount_applied: 250 }, 750, 25)).toBe('Partially Paid')
+    expect(invoicePaymentStatus({ amount: 1000, discount_applied: 250 }, 775, 25)).toBe('Paid')
+  })
+  it('a fully incentive-covered invoice is Paid with $0 collected', () => {
+    expect(invoicePaymentStatus(SMC_AUTO, 0)).toBe('Paid')
   })
 })
 

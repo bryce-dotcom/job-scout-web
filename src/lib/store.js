@@ -2134,14 +2134,22 @@ export const useStore = create(
           if (navigator.onLine) {
             // Delete child records first to avoid FK constraint violations
             try {
+              // Transient records with no pay attached — safe to delete.
               await Promise.all([
                 supabase.from('appointments').delete().eq('lead_id', id),
-                supabase.from('lead_commissions').delete().eq('lead_id', id),
-                supabase.from('setter_commissions').delete().eq('lead_id', id),
                 supabase.from('sales_pipeline').delete().eq('lead_id', id),
               ])
-              // Unlink quotes and jobs (set lead_id to null instead of deleting)
+              // PRESERVE earned pay: UNLINK (lead_id → null) rather than delete
+              // the commission tables. Deleting them used to silently wipe a
+              // setter's real earned pay whenever a lead was cleaned up or
+              // merged — even after it had converted to a paid job (Biorge:
+              // Damien's $25 vanished when lead 3691 was deleted). The rows are
+              // paid from lead_commissions by company_id + period, not lead_id,
+              // so unlinking keeps them payable. Quotes/jobs unlink for the
+              // same reason (don't destroy downstream records).
               await Promise.all([
+                supabase.from('lead_commissions').update({ lead_id: null }).eq('lead_id', id),
+                supabase.from('setter_commissions').update({ lead_id: null }).eq('lead_id', id),
                 supabase.from('quotes').update({ lead_id: null }).eq('lead_id', id),
                 supabase.from('jobs').update({ lead_id: null }).eq('lead_id', String(id)),
               ])
