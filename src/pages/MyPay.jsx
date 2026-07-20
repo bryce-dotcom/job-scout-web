@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { DollarSign, TrendingUp, Clock, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Zap, Eye } from 'lucide-react'
+import { DollarSign, TrendingUp, Clock, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, Zap, Eye, FileText, Shield, Umbrella } from 'lucide-react'
 import {
   getCurrentPayPeriod,
   calculateInvoiceCommissions,
@@ -11,6 +11,80 @@ import {
 } from '../lib/bonusCalc'
 import { fetchUserBonuses, bonusStatusLabel } from '../lib/bonusLedger'
 import { canViewHR } from '../lib/accessControl'
+
+const money = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const BENEFIT_LABELS = { health: 'Health', dental: 'Dental', vision: 'Vision', life: 'Life', disability: 'Disability', retirement_401k: '401(k)', hsa: 'HSA', fsa: 'FSA', other: 'Other' }
+const FREQ_LABELS = { per_paycheck: 'Per paycheck', monthly: 'Monthly', annual: 'Annual' }
+
+// Reusable collapsible "pulldown" card so My Pay can carry pay history,
+// benefits, etc. without turning into an endless scroll. Collapsed by default.
+function CollapsibleCard({ cardStyle, theme, icon, title, summary, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div style={cardStyle}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        style={{ width: '100%', background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, textAlign: 'left' }}
+      >
+        <span style={{ fontSize: '15px', fontWeight: 700, color: theme.text, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {icon}{title}
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {summary != null && <span style={{ fontSize: 12, color: theme.textMuted, fontWeight: 600 }}>{summary}</span>}
+          <ChevronDown size={18} style={{ color: theme.textMuted, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+        </span>
+      </button>
+      {open && <div style={{ marginTop: 14 }}>{children}</div>}
+    </div>
+  )
+}
+
+// One past paycheck, expandable to its full gross → net breakdown. Reads the
+// paystubs row saved when a payroll run was finalized.
+function PaystubRow({ p, theme }) {
+  const [open, setOpen] = useState(false)
+  const d = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+  const tax = (Number(p.federal_income_tax) || 0) + (Number(p.state_income_tax) || 0) + (Number(p.social_security_employee) || 0) + (Number(p.medicare_employee) || 0) + (Number(p.additional_medicare) || 0)
+  const ded = (Number(p.pre_tax_deductions) || 0) + (Number(p.post_tax_deductions) || 0)
+  const line = (label, val, opts = {}) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0' }}>
+      <span style={{ color: theme.textMuted }}>{label}</span>
+      <span style={{ color: opts.color || theme.text, fontVariantNumeric: 'tabular-nums' }}>{opts.neg ? '−' : ''}{money(Math.abs(Number(val) || 0))}</span>
+    </div>
+  )
+  return (
+    <div style={{ backgroundColor: theme.bg, borderRadius: 8, overflow: 'hidden' }}>
+      <button onClick={() => setOpen(o => !o)} aria-expanded={open}
+        style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textAlign: 'left' }}>
+        <span style={{ minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: theme.text }}>{d(p.pay_date)}</span>
+          <span style={{ display: 'block', fontSize: 11, color: theme.textMuted }}>{d(p.period_start)} – {d(p.period_end)}</span>
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
+          <span style={{ textAlign: 'right' }}>
+            <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: theme.text, fontVariantNumeric: 'tabular-nums' }}>{money(p.net_pay)}</span>
+            <span style={{ display: 'block', fontSize: 10, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.4px' }}>net</span>
+          </span>
+          <ChevronDown size={16} style={{ color: theme.textMuted, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+        </span>
+      </button>
+      {open && (
+        <div style={{ padding: '2px 12px 12px', borderTop: `1px solid ${theme.border}` }}>
+          {line('Gross pay', p.gross_pay)}
+          {Number(p.commission_pay) > 0 && line('Commission', p.commission_pay)}
+          {Number(p.bonus_pay) > 0 && line('Bonus', p.bonus_pay)}
+          {Number(p.reimbursement_pay) > 0 && line('Reimbursement', p.reimbursement_pay)}
+          {tax > 0 && line('Taxes withheld', tax, { neg: true, color: '#ef4444' })}
+          {ded > 0 && line('Deductions', ded, { neg: true, color: '#ef4444' })}
+          <div style={{ borderTop: `1px dashed ${theme.border}`, marginTop: 6, paddingTop: 6 }}>
+            {line('Net pay', p.net_pay, { color: theme.accent })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /**
  * MyPay — self-service pay view for every employee.
@@ -54,6 +128,11 @@ export default function MyPay() {
   // truth so a bonus never vanishes when hours are corrected or the period
   // rolls over. Payroll keeps it fresh; MyPay only reads it.
   const [ledgerBonuses, setLedgerBonuses] = useState([])
+  // Self-service HR data — not period-scoped. Pay history is every past
+  // paycheck (paystubs); benefits are the employee's active enrollments
+  // (employee_benefits). Both are READ-ONLY here.
+  const [paystubs, setPaystubs] = useState([])
+  const [benefits, setBenefits] = useState([])
   const [loading, setLoading] = useState(true)
   // Fresh copy of the user's employee row (rate, commission flags) re-read
   // from DB on every mount so a just-updated rate shows here immediately
@@ -99,6 +178,27 @@ export default function MyPay() {
     ;(async () => {
       const rows = await fetchUserBonuses(supabase, companyId, effectiveUserId)
       if (!cancelled) setLedgerBonuses(rows)
+    })()
+    return () => { cancelled = true }
+  }, [companyId, effectiveUserId])
+
+  // Pay history + benefits — not period-scoped, so loaded on their own (small,
+  // additive; never touches the commission/bonus math above).
+  useEffect(() => {
+    if (!companyId || !effectiveUserId) { setPaystubs([]); setBenefits([]); return }
+    let cancelled = false
+    ;(async () => {
+      const [ps, bf] = await Promise.all([
+        supabase.from('paystubs')
+          .select('id, period_start, period_end, pay_date, regular_hours, overtime_hours, pto_hours, gross_pay, net_pay, bonus_pay, commission_pay, reimbursement_pay, federal_income_tax, state_income_tax, social_security_employee, medicare_employee, additional_medicare, pre_tax_deductions, post_tax_deductions')
+          .eq('company_id', companyId).eq('employee_id', effectiveUserId)
+          .order('pay_date', { ascending: false }).limit(24),
+        supabase.from('employee_benefits')
+          .select('id, benefit_type, plan_name, employee_contribution, employer_contribution, is_pre_tax, frequency, status')
+          .eq('company_id', companyId).eq('employee_id', effectiveUserId).eq('status', 'active')
+          .order('benefit_type'),
+      ])
+      if (!cancelled) { setPaystubs(ps.data || []); setBenefits(bf.data || []) }
     })()
     return () => { cancelled = true }
   }, [companyId, effectiveUserId])
@@ -760,8 +860,67 @@ export default function MyPay() {
         </div>
       )}
 
+      {/* Pay history — every finalized paycheck (paystubs). Read-only, all-time. */}
+      {paystubs.length > 0 && (
+        <CollapsibleCard
+          cardStyle={cardStyle} theme={theme}
+          icon={<FileText size={18} style={{ color: theme.accent }} />}
+          title="Pay history"
+          summary={`${paystubs.length} paycheck${paystubs.length === 1 ? '' : 's'}`}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {paystubs.map(p => <PaystubRow key={p.id} p={p} theme={theme} />)}
+          </div>
+          <div style={{ marginTop: 10, fontSize: 11, color: theme.textMuted }}>
+            Your last {paystubs.length} pay period{paystubs.length === 1 ? '' : 's'} · tap a paycheck for the full breakdown.
+          </div>
+        </CollapsibleCard>
+      )}
+
+      {/* Benefits & deductions — active enrollments + what comes out of each
+          check. Shown for anyone with a pay record; empty state (no fake data)
+          when nothing is enrolled. */}
+      {(benefits.length > 0 || paystubs.length > 0) && (
+        <CollapsibleCard
+          cardStyle={cardStyle} theme={theme}
+          icon={<Shield size={18} style={{ color: '#0ea5e9' }} />}
+          title="Benefits & deductions"
+          summary={benefits.length ? `${benefits.length} active` : 'None on file'}
+        >
+          {benefits.length === 0 ? (
+            <div style={{ fontSize: 13, color: theme.textMuted, padding: '4px 0', lineHeight: 1.5 }}>
+              No benefits are on file for you yet. Health, dental, 401(k) and other enrollments your employer sets up will show here — ask an admin if you expect to see something.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {benefits.map(b => (
+                <div key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', backgroundColor: theme.bg, borderRadius: 8 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+                      {BENEFIT_LABELS[b.benefit_type] || b.benefit_type}{b.plan_name ? ` · ${b.plan_name}` : ''}
+                    </div>
+                    <div style={{ fontSize: 11, color: theme.textMuted }}>
+                      {b.is_pre_tax ? 'Pre-tax' : 'Post-tax'} · {FREQ_LABELS[b.frequency] || b.frequency}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: theme.text, fontVariantNumeric: 'tabular-nums' }}>{money(b.employee_contribution)}</div>
+                    {Number(b.employer_contribution) > 0 && <div style={{ fontSize: 10, color: theme.textMuted }}>+{money(b.employer_contribution)} employer</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {paystubs[0] && ((Number(paystubs[0].pre_tax_deductions) || 0) + (Number(paystubs[0].post_tax_deductions) || 0) > 0) && (
+            <div style={{ marginTop: 12, fontSize: 12, color: theme.textMuted, borderTop: `1px dashed ${theme.border}`, paddingTop: 10 }}>
+              Last paycheck deductions: <strong style={{ color: theme.text }}>{money((Number(paystubs[0].pre_tax_deductions) || 0) + (Number(paystubs[0].post_tax_deductions) || 0))}</strong>
+            </div>
+          )}
+        </CollapsibleCard>
+      )}
+
       {/* Empty states */}
-      {!commData.details.length && !timeEntries.length && !ledgerBonuses.length && (
+      {!commData.details.length && !timeEntries.length && !ledgerBonuses.length && !paystubs.length && (
         <div style={{ ...cardStyle, textAlign: 'center', padding: '40px 20px' }}>
           <DollarSign size={32} style={{ color: theme.textMuted, margin: '0 auto 8px' }} />
           <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Nothing to show yet</div>

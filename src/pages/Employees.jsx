@@ -14,6 +14,7 @@ import { employeesFields } from '../lib/importExportFields'
 import { isAdmin as checkAdmin, canAccessDevTools, canEditPipelineStages, canViewHR, canManageHRAccess } from '../lib/accessControl'
 import RankBadge from '../components/RankBadge'
 import OnboardingPanel from '../components/OnboardingPanel'
+import EmployeeBenefitsPanel from '../components/EmployeeBenefitsPanel'
 
 // Role colors (OG DiX style)
 const roleColors = {
@@ -2203,6 +2204,15 @@ export default function Employees() {
                     {/* ===== ONBOARDING ===== */}
                     {viewingEmployee && (
                       <OnboardingPanel
+                        employee={viewingEmployee}
+                        theme={theme}
+                        sectionHeaderStyle={sectionHeaderStyle}
+                      />
+                    )}
+
+                    {/* ===== BENEFITS & DEDUCTIONS ===== */}
+                    {viewingEmployee && (
+                      <EmployeeBenefitsPanel
                         employee={viewingEmployee}
                         theme={theme}
                         sectionHeaderStyle={sectionHeaderStyle}
