@@ -80,6 +80,9 @@ export default function LeadSetter() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState(null)
   const [calendarView, setCalendarView] = useState('week') // week or day
+  // Mobile-only tab: the calendar used to sit ~33 screens below the full lead
+  // list. Default to Calendar (what setters want first); Leads is one tap away.
+  const [mobileTab, setMobileTab] = useState('calendar') // 'calendar' | 'leads'
 
   // Modals
   const [showAppointmentModal, setShowAppointmentModal] = useState(false)
@@ -1057,10 +1060,25 @@ export default function LeadSetter() {
         </div>
       </div>
 
+      {/* Mobile tab bar: Calendar | Leads. Desktop shows both side-by-side. */}
+      {isMobile && (
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+          {['calendar', 'leads'].map(tab => (
+            <button key={tab} onClick={() => setMobileTab(tab)} style={{
+              flex: 1, minHeight: '44px', padding: '10px', borderRadius: '10px', fontSize: '14px', fontWeight: '700',
+              textTransform: 'capitalize', cursor: 'pointer',
+              border: `1px solid ${mobileTab === tab ? theme.accent : theme.border}`,
+              backgroundColor: mobileTab === tab ? theme.accent : theme.bgCard,
+              color: mobileTab === tab ? '#fff' : theme.textSecondary
+            }}>{tab}</button>
+          ))}
+        </div>
+      )}
+
       {/* Main Content - Split View */}
       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', flex: 1, gap: '16px', overflow: isMobile ? 'auto' : 'hidden' }}>
-        {/* Left: Kanban Leads */}
-        <div style={{ width: isMobile ? '100%' : '450px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: isMobile ? '300px' : undefined }}>
+        {/* Left: Kanban Leads — hidden on mobile unless the Leads tab is active */}
+        <div style={{ width: isMobile ? '100%' : '450px', flexShrink: 0, display: (isMobile && mobileTab !== 'leads') ? 'none' : 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: isMobile ? '300px' : undefined }}>
           {/* Stats Row */}
           <div style={{
             display: 'flex',
@@ -1171,7 +1189,7 @@ export default function LeadSetter() {
                       rows = all.slice(0, CAP)
                       overflow = all.length - rows.length
                     } else {
-                      rows = all.slice().sort((a, b) => {
+                      const sorted = all.slice().sort((a, b) => {
                         // Overdue callbacks first, then upcoming callbacks, then by created
                         const now = new Date()
                         const aCb = a.callback_date ? new Date(a.callback_date) : null
@@ -1185,7 +1203,11 @@ export default function LeadSetter() {
                         if (bCb) return 1
                         return new Date(b.created_at) - new Date(a.created_at)
                       })
-                      overflow = 0
+                      // Cap so a column with hundreds of leads doesn't render a
+                      // 30-screen page (the New column was the height driver).
+                      const CAP = 25
+                      rows = sorted.slice(0, CAP)
+                      overflow = sorted.length - rows.length
                     }
                     return (<>
                     {rows.map(lead => {
@@ -1282,7 +1304,7 @@ export default function LeadSetter() {
                       fontSize: '11px', color: theme.textMuted, fontStyle: 'italic',
                       borderTop: `1px dashed ${theme.border}`, marginTop: '4px'
                     }}>
-                      +{overflow} more on the calendar →
+                      +{overflow} more{stage.id === 'Appointment Set' ? ' on the calendar →' : ' — search or filter to narrow'}
                     </div>
                   )}
                   {all.length === 0 && (
@@ -1303,10 +1325,10 @@ export default function LeadSetter() {
           </div>
         </div>
 
-        {/* Right: Calendar */}
+        {/* Right: Calendar — hidden on mobile unless the Calendar tab is active */}
         <div style={{
           flex: 1,
-          display: 'flex',
+          display: (isMobile && mobileTab !== 'calendar') ? 'none' : 'flex',
           flexDirection: 'column',
           backgroundColor: theme.bgCard,
           borderRadius: '12px',

@@ -346,6 +346,11 @@ function EstimateDetailInner() {
   const [attachments, setAttachments] = useState([])
   const [convertingToJob, setConvertingToJob] = useState(false)
   const [expandedLineId, setExpandedLineId] = useState(null)
+  // Estimate Details is a tall block of metadata (business unit, name, summary,
+  // 6 date fields, salesperson, message) that used to push the Line Items —
+  // the actual work — ~2.4 screens down on mobile. Collapse it by default on a
+  // phone; the rep can expand it when needed. Desktop stays expanded.
+  const [detailsCollapsed, setDetailsCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
   const [viewingPhoto, setViewingPhoto] = useState(null)
   const [showAssociateModal, setShowAssociateModal] = useState(false)
   const [associationType, setAssociationType] = useState('lead') // 'lead' | 'customer' | 'newLead'
@@ -3062,21 +3067,32 @@ function EstimateDetailInner() {
             </div>
           </div>
 
-          {/* Estimate Details Card */}
+          {/* Estimate Details Card. On mobile: order:5 pushes it BELOW Line
+              Items (the flex column reorders it without moving JSX), and the
+              header collapses the body so it doesn't bury the line items. */}
           <div style={{
             backgroundColor: theme.bgCard,
             borderRadius: '12px',
             border: `1px solid ${theme.border}`,
-            padding: '20px'
+            padding: '20px',
+            order: isMobile ? 5 : 0
           }}>
-            <h3 style={{
-              fontSize: '15px',
-              fontWeight: '600',
-              color: theme.text,
-              marginBottom: '16px'
-            }}>
+            <h3
+              onClick={() => isMobile && setDetailsCollapsed(c => !c)}
+              style={{
+                fontSize: '15px',
+                fontWeight: '600',
+                color: theme.text,
+                marginBottom: detailsCollapsed ? 0 : '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: isMobile ? 'pointer' : 'default'
+              }}>
               Estimate Details
+              {isMobile && (detailsCollapsed ? <ChevronDown size={18} /> : <ChevronRight size={18} />)}
             </h3>
+            {!detailsCollapsed && (
             <div style={{
               display: 'grid',
               gridTemplateColumns: '1fr 1fr',
@@ -3219,6 +3235,7 @@ function EstimateDetailInner() {
                 />
               </div>
             </div>
+            )}
           </div>
 
           {/* "Total set but no line items" banner — proactive warning

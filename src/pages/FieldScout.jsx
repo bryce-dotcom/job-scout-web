@@ -16,7 +16,6 @@ import {
   Camera, Calendar as CalendarIcon, ArrowRight
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
-import ArnieFloatingPanel from '../components/ArnieFloatingPanel'
 import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours } from '../lib/bonusCalc'
 import { computeAllottedHours } from '../lib/allottedHours'
 import RankBadge from '../components/RankBadge'
@@ -4083,8 +4082,8 @@ export default function FieldScout() {
         </div>
       )}
 
-      {/* ===== ARNIE FLOATING PANEL ===== */}
-      <ArnieFloatingPanel />
+      {/* Arnie renders once from Layout (this page is inside it); the local
+          mount here was a duplicate — Arnie showed twice on /field-scout. */}
 
       {/* Animations */}
       <style>{`

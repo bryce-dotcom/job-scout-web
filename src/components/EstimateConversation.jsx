@@ -31,7 +31,9 @@ export default function EstimateConversation({
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [expandedIds, setExpandedIds] = useState(() => new Set())
-  const [collapsed, setCollapsed] = useState(false)
+  // Default collapsed on mobile — this panel is ~500px tall and sat between the
+  // estimate header and the line items, adding to the scroll-to-work problem.
+  const [collapsed, setCollapsed] = useState(() => !!isMobile)
   const pollRef = useRef(null)
 
   const fetchMessages = async () => {

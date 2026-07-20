@@ -1,5 +1,5 @@
 import { useState, createContext, useContext, useMemo } from 'react'
-import { useNavigate, NavLink, Outlet } from 'react-router-dom'
+import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import FeedbackButton from './FeedbackButton'
 import ArnieFloatingPanel from './ArnieFloatingPanel'
@@ -174,6 +174,15 @@ export default function Layout() {
   const [expandedMenus, setExpandedMenus] = useState({})
   const [showAgentSettings, setShowAgentSettings] = useState(false)
   const [editingAgent, setEditingAgent] = useState(null)
+
+  // On :id detail/edit pages the primary action lives in the bottom-right
+  // corner, exactly where the Arnie pill + Feedback FAB float — so they cover
+  // page buttons on mobile. Hide both on detail routes; keep them on the main
+  // list/dashboard pages. Static sub-paths that are really lists (e.g.
+  // /jobs/calendar) are excluded so they keep the widgets.
+  const { pathname } = useLocation()
+  const isDetailRoute = /^\/(estimates|jobs|invoices|customers|leads|vendors|purchase-orders|bills|fleet|lighting-audits|utility-invoices)\/[^/]+$/.test(pathname)
+    && !/^\/(jobs|routes)\/calendar$/.test(pathname)
 
   // Background location tracking while clocked in
   useLocationTracking()
@@ -1192,11 +1201,14 @@ export default function Layout() {
                 position: 'fixed',
                 // Drawer hangs below the (notch-aware) header.
                 top: 'calc(64px + env(safe-area-inset-top, 0px))',
-                left: 0,
+                // Anchored to the RIGHT to match the hamburger trigger (which
+                // sits top-right on mobile) — tapping top-right now opens the
+                // menu on the same side instead of flying in from the left.
+                right: 0,
                 bottom: 0,
                 width: '280px',
                 backgroundColor: theme.bgCard,
-                borderRight: `1px solid ${theme.border}`,
+                borderLeft: `1px solid ${theme.border}`,
                 zIndex: 46,
                 display: 'flex',
                 flexDirection: 'column',
@@ -1799,11 +1811,10 @@ export default function Layout() {
         </>
       )}
 
-      {/* Arnie Floating Panel */}
-      <ArnieFloatingPanel />
-
-      {/* Feedback Button */}
-      <FeedbackButton />
+      {/* Arnie + Feedback float bottom-right — hide on detail/edit pages so
+          they don't cover the page's own action button on mobile. */}
+      {!isDetailRoute && <ArnieFloatingPanel />}
+      {!isDetailRoute && <FeedbackButton />}
 
       {/* Responsive CSS */}
       <style>{`
