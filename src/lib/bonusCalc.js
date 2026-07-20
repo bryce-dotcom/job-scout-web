@@ -602,6 +602,18 @@ export function calculateEfficiencyBonus({
     if (savedHours < minSaved) return
     if (payrollConfig.bonus_quality_gate && job.has_callback) return
 
+    // Allotted-vs-actual sanity guard. A job whose allotted hours are more than
+    // 3x the hours actually worked is almost always a padded/garbled estimate
+    // minting a garbage bonus — job 23385 had 636.88h allotted vs 51.8h worked
+    // (12.3x) and produced an ~$11k bonus. Hold it for admin review instead of
+    // paying it. (No-scope jobs already have allotted 0 and are filtered out
+    // above by the `!job.allotted_time_hours` guard.)
+    const ALLOTTED_RATIO_LIMIT = 3
+    const allottedRatio = totalActualHours > 0
+      ? job.allotted_time_hours / totalActualHours
+      : Infinity
+    const suspiciousAllotted = allottedRatio > ALLOTTED_RATIO_LIMIT
+
     // Verification gate — respect the configured mode.
     //
     // A blocked job still emits a details row so the Payroll UI can show
@@ -628,7 +640,10 @@ export function calculateEfficiencyBonus({
       }
     }
     const gateOff = gateMode === 'off'
-    const passes = gateOff || passesVictor || paidOverrideApplies || hasAdminOverride
+    // An explicit admin override releases anything (the admin has said "pay it").
+    // Otherwise the bonus must clear the >3x allotted guard AND the verification
+    // gate before it can pay.
+    const passes = hasAdminOverride || (!suspiciousAllotted && (gateOff || passesVictor || paidOverrideApplies))
 
     if (!passes) {
       // Compute what they WOULD have earned so the admin can override.
@@ -661,7 +676,9 @@ export function calculateEfficiencyBonus({
         crewSize: crew.length,
         employeeShare: 0,
         wouldHaveEarned: +myRawShare.toFixed(2),
-        blockedReason: !passesVictor ? 'no_completion_verification' : 'blocked',
+        blockedReason: suspiciousAllotted ? 'allotted_over_actual'
+          : !passesVictor ? 'no_completion_verification' : 'blocked',
+        allottedRatio: allottedRatio === Infinity ? null : +allottedRatio.toFixed(1),
         paidPercent: paidPercent != null ? +paidPercent.toFixed(1) : null,
         paidThresholdPct,
         gateMode,

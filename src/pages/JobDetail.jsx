@@ -446,7 +446,7 @@ function JobDetailInner() {
 
       const { data: lines } = await supabase
         .from('job_lines')
-        .select('*, item:products_services(id, name, description, allotted_time_hours, cost, spec_sheet_url, install_guide_url, dlc_document_url)')
+        .select('*, item:products_services(id, name, description, allotted_time_hours, material_or_labor, cost, spec_sheet_url, install_guide_url, dlc_document_url)')
         .eq('job_id', id)
         .order('id')
 
@@ -5566,6 +5566,18 @@ function JobDetailInner() {
                               <AlertCircle size={10} /> Needs verification
                             </span>
                           )}
+                          {/* Loud flag when allotted is wildly over hours worked
+                              (padded/garbled estimate minting a big bonus) — held. */}
+                          {b.status !== 'paid' && (() => {
+                            const al = Number(b.allotted_hours) || 0, ac = Number(b.actual_hours) || 0
+                            const ratio = ac > 0 ? al / ac : (al > 0 ? Infinity : 0)
+                            if (ratio <= 3) return null
+                            return (
+                              <span style={{ fontSize: '10px', fontWeight: 700, color: '#b91c1c', backgroundColor: 'rgba(239,68,68,0.15)', padding: '2px 7px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <AlertCircle size={10} /> Held — allotted {ratio === Infinity ? '∞' : ratio.toFixed(1)}× hours worked
+                              </span>
+                            )
+                          })()}
                           {b.status === 'paid' && b.paid_at && (
                             <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 600 }}>
                               Paid {new Date(b.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -5580,6 +5592,14 @@ function JobDetailInner() {
                   )
                 })}
               </div>
+              {/* Make the payout rule explicit — bonuses accrue on the job but
+                  only pay once the customer's invoice is actually paid. */}
+              {jobBonuses.some(b => b.status !== 'paid') && (
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Info size={11} style={{ flexShrink: 0 }} />
+                  Bonuses pay out on the next payroll after this job's invoice is paid.
+                </div>
+              )}
             </div>
           )}
 

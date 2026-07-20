@@ -539,7 +539,7 @@ export default function FieldScout() {
           .maybeSingle()
         const { data: lineRows } = await supabase
           .from('job_lines')
-          .select('id, quantity, price, total, notes, item:products_services(id, name, description, allotted_time_hours)')
+          .select('id, quantity, price, total, notes, item:products_services(id, name, description, allotted_time_hours, material_or_labor)')
           .eq('job_id', jobId)
           .order('id')
         if (cancelled) return

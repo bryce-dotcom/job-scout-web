@@ -1923,10 +1923,14 @@ export default function Payroll() {
             on anything still flagged. */}
         {(bonusesByEmployee.get(emp.id) || []).length > 0 && (
           <div style={{ ...cardStyle, marginBottom: '20px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Zap size={18} style={{ color: '#8b5cf6' }} />
               Efficiency Bonuses
             </h3>
+            {/* State the payout rule up front so "Owed" vs "Upcoming" reads clearly. */}
+            <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 16px' }}>
+              Paid out on the next payroll after each job's invoice is paid. Rows flagged <strong>Held</strong> or <strong>Needs verification</strong> stay out of pay until an admin releases them.
+            </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {(bonusesByEmployee.get(emp.id) || []).map((b) => {
                 const statusMeta = {
@@ -1953,6 +1957,19 @@ export default function Payroll() {
                           <AlertCircle size={10} /> Needs verification
                         </span>
                       )}
+                      {/* Loud flag when the allotted estimate is wildly over the
+                          hours actually worked — that's a padded/garbled estimate
+                          minting a big bonus (job 23385: 12.3×), held for review. */}
+                      {b.status !== 'paid' && (() => {
+                        const al = Number(b.allotted_hours) || 0, ac = Number(b.actual_hours) || 0
+                        const ratio = ac > 0 ? al / ac : (al > 0 ? Infinity : 0)
+                        if (ratio <= 3) return null
+                        return (
+                          <span style={{ fontSize: '10px', fontWeight: 700, color: '#b91c1c', backgroundColor: 'rgba(239,68,68,0.15)', padding: '2px 7px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            <AlertCircle size={10} /> Held — allotted {ratio === Infinity ? '∞' : ratio.toFixed(1)}× hours worked
+                          </span>
+                        )
+                      })()}
                       {b.status === 'paid' && b.paid_at && (
                         <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 600 }}>
                           Paid {new Date(b.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
