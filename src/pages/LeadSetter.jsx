@@ -2334,7 +2334,11 @@ export default function LeadSetter() {
                 onClick={async () => {
                   setSavingEvent(true)
                   try {
-                    const startDT = new Date(eventForm.start_time)
+                    // The form holds a Mountain wall-clock string (prefilled via
+                    // formatDateTimeLocal -> toZonedInput(MT)); convert back with
+                    // the SAME zone so a no-op save round-trips to the identical
+                    // instant on any device, matching handleCreateAppointment.
+                    const startDT = new Date(fromZonedInput(eventForm.start_time, MT))
                     const endDT = new Date(startDT.getTime() + eventForm.duration_minutes * 60000)
                     const _ids = (eventForm.salesperson_ids || []).filter(Boolean)
                     if (eventForm.salesperson_id && !_ids.includes(eventForm.salesperson_id)) {
@@ -2430,7 +2434,9 @@ export default function LeadSetter() {
               setBlockSaving(true)
               const ids = (blockForm.salesperson_ids?.length ? blockForm.salesperson_ids : (blockForm.salesperson_id ? [blockForm.salesperson_id] : [])).filter(Boolean)
               if (ids.length === 0) { setBlockSaving(false); alert('Pick at least one rep to block.'); return }
-              const startTime = new Date(blockForm.start_time)
+              // Interpret the typed wall-clock in Mountain (the grid's zone) so
+              // the block lands on the same slot for everyone, not the device tz.
+              const startTime = new Date(fromZonedInput(blockForm.start_time, MT))
               const endTime = new Date(startTime.getTime() + blockForm.duration_minutes * 60000)
               const rows = ids.map(empId => ({
                 company_id: companyId,

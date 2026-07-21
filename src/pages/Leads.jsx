@@ -8,6 +8,7 @@ import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { leadsFields } from '../lib/importExportFields'
 import { leadStatusColors } from '../lib/statusColors'
+import { fromZonedInput, DEFAULT_TZ } from '../lib/dateTz'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
 
@@ -301,8 +302,11 @@ export default function Leads() {
     e.preventDefault()
     setLoading(true)
 
-    const startTime = new Date(appointmentData.start_time)
-    const endTime = appointmentData.end_time ? new Date(appointmentData.end_time) : new Date(startTime.getTime() + 60 * 60 * 1000)
+    // Interpret the typed wall-clock in the company's zone (Mountain), matching
+    // the Lead Setter grid, so the appointment lands on the same day for everyone
+    // regardless of the device's timezone.
+    const startTime = new Date(fromZonedInput(appointmentData.start_time, DEFAULT_TZ))
+    const endTime = appointmentData.end_time ? new Date(fromZonedInput(appointmentData.end_time, DEFAULT_TZ)) : new Date(startTime.getTime() + 60 * 60 * 1000)
 
     const apptTempId = await createAppointment({
       company_id: companyId,
