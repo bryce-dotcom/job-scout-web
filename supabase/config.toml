@@ -354,6 +354,15 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+# Webhook receivers are called by third parties (Resend/Svix) that CANNOT send a
+# Supabase JWT, so the endpoint must not require one. Without this, a redeploy
+# resets verify_jwt to the default (true), the endpoint starts returning 401, and
+# the provider auto-disables the webhook after repeated failures — exactly what
+# silenced Resend delivery/bounce tracking on 2026-06-12. The function is safe to
+# expose: it only writes email delivery status keyed by Resend-side email UUIDs.
+[functions.resend-webhook]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
