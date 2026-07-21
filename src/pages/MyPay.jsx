@@ -406,9 +406,12 @@ export default function MyPay() {
   // Swap the invoice-commission (services/goods) portion of `available` for the
   // FROZEN rep_commissions ledger — same number today, but it stops drifting
   // and now matches Payroll exactly. Utility/processor + pending stay live.
+  // All rep commissions (invoice + utility + processor) are frozen rows now, so
+  // the whole available comes from the ledger — no live component. (Pending is
+  // still projected live below via commData.pending.)
   const commAvailable = useMemo(
-    () => commData.available - liveInvoiceAvailable(commData) + earnedRepInPeriod(repCommissions, effectiveUserId, periodStartStr, periodEndStr),
-    [commData, repCommissions, effectiveUserId, periodStartStr, periodEndStr]
+    () => earnedRepInPeriod(repCommissions, effectiveUserId, periodStartStr, periodEndStr),
+    [repCommissions, effectiveUserId, periodStartStr, periodEndStr]
   )
 
   // Efficiency bonuses now come from the persistent job_bonuses ledger
@@ -440,6 +443,12 @@ export default function MyPay() {
 
   // Owed bonuses (money already collected) count toward gross pay.
   const grossPay = hourlyPay + salaryPay + commAvailable + accruedBonusTotal
+
+  // What's been STAGED into the next payroll run (an admin added it) — so the
+  // tech sees what's actually coming next run vs what's owed but not yet added.
+  const queuedBonusTotal = accruedBonuses.filter(b => b.queued_for_payroll).reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
+  const queuedRepTotal = repCommissions.filter(r => r.payment_status === 'earned' && r.queued_for_payroll && (r.earned_at || '').slice(0, 10) >= periodStartStr && (r.earned_at || '').slice(0, 10) <= periodEndStr).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+  const inNextPaycheck = queuedBonusTotal + queuedRepTotal
 
   // Split commissions into buckets the UI renders separately so it's
   // obvious to the rep where each dollar is coming from.
@@ -621,6 +630,22 @@ export default function MyPay() {
           </div>
         </div>
       </div>
+
+      {/* In your next paycheck — what an admin has staged (added to the run). */}
+      {inNextPaycheck > 0 && (
+        <div style={{ ...cardStyle, background: 'linear-gradient(135deg, rgba(34,197,94,0.10) 0%, rgba(34,197,94,0.03) 100%)', border: '1px solid rgba(34,197,94,0.3)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CheckCircle size={18} style={{ color: '#16a34a' }} />
+              <span style={{ fontSize: 15, fontWeight: 700, color: theme.text }}>In your next paycheck</span>
+            </div>
+            <span style={{ fontSize: 20, fontWeight: 700, color: '#16a34a' }}>{fmt(inNextPaycheck)}</span>
+          </div>
+          <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 6 }}>
+            {fmt(queuedBonusTotal)} bonus + {fmt(queuedRepTotal)} commission added to the next payroll run.
+          </div>
+        </div>
+      )}
 
       {/* Pending commissions — jobs won but not paid */}
       {pendingList.length > 0 && (

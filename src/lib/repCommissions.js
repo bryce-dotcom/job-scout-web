@@ -15,7 +15,7 @@
 // (rep, payment) on an owned invoice, plus a synthetic row per Paid invoice
 // with no payment (mirrors the bonusCalc fallback). Mirrors the backfill so
 // the math never diverges. `onlyEmployeeId` scopes it (My Pay).
-export function computeRepRows({ employees = [], jobs = [], leads = [], invoices = [], payments = [] }, onlyEmployeeId = null) {
+export function computeRepRows({ employees = [], jobs = [], leads = [], invoices = [], payments = [], utilityInvoices = [], payrollConfig = {} }, onlyEmployeeId = null) {
   const leadsById = new Map((leads || []).map(l => [String(l.id), l]))
   const matchId = (a, b) => a != null && b != null && String(a) === String(b)
   const ownsJob = (job, empId) => {
@@ -65,6 +65,48 @@ export function computeRepRows({ employees = [], jobs = [], leads = [], invoices
       }
     }
   }
+
+  // ── Utility + processor commissions — frozen when the utility invoice is
+  //    PAID (earned_at = paid_at), keyed by the utility invoice. Mirrors the
+  //    utility_commission / processor_commission branches of the live calc.
+  const procDefault = payrollConfig?.utility_processor_employee_id != null ? Number(payrollConfig.utility_processor_employee_id) : null
+  for (const u of (utilityInvoices || [])) {
+    if (u.payment_status !== 'Paid') continue
+    const incentive = parseFloat(u.incentive_amount) || parseFloat(u.amount) || 0
+    if (incentive <= 0) continue
+    const job = (jobs || []).find(j => j.id === u.job_id)
+    // utility_commission: the rep who owns the job earns their services/goods rate.
+    for (const e of reps) {
+      const svc = parseFloat(e.commission_services_rate) || 0
+      const goods = parseFloat(e.commission_goods_rate) || 0
+      const rate = svc > 0 ? svc : goods
+      const rateType = svc > 0 ? (e.commission_services_type || 'percent') : (e.commission_goods_type || 'percent')
+      if (rate <= 0 || rateType !== 'percent') continue
+      if (!job || !ownsJob(job, e.id)) continue
+      const amt = incentive * (rate / 100)
+      if (amt <= 0) continue
+      rows.push({
+        company_id: e.company_id, employee_id: e.id, invoice_id: null, job_id: u.job_id, payment_id: null, utility_invoice_id: u.id,
+        kind: 'utility', amount: Math.round(amt * 100) / 100, rate, rate_type: 'percent', basis_amount: incentive,
+        earned_at: u.paid_at || null, payment_status: 'earned', source: 'live_utility',
+      })
+    }
+    // processor_commission: the designated processor earns their processor rate.
+    const processorId = u.processor_id != null ? Number(u.processor_id) : procDefault
+    if (processorId != null && (onlyEmployeeId == null || processorId === onlyEmployeeId)) {
+      const pe = (employees || []).find(e => e.id === processorId)
+      const procRate = parseFloat(pe?.commission_processor_rate) || 0
+      const procType = pe?.commission_processor_type || 'percent'
+      if (pe && procRate > 0 && procType === 'percent') {
+        const amt = incentive * (procRate / 100)
+        if (amt > 0) rows.push({
+          company_id: pe.company_id, employee_id: pe.id, invoice_id: null, job_id: u.job_id, payment_id: null, utility_invoice_id: u.id,
+          kind: 'processor', amount: Math.round(amt * 100) / 100, rate: procRate, rate_type: 'percent', basis_amount: incentive,
+          earned_at: u.paid_at || null, payment_status: 'earned', source: 'live_processor',
+        })
+      }
+    }
+  }
   return rows
 }
 
@@ -74,25 +116,38 @@ export function computeRepRows({ employees = [], jobs = [], leads = [], invoices
 export async function syncRepCommissions(supabase, companyId, data, onlyEmployeeId = null) {
   try {
     const expected = computeRepRows(data, onlyEmployeeId).map(r => ({ ...r, company_id: companyId }))
-    if (!expected.length) return { inserted: 0 }
-    let q = supabase.from('rep_commissions').select('payment_id, invoice_id, employee_id, kind').eq('company_id', companyId)
+    // RECONCILE (freeze-on-PAY, like the bonus ledger): an UNPAID row follows
+    // current reality — insert what's newly earned, delete what's no longer
+    // earned (a job reassigned to another rep; a payment landing on an invoice
+    // that used to be synthetic; a payment/invoice deleted). PAID rows are
+    // frozen and never touched. This is what keeps Payroll and My Pay correct
+    // without freezing a stale attribution. (Insert-only would double-count.)
+    let q = supabase.from('rep_commissions').select('id, payment_id, invoice_id, utility_invoice_id, employee_id, kind, payment_status').eq('company_id', companyId)
     if (onlyEmployeeId != null) q = q.eq('employee_id', onlyEmployeeId)
     const { data: existing, error } = await q
-    if (error) { console.warn('[syncRepCommissions] read failed:', error.message); return { inserted: 0 } }
-    // Key: payment-backed rows by payment_id; synthetic rows (null payment) by invoice_id.
-    const seen = new Set((existing || []).map(r => r.payment_id != null
-      ? `p:${r.payment_id}:${r.employee_id}:${r.kind}`
-      : `i:${r.invoice_id}:${r.employee_id}:${r.kind}`))
-    const missing = expected.filter(r => !seen.has(r.payment_id != null
-      ? `p:${r.payment_id}:${r.employee_id}:${r.kind}`
-      : `i:${r.invoice_id}:${r.employee_id}:${r.kind}`))
-    if (!missing.length) return { inserted: 0 }
-    const { error: insErr } = await supabase.from('rep_commissions').insert(missing)
-    if (insErr) { console.warn('[syncRepCommissions] insert failed:', insErr.message); return { inserted: 0 } }
-    return { inserted: missing.length }
+    if (error) { console.warn('[syncRepCommissions] read failed:', error.message); return { inserted: 0, deleted: 0 } }
+    // Key: payment-backed by payment_id; utility/processor by utility invoice;
+    // synthetic (null payment) by standard invoice.
+    const keyOf = (r) => r.payment_id != null ? `p:${r.payment_id}:${r.employee_id}:${r.kind}`
+      : r.utility_invoice_id != null ? `u:${r.utility_invoice_id}:${r.employee_id}:${r.kind}`
+      : `i:${r.invoice_id}:${r.employee_id}:${r.kind}`
+    const expectedKeys = new Set(expected.map(keyOf))
+    const existingKeys = new Set((existing || []).map(keyOf))
+    const missing = expected.filter(r => !existingKeys.has(keyOf(r)))
+    const stale = (existing || []).filter(r => r.payment_status !== 'paid' && !expectedKeys.has(keyOf(r)))
+    let inserted = 0, deleted = 0
+    if (stale.length) {
+      const { error: delErr } = await supabase.from('rep_commissions').delete().in('id', stale.map(r => r.id))
+      if (delErr) console.warn('[syncRepCommissions] stale delete failed:', delErr.message); else deleted = stale.length
+    }
+    if (missing.length) {
+      const { error: insErr } = await supabase.from('rep_commissions').insert(missing)
+      if (insErr) console.warn('[syncRepCommissions] insert failed:', insErr.message); else inserted = missing.length
+    }
+    return { inserted, deleted }
   } catch (e) {
     console.warn('[syncRepCommissions] crashed:', e?.message || e)
-    return { inserted: 0 }
+    return { inserted: 0, deleted: 0 }
   }
 }
 

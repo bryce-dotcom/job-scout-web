@@ -1242,7 +1242,7 @@ export default function Payroll() {
     if (loading || !companyId || !jobs.length) return
     let cancelled = false
     ;(async () => {
-      await syncRepCommissions(supabase, companyId, { employees, jobs, leads, invoices, payments })
+      await syncRepCommissions(supabase, companyId, { employees, jobs, leads, invoices, payments, utilityInvoices: utilityInvoicesState, payrollConfig })
       const rows = await fetchRepCommissions(supabase, companyId)
       if (!cancelled) setRepCommissions(rows)
     })()
@@ -1326,16 +1326,17 @@ export default function Payroll() {
     // explicit staging. Setter + rep-invoice commissions are queueable rows;
     // utility/processor commissions stay on the live calc and auto-include
     // (they aren't row-staged yet).
-    const invoiceComm = calculateInvoiceCommissions(employee.id)
+    const invoiceComm = calculateInvoiceCommissions(employee.id) // still drives the pending/waiting display
     const leadComm = calculateLeadCommissions(employee.id)
     const { periodStart: cfpStart, periodEnd: cfpEnd } = getCurrentPeriod()
     const cfpS = cfpStart.toISOString().split('T')[0], cfpE = cfpEnd.toISOString().split('T')[0]
-    const liveOtherComm = invoiceComm.available - liveInvoiceAvailable(invoiceComm) // utility + processor
+    // ALL rep commissions (invoice + utility + processor) are frozen rows now,
+    // so the whole commission is queued-driven — no live component in the gross.
     const queuedSetter = (leadComm.details || []).filter(c => c.queued_for_payroll).reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
     const queuedRep = repCommissions
       .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && r.queued_for_payroll && (r.earned_at || '').slice(0, 10) >= cfpS && (r.earned_at || '').slice(0, 10) <= cfpE)
       .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
-    const commissionPay = queuedSetter + queuedRep + liveOtherComm
+    const commissionPay = queuedSetter + queuedRep
 
     // Efficiency bonus. The live calc still drives the per-job breakdown UI
     // (what was saved on each job, verification state), but the dollar amount
