@@ -184,7 +184,7 @@ export default function InvoiceDetail() {
 
     const { data: invoiceData } = await supabase
       .from('invoices')
-      .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title, lead_id, quote_id, service_kind, parts_coverage, labor_coverage, coverage_notes, parent_job_id)')
+      .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title, job_address, lead_id, quote_id, service_kind, parts_coverage, labor_coverage, coverage_notes, parent_job_id)')
       .eq('id', id)
       .single()
 
@@ -1101,6 +1101,16 @@ export default function InvoiceDetail() {
     }
     if (invoice.customer?.email) { doc.text(invoice.customer?.email, margin, y); y += 5 }
     if (invoice.customer?.phone) { doc.text(invoice.customer?.phone, margin, y); y += 5 }
+    // Service address (job site). An account can have many locations; without
+    // this the customer can't tell which site the invoice is for (Tracy's
+    // pushback). Only show it when it differs from the billing address.
+    const jobSite = invoice.job?.job_address
+    if (jobSite && jobSite.trim().toLowerCase() !== (invoice.customer?.address || '').trim().toLowerCase()) {
+      y += 3
+      doc.setFont('helvetica', 'bold'); doc.text('Service Address:', margin, y); y += 5
+      doc.setFont('helvetica', 'normal')
+      for (const line of doc.splitTextToSize(jobSite, contentWidth / 2)) { doc.text(line, margin, y); y += 5 }
+    }
     y += 8
 
     // Shared totals-line drawer (label at totalsX, amount right-aligned at
@@ -2235,6 +2245,12 @@ export default function InvoiceDetail() {
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Job Title</p>
                   <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{invoice.job.job_title || '-'}</p>
                 </div>
+                {invoice.job.job_address && (
+                  <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+                    <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Service Address</p>
+                    <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{invoice.job.job_address}</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
