@@ -814,12 +814,14 @@ function EstimateDetailInner() {
     setLineItems(prev => prev.map(l => l.id === lineId ? { ...l, photos: updatedPhotos } : l))
     await supabase.from('quote_lines').update({ photos: updatedPhotos }).eq('id', lineId)
 
-    // Try to delete from storage (best effort)
+    // Try to delete from storage (best effort). Uploads go to audit-photos
+    // (see handleLinePhotoUpload), so the cleanup must target the SAME bucket —
+    // it previously pointed at project-documents and silently orphaned the blob.
     try {
       const url = new URL(photoUrl)
-      const storagePath = url.pathname.split('/object/public/project-documents/')[1]
+      const storagePath = url.pathname.split('/object/public/audit-photos/')[1]
       if (storagePath) {
-        await supabase.storage.from('project-documents').remove([decodeURIComponent(storagePath)])
+        await supabase.storage.from('audit-photos').remove([decodeURIComponent(storagePath)])
       }
     } catch (_) { /* ignore storage cleanup errors */ }
   }
