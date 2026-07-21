@@ -1083,6 +1083,19 @@ export default function Payroll() {
     setLeadCommissions(prev => prev.map(c => ids.includes(c.id) ? { ...c, payment_status: next } : c))
   }
 
+  // Same "pay in or outside the app" toggle for the frozen rep (%) commissions.
+  // earnedRepInPeriod already drops payment_status='paid' from the payable set.
+  const markRepCommissionsPaid = async (rows, paid = true) => {
+    const ids = (rows || []).map(r => r.id).filter(Boolean)
+    if (!ids.length) return
+    const patch = paid
+      ? { payment_status: 'paid', paid_at: new Date().toISOString() }
+      : { payment_status: 'earned', paid_at: null }
+    const { error } = await supabase.from('rep_commissions').update(patch).in('id', ids)
+    if (error) { alert('Could not update rep commissions: ' + error.message); return }
+    setRepCommissions(prev => prev.map(r => ids.includes(r.id) ? { ...r, ...patch } : r))
+  }
+
   // Efficiency bonuses: allotted hours - actual hours, weighted split between crew.
   // Logic lives in src/lib/bonusCalc.js so FieldScout can render the same numbers.
   // We feed it time_clock rows (normalized), so admin time edits on this page
@@ -1849,6 +1862,51 @@ export default function Payroll() {
           </div>
         </div>
 
+        {/* Earnings rollup — Ready to pay vs Waiting on, across bonuses + setter
+            + rep commissions. One glance at what's owed and what's still gated. */}
+        {(() => {
+          const { periodStart: rps, periodEnd: rpe } = getCurrentPeriod()
+          const psStr = rps.toISOString().split('T')[0], peStr = rpe.toISOString().split('T')[0]
+          const bonuses = bonusesByEmployee.get(emp.id) || []
+          const sum = (arr) => arr.reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
+          const bonusReady = sum(bonuses.filter(b => b.status === 'accrued' && !b.needs_verification))
+          const bonusHeld = sum(bonuses.filter(b => b.status === 'accrued' && b.needs_verification))
+          const bonusPending = sum(bonuses.filter(b => b.status === 'pending'))
+          const setterReady = data.leadCommissions.total
+          const setterPending = data.leadCommissions.pendingAmount || 0
+          const repReady = earnedRepInPeriod(repCommissions, emp.id, psStr, peStr)
+          const ready = bonusReady + setterReady + repReady
+          const waiting = bonusHeld + bonusPending + setterPending
+          if (ready <= 0 && waiting <= 0) return null
+          const waitingItems = []
+          if (bonusPending > 0) waitingItems.push(`${fmt(bonusPending)} bonus — the job's money hasn't come in yet`)
+          if (bonusHeld > 0) waitingItems.push(`${fmt(bonusHeld)} bonus — held for review`)
+          if (setterPending > 0) waitingItems.push(`${fmt(setterPending)} setter commission — appointment set, no estimate yet`)
+          return (
+            <div style={{ ...cardStyle, marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <DollarSign size={18} style={{ color: theme.accent }} /> Earnings
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '14px' }}>
+                <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#16a34a' }}>Ready to pay</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>{fmt(ready)}</div>
+                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>bonuses owed + earned commissions · paid on the next run, or mark paid below</div>
+                </div>
+                <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: theme.bg, border: `1px solid ${theme.border}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: theme.textMuted }}>Waiting on</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: theme.textSecondary, marginTop: 4 }}>{fmt(waiting)}</div>
+                  {waitingItems.length > 0 ? (
+                    <ul style={{ margin: '6px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {waitingItems.map((w, i) => <li key={i} style={{ fontSize: 11, color: theme.textMuted }}>{w}</li>)}
+                    </ul>
+                  ) : <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>nothing pending</div>}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Action Buttons */}
         {isAdmin && (
           <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -2025,6 +2083,54 @@ export default function Payroll() {
             )}
           </div>
         )}
+
+        {/* Rep (%) Commissions — from the frozen rep_commissions ledger. Pay
+            in-app (Run Payroll) or mark paid here for outside-the-app payroll. */}
+        {(() => {
+          const { periodStart: rps, periodEnd: rpe } = getCurrentPeriod()
+          const psStr = rps.toISOString().split('T')[0], peStr = rpe.toISOString().split('T')[0]
+          const mine = repCommissions.filter(r => r.employee_id === emp.id)
+          const ready = mine.filter(r => r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) >= psStr && (r.earned_at || '').slice(0, 10) <= peStr)
+          const paid = mine.filter(r => r.payment_status === 'paid')
+          const readyTotal = ready.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+          const paidTotal = paid.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+          if (!ready.length && !paid.length) return null
+          return (
+            <div style={{ ...cardStyle, marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <DollarSign size={18} style={{ color: '#22c55e' }} />
+                Rep Commissions
+              </h3>
+              <p style={{ fontSize: 12, color: theme.textMuted, margin: '0 0 12px' }}>
+                {ready.length} payment{ready.length === 1 ? '' : 's'} this period · frozen when earned, so the amount never changes under a later invoice edit.
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: '18px', fontWeight: '600', color: '#22c55e' }}>Ready to pay: {fmt(readyTotal)}</div>
+                {isAdmin && ready.length > 0 && (
+                  <button
+                    onClick={() => { if (confirm(`Mark ${fmt(readyTotal)} of ${emp.name}'s rep commissions paid? Use this if you paid outside the app — they'll drop off the payable total.`)) markRepCommissionsPaid(ready, true) }}
+                    style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    Mark paid
+                  </button>
+                )}
+              </div>
+              {paid.length > 0 && (
+                <div style={{ marginTop: 10, fontSize: 12, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <CheckCircle size={13} style={{ color: '#22c55e' }} /> {paid.length} paid ({fmt(paidTotal)}) — not in the total above.
+                  {isAdmin && (
+                    <button
+                      onClick={() => { if (confirm('Reopen this employee’s paid rep commissions? They’ll return to the payable total.')) markRepCommissionsPaid(paid, false) }}
+                      style={{ background: 'none', border: 'none', color: theme.accent, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                    >
+                      Reopen
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Efficiency Bonus Detail — from the persistent ledger (same rows
             the tech sees in My Pay). Owed/upcoming/paid, with a verify action
