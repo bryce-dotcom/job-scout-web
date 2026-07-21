@@ -1592,6 +1592,22 @@ export default function Payroll() {
     } catch (err) { alert('Verify failed: ' + err.message) }
   }
 
+  // Manual "paid" for bonuses — the "pay outside the app" path. Parity with the
+  // commission toggle so a business that runs payroll through an outside
+  // provider can still mark bonuses paid (they drop off the owed list). In-app
+  // Run Payroll marks them automatically; this is the manual equivalent.
+  const handleBonusesPaid = async (bonusRows, paid = true) => {
+    const ids = (bonusRows || []).map(b => b.id).filter(Boolean)
+    if (!ids.length) return
+    const adminEmp = employees.find(e => e.email === user?.email)
+    const patch = paid
+      ? { status: 'paid', paid_at: new Date().toISOString(), paid_by: adminEmp?.id || null, updated_at: new Date().toISOString() }
+      : { status: 'accrued', paid_at: null, updated_at: new Date().toISOString() }
+    const { error } = await supabase.from('job_bonuses').update(patch).in('id', ids)
+    if (error) { alert('Could not update bonuses: ' + error.message); return }
+    setLedgerBonuses(prev => prev.map(b => ids.includes(b.id) ? { ...b, ...patch } : b))
+  }
+
   const handleRunPayroll = async () => {
     setRunningPayroll(true)
     const payDate = getNextPayDate()
@@ -1995,9 +2011,42 @@ export default function Payroll() {
               Efficiency Bonuses
             </h3>
             {/* State the payout rule up front so "Owed" vs "Upcoming" reads clearly. */}
-            <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 16px' }}>
+            <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px' }}>
               Paid out on the next payroll after each job's invoice is paid. Rows flagged <strong>Held</strong> or <strong>Needs verification</strong> stay out of pay until an admin releases them.
             </p>
+            {/* Pay-outside-the-app path: mark owed bonuses paid without an in-app
+                run (in-app Run Payroll marks them automatically). */}
+            {isAdmin && (() => {
+              const rows = bonusesByEmployee.get(emp.id) || []
+              const owed = rows.filter(b => b.status === 'accrued' && !b.needs_verification)
+              const paid = rows.filter(b => b.status === 'paid')
+              const owedTotal = owed.reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
+              const paidTotal = paid.reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
+              if (!owed.length && !paid.length) return null
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+                  {owed.length > 0 && (
+                    <button
+                      onClick={() => { if (confirm(`Mark ${fmt(owedTotal)} of owed bonuses paid? Use this if you paid them outside the app — they'll drop off the owed list.`)) handleBonusesPaid(owed, true) }}
+                      style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      Mark {fmt(owedTotal)} paid
+                    </button>
+                  )}
+                  {paid.length > 0 && (
+                    <span style={{ fontSize: 12, color: theme.textMuted, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <CheckCircle size={13} style={{ color: '#22c55e' }} /> {paid.length} paid ({fmt(paidTotal)})
+                      <button
+                        onClick={() => { if (confirm('Reopen these paid bonuses? They’ll return to the owed list.')) handleBonusesPaid(paid, false) }}
+                        style={{ background: 'none', border: 'none', color: theme.accent, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                      >
+                        Reopen
+                      </button>
+                    </span>
+                  )}
+                </div>
+              )
+            })()}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {(bonusesByEmployee.get(emp.id) || []).map((b) => {
                 const statusMeta = {
