@@ -9,7 +9,7 @@ import {
   DollarSign, Calendar, Clock, Users, Settings, Play, Check, X,
   ChevronRight, ChevronDown, ChevronLeft, AlertTriangle, TrendingUp, Zap,
   Award, Filter, ArrowLeft, Eye, Briefcase, MapPin, FileText,
-  Edit3, Save, Map as MapIcon, Plus, Minus, Printer, Mail, Send, AlertCircle
+  Edit3, Save, Map as MapIcon, Plus, Minus, Printer, Mail, Send, AlertCircle, CheckCircle
 } from 'lucide-react'
 import LocationTrailModal from '../components/LocationTrailModal'
 import SearchableSelect from '../components/SearchableSelect'
@@ -1040,7 +1040,12 @@ export default function Payroll() {
   // Lead-source commissions are unaffected — they always pay on the row.
   const setterRule = company?.setter_qualification_rule || 'appointment_set'
   const calculateLeadCommissions = (employeeId) => {
-    const empCommissions = leadCommissions.filter(c => c.employee_id === employeeId)
+    const allEmp = leadCommissions.filter(c => c.employee_id === employeeId)
+    // Already-paid rows drop OFF the payable set — parity with bonuses, so a
+    // commission that was paid on one run can't be paid again on the next
+    // (ticket efd85146). Surfaced separately as paidCount, not silently gone.
+    const paidRows = allEmp.filter(c => c.payment_status === 'paid')
+    const empCommissions = allEmp.filter(c => c.payment_status !== 'paid')
     const setterRows = empCommissions.filter(c => c.commission_type === 'appointment_set')
     const sourceRows = empCommissions.filter(c => c.commission_type === 'lead_source')
     const earnedSetter = setterRule === 'quote_created'
@@ -1055,7 +1060,22 @@ export default function Payroll() {
     const pendingCount = pendingSetter.length
     const pendingAmount = pendingSetter.reduce((s, c) => s + (c.amount || 0), 0)
     const sourceCount = sourceRows.length
-    return { total, apptCount, sourceCount, details: [...earnedSetter, ...sourceRows], pendingCount, pendingAmount }
+    return {
+      total, apptCount, sourceCount, details: [...earnedSetter, ...sourceRows], pendingCount, pendingAmount,
+      paidCount: paidRows.length, paidTotal: paidRows.reduce((s, c) => s + (c.amount || 0), 0),
+    }
+  }
+
+  // Manual "Paid" toggle for lead/setter commissions — the control Bryce asked
+  // for in efd85146. Marks the given rows paid (or reopens them) so they drop
+  // off the payable list without needing a full run. Optimistic local update.
+  const markCommissionsPaid = async (rows, paid = true) => {
+    const ids = (rows || []).map(r => r.id).filter(Boolean)
+    if (!ids.length) return
+    const next = paid ? 'paid' : 'earned'
+    const { error } = await supabase.from('lead_commissions').update({ payment_status: next }).in('id', ids)
+    if (error) { alert('Could not update commissions: ' + error.message); return }
+    setLeadCommissions(prev => prev.map(c => ids.includes(c.id) ? { ...c, payment_status: next } : c))
   }
 
   // Efficiency bonuses: allotted hours - actual hours, weighted split between crew.
@@ -1658,6 +1678,29 @@ export default function Payroll() {
         console.warn('[runPayroll] bonus mark-paid crashed:', bonusErr)
       }
 
+      // ── Mark the lead/setter commissions this run paid as `paid` too, so
+      //    they drop off the next payroll and can't be double-paid (efd85146).
+      //    We mark EXACTLY the rows that fed each employee's commission_pay
+      //    (leadCommissions.details), not a blanket period sweep.
+      try {
+        const paidCommissionIds = []
+        for (const emp of activeEmployees) {
+          const d = employeePayData[emp.id]
+          ;(d?.leadCommissions?.details || []).forEach(c => { if (c?.id) paidCommissionIds.push(c.id) })
+        }
+        if (paidCommissionIds.length) {
+          const { error: commErr } = await supabase
+            .from('lead_commissions')
+            .update({ payment_status: 'paid' })
+            .in('id', paidCommissionIds)
+            .neq('payment_status', 'paid')
+          if (commErr) console.warn('[runPayroll] commission mark-paid failed:', commErr)
+          else setLeadCommissions(prev => prev.map(c => paidCommissionIds.includes(c.id) ? { ...c, payment_status: 'paid' } : c))
+        }
+      } catch (commErr) {
+        console.warn('[runPayroll] commission mark-paid crashed:', commErr)
+      }
+
       // ── Write payroll_tax_liabilities so the Payroll Inbox knows
       //    what to deposit and when. Aggregates each tax kind across
       //    all employees on this run.
@@ -1881,7 +1924,7 @@ export default function Payroll() {
         )}
 
         {/* Lead Commissions Detail */}
-        {data.leadCommissions.details.length > 0 && (
+        {(data.leadCommissions.details.length > 0 || data.leadCommissions.paidCount > 0) && (
           <div style={{ ...cardStyle, marginBottom: '20px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Users size={18} style={{ color: '#3b82f6' }} />
@@ -1914,7 +1957,31 @@ export default function Payroll() {
                 </div>
               )}
             </div>
-            <div style={{ fontSize: '18px', fontWeight: '600', color: '#f59e0b' }}>Total: {fmt(data.leadCommissions.total)}</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#f59e0b' }}>Total owed: {fmt(data.leadCommissions.total)}</div>
+              {isAdmin && data.leadCommissions.details.length > 0 && (
+                <button
+                  onClick={() => { if (confirm(`Mark ${fmt(data.leadCommissions.total)} of ${emp.name}'s commissions as paid? They'll drop off the payable list.`)) markCommissionsPaid(data.leadCommissions.details, true) }}
+                  style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Mark paid
+                </button>
+              )}
+            </div>
+            {data.leadCommissions.paidCount > 0 && (
+              <div style={{ marginTop: 10, fontSize: 12, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <CheckCircle size={13} style={{ color: '#22c55e' }} />
+                {data.leadCommissions.paidCount} already paid ({fmt(data.leadCommissions.paidTotal)}) — not in the total above.
+                {isAdmin && (
+                  <button
+                    onClick={() => { if (confirm('Reopen this employee’s paid commissions? They’ll return to the payable list.')) markCommissionsPaid(leadCommissions.filter(c => c.employee_id === emp.id && c.payment_status === 'paid'), false) }}
+                    style={{ background: 'none', border: 'none', color: theme.accent, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                  >
+                    Reopen
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 
