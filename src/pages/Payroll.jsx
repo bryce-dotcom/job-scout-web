@@ -1096,6 +1096,20 @@ export default function Payroll() {
     setRepCommissions(prev => prev.map(r => ids.includes(r.id) ? { ...r, ...patch } : r))
   }
 
+  // ── "Add to current Payroll" staging ────────────────────────────────────
+  // Sets/clears queued_for_payroll on an earning. A run pays only queued rows.
+  const setQueuedForPayroll = async (table, rows, queued, applyLocal) => {
+    const ids = (rows || []).map(r => r.id).filter(Boolean)
+    if (!ids.length) return
+    const patch = { queued_for_payroll: queued, queued_at: queued ? new Date().toISOString() : null }
+    const { error } = await supabase.from(table).update(patch).in('id', ids)
+    if (error) { alert('Could not update the payroll queue: ' + error.message); return }
+    applyLocal(ids, patch)
+  }
+  const queueBonuses = (rows, q = true) => setQueuedForPayroll('job_bonuses', rows, q, (ids, patch) => setLedgerBonuses(prev => prev.map(b => ids.includes(b.id) ? { ...b, ...patch } : b)))
+  const queueSetter = (rows, q = true) => setQueuedForPayroll('lead_commissions', rows, q, (ids, patch) => setLeadCommissions(prev => prev.map(c => ids.includes(c.id) ? { ...c, ...patch } : c)))
+  const queueRep = (rows, q = true) => setQueuedForPayroll('rep_commissions', rows, q, (ids, patch) => setRepCommissions(prev => prev.map(r => ids.includes(r.id) ? { ...r, ...patch } : r)))
+
   // Efficiency bonuses: allotted hours - actual hours, weighted split between crew.
   // Logic lives in src/lib/bonusCalc.js so FieldScout can render the same numbers.
   // We feed it time_clock rows (normalized), so admin time edits on this page
@@ -1214,7 +1228,7 @@ export default function Payroll() {
       // Re-read the ledger so the page shows exactly what techs are owed.
       const { data } = await supabase
         .from('job_bonuses')
-        .select('id, job_id, employee_id, amount, status, needs_verification, saved_hours, allotted_hours, actual_hours, crew_size, paid_at, jobs(job_title, job_id)')
+        .select('id, job_id, employee_id, amount, status, needs_verification, saved_hours, allotted_hours, actual_hours, crew_size, paid_at, queued_for_payroll, jobs(job_title, job_id)')
         .eq('company_id', companyId)
       if (!cancelled) setLedgerBonuses(data || [])
     })()
@@ -1308,16 +1322,20 @@ export default function Payroll() {
       salaryPay = annualSalary / periodsPerYear
     }
 
-    // Commissions. The invoice-commission (services/goods) portion of the
-    // available now comes from the FROZEN rep_commissions ledger instead of the
-    // live recompute — swap out the live invoice part, swap in the frozen part.
-    // Utility/processor commissions and pending stay on the live calc.
+    // Commissions. A run pays only what was ADDED to this payroll (queued) —
+    // explicit staging. Setter + rep-invoice commissions are queueable rows;
+    // utility/processor commissions stay on the live calc and auto-include
+    // (they aren't row-staged yet).
     const invoiceComm = calculateInvoiceCommissions(employee.id)
     const leadComm = calculateLeadCommissions(employee.id)
     const { periodStart: cfpStart, periodEnd: cfpEnd } = getCurrentPeriod()
-    const ledgerInvoiceAvail = earnedRepInPeriod(repCommissions, employee.id, cfpStart.toISOString().split('T')[0], cfpEnd.toISOString().split('T')[0])
-    const invoiceAvailable = invoiceComm.available - liveInvoiceAvailable(invoiceComm) + ledgerInvoiceAvail
-    const commissionPay = invoiceAvailable + leadComm.total
+    const cfpS = cfpStart.toISOString().split('T')[0], cfpE = cfpEnd.toISOString().split('T')[0]
+    const liveOtherComm = invoiceComm.available - liveInvoiceAvailable(invoiceComm) // utility + processor
+    const queuedSetter = (leadComm.details || []).filter(c => c.queued_for_payroll).reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
+    const queuedRep = repCommissions
+      .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && r.queued_for_payroll && (r.earned_at || '').slice(0, 10) >= cfpS && (r.earned_at || '').slice(0, 10) <= cfpE)
+      .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+    const commissionPay = queuedSetter + queuedRep + liveOtherComm
 
     // Efficiency bonus. The live calc still drives the per-job breakdown UI
     // (what was saved on each job, verification state), but the dollar amount
@@ -1326,7 +1344,10 @@ export default function Payroll() {
     // the tech's My Pay, so paying it here keeps the two in lockstep and stops
     // the old "bonus showed then vanished" drift.
     const efficiencyBonus = calculateEfficiencyBonus(employee.id)
-    const bonusOwed = accruedByEmployee.get(employee.id) || 0
+    // Only bonuses ADDED to this payroll (queued + eligible) are paid by a run.
+    const bonusOwed = (bonusesByEmployee.get(employee.id) || [])
+      .filter(b => b.status === 'accrued' && !b.needs_verification && b.queued_for_payroll)
+      .reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
 
     const grossPay = hourlyPay + salaryPay + commissionPay + bonusOwed
 
@@ -1704,55 +1725,45 @@ export default function Payroll() {
       const { error: stubsError } = await supabase.from('paystubs').insert(paystubs)
       if (stubsError) throw stubsError
 
-      // ── Mark the OWED (accrued) efficiency bonuses we just paid as `paid`.
-      //    This freezes them and drops them off the techs' My Pay, stamped
-      //    with the pay date so the "paid on X" indicator shows. We pay the
-      //    whole accrued-unpaid balance for each employee on this run — that's
-      //    the amount that went into bonusOwed / their gross above.
+      // ── Pay the earnings ADDED to this payroll (queued): mark them paid,
+      //    stamp the date, and clear the queue flag so they drop off "owed".
+      //    Only queued + eligible rows are touched — exactly the amount that
+      //    fed each gross above. Un-queued owed items stay owed for a later run.
       try {
         const adminEmp = employees.find(e => e.email === user?.email)
         const paidEmpIds = activeEmployees.map(e => e.id)
+        const stamp = {
+          paid_pay_period_start: periodStart.toISOString().split('T')[0],
+          paid_pay_period_end: periodEnd.toISOString().split('T')[0],
+          updated_at: new Date().toISOString(),
+        }
         if (paidEmpIds.length) {
-          const { error: bonusErr } = await supabase
-            .from('job_bonuses')
-            .update({
-              status: 'paid',
-              paid_at: payDate.toISOString(),
-              paid_pay_period_start: periodStart.toISOString().split('T')[0],
-              paid_pay_period_end: periodEnd.toISOString().split('T')[0],
-              paid_by: adminEmp?.id || null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('company_id', companyId)
-            .eq('status', 'accrued')
-            .in('employee_id', paidEmpIds)
+          // Bonuses: queued + accrued -> paid.
+          const { error: bonusErr } = await supabase.from('job_bonuses')
+            .update({ status: 'paid', paid_at: payDate.toISOString(), paid_by: adminEmp?.id || null, queued_for_payroll: false, ...stamp })
+            .eq('company_id', companyId).in('employee_id', paidEmpIds)
+            .eq('status', 'accrued').eq('queued_for_payroll', true)
           if (bonusErr) console.warn('[runPayroll] bonus mark-paid failed:', bonusErr)
-        }
-      } catch (bonusErr) {
-        console.warn('[runPayroll] bonus mark-paid crashed:', bonusErr)
-      }
+          else setLedgerBonuses(prev => prev.map(b => (paidEmpIds.includes(b.employee_id) && b.status === 'accrued' && b.queued_for_payroll) ? { ...b, status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : b))
 
-      // ── Mark the lead/setter commissions this run paid as `paid` too, so
-      //    they drop off the next payroll and can't be double-paid (efd85146).
-      //    We mark EXACTLY the rows that fed each employee's commission_pay
-      //    (leadCommissions.details), not a blanket period sweep.
-      try {
-        const paidCommissionIds = []
-        for (const emp of activeEmployees) {
-          const d = employeePayData[emp.id]
-          ;(d?.leadCommissions?.details || []).forEach(c => { if (c?.id) paidCommissionIds.push(c.id) })
+          // Setter/lead commissions: queued -> paid.
+          const { error: commErr } = await supabase.from('lead_commissions')
+            .update({ payment_status: 'paid', queued_for_payroll: false })
+            .eq('company_id', companyId).in('employee_id', paidEmpIds)
+            .eq('queued_for_payroll', true).neq('payment_status', 'paid')
+          if (commErr) console.warn('[runPayroll] setter commission mark-paid failed:', commErr)
+          else setLeadCommissions(prev => prev.map(c => (paidEmpIds.includes(c.employee_id) && c.queued_for_payroll) ? { ...c, payment_status: 'paid', queued_for_payroll: false } : c))
+
+          // Rep (%) commissions: queued -> paid.
+          const { error: repErr } = await supabase.from('rep_commissions')
+            .update({ payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false })
+            .eq('company_id', companyId).in('employee_id', paidEmpIds)
+            .eq('queued_for_payroll', true).neq('payment_status', 'paid')
+          if (repErr) console.warn('[runPayroll] rep commission mark-paid failed:', repErr)
+          else setRepCommissions(prev => prev.map(r => (paidEmpIds.includes(r.employee_id) && r.queued_for_payroll) ? { ...r, payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : r))
         }
-        if (paidCommissionIds.length) {
-          const { error: commErr } = await supabase
-            .from('lead_commissions')
-            .update({ payment_status: 'paid' })
-            .in('id', paidCommissionIds)
-            .neq('payment_status', 'paid')
-          if (commErr) console.warn('[runPayroll] commission mark-paid failed:', commErr)
-          else setLeadCommissions(prev => prev.map(c => paidCommissionIds.includes(c.id) ? { ...c, payment_status: 'paid' } : c))
-        }
-      } catch (commErr) {
-        console.warn('[runPayroll] commission mark-paid crashed:', commErr)
+      } catch (payErr) {
+        console.warn('[runPayroll] earnings mark-paid crashed:', payErr)
       }
 
       // ── Write payroll_tax_liabilities so the Payroll Inbox knows
@@ -1868,41 +1879,60 @@ export default function Payroll() {
           const { periodStart: rps, periodEnd: rpe } = getCurrentPeriod()
           const psStr = rps.toISOString().split('T')[0], peStr = rpe.toISOString().split('T')[0]
           const bonuses = bonusesByEmployee.get(emp.id) || []
-          const sum = (arr) => arr.reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
-          const bonusReady = sum(bonuses.filter(b => b.status === 'accrued' && !b.needs_verification))
-          const bonusHeld = sum(bonuses.filter(b => b.status === 'accrued' && b.needs_verification))
-          const bonusPending = sum(bonuses.filter(b => b.status === 'pending'))
-          const setterReady = data.leadCommissions.total
+          const sumAmt = (arr) => arr.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0)
+          const eligBonuses = bonuses.filter(b => b.status === 'accrued' && !b.needs_verification)
+          const bonusReadyRows = eligBonuses.filter(b => !b.queued_for_payroll)
+          const bonusQueuedRows = eligBonuses.filter(b => b.queued_for_payroll)
+          const setterRows = data.leadCommissions.details || []
+          const setterReadyRows = setterRows.filter(c => !c.queued_for_payroll)
+          const setterQueuedRows = setterRows.filter(c => c.queued_for_payroll)
+          const repElig = repCommissions.filter(r => r.employee_id === emp.id && r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) >= psStr && (r.earned_at || '').slice(0, 10) <= peStr)
+          const repReadyRows = repElig.filter(r => !r.queued_for_payroll)
+          const repQueuedRows = repElig.filter(r => r.queued_for_payroll)
+          const readyToAdd = sumAmt(bonusReadyRows) + sumAmt(setterReadyRows) + sumAmt(repReadyRows)
+          const inPayroll = sumAmt(bonusQueuedRows) + sumAmt(setterQueuedRows) + sumAmt(repQueuedRows)
+          const bonusHeld = sumAmt(bonuses.filter(b => b.status === 'accrued' && b.needs_verification))
+          const bonusPending = sumAmt(bonuses.filter(b => b.status === 'pending'))
           const setterPending = data.leadCommissions.pendingAmount || 0
-          const repReady = earnedRepInPeriod(repCommissions, emp.id, psStr, peStr)
-          const ready = bonusReady + setterReady + repReady
           const waiting = bonusHeld + bonusPending + setterPending
-          if (ready <= 0 && waiting <= 0) return null
+          if (readyToAdd <= 0 && inPayroll <= 0 && waiting <= 0) return null
           const waitingItems = []
           if (bonusPending > 0) waitingItems.push(`${fmt(bonusPending)} bonus — the job's money hasn't come in yet`)
           if (bonusHeld > 0) waitingItems.push(`${fmt(bonusHeld)} bonus — held for review`)
-          if (setterPending > 0) waitingItems.push(`${fmt(setterPending)} setter commission — appointment set, no estimate yet`)
+          if (setterPending > 0) waitingItems.push(`${fmt(setterPending)} setter — appointment set, no estimate yet`)
+          const addAllReady = () => { queueBonuses(bonusReadyRows, true); queueSetter(setterReadyRows, true); queueRep(repReadyRows, true) }
+          const cell = (label, val, color, bg, border) => (
+            <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: bg, border: `1px solid ${border}` }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color }}>{label}</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color, marginTop: 4 }}>{fmt(val)}</div>
+            </div>
+          )
           return (
             <div style={{ ...cardStyle, marginBottom: '20px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <DollarSign size={18} style={{ color: theme.accent }} /> Earnings
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '14px' }}>
-                <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#16a34a' }}>Ready to pay</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>{fmt(ready)}</div>
-                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>bonuses owed + earned commissions · paid on the next run, or mark paid below</div>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: '14px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <DollarSign size={18} style={{ color: theme.accent }} /> Earnings
+                </h3>
+                {isAdmin && readyToAdd > 0 && (
+                  <button onClick={addAllReady} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Add all ready ({fmt(readyToAdd)}) to payroll</button>
+                )}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px' }}>
+                {cell('Ready to add', readyToAdd, '#b45309', 'rgba(245,158,11,0.08)', 'rgba(245,158,11,0.25)')}
+                {cell('In this payroll', inPayroll, '#16a34a', 'rgba(34,197,94,0.08)', 'rgba(34,197,94,0.25)')}
                 <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: theme.bg, border: `1px solid ${theme.border}` }}>
                   <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: theme.textMuted }}>Waiting on</div>
                   <div style={{ fontSize: 24, fontWeight: 700, color: theme.textSecondary, marginTop: 4 }}>{fmt(waiting)}</div>
-                  {waitingItems.length > 0 ? (
-                    <ul style={{ margin: '6px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      {waitingItems.map((w, i) => <li key={i} style={{ fontSize: 11, color: theme.textMuted }}>{w}</li>)}
-                    </ul>
-                  ) : <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>nothing pending</div>}
                 </div>
               </div>
+              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 10 }}>
+                Running payroll pays <strong style={{ color: theme.text }}>“In this payroll” ({fmt(inPayroll)})</strong>. Add ready items, or mark any paid outside the app in the cards below.
+              </div>
+              {waitingItems.length > 0 && (
+                <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {waitingItems.map((w, i) => <li key={i} style={{ fontSize: 11, color: theme.textMuted }}>· {w}</li>)}
+                </ul>
+              )}
             </div>
           )
         })()}
@@ -2056,17 +2086,28 @@ export default function Payroll() {
                 </div>
               )}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: '#f59e0b' }}>Total owed: {fmt(data.leadCommissions.total)}</div>
-              {isAdmin && data.leadCommissions.details.length > 0 && (
-                <button
-                  onClick={() => { if (confirm(`Mark ${fmt(data.leadCommissions.total)} of ${emp.name}'s commissions as paid? They'll drop off the payable list.`)) markCommissionsPaid(data.leadCommissions.details, true) }}
-                  style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                >
-                  Mark paid
-                </button>
-              )}
-            </div>
+            {(() => {
+              const details = data.leadCommissions.details || []
+              const readyRows = details.filter(c => !c.queued_for_payroll)
+              const queuedRows = details.filter(c => c.queued_for_payroll)
+              const readyTot = readyRows.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
+              const queuedTot = queuedRows.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 16, fontWeight: 600, color: '#f59e0b' }}>Ready: {fmt(readyTot)}</span>
+                    {queuedTot > 0 && <span style={{ fontSize: 16, fontWeight: 600, color: '#16a34a' }}>In this payroll: {fmt(queuedTot)}</span>}
+                  </div>
+                  {isAdmin && details.length > 0 && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {readyRows.length > 0 && <button onClick={() => queueSetter(readyRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add {fmt(readyTot)} to payroll</button>}
+                      {queuedRows.length > 0 && <button onClick={() => queueSetter(queuedRows, false)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: 'none', color: theme.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove from payroll</button>}
+                      <button onClick={() => { if (confirm(`Mark ${fmt(readyTot + queuedTot)} of ${emp.name}'s commissions paid (e.g. outside the app)?`)) markCommissionsPaid(details, true) }} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Mark paid</button>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
             {data.leadCommissions.paidCount > 0 && (
               <div style={{ marginTop: 10, fontSize: 12, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <CheckCircle size={13} style={{ color: '#22c55e' }} />
@@ -2104,17 +2145,27 @@ export default function Payroll() {
               <p style={{ fontSize: 12, color: theme.textMuted, margin: '0 0 12px' }}>
                 {ready.length} payment{ready.length === 1 ? '' : 's'} this period · frozen when earned, so the amount never changes under a later invoice edit.
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                <div style={{ fontSize: '18px', fontWeight: '600', color: '#22c55e' }}>Ready to pay: {fmt(readyTotal)}</div>
-                {isAdmin && ready.length > 0 && (
-                  <button
-                    onClick={() => { if (confirm(`Mark ${fmt(readyTotal)} of ${emp.name}'s rep commissions paid? Use this if you paid outside the app — they'll drop off the payable total.`)) markRepCommissionsPaid(ready, true) }}
-                    style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                  >
-                    Mark paid
-                  </button>
-                )}
-              </div>
+              {(() => {
+                const readyRows = ready.filter(r => !r.queued_for_payroll)
+                const queuedRows = ready.filter(r => r.queued_for_payroll)
+                const readyTot = readyRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+                const queuedTot = queuedRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 16, fontWeight: 600, color: '#22c55e' }}>Ready: {fmt(readyTot)}</span>
+                      {queuedTot > 0 && <span style={{ fontSize: 16, fontWeight: 600, color: '#16a34a' }}>In this payroll: {fmt(queuedTot)}</span>}
+                    </div>
+                    {isAdmin && (
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {readyRows.length > 0 && <button onClick={() => queueRep(readyRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add {fmt(readyTot)} to payroll</button>}
+                        {queuedRows.length > 0 && <button onClick={() => queueRep(queuedRows, false)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: 'none', color: theme.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove from payroll</button>}
+                        {ready.length > 0 && <button onClick={() => { if (confirm(`Mark ${fmt(readyTot + queuedTot)} of ${emp.name}'s rep commissions paid (e.g. outside the app)?`)) markRepCommissionsPaid(ready, true) }} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Mark paid</button>}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
               {paid.length > 0 && (
                 <div style={{ marginTop: 10, fontSize: 12, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <CheckCircle size={13} style={{ color: '#22c55e' }} /> {paid.length} paid ({fmt(paidTotal)}) — not in the total above.
@@ -2231,8 +2282,21 @@ export default function Payroll() {
                         onClick={() => handleBonusVerify(b)}
                         style={{ padding: '4px 10px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
                       >
-                        Mark verified
+                        Verify
                       </button>
+                    )}
+                    {isAdmin && b.status === 'accrued' && !b.needs_verification && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        {b.queued_for_payroll ? (
+                          <>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', background: 'rgba(34,197,94,0.15)', padding: '3px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Check size={10} /> In payroll</span>
+                            <button onClick={() => queueBonuses([b], false)} style={{ padding: '4px 8px', background: 'none', border: `1px solid ${theme.border}`, color: theme.textMuted, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Remove</button>
+                          </>
+                        ) : (
+                          <button onClick={() => queueBonuses([b], true)} style={{ padding: '4px 10px', background: theme.accent, color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Add to payroll</button>
+                        )}
+                        <button onClick={() => { if (confirm('Mark this bonus paid (e.g. paid outside the app)?')) handleBonusesPaid([b], true) }} style={{ padding: '4px 10px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Mark paid</button>
+                      </div>
                     )}
                   </div>
                 </div>

@@ -97,7 +97,7 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
 }
 
 export async function fetchRepCommissions(supabase, companyId, employeeId = null) {
-  let q = supabase.from('rep_commissions').select('id, employee_id, invoice_id, job_id, payment_id, kind, amount, earned_at, payment_status, paid_at').eq('company_id', companyId)
+  let q = supabase.from('rep_commissions').select('id, employee_id, invoice_id, job_id, payment_id, kind, amount, earned_at, payment_status, paid_at, queued_for_payroll').eq('company_id', companyId)
   if (employeeId != null) q = q.eq('employee_id', employeeId)
   const { data, error } = await q
   if (error) { console.warn('[fetchRepCommissions] failed:', error.message); return [] }
