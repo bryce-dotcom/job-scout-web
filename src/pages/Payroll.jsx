@@ -21,6 +21,7 @@ import {
   calculateInvoiceCommissions as sharedCalculateInvoiceCommissions,
 } from '../lib/bonusCalc'
 import { syncJobBonuses } from '../lib/bonusLedger'
+import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 
 // Roll the per-employee tax breakdowns up into one row per tax-kind +
@@ -278,6 +279,10 @@ export default function Payroll() {
   // and freezes these; My Pay / the Job page read them. Loaded after each
   // sync so the page shows the same numbers the techs see.
   const [ledgerBonuses, setLedgerBonuses] = useState([])
+  // Frozen rep (%) commission ledger (rep_commissions). Payroll is a writer:
+  // it syncs new payments into frozen rows, then reads them so the invoice-
+  // commission amount can't drift. Utility/processor stay on the live calc.
+  const [repCommissions, setRepCommissions] = useState([])
 
   const isAdmin = checkAdmin(user)
   const isManagerPlus = checkManager(user)
@@ -1203,6 +1208,20 @@ export default function Payroll() {
     return () => { cancelled = true }
   }, [loading, companyId, jobs, timeEntries, employees, skillLevelSettings, payrollConfig, verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides])
 
+  // Rep (%) commission ledger — freeze new payments into rows, then read them.
+  // Insert-only; never rewrites an earned amount. Mirrors the bonus sync so
+  // Payroll and My Pay read identical, non-drifting invoice-commission numbers.
+  useEffect(() => {
+    if (loading || !companyId || !jobs.length) return
+    let cancelled = false
+    ;(async () => {
+      await syncRepCommissions(supabase, companyId, { employees, jobs, leads, invoices, payments })
+      const rows = await fetchRepCommissions(supabase, companyId)
+      if (!cancelled) setRepCommissions(rows)
+    })()
+    return () => { cancelled = true }
+  }, [loading, companyId, jobs, invoices, payments, employees, leads])
+
   // Per-employee OWED (accrued, unpaid) bonus total from the ledger — the
   // real amount a payroll run will pay out and freeze.
   const accruedByEmployee = useMemo(() => {
@@ -1276,10 +1295,16 @@ export default function Payroll() {
       salaryPay = annualSalary / periodsPerYear
     }
 
-    // Commissions
+    // Commissions. The invoice-commission (services/goods) portion of the
+    // available now comes from the FROZEN rep_commissions ledger instead of the
+    // live recompute — swap out the live invoice part, swap in the frozen part.
+    // Utility/processor commissions and pending stay on the live calc.
     const invoiceComm = calculateInvoiceCommissions(employee.id)
     const leadComm = calculateLeadCommissions(employee.id)
-    const commissionPay = invoiceComm.available + leadComm.total
+    const { periodStart: cfpStart, periodEnd: cfpEnd } = getCurrentPeriod()
+    const ledgerInvoiceAvail = earnedRepInPeriod(repCommissions, employee.id, cfpStart.toISOString().split('T')[0], cfpEnd.toISOString().split('T')[0])
+    const invoiceAvailable = invoiceComm.available - liveInvoiceAvailable(invoiceComm) + ledgerInvoiceAvail
+    const commissionPay = invoiceAvailable + leadComm.total
 
     // Efficiency bonus. The live calc still drives the per-job breakdown UI
     // (what was saved on each job, verification state), but the dollar amount

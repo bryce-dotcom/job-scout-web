@@ -10,6 +10,7 @@ import {
   PERIODS_PER_YEAR,
 } from '../lib/bonusCalc'
 import { fetchUserBonuses, bonusStatusLabel } from '../lib/bonusLedger'
+import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { canViewHR } from '../lib/accessControl'
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -133,6 +134,10 @@ export default function MyPay() {
   // (employee_benefits). Both are READ-ONLY here.
   const [paystubs, setPaystubs] = useState([])
   const [benefits, setBenefits] = useState([])
+  // Frozen rep (%) commissions (rep_commissions) for this employee — read-only
+  // here; Payroll is the writer. Replaces the drifty live invoice-commission
+  // amount so My Pay and Payroll always agree.
+  const [repCommissions, setRepCommissions] = useState([])
   const [loading, setLoading] = useState(true)
   // Fresh copy of the user's employee row (rate, commission flags) re-read
   // from DB on every mount so a just-updated rate shows here immediately
@@ -188,7 +193,7 @@ export default function MyPay() {
     if (!companyId || !effectiveUserId) { setPaystubs([]); setBenefits([]); return }
     let cancelled = false
     ;(async () => {
-      const [ps, bf] = await Promise.all([
+      const [ps, bf, rc] = await Promise.all([
         supabase.from('paystubs')
           .select('id, period_start, period_end, pay_date, regular_hours, overtime_hours, pto_hours, gross_pay, net_pay, bonus_pay, commission_pay, reimbursement_pay, federal_income_tax, state_income_tax, social_security_employee, medicare_employee, additional_medicare, pre_tax_deductions, post_tax_deductions')
           .eq('company_id', companyId).eq('employee_id', effectiveUserId)
@@ -197,8 +202,9 @@ export default function MyPay() {
           .select('id, benefit_type, plan_name, employee_contribution, employer_contribution, is_pre_tax, frequency, status')
           .eq('company_id', companyId).eq('employee_id', effectiveUserId).eq('status', 'active')
           .order('benefit_type'),
+        fetchRepCommissions(supabase, companyId, effectiveUserId),
       ])
-      if (!cancelled) { setPaystubs(ps.data || []); setBenefits(bf.data || []) }
+      if (!cancelled) { setPaystubs(ps.data || []); setBenefits(bf.data || []); setRepCommissions(rc || []) }
     })()
     return () => { cancelled = true }
   }, [companyId, effectiveUserId])
@@ -397,6 +403,14 @@ export default function MyPay() {
     })
   }, [effectiveUserId, empRow, jobs, leads, invoices, payments, allPaymentsByInvoiceId, utilityInvoices, payrollConfig, periodStartStr, periodEndStr])
 
+  // Swap the invoice-commission (services/goods) portion of `available` for the
+  // FROZEN rep_commissions ledger — same number today, but it stops drifting
+  // and now matches Payroll exactly. Utility/processor + pending stay live.
+  const commAvailable = useMemo(
+    () => commData.available - liveInvoiceAvailable(commData) + earnedRepInPeriod(repCommissions, effectiveUserId, periodStartStr, periodEndStr),
+    [commData, repCommissions, effectiveUserId, periodStartStr, periodEndStr]
+  )
+
   // Efficiency bonuses now come from the persistent job_bonuses ledger
   // (loaded into ledgerBonuses above), not a live per-period recompute —
   // that's what stopped bonuses from vanishing across pay periods.
@@ -425,7 +439,7 @@ export default function MyPay() {
   const needsVerCount = ledgerBonuses.filter(b => b.needs_verification && b.status !== 'paid').length
 
   // Owed bonuses (money already collected) count toward gross pay.
-  const grossPay = hourlyPay + salaryPay + commData.available + accruedBonusTotal
+  const grossPay = hourlyPay + salaryPay + commAvailable + accruedBonusTotal
 
   // Split commissions into buckets the UI renders separately so it's
   // obvious to the rep where each dollar is coming from.
@@ -597,7 +611,7 @@ export default function MyPay() {
           )}
           <div>
             <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Commission</div>
-            <div style={{ fontSize: '18px', fontWeight: '600', color: '#22c55e', marginTop: '2px' }}>{fmt(commData.available)}</div>
+            <div style={{ fontSize: '18px', fontWeight: '600', color: '#22c55e', marginTop: '2px' }}>{fmt(commAvailable)}</div>
             {commData.pending > 0 && <div style={{ fontSize: '11px', color: '#f59e0b' }}>{fmt(commData.pending)} pending</div>}
           </div>
           <div>
@@ -653,7 +667,7 @@ export default function MyPay() {
               <CheckCircle size={18} style={{ color: '#22c55e' }} />
               Commissions earned this period
             </h2>
-            <span style={{ fontSize: '18px', fontWeight: '700', color: '#22c55e' }}>{fmt(commData.available)}</span>
+            <span style={{ fontSize: '18px', fontWeight: '700', color: '#22c55e' }}>{fmt(commAvailable)}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {earned.map((d, i) => (
