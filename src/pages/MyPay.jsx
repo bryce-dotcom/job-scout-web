@@ -796,6 +796,12 @@ export default function MyPay() {
                         </span>
                       )}
                     </div>
+                    {/* Plain-language "what this status means" so nobody has to guess. */}
+                    <div style={{ fontSize: '10.5px', color: theme.textMuted, marginTop: '5px', lineHeight: 1.4 }}>
+                      {b.status === 'accrued'
+                        ? 'The customer has paid this job — it goes out on your next paycheck.'
+                        : "Earned by finishing under the hours bid. Held until the customer pays this job's invoice, then it moves to your next paycheck."}
+                    </div>
                   </div>
                   <div style={{ fontSize: '14px', fontWeight: 700, color: b.status === 'accrued' ? '#8b5cf6' : '#f59e0b', whiteSpace: 'nowrap' }}>{fmt(b.amount)}</div>
                 </div>
