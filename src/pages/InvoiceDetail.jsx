@@ -15,6 +15,7 @@ import { resolveMatLabSplit, splitLinePartsLabor } from '../lib/materialLaborSpl
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
 import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
+import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
 
 // Light theme fallback
 const defaultTheme = {
@@ -73,6 +74,12 @@ export default function InvoiceDetail() {
     status: 'Completed',
     notes: ''
   })
+
+  // Trade credit (credit HHH holds with this customer, applied against the invoice)
+  const [custCreditBalance, setCustCreditBalance] = useState(0)
+  const [showApplyCredit, setShowApplyCredit] = useState(false)
+  const [applyAmount, setApplyAmount] = useState('')
+  const [applyingCredit, setApplyingCredit] = useState(false)
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false)
@@ -614,6 +621,61 @@ export default function InvoiceDetail() {
     })
     setShowPaymentModal(false)
     setSaving(false)
+  }
+
+  // Load this customer's available trade-credit balance (sum of ledger entries)
+  useEffect(() => {
+    const cid = invoice?.customer_id
+    if (!cid) { setCustCreditBalance(0); return }
+    let cancelled = false
+    supabase.from('customer_credits').select('amount').eq('customer_id', cid)
+      .then(({ data }) => { if (!cancelled) setCustCreditBalance(creditBalance(data || [])) })
+    return () => { cancelled = true }
+  }, [invoice?.customer_id])
+
+  // Apply trade credit to this invoice: records a non-cash 'Trade Credit'
+  // payment (so the balance/status update through the normal path) AND draws
+  // the credit ledger down, linked by payment_id.
+  const applyTradeCredit = async () => {
+    const cap = applicableCredit(custCreditBalance, balanceDue)
+    const requested = parseFloat(applyAmount)
+    const finalAmt = requested > 0 ? Math.min(requested, cap) : cap
+    if (!finalAmt || finalAmt <= 0) { toast.error('No credit available to apply'); return }
+    setApplyingCredit(true)
+    const { data: payRow, error: payErr } = await supabase.from('payments').insert([{
+      company_id: companyId,
+      invoice_id: parseInt(id),
+      customer_id: invoice.customer_id || null,
+      job_id: invoice.job_id || null,
+      amount: finalAmt,
+      date: new Date().toISOString().split('T')[0],
+      method: 'Trade Credit',
+      status: 'Completed',
+      source: 'trade_credit',
+      notes: 'Applied from trade-credit balance',
+    }]).select('id').single()
+    if (payErr) { setApplyingCredit(false); toast.error('Could not apply credit: ' + payErr.message); return }
+    const { error: credErr } = await supabase.from('customer_credits').insert([{
+      company_id: companyId,
+      customer_id: invoice.customer_id,
+      amount: -finalAmt,
+      kind: 'applied',
+      note: `Applied to invoice #${id}`,
+      invoice_id: parseInt(id),
+      payment_id: payRow?.id || null,
+    }])
+    if (credErr) console.error('trade-credit ledger insert failed', credErr)
+    const totalPaidNow = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0) + finalAmt
+    await supabase.from('invoices').update({
+      payment_status: invoicePaymentStatus(invoice, totalPaidNow, parseFloat(invoice.credit_card_fee) || 0),
+      updated_at: new Date().toISOString(),
+    }).eq('id', id)
+    setApplyingCredit(false)
+    setShowApplyCredit(false)
+    setApplyAmount('')
+    toast.success(`${fmtMoney(finalAmt)} trade credit applied`)
+    await fetchInvoiceData()
+    await fetchInvoices()
   }
 
   const markAsPaid = async () => {
@@ -2431,6 +2493,17 @@ export default function InvoiceDetail() {
               borderBottom: `1px solid ${theme.border}`
             }}>
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>Payments</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {custCreditBalance > 0.005 && balanceDue > 0.005 && (
+                <button
+                  onClick={() => { setApplyAmount(''); setShowApplyCredit(true) }}
+                  title={`${fmtMoney(custCreditBalance)} trade credit available`}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', backgroundColor: theme.bg, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  <CreditCard size={16} />
+                  Apply credit
+                </button>
+              )}
               <button
                 onClick={() => setShowPaymentModal(true)}
                 style={{
@@ -2450,6 +2523,7 @@ export default function InvoiceDetail() {
                 <Plus size={16} />
                 Add Payment
               </button>
+              </div>
             </div>
 
             {payments.length === 0 ? (
@@ -3422,6 +3496,29 @@ export default function InvoiceDetail() {
       </div>
 
       {/* Add Payment Modal */}
+      {showApplyCredit && (
+        <div onClick={() => setShowApplyCredit(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 50 }}>
+          <div onClick={e => e.stopPropagation()} style={{ backgroundColor: theme.bgCard, borderRadius: '16px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '400px', padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: theme.text }}>Apply Trade Credit</h3>
+              <button onClick={() => setShowApplyCredit(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}><X size={18} /></button>
+            </div>
+            <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '14px' }}>
+              {fmtMoney(custCreditBalance)} available &middot; {fmtMoney(balanceDue)} due on this invoice
+            </div>
+            <label style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Amount to apply</label>
+            <input type="number" min="0" step="0.01" inputMode="decimal" value={applyAmount} onChange={e => setApplyAmount(e.target.value)} placeholder={applicableCredit(custCreditBalance, balanceDue).toFixed(2)} autoFocus style={{ width: '100%', padding: '10px 12px', border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', color: theme.text, backgroundColor: theme.bgCard, boxSizing: 'border-box', marginBottom: '6px' }} />
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '18px' }}>
+              Leave blank to apply the full {fmtMoney(applicableCredit(custCreditBalance, balanceDue))}. This is not a cash payment — it draws down their trade-credit balance.
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setShowApplyCredit(false)} style={{ flex: 1, padding: '12px', minHeight: '44px', backgroundColor: theme.bg, color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', cursor: 'pointer', fontSize: '14px' }}>Cancel</button>
+              <button onClick={applyTradeCredit} disabled={applyingCredit} style={{ flex: 1, padding: '12px', minHeight: '44px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', cursor: applyingCredit ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: '700', opacity: applyingCredit ? 0.6 : 1 }}>{applyingCredit ? 'Applying…' : 'Apply credit'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showPaymentModal && (
         <div style={{
           position: 'fixed',

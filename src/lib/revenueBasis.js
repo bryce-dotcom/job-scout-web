@@ -34,7 +34,10 @@ export function invoiceNet(inv) {
 }
 
 export function cashRevenue({ payments = [], leadPayments = [], utilityInvoices = [] }, inRange) {
-  const pay = (payments || []).filter(p => isCollected(p) && inRange(p.date || p.created_at)).reduce((s, p) => s + num(p.amount), 0)
+  // Trade-credit applications reduce an invoice balance but are NOT cash — they
+  // draw down credit HHH already holds with a trade partner. Excluding them here
+  // keeps cash revenue from being overstated.
+  const pay = (payments || []).filter(p => isCollected(p) && p.method !== 'Trade Credit' && inRange(p.date || p.created_at)).reduce((s, p) => s + num(p.amount), 0)
   const dep = (leadPayments || []).filter(d => inRange(d.date_created || d.created_at)).reduce((s, d) => s + num(d.amount), 0)
   const inc = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && inRange(i.updated_at || i.created_at)).reduce((s, i) => s + num(i.amount ?? i.incentive_amount), 0)
   return pay + dep + inc
