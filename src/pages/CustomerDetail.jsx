@@ -16,6 +16,7 @@ import EmptyState from '../components/EmptyState'
 import { quoteStatusColors, invoiceStatusColors } from '../lib/statusColors'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
 import useSmartBack from '../lib/useSmartBack'
+import { creditTotals, fmtMoney, creditKindLabel } from '../lib/creditLedger'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -73,6 +74,12 @@ export default function CustomerDetail() {
   const [savingQuote, setSavingQuote] = useState(false)
   const [showProductPicker, setShowProductPicker] = useState(false)
 
+  // Trade-credit ledger
+  const [creditEntries, setCreditEntries] = useState([])
+  const [showCreditModal, setShowCreditModal] = useState(false)
+  const [creditForm, setCreditForm] = useState({ kind: 'earned', amount: '', note: '' })
+  const [savingCredit, setSavingCredit] = useState(false)
+
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
@@ -89,6 +96,27 @@ export default function CustomerDetail() {
       fetchCustomerData()
     }
   }, [id, companyId])
+
+  const addCreditEntry = async () => {
+    const amt = parseFloat(creditForm.amount)
+    if (!amt || amt <= 0) { toast.error('Enter an amount greater than 0'); return }
+    setSavingCredit(true)
+    const isUsed = creditForm.kind === 'used'
+    const { error } = await supabase.from('customer_credits').insert({
+      company_id: companyId,
+      customer_id: parseInt(id, 10),
+      amount: isUsed ? -Math.abs(amt) : Math.abs(amt), // used entries stored negative
+      kind: isUsed ? 'used' : 'earned',
+      note: creditForm.note?.trim() || null,
+      created_by: user?.id || null,
+    })
+    setSavingCredit(false)
+    if (error) { toast.error('Could not save: ' + error.message); return }
+    toast.success(isUsed ? 'Credit use recorded' : 'Credit added')
+    setShowCreditModal(false)
+    setCreditForm({ kind: 'earned', amount: '', note: '' })
+    await fetchCustomerData()
+  }
 
   const fetchCustomerData = async () => {
     setLoading(true)
@@ -107,6 +135,14 @@ export default function CustomerDetail() {
     }
 
     setCustomer(customerData)
+
+    // Trade-credit ledger entries for this customer
+    const { data: creditData } = await supabase
+      .from('customer_credits')
+      .select('*')
+      .eq('customer_id', id)
+      .order('created_at', { ascending: false })
+    setCreditEntries(creditData || [])
 
     // Fetch quotes linked to this customer
     const { data: quoteData } = await supabase
@@ -1435,7 +1471,90 @@ export default function CustomerDetail() {
                   </div>
                 )}
               </div>
+
+              {/* Trade Credit ledger */}
+              <div style={{
+                padding: isMobile ? '16px' : '20px',
+                backgroundColor: theme.bg,
+                borderRadius: '10px',
+                gridColumn: isMobile ? 'span 1' : 'span 2'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '8px' }}>
+                  <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.textSecondary, margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <CreditCard size={15} /> Trade Credit
+                  </h3>
+                  <button
+                    onClick={() => { setCreditForm({ kind: 'earned', amount: '', note: '' }); setShowCreditModal(true) }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', minHeight: '36px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', whiteSpace: 'nowrap' }}
+                  >
+                    <Plus size={14} /> Add credit
+                  </button>
+                </div>
+                {(() => {
+                  const t = creditTotals(creditEntries)
+                  return (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '2px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '26px', fontWeight: '800', color: t.balance > 0 ? theme.accent : theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(t.balance)}</span>
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>available credit</span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '14px' }}>
+                        {fmtMoney(t.earned)} earned &middot; {fmtMoney(t.used)} used
+                      </div>
+                      {creditEntries.length === 0 ? (
+                        <div style={{ fontSize: '13px', color: theme.textMuted, fontStyle: 'italic' }}>
+                          No credit tracked yet — use "Add credit" when this customer earns or draws down trade credit.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {creditEntries.slice(0, 12).map(e => (
+                            <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', paddingBottom: '8px', borderBottom: `1px solid ${theme.border}` }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
+                                  {creditKindLabel(e.kind)}{e.invoice_id ? ` · Invoice #${e.invoice_id}` : ''}
+                                </div>
+                                {e.note && <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>{e.note}</div>}
+                                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                                  {new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '14px', fontWeight: '700', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', color: Number(e.amount) >= 0 ? '#16a34a' : '#b45309' }}>
+                                {Number(e.amount) >= 0 ? '+' : '−'}{fmtMoney(Math.abs(Number(e.amount)))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
             </div>
+
+            {/* Add / use trade credit */}
+            {showCreditModal && (
+              <div onClick={() => setShowCreditModal(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }}>
+                <div onClick={e => e.stopPropagation()} style={{ backgroundColor: theme.bgCard, borderRadius: '14px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: '400px', padding: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: theme.text }}>Trade Credit</h3>
+                    <button onClick={() => setShowCreditModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}><X size={18} /></button>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+                    {[['earned', 'Credit earned'], ['used', 'Credit used']].map(([k, label]) => (
+                      <button key={k} onClick={() => setCreditForm(f => ({ ...f, kind: k }))} style={{ flex: 1, padding: '10px', minHeight: '44px', borderRadius: '8px', border: `1.5px solid ${creditForm.kind === k ? theme.accent : theme.border}`, backgroundColor: creditForm.kind === k ? theme.accent : theme.bg, color: creditForm.kind === k ? '#fff' : theme.text, cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>{label}</button>
+                    ))}
+                  </div>
+                  <label style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Amount</label>
+                  <input type="number" min="0" step="0.01" inputMode="decimal" value={creditForm.amount} onChange={e => setCreditForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" style={{ ...inputStyle, marginBottom: '12px' }} autoFocus />
+                  <label style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Note (optional)</label>
+                  <input type="text" value={creditForm.note} onChange={e => setCreditForm(f => ({ ...f, note: e.target.value }))} placeholder="e.g. trade work on their office" style={{ ...inputStyle, marginBottom: '18px' }} />
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button onClick={() => setShowCreditModal(false)} style={{ flex: 1, padding: '12px', minHeight: '44px', backgroundColor: theme.bg, color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', cursor: 'pointer', fontSize: '14px' }}>Cancel</button>
+                    <button onClick={addCreditEntry} disabled={savingCredit} style={{ flex: 1, padding: '12px', minHeight: '44px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', cursor: savingCredit ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: '700', opacity: savingCredit ? 0.6 : 1 }}>{savingCredit ? 'Saving…' : 'Save'}</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
