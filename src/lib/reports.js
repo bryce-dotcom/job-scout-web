@@ -615,6 +615,56 @@ export function monthlyTrend({ payments = [], manualExpenses = [], plaidTransact
   }
 }
 
+// 9. Bank Reconciliation — recorded revenue (books / payments) vs bank
+// cash-in (Plaid deposits), and the deposits that haven't been matched to
+// a recorded payment. Revenue stays attributed (customer/job/AR keep
+// working); the bank is the completeness check. Plaid convention (mirrors
+// Books): NEGATIVE amount = money IN, positive = money out. A deposit is
+// "matched" when matched_invoice_id is set. The rows are the unmatched
+// deposits so an admin can clear the queue / download them.
+export function bankReconciliation({ payments = [], plaidTransactions = [], from, to } = {}) {
+  const fromD = from instanceof Date ? from : new Date(from)
+  const toD = to instanceof Date ? to : new Date(to)
+  const recordedRevenue = (payments || [])
+    .filter(p => inRange(p.date, fromD, toD))
+    .reduce((s, p) => s + (Number(p.amount) || 0), 0)
+  const deposits = (plaidTransactions || [])
+    .filter(t => Number(t.amount) < 0 && !t.is_transfer && inRange(t.date, fromD, toD))
+    .map(t => ({
+      date: t.date,
+      source: t.merchant_name || t.name || '(unnamed)',
+      amount: Math.abs(Number(t.amount) || 0),
+      matched: !!t.matched_invoice_id,
+    }))
+  const bankCashIn = deposits.reduce((s, d) => s + d.amount, 0)
+  const unmatched = deposits.filter(d => !d.matched).sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+  const unmatchedTotal = unmatched.reduce((s, d) => s + d.amount, 0)
+  const rows = unmatched.map(d => ({ date: d.date, source: d.source, amount: d.amount }))
+  return {
+    id: 'bank-reconciliation',
+    name: 'Bank Reconciliation',
+    description: 'Recorded revenue (books) vs bank cash-in (Plaid deposits) for the period. Rows list bank deposits not yet matched to a recorded payment — cash in the bank not yet booked as revenue.',
+    columns: [
+      { key: 'date', label: 'Deposit Date', format: 'date' },
+      { key: 'source', label: 'Source' },
+      { key: 'amount', label: 'Amount', align: 'right', format: 'currency' },
+    ],
+    rows,
+    totals: { date: 'Unmatched Total', amount: unmatchedTotal },
+    summary: {
+      recordedRevenue,
+      bankCashIn,
+      unmatchedTotal,
+      unmatchedCount: unmatched.length,
+      // Positive: more cash hit the bank than is booked (unrecorded payments
+      // or non-revenue deposits). Negative: booked revenue the bank hasn't
+      // shown yet (e.g. Stripe payout in flight).
+      difference: bankCashIn - recordedRevenue,
+    },
+    period: { from: fromD, to: toD },
+  }
+}
+
 // ─────────────────── helpers used by Books/Frankie ───────────────────
 
 // Catalogue with metadata for rendering buttons / tabs in the UI.
@@ -627,6 +677,7 @@ export const STANDARD_REPORTS = [
   { id: 'expense-by-category', name: 'Expenses by Category', description: 'Spend per category.', icon: 'PieChart', run: expenseByCategory },
   { id: 'expense-by-vendor', name: 'Expenses by Vendor', description: 'Top vendors by spend.', icon: 'Building', run: expenseByVendor },
   { id: 'monthly-trend', name: 'Monthly Trend', description: 'Revenue, expenses, net by month.', icon: 'TrendingUp', run: monthlyTrend },
+  { id: 'bank-reconciliation', name: 'Bank Reconciliation', description: 'Recorded revenue vs bank cash-in; unmatched deposits.', icon: 'Scale', run: bankReconciliation },
 ]
 
 // Format a single cell value for display.

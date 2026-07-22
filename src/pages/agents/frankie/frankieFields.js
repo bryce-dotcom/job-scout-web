@@ -169,6 +169,66 @@ export function unifiedExpenses(manualExpenses = [], plaidTransactions = []) {
   return out
 }
 
+// ──────────────────────── bank cash-in / reconciliation ────────────────────────
+
+// Plaid convention (mirrors Books → Money): NEGATIVE amount = money IN
+// (a deposit), positive = money out. Returns deposits normalized to
+// POSITIVE inflow amounts, excluding transfers between the company's own
+// accounts. `matched` is true when a payment/invoice was already recorded
+// against the deposit (matched_invoice_id set) — unmatched deposits are
+// cash that hit the bank but was never booked as revenue, which is the gap
+// Frankie reconciles. Same filter as Books unmatchedDeposits.
+export function bankDeposits(plaidTransactions = []) {
+  const out = []
+  for (const t of plaidTransactions || []) {
+    const amt = Number(t.amount) || 0
+    if (amt >= 0) continue        // skip debits / zero (money out lives in unifiedExpenses)
+    if (t.is_transfer) continue   // moving own cash, not income
+    out.push({
+      id: 'plaid-' + t.id,
+      date: t.date,
+      amount: Math.abs(amt),
+      matched: !!t.matched_invoice_id,
+      source: t.merchant_name || t.name || '',
+    })
+  }
+  return out
+}
+
+// Cash reconciliation for a window: recorded revenue (the books — payments
+// table) vs bank cash-in (Plaid deposits) and the unmatched gap between
+// them. This is the answer to "are we seeing the whole year, and does the
+// bank agree with the books?" — revenue stays attributed (customer/job/AR
+// keep working) while the bank provides the completeness check.
+export function cashReconciliation(payments = [], plaidTransactions = [], startDate = null, endDate = new Date()) {
+  const inWin = (d) => {
+    if (!d) return false
+    const t = new Date(d)
+    if (startDate && t < startDate) return false
+    if (endDate && t > endDate) return false
+    return true
+  }
+  const recordedRevenue = (payments || [])
+    .filter(p => inWin(paymentDate(p)))
+    .reduce((s, p) => s + (Number(p.amount) || 0), 0)
+  const deposits = bankDeposits(plaidTransactions).filter(d => inWin(d.date))
+  const bankCashIn = deposits.reduce((s, d) => s + d.amount, 0)
+  const unmatched = deposits.filter(d => !d.matched)
+  const unmatchedTotal = unmatched.reduce((s, d) => s + d.amount, 0)
+  return {
+    recordedRevenue,
+    bankCashIn,
+    unmatchedTotal,
+    unmatchedCount: unmatched.length,
+    unmatched,
+    // Positive = more cash landed in the bank than is booked as revenue
+    // (likely unrecorded payments or non-revenue deposits like loans).
+    // Negative = booked revenue the bank hasn't shown (e.g. Stripe payout
+    // still in flight, or a payment recorded before the deposit cleared).
+    difference: bankCashIn - recordedRevenue,
+  }
+}
+
 // ──────────────────────────── aggregate helpers ────────────────────────────
 
 // Total AR across all open invoices (customer balance after payments).
