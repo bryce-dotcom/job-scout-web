@@ -16,6 +16,7 @@ import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
 import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
 import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
+import LoadingSpinner from '../components/LoadingSpinner'
 
 // Light theme fallback
 const defaultTheme = {
@@ -1930,7 +1931,7 @@ export default function InvoiceDetail() {
   if (loading) {
     return (
       <div style={{ padding: '24px' }}>
-        <p style={{ color: theme.textMuted }}>Loading invoice...</p>
+        <LoadingSpinner message="Loading invoice…" size="large" />
       </div>
     )
   }

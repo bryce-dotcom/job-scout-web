@@ -8,6 +8,7 @@ import { isLegacyNetShape } from '../lib/arHelpers'
 import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle, Pencil, Trash2, Zap, Upload, Download, Settings as SettingsIcon, Sliders, CreditCard, Mail } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import SearchableSelect from '../components/SearchableSelect'
+import LoadingSpinner from '../components/LoadingSpinner'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { invoicesFields, paymentsFields } from '../lib/importExportFields'
 import { toast } from '../lib/toast'
@@ -819,7 +820,7 @@ export default function Invoices() {
   if (!user) {
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
-        <div style={{ fontSize: '14px', color: '#7d8a7f' }}>Loading...</div>
+        <LoadingSpinner size="large" />
       </div>
     )
   }

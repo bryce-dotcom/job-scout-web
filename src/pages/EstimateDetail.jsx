@@ -8,6 +8,7 @@ import { deriveBusinessUnit } from '../lib/businessUnitForWork'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
+import LoadingSpinner from '../components/LoadingSpinner'
 import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image, Upload } from 'lucide-react'
 import FlowIndicator from '../components/FlowIndicator'
 import DealBreadcrumb from '../components/DealBreadcrumb'
@@ -2498,7 +2499,7 @@ function EstimateDetailInner() {
   if (loading) {
     return (
       <div style={{ padding: isMobile ? '16px' : '24px' }}>
-        <p style={{ color: theme.textMuted }}>Loading estimate...</p>
+        <LoadingSpinner message="Loading estimate…" size="large" />
       </div>
     )
   }
