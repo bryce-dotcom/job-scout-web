@@ -19,6 +19,13 @@ function formatElapsed(start) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
+// A shift open longer than this is almost certainly a forgotten clock-out, not
+// someone still on the job — real shifts don't run 16h. We keep these OUT of the
+// live map + "on the clock" count (they'd otherwise pin people at old job sites
+// from days ago) and surface them separately as "needs a clock-out fixed."
+const STALE_SHIFT_MS = 16 * 60 * 60 * 1000
+const isForgottenShift = (a) => (Date.now() - new Date(a.clock_in).getTime()) > STALE_SHIFT_MS
+
 export default function WhosWorking({ theme }) {
   const companyId = useStore(s => s.companyId)
   const mapElRef = useRef(null)
@@ -51,13 +58,30 @@ export default function WhosWorking({ theme }) {
         .is('clock_out', null)
         .order('clock_in', { ascending: false })
       if (error) throw error
+
+      // Freshest location comes from location_pings — the GLOBAL tracker
+      // (useLocationTracking in Layout) pings from ANY page while on the clock,
+      // every ~15 min. time_clock.last_lat is only written by FieldScout, which
+      // techs rarely keep open, so it was usually stale/empty and the map fell
+      // back to the clock-in spot. Prefer the latest ping per shift.
+      const shiftIds = (data || []).map(r => r.id)
+      const latestPing = new Map()
+      if (shiftIds.length) {
+        const { data: pings } = await supabase
+          .from('location_pings')
+          .select('time_clock_id, lat, lng, pinged_at')
+          .eq('company_id', companyId)
+          .in('time_clock_id', shiftIds)
+          .order('pinged_at', { ascending: false })
+          .limit(500)
+        for (const p of pings || []) { if (!latestPing.has(p.time_clock_id)) latestPing.set(p.time_clock_id, p) }
+      }
+
       const rows = (data || []).map(r => {
-        // Prefer the live ping location over the clock-in location when we
-        // have a recent ping. Falls back to clock-in location if the user
-        // hasn't pinged yet (e.g. first 30s after clock-in, or backgrounded
-        // tab).
-        const liveLat = r.last_lat != null ? Number(r.last_lat) : null
-        const liveLng = r.last_lng != null ? Number(r.last_lng) : null
+        const ping = latestPing.get(r.id)
+        // priority: latest location ping > time_clock.last_lat > clock-in spot.
+        const liveLat = ping && ping.lat != null ? Number(ping.lat) : (r.last_lat != null ? Number(r.last_lat) : null)
+        const liveLng = ping && ping.lng != null ? Number(ping.lng) : (r.last_lng != null ? Number(r.last_lng) : null)
         const lat = liveLat != null ? liveLat : (r.clock_in_lat != null ? Number(r.clock_in_lat) : null)
         const lng = liveLng != null ? liveLng : (r.clock_in_lng != null ? Number(r.clock_in_lng) : null)
         return {
@@ -68,7 +92,7 @@ export default function WhosWorking({ theme }) {
           lat, lng,
           address: r.clock_in_address || null,
           clock_in: r.clock_in,
-          last_ping_at: r.last_ping_at || null,
+          last_ping_at: ping?.pinged_at || r.last_ping_at || null,
           isLive: liveLat != null && liveLng != null,
         }
       })
@@ -92,7 +116,10 @@ export default function WhosWorking({ theme }) {
         filter: `company_id=eq.${companyId}`,
       }, () => load())
       .subscribe()
-    return () => { supabase.removeChannel(ch) }
+    // Also reload every 3 min so fresh location_pings show without a clock
+    // in/out (realtime only fires on time_clock changes, not new pings).
+    const reloadId = setInterval(() => load(), 3 * 60 * 1000)
+    return () => { supabase.removeChannel(ch); clearInterval(reloadId) }
   }, [companyId])
 
   // Init map once Google is ready
@@ -127,7 +154,9 @@ export default function WhosWorking({ theme }) {
     markersRef.current.forEach(m => m.setMap(null))
     markersRef.current = []
 
-    const located = active.filter(a => a.lat != null && a.lng != null)
+    // Only pin people who are actually working now — not forgotten clock-outs
+    // still open from days ago (those would drop a pin at a stale job site).
+    const located = active.filter(a => a.lat != null && a.lng != null && !isForgottenShift(a))
     if (located.length === 0) return
 
     const bounds = new google.maps.LatLngBounds()
@@ -169,8 +198,12 @@ export default function WhosWorking({ theme }) {
     }
   }, [active])
 
-  const located = active.filter(a => a.lat != null && a.lng != null)
-  const unlocated = active.filter(a => a.lat == null || a.lng == null)
+  // "On the clock" = current shifts only; forgotten clock-outs are handled
+  // separately so someone with an old open shift isn't shown as still working.
+  const currentShifts = active.filter(a => !isForgottenShift(a))
+  const forgottenShifts = active.filter(isForgottenShift)
+  const located = currentShifts.filter(a => a.lat != null && a.lng != null)
+  const unlocated = currentShifts.filter(a => a.lat == null || a.lng == null)
 
   return (
     <div style={{
@@ -185,7 +218,7 @@ export default function WhosWorking({ theme }) {
           <Users size={20} style={{ color: theme.accent }} />
           Who's Working
           <span style={{ fontSize: 12, fontWeight: 500, color: theme.textMuted, padding: '2px 8px', background: theme.accentBg, borderRadius: 12 }}>
-            {active.length} on the clock
+            {currentShifts.length} on the clock
           </span>
         </h2>
         <button
@@ -207,7 +240,7 @@ export default function WhosWorking({ theme }) {
         {/* Map */}
         <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: `1px solid ${theme.border}`, minHeight: 320 }}>
           <div ref={mapElRef} style={{ width: '100%', height: 360 }} />
-          {!loading && active.length === 0 && (
+          {!loading && currentShifts.length === 0 && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(247,245,239,0.92)', color: theme.textMuted, gap: 6, padding: 16, textAlign: 'center', zIndex: 5, pointerEvents: 'none' }}>
               <Clock size={28} />
               <div style={{ fontWeight: 600, color: theme.textSecondary }}>Nobody is clocked in right now</div>
@@ -219,15 +252,15 @@ export default function WhosWorking({ theme }) {
         {/* Roster — keep the column visible even when empty so the layout
             doesn't collapse. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto', minHeight: 60 }}>
-          {active.length === 0 && !loading && (
+          {currentShifts.length === 0 && !loading && (
             <div style={{ fontSize: 13, color: theme.textMuted, padding: 12, textAlign: 'center', background: theme.bg, border: `1px dashed ${theme.border}`, borderRadius: 8 }}>
               No one on the clock right now.
             </div>
           )}
-          {loading && active.length === 0 && (
+          {loading && currentShifts.length === 0 && (
             <div style={{ fontSize: 13, color: theme.textMuted, padding: 12, textAlign: 'center' }}>Loading…</div>
           )}
-          {active.map(p => (
+          {currentShifts.map(p => (
             <RosterRow
               key={p.entryId}
               p={p}
@@ -237,6 +270,19 @@ export default function WhosWorking({ theme }) {
               markersRef={markersRef}
             />
           ))}
+          {/* Forgotten clock-outs — NOT shown as "working"; surfaced so an admin
+              fixes the real clock-out time on Payroll (where hours get corrected). */}
+          {forgottenShifts.length > 0 && (
+            <div style={{ marginTop: 4, padding: 10, background: 'rgba(212,148,10,0.08)', border: '1px solid rgba(212,148,10,0.4)', borderRadius: 8, fontSize: 12, color: '#7a5600' }}>
+              <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                <AlertTriangle size={13} /> {forgottenShifts.length} forgotten clock-out{forgottenShifts.length === 1 ? '' : 's'}
+              </div>
+              {forgottenShifts.slice(0, 5).map(p => (
+                <div key={p.entryId} style={{ marginTop: 2 }}>{p.name} — open since {new Date(p.clock_in).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+              ))}
+              <div style={{ marginTop: 5, color: theme.textMuted }}>These aren't counted as working. Set the real clock-out on the Payroll page.</div>
+            </div>
+          )}
         </div>
       </div>
 
