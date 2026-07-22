@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+import { emailRep, repEmailShell, appLink } from "../_shared/notifyRep.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -556,6 +557,22 @@ serve(async (req) => {
         },
         created_by: null, // portal approvals have no session user
       })
+
+      // Email the owning rep too. The in-app toast only helps a rep who is
+      // staring at the app — reps are in the field, so this is the alert that
+      // actually reaches them and stops accepted quotes from going cold.
+      const emailRes = await emailRep(supabase, {
+        salespersonId: estimate.salesperson_id || null,
+        subject: `Accepted: ${customerDisplayName} approved your quote${amountStr}`,
+        html: repEmailShell(
+          'Quote accepted 🎉',
+          `<p style="font-size:15px;margin:0 0 10px"><b>${customerDisplayName}</b> just accepted estimate <b>${estimate.quote_id || 'EST-' + estimate.id}</b>${amountStr}.</p>`
+          + (approver_name ? `<p style="font-size:13px;color:#4d5a52;margin:0 0 6px">Signed by ${approver_name}.</p>` : '')
+          + `<p style="font-size:13px;color:#4d5a52;margin:0">A job was created automatically — open it to schedule and follow up.</p>`,
+          appLink(`/estimates/${estimate.id}`), 'Open the estimate',
+        ),
+      })
+      if (!emailRes.sent) console.log('[approve-document] rep email skipped:', emailRes.skipped || emailRes.error)
     } catch (notifErr) {
       console.error('[approve-document] notification insert failed', notifErr)
     }

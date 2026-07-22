@@ -3,6 +3,7 @@
 // The rep sees it on the estimate page in real time.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { emailRep, repEmailShell, appLink } from "../_shared/notifyRep.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -108,6 +109,50 @@ serve(async (req) => {
       console.error('[customer-portal-message] insert failed:', insErr);
       return new Response(JSON.stringify({ error: insErr.message }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Notify the owning rep — in-app AND email. Before this, a customer reply
+    // landed in estimate_messages and notified no one, so it sat unseen unless
+    // a rep happened to be on that exact estimate page. Best-effort.
+    try {
+      const { data: quote } = await supabase
+        .from('quotes')
+        .select('id, quote_id, estimate_name, salesperson_id')
+        .eq('id', tokenRow.document_id)
+        .maybeSingle();
+      const estLabel = quote?.quote_id || `EST-${tokenRow.document_id}`;
+      const text = String(body).trim();
+      const snippet = text.length > 140 ? text.slice(0, 140) + '…' : text;
+
+      await supabase.from('company_notifications').insert({
+        company_id: tokenRow.company_id,
+        type: 'estimate_reply',
+        title: 'New reply on an estimate',
+        message: `${resolvedName || 'Customer'} replied on ${estLabel}: "${snippet}"`,
+        metadata: {
+          quote_id: tokenRow.document_id,
+          quote_number: quote?.quote_id || null,
+          owner_employee_id: quote?.salesperson_id || null,
+          from_name: resolvedName || null,
+          source: 'portal_reply',
+        },
+        created_by: null,
+      });
+
+      const emailRes = await emailRep(supabase, {
+        salespersonId: quote?.salesperson_id || null,
+        replyTo: resolvedEmail || null,
+        subject: `Reply from ${resolvedName || 'a customer'} on ${estLabel}`,
+        html: repEmailShell(
+          'New reply on your estimate',
+          `<p style="font-size:15px;margin:0 0 10px"><b>${resolvedName || 'A customer'}</b> replied on estimate <b>${estLabel}</b>:</p>`
+          + `<blockquote style="margin:0;padding:10px 14px;background:#f7f5ef;border-left:3px solid #5a6349;border-radius:6px;font-size:14px;white-space:pre-wrap">${text.replace(/[<>]/g, (c) => c === '<' ? '&lt;' : '&gt;')}</blockquote>`,
+          appLink(`/estimates/${tokenRow.document_id}`), 'Reply in JobScout',
+        ),
+      });
+      if (!emailRes.sent) console.log('[customer-portal-message] rep email skipped:', emailRes.skipped || emailRes.error);
+    } catch (notifErr) {
+      console.error('[customer-portal-message] rep notify failed (non-fatal):', notifErr);
     }
 
     return new Response(JSON.stringify({ ok: true, message: msg }), {
