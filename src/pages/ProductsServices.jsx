@@ -431,13 +431,15 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborDat
               )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              {cost > 0 && (
+              {/* Material cost + markup reveal margin — managers only, so a rep
+                  can show this modal to a customer without flashing cost. */}
+              {isManagerPlus && cost > 0 && (
                 <div style={detailRow}>
                   <span style={{ color: theme.textMuted }}>Material cost</span>
                   <span style={{ color: theme.text }}>{formatCurrency(cost)}</span>
                 </div>
               )}
-              {cost > 0 && markup > 0 && (
+              {isManagerPlus && cost > 0 && markup > 0 && (
                 <div style={detailRow}>
                   <span style={{ color: theme.textMuted }}>Markup ({markup}%)</span>
                   <span style={{ color: theme.text }}>+{formatCurrency(markedUpDirectCost - cost)}</span>
@@ -457,8 +459,9 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborDat
               )}
             </div>
 
-            {/* Cost Breakdown */}
-            {totalCost > 0 && (
+            {/* Cost Breakdown — cost + profit/margin, managers only (hidden from
+                reps/customers so the modal is safe to show a customer). */}
+            {isManagerPlus && totalCost > 0 && (
               <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: `1px solid ${theme.border}` }}>
                 <div style={{ ...sectionTitleStyle, marginBottom: '6px', fontSize: '10px' }}>Cost Breakdown</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
