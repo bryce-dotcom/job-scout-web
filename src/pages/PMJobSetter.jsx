@@ -392,7 +392,11 @@ export default function PMJobSetter() {
     setLoading(true)
 
     // Fetch active (non-terminal) jobs
-    const jobCols = '*, customer:customers(id, name, business_name, address, phone, email), pm:employees!jobs_pm_id_fkey(id, name)'
+    // quote join is required by the search blob below (j.quote.estimate_name /
+    // quote_id) — without it, searching the job board by estimate name or
+    // number silently returns nothing (Doug's "search sucks"). Uses the
+    // !quote_id hint because jobs↔quotes has more than one relationship.
+    const jobCols = '*, customer:customers(id, name, business_name, address, phone, email), pm:employees!jobs_pm_id_fkey(id, name), quote:quotes!quote_id(id, estimate_name, quote_id)'
     let query = supabase
       .from('jobs')
       .select(jobCols)
