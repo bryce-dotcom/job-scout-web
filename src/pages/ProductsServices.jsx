@@ -322,7 +322,10 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborDat
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50 }} />
+      {/* z-index ABOVE the Arnie (999) + Feedback (1000/1001) floating buttons,
+          or on mobile they overlay the modal's bottom and swallow taps on the
+          Spec Sheet / DLC / Install Guide links that live down there. */}
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1100 }} />
       <div style={{
         position: 'fixed',
         top: isMobile ? 0 : '50%',
@@ -339,7 +342,7 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborDat
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: 51,
+        zIndex: 1101,
         boxShadow: '0 25px 50px rgba(0,0,0,0.15)'
       }}>
         {/* Header */}
@@ -372,19 +375,41 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborDat
                 <Pencil size={14} /> Edit
               </button>
             )}
-            <button onClick={onClose} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
-              <X size={20} />
+            {/* Full-screen on mobile means no tappable backdrop, so this X is the
+                only way out — give it a real 44px target and enough contrast to spot. */}
+            <button onClick={onClose} aria-label="Close" style={{
+              width: '44px', height: '44px', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '10px',
+              cursor: 'pointer', color: theme.text
+            }}>
+              <X size={22} />
             </button>
           </div>
         </div>
 
         {/* Body */}
         <div style={{ flex: 1, overflow: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Image + Description */}
+          {/* Image + Description. On mobile the photo goes full-width so a rep
+              can actually show it to a customer; tap opens the full-size image. */}
           {(product.image_url || product.description) && (
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '12px' : '16px', alignItems: isMobile ? 'stretch' : 'flex-start' }}>
               {product.image_url && (
-                <img src={product.image_url} alt={product.name} style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '10px', border: `1px solid ${theme.border}`, flexShrink: 0 }} />
+                <a href={product.image_url} target="_blank" rel="noopener noreferrer" title="Tap to view full size" style={{ flexShrink: 0, display: 'block' }}>
+                  <img
+                    src={product.image_url}
+                    alt={product.name}
+                    style={{
+                      width: isMobile ? '100%' : '120px',
+                      height: isMobile ? '220px' : '120px',
+                      objectFit: isMobile ? 'contain' : 'cover',
+                      backgroundColor: theme.bg,
+                      borderRadius: '10px',
+                      border: `1px solid ${theme.border}`,
+                      cursor: 'zoom-in',
+                    }}
+                  />
+                </a>
               )}
               {product.description && (
                 <p style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5', margin: 0 }}>{product.description}</p>
