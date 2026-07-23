@@ -53,6 +53,34 @@ function inferExistingWatts(category: string | null | undefined, newW: number): 
   return Math.round(newW * 1.5);
 }
 
+// Build a human-readable estimate-line description that carries the audit
+// detail reps kept losing on import: area/location, mounting height, the
+// existing fixture being replaced, the LED wattage, and controls. Before
+// this, the quote line showed only "<area> - LED Retrofit" with no
+// description, so heights and product detail were dropped (Bryce ticket,
+// est. 4418: "only showing the place, no heights or product detail").
+function describeAuditLine(l: any): string {
+  const parts: string[] = [];
+  if (l.name) parts.push(String(l.name).trim());
+  const h = Number(l.height) || 0;
+  if (h > 0) parts.push(`${h} ft`);
+  const existW = Number(l.existW) || 0;
+  const newW = Number(l.newW) || 0;
+  const exType = String(l.lightingType || l.fixtureCategory || '').trim();
+  const existing = existW > 0 ? `${existW}W${exType ? ' ' + exType : ''}` : exType;
+  const replacement = newW > 0 ? `${newW}W LED` : '';
+  if (existing && replacement) parts.push(`${existing} → ${replacement}`);
+  else if (existing) parts.push(`existing ${existing}`);
+  else if (replacement) parts.push(replacement);
+  let ctrl = String(l.controlsType || '').trim();
+  if (ctrl && !/^(none|no|n\/?a)$/i.test(ctrl)) {
+    // Uppercase short acronym codes (e.g. "lllc" -> "LLLC"); leave words alone.
+    if (/^[a-z]{2,5}$/.test(ctrl)) ctrl = ctrl.toUpperCase();
+    parts.push(`${ctrl} controls`);
+  }
+  return parts.join(' · ');
+}
+
 async function supabasePost(url: string, key: string, body: any): Promise<any> {
   const res = await fetch(url, {
     method: 'POST',
@@ -484,10 +512,15 @@ serve(async (req) => {
           const qty = l.qty || 1;
           const basePrice = Number(l.productPrice) || 0;
           const unitPrice = basePrice * scale;
+          const areaLabel = l.name || `Area ${i + 1}`;
           await supabasePost(`${SUPABASE_URL}/rest/v1/quote_lines`, key, {
             company_id: cid,
             quote_id: newQuote.id,
-            item_name: `${l.name || `Area ${i + 1}`} - LED Retrofit`,
+            // Name the line by the LED product (the fixture being sold) so the
+            // "product detail" is front-and-center; fall back to the area.
+            item_name: l.productName || `${areaLabel} - LED Retrofit`,
+            // Carry area, mounting height, existing fixture and controls.
+            description: describeAuditLine(l) || null,
             item_id: l.productId ? parseInt(l.productId) : null,
             quantity: qty,
             price: Math.round(unitPrice * 100) / 100,

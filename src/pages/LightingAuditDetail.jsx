@@ -151,6 +151,26 @@ export default function LightingAuditDetail() {
     }
   }
 
+  // Estimate-line description carrying the audit detail that used to be
+  // dropped on convert: area/location, mounting height, the existing fixture
+  // being replaced, and the LED wattage. Without it the line showed only
+  // "<area> - LED Retrofit" and heights/product detail were lost.
+  const describeArea = (a) => {
+    const parts = []
+    if (a.area_name) parts.push(String(a.area_name).trim())
+    const h = Number(a.ceiling_height) || 0
+    if (h > 0) parts.push(`${h} ft`)
+    const existW = Number(a.existing_wattage) || 0
+    const newW = Number(a.led_wattage) || 0
+    const exType = String(a.lighting_type || a.fixture_category || '').trim()
+    const existing = existW > 0 ? `${existW}W${exType ? ' ' + exType : ''}` : exType
+    const replacement = newW > 0 ? `${newW}W LED` : ''
+    if (existing && replacement) parts.push(`${existing} → ${replacement}`)
+    else if (existing) parts.push(`existing ${existing}`)
+    else if (replacement) parts.push(replacement)
+    return parts.join(' · ')
+  }
+
   const handleCreateQuote = async () => {
     if (!audit) return
 
@@ -180,7 +200,10 @@ export default function LightingAuditDetail() {
         const unitPrice = area.led_product?.price || (((area.existing_wattage || 0) - (area.led_wattage || 0)) * costPerWatt)
         await createQuoteLine({
           quote_id: quoteTempId,
-          item_name: `${area.area_name} - LED Retrofit`,
+          // Name by the LED product (the fixture sold); fall back to the area.
+          item_name: area.led_product?.name || `${area.area_name} - LED Retrofit`,
+          // Carry area, mounting height and the existing → LED fixture swap.
+          description: describeArea(area) || null,
           item_id: area.led_replacement_id || null,
           quantity: qty,
           price: Math.round(unitPrice * 100) / 100,
