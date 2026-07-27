@@ -2902,7 +2902,7 @@ function EstimateDetailInner() {
           marginBottom: '24px'
         }}>
           <div style={{ flex: 1, fontSize: '13px', color: theme.textSecondary }}>
-            This estimate has been converted to a job.
+            <strong style={{ color: theme.text }}>This estimate is now a job.</strong> Edits here — notes, line items, pricing — won't update the job. Make those changes on the job instead.
           </div>
           <button
             onClick={() => navigate(`/jobs/${estimate.job_id}`)}
