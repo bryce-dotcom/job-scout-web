@@ -553,7 +553,7 @@ export default function Jobs() {
   // Optional line items to add when creating a brand-new job (so users don't
   // have to schedule a job, then re-open it just to add line items).
   const [newJobLines, setNewJobLines] = useState([])
-  const [newLineDraft, setNewLineDraft] = useState({ item_id: '', quantity: 1 })
+  const [newLineDraft, setNewLineDraft] = useState({ item_id: '', description: '', price: '', quantity: 1 })
   const [viewMode, setViewMode] = useState('board')
   const [historyYear, setHistoryYear] = useState(null)
   const [historyMonth, setHistoryMonth] = useState(null)
@@ -970,7 +970,7 @@ export default function Jobs() {
     setError(null)
     setShowCustomerDropdown(false)
     setNewJobLines([])
-    setNewLineDraft({ item_id: '', quantity: 1 })
+    setNewLineDraft({ item_id: '', description: '', price: '', quantity: 1 })
   }
 
   const handleChange = (e) => {
@@ -1069,15 +1069,20 @@ export default function Jobs() {
     if (!editingJob && result.data?.[0] && newJobLines.length > 0) {
       const newJobId = result.data[0].id
       const linesPayload = newJobLines
-        .filter(l => l.item_id && Number(l.quantity) > 0)
+        .filter(l => (l.item_id || (l.description && String(l.description).trim())) && Number(l.quantity) > 0)
         .map(l => {
           const product = products.find(p => String(p.id) === String(l.item_id))
-          const price = Number(product?.unit_price || 0)
+          // Custom lines carry a typed price; catalog lines fall back to the
+          // product's unit price (preserves the old behavior exactly).
+          const price = (l.price != null && l.price !== '' && !isNaN(Number(l.price)))
+            ? Number(l.price)
+            : Number(product?.unit_price || 0)
           const qty = Number(l.quantity || 1)
           return {
             company_id: companyId,
             job_id: newJobId,
             item_id: product?.id || null,
+            description: (l.description && String(l.description).trim()) || product?.name || null,
             quantity: qty,
             price,
             total: price * qty,
@@ -1150,8 +1155,16 @@ export default function Jobs() {
     }
 
     await fetchJobs()
+    const createdJobId = !editingJob ? result.data?.[0]?.id : null
     closeModal()
     setLoading(false)
+    // Land the user ON the newly created job so they can review/add line items
+    // in one continuous flow instead of hunting for it on the board afterwards
+    // (Alayda #97cce27a "having to touch a job twice"). JobDetail auto-syncs
+    // job_total from the lines on load, so the total shows correctly there.
+    if (createdJobId) {
+      navigate(`/jobs/${createdJobId}`)
+    }
   }
 
   const scheduleJob = async (job) => {
@@ -2735,7 +2748,7 @@ export default function Jobs() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
                         {newJobLines.map((l, idx) => {
                           const prod = products.find(p => String(p.id) === String(l.item_id))
-                          const price = Number(prod?.unit_price || 0)
+                          const price = Number(l.price != null && l.price !== '' ? l.price : (prod?.unit_price || 0))
                           const qty = Number(l.quantity || 1)
                           return (
                             <div key={idx} style={{
@@ -2743,7 +2756,7 @@ export default function Jobs() {
                               padding: '8px 10px', backgroundColor: theme.bgCard,
                               border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px'
                             }}>
-                              <div style={{ flex: 1, color: theme.text }}>{prod?.name || 'Unknown product'}</div>
+                              <div style={{ flex: 1, minWidth: 0, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.description || prod?.name || 'Custom line'}</div>
                               <input
                                 type="number"
                                 min="1"
@@ -2771,51 +2784,92 @@ export default function Jobs() {
                         })}
                       </div>
                     )}
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 100px auto', gap: '8px', alignItems: 'end' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <SearchableSelect
                         options={(products || []).filter(p => p.active !== false).map(p => ({
                           value: p.id,
                           label: `${p.name}${p.unit_price != null ? ` — $${Number(p.unit_price).toFixed(2)}` : ''}`
                         }))}
                         value={newLineDraft.item_id}
-                        onChange={(val) => setNewLineDraft(prev => ({ ...prev, item_id: val }))}
-                        placeholder="Search products & services..."
+                        onChange={(val) => {
+                          const p = (products || []).find(pp => String(pp.id) === String(val))
+                          setNewLineDraft(prev => ({
+                            ...prev,
+                            item_id: val,
+                            description: p?.name || prev.description,
+                            price: p?.unit_price != null ? String(p.unit_price) : prev.price,
+                          }))
+                        }}
+                        placeholder="Search products & services (optional)..."
                         theme={theme}
                       />
                       <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={newLineDraft.quantity}
-                        onChange={(e) => setNewLineDraft(prev => ({ ...prev, quantity: e.target.value }))}
-                        placeholder="Qty"
-                        style={inputStyle}
+                        type="text"
+                        value={newLineDraft.description}
+                        onChange={(e) => setNewLineDraft(prev => ({ ...prev, description: e.target.value }))}
+                        placeholder="Description of work (for a custom line)"
+                        style={{ ...inputStyle, minWidth: 0, boxSizing: 'border-box' }}
                       />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!newLineDraft.item_id) return
-                          const qty = Number(newLineDraft.quantity || 1)
-                          if (qty <= 0) return
-                          setNewJobLines(prev => [...prev, { item_id: newLineDraft.item_id, quantity: qty }])
-                          setNewLineDraft({ item_id: '', quantity: 1 })
-                        }}
-                        disabled={!newLineDraft.item_id}
-                        style={{
-                          minHeight: '40px',
-                          padding: '8px 14px',
-                          backgroundColor: newLineDraft.item_id ? theme.accent : theme.bgCardHover,
-                          color: newLineDraft.item_id ? '#ffffff' : theme.textMuted,
-                          border: 'none',
-                          borderRadius: '8px',
-                          fontSize: '13px',
-                          fontWeight: '600',
-                          cursor: newLineDraft.item_id ? 'pointer' : 'not-allowed',
-                          display: 'flex', alignItems: 'center', gap: '6px'
-                        }}
-                      >
-                        <Plus size={14} /> Add
-                      </button>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto', gap: '8px', alignItems: 'end' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={newLineDraft.price}
+                          onChange={(e) => setNewLineDraft(prev => ({ ...prev, price: e.target.value }))}
+                          placeholder="$ Price"
+                          style={{ ...inputStyle, minWidth: 0, boxSizing: 'border-box' }}
+                        />
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={newLineDraft.quantity}
+                          onChange={(e) => setNewLineDraft(prev => ({ ...prev, quantity: e.target.value }))}
+                          placeholder="Qty"
+                          style={{ ...inputStyle, minWidth: 0, boxSizing: 'border-box' }}
+                        />
+                        {(() => {
+                          const canAdd = !!newLineDraft.item_id || !!(newLineDraft.description || '').trim()
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const desc = (newLineDraft.description || '').trim()
+                                if (!newLineDraft.item_id && !desc) return
+                                const qty = Number(newLineDraft.quantity || 1)
+                                if (qty <= 0) return
+                                const prod = (products || []).find(p => String(p.id) === String(newLineDraft.item_id))
+                                const price = (newLineDraft.price !== '' && newLineDraft.price != null && !isNaN(Number(newLineDraft.price)))
+                                  ? Number(newLineDraft.price)
+                                  : Number(prod?.unit_price || 0)
+                                setNewJobLines(prev => [...prev, {
+                                  item_id: newLineDraft.item_id || null,
+                                  description: desc || prod?.name || '',
+                                  price,
+                                  quantity: qty,
+                                }])
+                                setNewLineDraft({ item_id: '', description: '', price: '', quantity: 1 })
+                              }}
+                              disabled={!canAdd}
+                              style={{
+                                minHeight: '40px',
+                                padding: '8px 14px',
+                                backgroundColor: canAdd ? theme.accent : theme.bgCardHover,
+                                color: canAdd ? '#ffffff' : theme.textMuted,
+                                border: 'none',
+                                borderRadius: '8px',
+                                fontSize: '13px',
+                                fontWeight: '600',
+                                cursor: canAdd ? 'pointer' : 'not-allowed',
+                                display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap'
+                              }}
+                            >
+                              <Plus size={14} /> Add
+                            </button>
+                          )
+                        })()}
+                      </div>
                     </div>
                   </div>
                 )}
