@@ -162,32 +162,83 @@ export default function VictorVerify({
   const prepareImageForAI = async (file) => {
     const MAX_EDGE = 1600   // px on the longest side — Claude Vision is happy at this
     const QUALITY = 0.82
-    // Load via createImageBitmap when available (handles EXIF orientation
-    // automatically). Fall back to HTMLImageElement for older browsers.
+    const CLAUDE_OK = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+
+    // iPhone photos are often HEIC/HEIF, which only Safari can decode — on
+    // Android/Chrome both createImageBitmap and <img> fail, so the tech saw
+    // "Couldn't read that photo" and couldn't run Victor (Derrick b9d71501).
+    // Convert HEIC → JPEG first, lazy-loading the converter so it only costs
+    // the download when a HEIC is actually uploaded.
+    let src = file
+    const isHeic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name || '')
+    if (isHeic) {
+      try {
+        const mod = await import('heic2any')
+        // heic2any ships a UMD build; depending on bundler interop the callable
+        // shows up as the module itself, .default, a named export, or the global
+        // it sets — cover them all so conversion doesn't silently no-op.
+        const heic2any = (typeof mod === 'function' && mod) || mod.default || mod.heic2any
+          || (typeof window !== 'undefined' && window.heic2any)
+        if (typeof heic2any !== 'function') throw new Error('heic2any unavailable')
+        const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: QUALITY })
+        src = Array.isArray(out) ? out[0] : out
+      } catch (e) {
+        console.error('[Victor] HEIC conversion failed', e)
+        // fall through — the decode attempts below will throw a clear error
+      }
+    }
+
+    // Decode via createImageBitmap (best — auto-fixes EXIF orientation), with
+    // fallbacks for older/embedded WebViews that reject the options form.
     let bitmap = null
-    try {
-      bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
-    } catch {
-      bitmap = await new Promise((resolve, reject) => {
-        const img = new Image()
-        img.onload = () => resolve(img)
-        img.onerror = reject
-        img.src = URL.createObjectURL(file)
+    try { bitmap = await createImageBitmap(src, { imageOrientation: 'from-image' }) }
+    catch {
+      try { bitmap = await createImageBitmap(src) }
+      catch {
+        try {
+          bitmap = await new Promise((resolve, reject) => {
+            const img = new Image()
+            img.onload = () => resolve(img)
+            img.onerror = () => reject(new Error('img decode'))
+            img.src = URL.createObjectURL(src)
+          })
+        } catch { bitmap = null }
+      }
+    }
+
+    if (bitmap) {
+      const srcW = bitmap.width || bitmap.naturalWidth
+      const srcH = bitmap.height || bitmap.naturalHeight
+      if (srcW && srcH) {
+        const scale = Math.min(1, MAX_EDGE / Math.max(srcW, srcH))
+        const w = Math.round(srcW * scale)
+        const h = Math.round(srcH * scale)
+        const canvas = document.createElement('canvas')
+        canvas.width = w; canvas.height = h
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h)
+        const dataUrl = canvas.toDataURL('image/jpeg', QUALITY)
+        const base64 = dataUrl.split(',')[1]
+        if (base64) return { base64, mediaType: 'image/jpeg' }
+      }
+    }
+
+    // Canvas path failed but the file is already a Claude-accepted type and
+    // small enough for the 6MB edge cap — send the raw bytes rather than
+    // failing outright (covers odd WebViews that can't canvas-encode).
+    const rawType = src.type || file.type
+    if (CLAUDE_OK.includes(rawType) && src.size <= 4.5 * 1024 * 1024) {
+      const base64 = await new Promise((resolve, reject) => {
+        const fr = new FileReader()
+        fr.onload = () => resolve(String(fr.result).split(',')[1])
+        fr.onerror = () => reject(new Error('read'))
+        fr.readAsDataURL(src)
       })
+      if (base64) return { base64, mediaType: rawType }
     }
-    const srcW = bitmap.width || bitmap.naturalWidth
-    const srcH = bitmap.height || bitmap.naturalHeight
-    const scale = Math.min(1, MAX_EDGE / Math.max(srcW, srcH))
-    const w = Math.round(srcW * scale)
-    const h = Math.round(srcH * scale)
-    const canvas = document.createElement('canvas')
-    canvas.width = w; canvas.height = h
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h)
-    const dataUrl = canvas.toDataURL('image/jpeg', QUALITY)
-    return {
-      base64: dataUrl.split(',')[1],
-      mediaType: 'image/jpeg',
-    }
+
+    throw new Error(isHeic
+      ? "Couldn't convert this iPhone (HEIC) photo. Try again, or set iPhone Camera → Formats to “Most Compatible”."
+      : 'Could not read this image format. Try a JPEG or PNG.')
   }
 
   // Handle line item photo capture
@@ -200,7 +251,7 @@ export default function VictorVerify({
       setLineItemPhotos(prev => ({ ...prev, [lineId]: { file, preview, base64, mediaType } }))
     } catch (err) {
       console.error('[Victor] line-item photo prep failed', err)
-      setError(`Couldn't read that photo (${file.name}). Try a different photo.`)
+      setError(err?.message || `Couldn't read that photo (${file.name}). Try a different photo.`)
     }
   }
 
@@ -231,7 +282,7 @@ export default function VictorVerify({
         setPhotos(prev => [...prev, { file, preview, photoType: defaultType, base64, mediaType }])
       } catch (err) {
         console.error('[Victor] photo prep failed', err)
-        setError(`Couldn't read that photo (${file.name}). Try a different photo.`)
+        setError(err?.message || `Couldn't read that photo (${file.name}). Try a different photo.`)
       }
     }
     if (fileInputRef.current) fileInputRef.current.value = ''
