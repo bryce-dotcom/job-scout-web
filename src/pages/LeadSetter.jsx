@@ -2361,8 +2361,24 @@ export default function LeadSetter() {
                         updated_at: new Date().toISOString()
                       }).eq('id', selectedEvent.lead_id)
                     }
+                    // Optimistically merge the saved fields into local state
+                    // instead of a full fetchData(). That refetch pulls every
+                    // lead + appointment + commission and flips the board into
+                    // its loading state — which setters reported as "kicked out
+                    // every time I update notes... slow like a snail." The
+                    // calendar reads from `appointments`, so this reflects the
+                    // change instantly with no reload.
+                    setAppointments(prev => prev.map(a => a.id === selectedEvent.id ? {
+                      ...a,
+                      start_time: startDT.toISOString(),
+                      end_time: endDT.toISOString(),
+                      duration_minutes: eventForm.duration_minutes,
+                      salesperson_id: _primary,
+                      salesperson_ids: _ids,
+                      location: eventForm.location || null,
+                      notes: eventForm.notes || null,
+                    } : a))
                     setShowEventModal(false); setSelectedEvent(null)
-                    await fetchData()
                   } catch (err) { alert('Error: ' + err.message) }
                   setSavingEvent(false)
                 }}
