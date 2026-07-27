@@ -30,6 +30,34 @@ const cors = {
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } });
 
+// Claude often wraps its JSON in prose or a code fence, or appends a note /
+// citation after it. A greedy first-brace-to-last-brace match then captures
+// the trailing prose and fails to parse, which used to hard-502 and surface
+// to setters as "Enrichment failed: AI returned non-JSON response". Extract
+// the FIRST balanced {…} / […] instead (quote/escape aware).
+function firstBalanced(s: string, open: '{' | '['): string | null {
+  const close = open === '{' ? '}' : ']';
+  const start = s.indexOf(open);
+  if (start < 0) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') inStr = false; continue; }
+    if (ch === '"') inStr = true;
+    else if (ch === open) depth++;
+    else if (ch === close) { depth--; if (depth === 0) return s.slice(start, i + 1); }
+  }
+  return null;
+}
+function parseJsonLoose(text: string, kind: 'object' | 'array'): any | null {
+  if (!text) return null;
+  const s = String(text).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  try { return JSON.parse(s); } catch { /* fall through to balanced extraction */ }
+  const cand = firstBalanced(s, kind === 'array' ? '[' : '{');
+  if (cand) { try { return JSON.parse(cand); } catch { /* give up */ } }
+  return null;
+}
+
 const CLAUDE_MODEL   = 'claude-sonnet-4-5-20250929';
 
 // Tier quotas — monthly per-company. Stays in lockstep with the
@@ -174,17 +202,12 @@ Rules:
         maxRounds: 4,
       });
 
-      let prospects: any[] = [];
-      try {
-        const cleaned = claudeResponse.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-        const match = cleaned.match(/\[[\s\S]*\]/);
-        const toParse = match ? match[0] : cleaned;
-        prospects = JSON.parse(toParse);
-        if (!Array.isArray(prospects)) prospects = [];
-      } catch (e) {
-        console.error('[prospect-research] JSON parse failed:', e, 'raw:', claudeResponse.slice(0, 500));
-        return json({ error: 'AI returned non-JSON response', raw: claudeResponse.slice(0, 500) }, 502);
+      const parsedSearch = parseJsonLoose(claudeResponse, 'array');
+      if (!Array.isArray(parsedSearch)) {
+        console.error('[prospect-research] search JSON parse failed, raw:', claudeResponse.slice(0, 500));
+        return json({ error: "Couldn't read the AI's research — please try your search again.", raw: claudeResponse.slice(0, 500) }, 502);
       }
+      const prospects: any[] = parsedSearch;
 
       // Cache each candidate
       const out: any[] = [];
@@ -305,14 +328,12 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
         maxRounds: 5,
       });
 
-      let enriched: any = {};
-      try {
-        const cleaned = claudeResponse.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-        const match = cleaned.match(/\{[\s\S]*\}/);
-        enriched = JSON.parse(match ? match[0] : cleaned);
-      } catch (e) {
-        return json({ error: 'AI returned non-JSON response', raw: claudeResponse.slice(0, 500) }, 502);
+      const parsedEnrich = parseJsonLoose(claudeResponse, 'object');
+      if (!parsedEnrich || typeof parsedEnrich !== 'object' || Array.isArray(parsedEnrich)) {
+        console.error('[prospect-research] enrich JSON parse failed, raw:', claudeResponse.slice(0, 500));
+        return json({ error: "Couldn't read the AI's research for this business — please try again.", raw: claudeResponse.slice(0, 500) }, 502);
       }
+      const enriched: any = parsedEnrich;
 
       const mergedPayload = { ...c, enrichment: enriched };
       // Phone preference order for the cache's `phone` column:
