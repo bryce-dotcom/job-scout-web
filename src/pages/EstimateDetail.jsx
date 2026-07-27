@@ -3549,7 +3549,7 @@ function EstimateDetailInner() {
                 <div style={{
                   display: 'grid',
                   gridTemplateColumns: isMobile
-                    ? '20px 1fr 56px 70px 80px 32px'
+                    ? '16px minmax(0, 1fr) 44px 62px 64px 28px'
                     : '20px 2fr 1.5fr 80px 100px 90px 100px 72px',
                   gap: isMobile ? '6px' : '12px',
                   padding: isMobile ? '10px 12px' : '12px 20px',
@@ -3583,7 +3583,7 @@ function EstimateDetailInner() {
                         style={{
                           display: 'grid',
                           gridTemplateColumns: isMobile
-                            ? '20px 1fr 56px 70px 80px 32px'
+                            ? '16px minmax(0, 1fr) 44px 62px 64px 28px'
                             : '20px 2fr 1.5fr 80px 100px 90px 100px 72px',
                           gap: isMobile ? '6px' : '12px',
                           padding: isMobile ? '10px 12px' : '14px 20px',
@@ -3594,8 +3594,8 @@ function EstimateDetailInner() {
                         <div style={{ color: theme.textMuted, display: 'flex', alignItems: 'center' }}>
                           {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                          <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {line.item_name || line.item?.name || 'Custom Item'}
                           </p>
                           {totalPhotoCount > 0 && (
@@ -3630,7 +3630,9 @@ function EstimateDetailInner() {
                             }}
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                             style={{
-                              width: '56px',
+                              width: isMobile ? '100%' : '56px',
+                              minWidth: 0,
+                              boxSizing: 'border-box',
                               padding: '4px 6px',
                               textAlign: 'right',
                               fontSize: '14px',
@@ -3655,7 +3657,9 @@ function EstimateDetailInner() {
                             }}
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                             style={{
-                              width: '80px',
+                              width: isMobile ? '100%' : '80px',
+                              minWidth: 0,
+                              boxSizing: 'border-box',
                               padding: '4px 6px',
                               textAlign: 'right',
                               fontSize: '14px',
@@ -3699,6 +3703,7 @@ function EstimateDetailInner() {
                           {formatCurrency(line.line_total)}
                         </div>
                         <div style={{ display: 'flex', gap: '2px', justifyContent: 'flex-end' }}>
+                          {!isMobile && (
                           <button
                             onClick={(e) => { e.stopPropagation(); duplicateLineItem(line) }}
                             title="Duplicate line"
@@ -3721,6 +3726,7 @@ function EstimateDetailInner() {
                           >
                             <Copy size={16} />
                           </button>
+                          )}
                           <button
                             onClick={(e) => { e.stopPropagation(); removeLineItem(line.id) }}
                             title="Delete line"
