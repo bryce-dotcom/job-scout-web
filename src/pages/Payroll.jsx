@@ -23,6 +23,7 @@ import {
 import { syncJobBonuses } from '../lib/bonusLedger'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
+import { payDateForPeriod } from '../lib/payDate'
 
 // Roll the per-employee tax breakdowns up into one row per tax-kind +
 // jurisdiction with the right due date based on the company's deposit
@@ -4386,24 +4387,37 @@ function AddAdjustmentModal({ show, onClose, onSave, saving, theme, isMobile }) 
 
 // ── Check Stub Preview Modal ─────────────────────────────
 function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodStart, periodEnd, company, theme, isMobile, fmt }) {
-  if (!show) return null
-  const emp = show
-  const data = employeePayData[emp.id]
-  if (!data) return null
+  // Hooks must run before any early return. Pay date defaults to the scheduled
+  // payday but stays editable — off-cycle payments (corrections, early pay,
+  // one-off checks) don't land on the regular schedule.
+  const [payDateOverride, setPayDateOverride] = useState('')
+  const emp = show || null
+  const data = emp ? employeePayData[emp.id] : null
+
+  const localKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const scheduledPayDate = (emp && payDateForPeriod(periodEnd, payrollConfig)) || (emp ? localKey(periodEnd) : '')
+  const effectivePayDate = payDateOverride || scheduledPayDate
+  const handleClose = () => { setPayDateOverride(''); onClose() }
+
+  if (!show || !data) return null
 
   // Produce the SAME Gusto-style PDF as My Pay / pay history rather than
   // dumping this modal's HTML to a print window. Alayda compared our stub to
   // Gusto's and the print-HTML version was the weak one (no YTD, no employer
   // taxes, no company/employee identity block). One paystub design everywhere.
-  const localKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
   const handleDownloadPdf = async () => {
     try {
       const t = data.tax || {}
       const periodStartKey = localKey(periodStart)
+      const periodEndKey = localKey(periodEnd)
       const paystub = {
         employee_id: emp.id,
-        pay_date: localKey(periodEnd),
+        // The payday that FOLLOWS this period — not the period end. Stamping
+        // the end date made a May 1–15 stub read "Paid May 15" when HHH's
+        // semi-monthly schedule actually pays it on May 20 (Alayda). Editable
+        // in the modal for off-cycle payments.
+        pay_date: effectivePayDate || periodEndKey,
         period_start: periodStartKey,
         period_end: localKey(periodEnd),
         regular_hours: data.regularHours || 0,
@@ -4463,11 +4477,27 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
         <div style={{ padding: '20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, backgroundColor: theme.bgCard, zIndex: 1 }}>
           <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Check Stub Preview</div>
           <div style={{ display: 'flex', gap: '8px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
+              Pay date
+              <input
+                type="date"
+                value={effectivePayDate}
+                onChange={(e) => setPayDateOverride(e.target.value)}
+                title={payDateOverride
+                  ? `Off-cycle — scheduled payday is ${scheduledPayDate}`
+                  : 'Scheduled payday for this period. Change it for an off-cycle payment.'}
+                style={{
+                  padding: '6px 8px', borderRadius: '6px', fontSize: '12px',
+                  border: `1px solid ${payDateOverride ? '#f59e0b' : theme.border}`,
+                  backgroundColor: theme.bg, color: theme.text, outline: 'none',
+                }}
+              />
+            </label>
             <button onClick={handleDownloadPdf} style={{
               padding: '8px 14px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px',
               color: theme.textSecondary, fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
             }}><Download size={14} /> Download PDF</button>
-            <button onClick={onClose} style={{ padding: '8px', backgroundColor: theme.border, border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}><X size={18} /></button>
+            <button onClick={handleClose} style={{ padding: '8px', backgroundColor: theme.border, border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}><X size={18} /></button>
           </div>
         </div>
 

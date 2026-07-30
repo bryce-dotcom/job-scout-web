@@ -80,7 +80,8 @@ export async function generatePaystubPdf({ paystub, employee, company, ytd }) {
   if (isContractor) {
     const colRC = M + 290
     set(17, 'bold'); doc.text('Contractor Payment', M, y + 4)
-    set(9, 'normal', muted); doc.text('Paid ' + fmtDate(p.pay_date), RIGHT, y + 4, { align: 'right' })
+    // "Pay Date", not "Paid" — a stub can be generated before the money moves.
+    set(9, 'normal', muted); doc.text('Pay Date ' + fmtDate(p.pay_date), RIGHT, y + 4, { align: 'right' })
     y += 22; rule(y); y += 16
     set(8, 'bold', muted); doc.text('PAID FROM', M, y); doc.text('PAID TO', colRC, y); y += 13
     set(10, 'bold')
@@ -114,7 +115,7 @@ export async function generatePaystubPdf({ paystub, employee, company, ytd }) {
 
   // ---- Title ----
   set(17, 'bold'); doc.text('Earnings Statement', M, y + 4)
-  set(9, 'normal', muted); doc.text('Pay Day ' + fmtDate(p.pay_date), RIGHT, y + 4, { align: 'right' })
+  set(9, 'normal', muted); doc.text('Pay Date ' + fmtDate(p.pay_date), RIGHT, y + 4, { align: 'right' })
   y += 22
   rule(y); y += 16
 
