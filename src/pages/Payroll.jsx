@@ -9,7 +9,7 @@ import {
   DollarSign, Calendar, Clock, Users, Settings, Play, Check, X,
   ChevronRight, ChevronDown, ChevronLeft, AlertTriangle, TrendingUp, Zap,
   Award, Filter, ArrowLeft, Eye, Briefcase, MapPin, FileText,
-  Edit3, Save, Map as MapIcon, Plus, Minus, Printer, Mail, Send, AlertCircle, CheckCircle
+  Edit3, Save, Map as MapIcon, Plus, Minus, Printer, Mail, Send, AlertCircle, CheckCircle, Download
 } from 'lucide-react'
 import LocationTrailModal from '../components/LocationTrailModal'
 import SearchableSelect from '../components/SearchableSelect'
@@ -1823,6 +1823,26 @@ export default function Payroll() {
     )
   }
 
+  // Download an employee's latest finalized paystub as a Gusto-style PDF.
+  const downloadEmpPaystub = async (emp) => {
+    const [mod, stubsRes, empRes] = await Promise.all([
+      import('../lib/paystubPdf'),
+      supabase.from('paystubs').select('*').eq('company_id', companyId).eq('employee_id', emp.id).order('pay_date', { ascending: true }),
+      supabase.from('employees').select('name, role, pay_type, hourly_rate, ssn_last4, home_address, home_city, home_state, home_zip').eq('id', emp.id).maybeSingle(),
+    ])
+    const stubs = (stubsRes.data || []).filter(s => (Number(s.gross_pay) || 0) > 0)
+    if (!stubs.length) { alert('No finalized paystub for this employee yet.'); return }
+    const target = stubs[stubs.length - 1]
+    const ytd = mod.computePaystubYtd(stubs, target)
+    const blob = await mod.generatePaystubPdf({ paystub: target, employee: empRes.data || emp, company, ytd })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `paystub-${(emp.name || 'employee').replace(/\s+/g, '-')}-${target.pay_date}.pdf`
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+  }
+
   // ── Employee Detail View ─────────────────────────────────
   if (selectedEmployee) {
     const emp = selectedEmployee
@@ -1871,6 +1891,13 @@ export default function Payroll() {
             {(data.totalAdditions > 0 || data.totalDeductions > 0) && (
               <div style={{ fontSize: '12px', color: theme.textMuted }}>Gross: {fmt(data.grossPay)}</div>
             )}
+            <button
+              onClick={() => downloadEmpPaystub(emp)}
+              title="Download this employee's latest paystub as a PDF"
+              style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', minHeight: 36, backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 8, cursor: 'pointer', color: theme.textSecondary, fontSize: 12, fontWeight: 600 }}
+            >
+              <Download size={13} /> Paystub PDF
+            </button>
           </div>
         </div>
 
