@@ -24,7 +24,11 @@ const LAST_SEEN_KEY = (email) => `jobscout_feedback_lastseen_${email || 'anon'}`
 
 export default function FeedbackButton() {
   const user = useStore((state) => state.user)
-  const activeCompany = useStore((state) => state.activeCompany)
+  // The store exposes `companyId` — there is no `activeCompany`, so the old
+  // read resolved to undefined and EVERY feedback row saved with a null
+  // company_id. In a multi-tenant install that pools every customer's
+  // feedback into one untenanted bucket.
+  const companyId = useStore((state) => state.companyId)
 
   const [isOpen, setIsOpen] = useState(false)
   const [tab, setTab] = useState('send')                 // 'send' | 'mine'
@@ -115,7 +119,7 @@ export default function FeedbackButton() {
     try {
       const { error } = await supabase.from('feedback').insert({
         user_email: user?.email || null,
-        company_id: activeCompany?.id,
+        company_id: companyId || null,
         feedback_type: type,
         subject: subject.trim() || null,
         message: message.trim(),
