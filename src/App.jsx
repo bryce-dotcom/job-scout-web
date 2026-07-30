@@ -53,6 +53,7 @@ import UpcomingServices from './pages/UpcomingServices'
 import CommunicationsLog from './pages/CommunicationsLog'
 import Expenses from './pages/Expenses'
 import Appointments from './pages/Appointments'
+import CompanyCalendar from './pages/CompanyCalendar'
 import RoutesPage from './pages/RoutesPage'
 import RoutesCalendar from './pages/RoutesCalendar'
 import Bookings from './pages/Bookings'
@@ -423,6 +424,7 @@ function App() {
           <Route path="/communications" element={<CommunicationsLog />} />
           <Route path="/expenses" element={<Expenses />} />
           <Route path="/appointments" element={<Appointments />} />
+          <Route path="/company-calendar" element={<CompanyCalendar />} />
           <Route path="/routes" element={<RoutesPage />} />
           <Route path="/routes/calendar" element={<RoutesCalendar />} />
           <Route path="/bookings" element={<Bookings />} />

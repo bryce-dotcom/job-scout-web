@@ -328,6 +328,7 @@ export default function Layout() {
       description: 'Employees, time tracking & payroll',
       sectionIcon: Users,
       baseItems: [
+        { to: '/company-calendar', icon: CalendarDays, label: 'Company Calendar', hint: 'Sales, scheduled work and time off in one month view' },
         { to: '/employees', icon: UserCog, label: 'Employees', hint: 'Manage team members and roles' },
         { to: '/time-clock', icon: Clock, label: 'Time Clock', hint: 'Clock in and out track hours worked' },
         { to: '/my-pay', icon: DollarSign, label: 'My Pay', hint: 'Your commissions, pending payouts, and hours' },
