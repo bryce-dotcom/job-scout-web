@@ -7,6 +7,7 @@ import { toast } from '../../lib/toast'
 import HelpBadge from '../../components/HelpBadge'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR, paymentsByInvoiceIndex } from '../../lib/arHelpers'
+import { getWeekRange } from '../../lib/eosWeek'
 import {
   Target, Eye, TrendingUp, Shield, Heart, Star, Zap,
   Users, CheckCircle, XCircle, Clock, Calendar, Plus, X,
@@ -50,22 +51,10 @@ const VALUE_ICONS = [Heart, Star, Shield, Zap, Compass, Award, Target, Users, Ey
 
 // ─── Week Helpers ────────────────────────────────────────────────
 
-function getWeekRange(weeksAgo = 0) {
-  const now = new Date()
-  const day = now.getDay()
-  const mondayOffset = day === 0 ? -6 : 1 - day
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset - (weeksAgo * 7))
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
-  sunday.setHours(23, 59, 59, 999)
-  return {
-    start: monday.toISOString(),
-    end: sunday.toISOString(),
-    startDate: monday.toISOString().slice(0, 10),
-    endDate: sunday.toISOString().slice(0, 10),
-    label: `${monday.getMonth() + 1}/${monday.getDate()}`,
-  }
-}
+// getWeekRange now lives in ../../lib/eosWeek so the Mon–Sun date math is
+// unit-tested. It previously derived startDate/endDate via toISOString(),
+// which pushed endDate to the following Monday in Mountain time and made
+// every date-column metric read an 8-day window.
 
 const WON_STATUSES = ['Won', 'Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Closed']
 
