@@ -61,7 +61,14 @@ export async function generatePaystubPdf({ paystub, employee, company, ytd }) {
   const c = company || {}
   const yt = ytd || {}
   const rate = num(p.hourly_rate)
-  const isSalary = Array.isArray(e.pay_type) ? e.pay_type.includes('salary') : /salary/i.test(String(e.pay_type || ''))
+  // Source of truth is is_salary / is_hourly — the same flags Payroll.jsx
+  // computes pay from. `pay_type` is a legacy column that reads ["hourly"] for
+  // EVERY employee including salaried ones, so trusting it rendered a $0.00
+  // "Regular" line instead of Salary for the 5 salaried staff. Fall back to
+  // pay_type only when the flags are absent.
+  const isSalary = e.is_salary === true
+    || (e.is_salary == null && e.is_hourly == null
+        && (Array.isArray(e.pay_type) ? e.pay_type.includes('salary') : /salary/i.test(String(e.pay_type || ''))))
 
   const fmtDate = (s) => s ? new Date(String(s).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
   const set = (size, style = 'normal', color = [40, 44, 46]) => { doc.setFont('helvetica', style); doc.setFontSize(size); doc.setTextColor(...color) }
@@ -160,15 +167,28 @@ export async function generatePaystubPdf({ paystub, employee, company, ytd }) {
 
   // ---- Earnings ----
   headRow('EARNINGS')
+  const regularPay = num(p.regular_hours) * rate
+  const overtimePay = num(p.overtime_hours) * rate * 1.5
+  const ptoPay = num(p.pto_hours) * rate
+  let itemised = 0
   if (isSalary && num(p.salary_amount) > 0) {
     earnRow('Salary' + (e.role ? ` — ${e.role}` : ''), { cur: p.salary_amount, ytdv: yt.salary_amount })
-  } else {
-    earnRow('Regular' + (e.role ? ` — ${e.role}` : ''), { rate, hours: p.regular_hours, cur: num(p.regular_hours) * rate, ytdv: yt.regular_pay })
-    if (num(p.overtime_hours) > 0) earnRow('Overtime', { rate: rate * 1.5, hours: p.overtime_hours, cur: num(p.overtime_hours) * rate * 1.5, ytdv: yt.overtime_pay })
-    if (num(p.pto_hours) > 0) earnRow('Paid Time Off', { rate, hours: p.pto_hours, cur: num(p.pto_hours) * rate, ytdv: yt.pto_pay })
+    itemised += num(p.salary_amount)
+  } else if (regularPay > 0 || num(p.regular_hours) > 0 || (!isSalary && num(p.bonus_pay) === 0 && num(p.commission_pay) === 0)) {
+    earnRow('Regular' + (e.role ? ` — ${e.role}` : ''), { rate, hours: p.regular_hours, cur: regularPay, ytdv: yt.regular_pay })
+    itemised += regularPay
+    if (num(p.overtime_hours) > 0) { earnRow('Overtime', { rate: rate * 1.5, hours: p.overtime_hours, cur: overtimePay, ytdv: yt.overtime_pay }); itemised += overtimePay }
+    if (num(p.pto_hours) > 0) { earnRow('Paid Time Off', { rate, hours: p.pto_hours, cur: ptoPay, ytdv: yt.pto_pay }); itemised += ptoPay }
   }
-  if (num(p.bonus_pay) > 0) earnRow('Bonus', { cur: p.bonus_pay, ytdv: yt.bonus_pay })
-  if (num(p.commission_pay) > 0) earnRow('Commission', { cur: p.commission_pay, ytdv: yt.commission_pay })
+  if (num(p.bonus_pay) > 0) { earnRow('Bonus', { cur: p.bonus_pay, ytdv: yt.bonus_pay }); itemised += num(p.bonus_pay) }
+  if (num(p.commission_pay) > 0) { earnRow('Commission', { cur: p.commission_pay, ytdv: yt.commission_pay }); itemised += num(p.commission_pay) }
+  // Never let Gross Earnings exceed what's itemised above it — a stub whose
+  // lines don't add up to the total is worse than no stub. Anything not
+  // attributable to a known line shows as Other earnings.
+  const unaccounted = Math.round((num(p.gross_pay) - itemised) * 100) / 100
+  if (unaccounted > 0.01) {
+    earnRow('Other earnings', { cur: unaccounted, ytdv: Math.max(0, num(yt.gross_pay) - (num(yt.salary_amount) + num(yt.regular_pay) + num(yt.overtime_pay) + num(yt.pto_pay) + num(yt.bonus_pay) + num(yt.commission_pay))) })
+  }
   y += 2; rule(y); y += 12
   const totalHours = num(p.regular_hours) + num(p.overtime_hours) + num(p.pto_hours)
   earnRow('Gross Earnings', { hours: totalHours || null, cur: p.gross_pay, ytdv: yt.gross_pay, bold: true })
