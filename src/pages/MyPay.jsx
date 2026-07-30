@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { DollarSign, TrendingUp, Clock, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, Zap, Eye, FileText, Shield, Umbrella } from 'lucide-react'
+import { DollarSign, TrendingUp, Clock, Calendar, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, Zap, Eye, FileText, Shield, Umbrella, Download } from 'lucide-react'
 import {
   getCurrentPayPeriod,
   calculateInvoiceCommissions,
@@ -43,8 +43,9 @@ function CollapsibleCard({ cardStyle, theme, icon, title, summary, defaultOpen =
 
 // One past paycheck, expandable to its full gross → net breakdown. Reads the
 // paystubs row saved when a payroll run was finalized.
-function PaystubRow({ p, theme }) {
+function PaystubRow({ p, theme, onDownload }) {
   const [open, setOpen] = useState(false)
+  const [dl, setDl] = useState(false)
   const d = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
   const tax = (Number(p.federal_income_tax) || 0) + (Number(p.state_income_tax) || 0) + (Number(p.social_security_employee) || 0) + (Number(p.medicare_employee) || 0) + (Number(p.additional_medicare) || 0)
   const ded = (Number(p.pre_tax_deductions) || 0) + (Number(p.post_tax_deductions) || 0)
@@ -81,6 +82,15 @@ function PaystubRow({ p, theme }) {
           <div style={{ borderTop: `1px dashed ${theme.border}`, marginTop: 6, paddingTop: 6 }}>
             {line('Net pay', p.net_pay, { color: theme.accent })}
           </div>
+          {onDownload && (
+            <button
+              onClick={async () => { setDl(true); try { await onDownload(p) } catch (e) { alert('Could not build paystub: ' + (e?.message || e)) } finally { setDl(false) } }}
+              disabled={dl}
+              style={{ marginTop: 10, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', minHeight: 40, background: 'none', border: `1px solid ${theme.border}`, borderRadius: 8, cursor: dl ? 'wait' : 'pointer', color: theme.textSecondary, fontSize: 12, fontWeight: 600 }}
+            >
+              <Download size={14} /> {dl ? 'Preparing…' : 'Download paystub (PDF)'}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -369,6 +379,24 @@ export default function MyPay() {
     })()
     // periodOffset in deps so changing the period refetches in-period payments
   }, [companyId, effectiveUserId, periodOffset])
+
+  // Build + download a Gusto-style paystub PDF for one paycheck. Pulls the
+  // employee + company identity on demand and computes YTD from pay history.
+  const downloadPaystub = async (p) => {
+    const [mod, empRes, coRes] = await Promise.all([
+      import('../lib/paystubPdf'),
+      supabase.from('employees').select('name, role, pay_type, hourly_rate, ssn_last4, home_address, home_city, home_state, home_zip').eq('id', effectiveUserId).maybeSingle(),
+      supabase.from('companies').select('company_name, legal_name, address, city, state, zip, ein, phone').eq('id', companyId).maybeSingle(),
+    ])
+    const ytd = mod.computePaystubYtd(paystubs, p)
+    const blob = await mod.generatePaystubPdf({ paystub: p, employee: empRes.data || {}, company: coRes.data || {}, ytd })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `paystub-${p.pay_date || 'statement'}.pdf`
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+  }
 
   const { periodStart, periodEnd } = getCurrentPayPeriod(payrollConfig, periodOffset)
   const periodStartStr = periodStart.toISOString().split('T')[0]
@@ -914,7 +942,7 @@ export default function MyPay() {
           summary={`${paystubs.length} paycheck${paystubs.length === 1 ? '' : 's'}`}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {paystubs.map(p => <PaystubRow key={p.id} p={p} theme={theme} />)}
+            {paystubs.map(p => <PaystubRow key={p.id} p={p} theme={theme} onDownload={downloadPaystub} />)}
           </div>
           <div style={{ marginTop: 10, fontSize: 11, color: theme.textMuted }}>
             Your last {paystubs.length} pay period{paystubs.length === 1 ? '' : 's'} · tap a paycheck for the full breakdown.
