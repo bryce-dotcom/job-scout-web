@@ -4391,29 +4391,68 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
   const data = employeePayData[emp.id]
   if (!data) return null
 
-  const handlePrint = () => {
-    const stubEl = document.getElementById('check-stub-content')
-    if (!stubEl) return
-    const printWindow = window.open('', '_blank', 'width=800,height=600')
-    printWindow.document.write(`
-      <html><head><title>Pay Stub - ${emp.name}</title>
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; color: #333; }
-        table { width: 100%; border-collapse: collapse; margin: 16px 0; }
-        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        th { font-size: 12px; text-transform: uppercase; color: #666; }
-        .header { border-bottom: 2px solid #333; padding-bottom: 16px; margin-bottom: 16px; }
-        .total-row { font-weight: 700; border-top: 2px solid #333; }
-        .section { margin-top: 24px; }
-        .section-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
-        @media print { body { padding: 20px; } }
-      </style></head><body>
-      ${stubEl.innerHTML}
-      </body></html>
-    `)
-    printWindow.document.close()
-    printWindow.focus()
-    setTimeout(() => { printWindow.print() }, 250)
+  // Produce the SAME Gusto-style PDF as My Pay / pay history rather than
+  // dumping this modal's HTML to a print window. Alayda compared our stub to
+  // Gusto's and the print-HTML version was the weak one (no YTD, no employer
+  // taxes, no company/employee identity block). One paystub design everywhere.
+  const localKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  const handleDownloadPdf = async () => {
+    try {
+      const t = data.tax || {}
+      const periodStartKey = localKey(periodStart)
+      const paystub = {
+        employee_id: emp.id,
+        pay_date: localKey(periodEnd),
+        period_start: periodStartKey,
+        period_end: localKey(periodEnd),
+        regular_hours: data.regularHours || 0,
+        overtime_hours: data.overtimeHours || 0,
+        pto_hours: 0,
+        hourly_rate: data.hourlyRate || 0,
+        salary_amount: data.salaryPay || 0,
+        gross_pay: (data.grossPay || 0) + (data.totalAdditions || 0),
+        bonus_pay: data.bonusOwed || 0,
+        commission_pay: data.commissionPay || 0,
+        reimbursement_pay: 0,
+        federal_income_tax: t.federalIncomeTax || 0,
+        state_income_tax: t.stateIncomeTax || 0,
+        social_security_employee: t.socialSecurityEmployee || 0,
+        medicare_employee: t.medicareEmployee || 0,
+        additional_medicare: t.additionalMedicare || 0,
+        social_security_employer: t.socialSecurityEmployer || 0,
+        medicare_employer: t.medicareEmployer || 0,
+        futa: t.futa || 0,
+        sui: t.sui || 0,
+        pre_tax_deductions: t.preTaxDeductions || 0,
+        post_tax_deductions: data.totalDeductions || 0,
+        net_pay: t.netPay != null ? t.netPay : (data.netPay || 0),
+      }
+
+      const [mod, stubsRes] = await Promise.all([
+        import('../lib/paystubPdf'),
+        supabase.from('paystubs').select('*')
+          .eq('company_id', company?.id).eq('employee_id', emp.id)
+          .order('pay_date', { ascending: true }),
+      ])
+
+      // YTD = every earlier finalized paycheck this year PLUS this one. Drop a
+      // saved row covering the same period so re-previewing an already-run
+      // payroll can't double-count it.
+      const prior = (stubsRes.data || []).filter(s => String(s.period_start || '').slice(0, 10) !== periodStartKey)
+      const ytd = mod.computePaystubYtd([...prior, paystub], paystub)
+
+      const blob = await mod.generatePaystubPdf({ paystub, employee: emp, company, ytd })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `paystub-${(emp.name || 'employee').replace(/\s+/g, '-')}-${paystub.pay_date}.pdf`
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 2000)
+    } catch (err) {
+      console.error('[CheckStubModal] paystub PDF failed', err)
+      alert('Could not build the paystub PDF: ' + (err?.message || err))
+    }
   }
 
   const periodLabel = `${periodStart.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} – ${periodEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
@@ -4424,10 +4463,10 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
         <div style={{ padding: '20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, backgroundColor: theme.bgCard, zIndex: 1 }}>
           <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Check Stub Preview</div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={handlePrint} style={{
+            <button onClick={handleDownloadPdf} style={{
               padding: '8px 14px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px',
               color: theme.textSecondary, fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px'
-            }}><Printer size={14} /> Print</button>
+            }}><Download size={14} /> Download PDF</button>
             <button onClick={onClose} style={{ padding: '8px', backgroundColor: theme.border, border: 'none', borderRadius: '8px', cursor: 'pointer', color: theme.textMuted }}><X size={18} /></button>
           </div>
         </div>
