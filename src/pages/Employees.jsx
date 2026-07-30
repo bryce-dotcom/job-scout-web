@@ -7,13 +7,14 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import {
   Plus, Minus, Pencil, X, User, Phone, Mail, Eye,
   DollarSign, Clock, Calendar, Briefcase, Lock,
-  Camera, FileText, Upload, Download, Settings, Trash2, Send, KeyRound, Zap
+  Camera, FileText, Upload, Download, Settings, Trash2, Send, KeyRound, Zap, AlertTriangle
 } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { employeesFields } from '../lib/importExportFields'
 import { isAdmin as checkAdmin, canAccessDevTools, canEditPipelineStages, canViewHR, canManageHRAccess } from '../lib/accessControl'
 import RankBadge from '../components/RankBadge'
 import OnboardingPanel from '../components/OnboardingPanel'
+import { w9Status, contractorsMissingW9 } from '../lib/w9Status'
 import EmployeeBenefitsPanel from '../components/EmployeeBenefitsPanel'
 
 // Role colors (OG DiX style)
@@ -1244,6 +1245,33 @@ export default function Employees() {
         </div>
       </div>
 
+      {/* W-9 compliance banner — you can't file a contractor's 1099-NEC at
+          year end without a W-9 on file, and this was only visible one
+          employee at a time (Alayda a84b18e3). Only shown to people who can
+          already see sensitive HR info. */}
+      {hasHR && (() => {
+        const missing = contractorsMissingW9(employees)
+        if (missing.length === 0) return null
+        return (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: '10px',
+            padding: '12px 16px', marginBottom: '16px',
+            backgroundColor: 'rgba(239,68,68,0.06)',
+            border: '1px solid rgba(239,68,68,0.2)',
+            borderRadius: '10px',
+          }}>
+            <AlertTriangle size={16} style={{ color: '#dc2626', flexShrink: 0, marginTop: '1px' }} />
+            <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
+              <strong style={{ color: theme.text }}>
+                {missing.length} contractor{missing.length === 1 ? '' : 's'} missing a W-9
+              </strong>
+              {' — ' + missing.map(e => e.name).join(', ') + '. '}
+              A W-9 is required before year-end 1099-NEC filing. Open the employee and send an onboarding link to collect it.
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Employee Grid */}
       {displayedEmployees.length === 0 ? (
         <div style={{
@@ -1329,6 +1357,23 @@ export default function Employees() {
                   }}>
                     {employee.role}
                   </p>
+
+                  {/* W-9 status — 1099 contractors only. Year-end 1099-NEC
+                      filing needs a W-9 on file, and this state was only
+                      visible one employee at a time on the detail page. */}
+                  {userCanView && w9Status(employee) !== 'not_required' && (
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      padding: '2px 8px', borderRadius: '10px', marginBottom: '8px',
+                      fontSize: '10.5px', fontWeight: '700',
+                      backgroundColor: w9Status(employee) === 'on_file' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                      color: w9Status(employee) === 'on_file' ? '#16a34a' : '#dc2626',
+                    }}>
+                      {w9Status(employee) === 'on_file'
+                        ? <>W-9 on file</>
+                        : <><AlertTriangle size={10} /> W-9 needed</>}
+                    </div>
+                  )}
 
                   {/* Status & Tax Classification Badges */}
                   <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', flexWrap: 'wrap' }}>
