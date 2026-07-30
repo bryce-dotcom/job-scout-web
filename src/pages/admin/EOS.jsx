@@ -1014,8 +1014,13 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
   const todos = data.todos || []
   const [filter, setFilter] = useState('open')
   const [adding, setAdding] = useState(false)
-  const [newIssue, setNewIssue] = useState({ title: '', priority: 'medium', type: 'short' })
+  const [newIssue, setNewIssue] = useState({ title: '', priority: 'medium', type: 'short', owner_ids: [] })
   const [resolvingId, setResolvingId] = useState(null)
+  // Which issue's "assign" panel is open. Issues previously had NO owner at
+  // all — you could only attach a person by RESOLVING the issue and creating
+  // a to-do, so during an L10 there was nowhere to record who owns an issue
+  // still being worked (Alayda ec5e049b).
+  const [assigningId, setAssigningId] = useState(null)
   const [todoText, setTodoText] = useState('')
   // Owner state is now an ARRAY of employee ids so a single to-do can be
   // assigned to multiple people. Bryce: "When putting in to-dos for the
@@ -1044,13 +1049,27 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
       title: newIssue.title.trim(),
       priority: newIssue.priority,
       type: newIssue.type,
+      // Who owns this issue while it's being worked. Same multi-owner shape
+      // as to-dos so one issue can sit with more than one person.
+      owner_ids: newIssue.owner_ids?.length ? newIssue.owner_ids : null,
       resolved: false,
       created_at: new Date().toISOString(),
       resolved_at: null,
       resolution: '',
     }])
-    setNewIssue({ title: '', priority: 'medium', type: 'short' })
+    setNewIssue({ title: '', priority: 'medium', type: 'short', owner_ids: [] })
     setAdding(false)
+  }
+
+  // Assign / unassign owners on an OPEN issue, without having to resolve it.
+  const toggleIssueOwner = (issueId, empId) => {
+    save('issues', issues.map(i => {
+      if (i.id !== issueId) return i
+      const cur = (i.owner_ids || []).map(String)
+      const id = String(empId)
+      const next = cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id]
+      return { ...i, owner_ids: next.length ? next : null }
+    }))
   }
 
   const resolveIssue = (id) => {
@@ -1234,7 +1253,10 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
                   if (!issue.resolved) {
                     setResolvingId(resolvingId === issue.id ? null : issue.id)
                     setTodoText('')
-                    setTodoOwner('')
+                    // todoOwner is an ARRAY (chip multi-select) — resetting it
+                    // to '' left a string in state that would throw on .filter
+                    // as soon as a chip was toggled off.
+                    setTodoOwner(issue.owner_ids?.length ? issue.owner_ids.map(String) : [])
                   } else {
                     unresolveIssue(issue.id)
                   }
@@ -1247,9 +1269,33 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
                   textTransform: 'uppercase', flexShrink: 0,
                 }}>{issue.priority}</div>
                 <span style={{
-                  flex: 1, fontSize: '13px', color: theme.text, fontWeight: '500',
+                  flex: 1, minWidth: 0, fontSize: '13px', color: theme.text, fontWeight: '500',
                   textDecoration: issue.resolved ? 'line-through' : 'none',
                 }}>{issue.title}</span>
+                {(() => {
+                  const ids = (issue.owner_ids || []).map(String)
+                  const owners = employees.filter(e => ids.includes(String(e.id)))
+                  return (
+                    <button
+                      onClick={() => setAssigningId(assigningId === issue.id ? null : issue.id)}
+                      title={owners.length ? `Assigned to ${owners.map(o => o.name).join(', ')}` : 'Assign this issue to someone'}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
+                        padding: '3px 8px', borderRadius: '12px', cursor: 'pointer',
+                        fontSize: '10.5px', fontWeight: '600',
+                        border: `1px solid ${owners.length ? '#8b5cf6' : theme.border}`,
+                        backgroundColor: owners.length ? '#8b5cf615' : 'transparent',
+                        color: owners.length ? '#8b5cf6' : theme.textMuted,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <Users size={10} />
+                      {owners.length
+                        ? owners.map(o => o.name?.split(' ')[0] || o.name).join(', ')
+                        : 'Assign'}
+                    </button>
+                  )
+                })()}
                 <span style={{ fontSize: '10px', color: theme.textMuted, flexShrink: 0 }}>
                   {issue.type === 'short' ? 'Short-term' : 'Long-term'}
                 </span>
@@ -1257,6 +1303,39 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
                   <Trash2 size={13} />
                 </button>
               </div>
+              {/* Assign panel — who owns this issue while it's open */}
+              {assigningId === issue.id && (
+                <div style={{
+                  padding: '10px 14px', backgroundColor: '#8b5cf608',
+                  border: '1px solid #8b5cf630', borderTop: 'none', borderRadius: '0 0 8px 8px',
+                }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '600', marginRight: '4px' }}>
+                      Assigned to:
+                    </span>
+                    {employees.map(e => {
+                      const on = (issue.owner_ids || []).map(String).includes(String(e.id))
+                      return (
+                        <button
+                          key={e.id}
+                          type="button"
+                          onClick={() => toggleIssueOwner(issue.id, e.id)}
+                          style={{
+                            padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: '600',
+                            border: `1px solid ${on ? '#8b5cf6' : theme.border}`,
+                            backgroundColor: on ? '#8b5cf6' : 'transparent',
+                            color: on ? '#fff' : theme.textSecondary,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {e.name}
+                        </button>
+                      )
+                    })}
+                    <SmallBtn onClick={() => setAssigningId(null)} theme={theme}><X size={12} /></SmallBtn>
+                  </div>
+                </div>
+              )}
               {/* Resolve panel — create to-do from IDS */}
               {resolvingId === issue.id && !issue.resolved && (
                 <div style={{
