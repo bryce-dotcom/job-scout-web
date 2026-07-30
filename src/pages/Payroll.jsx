@@ -1828,7 +1828,7 @@ export default function Payroll() {
     const [mod, stubsRes, empRes] = await Promise.all([
       import('../lib/paystubPdf'),
       supabase.from('paystubs').select('*').eq('company_id', companyId).eq('employee_id', emp.id).order('pay_date', { ascending: true }),
-      supabase.from('employees').select('name, role, pay_type, hourly_rate, ssn_last4, home_address, home_city, home_state, home_zip').eq('id', emp.id).maybeSingle(),
+      supabase.from('employees').select('name, role, pay_type, hourly_rate, ssn_last4, home_address, home_city, home_state, home_zip, tax_classification, w9_business_name, w9_legal_name').eq('id', emp.id).maybeSingle(),
     ])
     const stubs = (stubsRes.data || []).filter(s => (Number(s.gross_pay) || 0) > 0)
     if (!stubs.length) { alert('No finalized paystub for this employee yet.'); return }

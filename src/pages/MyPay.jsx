@@ -385,7 +385,7 @@ export default function MyPay() {
   const downloadPaystub = async (p) => {
     const [mod, empRes, coRes] = await Promise.all([
       import('../lib/paystubPdf'),
-      supabase.from('employees').select('name, role, pay_type, hourly_rate, ssn_last4, home_address, home_city, home_state, home_zip').eq('id', effectiveUserId).maybeSingle(),
+      supabase.from('employees').select('name, role, pay_type, hourly_rate, ssn_last4, home_address, home_city, home_state, home_zip, tax_classification, w9_business_name, w9_legal_name').eq('id', effectiveUserId).maybeSingle(),
       supabase.from('companies').select('company_name, legal_name, address, city, state, zip, ein, phone').eq('id', companyId).maybeSingle(),
     ])
     const ytd = mod.computePaystubYtd(paystubs, p)
