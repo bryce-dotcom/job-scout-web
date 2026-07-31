@@ -62,6 +62,9 @@ export async function syncJobBonuses({
   dailyVerifiedJobDays = null,
   jobPaymentStatus = null,   // Map<job_id, { paid, total }>
   bonusOverrides = [],
+  // Business units exempt from photo/Victor verification. Defaults to none,
+  // so callers that don't pass it behave exactly as before.
+  verificationExemptUnits = null,
 }) {
   if (!companyId) return { upserted: 0, accruedTotal: 0, pendingTotal: 0 }
 
@@ -89,6 +92,7 @@ export async function syncJobBonuses({
     const rows = computeJobBonusRows({
       job, timeClockRows: jobTime, employees, skillLevels, payrollConfig,
       verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides,
+      verificationExemptUnits,
     })
     const moneyIn = (jobPaymentStatus?.get?.(job.id)?.paid || 0) > 0.005
     for (const r of rows) {

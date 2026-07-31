@@ -24,6 +24,7 @@ import { syncJobBonuses } from '../lib/bonusLedger'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 import { payDateForPeriod } from '../lib/payDate'
+import { VERIFICATION_EXEMPT_KEY } from '../lib/verificationPolicy'
 
 // Roll the per-employee tax breakdowns up into one row per tax-kind +
 // jurisdiction with the right due date based on the company's deposit
@@ -187,6 +188,8 @@ export default function Payroll() {
   const fetchEmployees = useStore((state) => state.fetchEmployees)
   const refreshCompany = useStore((state) => state.fetchCompany)
   const allSettings = useStore((state) => state.settings) || []
+  // Business units — drives the per-unit photo-verification toggles below.
+  const businessUnits = useStore((state) => state.businessUnits) || []
 
   // Check whether the company has at least one positive Target Revenue
   // per Hour configured. Required for efficiency_bonus math to produce
@@ -1225,6 +1228,7 @@ export default function Payroll() {
         dailyVerifiedJobDays,
         jobPaymentStatus,
         bonusOverrides,
+        verificationExemptUnits: payrollConfig?.[VERIFICATION_EXEMPT_KEY],
       }).catch(e => console.error('bonus ledger sync', e))
       // Re-read the ledger so the page shows exactly what techs are owed.
       const { data } = await supabase
@@ -3983,6 +3987,50 @@ export default function Payroll() {
                       </div>
                     </div>
                   </label>
+
+                  {/* Photo verification per business unit. Christopher:
+                      cleaning crews don't evidence a finished job with a
+                      photo, and the gate was blocking completion + invoicing
+                      from the field. Lighting keeps it — those photos back
+                      rebate claims and the customer invoice. */}
+                  {(businessUnits || []).length > 0 && (
+                    <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>Photo verification by business unit</div>
+                      <div style={{ fontSize: '12px', color: theme.textMuted, margin: '2px 0 12px' }}>
+                        Untick a unit whose crews don&apos;t evidence finished work with photos. They&apos;ll be able to complete jobs and
+                        invoice from the field without a Victor check, and their bonuses pay without being flagged for review.
+                      </div>
+                      {(businessUnits || []).map((bu) => {
+                        const name = typeof bu === 'string' ? bu : bu?.name
+                        if (!name) return null
+                        const exempt = (payrollConfig?.[VERIFICATION_EXEMPT_KEY] || []).map(String)
+                        const required = !exempt.some(x => String(x).trim().toLowerCase() === name.trim().toLowerCase())
+                        return (
+                          <label key={name} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={required}
+                              onChange={(e) => {
+                                const cur = (payrollConfig?.[VERIFICATION_EXEMPT_KEY] || []).filter(
+                                  x => String(x).trim().toLowerCase() !== name.trim().toLowerCase())
+                                setPayrollConfig({
+                                  ...payrollConfig,
+                                  [VERIFICATION_EXEMPT_KEY]: e.target.checked ? cur : [...cur, name],
+                                })
+                              }}
+                              style={{ width: '18px', height: '18px' }}
+                            />
+                            <span style={{ fontSize: '13px', color: theme.text }}>
+                              {name}
+                              <span style={{ color: required ? theme.textMuted : '#f59e0b', marginLeft: '8px', fontSize: '12px' }}>
+                                {required ? 'photo verification required' : 'no photo verification'}
+                              </span>
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
 
                   {/* Live example */}
                   <div style={{ padding: '16px 18px', backgroundColor: theme.bgCard, borderRadius: '10px', border: `1px solid ${theme.border}`, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>

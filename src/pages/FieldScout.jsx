@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
@@ -18,6 +18,7 @@ import {
 import VictorVerify from './agents/victor/VictorVerify'
 import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours } from '../lib/bonusCalc'
 import { computeAllottedHours } from '../lib/allottedHours'
+import { verificationRequiredFor, anyUnitRequiresVerification, exemptUnitsFromPayrollConfig } from '../lib/verificationPolicy'
 import RankBadge from '../components/RankBadge'
 
 // Stripe card payment form (rendered inside Elements provider)
@@ -152,6 +153,28 @@ export default function FieldScout() {
 
   // Google review & settings
   const settings = useStore((s) => s.settings)
+
+  // Photo/Victor verification is required per BUSINESS UNIT. Christopher:
+  // "we don't verify our work completed with a photo" — on the cleaning side
+  // the gate was blocking job completion and invoicing from the field, while
+  // on lighting the photos back rebate claims and the invoice PDF.
+  // No setting configured => every unit stays gated, exactly as before.
+  const verificationExemptSetting = useMemo(
+    () => exemptUnitsFromPayrollConfig((settings || []).find((s) => s.key === 'payroll_config')?.value),
+    [settings],
+  )
+  const allBusinessUnits = useMemo(() => {
+    const raw = (settings || []).find((s) => s.key === 'business_units')?.value
+    if (!raw) return []
+    try { return (typeof raw === 'string' ? JSON.parse(raw) : raw) || [] } catch { return [] }
+  }, [settings])
+  // Does the job clocked into still need a passing verification?
+  const jobRequiresVerification = (jobId) => {
+    if (!jobId) return true
+    const job = (jobs || []).find((j) => String(j.id) === String(jobId))
+    return verificationRequiredFor(job?.business_unit, verificationExemptSetting)
+  }
+  const dailyCheckRequired = anyUnitRequiresVerification(allBusinessUnits, verificationExemptSetting)
   const [googleReviewUrl, setGoogleReviewUrl] = useState('')
   const [reviewSent, setReviewSent] = useState(new Set())
 
@@ -979,12 +1002,12 @@ export default function FieldScout() {
     // Only admins may force; everyone else must actually pass verification.
     if (!isForced) {
       // Block clock-out if clocked into a job that hasn't been verified
-      if (activeEntry.job_id && !verifiedJobs.has(activeEntry.job_id)) {
+      if (activeEntry.job_id && jobRequiresVerification(activeEntry.job_id) && !verifiedJobs.has(activeEntry.job_id)) {
         setClockOutBlocked(true)
         return
       }
       // Block field roles clocked in as General if they haven't done daily verification
-      if (isFieldRole && !activeEntry.job_id && !hasDailyVerification) {
+      if (isFieldRole && dailyCheckRequired && !activeEntry.job_id && !hasDailyVerification) {
         setClockOutBlocked(true)
         return
       }
@@ -2233,7 +2256,7 @@ export default function FieldScout() {
               style={{
                 flex: 1,
                 padding: '14px',
-                backgroundColor: ((activeEntry?.job_id && !verifiedJobs.has(activeEntry.job_id)) || (isFieldRole && !activeEntry?.job_id && !hasDailyVerification))
+                backgroundColor: ((activeEntry?.job_id && jobRequiresVerification(activeEntry.job_id) && !verifiedJobs.has(activeEntry.job_id)) || (isFieldRole && dailyCheckRequired && !activeEntry?.job_id && !hasDailyVerification))
                   ? 'rgba(239,68,68,0.5)' : 'rgba(239,68,68,0.9)',
                 border: 'none',
                 borderRadius: '10px',
@@ -2248,7 +2271,7 @@ export default function FieldScout() {
                 minHeight: '48px'
               }}
             >
-              {(activeEntry?.job_id && !verifiedJobs.has(activeEntry.job_id)) || (isFieldRole && !activeEntry?.job_id && !hasDailyVerification) ? (
+              {(activeEntry?.job_id && jobRequiresVerification(activeEntry.job_id) && !verifiedJobs.has(activeEntry.job_id)) || (isFieldRole && dailyCheckRequired && !activeEntry?.job_id && !hasDailyVerification) ? (
                 <><Lock size={18} /> Clock Out</>
               ) : (
                 <><Square size={18} /> {clockingOut ? 'Saving...' : 'Clock Out'}</>

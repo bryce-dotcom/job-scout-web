@@ -2,6 +2,8 @@
 // Used by both Payroll.jsx (admin view) and FieldScout.jsx (tech view)
 // so every surface computes bonuses identically.
 
+import { verificationRequiredFor } from './verificationPolicy'
+
 // Default bi-weekly anchor: a known Friday payday in 2024. Companies on
 // bi-weekly should set their own pay_anchor_date in payroll_config; this
 // fallback keeps period math sane if they haven't yet.
@@ -339,6 +341,7 @@ export function computeJobBonusRows({
   dailyVerifiedJobDays = null,
   jobPaymentStatus = null,
   bonusOverrides = [],
+  verificationExemptUnits = null,
 }) {
   if (!job?.id) return []
   // Only this job's time, normalized the same way every other surface does.
@@ -361,6 +364,7 @@ export function computeJobBonusRows({
       timeClockRows,
       jobPaymentStatus,
       bonusOverrides,
+      verificationExemptUnits,
     })
     // calculateEfficiencyBonus returns one detail per job; we scoped to one.
     const d = details[0]
@@ -383,7 +387,11 @@ export function computeJobBonusRows({
     if (amount <= 0) continue
     // Only a passing completion verification clears the flag. Money-threshold
     // / gate-off releases still want a human or Victor to confirm the work.
+    // 'verification_not_required' also clears it: the company has said this
+    // business unit doesn't verify with photos, so flagging every one of its
+    // bonuses would build a review queue nobody can ever clear.
     const completionVerified = d.releaseReason === 'victor_verified'
+      || d.releaseReason === 'verification_not_required'
     rows.push({
       employee_id: employeeId,
       amount: +amount.toFixed(2),
@@ -559,6 +567,12 @@ export function calculateEfficiencyBonus({
   // Array of { job_id, employee_id } tuples — the admin has explicitly said
   // "pay this bonus anyway" for that employee/job combo. Always releases.
   bonusOverrides = [],
+  // Business units the company has said don't verify work with photos
+  // (Christopher: cleaning crews don't photograph a clean window). Jobs in
+  // these units are treated as verified — the bonus releases normally and
+  // is NOT flagged for review, because no one was ever going to verify it.
+  // Defaults to nothing exempt, so untouched callers behave exactly as before.
+  verificationExemptUnits = null,
 }) {
   if (!payrollConfig.efficiency_bonus_enabled) return { bonus: 0, details: [] }
 
@@ -620,7 +634,11 @@ export function calculateEfficiencyBonus({
     // "would have earned $X, blocked because …" and offer an override.
     // The computed-but-blocked amount is carried in wouldHaveEarned on the
     // details row; it isn't added to totalBonus.
-    const passesVictor = !verifiedSet || verifiedSet.has(String(jobId))
+    // Work in an exempt business unit counts as verified: the company has
+    // decided this trade doesn't evidence completion with photos, so holding
+    // the bonus for a check that will never happen just strands someone's pay.
+    const verificationExempt = !verificationRequiredFor(job?.business_unit, verificationExemptUnits)
+    const passesVictor = verificationExempt || !verifiedSet || verifiedSet.has(String(jobId))
     const hasAdminOverride = overrideSet.has(`${jobId}|${employeeId}`)
     let paidPercent = null
     let paidOverrideApplies = false
@@ -686,7 +704,8 @@ export function calculateEfficiencyBonus({
       return
     }
     // Bonus released via an override path — tag it so the UI can show why.
-    const releaseReason = passesVictor ? 'victor_verified'
+    const releaseReason = verificationExempt ? 'verification_not_required'
+      : passesVictor ? 'victor_verified'
       : hasAdminOverride ? 'admin_override'
       : paidOverrideApplies ? 'paid_threshold_met'
       : 'gate_off'
