@@ -10,6 +10,7 @@ import {
   PERIODS_PER_YEAR,
 } from '../lib/bonusCalc'
 import { fetchUserBonuses, bonusStatusLabel } from '../lib/bonusLedger'
+import { groupHoursByDay } from '../lib/dailyHours'
 import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { canViewHR } from '../lib/accessControl'
 
@@ -876,9 +877,39 @@ export default function MyPay() {
             </h2>
             <span style={{ fontSize: '18px', fontWeight: '700', color: '#3b82f6' }}>{totalHours.toFixed(2)}h</span>
           </div>
-          <div style={{ fontSize: '12px', color: theme.textMuted }}>
-            {timeEntries.length} time entries logged this pay period. Full detail on the Time Clock page.
-          </div>
+          {/* Per-day breakdown. London: "Ability to see the hours clocked each
+              day of the pay period" — this card used to show only the period
+              total and send people to the Time Clock page. */}
+          {(() => {
+            const days = groupHoursByDay(timeEntries)
+            if (!days.length) return null
+            const maxH = Math.max(1, ...days.map(d => d.hours))
+            const dow = (key) => new Date(key + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {days.map(d => (
+                  <div key={d.dayKey} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0', borderBottom: `1px solid ${theme.border}` }}>
+                    <span style={{ fontSize: 12, color: theme.textSecondary, minWidth: 96 }}>{dow(d.dayKey)}</span>
+                    <div style={{ flex: 1, minWidth: 0, height: 6, borderRadius: 3, backgroundColor: theme.bg, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.round((d.hours / maxH) * 100)}%`, backgroundColor: '#3b82f6' }} />
+                    </div>
+                    {d.hasOpenShift && (
+                      <span title="Still clocked in on this day — hours aren't final" style={{ fontSize: 10, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>
+                        open
+                      </span>
+                    )}
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: theme.text, minWidth: 52, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {d.hours.toFixed(2)}h
+                    </span>
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 6 }}>
+                  {timeEntries.length} time {timeEntries.length === 1 ? 'entry' : 'entries'} across {days.length} {days.length === 1 ? 'day' : 'days'}
+                  {' · '}use the arrows above to check a past pay period.
+                </div>
+              </div>
+            )
+          })()}
         </div>
       )}
 
