@@ -64,7 +64,21 @@ export default function Estimates() {
   // "Only mine" — show only estimates assigned to the logged-in rep.
   // Damien's request: reps shouldn't have to scroll through everyone's
   // projects to find their own. Matches the same toggle on LeadSetter.
-  const [onlyMine, setOnlyMine] = useState(false)
+  // Noah: "it would be nice if it only showed my projects/estimates unless I
+  // select to see everyone's" — the toggle existed but reset on every visit,
+  // so it's now remembered per user instead of forcing a default on admins.
+  const [onlyMine, setOnlyMine] = useState(() => {
+    try { return localStorage.getItem('jobscout_estimates_only_mine') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('jobscout_estimates_only_mine', onlyMine ? '1' : '0') } catch { /* private mode */ }
+  }, [onlyMine])
+  // The logged-in user's employee record — used both for "Only mine" and to
+  // pre-assign a new estimate to whoever is writing it (Noah: "it would be
+  // nice if it automatically put projects under my name when I build them").
+  const myEmployee = employees.find(
+    (e) => e.email && user?.email && e.email.toLowerCase() === user.email.toLowerCase(),
+  )
   const [showImportExport, setShowImportExport] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
 
@@ -133,12 +147,33 @@ export default function Estimates() {
     // "Only mine" — the logged-in user's employee record matched by email,
     // compared against the estimate's salesperson.
     if (onlyMine) {
-      const me = employees.find(e => e.email && user?.email && e.email.toLowerCase() === user.email.toLowerCase())
-      if (me && quote.salesperson_id !== me.id) return false
+      if (myEmployee && quote.salesperson_id !== myEmployee.id) return false
     }
 
     return matchesSearch && matchesStatus
   })
+
+  // Noah: "when I back out it takes me to the top of the page, it would be
+  // nice if it took me back to where I was in the list." Stash the scroll
+  // offset on the way into an estimate and restore it once the list has
+  // rendered again. The window scrolls (main has no overflowY), so
+  // window.scrollY is the right value to keep.
+  const SCROLL_KEY = 'jobscout_estimates_scroll'
+  const openEstimate = (id) => {
+    try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY)) } catch { /* private mode */ }
+    navigate(`/estimates/${id}`)
+  }
+  useEffect(() => {
+    if (!filteredEstimates.length) return
+    let y = null
+    try {
+      y = sessionStorage.getItem(SCROLL_KEY)
+      // Clear first so a restore happens exactly once per return trip.
+      if (y != null) sessionStorage.removeItem(SCROLL_KEY)
+    } catch { return }
+    if (y == null) return
+    requestAnimationFrame(() => window.scrollTo(0, parseInt(y, 10) || 0))
+  }, [filteredEstimates.length])
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -274,7 +309,11 @@ export default function Estimates() {
             <Download size={18} />{!isMobile && ' Export'}
           </button>
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => {
+              // Pre-assign to whoever is creating it; still editable in the form.
+              if (myEmployee?.id) setFormData(f => ({ ...f, salesperson_id: f.salesperson_id || myEmployee.id }))
+              setShowModal(true)
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -456,7 +495,7 @@ export default function Estimates() {
                 key={estimate.id}
                 name={customerName}
                 businessName={estimate.customer?.business_name || estimate.lead?.business_name}
-                onClick={() => navigate(`/estimates/${estimate.id}`)}
+                onClick={() => openEstimate(estimate.id)}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
