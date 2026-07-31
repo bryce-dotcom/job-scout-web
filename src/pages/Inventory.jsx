@@ -11,6 +11,7 @@ import {
 import Tooltip from '../components/Tooltip'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { inventoryFields } from '../lib/importExportFields'
+import { groupProductsForPicker } from '../lib/variants'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -1131,9 +1132,29 @@ export default function Inventory() {
                       style={inputStyle}
                     >
                       <option value="">No linked product</option>
-                      {products.map(p => (
-                        <option key={p.id} value={p.id}>{p.name} ({formatCurrency(p.unit_price)})</option>
-                      ))}
+                      {/* Grouped by variant family. London: this list showed
+                          "all products with all possible options of widgets" —
+                          255 of the 715 rows are size/wattage variants, so
+                          SMBE Highbay alone ran 40 consecutive lines. Stock is
+                          tracked per SKU, so every variant stays selectable;
+                          they're just filed under their family now. */}
+                      {(() => {
+                        const { groups, loose } = groupProductsForPicker(products)
+                        return (
+                          <>
+                            {loose.map(p => (
+                              <option key={p.id} value={p.id}>{p.name} ({formatCurrency(p.unit_price)})</option>
+                            ))}
+                            {groups.map(g => (
+                              <optgroup key={g.key} label={`${g.label} (${g.items.length})`}>
+                                {g.items.map(p => (
+                                  <option key={p.id} value={p.id}>{p.name} ({formatCurrency(p.unit_price)})</option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </>
+                        )
+                      })()}
                     </select>
                   </div>
                 )}

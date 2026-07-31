@@ -84,3 +84,37 @@ export function variantPriceRange(rows) {
   if (!prices.length) return null
   return { min: Math.min(...prices), max: Math.max(...prices) }
 }
+
+// ── Grouping for flat <select> pickers ──────────────────────────────────
+// London: the inventory "Link to Product" dropdown listed all 715 products
+// "with all possible options of widgets" — 255 of those rows are size/wattage
+// variants of 44 base products, so SMBE Highbay alone took 40 consecutive
+// lines. Inventory tracks stock per SKU, so the variants must stay
+// SELECTABLE — they just need organising, not hiding. This returns optgroup
+// -shaped data: one group per variant family, plus everything else loose.
+export function groupProductsForPicker(products = []) {
+  const families = new Map()
+  const loose = []
+  for (const p of products || []) {
+    if (!p) continue
+    if (p.variant_group_id) {
+      const key = String(p.variant_group_id)
+      if (!families.has(key)) {
+        families.set(key, { key, label: p.variant_group_label || p.name || 'Variants', items: [] })
+      }
+      families.get(key).items.push(p)
+    } else {
+      loose.push(p)
+    }
+  }
+  // A "family" of one isn't worth a group header — fold it back in.
+  const groups = []
+  for (const f of families.values()) {
+    if (f.items.length < 2) { loose.push(...f.items); continue }
+    f.items.sort((a, b) => naturalCompare(a.name || '', b.name || ''))
+    groups.push(f)
+  }
+  groups.sort((a, b) => (a.label || '').localeCompare(b.label || ''))
+  loose.sort((a, b) => naturalCompare(a.name || '', b.name || ''))
+  return { groups, loose }
+}

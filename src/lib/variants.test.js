@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   naturalCompare, deriveVariantAxes, defaultVariantSelection, resolveVariant, variantPriceRange,
+  groupProductsForPicker,
 } from './variants'
 
 // A trimmed SMBE-like fixture: 2 wattage tiers x a few install combos.
@@ -55,5 +56,51 @@ describe('resolveVariant', () => {
 describe('variantPriceRange', () => {
   it('spans min to max unit_price', () => {
     expect(variantPriceRange(rows)).toEqual({ min: 251.6, max: 676.28 })
+  })
+})
+
+describe('groupProductsForPicker', () => {
+  const rows = [
+    { id: 1, name: 'SMBE Highbay 100W', variant_group_id: 'g1', variant_group_label: 'SMBE Highbay' },
+    { id: 2, name: 'SMBE Highbay 240W', variant_group_id: 'g1', variant_group_label: 'SMBE Highbay' },
+    { id: 3, name: 'SMBE Highbay 150W', variant_group_id: 'g1', variant_group_label: 'SMBE Highbay' },
+    { id: 4, name: 'Zip Ties' },
+    { id: 5, name: 'Anchor Bolt' },
+  ]
+
+  it('groups a variant family and leaves other products loose', () => {
+    const { groups, loose } = groupProductsForPicker(rows)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].label).toBe('SMBE Highbay')
+    expect(groups[0].items).toHaveLength(3)
+    expect(loose.map(p => p.name)).toEqual(['Anchor Bolt', 'Zip Ties'])
+  })
+
+  it('keeps EVERY product selectable — nothing is hidden', () => {
+    const { groups, loose } = groupProductsForPicker(rows)
+    const total = groups.reduce((s, g) => s + g.items.length, 0) + loose.length
+    expect(total).toBe(rows.length)
+  })
+
+  it('sorts variants naturally by wattage, not alphabetically', () => {
+    const { groups } = groupProductsForPicker(rows)
+    expect(groups[0].items.map(i => i.name)).toEqual([
+      'SMBE Highbay 100W', 'SMBE Highbay 150W', 'SMBE Highbay 240W',
+    ])
+  })
+
+  it('does not make a group header for a family of one', () => {
+    const { groups, loose } = groupProductsForPicker([
+      { id: 9, name: 'Lonely', variant_group_id: 'g9', variant_group_label: 'Lonely Fam' },
+      { id: 10, name: 'Plain' },
+    ])
+    expect(groups).toHaveLength(0)
+    expect(loose.map(p => p.name)).toEqual(['Lonely', 'Plain'])
+  })
+
+  it('handles empty / junk input without throwing', () => {
+    expect(groupProductsForPicker([])).toEqual({ groups: [], loose: [] })
+    expect(groupProductsForPicker(null)).toEqual({ groups: [], loose: [] })
+    expect(groupProductsForPicker([null, undefined])).toEqual({ groups: [], loose: [] })
   })
 })
