@@ -1,3 +1,4 @@
+import { buildLeadIndex, jobOwnedBy } from './jobOwnership'
 // Rep (%) commission ledger — read/sync helpers for the frozen rep_commissions
 // table (P2). The amount of a rep's services/goods commission is snapshotted
 // per payment when earned and never recomputed, so Payroll and My Pay stop
@@ -16,18 +17,13 @@
 // with no payment (mirrors the bonusCalc fallback). Mirrors the backfill so
 // the math never diverges. `onlyEmployeeId` scopes it (My Pay).
 export function computeRepRows({ employees = [], jobs = [], leads = [], invoices = [], payments = [], utilityInvoices = [], payrollConfig = {} }, onlyEmployeeId = null) {
-  const leadsById = new Map((leads || []).map(l => [String(l.id), l]))
-  const matchId = (a, b) => a != null && b != null && String(a) === String(b)
-  const ownsJob = (job, empId) => {
-    if (matchId(job.salesperson_id, empId)) return true
-    if (job.lead_id) {
-      const lead = leadsById.get(String(job.lead_id))
-      if (!lead) return false
-      if (matchId(lead.salesperson_id, empId)) return true
-      if (Array.isArray(lead.salesperson_ids) && lead.salesperson_ids.map(String).includes(String(empId))) return true
-    }
-    return false
-  }
+  // Ownership now comes from lib/jobOwnership so Payroll, My Pay and the
+  // Sales Pipeline answer "whose job is this?" identically. This copy was the
+  // only one that String()-normalized jobs.lead_id (TEXT) against leads.id
+  // (INT), so it paid commission on jobs the pipeline credited to nobody.
+  // 'credit' scope deliberately excludes lead_owner_id — same as before.
+  const leadIndex = buildLeadIndex(leads)
+  const ownsJob = (job, empId) => jobOwnedBy(job, empId, leadIndex, 'credit')
   const paysByInv = new Map()
   for (const p of payments) { if (!p.invoice_id) continue; if (!paysByInv.has(p.invoice_id)) paysByInv.set(p.invoice_id, []); paysByInv.get(p.invoice_id).push(p) }
 

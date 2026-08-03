@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import EntityCard, { MALE_NAMES, FEMALE_NAMES } from '../components/EntityCard'
 import UnassignedSalesPanel from '../components/UnassignedSalesPanel'
+import { buildLeadIndex, primaryOwnerId } from '../lib/jobOwnership'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -480,10 +481,30 @@ export default function SalesPipeline() {
       const standaloneJobs = [...(activeRes.data || []), ...(completedRes.data || [])]
 
       if (standaloneJobs.length) {
-        const pipelineLeadIds = new Set(normalized.map(l => l.id))
+        // jobs.lead_id is TEXT while leads.id is an INT, so a raw Set.has()
+        // NEVER matched: every job that belonged to a lead was misfiled as a
+        // standalone "orphan" and pushed onto the board on its own, never
+        // inheriting its lead's salesperson. That is why $232,049 of 2026
+        // work looked like it had no rep — the rep was on the lead all along.
+        // Compare as strings on both sides.
+        const pipelineLeadIds = new Set(normalized.map(l => String(l.id)))
         const todayStr = new Date().toISOString().split('T')[0]
 
-        const orphanJobs = standaloneJobs.filter(j => !j.lead_id || !pipelineLeadIds.has(j.lead_id))
+        const orphanJobs = standaloneJobs.filter(j => !j.lead_id || !pipelineLeadIds.has(String(j.lead_id)))
+
+        // An orphan can still HAVE a lead — one the pipeline query filtered
+        // out. Fetch just those leads so the card can inherit its rep instead
+        // of rendering as unattributed work.
+        let orphanLeadIndex = buildLeadIndex([])
+        const missingLeadIds = [...new Set(orphanJobs.map(j => j.lead_id).filter(Boolean))]
+        if (missingLeadIds.length) {
+          const { data: extraLeads } = await supabase
+            .from('leads')
+            .select('id, salesperson_id, lead_owner_id, salesperson_ids')
+            .eq('company_id', companyId)
+            .in('id', missingLeadIds.slice(0, 500))
+          orphanLeadIndex = buildLeadIndex(extraLeads || [])
+        }
         orphanJobs.forEach(job => {
           const stage = mapJobToStage(job)
 
@@ -514,7 +535,10 @@ export default function SalesPipeline() {
             _startDate: job.start_date,
             lead_owner: null,
             lead_owner_id: job.pm_id || job.job_lead_id || null,
-            salesperson_id: job.salesperson_id || null,
+            // Fall back to the lead's rep. Without this the card shows as
+            // unattributed even though the sale plainly belongs to someone —
+            // $232,049 of 2026 work read that way.
+            salesperson_id: job.salesperson_id || primaryOwnerId(job, orphanLeadIndex) || null,
             _pmId: job.pm_id || null,
             _jobLeadId: job.job_lead_id || null,
             lead_source: 'Direct Job',
