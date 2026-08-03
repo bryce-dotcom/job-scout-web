@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import EntityCard, { MALE_NAMES, FEMALE_NAMES } from '../components/EntityCard'
 import UnassignedSalesPanel from '../components/UnassignedSalesPanel'
-import { buildLeadIndex, primaryOwnerId } from '../lib/jobOwnership'
+import { buildLeadIndex, primaryOwnerId, leadForJob } from '../lib/jobOwnership'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -534,7 +534,16 @@ export default function SalesPipeline() {
             created_at: job.created_at || job.start_date,
             _startDate: job.start_date,
             lead_owner: null,
-            lead_owner_id: job.pm_id || job.job_lead_id || null,
+            // The LEAD's owner — not the PM or the assigned field lead. The
+            // owner filter matches on this, and pm_id/job_lead_id are install
+            // roles: feeding them in here credited techs with sales they
+            // never made (London +$261,554, Cameron +$118,661 of work they
+            // managed, plus field techs showing "sold" totals outright). The
+            // comment on that filter already said PM matching was too loose;
+            // it was the card that kept supplying it. _pmId / _jobLeadId
+            // below still carry the real values for display.
+            lead_owner_id: leadForJob(job, orphanLeadIndex)?.lead_owner_id ?? null,
+            salesperson_ids: leadForJob(job, orphanLeadIndex)?.salesperson_ids ?? null,
             // Fall back to the lead's rep. Without this the card shows as
             // unattributed even though the sale plainly belongs to someone —
             // $232,049 of 2026 work read that way.
@@ -588,7 +597,12 @@ export default function SalesPipeline() {
   // dates by when the deal was sold, not by stage timestamps), so the date
   // block is parameterised rather than the predicate being copied — a second
   // copy is how the owner rules drifted apart on this page before.
-  const matchesCardFilters = (lead, { applyDateFilter = true } = {}) => {
+  // `scope` mirrors lib/jobOwnership: 'visibility' decides what a rep SEES on
+  // the board (includes the lead owner, often a setter or admin), 'credit'
+  // decides who SOLD it. The Sold stat must use 'credit' or it disagrees with
+  // Payroll and My Pay — under 'visibility' Tracy Clark showed $216,278 sold
+  // against the $2,521 she is actually paid on, purely from owning leads.
+  const matchesCardFilters = (lead, { applyDateFilter = true, scope = 'visibility' } = {}) => {
     // Search filter — match name, phone, email, address, notes
     if (searchTerm) {
       const term = searchTerm.toLowerCase()
@@ -623,23 +637,36 @@ export default function SalesPipeline() {
       // disappear from every rep's pipeline view ("bitter creek testing
       // is Noah's but I can't see it"). Quote-level matching is safe
       // because the rep DID send the quote — that's their work.
+      // Everything here is compared as a STRING. Ids arrive from three
+      // places with three types — leads.id / salesperson_id are INTs,
+      // jobs.lead_id is TEXT, and a card's salesperson_id may come from
+      // primaryOwnerId() which normalises to a string. Comparing raw is
+      // what made the board lose whole reps' work in the first place.
+      const oid = String(ownerId)
       const owners = new Set()
-      if (lead.lead_owner_id) owners.add(lead.lead_owner_id)
-      if (lead.salesperson_id) owners.add(lead.salesperson_id)
+      // Lead owner counts for VISIBILITY only — crediting a sale to whoever
+      // owns the lead is how a coordinator ends up outselling the sales team.
+      if (scope === 'visibility' && lead.lead_owner_id) owners.add(String(lead.lead_owner_id))
+      if (lead.salesperson_id) owners.add(String(lead.salesperson_id))
+      // Multi-rep deals: Payroll credits every rep listed here, so the board
+      // must too, or a shared sale shows on one rep's number and not the
+      // other's (Cole was short $20,961 from exactly this).
+      if (Array.isArray(lead.salesperson_ids)) {
+        for (const id of lead.salesperson_ids) if (id != null) owners.add(String(id))
+      }
       ;(lead._quotes || []).forEach(q => {
-        if (q.salesperson_id) owners.add(q.salesperson_id)
+        if (q.salesperson_id) owners.add(String(q.salesperson_id))
       })
 
       if (effectiveOwnerFilter === 'unassigned') {
         if (owners.size > 0) return false
       } else if (lead._isJob) {
-        // For standalone jobs, only match the lead-level fields (jobs
-        // don't have an attached quotes set the same way). PM / job-lead
-        // matches were too loose — they made reps see deals they didn't
-        // sell just because they were assigned to install.
-        if (lead.salesperson_id !== ownerId && lead.lead_owner_id !== ownerId) return false
+        // Job cards carry no attached quote set; match the owner ids built
+        // above. PM / job-lead are install roles and are deliberately NOT in
+        // there — feeding them in credited techs with sales they never made.
+        if (!owners.has(oid)) return false
       } else {
-        if (!owners.has(ownerId)) return false
+        if (!owners.has(oid)) return false
       }
     }
     if (buFilter !== 'all') {
@@ -713,7 +740,7 @@ export default function SalesPipeline() {
   const filteredPipelineLeads = pipelineLeads.filter(l => matchesCardFilters(l))
   // Same owner / BU / search scoping, WITHOUT the stage-timestamp date rule,
   // so the cumulative Sold stat can apply its own sold-date window.
-  const scopedCards = pipelineLeads.filter(l => matchesCardFilters(l, { applyDateFilter: false }))
+  const scopedCards = pipelineLeads.filter(l => matchesCardFilters(l, { applyDateFilter: false, scope: 'credit' }))
 
   // Get leads for a stage
   // Pre-estimate stages show lead cards; estimate stages show one card per quote
