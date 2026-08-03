@@ -84,10 +84,66 @@ for (const rule of RULES) {
   }
 }
 
-if (violations.length === 0) {
-  console.log(`guard: ok — ${files.length} files, ${RULES.length} rule${RULES.length === 1 ? '' : 's'}, 0 violations`)
+// ── Undefined references ────────────────────────────────────────────────
+// Vite compiles a file that references a variable which does not exist; the
+// page then dies at runtime with "X is not defined". The build stays green
+// and the break reaches a user. This has happened repeatedly:
+//   Target (whole nav crashed), handlePrint, useMemo, businessUnits, toast,
+//   and customDateTo sat undefined in SalesPipeline for months, one click
+//   from taking the board down.
+// eslint's no-undef finds all of them in about a second, so the build now
+// refuses to proceed. Scoped to ONLY this rule — the repo has unrelated
+// style/hook warnings we deliberately don't block on, because a guard that
+// cries wolf is a guard someone disables.
+// Parsed as JSON, not a text format: --format compact was removed in ESLint 9
+// and the guard silently reported "0 undefined refs" while a real one sat in
+// the file. A check that can quietly pass is worse than no check, so an
+// unparseable result is now treated as a failure to run, not as success.
+let undefFailed = false
+{
+  const { execSync } = await import('node:child_process')
+  let raw = ''
+  try {
+    // no-undef is already enabled by the project's eslint config, so no
+    // --rule flag is needed (and its shell quoting breaks on Windows).
+    // Other rules' findings are ignored below; only no-undef blocks.
+    // Only `src`: supabase/functions is excluded by the eslint config, and
+    // naming an ignored path makes eslint exit fatally (2) rather than lint.
+    raw = execSync('npx eslint src --format json',
+      { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 * 1024 * 1024 })
+  } catch (e) {
+    raw = `${e.stdout || ''}`   // eslint exits non-zero when it finds errors
+  }
+  let hits = null
+  try {
+    const start = raw.indexOf('[')
+    if (start >= 0) {
+      hits = []
+      for (const f of JSON.parse(raw.slice(start))) {
+        for (const m of f.messages || []) {
+          if (m.ruleId === 'no-undef') hits.push(`${relative(ROOT, f.filePath)}:${m.line}  ${m.message}`)
+        }
+      }
+    }
+  } catch { hits = null }
+
+  if (hits === null) {
+    undefFailed = true
+    console.error('\nguard: FAILED — could not run the undefined-reference check (eslint output unreadable).')
+    console.error('  Not treating this as a pass: a silent skip is how a runtime crash reaches production.\n')
+  } else if (hits.length) {
+    undefFailed = true
+    console.error(`\nguard: FAILED — ${hits.length} undefined reference(s). These compile fine and crash at runtime:\n`)
+    hits.forEach((h) => console.error('    ' + h))
+    console.error('')
+  }
+}
+
+if (violations.length === 0 && !undefFailed) {
+  console.log(`guard: ok — ${files.length} files, ${RULES.length} rule${RULES.length === 1 ? '' : 's'}, 0 violations, 0 undefined refs`)
   process.exit(0)
 }
+if (violations.length === 0) process.exit(1)
 
 const byRule = new Map()
 for (const v of violations) {

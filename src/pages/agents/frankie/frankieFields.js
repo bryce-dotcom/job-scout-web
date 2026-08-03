@@ -19,7 +19,12 @@
 // InvoiceDetail, CustomerPortal, Stripe webhook, and Books" — and it stopped
 // mirroring them the moment that math was corrected, because a comment can't
 // keep two implementations in sync. Re-export the one definition instead.
-export { invoiceCustomerTotal } from '../../../lib/arHelpers'
+// `export { x } from '...'` RE-EXPORTS without binding the name locally, so
+// the call below was hitting an undeclared variable and throwing at runtime.
+// Import it properly, then re-export for existing consumers.
+// Found by the new undefined-reference guard.
+import { invoiceCustomerTotal } from '../../../lib/arHelpers'
+export { invoiceCustomerTotal }
 
 // Total a customer still owes on this invoice after applied payments.
 // Pass in either a paymentsByInvoiceId Map (preferred) or a flat payments

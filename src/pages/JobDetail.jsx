@@ -647,12 +647,18 @@ function JobDetailInner() {
             aiScore: p.ai_score
           })
           // Group line_item verification photos by matching line item
-          if (p.photo_type === 'line_item' && lines?.length) {
+          // `lines` is a local inside fetchJobData and does NOT exist here —
+          // this threw "lines is not defined" the moment a job had a
+          // line-item verification photo, taking the whole job page down.
+          // Note `lines?.length` did not protect it: optional chaining guards
+          // null VALUES, not undeclared VARIABLES. The in-scope equivalent is
+          // the lineItems state. Found by the new undefined-reference guard.
+          if (p.photo_type === 'line_item' && lineItems?.length) {
             const pathSegment = p.file_path.split('/').pop() || ''
             const match = pathSegment.match(/^lineitem_(.+?)_\d+_/)
             if (match) {
               const photoLineName = match[1].replace(/_/g, ' ')
-              const matchedLine = lines.find(l => {
+              const matchedLine = lineItems.find(l => {
                 const name = (l.item?.name || l.description || '').toLowerCase()
                 return name === photoLineName.toLowerCase() || name.replace(/[^a-z0-9]/g, '') === photoLineName.replace(/[^a-z0-9]/g, '').toLowerCase()
               })

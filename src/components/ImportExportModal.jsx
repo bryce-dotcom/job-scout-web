@@ -376,9 +376,14 @@ export default function ImportExportModal({
       setHeaders(fileHeaders)
       setRows(fileRows)
 
-      // Parse child sheets if multi-sheet
+      // Parse child sheets if multi-sheet.
+      // Declared at function scope, not inside the if: the AI-mapping step
+      // further down deliberately reads this LOCAL copy (state hasn't updated
+      // yet), but `const` is block-scoped, so from there it was an undeclared
+      // variable and threw "childData is not defined" — breaking every
+      // multi-sheet import. Found by the new undefined-reference guard.
+      const childData = {}
       if (hasMultipleSheets) {
-        const childData = {}
         for (const rt of relatedTables) {
           // Auto-match sheet by name (case-insensitive, partial match)
           const matchedSheet = workbook.SheetNames.find(sn =>
