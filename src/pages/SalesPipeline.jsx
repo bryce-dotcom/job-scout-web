@@ -13,6 +13,7 @@ import {
   ChevronUp, ChevronDown, Briefcase, List, Search
 } from 'lucide-react'
 import EntityCard, { MALE_NAMES, FEMALE_NAMES } from '../components/EntityCard'
+import UnassignedSalesPanel from '../components/UnassignedSalesPanel'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -1563,6 +1564,20 @@ export default function SalesPipeline() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Sold work nobody is credited for. Sits above the board for both
+          layouts, and hides itself entirely when there is nothing to claim.
+          Admins only — a rep claiming their own work unprompted is how
+          commission ends up on the wrong name. */}
+      {canViewAll && (
+        <UnassignedSalesPanel
+          theme={theme}
+          companyId={companyId}
+          employees={activeEmployees}
+          cutoff={getDateCutoff(dateRange)}
+          onAssigned={fetchPipelineLeads}
+        />
       )}
 
       {/* Mobile View — dark theme, full PWA experience */}
