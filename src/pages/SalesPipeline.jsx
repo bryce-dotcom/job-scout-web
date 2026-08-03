@@ -1532,9 +1532,17 @@ export default function SalesPipeline() {
         const deliveryStages = stages.filter(s => s.isDelivery || s.isClosed)
 
         // Filter leads by mobile tab
+        // Use the SAME source as the desktop columns. Mobile was filtering
+        // LEADS by lead.status, but for the estimate stages (Estimate Sent /
+        // Negotiation / Won / Lost) a stage is made of one card per QUOTE —
+        // which is what getLeadsForStage returns and what desktop renders.
+        // So the phone silently showed a different, much smaller set: on
+        // Negotiation, desktop had 27 cards worth $1.5M while the phone
+        // listed 4 leads worth $100k. That is the "shows on the computer but
+        // not on the phone" report.
         const mobileLeads = mobileFilter === 'All'
-          ? filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed })
-          : filteredPipelineLeads.filter(l => l.status === mobileFilter)
+          ? salesStages.flatMap(s => getLeadsForStage(s.id))
+          : getLeadsForStage(mobileFilter)
 
         const deliveryLeadsList = filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && (s.isDelivery || s.isClosed) })
 
@@ -1724,9 +1732,13 @@ export default function SalesPipeline() {
               <div style={{ display: 'flex', overflowX: 'auto', gap: '8px', paddingBottom: '4px', marginBottom: '12px', flexShrink: 0, WebkitOverflowScrolling: 'touch' }}>
                 {filterTabs.map(tab => {
                   const isActive = mobileFilter === tab.id
-                  const count = tab.id === 'All'
-                    ? filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed }).length
-                    : getLeadsForStage(tab.id).length
+                  const tabLeads = tab.id === 'All'
+                    ? filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed })
+                    : getLeadsForStage(tab.id)
+                  const count = tabLeads.length
+                  // Value on the tab itself, so a rep can see which stage
+                  // holds the money without opening each one.
+                  const tabValue = tabLeads.reduce((s, l) => s + getLeadAmount(l), 0)
                   return (
                     <button
                       key={tab.id}
@@ -1747,6 +1759,11 @@ export default function SalesPipeline() {
                           {count}
                         </span>
                       )}
+                      {tabValue > 0 && (
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: isActive ? tab.color : m.textMuted, whiteSpace: 'nowrap' }}>
+                          {formatCurrency(tabValue)}
+                        </span>
+                      )}
                     </button>
                   )
                 })}
@@ -1763,6 +1780,19 @@ export default function SalesPipeline() {
                   <span style={{ fontSize: '11px', fontWeight: '700', color: m.textMuted, textTransform: 'uppercase', letterSpacing: '1px' }}>Sales Pipeline</span>
                   <span style={{ fontSize: '10px', color: m.textMuted }}>Leads & Customers W/Estimates</span>
                   <div style={{ flex: 1, height: '1px', backgroundColor: m.border }} />
+                  {/* Value of whatever folder/status is selected. Mobile showed
+                      counts everywhere and money nowhere, so a rep tapping
+                      "Negotiation" saw the cards but not the $1.1M behind them
+                      — the number their desktop column header shows. */}
+                  {(() => {
+                    const total = mobileLeads.reduce((s, l) => s + getLeadAmount(l), 0)
+                    if (total <= 0) return null
+                    return (
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#16a34a' }}>
+                        {formatCurrency(total)}
+                      </span>
+                    )
+                  })()}
                   <span style={{ fontSize: '11px', color: m.textMuted, backgroundColor: m.bgCard, padding: '2px 8px', borderRadius: '10px', border: `1px solid ${m.border}` }}>
                     {mobileLeads.length}
                   </span>
@@ -1884,6 +1914,14 @@ export default function SalesPipeline() {
                               <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: stage.color }} />
                               <span style={{ fontSize: '12px', fontWeight: '600', color: m.textMuted }}>{stage.name}</span>
                               <span style={{ fontSize: '10px', color: stage.color }}>({stLeads.length})</span>
+                              {/* Per-stage value, same figure the desktop
+                                  column header shows. */}
+                              {(() => {
+                                const v = stLeads.reduce((s, l) => s + getLeadAmount(l), 0)
+                                return v > 0
+                                  ? <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: '700', color: '#16a34a' }}>{formatCurrency(v)}</span>
+                                  : null
+                              })()}
                             </div>
                             {stLeads.map(lead => {
                               const job = lead.jobs?.[0]
