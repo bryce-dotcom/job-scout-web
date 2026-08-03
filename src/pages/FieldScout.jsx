@@ -13,7 +13,7 @@ import {
   ChevronDown, ChevronUp, ExternalLink, Navigation,
   CheckCircle, Timer, Briefcase, DollarSign, Star,
   AlertTriangle, Send, X, CreditCard, Banknote, Smartphone,
-  Loader2, ShieldCheck, Shield, Search, FileText, Lock,
+  Loader2, ShieldCheck, Shield, Search, FileText,
   Camera, Calendar as CalendarIcon, ArrowRight
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
@@ -1020,18 +1020,23 @@ export default function FieldScout() {
     const isForced = typeof forceReason === 'string' && forceReason.trim().length > 0
     // Re-enforce the gate here — never trust a caller's local state mutation.
     // Only admins may force; everyone else must actually pass verification.
-    if (!isForced) {
-      // Block clock-out if clocked into a job that hasn't been verified
-      if (activeEntry.job_id && jobRequiresVerification(activeEntry.job_id) && !verifiedJobs.has(activeEntry.job_id)) {
-        setClockOutBlocked(true)
-        return
-      }
-      // Block field roles clocked in as General if they haven't done daily verification
-      if (isFieldRole && dailyCheckRequired && !activeEntry.job_id && !hasDailyVerification) {
-        setClockOutBlocked(true)
-        return
-      }
-    }
+    // Verification FLAGS a shift; it never traps someone on the clock.
+    //
+    // This used to `return` and refuse to clock out. It protected nothing:
+    // bonusCalc already withholds the bonus on its own verification check
+    // (needs_verification), so the block guarded no money — it only produced
+    // wrong time records. 17 punches were sitting open when we found this,
+    // some from six weeks earlier, and Lucas had to be clocked out by hand
+    // because "it won't let me get to the verification process so I can't do
+    // anything about clocking out". A worker must always be able to end their
+    // shift; an unverified one gets flagged for payroll to resolve.
+    const needsVerification = !isForced && (
+      (activeEntry.job_id && jobRequiresVerification(activeEntry.job_id) && !verifiedJobs.has(activeEntry.job_id)) ||
+      (isFieldRole && dailyCheckRequired && !activeEntry.job_id && !hasDailyVerification)
+    )
+    // Still surface the prompt so verification actually gets done — it just
+    // no longer stands between someone and the end of their day.
+    if (needsVerification) setClockOutBlocked(true)
     setClockingOut(true)
     const entryId = activeEntry.id
     // Capture the clock-out moment IMMEDIATELY — before anything async — so a
@@ -1063,6 +1068,15 @@ export default function FieldScout() {
         updatePayload.adjustment_reason = isAdmin
           ? `Force clock-out: ${forceReason.trim()}`
           : `Tech-skip clock-out (flagged for review): ${forceReason.trim()}`
+      }
+      // Unverified shift: let it close, but mark it so Payroll can see the
+      // shift ended without verification instead of finding a punch that
+      // never closed at all.
+      if (needsVerification) {
+        updatePayload.flagged_for_review = true
+        updatePayload.review_reason = activeEntry.job_id
+          ? 'Clocked out before job verification was completed'
+          : 'Clocked out before the daily verification was completed'
       }
       return updatePayload
     }
@@ -2279,11 +2293,9 @@ export default function FieldScout() {
                 minHeight: '48px'
               }}
             >
-              {(activeEntry?.job_id && jobRequiresVerification(activeEntry.job_id) && !verifiedJobs.has(activeEntry.job_id)) || (isFieldRole && dailyCheckRequired && !activeEntry?.job_id && !hasDailyVerification) ? (
-                <><Lock size={18} /> Clock Out</>
-              ) : (
-                <><Square size={18} /> {clockingOut ? 'Saving...' : 'Clock Out'}</>
-              )}
+              {/* No padlock any more: verification flags the shift, it does
+                  not hold anyone on the clock. The button always works. */}
+              <><Square size={18} /> {clockingOut ? 'Saving...' : 'Clock Out'}</>
             </button>
           </div>
 
@@ -2307,13 +2319,13 @@ export default function FieldScout() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '15px', fontWeight: '700', color: theme.text, marginBottom: '4px' }}>
-                    Quick check before you clock out
+                    You&apos;re clocked out — one quick check left
                   </div>
                   <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
                     {activeEntry.job_id ? (
-                      <>Run a 60-second Victor check on this job — a few photos and a couple questions. This is how we confirm the job&apos;s done so you get paid your <strong>efficiency bonus</strong>, and so the customer&apos;s invoice is right.</>
+                      <>Your hours are saved. Run a 60-second Victor check on this job — a few photos and a couple of questions — so the job counts as done, your <strong>efficiency bonus</strong> gets released, and the customer&apos;s invoice is right. Until then the shift is flagged for the office.</>
                     ) : (
-                      <>You&apos;re clocked into general time. Run a quick daily check (where you are, what you worked on) so the office knows your time is real and your hours go through clean.</>
+                      <>Your hours are saved. Run a quick daily check (where you are, what you worked on) so the office can clear the shift — until then it&apos;s flagged for review.</>
                     )}
                   </div>
                 </div>
