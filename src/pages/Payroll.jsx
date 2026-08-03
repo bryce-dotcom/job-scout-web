@@ -25,6 +25,7 @@ import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoice
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 import { payDateForPeriod } from '../lib/payDate'
 import { VERIFICATION_EXEMPT_KEY } from '../lib/verificationPolicy'
+import { needsAttention } from '../lib/openPunches'
 
 // Roll the per-employee tax breakdowns up into one row per tax-kind +
 // jurisdiction with the right due date based on the company's deposit
@@ -211,6 +212,15 @@ export default function Payroll() {
   // pay-calc entries so a forgotten clock-out surfaces for correction instead
   // of silently counting as zero hours (London lost her whole AZ week this way).
   const [openEntries, setOpenEntries] = useState([])
+  // Only punches that genuinely need a manager. lib/openPunches proves a
+  // punch was abandoned when a LATER clock-in exists for the same person —
+  // a signal that holds whatever shift they work — and otherwise grades
+  // against that person's own normal shift length rather than one
+  // company-wide number. Somebody simply still on the clock is not shown.
+  const attentionEntries = useMemo(
+    () => needsAttention(openEntries, [...openEntries, ...timeEntries], timeEntries),
+    [openEntries, timeEntries],
+  )
   const [timeLogEntries, setTimeLogEntries] = useState([])
   const [leadCommissions, setLeadCommissions] = useState([])
   const [payments, setPayments] = useState([])
@@ -635,19 +645,22 @@ export default function Payroll() {
       ])
 
       setTimeEntries(entriesRes.data || [])
-      // Incomplete shifts: any clock-in with no clock-out older than 12h is a
-      // missed clock-out (not someone actively on the clock right now). These
-      // never enter the pay calc — surface them so a manager sets the real
-      // clock-out. Company-wide + period-independent so a ghost from a past
-      // period can't hide once we've rolled into the next one.
+      // Incomplete shifts. These never enter the pay calc, so surface them for
+      // a manager to set the real clock-out. Company-wide and
+      // period-independent so a ghost from a past period can't hide once we
+      // roll into the next one.
+      //
+      // Fetch EVERY open punch and let lib/openPunches classify them. The old
+      // "older than 12 hours" rule assumed a day shift: London, Mike and
+      // Derrick work nights and swing (about one shift in seven starts after
+      // 5pm), so their ordinary long shifts were being called ghosts while
+      // they were still on the clock.
       try {
-        const cutoff = new Date(Date.now() - 12 * 3600 * 1000).toISOString()
         const { data: openData } = await supabase
           .from('time_clock')
           .select('*')
           .eq('company_id', companyId)
           .is('clock_out', null)
-          .lt('clock_in', cutoff)
           .order('clock_in', { ascending: false })
         setOpenEntries(openData || [])
       } catch { setOpenEntries([]) }
@@ -2930,7 +2943,7 @@ export default function Payroll() {
           calc. A forgotten clock-out used to silently vanish (null hours,
           excluded from payroll). Surface them so a manager sets the real
           clock-out and the tech gets paid. */}
-      {isAdmin && openEntries.length > 0 && (
+      {isAdmin && attentionEntries.length > 0 && (
         <div style={{
           padding: '14px 16px', marginBottom: '16px', borderRadius: '10px',
           background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.35)'
@@ -2938,14 +2951,14 @@ export default function Payroll() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
             <AlertTriangle size={18} style={{ color: '#f97316' }} />
             <span style={{ fontSize: '14px', fontWeight: '700', color: '#f97316' }}>
-              {openEntries.length} incomplete shift{openEntries.length === 1 ? '' : 's'} — missed clock-out
+              {attentionEntries.length} incomplete shift{attentionEntries.length === 1 ? '' : 's'} — missed clock-out
             </span>
           </div>
           <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
             These clock-ins never got a clock-out, so they count as <strong>zero hours</strong> and aren't in anyone's pay. Set the real clock-out time to fix it.
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {openEntries.map((entry) => {
+            {attentionEntries.map((entry) => {
               const emp = employees.find(e => e.id === entry.employee_id)
               const ci = new Date(entry.clock_in)
               const job = entry.job_id ? jobs.find(j => j.id === entry.job_id) : null
@@ -2963,6 +2976,19 @@ export default function Payroll() {
                       {job ? ` · ${job.job_title || job.customer_name || `Job ${job.job_id}`}` : ''}
                       {entry.clock_in_address ? ` · ${String(entry.clock_in_address).split(',').slice(0, 2).join(',')}` : ''}
                     </div>
+                    {/* Say WHY it's here. "They clocked in again after this" is
+                        proof; "running longer than usual" is a judgement the
+                        manager should be able to overrule — especially for the
+                        night and swing crew. */}
+                    {entry._classification?.reason && (
+                      <div style={{
+                        fontSize: '11px', marginTop: '3px',
+                        color: entry._classification.level === 'superseded' ? '#f97316' : theme.textSecondary,
+                      }}>
+                        {entry._classification.level === 'superseded' ? 'Abandoned — ' : ''}
+                        {entry._classification.reason}
+                      </div>
+                    )}
                   </div>
                   <button onClick={() => {
                     const pad = (n) => String(n).padStart(2, '0')
