@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/resync-bonuses",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/expire-trials",
+      "schedule": "23 8 * * *"
     }
   ],
   "functions": {
@@ -26,6 +30,9 @@
     },
     "api/cron/resync-bonuses.js": {
       "maxDuration": 300
+    },
+    "api/cron/expire-trials.js": {
+      "maxDuration": 60
     }
   }
 }
