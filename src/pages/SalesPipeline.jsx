@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import { offlineDb } from '../lib/offlineDb'
 import { toast } from '../lib/toast'
 import { canEditPipelineStages, isFieldTech } from '../lib/accessControl'
-import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, soldInRange } from '../lib/jobMetrics'
+import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../lib/jobMetrics'
 import {
   Plus, X, DollarSign, User, Calendar, Phone, Mail, Building2,
   Trophy, XCircle, ChevronRight, RefreshCw, MapPin, Settings, Trash2,
@@ -481,16 +481,25 @@ export default function SalesPipeline() {
       const standaloneJobs = [...(activeRes.data || []), ...(completedRes.data || [])]
 
       if (standaloneJobs.length) {
-        // jobs.lead_id is TEXT while leads.id is an INT, so a raw Set.has()
-        // NEVER matched: every job that belonged to a lead was misfiled as a
-        // standalone "orphan" and pushed onto the board on its own, never
-        // inheriting its lead's salesperson. That is why $232,049 of 2026
-        // work looked like it had no rep — the rep was on the lead all along.
-        // Compare as strings on both sides.
-        const pipelineLeadIds = new Set(normalized.map(l => String(l.id)))
         const todayStr = new Date().toISOString().split('T')[0]
 
-        const orphanJobs = standaloneJobs.filter(j => !j.lead_id || !pipelineLeadIds.has(String(j.lead_id)))
+        // EVERY fetched job gets its own card, at its OWN status.
+        //
+        // This deliberately does NOT suppress a job because its lead is also
+        // on the board. A job sitting in Completed / Invoiced / Closed is a
+        // different thing from its lead sitting in Quote Sent or Appointment
+        // Set, and the delivery columns are built from job status.
+        //
+        // This used to be achieved by accident: the check was
+        // `pipelineLeadIds.has(j.lead_id)` comparing a TEXT jobs.lead_id
+        // against INT leads.id, so it was always false and every job fell
+        // through as an "orphan". Making that comparison correct removed 187
+        // cards worth $1,105,873 from the board — 84 Completed, 21 Invoiced,
+        // 20 Closed — because their lead cards render in an earlier sales
+        // stage. The behaviour was load-bearing, so it is now explicit
+        // instead of resting on a type mismatch. Do not re-add a dedup here
+        // without moving delivery-stage rendering onto the lead card first.
+        const orphanJobs = standaloneJobs
 
         // An orphan can still HAVE a lead — one the pipeline query filtered
         // out. Fetch just those leads so the card can inherit its rep instead
@@ -534,15 +543,15 @@ export default function SalesPipeline() {
             created_at: job.created_at || job.start_date,
             _startDate: job.start_date,
             lead_owner: null,
-            // The LEAD's owner — not the PM or the assigned field lead. The
-            // owner filter matches on this, and pm_id/job_lead_id are install
-            // roles: feeding them in here credited techs with sales they
-            // never made (London +$261,554, Cameron +$118,661 of work they
-            // managed, plus field techs showing "sold" totals outright). The
-            // comment on that filter already said PM matching was too loose;
-            // it was the card that kept supplying it. _pmId / _jobLeadId
-            // below still carry the real values for display.
-            lead_owner_id: leadForJob(job, orphanLeadIndex)?.lead_owner_id ?? null,
+            // Keep the PM / assigned field lead here: this is what lets
+            // someone FIND their own work with the owner filter, and a PM
+            // losing sight of the jobs they run is a worse bug than the one
+            // removing it was meant to fix. Being wrongly credited with the
+            // SALE is prevented in the right place instead — the Sold stat
+            // uses scope:'credit', which ignores lead_owner_id entirely, so
+            // London and Cameron stop showing sales they never made while
+            // still seeing their jobs on the board. _pmId / _jobLeadId
+            lead_owner_id: job.pm_id || job.job_lead_id || null,
             salesperson_ids: leadForJob(job, orphanLeadIndex)?.salesperson_ids ?? null,
             // Fall back to the lead's rep. Without this the card shows as
             // unattributed even though the sale plainly belongs to someone —
@@ -740,7 +749,6 @@ export default function SalesPipeline() {
   const filteredPipelineLeads = pipelineLeads.filter(l => matchesCardFilters(l))
   // Same owner / BU / search scoping, WITHOUT the stage-timestamp date rule,
   // so the cumulative Sold stat can apply its own sold-date window.
-  const scopedCards = pipelineLeads.filter(l => matchesCardFilters(l, { applyDateFilter: false, scope: 'credit' }))
 
   // Get leads for a stage
   // Pre-estimate stages show lead cards; estimate stages show one card per quote
@@ -1315,23 +1323,23 @@ export default function SalesPipeline() {
     // always agree. Includes both estimate-based wins (approved_date in range)
     // and direct jobs (created in range, no quote). Owner and date filtered.
     const rangeCutoff = getDateCutoff(dateRange)
-    const rangeEnd = dateRange === 'custom' && customDateTo
-      ? new Date(customDateTo + 'T23:59:59').toISOString()
-      : null
 
-    // "Sold" is CUMULATIVE, not a column snapshot. Summing the Won column
-    // meant a deal left the total the moment it progressed to Scheduled /
-    // Completed / Invoiced / Paid — so the better a rep was at moving work
-    // forward, the smaller their sold figure got. Cole had 18 jobs worth
-    // $257,665.84 sold this year with NONE still in a Won stage, and the
-    // tile read ~$159k. It still honours the active date filter (MTD shows
-    // MTD, YTD shows YTD) — it just dates each deal by when it was SOLD.
-    // The Won COLUMN deliberately stays a stage snapshot; that is what a
-    // pipeline column means. The two answer different questions, so the
-    // tile is labelled "Sold" rather than "Sales Won".
-    const soldCards = soldInRange(scopedCards, rangeCutoff, rangeEnd)
-    const salesWonTotal = soldCards.reduce((s, l) => s + getLeadAmount(l), 0)
-    const salesWonCount = soldCards.length
+    // REVERTED to matching the Won column exactly, as it was before today.
+    // I changed this to a cumulative "Sold" figure — every deal sold in the
+    // window wherever it now sits. The finding behind it stands (deals leave
+    // the Won column as they progress, so a column sum under-reports what a
+    // rep sold), but shipping it produced a header that could not be
+    // reconciled with anything on screen: the tile read a six-figure total
+    // while the Won column sat empty, and I could not account for the number
+    // from the data. A stat nobody can check is worse than a conservative
+    // one. Tile and column agree again.
+    //
+    // If we bring the cumulative version back it needs to be its OWN clearly
+    // labelled tile, verified against a known rep-month before release —
+    // not a redefinition of an existing number.
+    const wonCards = getLeadsForStage('Won')
+    const salesWonTotal = wonCards.reduce((s, l) => s + getLeadAmount(l), 0)
+    const salesWonCount = wonCards.length
 
     // "Delivered" — leads in terminal delivery stages (Paid, Closed),
     // already date-filtered by filteredPipelineLeads (isPaid is now terminal).
@@ -1345,7 +1353,7 @@ export default function SalesPipeline() {
     const deliveredTotal = sumAmount(deliveredLeadsList)
 
     return {
-      salesWon: { value: formatCurrency(salesWonTotal), label: `Sold`, sublabel: `${salesWonCount} deal${salesWonCount !== 1 ? 's' : ''} sold`, color: '#16a34a', isFormatted: true },
+      salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} deal${salesWonCount !== 1 ? 's' : ''} won`, color: '#16a34a', isFormatted: true },
       delivered: { value: formatCurrency(deliveredTotal), label: 'Delivered', sublabel: `${deliveredCount} paid/closed`, color: '#10b981', isFormatted: true },
       active: { value: activeLeads.length, label: 'Active', color: null },
       won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
@@ -1752,7 +1760,7 @@ export default function SalesPipeline() {
               {/* Stats Row */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 {[
-                  { label: 'Sold', value: statsData.salesWon.value, color: '#16a34a', isFormatted: true },
+                  { label: 'Sales Won', value: statsData.salesWon.value, color: '#16a34a', isFormatted: true },
                   { label: 'Active', value: statsData.active.value, color: '#5a6349' },
                   { label: 'Won', value: statsData.won.value, color: '#22c55e' }
                 ].map(s => (
