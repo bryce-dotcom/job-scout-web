@@ -1206,7 +1206,7 @@ export default function FieldScout() {
               // item_name and labor_cost were missing here: without them the
               // invoice billed unnamed lines as "Item" and dropped the labor
               // portion, so summary PDFs could not split Parts vs Labor.
-              .select('item_id, description, item_name, quantity, price, discount, total, labor_cost, in_utility_scope')
+              .select('item_id, description, item_name, quantity, price, discount, total, labor_cost, in_utility_scope, item:products_services(name)')
               .eq('job_id', job.id)
               .order('id', { ascending: true })
             await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: invoice.id })

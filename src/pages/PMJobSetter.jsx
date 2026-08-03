@@ -1655,7 +1655,7 @@ export default function PMJobSetter() {
         // Fetch job_lines to calculate total
         const { data: jobLines } = await supabase
           .from('job_lines')
-          .select('item_id, quantity, price, total, description, item_name, discount, labor_cost, in_utility_scope')
+          .select('item_id, quantity, price, total, description, item_name, discount, labor_cost, in_utility_scope, item:products_services(name)')
           .eq('job_id', jobForInvoice.id)
 
         const jobTotal = jobLines?.reduce((sum, l) => sum + (l.total || l.quantity * l.price || 0), 0) || jobForInvoice.job_total || 0
