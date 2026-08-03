@@ -133,6 +133,54 @@ export function sumJobTotal(jobs, quoteAmountById) {
   return (jobs || []).reduce((s, j) => s + jobValue(j, quoteAmountById), 0)
 }
 
+// ── "Sold" is cumulative, not a pipeline stage ──────────────────────────────
+//
+// A deal is SOLD the moment the customer says yes. It stays sold forever,
+// however far it later progresses. The Sales Pipeline used to answer "how
+// much has this rep sold?" by summing the cards sitting in the Won COLUMN —
+// so every deal that moved on to Scheduled/Completed/Invoiced/Paid silently
+// left the total. Cole had 18 jobs worth $257,665.84 sold this year and not
+// one of them was still in a Won stage, so the tile read ~$159k. The better a
+// rep was at moving work forward, the smaller their sold number got.
+//
+// A pipeline COLUMN is rightly a snapshot of where work sits now; this is the
+// cumulative counterpart. Keep them separate rather than making one serve both.
+
+/** When a deal was sold: the estimate's approved date, else the date the job
+ *  came into existence (a job only exists because someone sold it). Returns
+ *  null for a card that has not been sold — a live lead or an open estimate. */
+export function soldDateOf(card) {
+  if (!card) return null
+  const approved = card._quoteApprovedDate || card.approved_date || null
+  if (approved) return approved
+  const job = card.jobs?.[0]
+  if (job?.created_at) return job.created_at
+  if (card._isJob && card.created_at) return card.created_at
+  return null
+}
+
+/** Has this card been sold at all? */
+export function isSold(card) {
+  return soldDateOf(card) != null
+}
+
+/** Every card sold within [start, end), whatever stage it now sits in.
+ *  Half-open so consecutive periods can't double-count the same deal. */
+export function soldInRange(cards, startDate, endDate) {
+  if (!Array.isArray(cards)) return []
+  const startMs = startDate ? new Date(startDate).getTime() : null
+  const endMs = endDate ? new Date(endDate).getTime() : null
+  return cards.filter(c => {
+    const d = soldDateOf(c)
+    if (!d) return false
+    const t = new Date(d).getTime()
+    if (!Number.isFinite(t)) return false
+    if (startMs != null && t < startMs) return false
+    if (endMs != null && t >= endMs) return false
+    return true
+  })
+}
+
 // ── Common date windows ─────────────────────────────────────────────────────
 
 export function startOfMonth(now = new Date()) {

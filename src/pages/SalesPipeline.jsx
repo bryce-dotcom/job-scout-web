@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import { offlineDb } from '../lib/offlineDb'
 import { toast } from '../lib/toast'
 import { canEditPipelineStages, isFieldTech } from '../lib/accessControl'
-import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../lib/jobMetrics'
+import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, soldInRange } from '../lib/jobMetrics'
 import {
   Plus, X, DollarSign, User, Calendar, Phone, Mail, Building2,
   Trophy, XCircle, ChevronRight, RefreshCw, MapPin, Settings, Trash2,
@@ -460,7 +460,19 @@ export default function SalesPipeline() {
         .eq('company_id', companyId)
         .in('status', terminalStatuses)
         .limit(5000)
-      if (rangeCutoff) completedQuery = completedQuery.gte('start_date', rangeCutoff)
+      // Filtering on start_date alone lost two whole classes of job:
+      // Postgres drops NULLs on a .gte() comparison, so any job SOLD in the
+      // window but not yet scheduled was never fetched at all (10 of Cole's
+      // 18 jobs this year — $140,449), and a job sold in one period but
+      // scheduled in another landed in the wrong one. Match on any of the
+      // three dates and let the client-side filter below decide which column
+      // it belongs in; this is strictly more inclusive than before, so
+      // nothing that used to appear can disappear.
+      if (rangeCutoff) {
+        completedQuery = completedQuery.or(
+          `created_at.gte.${rangeCutoff},start_date.gte.${rangeCutoff},last_status_change_at.gte.${rangeCutoff}`
+        )
+      }
 
       const [activeRes, completedRes] = await Promise.all([activeQuery, completedQuery])
 
@@ -492,7 +504,13 @@ export default function SalesPipeline() {
             // incentive (it carries through from quote_amount) — adding the
             // incentive again overstated these cards by the rebate amount.
             quote_amount: parseFloat(job.job_total) || 0,
-            created_at: job.start_date,
+            // The card's date is when the deal was SOLD, not when the work
+            // is scheduled. These were the same field before, which dated
+            // every direct job by its start_date and left jobs with no start
+            // date undated entirely. Scheduling still reads job.start_date
+            // directly (see the past-dated skip above) — keep it available.
+            created_at: job.created_at || job.start_date,
+            _startDate: job.start_date,
             lead_owner: null,
             lead_owner_id: job.pm_id || job.job_lead_id || null,
             salesperson_id: job.salesperson_id || null,
@@ -540,7 +558,12 @@ export default function SalesPipeline() {
   }, [pipelineLeads])
 
   // Filter leads by search, owner, and business unit
-  const filteredPipelineLeads = pipelineLeads.filter(lead => {
+  // Search + owner + business-unit + date, in ONE definition. The cumulative
+  // "Sold" stat needs the same owner/BU scoping but its own date rule (it
+  // dates by when the deal was sold, not by stage timestamps), so the date
+  // block is parameterised rather than the predicate being copied — a second
+  // copy is how the owner rules drifted apart on this page before.
+  const matchesCardFilters = (lead, { applyDateFilter = true } = {}) => {
     // Search filter — match name, phone, email, address, notes
     if (searchTerm) {
       const term = searchTerm.toLowerCase()
@@ -621,7 +644,7 @@ export default function SalesPipeline() {
     // Invoiced / Closed (the user's terminal categories) respect it.
     const cutoffStr = getDateCutoff(dateRange)
     const cutoffEndStr = dateRange === 'custom' && customDateTo ? new Date(customDateTo + 'T23:59:59').toISOString() : null
-    if (cutoffStr) {
+    if (applyDateFilter && cutoffStr) {
       const stage = stages.find(s => s.id === lead.status)
       // isPaid is terminal for date-range purposes — a deal paid 2 years ago
       // shouldn't appear in the current month's pipeline view. isClosed was
@@ -660,7 +683,12 @@ export default function SalesPipeline() {
       }
     }
     return true
-  })
+  }
+
+  const filteredPipelineLeads = pipelineLeads.filter(l => matchesCardFilters(l))
+  // Same owner / BU / search scoping, WITHOUT the stage-timestamp date rule,
+  // so the cumulative Sold stat can apply its own sold-date window.
+  const scopedCards = pipelineLeads.filter(l => matchesCardFilters(l, { applyDateFilter: false }))
 
   // Get leads for a stage
   // Pre-estimate stages show lead cards; estimate stages show one card per quote
@@ -1234,10 +1262,24 @@ export default function SalesPipeline() {
     // "Sales Won" — same source as the Won column cards so tile and column
     // always agree. Includes both estimate-based wins (approved_date in range)
     // and direct jobs (created in range, no quote). Owner and date filtered.
-    const wonCards = getLeadsForStage('Won')
-    const salesWonTotal = wonCards.reduce((s, l) => s + getLeadAmount(l), 0)
-    const salesWonCount = wonCards.length
     const rangeCutoff = getDateCutoff(dateRange)
+    const rangeEnd = dateRange === 'custom' && customDateTo
+      ? new Date(customDateTo + 'T23:59:59').toISOString()
+      : null
+
+    // "Sold" is CUMULATIVE, not a column snapshot. Summing the Won column
+    // meant a deal left the total the moment it progressed to Scheduled /
+    // Completed / Invoiced / Paid — so the better a rep was at moving work
+    // forward, the smaller their sold figure got. Cole had 18 jobs worth
+    // $257,665.84 sold this year with NONE still in a Won stage, and the
+    // tile read ~$159k. It still honours the active date filter (MTD shows
+    // MTD, YTD shows YTD) — it just dates each deal by when it was SOLD.
+    // The Won COLUMN deliberately stays a stage snapshot; that is what a
+    // pipeline column means. The two answer different questions, so the
+    // tile is labelled "Sold" rather than "Sales Won".
+    const soldCards = soldInRange(scopedCards, rangeCutoff, rangeEnd)
+    const salesWonTotal = soldCards.reduce((s, l) => s + getLeadAmount(l), 0)
+    const salesWonCount = soldCards.length
 
     // "Delivered" — leads in terminal delivery stages (Paid, Closed),
     // already date-filtered by filteredPipelineLeads (isPaid is now terminal).
@@ -1251,7 +1293,7 @@ export default function SalesPipeline() {
     const deliveredTotal = sumAmount(deliveredLeadsList)
 
     return {
-      salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} deal${salesWonCount !== 1 ? 's' : ''} won`, color: '#16a34a', isFormatted: true },
+      salesWon: { value: formatCurrency(salesWonTotal), label: `Sold`, sublabel: `${salesWonCount} deal${salesWonCount !== 1 ? 's' : ''} sold`, color: '#16a34a', isFormatted: true },
       delivered: { value: formatCurrency(deliveredTotal), label: 'Delivered', sublabel: `${deliveredCount} paid/closed`, color: '#10b981', isFormatted: true },
       active: { value: activeLeads.length, label: 'Active', color: null },
       won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
@@ -1644,7 +1686,7 @@ export default function SalesPipeline() {
               {/* Stats Row */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 {[
-                  { label: 'Sales Won', value: statsData.salesWon.value, color: '#16a34a', isFormatted: true },
+                  { label: 'Sold', value: statsData.salesWon.value, color: '#16a34a', isFormatted: true },
                   { label: 'Active', value: statsData.active.value, color: '#5a6349' },
                   { label: 'Won', value: statsData.won.value, color: '#22c55e' }
                 ].map(s => (

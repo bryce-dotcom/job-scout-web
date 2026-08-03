@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   getDeliveredStatusIds, getOpenStatusIds, wonJobsInRange,
   deliveredJobsInRange, jobValue, sumJobTotal, startOfMonth, startOfYear, daysAgo,
+  soldDateOf, isSold, soldInRange,
 } from './jobMetrics'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -172,5 +173,69 @@ describe('date windows are local, not UTC', () => {
 
   it('daysAgo counts back the right number of days', () => {
     expect(Math.round((now - daysAgo(30, now)) / 86400000)).toBe(30)
+  })
+})
+
+describe('sold is cumulative, not a pipeline stage', () => {
+  // The Cole bug: 18 jobs sold this year, none still sitting in a Won stage,
+  // so a Won-column sum reported ~$159k against a real $257,665.84.
+  const approvedEstimate = { _isEstimate: true, _quoteApprovedDate: '2026-03-01T00:00:00Z' }
+  const jobCard = { _isJob: true, created_at: '2026-04-01T00:00:00Z' }
+  const leadWithJob = { jobs: [{ created_at: '2026-05-01T00:00:00Z' }] }
+  const openLead = { status: 'Contacted' }
+  const openEstimate = { _isEstimate: true, _quoteAmount: 5000 }
+
+  it('counts a deal that has moved far past Won', () => {
+    // status is deliberately a delivery stage — it must not matter.
+    expect(isSold({ ...jobCard, status: 'Invoiced' })).toBe(true)
+    expect(isSold({ ...leadWithJob, status: 'Paid' })).toBe(true)
+  })
+
+  it('does NOT count a lead or an estimate that was never approved', () => {
+    expect(isSold(openLead)).toBe(false)
+    expect(isSold(openEstimate)).toBe(false)
+    expect(isSold(null)).toBe(false)
+  })
+
+  it('dates the sale by approval, then by the job coming into existence', () => {
+    expect(soldDateOf(approvedEstimate)).toBe('2026-03-01T00:00:00Z')
+    expect(soldDateOf(jobCard)).toBe('2026-04-01T00:00:00Z')
+    expect(soldDateOf(leadWithJob)).toBe('2026-05-01T00:00:00Z')
+  })
+
+  it('prefers the approval date over the job date when both exist', () => {
+    // The customer said yes on approval; the job record came later.
+    const both = { _quoteApprovedDate: '2026-03-01T00:00:00Z', jobs: [{ created_at: '2026-06-01T00:00:00Z' }] }
+    expect(soldDateOf(both)).toBe('2026-03-01T00:00:00Z')
+  })
+
+  it('sums every sold deal in the window regardless of stage', () => {
+    const cards = [
+      { ...jobCard, status: 'Completed' },
+      { ...leadWithJob, status: 'Invoiced' },
+      { ...approvedEstimate, status: 'Won' },
+      openLead,
+    ]
+    expect(soldInRange(cards, '2026-01-01T00:00:00Z', '2027-01-01T00:00:00Z')).toHaveLength(3)
+  })
+
+  it('excludes deals sold outside the window', () => {
+    const cards = [jobCard, { _isJob: true, created_at: '2025-04-01T00:00:00Z' }]
+    expect(soldInRange(cards, '2026-01-01T00:00:00Z', '2027-01-01T00:00:00Z')).toHaveLength(1)
+  })
+
+  it('uses a half-open window so months cannot double-count a deal', () => {
+    const edge = [{ _isJob: true, created_at: '2026-02-01T00:00:00Z' }]
+    expect(soldInRange(edge, '2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z')).toHaveLength(0)
+    expect(soldInRange(edge, '2026-02-01T00:00:00Z', '2026-03-01T00:00:00Z')).toHaveLength(1)
+  })
+
+  it('treats null bounds as all-time', () => {
+    expect(soldInRange([jobCard, approvedEstimate], null, null)).toHaveLength(2)
+  })
+
+  it('survives junk input', () => {
+    expect(soldInRange(null, null, null)).toEqual([])
+    expect(soldInRange([{ _isJob: true, created_at: 'nonsense' }], null, null)).toEqual([])
   })
 })
