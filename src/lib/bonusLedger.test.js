@@ -1,0 +1,191 @@
+import { describe, it, expect } from 'vitest'
+import { syncJobBonuses, bonusStatusLabel } from './bonusLedger'
+
+// ─────────────────────────────────────────────────────────────────────────
+// The ledger is what actually gets paid — bonusCalc only computes. Its whole
+// job is remembering things a recompute must not undo:
+//   - a PAID bonus is frozen forever (recomputing it is a double-pay or a
+//     silent clawback, depending on which way the number moved)
+//   - pending becomes accrued only once the customer's money lands
+//   - accrued_at is the date it was earned, not the date of the last sync
+//   - a human's verification override survives the next recompute
+// None of that was tested.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Minimal Supabase stand-in: serves `existing` to the select, captures upserts.
+function fakeSupabase(existing = []) {
+  const captured = []
+  const client = {
+    from() { return client },
+    select() { return client },
+    eq() { return Promise.resolve({ data: existing }) },
+    upsert(rows) { captured.push(...rows); return Promise.resolve({ error: null }) },
+  }
+  return { client, captured }
+}
+
+const CFG = {
+  efficiency_bonus_enabled: true,
+  efficiency_bonus_rate: 30,
+  company_bonus_cut_percent: 0,
+  bonus_min_hours_saved: 0,
+}
+const EXEMPT = ['Test BU']   // bypass the Victor gate; the gate has its own tests
+const JOB = { id: 900, business_unit: 'Test BU', allotted_time_hours: 10, status: 'Completed' }
+const SHIFT = { id: 's1', employee_id: 7, job_id: 900, hours: 6, date: '2026-07-20', clock_in: '2026-07-20T14:00:00Z', clock_out: '2026-07-20T20:00:00Z' }
+const EMPLOYEES = [{ id: 7, name: 'Tech', active: true }]
+
+async function sync({ existing = [], paid = 0, overrides = [] } = {}) {
+  const { client, captured } = fakeSupabase(existing)
+  const result = await syncJobBonuses({
+    supabase: client, companyId: 3,
+    jobs: [JOB], timeClockRows: [SHIFT], employees: EMPLOYEES, skillLevels: [],
+    payrollConfig: CFG,
+    verifiedJobIds: new Set(),
+    jobPaymentStatus: new Map([[900, { paid, total: 5000 }]]),
+    bonusOverrides: overrides,
+    verificationExemptUnits: EXEMPT,
+  })
+  return { result, captured }
+}
+
+describe('money-in flips pending to accrued', () => {
+  it('is pending while the customer has not paid', async () => {
+    const { result, captured } = await sync({ paid: 0 })
+    expect(captured).toHaveLength(1)
+    expect(captured[0].status).toBe('pending')
+    expect(result.pendingTotal).toBeGreaterThan(0)
+    expect(result.accruedTotal).toBe(0)
+  })
+
+  it('becomes accrued once money has landed', async () => {
+    const { result, captured } = await sync({ paid: 2500 })
+    expect(captured[0].status).toBe('accrued')
+    expect(result.accruedTotal).toBeGreaterThan(0)
+    expect(result.pendingTotal).toBe(0)
+  })
+
+  it('a trivial rounding payment does not count as money in', async () => {
+    const { captured } = await sync({ paid: 0.001 })
+    expect(captured[0].status).toBe('pending')
+  })
+
+  it('stamps accrued_at only when accrued', async () => {
+    expect((await sync({ paid: 0 })).captured[0].accrued_at).toBeNull()
+    expect((await sync({ paid: 2500 })).captured[0].accrued_at).toBeTruthy()
+  })
+})
+
+describe('a paid bonus is frozen', () => {
+  it('NEVER re-upserts a row already marked paid', async () => {
+    // The whole point: recomputing a paid bonus either pays it twice or
+    // silently claws it back when an estimate is edited afterwards.
+    const { captured } = await sync({
+      existing: [{ job_id: 900, employee_id: 7, status: 'paid', accrued_at: '2026-07-01T00:00:00Z' }],
+    })
+    expect(captured).toHaveLength(0)
+  })
+
+  it('a paid row contributes nothing to the accrued or pending totals', async () => {
+    const { result } = await sync({
+      existing: [{ job_id: 900, employee_id: 7, status: 'paid' }],
+      paid: 2500,
+    })
+    expect(result.accruedTotal).toBe(0)
+    expect(result.pendingTotal).toBe(0)
+    expect(result.upserted).toBe(0)
+  })
+
+  it('still syncs an unpaid row for a different employee on the same job', async () => {
+    const { captured } = await sync({
+      existing: [{ job_id: 900, employee_id: 99, status: 'paid' }],
+    })
+    expect(captured).toHaveLength(1)
+    expect(captured[0].employee_id).toBe(7)
+  })
+})
+
+describe('a re-sync preserves what was already established', () => {
+  it('keeps the ORIGINAL accrued_at instead of resetting it to now', async () => {
+    // Otherwise every sync moves the earned date forward and the bonus
+    // drifts into whatever pay period happens to be open.
+    const earned = '2026-07-01T12:00:00Z'
+    const { captured } = await sync({
+      existing: [{ job_id: 900, employee_id: 7, status: 'accrued', accrued_at: earned }],
+      paid: 2500,
+    })
+    expect(captured[0].accrued_at).toBe(earned)
+  })
+
+  it('keeps a human verification override rather than re-flagging it', async () => {
+    const { captured } = await sync({
+      existing: [{
+        job_id: 900, employee_id: 7, status: 'pending',
+        needs_verification: false,
+        verification_overridden_by: 'admin-42',
+        verification_overridden_at: '2026-07-02T00:00:00Z',
+      }],
+    })
+    expect(captured[0].needs_verification).toBe(false)
+    expect(captured[0].verification_overridden_by).toBe('admin-42')
+    expect(captured[0].release_reason).toBe('admin_override')
+  })
+
+  it('does not invent an override that was never granted', async () => {
+    const { captured } = await sync({
+      existing: [{ job_id: 900, employee_id: 7, status: 'pending', needs_verification: false, verification_overridden_by: null }],
+    })
+    expect(captured[0].verification_overridden_by).toBeNull()
+  })
+})
+
+describe('what the ledger refuses to write', () => {
+  it('writes nothing without a company', async () => {
+    const { client } = fakeSupabase()
+    const r = await syncJobBonuses({ supabase: client, companyId: null })
+    expect(r).toEqual({ upserted: 0, accruedTotal: 0, pendingTotal: 0 })
+  })
+
+  it('skips a job with no allotted estimate', async () => {
+    const { client, captured } = fakeSupabase()
+    await syncJobBonuses({
+      supabase: client, companyId: 3,
+      jobs: [{ ...JOB, allotted_time_hours: null }], timeClockRows: [SHIFT],
+      employees: EMPLOYEES, payrollConfig: CFG, verificationExemptUnits: EXEMPT,
+    })
+    expect(captured).toHaveLength(0)
+  })
+
+  it('skips a job nobody clocked into', async () => {
+    const { client, captured } = fakeSupabase()
+    await syncJobBonuses({
+      supabase: client, companyId: 3,
+      jobs: [JOB], timeClockRows: [],
+      employees: EMPLOYEES, payrollConfig: CFG, verificationExemptUnits: EXEMPT,
+    })
+    expect(captured).toHaveLength(0)
+  })
+
+  it('every written row carries the company and a finite amount', async () => {
+    const { captured } = await sync({ paid: 2500 })
+    for (const r of captured) {
+      expect(r.company_id).toBe(3)
+      expect(Number.isFinite(r.amount)).toBe(true)
+      expect(r.amount).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('bonusStatusLabel', () => {
+  it('names each state the way payroll reads it', () => {
+    expect(bonusStatusLabel({ status: 'paid' }).label).toBe('Paid')
+    expect(bonusStatusLabel({ status: 'accrued' }).label).toBe('Owed')
+    expect(bonusStatusLabel({ status: 'pending' }).label).toBe('Upcoming')
+    expect(bonusStatusLabel({ status: 'void' }).label).toBe('Void')
+  })
+
+  it('treats an unknown status as upcoming, never as paid', () => {
+    expect(bonusStatusLabel({ status: 'weird' }).label).toBe('Upcoming')
+    expect(bonusStatusLabel({}).label).toBe('Upcoming')
+  })
+})
