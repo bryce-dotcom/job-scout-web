@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Component } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
 import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
 import { RecordHistoryButton } from '../components/RecordHistory'
@@ -1295,33 +1296,11 @@ function JobDetailInner() {
     if (!error && invoice) {
       // Copy job line items into invoice_lines so the invoice has its own
       // record of what was billed (independent of any future job edits).
-      if (lineItems.length > 0) {
-        const invoiceLineRows = lineItems.map((l, idx) => ({
-          company_id: companyId,
-          invoice_id: invoice.id,
-          item_id: l.item_id || null,
-          line_number: idx + 1,
-          description: l.description || l.item?.name || 'Item',
-          quantity: l.quantity || 1,
-          unit_price: parseFloat(l.price) || 0,
-          discount: parseFloat(l.discount) || 0,
-          line_total: parseFloat(l.total) || ((l.quantity || 1) * (parseFloat(l.price) || 0)),
-          sort_order: idx,
-          // Preserve the in_utility_scope flag so out-of-scope add-ons
-          // (Extended Service Coverage, warranties, etc.) render in the
-          // customer invoice's "Additional Services" section instead of
-          // silently collapsing into the utility project. Default true
-          // unless explicitly marked false — matches createBothInvoices
-          // and the products_services / line-table column default.
-          in_utility_scope: l.in_utility_scope !== false,
-          // Carry through the labor portion so summary-mode PDFs can
-          // legitimately split Parts vs Labor from per-line data
-          // (instead of guessing by product type).
-          labor_cost: parseFloat(l.labor_cost) || 0,
-        }))
-        const { error: linesErr } = await supabase.from('invoice_lines').insert(invoiceLineRows)
-        if (linesErr) console.error('Failed to copy line items into invoice_lines:', linesErr)
-      }
+      // Row shape lives in lib/invoiceLines so every billing path agrees;
+      // it used to be hand-copied here and in three other files, which is
+      // how FieldScout and Invoices ended up dropping labor_cost and the
+      // product-name fallback without anyone noticing.
+      await writeInvoiceLines(supabase, lineItems, { companyId, invoiceId: invoice.id })
 
       await supabase.from('jobs').update({
         invoice_status: 'Invoiced',
@@ -1629,28 +1608,7 @@ function JobDetailInner() {
         // critically preserves the in_utility_scope flag on each line so
         // the utility-copy PDF can split items into "in-scope" vs
         // "customer add-ons" without re-querying anything.
-        if (lineItems.length > 0) {
-          const invoiceLineRows = lineItems.map((l, idx) => ({
-            company_id: companyId,
-            invoice_id: invoice.id,
-            item_id: l.item_id || null,
-            line_number: idx + 1,
-            description: l.description || l.item?.name || 'Item',
-            quantity: l.quantity || 1,
-            unit_price: parseFloat(l.price) || 0,
-            discount: parseFloat(l.discount) || 0,
-            line_total: parseFloat(l.total) || ((l.quantity || 1) * (parseFloat(l.price) || 0)),
-            sort_order: idx,
-            // Default true unless explicitly marked false (matches the
-            // products_services default + the line-table column default).
-            in_utility_scope: l.in_utility_scope !== false,
-            // Carry through the labor portion so summary-mode PDFs can
-            // legitimately split Parts vs Labor from per-line data.
-            labor_cost: parseFloat(l.labor_cost) || 0,
-          }))
-          const { error: linesErr } = await supabase.from('invoice_lines').insert(invoiceLineRows)
-          if (linesErr) console.error('Failed to copy line items into invoice_lines:', linesErr)
-        }
+        await writeInvoiceLines(supabase, lineItems, { companyId, invoiceId: invoice.id })
 
         await supabase.from('jobs').update({
           invoice_status: 'Invoiced',

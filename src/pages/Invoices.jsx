@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
@@ -311,25 +312,11 @@ export default function Invoices() {
       try {
         const { data: jobLines } = await supabase
           .from('job_lines')
-          .select('item_id, description, quantity, price, discount, line_total:total, in_utility_scope')
+          // item_name and labor_cost were missing here (see FieldScout).
+          .select('item_id, description, item_name, quantity, price, discount, total, labor_cost, in_utility_scope')
           .eq('job_id', formData.job_id)
           .order('id', { ascending: true })
-        if (jobLines && jobLines.length > 0) {
-          const invoiceLineRows = jobLines.map((l, idx) => ({
-            company_id: companyId,
-            invoice_id: data.id,
-            item_id: l.item_id || null,
-            line_number: idx + 1,
-            description: l.description || 'Item',
-            quantity: l.quantity || 1,
-            unit_price: parseFloat(l.price) || 0,
-            discount: parseFloat(l.discount) || 0,
-            line_total: parseFloat(l.line_total) || ((l.quantity || 1) * (parseFloat(l.price) || 0)),
-            sort_order: idx,
-            in_utility_scope: l.in_utility_scope !== false,
-          }))
-          await supabase.from('invoice_lines').insert(invoiceLineRows)
-        }
+        await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: data.id })
       } catch (err) {
         console.error('Invoices.jsx: failed to copy job lines into invoice_lines', err)
       }

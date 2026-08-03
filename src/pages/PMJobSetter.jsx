@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import HelpBadge from '../components/HelpBadge'
@@ -1654,7 +1655,7 @@ export default function PMJobSetter() {
         // Fetch job_lines to calculate total
         const { data: jobLines } = await supabase
           .from('job_lines')
-          .select('item_id, quantity, price, total, description')
+          .select('item_id, quantity, price, total, description, item_name, discount, labor_cost, in_utility_scope')
           .eq('job_id', jobForInvoice.id)
 
         const jobTotal = jobLines?.reduce((sum, l) => sum + (l.total || l.quantity * l.price || 0), 0) || jobForInvoice.job_total || 0
@@ -1679,6 +1680,11 @@ export default function PMJobSetter() {
           console.error('[AutoInvoice] Error creating invoice:', invError)
         } else {
           console.log('[AutoInvoice] Created invoice', invoiceNumber, 'for $' + jobTotal)
+          // Copy the job lines onto the invoice. This path computed its
+          // total FROM these rows and then discarded them, so every
+          // auto-invoice landed with no line items — which is why the
+          // in-scope / out-of-scope split had nothing to render on them.
+          await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: newInvoice.id })
           // Update job's invoice_status
           await supabase.from('jobs').update({ invoice_status: 'Invoiced' }).eq('id', jobForInvoice.id)
         }
