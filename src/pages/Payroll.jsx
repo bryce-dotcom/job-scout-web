@@ -1233,7 +1233,7 @@ export default function Payroll() {
       // Re-read the ledger so the page shows exactly what techs are owed.
       const { data } = await supabase
         .from('job_bonuses')
-        .select('id, job_id, employee_id, amount, status, needs_verification, saved_hours, allotted_hours, actual_hours, crew_size, paid_at, queued_for_payroll, jobs(job_title, job_id)')
+        .select('id, job_id, employee_id, amount, status, needs_verification, saved_hours, allotted_hours, actual_hours, crew_size, paid_at, queued_for_payroll, jobs(job_title, job_id, customer:customers!customer_id(name, business_name))')
         .eq('company_id', companyId)
       if (!cancelled) setLedgerBonuses(data || [])
     })()
@@ -2276,7 +2276,39 @@ export default function Payroll() {
                   padding: '12px', backgroundColor: theme.bg, borderRadius: '8px'
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{b.jobs?.job_title || `Job ${b.job_id}`}</div>
+                    {/* Alayda (twice): "the bonuses are labeled by what they
+                        are doing on the job not by customer, we need to be
+                        able to click into the job." On the HHH side two
+                        different jobs both read "Commercial Window Cleaning -
+                        Store Front..." — the SERVICE, not the client — so
+                        they were indistinguishable. Lead with the customer,
+                        keep the job title underneath, and link to the job. */}
+                    {(() => {
+                      const j = b.jobs || {}
+                      const customer = j.customer?.business_name || j.customer?.name || null
+                      const title = j.job_title || null
+                      const heading = customer || title || `Job ${b.job_id}`
+                      return (
+                        <>
+                          <button
+                            onClick={() => navigate(`/jobs/${b.job_id}`)}
+                            title="Open this job"
+                            style={{
+                              display: 'block', width: '100%', textAlign: 'left', padding: 0,
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              fontSize: '14px', fontWeight: '600', color: theme.accent,
+                              textDecoration: 'underline', textUnderlineOffset: '2px',
+                            }}
+                          >
+                            {heading}
+                          </button>
+                          <div style={{ fontSize: '11.5px', color: theme.textSecondary, marginTop: '1px' }}>
+                            {customer && title && title !== customer ? `${title} · ` : ''}
+                            {j.job_id || `#${b.job_id}`}
+                          </div>
+                        </>
+                      )
+                    })()}
                     <div style={{ fontSize: '12px', color: theme.textMuted }}>
                       Allotted: {b.allotted_hours}h — Actual: {Number(b.actual_hours || 0).toFixed(1)}h — Saved: {Number(b.saved_hours || 0).toFixed(1)}h
                       {b.crew_size > 1 && ` (split ${b.crew_size} ways)`}
