@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { offlineDb } from '../lib/offlineDb'
+import { toast } from '../lib/toast'
 import { canEditPipelineStages, isFieldTech } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../lib/jobMetrics'
 import {
@@ -162,6 +163,12 @@ export default function SalesPipeline() {
 
   // Date range filter for delivery stages
   const [dateRange, setDateRange] = useState('mtd')
+  // Referenced by three date-window calculations for dateRange === 'custom'
+  // but never declared — the only reason it wasn't already throwing is that
+  // 'custom' isn't offered in the range buttons, so the && short-circuits
+  // before evaluating it. Declaring it so adding a custom range later can't
+  // take the whole board down with a ReferenceError.
+  const [customDateTo] = useState('')
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -312,9 +319,13 @@ export default function SalesPipeline() {
     normalized.forEach(lead => {
       lead._quotes = quotesByLeadId[lead.id] || []
       if (lead._quotes.length > 0) {
-        lead._quoteTotal = Math.max(...lead._quotes.map(q =>
-          (parseFloat(q.quote_amount) || 0) + (parseFloat(q.utility_incentive) || 0)
-        ))
+        // quote_amount is the CONTRACT TOTAL and already contains the utility
+        // incentive — every other surface treats the incentive as the utility's
+        // share OF that total (estimatePdf/signedProposalPdf both compute
+        // outOfPocket = total - incentive). Adding it back double-counted the
+        // rebate and inflated the board by ~19% (Cole: "showing numbers that
+        // are not real").
+        lead._quoteTotal = Math.max(...lead._quotes.map(q => parseFloat(q.quote_amount) || 0))
       }
     })
   }
@@ -477,7 +488,10 @@ export default function SalesPipeline() {
             business_name: null,
             business_unit: job.business_unit,
             status: stage,
-            quote_amount: (parseFloat(job.job_total) || 0) + (parseFloat(job.utility_incentive) || 0),
+            // job_total is the contract value and already includes the utility
+            // incentive (it carries through from quote_amount) — adding the
+            // incentive again overstated these cards by the rebate amount.
+            quote_amount: parseFloat(job.job_total) || 0,
             created_at: job.start_date,
             lead_owner: null,
             lead_owner_id: job.pm_id || job.job_lead_id || null,
@@ -700,7 +714,7 @@ export default function SalesPipeline() {
               _isEstimate: true,
               _quoteId: q.id,
               _quoteName: q.estimate_name || q.quote_id || `EST-${q.id}`,
-              _quoteAmount: (parseFloat(q.quote_amount) || 0) + (parseFloat(q.utility_incentive) || 0),
+              _quoteAmount: parseFloat(q.quote_amount) || 0, // already includes the incentive
               _quoteStatus: q.status,
               _quoteApprovedDate: q.approved_date,
               _quoteRejectedDate: q.rejected_date,
@@ -733,7 +747,7 @@ export default function SalesPipeline() {
                   _isEstimate: true,
                   _quoteId: q.id,
                   _quoteName: q.estimate_name || q.quote_id || `EST-${q.id}`,
-                  _quoteAmount: (parseFloat(q.quote_amount) || 0) + (parseFloat(q.utility_incentive) || 0),
+                  _quoteAmount: parseFloat(q.quote_amount) || 0, // already includes the incentive
                   _quoteStatus: q.status,
                   _quoteApprovedDate: q.approved_date,
                   _quoteCreatedAt: q.created_at,
@@ -899,6 +913,18 @@ export default function SalesPipeline() {
       }
       setDraggedLead(null)
       await fetchPipelineLeads()
+      return
+    }
+
+    // JOB CARD being dragged. These are standalone jobs with no lead behind
+    // them — their id is the string `job-<id>`, so the updateLead() below
+    // silently matched nothing and the card snapped back on the next refetch
+    // (Cole: "when i move jobs to negotiation some of them are not saving").
+    // A delivered job has no sales stage to move to, so say so instead of
+    // pretending it worked.
+    if (draggedLead._isJob) {
+      toast.info('This is a job, not a lead — it can\'t be moved back into a sales stage.')
+      setDraggedLead(null)
       return
     }
 
