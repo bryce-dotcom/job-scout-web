@@ -19,6 +19,25 @@ import VictorVerify from './agents/victor/VictorVerify'
 import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours } from '../lib/bonusCalc'
 import { computeAllottedHours } from '../lib/allottedHours'
 import { verificationRequiredFor, anyUnitRequiresVerification, exemptUnitsFromPayrollConfig } from '../lib/verificationPolicy'
+
+// Jobs a tech must not be able to clock into: the work is finished and, in
+// the Invoiced/Closed cases, already billed — so time logged against them is
+// cost nobody can recover.
+//
+// This existed in TWO places that disagreed: the "today's jobs" list excluded
+// Completed/Cancelled/Archived, while the search box excluded Cancelled/
+// Archived/Verified. NEITHER excluded "Invoiced", which is how Dusty clocked
+// into Winter School — an invoiced job — and then couldn't get out of it.
+// One list now, used by both paths.
+//
+// Deliberately a DENYLIST so every custom company status ("Waiting Product",
+// "Chillin", "On Deck", …) stays clockable by default. Returning to finished
+// work is what a service visit is for, not a second clock-in on the old job.
+const NON_CLOCKABLE_STATUSES = new Set([
+  'Cancelled', 'Canceled', 'Archived',
+  'Verified', 'Verified Complete',
+  'Completed', 'Invoiced', 'Closed', 'Paid',
+])
 import RankBadge from '../components/RankBadge'
 
 // Stripe card payment form (rendered inside Elements provider)
@@ -268,7 +287,7 @@ export default function FieldScout() {
     return false
   }
   const todaysJobs = jobs.filter(j => {
-    if (['Completed', 'Cancelled', 'Archived'].includes(j.status)) return false
+    if (j.status && NON_CLOCKABLE_STATUSES.has(j.status)) return false
     // Always include the job we're actively clocked into, even if not scheduled / assigned.
     if (activeEntry?.job_id && j.id === activeEntry.job_id) return true
     if (!matchesEmployee(j)) return false
@@ -2379,6 +2398,45 @@ export default function FieldScout() {
                 </button>
               </div>
 
+              {/* Wrong job? Dusty clocked into Winter School instead of Bird
+                  Spike and hit this banner. Switching jobs was already
+                  possible — but only from a job card further down the list,
+                  which you never see while you're stuck staring at a blocked
+                  Clock Out. Offer the way out at the point of the problem.
+                  Switching keeps the clock running and moves the time. */}
+              {activeEntry?.job_id && (() => {
+                const others = todaysJobs.filter(j => j.id !== activeEntry.job_id).slice(0, 3)
+                if (others.length === 0) return null
+                return (
+                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }}>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>
+                      On the wrong job?
+                    </div>
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px', lineHeight: 1.45 }}>
+                      Switch instead — no clock-out needed, and the time you&apos;ve worked moves with you.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {others.map(j => (
+                        <button
+                          key={j.id}
+                          onClick={() => { setClockOutBlocked(false); handleSwitchJob(j.id) }}
+                          disabled={clockingIn || clockingOut}
+                          style={{
+                            width: '100%', padding: '10px 12px', minHeight: '44px',
+                            backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                            borderRadius: '10px', color: theme.text, fontSize: '13px', fontWeight: '600',
+                            cursor: (clockingIn || clockingOut) ? 'wait' : 'pointer', textAlign: 'left',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}
+                        >
+                          Switch to {j.job_title || j.job_id}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+
               {!isAdmin && (
                 <div style={{
                   marginTop: '10px', fontSize: '11px', color: theme.textMuted,
@@ -3240,12 +3298,9 @@ export default function FieldScout() {
       {/* ===== SECTION 6: STANDALONE CLOCK-IN ===== */}
       {!activeEntry && (() => {
         const hasTodaysJobs = todaysJobs.length > 0
-        // Denylist (not an allowlist) so every custom company status —
-        // "Waiting Product", "Chillin", "On Deck", etc. — is clockable
-        // by default. Only truly terminal jobs are excluded.
-        const NON_CLOCKABLE_STATUSES = new Set([
-          'Cancelled', 'Canceled', 'Archived', 'Verified', 'Verified Complete'
-        ])
+        // Uses the module-scope NON_CLOCKABLE_STATUSES — this used to keep its
+        // own shorter copy, so the two clock-in paths disagreed about which
+        // jobs were finished.
         const searchResults = jobSearchQuery.trim().length >= 2
           ? jobs.filter(j => {
               const q = jobSearchQuery.toLowerCase()
