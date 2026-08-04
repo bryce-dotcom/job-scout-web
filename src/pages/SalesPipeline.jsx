@@ -86,7 +86,13 @@ const availableStats = [
   { id: 'deliveryValue', label: 'Delivery Value', color: '#0ea5e9' }
 ]
 
-const defaultVisibleStats = ['sold', 'salesWon', 'active', 'won', 'totalValue']
+// ONE money number. 'salesWon' summed whatever was parked in the Won COLUMN,
+// which answers a question nobody asks and read $0 for a rep who had sold
+// $305,199. Two similarly-named money tiles side by side was just confusing.
+// The Won column still shows its own total in the stage header, so nothing
+// is lost. salesWon remains available in the stat picker for anyone who
+// wants it back.
+const defaultVisibleStats = ['sold', 'active', 'won', 'totalValue']
 
 export default function SalesPipeline() {
   const navigate = useNavigate()
@@ -349,7 +355,8 @@ export default function SalesPipeline() {
           // Migrate a saved set forward: anyone who arranged their stats before
           // 'sold' existed would otherwise never see it. Prepend rather than
           // bumping PIPELINE_VERSION, which would also wipe custom STAGES.
-          setVisibleStats(parsed.includes('sold') ? parsed : ['sold', ...parsed])
+          const migrated = parsed.filter(id => id !== 'salesWon')
+          setVisibleStats(migrated.includes('sold') ? migrated : ['sold', ...migrated])
         }
       } catch (e) {
         console.error('Error loading saved stats:', e)
@@ -1931,8 +1938,8 @@ export default function SalesPipeline() {
                      questions; both shown. The per-stage totals below are
                      untouched. */
                   { label: 'Sold', value: statsData.sold.value, color: '#0ea5e9', isFormatted: true },
-                  { label: 'Sales Won', value: statsData.salesWon.value, color: '#16a34a', isFormatted: true },
-                  { label: 'Active', value: statsData.active.value, color: '#5a6349' }
+                  { label: 'Active', value: statsData.active.value, color: '#5a6349' },
+                  { label: 'Won', value: statsData.won.value, color: '#22c55e' }
                 ].map(s => (
                   <div key={s.label} style={{ flex: 1, height: '64px', backgroundColor: m.bgCard, borderRadius: '12px', border: `1px solid ${m.border}`, borderLeft: `3px solid ${s.color}`, padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: m.text }}>{s.isFormatted ? s.value : s.value}</div>
