@@ -19,6 +19,7 @@ import FollowUpStrip from '../components/FollowUpStrip'
 import { buildLeadIndex, primaryOwnerId, leadForJob } from '../lib/jobOwnership'
 import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipelineScroll, takePipelineScroll } from '../lib/pipelinePrefs'
 import { soldTotal, periodBounds } from '../lib/soldTotals'
+import { countDueFromRows } from '../lib/followUpDue'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -1470,6 +1471,11 @@ export default function SalesPipeline() {
   // Follow-up rows keyed by lead, so each card can render its own strip
   // without re-scanning the whole list. The strip decides what to show; only
   // OPEN deals get one — a won or delivered deal is nobody's callback.
+  // Follow-ups DUE right now. Same rule as the nav badge (lib/followUpDue)
+  // so the two can never disagree. Counts scheduled callbacks that have come
+  // round, not deals that have merely gone quiet.
+  const dueFollowUps = useMemo(() => countDueFromRows(followUpRows), [followUpRows])
+
   const followUpRowsByLead = useMemo(() => {
     const m = new Map()
     for (const r of followUpRows || []) {
@@ -1589,6 +1595,20 @@ export default function SalesPipeline() {
             <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>
               Track leads through the sales process. Drag to move between stages.
             </p>
+            {/* Same due count as the nav badge — lib/followUpDue is the single
+                definition, so the two can never disagree. */}
+            {dueFollowUps > 0 && (
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '6px',
+                padding: '4px 10px', borderRadius: '12px',
+                background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',
+              }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#ef4444' }} />
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#991b1b' }}>
+                  {dueFollowUps} follow-up{dueFollowUps === 1 ? '' : 's'} due
+                </span>
+              </div>
+            )}
           </div>
 
           <div style={{ position: 'relative', minWidth: '220px' }}>
@@ -1943,6 +1963,26 @@ export default function SalesPipeline() {
               {isPulling && (
                 <div style={{ textAlign: 'center', padding: '8px 0', color: m.textMuted, fontSize: '12px', transition: 'opacity 0.2s', opacity: pullDistance > 20 ? 1 : 0 }}>
                   {pullDistance > 70 ? '↑ Release to refresh' : '↓ Pull to refresh'}
+                </div>
+              )}
+
+              {/* Follow-ups DUE — a commitment someone made and the date has
+                  arrived. Deliberately not counting merely-quiet deals: a badge
+                  that counts everything stale is too big to act on. */}
+              {dueFollowUps > 0 && (
+                <div
+                  onClick={() => setMobileFilter('All')}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px',
+                    padding: '10px 12px', borderRadius: '10px', cursor: 'pointer',
+                    background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',
+                  }}
+                >
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#991b1b' }}>
+                    {dueFollowUps} follow-up{dueFollowUps === 1 ? '' : 's'} due
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#991b1b', opacity: 0.8 }}>tap a red card to call</span>
                 </div>
               )}
 

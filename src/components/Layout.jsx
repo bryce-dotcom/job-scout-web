@@ -1,6 +1,7 @@
-import { useState, createContext, useContext, useMemo } from 'react'
+import { useState, useEffect, createContext, useContext, useMemo } from 'react'
 import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useStore } from '../lib/store'
+import { fetchDueFollowUpCount } from '../lib/followUpDue'
 import FeedbackButton from './FeedbackButton'
 import ArnieFloatingPanel from './ArnieFloatingPanel'
 import GlobalSearch from './GlobalSearch'
@@ -165,6 +166,7 @@ const TopoBackground = () => (
 
 export default function Layout() {
   const navigate = useNavigate()
+  const companyId = useStore((state) => state.companyId)
   const user = useStore((state) => state.user)
   const company = useStore((state) => state.company)
   const clearSession = useStore((state) => state.clearSession)
@@ -269,6 +271,22 @@ export default function Layout() {
     setEditingAgent(null)
   }
 
+  // Follow-ups due, for the Pipeline badge. Polls on a slow interval so a
+  // callback coming round mid-morning shows up without a page reload — the
+  // card strip only recomputes on load, which was the gap.
+  const [dueFollowUps, setDueFollowUps] = useState(0)
+  useEffect(() => {
+    if (!companyId) { setDueFollowUps(0); return }
+    let alive = true
+    const tick = async () => {
+      const n = await fetchDueFollowUpCount(companyId)
+      if (alive) setDueFollowUps(n)
+    }
+    tick()
+    const id = setInterval(tick, 5 * 60 * 1000)
+    return () => { alive = false; clearInterval(id) }
+  }, [companyId])
+
   // Dashboard link (always visible at top)
   const dashboardItem = { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
 
@@ -276,7 +294,7 @@ export default function Layout() {
   const salesFlowItems = [
     { to: '/leads', icon: UserPlus, label: 'Leads', step: 1, hint: 'All potential customers start here', color: '#6b7280' },
     { to: '/lead-setter', icon: Headphones, label: 'Lead Setter', step: 2, hint: 'Call leads and schedule appointments', color: '#8b5cf6' },
-    { to: '/pipeline', icon: GitBranch, label: 'Pipeline', step: 3, hint: 'Track leads through sales process', color: '#f59e0b' },
+    { to: '/pipeline', icon: GitBranch, label: 'Pipeline', step: 3, hint: 'Track leads through sales process', color: '#f59e0b', badgeCount: dueFollowUps },
     { to: '/estimates', icon: FileText, label: 'Estimates', step: 4, hint: 'Create and send estimates', color: '#3b82f6' },
     { to: '/jobs', icon: Briefcase, label: 'Jobs', step: 5, hint: 'Won estimates become jobs', color: '#22c55e' }
   ]
@@ -516,6 +534,17 @@ export default function Layout() {
     >
       <item.icon size={item.isChildAgent ? 12 : 18} style={{ color: item.isAgent ? '#a855f7' : undefined }} />
       {item.label}
+      {/* Follow-ups due. Visible from ANY page, so a rep does not have to be
+          sitting on the pipeline to know a callback came round. Same count as
+          the board header — lib/followUpDue is the one definition. */}
+      {item.badgeCount > 0 && (
+        <span style={{
+          marginLeft: 'auto', minWidth: '18px', height: '18px', borderRadius: '9px',
+          background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: 600,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          padding: '0 5px', flexShrink: 0,
+        }}>{item.badgeCount > 99 ? '99+' : item.badgeCount}</span>
+      )}
     </NavLink>
   )
 
