@@ -3,7 +3,7 @@ import { Phone, Mail, MessageSquare, Calendar, StickyNote, ChevronDown, ChevronU
 import { supabase } from '../lib/supabase'
 import { toast } from '../lib/toast'
 import {
-  buildFollowUpRow, stripSummary, snoozeToIso, shortDate,
+  buildFollowUpRow, stripSummary, snoozeToIso, shortDate, resolveFollowUpTarget,
   attemptCount, historyFor, SNOOZE_PRESETS,
 } from '../lib/followUps'
 
@@ -27,8 +27,10 @@ export default function FollowUpStrip({
   const [noteOpen, setNoteOpen] = useState(false)
   const [note, setNote] = useState('')
 
-  const leadId = lead?._isJob ? null : lead?.id
-  const jobId = lead?._isJob ? lead?._jobId : null
+  // NEVER the card id. Cards carry synthetic ids (quote-4533, job-12785)
+  // because one lead produces several of them, and passing one into lead_id
+  // gave "invalid input syntax for type bigint". lib/followUps owns the rule.
+  const { leadId, jobId } = resolveFollowUpTarget(lead)
   const history = historyFor(rows, leadId, 2)
   const latest = history[0] || null
   const attempts = attemptCount(rows, leadId)

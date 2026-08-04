@@ -3,6 +3,7 @@ import {
   latestByLead, daysSince, followUpState, followUpQueue, buildFollowUpRow,
   COLD, DUE, AGING, FRESH, UNTOUCHED,
   stripSummary, snoozeToIso, shortDate, attemptCount, historyFor, SNOOZE_PRESETS,
+  resolveFollowUpTarget, isStorableId,
 } from './followUps'
 
 const NOW = new Date('2026-08-04T18:00:00Z').getTime()
@@ -227,5 +228,41 @@ describe('the card strip', () => {
     expect(shortDate(null)).toBe('')
     expect(shortDate('nonsense')).toBe('')
     expect(shortDate(ago(0)).length).toBeGreaterThan(0)
+  })
+})
+
+describe('a card id is NOT a database id', () => {
+  // The live error: "invalid input syntax for type bigint: quote-4533".
+  // Pipeline cards carry synthetic ids because one lead makes several cards.
+  it('an estimate card attaches to the lead it came from', () => {
+    const card = { id: 'quote-4533', _isEstimate: true, _quoteId: 4533, _originalLeadId: 3011 }
+    expect(resolveFollowUpTarget(card)).toEqual({ leadId: 3011, jobId: null })
+  })
+
+  it('a job card attaches to its job, not its card id', () => {
+    const card = { id: 'job-12785', _isJob: true, _jobId: 12785 }
+    expect(resolveFollowUpTarget(card)).toEqual({ leadId: null, jobId: 12785 })
+  })
+
+  it('a plain lead card is itself', () => {
+    expect(resolveFollowUpTarget({ id: 3011 })).toEqual({ leadId: 3011, jobId: null })
+  })
+
+  it('refuses to build a row from a synthetic id', () => {
+    // Belt and braces: even if a caller skips resolveFollowUpTarget, the row
+    // builder must not hand Postgres a string where a bigint goes.
+    expect(buildFollowUpRow({ companyId: 3, leadId: 'quote-4533' })).toBeNull()
+    expect(buildFollowUpRow({ companyId: 3, jobId: 'job-12785' })).toBeNull()
+    expect(buildFollowUpRow({ companyId: 3, leadId: 'custom_1712345' })).toBeNull()
+  })
+
+  it('still accepts a real id, as a number or a numeric string', () => {
+    expect(buildFollowUpRow({ companyId: 3, leadId: 3011 })?.lead_id).toBe(3011)
+    expect(buildFollowUpRow({ companyId: 3, leadId: '3011' })?.lead_id).toBe('3011')
+  })
+
+  it('handles a card with no usable target', () => {
+    expect(resolveFollowUpTarget({ id: 'quote-9', _isEstimate: true })).toEqual({ leadId: null, jobId: null })
+    expect(resolveFollowUpTarget(null)).toEqual({ leadId: null, jobId: null })
   })
 })

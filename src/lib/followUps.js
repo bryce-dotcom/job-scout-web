@@ -104,6 +104,11 @@ export function followUpQueue(cards = [], latestMap = new Map(), {
 /** The row to insert when a rep taps Call / Email / Text. */
 export function buildFollowUpRow({ companyId, leadId, jobId, employeeId, method, note, nextFollowUpAt }) {
   if (!companyId || (!leadId && !jobId)) return null
+  // Refuse a synthetic card id rather than letting Postgres reject the insert
+  // with 'invalid input syntax for type bigint'. The caller should have used
+  // resolveFollowUpTarget.
+  if (leadId != null && !isStorableId(leadId)) return null
+  if (jobId != null && !isStorableId(jobId)) return null
   return {
     company_id: companyId,
     lead_id: leadId ?? null,
@@ -188,4 +193,28 @@ export function historyFor(rows = [], leadId, limit = 2) {
     .filter(r => r && String(r.lead_id) === String(leadId))
     .sort((a, b) => new Date(b.contacted_at) - new Date(a.contacted_at))
     .slice(0, limit)
+}
+
+/**
+ * Which record a follow-up actually attaches to.
+ *
+ * Pipeline cards carry SYNTHETIC ids — `quote-4533`, `job-12785`, `custom_...`
+ * — because one lead can produce several cards. Passing a card id straight
+ * into lead_id gave Postgres:
+ *     invalid input syntax for type bigint: "quote-4533"
+ *
+ * An estimate card belongs to the lead it came from (_originalLeadId); a job
+ * card attaches to its job; a plain lead card is itself. Never the card id.
+ */
+export function resolveFollowUpTarget(card) {
+  if (!card) return { leadId: null, jobId: null }
+  if (card._isJob) return { leadId: null, jobId: card._jobId ?? null }
+  if (card._isEstimate) return { leadId: card._originalLeadId ?? null, jobId: null }
+  return { leadId: card.id ?? null, jobId: null }
+}
+
+/** Only a real numeric id may reach a bigint column. */
+export function isStorableId(v) {
+  if (v === null || v === undefined || v === '') return false
+  return Number.isFinite(Number(v)) && !/^[a-z]/i.test(String(v))
 }
