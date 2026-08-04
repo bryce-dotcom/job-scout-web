@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense, Component } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { quoteWriteDecision, WRITE } from '../lib/quoteTotal'
+import { quoteWriteDecision, WRITE, quoteSummary } from '../lib/quoteTotal'
 import { findMatchingCustomer } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { RecordHistoryButton } from '../components/RecordHistory'
@@ -2536,13 +2536,12 @@ function EstimateDetailInner() {
   // list page shows $X (from quote_amount) and the detail page shows $0
   // (sum of zero lines) — Noah's "estimate pricing shows different on
   // estimate page vs inside of estimate" complaint.
+  // The summary maths lives in lib/quoteTotal so the pipeline renders the
+  // exact same Total for this estimate. It used to be computed here and read
+  // from the cached quotes.quote_amount there, which is how EST-MOUH4ST4
+  // showed 732,220.44 on the board against 111,405.64 on this page.
   const lineSum = lineItems.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
-  const quoteAmt = parseFloat(estimate.quote_amount) || 0
-  const subtotal = lineSum > 0 ? lineSum : quoteAmt
-  const discount = parseFloat(estimate.discount) || 0
-  const incentive = parseFloat(estimate.utility_incentive) || 0
-  const total = subtotal - discount
-  const outOfPocket = total - incentive
+  const { subtotal, discount, total, incentive, outOfPocket } = quoteSummary(estimate, lineSum)
 
   const customerInfo = estimate.customer || estimate.lead
   const statusStyle = statusColors[estimate.status] || statusColors['Draft']

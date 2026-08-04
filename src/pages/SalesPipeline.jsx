@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { effectiveQuoteAmount } from '../lib/quoteTotal'
 import { useTheme } from '../components/Layout'
 import { offlineDb } from '../lib/offlineDb'
 import { toast } from '../lib/toast'
@@ -488,10 +489,32 @@ export default function SalesPipeline() {
           const batch = allLeadIds.slice(i, i + batchSize)
           const { data: quotesData } = await supabase
             .from('quotes')
-            .select('id, lead_id, quote_amount, utility_incentive, status, estimate_name, quote_id, approved_date, rejected_date, created_at, updated_at, salesperson_id')
+            .select('id, lead_id, quote_amount, discount, utility_incentive, status, estimate_name, quote_id, approved_date, rejected_date, created_at, updated_at, salesperson_id')
             .in('lead_id', batch)
           if (quotesData) allQuotes.push(...quotesData)
         }
+        // Sum each quote's LINE ITEMS. quotes.quote_amount is a cached copy of
+        // these and it drifts — EST-MOUH4ST4 stored $732,220.44 against
+        // $111,405.64 of lines, and 803 other quotes disagree with their own
+        // lines today. Reading the cache meant every drift needed a one-off
+        // data repair; deriving from the rows means there is nothing to
+        // repair, and the board matches the estimate page by construction.
+        const lineSums = new Map()
+        try {
+          const quoteIds = allQuotes.map(q => q.id).filter(Boolean)
+          for (let i = 0; i < quoteIds.length; i += batchSize) {
+            const { data: qlines } = await supabase
+              .from('quote_lines')
+              .select('quote_id, line_total, total')
+              .in('quote_id', quoteIds.slice(i, i + batchSize))
+            for (const l of qlines || []) {
+              const v = Number(l.line_total ?? l.total ?? 0) || 0
+              lineSums.set(l.quote_id, (lineSums.get(l.quote_id) || 0) + v)
+            }
+          }
+        } catch (e) { /* fall back to the stored amount below */ }
+        for (const q of allQuotes) q._lineSum = lineSums.get(q.id) || 0
+
         attachQuotes(normalized, allQuotes)
       } catch (e) { /* non-critical */ }
     }
@@ -861,7 +884,7 @@ export default function SalesPipeline() {
               _isEstimate: true,
               _quoteId: q.id,
               _quoteName: q.estimate_name || q.quote_id || `EST-${q.id}`,
-              _quoteAmount: parseFloat(q.quote_amount) || 0, // already includes the incentive
+              _quoteAmount: effectiveQuoteAmount(q, q._lineSum), // lines win; stored amount only for lump-sum quotes
               _quoteStatus: q.status,
               _quoteApprovedDate: q.approved_date,
               _quoteRejectedDate: q.rejected_date,
@@ -894,7 +917,7 @@ export default function SalesPipeline() {
                   _isEstimate: true,
                   _quoteId: q.id,
                   _quoteName: q.estimate_name || q.quote_id || `EST-${q.id}`,
-                  _quoteAmount: parseFloat(q.quote_amount) || 0, // already includes the incentive
+                  _quoteAmount: effectiveQuoteAmount(q, q._lineSum), // lines win; stored amount only for lump-sum quotes
                   _quoteStatus: q.status,
                   _quoteApprovedDate: q.approved_date,
                   _quoteCreatedAt: q.created_at,

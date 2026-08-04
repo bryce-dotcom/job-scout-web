@@ -43,6 +43,65 @@ export function quoteWriteDecision(computedTotal, currentAmount, lineCount) {
   return { action: WRITE, reason: '' }
 }
 
+/**
+ * What an estimate is actually worth, for anything that DISPLAYS a total.
+ *
+ * The line items are the truth. `quotes.quote_amount` is a cached copy of
+ * them, and a cache that can drift is a cache that will: EST-MOUH4ST4 showed
+ * $732,220.44 on the pipeline against $111,405.64 of lines, and 803 other
+ * quotes disagree with their own lines today.
+ *
+ * Reading the cached column meant every drift needed a one-off data repair.
+ * Summing the lines instead means there is nothing to repair — the estimate
+ * page and the pipeline compute the same number from the same rows.
+ *
+ * The stored amount is still the fallback, and legitimately so: a lump-sum
+ * quote with no itemisation has a real total and no lines to derive it from.
+ * Absence of lines is NOT evidence the quote is worth zero.
+ * Mirrors EstimateDetail exactly, so the board and the estimate cannot
+ * disagree:
+ *     subtotal = lineSum > 0 ? lineSum : quote_amount
+ *     total    = subtotal - discount
+ * The whole-project `discount` is a real reduction and is NOT the utility
+ * incentive — per-line discounts are already baked into each line_total, and
+ * the incentive is deducted separately to reach out-of-pocket, never from the
+ * contract total.
+ */
+export function effectiveQuoteAmount(quote, lineSum) {
+  return quoteSummary(quote, lineSum).total
+}
+
+/**
+ * The whole Estimate Summary block, from one place.
+ *
+ *   Subtotal        line items (or the stored amount for a lump-sum quote)
+ *   Discount        whole-project reduction, NOT the utility incentive
+ *   Total           Subtotal − Discount        <- what the board shows
+ *   Utility Incentive
+ *   Out of Pocket   Total − Incentive          <- what the customer pays
+ *
+ * There is no stored "Total" column to reuse, so anything displaying it has
+ * to compute it — which is exactly how the estimate page and the pipeline
+ * ended up showing different numbers for the same estimate. Both now call
+ * this, so they cannot drift apart again.
+ */
+export function quoteSummary(quote, lineSum) {
+  const lines = Number(lineSum) || 0
+  const stored = Number(quote?.quote_amount) || 0
+  const subtotal = lines > 0 ? lines : stored
+  const discount = Number(quote?.discount) || 0
+  const incentive = Number(quote?.utility_incentive) || 0
+  const total = Math.max(0, subtotal - discount)
+  return { subtotal, discount, total, incentive, outOfPocket: total - incentive }
+}
+
+/** Sum line rows for one quote. quote_lines carries BOTH `line_total` and
+ *  `total`, and `total` is null on most rows — reading only `total` reports
+ *  every quote as $0. */
+export function sumQuoteLines(lines = []) {
+  return (lines || []).reduce((s, l) => s + (Number(l?.line_total ?? l?.total ?? 0) || 0), 0)
+}
+
 /** Does the stored amount disagree with the line items? Used to warn a user
  *  that what the pipeline shows is not what the estimate adds up to. */
 export function quoteAmountMismatch(currentAmount, computedTotal, lineCount) {
