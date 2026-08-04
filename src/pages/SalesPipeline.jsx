@@ -15,6 +15,8 @@ import {
 } from 'lucide-react'
 import EntityCard, { MALE_NAMES, FEMALE_NAMES } from '../components/EntityCard'
 import UnassignedSalesPanel from '../components/UnassignedSalesPanel'
+import FollowUpColumn from '../components/FollowUpColumn'
+import { latestByLead, followUpQueue } from '../lib/followUps'
 import { buildLeadIndex, primaryOwnerId, leadForJob } from '../lib/jobOwnership'
 import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipelineScroll, takePipelineScroll } from '../lib/pipelinePrefs'
 
@@ -207,6 +209,28 @@ export default function SalesPipeline() {
 
   // The board scrolls inside containers, not the window, so a plain
   // window.scrollY restore (what Estimates does) would not help here.
+  // Follow-up OVERLAY. Deals stay in their real stage; this is a worklist of
+  // who has gone quiet. Failing to load it must never take the board down, so
+  // it degrades to an empty column.
+  // Who is logging the touch. Matches the Payroll pattern (auth user -> employee row).
+  const currentEmployeeId = useMemo(
+    () => employees.find(e => e.email && user?.email && e.email === user.email)?.id ?? null,
+    [employees, user?.email],
+  )
+  const [followUpRows, setFollowUpRows] = useState([])
+  const loadFollowUps = async () => {
+    if (!companyId) return
+    const { data, error } = await supabase
+      .from('lead_follow_ups')
+      .select('id, lead_id, job_id, employee_id, contacted_at, method, note, next_follow_up_at')
+      .eq('company_id', companyId)
+      .order('contacted_at', { ascending: false })
+      .limit(5000)
+    if (error) { console.warn('[Pipeline] follow-ups unavailable:', error.message); return }
+    setFollowUpRows(data || [])
+  }
+  useEffect(() => { loadFollowUps() }, [companyId])
+
   const boardScrollRef = useRef(null)
   // Put them back where they were, once the cards have actually rendered —
   // restoring against an empty board would just scroll to 0. takePipelineScroll
@@ -1385,6 +1409,19 @@ export default function SalesPipeline() {
 
   // Calculate all stats (memoized — must be before any early returns)
   // Uses filteredPipelineLeads so stats match what's visible on screen (owner/BU filters apply)
+  // Only OPEN deals are followed up — a won, lost or delivered deal is
+  // nobody's callback. Uses the same stage flags the board already has, so a
+  // tenant with custom stages works without configuration.
+  const followUpCards = useMemo(() => {
+    const latest = latestByLead(followUpRows)
+    const isOpenStage = (statusId) => {
+      const st = stages.find(x => x.id === statusId)
+      return !(st?.isWon || st?.isLost || st?.isClosed || st?.isPaid || st?.isDelivery)
+    }
+    return followUpQueue(filteredPipelineLeads, latest, { isOpenStage })
+      .map(c => ({ ...c, _amount: getLeadAmount(c) }))
+  }, [followUpRows, filteredPipelineLeads, stages])
+
   const statsData = useMemo(() => {
     const stageMap = new Map(stages.map(s => [s.id, s]))
     const leads = filteredPipelineLeads
@@ -2230,6 +2267,19 @@ export default function SalesPipeline() {
             {/* Cards Area - only when expanded */}
             {salesExpanded && (
               <div style={{ flex: 1, display: 'flex', gap: '0px', minHeight: '200px', overflow: 'hidden' }}>
+                {/* Follow-up OVERLAY, first so it reads as today's worklist. These
+                    deals are ALSO still shown in their own stage column — that is
+                    the point of an overlay: nothing loses its pipeline position. */}
+                <div style={{ flex: '0 0 260px', minWidth: 0, padding: '4px 8px 4px 4px', borderRight: `1px solid ${theme.border}` }}>
+                  <FollowUpColumn
+                    theme={theme}
+                    cards={followUpCards}
+                    companyId={companyId}
+                    employeeId={currentEmployeeId}
+                    onLogged={loadFollowUps}
+                    onOpen={(c) => openRecord(c._isJob ? `/jobs/${c._jobId}` : `/leads/${c.id}`)}
+                  />
+                </div>
                 {stages.filter(s => !s.isDelivery && !s.isClosed).map(stage => {
                   const stageLeads = getLeadsForStage(stage.id)
                   const isDragOver = dragOverStage === stage.id
