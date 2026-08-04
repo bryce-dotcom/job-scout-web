@@ -132,7 +132,10 @@ export default function FollowUpStrip({
       {open && (
         <div style={{ padding: '9px 11px 11px', background: t.bgCard, borderTop: `1px solid ${t.border}` }}>
           <div style={{ display: 'flex', gap: '5px', marginBottom: '9px' }}>
-            {phone && (
+            {/* All three actions are ALWAYS present, so the row never changes
+                shape and a rep can't mistake missing data for a missing
+                feature. Greyed = no number/address on the record. */}
+            {phone ? (
               <a
                 href={`tel:${phone}`}
                 onClick={(e) => { stop(e); log('call') }}
@@ -144,19 +147,36 @@ export default function FollowUpStrip({
               >
                 <Phone size={13} /> Call {contact}
               </a>
+            ) : (
+              <span style={{
+                flex: 1, textAlign: 'center', fontSize: '12px', padding: '8px 0', borderRadius: '6px',
+                border: `1px solid ${t.border}`, color: t.textMuted, cursor: 'default',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px', minHeight: '34px',
+              }} title="No phone number on this record">
+                <Phone size={13} /> No number
+              </span>
             )}
-            {phone && (
-              <a href={`sms:${phone}`} onClick={(e) => { stop(e); log('text') }} style={{ ...pill, minHeight: '34px', padding: '0 10px', textDecoration: 'none' }} title="Text">
+            {phone ? (
+              <a href={`sms:${phone}`} onClick={(e) => { stop(e); log('text') }} style={{ ...pill, minHeight: '34px', padding: '0 10px', textDecoration: 'none' }} title={`Text ${phone}`}>
                 <MessageSquare size={13} />
               </a>
+            ) : (
+              <span style={{ ...pill, minHeight: '34px', padding: '0 10px', opacity: 0.45, cursor: 'default' }} title="No phone number on this record">
+                <MessageSquare size={13} />
+              </span>
             )}
-            {email && (
-              <a href={`mailto:${email}`} onClick={(e) => { stop(e); log('email') }} style={{ ...pill, minHeight: '34px', padding: '0 10px', textDecoration: 'none' }} title="Email">
+            {/* Email is always shown. Hiding it when the address is missing
+                just reads as "there is no email button" — 298 of 1,720 leads
+                have no address, and a rep cannot tell a missing feature from
+                missing data. Present but disabled says which. */}
+            {email ? (
+              <a href={`mailto:${email}`} onClick={(e) => { stop(e); log('email') }} style={{ ...pill, minHeight: '34px', padding: '0 10px', textDecoration: 'none' }} title={`Email ${email}`}>
                 <Mail size={13} />
               </a>
-            )}
-            {!phone && !email && (
-              <span style={{ fontSize: '11px', color: t.textMuted }}>No phone or email on this lead</span>
+            ) : (
+              <span style={{ ...pill, minHeight: '34px', padding: '0 10px', opacity: 0.45, cursor: 'default' }} title="No email address on this record">
+                <Mail size={13} />
+              </span>
             )}
           </div>
 

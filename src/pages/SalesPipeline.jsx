@@ -544,7 +544,7 @@ export default function SalesPipeline() {
 
     // Fetch standalone jobs for delivery stages
     try {
-      const jobSelect = 'id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, utility_incentive, assigned_team, invoice_status, lead_id, salesperson_id, pm_id, job_lead_id, customer:customers!customer_id(id, name)'
+      const jobSelect = 'id, job_id, job_title, status, start_date, business_unit, customer_id, job_total, utility_incentive, assigned_team, invoice_status, lead_id, salesperson_id, pm_id, job_lead_id, customer:customers!customer_id(id, name, phone, email)'
       const rangeCutoff = getDateCutoff(dateRange)
 
       // Determine which statuses are "terminal" (completed-like) vs active.
@@ -664,6 +664,10 @@ export default function SalesPipeline() {
             salesperson_id: job.salesperson_id || primaryOwnerId(job, orphanLeadIndex) || null,
             _pmId: job.pm_id || null,
             _jobLeadId: job.job_lead_id || null,
+            // Carry the contact through so the follow-up strip can dial and
+            // email a direct job the same as a lead.
+            phone: job.customer?.phone || null,
+            email: job.customer?.email || null,
             lead_source: 'Direct Job',
             jobs: [job],
           })
@@ -2116,6 +2120,20 @@ export default function SalesPipeline() {
                               >
                                 <Phone size={12} /> {lead.phone}
                               </a>
+                            )}
+                            {/* THE mobile card. An earlier pass put this on stLeads.map, which is
+                                the delivery grouping — so the list a rep actually scrolls had no
+                                strip at all and the feature looked missing on the phone. */}
+                            {stageIsOpen(lead.status) && (
+                              <FollowUpStrip
+                                theme={m}
+                                lead={lead}
+                                rows={followUpRowsByLead.get(String(lead.id)) || []}
+                                companyId={companyId}
+                                employeeId={currentEmployeeId}
+                                onLogged={loadFollowUps}
+                                compact
+                              />
                             )}
                           </div>
                         )
