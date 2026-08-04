@@ -18,6 +18,7 @@ import UnassignedSalesPanel from '../components/UnassignedSalesPanel'
 import FollowUpStrip from '../components/FollowUpStrip'
 import { buildLeadIndex, primaryOwnerId, leadForJob } from '../lib/jobOwnership'
 import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipelineScroll, takePipelineScroll } from '../lib/pipelinePrefs'
+import { soldTotal, periodBounds } from '../lib/soldTotals'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -68,6 +69,7 @@ const PIPELINE_VERSION = 5
 
 // Available stats to show in header
 const availableStats = [
+  { id: 'sold', label: 'Sold', color: '#0ea5e9' },
   { id: 'salesWon', label: 'Sales Won', color: '#16a34a' },
   { id: 'active', label: 'Active Leads', color: null },
   { id: 'won', label: 'Won', color: '#22c55e' },
@@ -84,7 +86,7 @@ const availableStats = [
   { id: 'deliveryValue', label: 'Delivery Value', color: '#0ea5e9' }
 ]
 
-const defaultVisibleStats = ['salesWon', 'active', 'won', 'totalValue']
+const defaultVisibleStats = ['sold', 'salesWon', 'active', 'won', 'totalValue']
 
 export default function SalesPipeline() {
   const navigate = useNavigate()
@@ -216,6 +218,33 @@ export default function SalesPipeline() {
     () => employees.find(e => e.email && user?.email && e.email === user.email)?.id ?? null,
     [employees, user?.email],
   )
+  // CUMULATIVE sold — every deal closed in the window, wherever it sits now.
+  // Its own query rather than the board's card set, because the store excludes
+  // Archived jobs and 10 of Cole's 31 are archived: reading from the board
+  // would show ,945 against a verified ,199.43. A stat you cannot
+  // reconcile is worse than no stat, which is the lesson from the version of
+  // this I had to revert.
+  const [soldStat, setSoldStat] = useState({ count: 0, total: 0 })
+  const loadSoldTotal = async () => {
+    if (!companyId) return
+    try {
+      const { start, end } = periodBounds(dateRange)
+      let q = supabase.from('jobs')
+        .select('id, job_total, created_at, salesperson_id, lead_id')
+        .eq('company_id', companyId).limit(5000)
+      if (start) q = q.gte('created_at', start)
+      const [{ data: jobRows }, { data: leadRows }] = await Promise.all([
+        q,
+        supabase.from('leads').select('id, salesperson_id, lead_owner_id, salesperson_ids').eq('company_id', companyId).limit(5000),
+      ])
+      const owner = (!canViewAll && user?.id) ? String(user.id) : ownerFilter
+      setSoldStat(soldTotal(jobRows || [], leadRows || [], {
+        ownerId: owner === 'unassigned' ? null : owner, start, end,
+      }))
+    } catch (e) { /* leave the previous figure rather than showing a wrong one */ }
+  }
+  useEffect(() => { loadSoldTotal() }, [companyId, dateRange, ownerFilter, canViewAll, user?.id])
+
   const [followUpRows, setFollowUpRows] = useState([])
   const loadFollowUps = async () => {
     if (!companyId) return
@@ -317,7 +346,10 @@ export default function SalesPipeline() {
       try {
         const parsed = JSON.parse(savedStats)
         if (Array.isArray(parsed)) {
-          setVisibleStats(parsed)
+          // Migrate a saved set forward: anyone who arranged their stats before
+          // 'sold' existed would otherwise never see it. Prepend rather than
+          // bumping PIPELINE_VERSION, which would also wipe custom STAGES.
+          setVisibleStats(parsed.includes('sold') ? parsed : ['sold', ...parsed])
         }
       } catch (e) {
         console.error('Error loading saved stats:', e)
@@ -1480,6 +1512,10 @@ export default function SalesPipeline() {
     const deliveredTotal = sumAmount(deliveredLeadsList)
 
     return {
+      // CUMULATIVE — everything closed in the window, wherever it sits now.
+      // Sales Won below is the Won COLUMN and is deliberately left alone; the
+      // two answer different questions and both are worth seeing.
+      sold: { value: formatCurrency(soldStat.total), label: 'Sold', sublabel: `${soldStat.count} deal${soldStat.count !== 1 ? 's' : ''} closed`, color: '#0ea5e9', isFormatted: true },
       salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} deal${salesWonCount !== 1 ? 's' : ''} won`, color: '#16a34a', isFormatted: true },
       delivered: { value: formatCurrency(deliveredTotal), label: 'Delivered', sublabel: `${deliveredCount} paid/closed`, color: '#10b981', isFormatted: true },
       active: { value: activeLeads.length, label: 'Active', color: null },
@@ -1496,7 +1532,7 @@ export default function SalesPipeline() {
       invoiced: { value: leads.filter(l => l.status === 'Invoiced').length, label: 'Invoiced', color: '#8b5cf6' },
       deliveryValue: { value: formatCurrency(sumAmount(deliveryLeads)), label: 'Delivery $', color: '#0ea5e9', isFormatted: true }
     }
-  }, [filteredPipelineLeads, stages, dateRange])
+  }, [filteredPipelineLeads, stages, dateRange, soldStat])
 
   if (loading && pipelineLeads.length === 0) {
     return (
@@ -1890,9 +1926,13 @@ export default function SalesPipeline() {
               {/* Stats Row */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                 {[
+                  /* Sold = everything closed in the window, wherever it sits now.
+                     Sales Won = what is in the Won column right now. Different
+                     questions; both shown. The per-stage totals below are
+                     untouched. */
+                  { label: 'Sold', value: statsData.sold.value, color: '#0ea5e9', isFormatted: true },
                   { label: 'Sales Won', value: statsData.salesWon.value, color: '#16a34a', isFormatted: true },
-                  { label: 'Active', value: statsData.active.value, color: '#5a6349' },
-                  { label: 'Won', value: statsData.won.value, color: '#22c55e' }
+                  { label: 'Active', value: statsData.active.value, color: '#5a6349' }
                 ].map(s => (
                   <div key={s.label} style={{ flex: 1, height: '64px', backgroundColor: m.bgCard, borderRadius: '12px', border: `1px solid ${m.border}`, borderLeft: `3px solid ${s.color}`, padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: m.text }}>{s.isFormatted ? s.value : s.value}</div>
