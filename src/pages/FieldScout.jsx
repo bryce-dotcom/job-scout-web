@@ -8,6 +8,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { toast } from '../lib/toast'
+import { syncQueue } from '../lib/syncQueue'
 import {
   Compass, Clock, MapPin, Play, Square, Coffee,
   ChevronDown, ChevronUp, ExternalLink, Navigation,
@@ -208,6 +209,12 @@ export default function FieldScout() {
   const [verifiedJobs, setVerifiedJobs] = useState(new Set()) // job IDs with passing completion verification
   const [dailyVerifiedJobs, setDailyVerifiedJobs] = useState(new Set()) // job IDs with passing daily verification TODAY (per-job, any crew member)
   const [clockOutBlocked, setClockOutBlocked] = useState(false)
+  // The job to verify, captured BEFORE clocking out. A successful clock-out
+  // clears activeEntry (fetchData finds no open punch), but the prompt is
+  // still on screen — reading activeEntry.job_id there threw and took the
+  // whole page down, which is why this read as 'clock out not working' even
+  // though the shift saved. Christopher, 2026-08-05.
+  const [pendingVerifyJobId, setPendingVerifyJobId] = useState(null)
   const [hasDailyVerification, setHasDailyVerification] = useState(false) // field roles need this
 
   // Invoice presentation
@@ -1036,7 +1043,10 @@ export default function FieldScout() {
     )
     // Still surface the prompt so verification actually gets done — it just
     // no longer stands between someone and the end of their day.
-    if (needsVerification) setClockOutBlocked(true)
+    if (needsVerification) {
+      setPendingVerifyJobId(activeEntry.job_id || null)
+      setClockOutBlocked(true)
+    }
     setClockingOut(true)
     const entryId = activeEntry.id
     // Capture the clock-out moment IMMEDIATELY — before anything async — so a
@@ -1109,12 +1119,39 @@ export default function FieldScout() {
     }
 
     if (lastErr) {
-      // Replace the harsh native alert with a toast that lets the user retry
-      // without losing the captured timestamp. Until they retry successfully,
-      // they remain "clocked in" in our local view — but the stamp we'll send
-      // when they retry is the original moment, not the retry moment.
+      // The real reason was being thrown away — every failure looked identical
+      // and could not be diagnosed from a screenshot. Log it.
+      console.error('[FieldScout] clock-out failed after 3 attempts:', lastErr?.message || lastErr, lastErr)
+
+      // Three tries over ~1.8s is nothing on a bad connection. Cameron hit
+      // this on 2 bars with a 1% battery, and telling a tech on a roof to
+      // "tap Clock Out again" is not a fix — the shift is already over.
+      // Hand it to the offline queue so it lands when signal returns, with
+      // the ORIGINAL clock-out moment, not whenever the phone reconnects.
+      try {
+        await syncQueue.enqueue({
+          table: 'time_clock',
+          operation: 'update',
+          data: { id: entryId, ...buildPayload(coords) },
+        })
+        const hhmm = clockOut.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        toast.success(`Clocked out at ${hhmm}. Saving as soon as you have signal — you can put your phone away.`, { duration: 8000 })
+        setClockOutBlocked(false)
+        setPendingVerifyJobId(null)
+        setActiveEntry(null)
+        setClockingOut(false)
+        setGpsStatus(null)
+        await fetchEntries()
+        return
+      } catch (queueErr) {
+        console.error('[FieldScout] could not queue the clock-out:', queueErr)
+      }
+
+      // Queue unavailable too (private mode, no IndexedDB). Now a retry
+      // genuinely is the only option — say the actual reason so the next
+      // report is diagnosable.
       const hhmm = clockOut.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      toast.error(`Couldn't save your clock-out (${hhmm}). Tap Clock Out again — your time is preserved.`, { duration: 8000 })
+      toast.error(`Couldn't save your clock-out (${hhmm}): ${lastErr?.message || 'network error'}. Tap Clock Out again — your time is preserved.`, { duration: 10000 })
       setClockingOut(false)
       setGpsStatus(null)
       return
@@ -2322,7 +2359,7 @@ export default function FieldScout() {
                     You&apos;re clocked out — one quick check left
                   </div>
                   <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
-                    {activeEntry.job_id ? (
+                    {pendingVerifyJobId ? (
                       <>Your hours are saved. Run a 60-second Victor check on this job — a few photos and a couple of questions — so the job counts as done, your <strong>efficiency bonus</strong> gets released, and the customer&apos;s invoice is right. Until then the shift is flagged for the office.</>
                     ) : (
                       <>Your hours are saved. Run a quick daily check (where you are, what you worked on) so the office can clear the shift — until then it&apos;s flagged for review.</>
@@ -2334,9 +2371,9 @@ export default function FieldScout() {
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => {
-                    setClockOutBlocked(false)
-                    if (activeEntry.job_id) {
-                      handleMarkComplete(activeEntry.job_id)
+                    setClockOutBlocked(false); setPendingVerifyJobId(null)
+                    if (pendingVerifyJobId) {
+                      handleMarkComplete(pendingVerifyJobId)
                     } else {
                       setVictorModal({ type: 'daily', jobId: null })
                     }
@@ -2360,7 +2397,7 @@ export default function FieldScout() {
                   }}
                 >
                   <Shield size={16} />
-                  {activeEntry.job_id ? 'Run Quick Check (60 sec)' : 'Run Daily Check'}
+                  {pendingVerifyJobId ? 'Run Quick Check (60 sec)' : 'Run Daily Check'}
                 </button>
 
                 <button
@@ -2374,7 +2411,7 @@ export default function FieldScout() {
                       if (reason !== null) alert('Please give a real reason (at least a sentence) so your manager understands what happened.')
                       return
                     }
-                    setClockOutBlocked(false)
+                    setClockOutBlocked(false); setPendingVerifyJobId(null)
                     handleClockOut(reason.trim())
                   }}
                   title={isAdmin ? 'Admin: bypass and log reason' : 'Skip the check and explain why — manager will review'}
@@ -2420,7 +2457,7 @@ export default function FieldScout() {
                       {others.map(j => (
                         <button
                           key={j.id}
-                          onClick={() => { setClockOutBlocked(false); handleSwitchJob(j.id) }}
+                          onClick={() => { setClockOutBlocked(false); setPendingVerifyJobId(null); handleSwitchJob(j.id) }}
                           disabled={clockingIn || clockingOut}
                           style={{
                             width: '100%', padding: '10px 12px', minHeight: '44px',
@@ -3664,7 +3701,7 @@ export default function FieldScout() {
                 if (report?.score >= 60 || report?.status === 'complete_ai_skipped') {
                   if (verifyType === 'completion' && jobId) {
                     setVerifiedJobs(prev => new Set(prev).add(jobId))
-                    setClockOutBlocked(false)
+                    setClockOutBlocked(false); setPendingVerifyJobId(null)
                     if (shouldMarkComplete) {
                       await supabase.from('jobs')
                         .update({ status: 'Completed', updated_at: new Date().toISOString() })
@@ -3684,7 +3721,7 @@ export default function FieldScout() {
                     } else {
                       setHasDailyVerification(true)
                     }
-                    setClockOutBlocked(false)
+                    setClockOutBlocked(false); setPendingVerifyJobId(null)
                   }
 
                   // Cameron's request (1e2f10fc): "After getting verification
