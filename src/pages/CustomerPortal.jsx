@@ -329,6 +329,17 @@ export default function CustomerPortal() {
   // non-incentive invoice (Mode A).
   const matLabSplit = isInvoice ? doc.material_labor_split : null
 
+  // Summary mode collapses the project into Materials + Labor. It requires a
+  // split with real numbers: without one, collapsing would remove the line
+  // items and put NOTHING in their place, which is worse than ignoring the
+  // flag. So a summary invoice whose split cannot be computed still itemises.
+  const summaryMode = !!(
+    isInvoice
+    && doc.summary_format
+    && matLabSplit
+    && (Number(matLabSplit.materials) > 0 || Number(matLabSplit.labor) > 0)
+  )
+
   // CC fee settings from invoice_settings (passed by edge function)
   const ccFeeEnabled = invoice_settings?.cc_fee_enabled && invoice_settings?.accept_credit_card
   const ccFeePercent = invoice_settings?.cc_fee_percent || 1.9
@@ -616,9 +627,31 @@ export default function CustomerPortal() {
                         </span>
                       )}
                     </div>
-                    <div style={{ borderTop: `1px solid ${theme.border}` }}>
-                      {invoiceSections.inScope.map(renderPortalInvoiceLine)}
-                    </div>
+                    {/* SUMMARY MODE: the utility project collapses to two
+                        rows — Materials and Labor — instead of every line.
+                        This is what "summary version" means and the in-app PDF
+                        has always done it; the portal ignored summary_format
+                        entirely and itemised regardless, which is Alayda's
+                        ticket (filed 2026-08-03, then again 2026-08-04).
+                        Add-ons below stay itemised either way: they are the
+                        customer's discretionary upsells and they should see
+                        exactly what they are paying full price for. */}
+                    {summaryMode ? (
+                      <div style={{ borderTop: `1px solid ${theme.border}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 6px' }}>
+                          <span style={{ color: theme.text, fontSize: '14px' }}>Materials</span>
+                          <span style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>{formatCurrency(matLabSplit.materials)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '10px' }}>
+                          <span style={{ color: theme.text, fontSize: '14px' }}>Labor</span>
+                          <span style={{ fontWeight: '500', color: theme.text, fontSize: '14px' }}>{formatCurrency(matLabSplit.labor)}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ borderTop: `1px solid ${theme.border}` }}>
+                        {invoiceSections.inScope.map(renderPortalInvoiceLine)}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '4px' }}>
                       <span style={{ color: theme.textMuted, fontSize: '13px' }}>Project Subtotal</span>
                       <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(invoiceSections.inScopeSubtotal)}</span>
@@ -671,6 +704,11 @@ export default function CustomerPortal() {
                       <span style={{ color: theme.textMuted, fontSize: '13px' }}>Subtotal</span>
                       <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(invoiceAmount)}</span>
                     </div>
+                    {/* Kept for BOTH modes here. This branch never itemises —
+                        it shows a subtotal and this box — so suppressing it in
+                        summary mode would leave the customer with no breakdown
+                        at all. Only the section layout above swaps line items
+                        for Materials/Labor rows. */}
                     {matLabSplit && matLabSplit.total > 0 && (
                       <div style={{ padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px', marginBottom: '2px' }}>
                         <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
