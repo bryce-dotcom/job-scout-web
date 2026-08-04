@@ -235,13 +235,29 @@ export default function SalesPipeline() {
     if (!companyId) return
     try {
       const { start, end } = periodBounds(dateRange)
-      let q = supabase.from('jobs')
-        .select('id, job_total, created_at, salesperson_id, lead_id')
-        .eq('company_id', companyId).limit(5000)
-      if (start) q = q.gte('created_at', start)
-      const [{ data: jobRows }, { data: leadRows }] = await Promise.all([
-        q,
-        supabase.from('leads').select('id, salesperson_id, lead_owner_id, salesperson_ids').eq('company_id', companyId).limit(5000),
+      // PostgREST caps a response at 1000 rows NO MATTER what .limit() says.
+      // The first version asked for 5000 leads and got 1000 of 1722, so every
+      // job attributed through one of the missing 722 lost its owner and fell
+      // out of the total — Cole read 301,905 against a real 305,199.43.
+      // Paginate with a stable sort. Same silent-truncation trap that has bitten
+      // this codebase repeatedly; never trust .limit() above 1000.
+      const page = async (table, select, tweak = (x) => x) => {
+        const out = []
+        for (let from = 0; ; from += 1000) {
+          let q = supabase.from(table).select(select)
+            .eq('company_id', companyId).order('id', { ascending: true }).range(from, from + 999)
+          q = tweak(q)
+          const { data, error } = await q
+          if (error) throw error
+          out.push(...(data || []))
+          if (!data || data.length < 1000) break
+        }
+        return out
+      }
+      const [jobRows, leadRows] = await Promise.all([
+        page('jobs', 'id, job_total, status, created_at, salesperson_id, lead_id',
+          (q) => (start ? q.gte('created_at', start) : q)),
+        page('leads', 'id, salesperson_id, lead_owner_id, salesperson_ids'),
       ])
       const owner = (!canViewAll && user?.id) ? String(user.id) : ownerFilter
       setSoldStat(soldTotal(jobRows || [], leadRows || [], {

@@ -174,3 +174,23 @@ describe('per-rep totals PARTITION the company total', () => {
     }
   })
 })
+
+describe('cancelled work is not sold work', () => {
+  const leads = [{ id: 100, salesperson_id: 16 }]
+  it('excludes archived and cancelled jobs', () => {
+    const jobs = [
+      { id: 1, created_at: '2026-03-01T00:00:00Z', job_total: 500, salesperson_id: 16, status: 'Completed' },
+      { id: 2, created_at: '2026-03-01T00:00:00Z', job_total: 999, salesperson_id: 16, status: 'Archived' },
+      { id: 3, created_at: '2026-03-01T00:00:00Z', job_total: 999, salesperson_id: 16, status: 'Cancelled' },
+      { id: 4, created_at: '2026-03-01T00:00:00Z', job_total: 999, salesperson_id: 16, status: 'Void' },
+    ]
+    const r = soldTotal(jobs, leads, { ownerId: 16 })
+    expect(r.count).toBe(1)
+    expect(r.total).toBe(500)
+  })
+
+  it('still counts a job with no status at all', () => {
+    const jobs = [{ id: 1, created_at: '2026-03-01T00:00:00Z', job_total: 500, salesperson_id: 16 }]
+    expect(soldTotal(jobs, leads, { ownerId: 16 }).count).toBe(1)
+  })
+})

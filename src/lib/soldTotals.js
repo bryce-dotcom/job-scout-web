@@ -28,6 +28,11 @@ import { buildLeadIndex, primaryOwnerId } from './jobOwnership'
  * closed the deal. Dating by start_date (when the work is scheduled) is what
  * put deals in the wrong period before.
  */
+// Cancelled work is not sold work. These 10 of Cole's reached him only through
+// a catch-all lead (3011 alone carries 464 unrelated jobs), and counting
+// cancelled jobs as sales is how a rep's number stops meaning anything.
+const NOT_SOLD_STATUSES = new Set(['Archived', 'Cancelled', 'Canceled', 'Void', 'Voided'])
+
 export function soldTotal(jobs = [], leads = [], { ownerId = null, start = null, end = null } = {}) {
   const idx = buildLeadIndex(leads)
   const startMs = start ? new Date(start).getTime() : null
@@ -40,6 +45,7 @@ export function soldTotal(jobs = [], leads = [], { ownerId = null, start = null,
 
   for (const j of jobs || []) {
     if (!j?.created_at) continue
+    if (NOT_SOLD_STATUSES.has(j.status)) continue
     const t = new Date(j.created_at).getTime()
     if (!Number.isFinite(t)) continue
     if (startMs != null && t < startMs) continue
