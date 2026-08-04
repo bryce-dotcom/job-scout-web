@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -15,6 +15,7 @@ import {
 import EntityCard, { MALE_NAMES, FEMALE_NAMES } from '../components/EntityCard'
 import UnassignedSalesPanel from '../components/UnassignedSalesPanel'
 import { buildLeadIndex, primaryOwnerId, leadForJob } from '../lib/jobOwnership'
+import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipelineScroll, takePipelineScroll } from '../lib/pipelinePrefs'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -116,8 +117,13 @@ export default function SalesPipeline() {
   const [salesExpanded, setSalesExpanded] = useState(false)
   const [deliveryExpanded, setDeliveryExpanded] = useState(false)
 
+  // Two tickets the same morning: "i have to put all the filters on again"
+  // and "deletes your prefrences". Read whatever was last used ONCE, and let
+  // each filter seed itself from it. lib/pipelinePrefs owns the storage.
+  const savedPrefs = useMemo(() => loadPipelineFilters(companyId), [companyId])
+
   // Search
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchTerm, setSearchTerm] = useState(() => savedPrefs.searchTerm || '')
 
   // Won/Lost handling
   const [wonNotes, setWonNotes] = useState('')
@@ -134,7 +140,7 @@ export default function SalesPipeline() {
   // Mobile detection
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [selectedMobileStage, setSelectedMobileStage] = useState(null)
-  const [mobileFilter, setMobileFilter] = useState('All')
+  const [mobileFilter, setMobileFilter] = useState(() => savedPrefs.mobileFilter || 'All')
   const [mobileSalesExpanded, setMobileSalesExpanded] = useState(true)
   const [mobileDeliveryExpanded, setMobileDeliveryExpanded] = useState(false)
   const [pullDistance, setPullDistance] = useState(0)
@@ -148,7 +154,7 @@ export default function SalesPipeline() {
   // sales, and managers; field techs should still only see their own
   // scope so they don't see other reps' deal sizes and pipeline data.
   const fieldTech = isFieldTech(user)
-  const [ownerFilter, setOwnerFilter] = useState(() => fieldTech && user?.id ? String(user.id) : 'all')
+  const [ownerFilter, setOwnerFilter] = useState(() => resolveOwnerFilter(savedPrefs.ownerFilter, { isFieldTech: fieldTech, userId: user?.id }))
   // Field techs are locked to their own scope (numbers hidden from
   // them). Everyone else — admins, sales, managers, team leads,
   // owners — gets the full company pipeline.
@@ -161,16 +167,69 @@ export default function SalesPipeline() {
   }, [fieldTech, user?.id])
 
   // Business Unit filter
-  const [buFilter, setBuFilter] = useState('all')
+  const [buFilter, setBuFilter] = useState(() => savedPrefs.buFilter || 'all')
 
   // Date range filter for delivery stages
-  const [dateRange, setDateRange] = useState('mtd')
+  const [dateRange, setDateRange] = useState(() => savedPrefs.dateRange || 'mtd')
   // Referenced by three date-window calculations for dateRange === 'custom'
   // but never declared — the only reason it wasn't already throwing is that
   // 'custom' isn't offered in the range buttons, so the && short-circuits
   // before evaluating it. Declaring it so adding a custom range later can't
   // take the whole board down with a ReferenceError.
   const [customDateTo] = useState('')
+
+  // companyId comes from the store and may not be ready on the first render,
+  // and a useState initializer never runs again — so the seeding above can
+  // silently miss. Apply the saved set once, when companyId first arrives.
+  // (The ownerFilter re-pin below exists for this same reason.)
+  const prefsApplied = useRef(false)
+  useEffect(() => {
+    if (prefsApplied.current || !companyId) return
+    prefsApplied.current = true
+    const saved = loadPipelineFilters(companyId)
+    if (!Object.keys(saved).length) return
+    if (saved.dateRange) setDateRange(saved.dateRange)
+    if (saved.buFilter) setBuFilter(saved.buFilter)
+    if (saved.searchTerm) setSearchTerm(saved.searchTerm)
+    if (saved.mobileFilter) setMobileFilter(saved.mobileFilter)
+    setOwnerFilter(resolveOwnerFilter(saved.ownerFilter, { isFieldTech: fieldTech, userId: user?.id }))
+  }, [companyId, fieldTech, user?.id])
+
+  // Persist the filter set whenever it changes, so coming back from a job
+  // finds the board exactly as it was left.
+  useEffect(() => {
+    // Never write before the saved set has been applied, or the first render's
+    // DEFAULTS would overwrite what the user actually had.
+    if (!prefsApplied.current) return
+    savePipelineFilters(companyId, { ownerFilter, dateRange, buFilter, searchTerm, mobileFilter, customDateTo })
+  }, [companyId, ownerFilter, dateRange, buFilter, searchTerm, mobileFilter, customDateTo])
+
+  // The board scrolls inside containers, not the window, so a plain
+  // window.scrollY restore (what Estimates does) would not help here.
+  const boardScrollRef = useRef(null)
+  // Put them back where they were, once the cards have actually rendered —
+  // restoring against an empty board would just scroll to 0. takePipelineScroll
+  // clears as it reads, so this fires exactly once per return trip and a
+  // later re-render cannot yank the board back under someone's finger.
+  const scrollRestored = useRef(false)
+  useEffect(() => {
+    if (scrollRestored.current || loading || pipelineLeads.length === 0) return
+    const saved = takePipelineScroll(companyId)
+    if (!saved) { scrollRestored.current = true; return }
+    scrollRestored.current = true
+    requestAnimationFrame(() => {
+      if (boardScrollRef.current && saved.board) boardScrollRef.current.scrollTop = saved.board
+      if (saved.window) window.scrollTo(0, saved.window)
+    })
+  }, [loading, pipelineLeads.length, companyId])
+
+  const openRecord = (path) => {
+    stashPipelineScroll(companyId, {
+      board: boardScrollRef.current?.scrollTop || 0,
+      window: window.scrollY || 0,
+    })
+    navigate(path)
+  }
 
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -1745,6 +1804,7 @@ export default function SalesPipeline() {
 
             {/* Scrollable content */}
             <div
+              ref={boardScrollRef}
               style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', WebkitOverflowScrolling: 'touch' }}
               onTouchStart={handleTouchStart}
               onTouchMove={handleTouchMove}
@@ -1929,7 +1989,7 @@ export default function SalesPipeline() {
                         return (
                           <div
                             key={lead.id}
-                            onClick={() => navigate(`/leads/${lead.id}`)}
+                            onClick={() => openRecord(`/leads/${lead.id}`)}
                             onTouchStart={() => setTouchedCardId(lead.id)}
                             onTouchEnd={() => setTouchedCardId(null)}
                             style={{
@@ -2044,7 +2104,7 @@ export default function SalesPipeline() {
                               return (
                                 <div
                                   key={lead.id}
-                                  onClick={() => navigate(lead._isJob ? `/jobs/${lead._jobId}` : `/leads/${lead.id}`)}
+                                  onClick={() => openRecord(lead._isJob ? `/jobs/${lead._jobId}` : `/leads/${lead.id}`)}
                                   style={{ backgroundColor: m.bgCard, border: `1px solid ${m.border}`, borderLeft: `4px solid ${stage.color}`, borderRadius: '12px', padding: '12px 16px', marginBottom: '6px', cursor: 'pointer' }}
                                 >
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
@@ -2082,7 +2142,7 @@ export default function SalesPipeline() {
         )
       })() : (
         /* Desktop Pipeline Board - Two collapsible sections */
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', minHeight: 0 }}>
+        <div ref={boardScrollRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', minHeight: 0 }}>
 
           {/* SALES FUNNEL */}
           <div style={{ display: 'flex', flexDirection: 'column', borderRadius: '8px', border: `1px solid ${theme.border}`, overflow: 'hidden', flex: salesExpanded ? 1 : 'none' }}>
@@ -2182,7 +2242,7 @@ export default function SalesPipeline() {
                             <EntityCard
                               name={lead.customer_name}
                               businessName={lead.business_name}
-                              onClick={() => lead._isEstimate ? navigate(`/estimates/${lead._quoteId}`) : navigate(`/leads/${lead.id}`)}
+                              onClick={() => openRecord(lead._isEstimate ? `/estimates/${lead._quoteId}` : `/leads/${lead.id}`)}
                               style={{ cursor: 'grab', padding: '8px' }}
                             >
                               <div style={{ fontWeight: '600', color: theme.text, fontSize: '12px', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -2331,7 +2391,7 @@ export default function SalesPipeline() {
                               key={lead.id}
                               name={lead.customer_name}
                               businessName={lead.business_name}
-                              onClick={() => navigate(lead._isJob ? `/jobs/${lead._jobId}` : `/leads/${lead.id}`)}
+                              onClick={() => openRecord(lead._isJob ? `/jobs/${lead._jobId}` : `/leads/${lead.id}`)}
                               style={{ cursor: 'pointer', padding: '8px' }}
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
@@ -2616,7 +2676,7 @@ export default function SalesPipeline() {
             gap: '8px'
           }}>
             <button
-              onClick={() => navigate(`/leads/${selectedLead.id}`)}
+              onClick={() => openRecord(`/leads/${selectedLead.id}`)}
               style={{
                 flex: 1,
                 padding: '10px',
