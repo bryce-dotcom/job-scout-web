@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense, Component } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { quoteWriteDecision, WRITE } from '../lib/quoteTotal'
 import { findMatchingCustomer } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { RecordHistoryButton } from '../components/RecordHistory'
@@ -922,20 +923,23 @@ function EstimateDetailInner() {
     setSaving(false)
   }
 
-  // Safety guard: never silently clobber quote_amount with a smaller number
-  // when the lines array might not be fully hydrated. If the computed total
-  // drops by more than 50% compared to what's on file, the lines almost
-  // certainly aren't loaded yet and we skip the write instead of corrupting
-  // a real quote. (Fixed a regression where quote_amount got reset during a
-  // partial state update.)
-  const safeWriteQuoteAmount = async (computedTotal, sourceTag) => {
+  // Guard against writing a total computed from lines we don't actually have
+  // yet. Decision lives in lib/quoteTotal so it is testable.
+  //
+  // This used to refuse ANY write that more than halved the stored amount, on
+  // the theory that a big drop meant the lines hadn't loaded. It could not
+  // tell that apart from a quote genuinely getting smaller, so a wrong high
+  // number could never be corrected: EST-MOUH4ST4 "pioneer metals" stored
+  // $732,220.44 against $111,405.64 of real lines. The page showed the right
+  // figure, the write was refused every time — silently, to the console — and
+  // the pipeline rendered $732,220.44 for months.
+  //
+  // The signal is whether we HOLD the lines, not how far the number moved.
+  const safeWriteQuoteAmount = async (computedTotal, sourceTag, lineCount) => {
     const current = parseFloat(estimate?.quote_amount) || 0
-    if (computedTotal <= 0 && current > 0) {
-      console.warn(`[EstimateDetail] ${sourceTag}: refusing to overwrite $${current} with $0`)
-      return
-    }
-    if (current > 100 && computedTotal < current * 0.5) {
-      console.warn(`[EstimateDetail] ${sourceTag}: refusing shrink from $${current} → $${computedTotal} (lines likely not loaded)`)
+    const decision = quoteWriteDecision(computedTotal, current, lineCount)
+    if (decision.action !== WRITE) {
+      console.warn(`[EstimateDetail] ${sourceTag}: ${decision.reason} ($${current} kept, computed $${computedTotal})`)
       return
     }
     await updateQuote(id, { quote_amount: computedTotal, updated_at: new Date().toISOString() })
@@ -945,18 +949,19 @@ function EstimateDetailInner() {
     const allQuoteLines = useStore.getState().quoteLines || []
     const lines = allQuoteLines.filter(l => String(l.quote_id) === String(id))
     const total = lines.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
-    await safeWriteQuoteAmount(total, 'updateEstimateTotal')
+    await safeWriteQuoteAmount(total, 'updateEstimateTotal', lines.length)
   }
 
   // Compute total from local line items (avoids stale Zustand store reads during rapid edits)
   const updateEstimateTotalFromLines = async (lines) => {
     const total = lines.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
     const current = parseFloat(estimate?.quote_amount) || 0
-    const safe = !(current > 100 && total < current * 0.5) && !(total <= 0 && current > 0)
-    if (safe) {
+    // Mirror the same decision on the local copy so the screen and the row
+    // never disagree — that split is what hid the pioneer metals gap.
+    if (quoteWriteDecision(total, current, lines.length).action === WRITE) {
       setEstimate(prev => prev ? { ...prev, quote_amount: total } : prev)
     }
-    await safeWriteQuoteAmount(total, 'updateEstimateTotalFromLines')
+    await safeWriteQuoteAmount(total, 'updateEstimateTotalFromLines', lines.length)
   }
 
   // Change the linked audit's operating hours right from the estimate and
