@@ -1781,8 +1781,11 @@ export default function SalesPipeline() {
 
         const deliveryLeadsList = filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && (s.isDelivery || s.isClosed) })
 
+        // Follow-up is an OVERLAY tab, not a stage: picking it shows the
+        // worklist while every deal stays in whatever stage it is really in.
         const filterTabs = [
           { id: 'All', label: 'All', color: '#71717a' },
+          { id: '__followup', label: 'Follow-up', color: '#eab308' },
           ...salesStages.map(s => ({ id: s.id, label: s.name, color: getStatusColor(s.id) }))
         ]
 
@@ -1970,7 +1973,9 @@ export default function SalesPipeline() {
                   const isActive = mobileFilter === tab.id
                   const tabLeads = tab.id === 'All'
                     ? filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed })
-                    : getLeadsForStage(tab.id)
+                    : tab.id === '__followup'
+                      ? followUpCards
+                      : getLeadsForStage(tab.id)
                   const count = tabLeads.length
                   // Value on the tab itself, so a rep can see which stage
                   // holds the money without opening each one.
@@ -2006,6 +2011,23 @@ export default function SalesPipeline() {
               </div>
               <style>{`.pipeline-mobile-tabs::-webkit-scrollbar { display: none; }`}</style>
 
+              {/* Follow-up worklist. Replaces the stage list entirely while
+                  selected — a rep on a phone wants one screen of who to chase,
+                  not the board with a filter applied. Deals stay in their real
+                  stage throughout; this only changes what is shown. */}
+              {mobileFilter === '__followup' ? (
+                <div style={{ marginBottom: '16px' }}>
+                  <FollowUpColumn
+                    theme={theme}
+                    cards={followUpCards}
+                    companyId={companyId}
+                    employeeId={currentEmployeeId}
+                    onLogged={loadFollowUps}
+                    onOpen={(c) => openRecord(c._isJob ? `/jobs/${c._jobId}` : `/leads/${c.id}`)}
+                  />
+                </div>
+              ) : (
+              <>
               {/* SALES PIPELINE Section */}
               <div style={{ marginBottom: '16px' }}>
                 <div
@@ -2196,6 +2218,8 @@ export default function SalesPipeline() {
                   </>
                 )}
               </div>
+              </>
+              )}
             </div>
 
           </div>
