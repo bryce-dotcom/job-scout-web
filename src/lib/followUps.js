@@ -123,3 +123,69 @@ export const METHODS = [
   { id: 'voicemail', label: 'Left VM', icon: 'PhoneMissed' },
   { id: 'visit', label: 'Visit', icon: 'MapPin' },
 ]
+
+// ── The card strip ──────────────────────────────────────────────────────
+//
+// Setting a date must be ONE tap. A rep finishing a call will not open a date
+// picker, so the presets are the primary control and the calendar is the
+// escape hatch. 2 weeks is the default because that is what Bryce asked for
+// and it matches how these deals actually move.
+
+export const SNOOZE_PRESETS = [
+  { id: '3d', label: '3d', days: 3 },
+  { id: '1wk', label: '1wk', days: 7 },
+  { id: '2wk', label: '2wk', days: 14, isDefault: true },
+]
+
+export function snoozeToIso(days, from = Date.now()) {
+  const n = Number(days)
+  if (!Number.isFinite(n)) return null
+  return new Date(from + n * 86400000).toISOString()
+}
+
+/** Short date for "Chase 18 Aug". Local, not UTC — a follow-up set for the
+ *  18th must not read as the 17th for a Mountain-time rep. */
+export function shortDate(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+}
+
+/**
+ * What the collapsed strip says, and how loudly.
+ *   tone   'danger' | 'warning' | 'ok' | 'idle'  — drives the colour
+ *   pulse  only when genuinely OVERDUE. A scheduled-but-not-due follow-up
+ *          stays calm; if everything pulses, nothing means anything.
+ */
+export function stripSummary(latest, now = Date.now()) {
+  const info = followUpState(latest, now)
+  const next = latest?.next_follow_up_at || null
+
+  if (info.state === DUE) {
+    return { tone: 'danger', pulse: true, text: info.label }
+  }
+  if (info.state === COLD) {
+    return { tone: 'warning', pulse: false, text: `${info.days} days quiet` }
+  }
+  if (info.state === UNTOUCHED) {
+    return { tone: 'idle', pulse: false, text: 'No follow-up yet' }
+  }
+  // Worked recently or aging. A scheduled date is the useful thing to show.
+  if (next) return { tone: 'ok', pulse: false, text: `Chase ${shortDate(next)}` }
+  return { tone: 'idle', pulse: false, text: info.label }
+}
+
+/** How many times this deal has been chased. Pattern beats the last note —
+ *  three unanswered calls is a different deal from three good conversations. */
+export function attemptCount(rows = [], leadId) {
+  return (rows || []).filter(r => r && String(r.lead_id) === String(leadId)).length
+}
+
+/** Most recent touches for one deal, newest first. */
+export function historyFor(rows = [], leadId, limit = 2) {
+  return (rows || [])
+    .filter(r => r && String(r.lead_id) === String(leadId))
+    .sort((a, b) => new Date(b.contacted_at) - new Date(a.contacted_at))
+    .slice(0, limit)
+}

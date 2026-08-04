@@ -15,8 +15,7 @@ import {
 } from 'lucide-react'
 import EntityCard, { MALE_NAMES, FEMALE_NAMES } from '../components/EntityCard'
 import UnassignedSalesPanel from '../components/UnassignedSalesPanel'
-import FollowUpColumn from '../components/FollowUpColumn'
-import { latestByLead, followUpQueue } from '../lib/followUps'
+import FollowUpStrip from '../components/FollowUpStrip'
 import { buildLeadIndex, primaryOwnerId, leadForJob } from '../lib/jobOwnership'
 import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipelineScroll, takePipelineScroll } from '../lib/pipelinePrefs'
 
@@ -1409,18 +1408,23 @@ export default function SalesPipeline() {
 
   // Calculate all stats (memoized — must be before any early returns)
   // Uses filteredPipelineLeads so stats match what's visible on screen (owner/BU filters apply)
-  // Only OPEN deals are followed up — a won, lost or delivered deal is
-  // nobody's callback. Uses the same stage flags the board already has, so a
-  // tenant with custom stages works without configuration.
-  const followUpCards = useMemo(() => {
-    const latest = latestByLead(followUpRows)
-    const isOpenStage = (statusId) => {
-      const st = stages.find(x => x.id === statusId)
-      return !(st?.isWon || st?.isLost || st?.isClosed || st?.isPaid || st?.isDelivery)
+  // Follow-up rows keyed by lead, so each card can render its own strip
+  // without re-scanning the whole list. The strip decides what to show; only
+  // OPEN deals get one — a won or delivered deal is nobody's callback.
+  const followUpRowsByLead = useMemo(() => {
+    const m = new Map()
+    for (const r of followUpRows || []) {
+      if (!r?.lead_id) continue
+      const k = String(r.lead_id)
+      if (!m.has(k)) m.set(k, [])
+      m.get(k).push(r)
     }
-    return followUpQueue(filteredPipelineLeads, latest, { isOpenStage })
-      .map(c => ({ ...c, _amount: getLeadAmount(c) }))
-  }, [followUpRows, filteredPipelineLeads, stages])
+    return m
+  }, [followUpRows])
+  const stageIsOpen = (statusId) => {
+    const st = stages.find(x => x.id === statusId)
+    return !(st?.isWon || st?.isLost || st?.isClosed || st?.isPaid || st?.isDelivery)
+  }
 
   const statsData = useMemo(() => {
     const stageMap = new Map(stages.map(s => [s.id, s]))
@@ -1785,7 +1789,6 @@ export default function SalesPipeline() {
         // worklist while every deal stays in whatever stage it is really in.
         const filterTabs = [
           { id: 'All', label: 'All', color: '#71717a' },
-          { id: '__followup', label: 'Follow-up', color: '#eab308' },
           ...salesStages.map(s => ({ id: s.id, label: s.name, color: getStatusColor(s.id) }))
         ]
 
@@ -1973,9 +1976,7 @@ export default function SalesPipeline() {
                   const isActive = mobileFilter === tab.id
                   const tabLeads = tab.id === 'All'
                     ? filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed })
-                    : tab.id === '__followup'
-                      ? followUpCards
-                      : getLeadsForStage(tab.id)
+                    : getLeadsForStage(tab.id)
                   const count = tabLeads.length
                   // Value on the tab itself, so a rep can see which stage
                   // holds the money without opening each one.
@@ -2011,23 +2012,6 @@ export default function SalesPipeline() {
               </div>
               <style>{`.pipeline-mobile-tabs::-webkit-scrollbar { display: none; }`}</style>
 
-              {/* Follow-up worklist. Replaces the stage list entirely while
-                  selected — a rep on a phone wants one screen of who to chase,
-                  not the board with a filter applied. Deals stay in their real
-                  stage throughout; this only changes what is shown. */}
-              {mobileFilter === '__followup' ? (
-                <div style={{ marginBottom: '16px' }}>
-                  <FollowUpColumn
-                    theme={theme}
-                    cards={followUpCards}
-                    companyId={companyId}
-                    employeeId={currentEmployeeId}
-                    onLogged={loadFollowUps}
-                    onOpen={(c) => openRecord(c._isJob ? `/jobs/${c._jobId}` : `/leads/${c.id}`)}
-                  />
-                </div>
-              ) : (
-              <>
               {/* SALES PIPELINE Section */}
               <div style={{ marginBottom: '16px' }}>
                 <div
@@ -2208,6 +2192,20 @@ export default function SalesPipeline() {
                                       {job.assigned_team && <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><User size={10} /> {job.assigned_team}</span>}
                                     </div>
                                   )}
+                                  {/* Same strip as desktop. On a phone this is the whole feature —
+                                      one line per card, tap to dial and set the next date without
+                                      leaving the board. */}
+                                  {stageIsOpen(lead.status) && (
+                                    <FollowUpStrip
+                                      theme={m}
+                                      lead={lead}
+                                      rows={followUpRowsByLead.get(String(lead.id)) || []}
+                                      companyId={companyId}
+                                      employeeId={currentEmployeeId}
+                                      onLogged={loadFollowUps}
+                                      compact
+                                    />
+                                  )}
                                 </div>
                               )
                             })}
@@ -2218,8 +2216,6 @@ export default function SalesPipeline() {
                   </>
                 )}
               </div>
-              </>
-              )}
             </div>
 
           </div>
@@ -2291,19 +2287,6 @@ export default function SalesPipeline() {
             {/* Cards Area - only when expanded */}
             {salesExpanded && (
               <div style={{ flex: 1, display: 'flex', gap: '0px', minHeight: '200px', overflow: 'hidden' }}>
-                {/* Follow-up OVERLAY, first so it reads as today's worklist. These
-                    deals are ALSO still shown in their own stage column — that is
-                    the point of an overlay: nothing loses its pipeline position. */}
-                <div style={{ flex: '0 0 260px', minWidth: 0, padding: '4px 8px 4px 4px', borderRight: `1px solid ${theme.border}` }}>
-                  <FollowUpColumn
-                    theme={theme}
-                    cards={followUpCards}
-                    companyId={companyId}
-                    employeeId={currentEmployeeId}
-                    onLogged={loadFollowUps}
-                    onOpen={(c) => openRecord(c._isJob ? `/jobs/${c._jobId}` : `/leads/${c.id}`)}
-                  />
-                </div>
                 {stages.filter(s => !s.isDelivery && !s.isClosed).map(stage => {
                   const stageLeads = getLeadsForStage(stage.id)
                   const isDragOver = dragOverStage === stage.id
@@ -2382,6 +2365,19 @@ export default function SalesPipeline() {
                                 <div style={{ marginTop: '3px', fontSize: '9px', color: lead.lead_source === 'Existing Customer' ? '#0ea5e9' : lead.lead_source === 'Direct Job' ? '#f97316' : theme.textMuted, fontStyle: 'italic' }}>
                                   {lead.lead_source ? `via ${lead.lead_source}` : ''}{lead.source_employee?.name ? `${lead.lead_source ? ' · ' : 'via '}${lead.source_employee.name}` : ''}
                                 </div>
+                              )}
+                              {/* Follow-up lives on the card, in its real stage. Collapsed it is one
+                                  line so a column stays scannable; open it to dial, see the last
+                                  touches and set the next date. */}
+                              {stageIsOpen(lead.status) && (
+                                <FollowUpStrip
+                                  theme={theme}
+                                  lead={lead}
+                                  rows={followUpRowsByLead.get(String(lead.id)) || []}
+                                  companyId={companyId}
+                                  employeeId={currentEmployeeId}
+                                  onLogged={loadFollowUps}
+                                />
                               )}
                             </EntityCard>
                           </div>
@@ -2541,6 +2537,19 @@ export default function SalesPipeline() {
                                 <div style={{ marginTop: '3px', fontSize: '9px', color: lead.lead_source === 'Existing Customer' ? '#0ea5e9' : lead.lead_source === 'Direct Job' ? '#f97316' : theme.textMuted, fontStyle: 'italic' }}>
                                   {lead.lead_source ? `via ${lead.lead_source}` : ''}{lead.source_employee?.name ? `${lead.lead_source ? ' · ' : 'via '}${lead.source_employee.name}` : ''}
                                 </div>
+                              )}
+                              {/* Follow-up lives on the card, in its real stage. Collapsed it is one
+                                  line so a column stays scannable; open it to dial, see the last
+                                  touches and set the next date. */}
+                              {stageIsOpen(lead.status) && (
+                                <FollowUpStrip
+                                  theme={theme}
+                                  lead={lead}
+                                  rows={followUpRowsByLead.get(String(lead.id)) || []}
+                                  companyId={companyId}
+                                  employeeId={currentEmployeeId}
+                                  onLogged={loadFollowUps}
+                                />
                               )}
                             </EntityCard>
                           )

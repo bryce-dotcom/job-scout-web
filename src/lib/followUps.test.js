@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   latestByLead, daysSince, followUpState, followUpQueue, buildFollowUpRow,
   COLD, DUE, AGING, FRESH, UNTOUCHED,
+  stripSummary, snoozeToIso, shortDate, attemptCount, historyFor, SNOOZE_PRESETS,
 } from './followUps'
 
 const NOW = new Date('2026-08-04T18:00:00Z').getTime()
@@ -159,5 +160,72 @@ describe('logging a touch', () => {
   it('refuses to build an orphan or a cross-tenant row', () => {
     expect(buildFollowUpRow({ companyId: 3 })).toBeNull()
     expect(buildFollowUpRow({ leadId: 10 })).toBeNull()
+  })
+})
+
+describe('the card strip', () => {
+  it('pulses ONLY when genuinely overdue', () => {
+    // If everything pulses, nothing means anything.
+    const overdue = stripSummary(touch({ contacted_at: ago(1), next_follow_up_at: ago(3) }), NOW)
+    expect(overdue.pulse).toBe(true)
+    expect(overdue.tone).toBe('danger')
+
+    const future = new Date(NOW + 5 * 86400000).toISOString()
+    const scheduled = stripSummary(touch({ contacted_at: ago(1), next_follow_up_at: future }), NOW)
+    expect(scheduled.pulse).toBe(false)
+    expect(scheduled.tone).toBe('ok')
+  })
+
+  it('shows the scheduled date when one is set and not yet due', () => {
+    const future = new Date(NOW + 14 * 86400000).toISOString()
+    expect(stripSummary(touch({ contacted_at: ago(1), next_follow_up_at: future }), NOW).text)
+      .toMatch(/^Chase /)
+  })
+
+  it('warns without pulsing when a deal has just gone quiet', () => {
+    const s = stripSummary(touch({ contacted_at: ago(21) }), NOW)
+    expect(s.tone).toBe('warning')
+    expect(s.pulse).toBe(false)
+    expect(s.text).toBe('21 days quiet')
+  })
+
+  it('stays idle for a deal nobody has touched', () => {
+    const s = stripSummary(null, NOW)
+    expect(s.tone).toBe('idle')
+    expect(s.pulse).toBe(false)
+  })
+
+  it('snooze presets land the right number of days out', () => {
+    const iso = snoozeToIso(14, NOW)
+    expect(Math.round((new Date(iso) - NOW) / 86400000)).toBe(14)
+    expect(snoozeToIso('x')).toBeNull()
+  })
+
+  it('two weeks is the default preset', () => {
+    expect(SNOOZE_PRESETS.find(p => p.isDefault).days).toBe(14)
+  })
+
+  it('counts attempts so a stalled deal is obvious', () => {
+    const rows = [
+      { lead_id: 10, contacted_at: ago(1) },
+      { lead_id: 10, contacted_at: ago(9) },
+      { lead_id: 20, contacted_at: ago(2) },
+    ]
+    expect(attemptCount(rows, 10)).toBe(3 - 1)
+    expect(attemptCount(rows, '10')).toBe(2)
+  })
+
+  it('history comes back newest first', () => {
+    const rows = [
+      { lead_id: 10, contacted_at: ago(9), note: 'older' },
+      { lead_id: 10, contacted_at: ago(1), note: 'newer' },
+    ]
+    expect(historyFor(rows, 10, 2)[0].note).toBe('newer')
+  })
+
+  it('formats a short date without throwing on junk', () => {
+    expect(shortDate(null)).toBe('')
+    expect(shortDate('nonsense')).toBe('')
+    expect(shortDate(ago(0)).length).toBeGreaterThan(0)
   })
 })
