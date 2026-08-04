@@ -20,6 +20,7 @@ import { buildLeadIndex, primaryOwnerId, leadForJob } from '../lib/jobOwnership'
 import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipelineScroll, takePipelineScroll } from '../lib/pipelinePrefs'
 import { soldTotal, periodBounds } from '../lib/soldTotals'
 import { countDueFromRows } from '../lib/followUpDue'
+import { pushStatus, enablePush, disablePush, PUSH_GRANTED, PUSH_UNSUPPORTED, PUSH_UNCONFIGURED, PUSH_DENIED } from '../lib/pushNotifications'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -1476,6 +1477,24 @@ export default function SalesPipeline() {
   // round, not deals that have merely gone quiet.
   const dueFollowUps = useMemo(() => countDueFromRows(followUpRows), [followUpRows])
 
+  // Push opt-in. Hidden entirely when the browser cannot do it or the
+  // workspace has no VAPID key — offering a button that cannot work is worse
+  // than not offering one.
+  const [pushState, setPushState] = useState(() => pushStatus())
+  const canOfferPush = pushState !== PUSH_UNSUPPORTED && pushState !== PUSH_UNCONFIGURED
+  const togglePush = async () => {
+    if (pushState === PUSH_GRANTED) {
+      await disablePush()
+      setPushState(pushStatus())
+      toast.info('Daily follow-up reminders off for this device')
+      return
+    }
+    const res = await enablePush({ companyId, employeeId: currentEmployeeId })
+    setPushState(pushStatus())
+    if (res.ok) toast.success('You will get one reminder each morning')
+    else toast.error(res.reason || 'Could not turn on notifications')
+  }
+
   const followUpRowsByLead = useMemo(() => {
     const m = new Map()
     for (const r of followUpRows || []) {
@@ -1608,6 +1627,21 @@ export default function SalesPipeline() {
                   {dueFollowUps} follow-up{dueFollowUps === 1 ? '' : 's'} due
                 </span>
               </div>
+            )}
+            {canOfferPush && (
+              <button
+                onClick={togglePush}
+                title={pushState === PUSH_DENIED ? 'Notifications are blocked in your browser settings' : 'One reminder each morning listing what is due'}
+                style={{
+                  marginTop: '6px', marginLeft: '6px', minHeight: '28px', padding: '4px 10px',
+                  borderRadius: '12px', cursor: 'pointer', fontSize: '12px',
+                  border: `1px solid ${pushState === PUSH_GRANTED ? theme.accent : theme.border}`,
+                  background: pushState === PUSH_GRANTED ? theme.accentBg : theme.bgCard,
+                  color: pushState === PUSH_GRANTED ? theme.accent : theme.textSecondary,
+                }}
+              >
+                {pushState === PUSH_GRANTED ? 'Morning reminders on' : 'Remind me each morning'}
+              </button>
             )}
           </div>
 
