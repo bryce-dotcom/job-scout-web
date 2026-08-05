@@ -165,7 +165,12 @@ serve(async (req) => {
       if (est) {
         const { data: lines } = await supabase
           .from('quote_lines')
-          .select('*, item:products_services(id, name, description)')
+          // image_url and product_category ONLY. This payload is readable in
+          // the customer's browser devtools, so manufacturer, model_number and
+          // dlc_listing_number must never be selected here — model_number
+          // embeds the maker code and a DLC listing number is a public lookup
+          // that names them. See src/lib/productAssets.
+          .select('*, item:products_services(id, name, description, image_url, product_category)')
           .eq('quote_id', est.id)
           .order('sort_order', { ascending: true });
         lineItems = lines || [];

@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
 import { isLegacyNetShape } from '../lib/arHelpers'
+import { withAssets } from '../lib/productAssets'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -81,7 +82,11 @@ export default function CustomerPortal() {
     try {
       setLoading(true)
       const result = await invokeEdgeFunction('get-portal-document', { token })
-      setData(result)
+      // Lift each product's photo off the joined `item` and onto the line —
+      // FormalProposal's SolutionSection reads image_url from the line itself.
+      // Same rule the estimate preview uses, so the rep sees what the customer
+      // sees. lib/productAssets owns it.
+      setData(result ? { ...result, line_items: withAssets(result.line_items) } : result)
 
       // Pre-fill approver info from customer
       if (result.customer) {

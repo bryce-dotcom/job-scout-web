@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, lazy, Suspense, Component } from 
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { quoteWriteDecision, WRITE, quoteSummary } from '../lib/quoteTotal'
+import { withAssets } from '../lib/productAssets'
 import { findMatchingCustomer } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { RecordHistoryButton } from '../components/RecordHistory'
@@ -500,7 +501,7 @@ function EstimateDetailInner() {
       let lines = null
       const { data: l1, error: lErr } = await supabase
         .from('quote_lines')
-        .select('*, item:products_services(id, name, type, suggest_in_lenard, description, unit_price, cost, markup_percent, spec_sheet_url, install_guide_url, dlc_document_url)')
+        .select('*, item:products_services(id, name, type, suggest_in_lenard, description, unit_price, cost, markup_percent, spec_sheet_url, install_guide_url, dlc_document_url, image_url, product_category, datasheet_json)')
         .eq('quote_id', id)
         .order('sort_order', { ascending: true })
       if (!lErr) {
@@ -508,7 +509,7 @@ function EstimateDetailInner() {
       } else {
         const { data: l2 } = await supabase
           .from('quote_lines')
-          .select('*, item:products_services(id, name, type, suggest_in_lenard, description, unit_price, cost, markup_percent, spec_sheet_url, install_guide_url, dlc_document_url)')
+          .select('*, item:products_services(id, name, type, suggest_in_lenard, description, unit_price, cost, markup_percent, spec_sheet_url, install_guide_url, dlc_document_url, image_url, product_category, datasheet_json)')
           .eq('quote_id', id)
           .order('id')
         lines = l2
@@ -5619,7 +5620,11 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
         },
       },
     },
-    line_items: (lineItems || []).map(li => ({ ...li, total: li.line_total || li.total })),
+    // withAssets lifts the product photo off the joined `item` and onto the
+    // line, which is where SolutionSection looks for it. It deliberately does
+    // NOT carry manufacturer/model/DLC — this same shape feeds the customer's
+    // portal view. See lib/productAssets.
+    line_items: withAssets(lineItems).map(li => ({ ...li, total: li.line_total || li.total })),
     company: company || {},
     customer: customer ? {
       ...customer,
