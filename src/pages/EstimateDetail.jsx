@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { quoteWriteDecision, WRITE, quoteSummary } from '../lib/quoteTotal'
 import { withAssets } from '../lib/productAssets'
+import { publicSheet } from '../lib/specScrub'
+import { buildSpecSheetPdf, imageToDataUrl } from '../lib/specSheetPdf'
 import { findMatchingCustomer } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { RecordHistoryButton } from '../components/RecordHistory'
@@ -404,6 +406,13 @@ function EstimateDetailInner() {
   const [sendEmail, setSendEmail] = useState('')
   const [sendSubject, setSendSubject] = useState('')
   const [sendAttachments, setSendAttachments] = useState([]) // [{ file, name, base64 }]
+  // Specifications go out by default — the customer asking to see them is what
+  // started this. The manufacturer's own sheet does NOT: it carries their name,
+  // phone and domain, which is exactly what lets a customer re-bid the job
+  // elsewhere. Off unless a rep deliberately turns it on for a GC or engineer
+  // who wants the real cut sheet.
+  const [includeSpecSheet, setIncludeSpecSheet] = useState(true)
+  const [includeManufacturerSheets, setIncludeManufacturerSheets] = useState(false)
 
   // Theme with fallback
   const themeContext = useTheme()
@@ -2112,6 +2121,50 @@ function EstimateDetailInner() {
       return
     }
     setSendingEmail(true)
+
+    // Specification attachments. Built here rather than in the payload so a
+    // failure to generate one can never stop the estimate going out — the
+    // proposal matters more than the spec sheet.
+    const specAttachments = []
+    try {
+      if (includeSpecSheet) {
+        const products = []
+        const seen = new Set()
+        for (const li of lineItems || []) {
+          const p = li.item
+          if (!p || seen.has(p.id)) continue
+          seen.add(p.id)
+          products.push({ ...p, imageDataUrl: await imageToDataUrl(p.image_url) })
+        }
+        const { doc, leaks } = buildSpecSheetPdf({ products, company, logoDataUrl: null })
+        if (leaks.length) {
+          // Never send a sheet that failed its own leak check.
+          console.error('[EstimateDetail] spec sheet leak check failed', leaks)
+          toast.error('Specification sheet withheld — it failed its safety check.')
+        } else if (doc) {
+          specAttachments.push({
+            filename: 'Project Specifications.pdf',
+            content: doc.output('datauristring').split(',')[1],
+          })
+        }
+      }
+      if (includeManufacturerSheets) {
+        const seen = new Set()
+        for (const li of lineItems || []) {
+          const p = li.item
+          if (!p?.spec_sheet_url || seen.has(p.id)) continue
+          seen.add(p.id)
+          const dataUrl = await imageToDataUrl(p.spec_sheet_url)
+          if (!dataUrl) continue
+          specAttachments.push({
+            filename: `${String(p.name || 'Product').replace(/[^\w\s-]/g, '').slice(0, 60)} - Spec Sheet.pdf`,
+            content: dataUrl.split(',')[1],
+          })
+        }
+      }
+    } catch (specErr) {
+      console.warn('[EstimateDetail] spec attachments failed:', specErr)
+    }
     try {
       const buObject = getBusinessUnitObject()
       const presMode = estimate.settings_overrides?.presentation_mode || 'pdf'
@@ -2298,7 +2351,11 @@ function EstimateDetailInner() {
           down_payment_label: dpLabel,
           down_payment_amount: dpAmount,
           custom_subject: sendSubject || undefined,
-          extra_attachments: sendAttachments.length > 0 ? sendAttachments.map(a => ({ filename: a.name, content: a.base64 })) : undefined,
+          extra_attachments: (() => {
+            const atts = sendAttachments.map(a => ({ filename: a.name, content: a.base64 }))
+            if (specAttachments.length) atts.push(...specAttachments)
+            return atts.length > 0 ? atts : undefined
+          })(),
         }),
       })
       const sendData = await sendRes.json().catch(() => ({}))
@@ -5170,6 +5227,15 @@ function EstimateDetailInner() {
           setSendSubject={setSendSubject}
           sendAttachments={sendAttachments}
           setSendAttachments={setSendAttachments}
+          includeSpecSheet={includeSpecSheet}
+          setIncludeSpecSheet={setIncludeSpecSheet}
+          includeManufacturerSheets={includeManufacturerSheets}
+          setIncludeManufacturerSheets={setIncludeManufacturerSheets}
+          specProductCount={
+            new Set((lineItems || [])
+              .filter(li => li.item?.datasheet_json?.specs?.length)
+              .map(li => li.item.id)).size
+          }
         />
       )}
 
@@ -5624,7 +5690,18 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
     // line, which is where SolutionSection looks for it. It deliberately does
     // NOT carry manufacturer/model/DLC — this same shape feeds the customer's
     // portal view. See lib/productAssets.
-    line_items: withAssets(lineItems).map(li => ({ ...li, total: li.line_total || li.total })),
+    line_items: withAssets(lineItems).map(li => {
+      const sheet = publicSheet(li.item?.datasheet_json, li.item)
+      return {
+        ...li,
+        total: li.line_total || li.total,
+        // Same shape and same rule the portal sends, so this preview is a
+        // truthful rehearsal of what the customer will see.
+        public_specs: sheet.specs.length
+          ? { specs: sheet.specs, applications: sheet.applications, construction: sheet.construction }
+          : null,
+      }
+    }),
     company: company || {},
     customer: customer ? {
       ...customer,
@@ -6567,7 +6644,7 @@ function EstimatePreview({ estimate, lineItems, company, businessUnit, settings 
 }
 
 // Preview + Send modal with two steps
-function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUnit, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle, onSettingsUpdate, customer, sendSubject, setSendSubject, sendAttachments, setSendAttachments }) {
+function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUnit, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle, onSettingsUpdate, customer, sendSubject, setSendSubject, sendAttachments, setSendAttachments, includeSpecSheet, setIncludeSpecSheet, includeManufacturerSheets, setIncludeManufacturerSheets, specProductCount = 0 }) {
   const [step, setStep] = useState('preview') // 'preview' | 'send'
   const [mode, setMode] = useState(settings.presentation_mode || 'pdf')
   const [generating, setGenerating] = useState(false)
@@ -7258,6 +7335,38 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
               <input type="text" value={sendSubject} onChange={(e) => setSendSubject(e.target.value)}
                 placeholder={mode === 'formal' ? `Formal Proposal from ${company?.company_name || 'Company'}` : mode === 'interactive' ? `Your Proposal from ${company?.company_name || 'Company'}` : `Estimate from ${company?.company_name || 'Company'}`}
                 style={inputStyle} />
+            </div>
+
+            {/* Specifications. The generated sheet carries the real specs with
+                the manufacturer removed; the manufacturer's own PDF carries
+                their name, phone and domain — which is what lets a customer
+                take this proposal to another vendor. Hence the default. */}
+            <div style={{ border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '12px 14px', backgroundColor: theme.bg }}>
+              <label style={{ ...labelStyle, marginBottom: '10px', display: 'block' }}>Product Specifications</label>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', minHeight: '32px' }}>
+                <input type="checkbox" checked={includeSpecSheet}
+                  onChange={(e) => setIncludeSpecSheet(e.target.checked)}
+                  style={{ marginTop: '3px', width: '16px', height: '16px', accentColor: theme.accent }} />
+                <span style={{ fontSize: '13px', color: theme.text }}>
+                  Attach our specification sheet
+                  <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                    {specProductCount > 0
+                      ? `${specProductCount} product${specProductCount === 1 ? '' : 's'} — real specs, no manufacturer or model numbers`
+                      : 'No product on this estimate has specifications on file yet'}
+                  </span>
+                </span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', marginTop: '10px', minHeight: '32px' }}>
+                <input type="checkbox" checked={includeManufacturerSheets}
+                  onChange={(e) => setIncludeManufacturerSheets(e.target.checked)}
+                  style={{ marginTop: '3px', width: '16px', height: '16px', accentColor: theme.accent }} />
+                <span style={{ fontSize: '13px', color: theme.text }}>
+                  Also attach the manufacturer&rsquo;s sheets
+                  <span style={{ display: 'block', fontSize: '12px', color: theme.error || '#ef4444', marginTop: '2px' }}>
+                    Names the manufacturer and model — the customer can shop this quote
+                  </span>
+                </span>
+              </label>
             </div>
 
             <div>

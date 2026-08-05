@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import ProposalSection from './ProposalSection'
@@ -11,6 +11,10 @@ function formatCurrency(amount) {
 
 function LineItemCard({ item, index }) {
   const [expanded, setExpanded] = useState(false)
+  // Already scrubbed upstream — the portal computes it server-side and the
+  // estimate preview computes it with the same shared rule. Never derive it
+  // from raw product fields here; this component renders to customers.
+  const specs = item?.public_specs?.specs?.length ? item.public_specs : null
 
   return (
     <ProposalSection delay={index * 0.08}>
@@ -80,7 +84,7 @@ function LineItemCard({ item, index }) {
         </div>
 
         <AnimatePresence>
-          {expanded && item.description && (
+          {expanded && (item.description || specs) && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
@@ -93,14 +97,43 @@ function LineItemCard({ item, index }) {
                 borderTop: `1px solid ${proposalTheme.border}`,
                 paddingTop: '16px',
               }}>
-                <p style={{
-                  color: proposalTheme.textSecondary,
-                  fontSize: '14px',
-                  lineHeight: 1.6,
-                  margin: 0,
-                }}>
-                  {item.description}
-                </p>
+                {item.description && (
+                  <p style={{
+                    color: proposalTheme.textSecondary,
+                    fontSize: '14px',
+                    lineHeight: 1.6,
+                    margin: 0,
+                  }}>
+                    {item.description}
+                  </p>
+                )}
+
+                {/* Specifications, already scrubbed. The portal computes these
+                    server-side and never sends the manufacturer, model number
+                    or DLC listing — see get-portal-document. */}
+                {specs && (
+                  <div style={{ marginTop: item.description ? '16px' : 0 }}>
+                    <p style={{
+                      fontSize: '12px', fontWeight: '700', letterSpacing: '0.04em',
+                      textTransform: 'uppercase', color: proposalTheme.accent, margin: '0 0 10px',
+                    }}>
+                      Specifications
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 140px) minmax(0, 1fr)', gap: '6px 14px' }}>
+                      {specs.specs.map((s, i) => (
+                        <Fragment key={`${s.label}-${i}`}>
+                          <span style={{ fontSize: '13px', color: proposalTheme.textMuted }}>{s.label}</span>
+                          <span style={{ fontSize: '13px', color: proposalTheme.text, fontWeight: '500' }}>{s.value}</span>
+                        </Fragment>
+                      ))}
+                    </div>
+                    {specs.applications?.length > 0 && (
+                      <p style={{ fontSize: '12px', color: proposalTheme.textMuted, margin: '12px 0 0' }}>
+                        {specs.applications.join('  •  ')}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </motion.div>
           )}

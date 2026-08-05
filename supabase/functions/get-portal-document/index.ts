@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { resolveMatLabSplit, buildSummaryRows } from "../_shared/matLabCore.ts";
+import { publicSheet } from "../_shared/specScrub.ts";
 
 // The Material/Labor rule lives in _shared/matLabCore.ts, imported by both
 // this function and the React app (via src/lib/materialLaborSplit.js). It was
@@ -97,15 +98,36 @@ serve(async (req) => {
       if (est) {
         const { data: lines } = await supabase
           .from('quote_lines')
-          // image_url and product_category ONLY. This payload is readable in
-          // the customer's browser devtools, so manufacturer, model_number and
-          // dlc_listing_number must never be selected here — model_number
-          // embeds the maker code and a DLC listing number is a public lookup
-          // that names them. See src/lib/productAssets.
-          .select('*, item:products_services(id, name, description, image_url, product_category)')
+          // manufacturer / model_number / dlc_listing_number / datasheet_json
+          // are selected ONLY to compute the scrubbed spec sheet below. They
+          // are stripped before the response goes out — this payload is
+          // readable in the customer's devtools, model_number embeds the maker
+          // code, a DLC listing number is a public lookup that names them, and
+          // datasheet_json.brand_terms is a literal list of their brands.
+          .select('*, item:products_services(id, name, description, image_url, product_category, manufacturer, model_number, dlc_listing_number, datasheet_json)')
           .eq('quote_id', est.id)
           .order('sort_order', { ascending: true });
-        lineItems = lines || [];
+
+        // Compute the customer-safe spec sheet server-side, then DROP the
+        // fields that identify the manufacturer. The customer gets specs and
+        // never the maker. publicSheet is the same code the PDF and the
+        // estimate preview use — see _shared/specScrub.ts.
+        lineItems = (lines || []).map((l: any) => {
+          const p = l.item;
+          if (!p) return l;
+          const specs = publicSheet(p.datasheet_json, p);
+          const {
+            manufacturer: _m, model_number: _mn, dlc_listing_number: _d, datasheet_json: _ds,
+            ...safeItem
+          } = p;
+          return {
+            ...l,
+            item: safeItem,
+            public_specs: specs.specs.length > 0
+              ? { specs: specs.specs, applications: specs.applications, construction: specs.construction }
+              : null,
+          };
+        });
 
         // Attach before/after photos per line. Christopher uploaded site
         // photos from the estimate page but the customer portal never
