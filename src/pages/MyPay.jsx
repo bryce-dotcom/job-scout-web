@@ -12,6 +12,7 @@ import {
 import { fetchUserBonuses, bonusStatusLabel } from '../lib/bonusLedger'
 import { groupHoursByDay } from '../lib/dailyHours'
 import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
+import { setterCommissionSummary } from '../lib/setterCommissions'
 import { canViewHR } from '../lib/accessControl'
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -149,6 +150,10 @@ export default function MyPay() {
   // here; Payroll is the writer. Replaces the drifty live invoice-commission
   // amount so My Pay and Payroll always agree.
   const [repCommissions, setRepCommissions] = useState([])
+  // Setter / lead-source commissions (lead_commissions) — the other half of
+  // this employee's commission pay, previously invisible on this page.
+  const [leadCommissions, setLeadCommissions] = useState([])
+  const [setterRule, setSetterRule] = useState('appointment_set')
   const [loading, setLoading] = useState(true)
   // Fresh copy of the user's employee row (rate, commission flags) re-read
   // from DB on every mount so a just-updated rate shows here immediately
@@ -204,7 +209,7 @@ export default function MyPay() {
     if (!companyId || !effectiveUserId) { setPaystubs([]); setBenefits([]); return }
     let cancelled = false
     ;(async () => {
-      const [ps, bf, rc] = await Promise.all([
+      const [ps, bf, rc, lc, co] = await Promise.all([
         supabase.from('paystubs')
           .select('id, period_start, period_end, pay_date, regular_hours, overtime_hours, pto_hours, gross_pay, net_pay, bonus_pay, commission_pay, reimbursement_pay, federal_income_tax, state_income_tax, social_security_employee, medicare_employee, additional_medicare, pre_tax_deductions, post_tax_deductions')
           .eq('company_id', companyId).eq('employee_id', effectiveUserId)
@@ -214,8 +219,21 @@ export default function MyPay() {
           .eq('company_id', companyId).eq('employee_id', effectiveUserId).eq('status', 'active')
           .order('benefit_type'),
         fetchRepCommissions(supabase, companyId, effectiveUserId),
+        // Setter / lead-source commissions. My Pay read only rep_commissions,
+        // so anyone paid as a setter saw $0 here no matter what Payroll owed
+        // them — two commission tables, one surface reading one of them.
+        supabase.from('lead_commissions')
+          .select('id, lead_id, commission_type, amount, payment_status, created_at, lead:leads!lead_id(id, customer_name)')
+          .eq('company_id', companyId).eq('employee_id', effectiveUserId),
+        // The qualification rule lives on the company row and decides whether
+        // a booked appointment is payable yet.
+        supabase.from('companies').select('setter_qualification_rule').eq('id', companyId).maybeSingle(),
       ])
-      if (!cancelled) { setPaystubs(ps.data || []); setBenefits(bf.data || []); setRepCommissions(rc || []) }
+      if (!cancelled) {
+        setPaystubs(ps.data || []); setBenefits(bf.data || []); setRepCommissions(rc || [])
+        setLeadCommissions(lc?.data || [])
+        setSetterRule(co?.data?.setter_qualification_rule || 'appointment_set')
+      }
     })()
     return () => { cancelled = true }
   }, [companyId, effectiveUserId])
@@ -443,6 +461,13 @@ export default function MyPay() {
     [repCommissions, effectiveUserId, periodStartStr, periodEndStr]
   )
 
+  // Setter commissions, through the SAME rule Payroll pays from
+  // (lib/setterCommissions) so the two pages cannot disagree.
+  const setterComm = useMemo(
+    () => setterCommissionSummary(leadCommissions, effectiveUserId, setterRule),
+    [leadCommissions, effectiveUserId, setterRule]
+  )
+
   // Efficiency bonuses now come from the persistent job_bonuses ledger
   // (loaded into ledgerBonuses above), not a live per-period recompute —
   // that's what stopped bonuses from vanishing across pay periods.
@@ -470,8 +495,10 @@ export default function MyPay() {
   const pendingBonusTotal = pendingBonuses.reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
   const needsVerCount = ledgerBonuses.filter(b => b.needs_verification && b.status !== 'paid').length
 
-  // Owed bonuses (money already collected) count toward gross pay.
-  const grossPay = hourlyPay + salaryPay + commAvailable + accruedBonusTotal
+  // Owed bonuses (money already collected) count toward gross pay, and so do
+  // setter commissions — leaving them out is what made this page disagree
+  // with Payroll for anyone who books appointments.
+  const grossPay = hourlyPay + salaryPay + commAvailable + setterComm.total + accruedBonusTotal
 
   // What's been STAGED into the next payroll run (an admin added it) — so the
   // tech sees what's actually coming next run vs what's owed but not yet added.
@@ -652,6 +679,23 @@ export default function MyPay() {
             <div style={{ fontSize: '18px', fontWeight: '600', color: '#22c55e', marginTop: '2px' }}>{fmt(commAvailable)}</div>
             {commData.pending > 0 && <div style={{ fontSize: '11px', color: '#f59e0b' }}>{fmt(commData.pending)} pending</div>}
           </div>
+          {/* Setter commissions. Shown as its own tile rather than folded into
+              Commission above, because it is a different kind of earning
+              (a flat fee per booked appointment, not a % of what was paid)
+              and a setter needs to see the appointment count behind it. */}
+          {(setterComm.total > 0 || setterComm.pendingAmount > 0) && (
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Appointments set</div>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#22c55e', marginTop: '2px' }}>{fmt(setterComm.total)}</div>
+              <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                {setterComm.apptCount} appointment{setterComm.apptCount === 1 ? '' : 's'}
+                {setterComm.sourceCount > 0 && ` · ${setterComm.sourceCount} sourced`}
+              </div>
+              {setterComm.pendingAmount > 0 && (
+                <div style={{ fontSize: '11px', color: '#f59e0b' }}>{fmt(setterComm.pendingAmount)} pending a quote</div>
+              )}
+            </div>
+          )}
           <div>
             <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Bonus owed</div>
             <div style={{ fontSize: '18px', fontWeight: '600', color: '#8b5cf6', marginTop: '2px' }}>{fmt(accruedBonusTotal)}</div>

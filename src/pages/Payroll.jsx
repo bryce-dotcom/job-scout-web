@@ -22,6 +22,7 @@ import {
 } from '../lib/bonusCalc'
 import { syncJobBonuses } from '../lib/bonusLedger'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
+import { setterCommissionSummary } from '../lib/setterCommissions'
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 import { payDateForPeriod } from '../lib/payDate'
 import { VERIFICATION_EXEMPT_KEY } from '../lib/verificationPolicy'
@@ -178,6 +179,64 @@ const AVATAR_COLORS = [
   '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e'
 ]
 
+// Per-item commission list with its own Mark paid / Reopen control.
+//
+// Alayda (9536a565): "we need to be able to mark paid on each individual job
+// rather than 1 button that says mark paid." One bulk button meant paying a
+// rep for three of their four jobs was impossible — you either marked the
+// whole period paid or nothing. Both commission tables already took an array
+// of rows, so this only ever needed a UI that passes one.
+//
+// Written once and used by BOTH the setter and rep cards. Two copies of a
+// rule is how this codebase keeps breaking.
+function CommissionRowList({ rows = [], theme, fmt, labelFor, onMarkPaid, onReopen, isAdmin }) {
+  if (!rows.length) return null
+  return (
+    <div style={{ marginTop: 10 }}>
+      {rows.map(r => {
+        const isPaid = r.payment_status === 'paid'
+        return (
+          <div
+            key={r.id}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '7px 0', borderTop: `1px solid ${theme.border}`,
+            }}
+          >
+            <span style={{
+              flex: 1, minWidth: 0, fontSize: 12, color: theme.textSecondary,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {labelFor(r)}
+            </span>
+            <span style={{
+              fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
+              color: isPaid ? theme.textMuted : theme.text,
+              textDecoration: isPaid ? 'line-through' : 'none',
+            }}>
+              {fmt(parseFloat(r.amount) || 0)}
+            </span>
+            {isAdmin && (
+              <button
+                onClick={() => (isPaid ? onReopen([r]) : onMarkPaid([r]))}
+                style={{
+                  padding: '5px 10px', borderRadius: 6, minHeight: 30, flexShrink: 0,
+                  border: isPaid ? `1px solid ${theme.border}` : 'none',
+                  backgroundColor: isPaid ? 'transparent' : '#22c55e',
+                  color: isPaid ? theme.textMuted : '#fff',
+                  fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                {isPaid ? 'Reopen' : 'Mark paid'}
+              </button>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function Payroll() {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
@@ -208,6 +267,9 @@ export default function Payroll() {
 
   // Data state
   const [timeEntries, setTimeEntries] = useState([])
+  // Unfiltered, job-attached punches for the bonus ledger. Kept separate from
+  // timeEntries because pay is per-period but a bonus is per-job-lifetime.
+  const [bonusTimeEntries, setBonusTimeEntries] = useState([])
   // Open/dangling clock-ins (missed clock-out) — fetched separately from the
   // pay-calc entries so a forgotten clock-out surfaces for correction instead
   // of silently counting as zero hours (London lost her whole AZ week this way).
@@ -522,7 +584,7 @@ export default function Payroll() {
       const periodStartStr = periodStart.toISOString().split('T')[0]
       const periodEndStr = periodEnd.toISOString().split('T')[0]
 
-      const [entriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes, leadsRes, allPaymentsRes, utilityRes] = await Promise.all([
+      const [entriesRes, bonusEntriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes, leadsRes, allPaymentsRes, utilityRes] = await Promise.all([
         // Time clock entries for current period
         supabase
           .from('time_clock')
@@ -531,6 +593,27 @@ export default function Payroll() {
           .gte('clock_in', periodStart.toISOString())
           .lte('clock_in', periodEnd.toISOString())
           .not('clock_out', 'is', null),
+
+        // Time clock entries for the BONUS ledger — every closed punch that
+        // is attached to a job, with NO period filter.
+        //
+        // An efficiency bonus is a whole-job number: allotted hours for the
+        // job vs every hour ever worked on it. Feeding it the period-scoped
+        // set above counted only the hours inside the selected pay period, so
+        // any job spanning two periods looked far faster than it was and paid
+        // a bonus on hours that were never saved. Measured before this fix:
+        // 63 of 142 unpaid ledger rows disagreed with the live hours, worst
+        // case job 23319 at 24.39 recorded against 85.28 actually worked,
+        // carrying $1,166.93. It is also why "I changed the hours and the
+        // bonus didn't move" kept coming back — the changed hours were
+        // usually outside the loaded window.
+        fetchAllPages(() => supabase
+          .from('time_clock')
+          .select('id, employee_id, job_id, clock_in, clock_out, total_hours, lunch_start, lunch_end')
+          .eq('company_id', companyId)
+          .not('job_id', 'is', null)
+          .not('clock_out', 'is', null)
+          .order('id', { ascending: true })),
 
         // Time log entries (job-level hours) for current period
         supabase
@@ -543,7 +626,9 @@ export default function Payroll() {
         // Lead commissions for current period
         supabase
           .from('lead_commissions')
-          .select('*')
+          // Lead joined so the per-item Mark paid list can name the deal
+          // instead of showing a bare row id.
+          .select('*, lead:leads!lead_id(id, customer_name)')
           .eq('company_id', companyId)
           .gte('created_at', periodStart.toISOString())
           .lte('created_at', periodEnd.toISOString()),
@@ -645,6 +730,7 @@ export default function Payroll() {
       ])
 
       setTimeEntries(entriesRes.data || [])
+      setBonusTimeEntries(bonusEntriesRes.data || [])
       // Incomplete shifts. These never enter the pay calc, so surface them for
       // a manager to set the real clock-out. Company-wide and
       // period-independent so a ghost from a past period can't hide once we
@@ -1061,31 +1147,12 @@ export default function Payroll() {
   //
   // Lead-source commissions are unaffected — they always pay on the row.
   const setterRule = company?.setter_qualification_rule || 'appointment_set'
+  // The rule itself now lives in lib/setterCommissions so My Pay can show a
+  // setter the same number Payroll owes them. It used to live only here, and
+  // My Pay read a different table entirely — so setters saw $0 in My Pay
+  // however much this page said they were owed.
   const calculateLeadCommissions = (employeeId) => {
-    const allEmp = leadCommissions.filter(c => c.employee_id === employeeId)
-    // Already-paid rows drop OFF the payable set — parity with bonuses, so a
-    // commission that was paid on one run can't be paid again on the next
-    // (ticket efd85146). Surfaced separately as paidCount, not silently gone.
-    const paidRows = allEmp.filter(c => c.payment_status === 'paid')
-    const empCommissions = allEmp.filter(c => c.payment_status !== 'paid')
-    const setterRows = empCommissions.filter(c => c.commission_type === 'appointment_set')
-    const sourceRows = empCommissions.filter(c => c.commission_type === 'lead_source')
-    const earnedSetter = setterRule === 'quote_created'
-      ? setterRows.filter(c => c.payment_status === 'earned')
-      : setterRows
-    const pendingSetter = setterRule === 'quote_created'
-      ? setterRows.filter(c => c.payment_status === 'pending')
-      : []
-    const total = earnedSetter.reduce((s, c) => s + (c.amount || 0), 0)
-                + sourceRows.reduce((s, c) => s + (c.amount || 0), 0)
-    const apptCount = earnedSetter.length
-    const pendingCount = pendingSetter.length
-    const pendingAmount = pendingSetter.reduce((s, c) => s + (c.amount || 0), 0)
-    const sourceCount = sourceRows.length
-    return {
-      total, apptCount, sourceCount, details: [...earnedSetter, ...sourceRows], pendingCount, pendingAmount,
-      paidCount: paidRows.length, paidTotal: paidRows.reduce((s, c) => s + (c.amount || 0), 0),
-    }
+    return setterCommissionSummary(leadCommissions, employeeId, setterRule)
   }
 
   // Manual "Paid" toggle for lead/setter commissions — the control Bryce asked
@@ -1226,14 +1293,15 @@ export default function Payroll() {
   useEffect(() => {
     if (loading) return
     if (!companyId || !payrollConfig.efficiency_bonus_enabled) return
-    if (!jobs.length || !timeEntries.length) return
+    if (!jobs.length || !bonusTimeEntries.length) return
     let cancelled = false
     ;(async () => {
       await syncJobBonuses({
         supabase,
         companyId,
         jobs,
-        timeClockRows: timeEntries,
+        // Whole-job hours, not the pay period's. See the bonus fetch above.
+        timeClockRows: bonusTimeEntries,
         employees,
         skillLevels: skillLevelSettings,
         payrollConfig,
@@ -1251,7 +1319,7 @@ export default function Payroll() {
       if (!cancelled) setLedgerBonuses(data || [])
     })()
     return () => { cancelled = true }
-  }, [loading, companyId, jobs, timeEntries, employees, skillLevelSettings, payrollConfig, verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides])
+  }, [loading, companyId, jobs, bonusTimeEntries, employees, skillLevelSettings, payrollConfig, verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides])
 
   // Rep (%) commission ledger — freeze new payments into rows, then read them.
   // Insert-only; never rewrites an earned amount. Mirrors the bonus sync so
@@ -2148,9 +2216,21 @@ export default function Payroll() {
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {readyRows.length > 0 && <button onClick={() => queueSetter(readyRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add {fmt(readyTot)} to payroll</button>}
                       {queuedRows.length > 0 && <button onClick={() => queueSetter(queuedRows, false)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: 'none', color: theme.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove from payroll</button>}
-                      <button onClick={() => { if (confirm(`Mark ${fmt(readyTot + queuedTot)} of ${emp.name}'s commissions paid (e.g. outside the app)?`)) markCommissionsPaid(details, true) }} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Mark paid</button>
+                      <button onClick={() => { if (confirm(`Mark all ${fmt(readyTot + queuedTot)} of ${emp.name}'s commissions paid (e.g. outside the app)?`)) markCommissionsPaid(details, true) }} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Mark all paid</button>
                     </div>
                   )}
+                  {/* Same per-item control as the rep card. */}
+                  <CommissionRowList
+                    rows={[...details, ...leadCommissions.filter(c => c.employee_id === emp.id && c.payment_status === 'paid')]}
+                    theme={theme} fmt={fmt} isAdmin={isAdmin}
+                    labelFor={(c) => {
+                      const who = c.lead?.customer_name || (c.lead_id ? `Lead ${c.lead_id}` : 'Lead')
+                      const kind = (c.commission_type || '').replace(/_/g, ' ')
+                      return kind ? `${who} (${kind})` : who
+                    }}
+                    onMarkPaid={(rows) => markCommissionsPaid(rows, true)}
+                    onReopen={(rows) => markCommissionsPaid(rows, false)}
+                  />
                 </div>
               )
             })()}
@@ -2206,9 +2286,25 @@ export default function Payroll() {
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {readyRows.length > 0 && <button onClick={() => queueRep(readyRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add {fmt(readyTot)} to payroll</button>}
                         {queuedRows.length > 0 && <button onClick={() => queueRep(queuedRows, false)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: 'none', color: theme.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove from payroll</button>}
-                        {ready.length > 0 && <button onClick={() => { if (confirm(`Mark ${fmt(readyTot + queuedTot)} of ${emp.name}'s rep commissions paid (e.g. outside the app)?`)) markRepCommissionsPaid(ready, true) }} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Mark paid</button>}
+                        {ready.length > 0 && <button onClick={() => { if (confirm(`Mark all ${fmt(readyTot + queuedTot)} of ${emp.name}'s rep commissions paid (e.g. outside the app)?`)) markRepCommissionsPaid(ready, true) }} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Mark all paid</button>}
                       </div>
                     )}
+                    {/* Per-job control. The bulk button above stays for the
+                        common case; this is for paying some jobs and not
+                        others. Paid rows are listed too so a mistake is one
+                        click to undo. */}
+                    <CommissionRowList
+                      rows={[...ready, ...paid]}
+                      theme={theme} fmt={fmt} isAdmin={isAdmin}
+                      labelFor={(r) => {
+                        const j = jobs.find(x => x.id === r.job_id)
+                        const who = j?.customer_name || j?.job_title || ''
+                        const num = j?.job_id ? `${j.job_id} · ` : ''
+                        return `${num}${who || `Job ${r.job_id ?? '—'}`}${r.kind ? ` (${r.kind})` : ''}`
+                      }}
+                      onMarkPaid={(rows) => markRepCommissionsPaid(rows, true)}
+                      onReopen={(rows) => markRepCommissionsPaid(rows, false)}
+                    />
                   </div>
                 )
               })()}

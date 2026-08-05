@@ -49,6 +49,47 @@ async function sync({ existing = [], paid = 0, overrides = [] } = {}) {
   return { result, captured }
 }
 
+describe('a bonus counts the whole job, not one pay period', () => {
+  // Payroll used to hand this the period-scoped time_clock query, so a job
+  // worked across two pay periods only counted the hours inside the selected
+  // one. Actual hours came out low, saved hours came out high, and the bonus
+  // overpaid. 63 of 142 unpaid ledger rows were wrong before the fix — worst
+  // case 24.39 hours recorded against 85.28 worked, carrying $1,166.93. It is
+  // also why "I changed the hours and the bonus didn't move" kept recurring:
+  // the changed hours sat outside the window.
+  const JULY = { id: 's-jul', employee_id: 7, job_id: 900, hours: 6, date: '2026-07-20', clock_in: '2026-07-20T14:00:00Z', clock_out: '2026-07-20T20:00:00Z' }
+  const AUGUST = { id: 's-aug', employee_id: 7, job_id: 900, hours: 3, date: '2026-08-03', clock_in: '2026-08-03T14:00:00Z', clock_out: '2026-08-03T17:00:00Z' }
+
+  const syncWith = async (rows) => {
+    const { client, captured } = fakeSupabase([])
+    await syncJobBonuses({
+      supabase: client, companyId: 3,
+      jobs: [JOB], timeClockRows: rows, employees: EMPLOYEES, skillLevels: [],
+      payrollConfig: CFG,
+      verifiedJobIds: new Set(),
+      jobPaymentStatus: new Map([[900, { paid: 5000, total: 5000 }]]),
+      bonusOverrides: [],
+      verificationExemptUnits: EXEMPT,
+    })
+    return captured
+  }
+
+  it('sums every punch on the job, across periods', async () => {
+    const both = await syncWith([JULY, AUGUST])
+    expect(both).toHaveLength(1)
+    expect(both[0].actual_hours).toBeCloseTo(9, 2)   // 6 + 3, not 6
+  })
+
+  it('pays less than the truncated view would have', async () => {
+    // The old behaviour: only July's 6h visible against 10h allotted.
+    const julyOnly = await syncWith([JULY])
+    const whole = await syncWith([JULY, AUGUST])
+    expect(julyOnly[0].actual_hours).toBeCloseTo(6, 2)
+    expect(whole[0].saved_hours).toBeLessThan(julyOnly[0].saved_hours)
+    expect(whole[0].amount).toBeLessThan(julyOnly[0].amount)
+  })
+})
+
 describe('money-in flips pending to accrued', () => {
   it('is pending while the customer has not paid', async () => {
     const { result, captured } = await sync({ paid: 0 })
