@@ -1,81 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Same logic as src/lib/materialLaborSplit.js — duplicated here because edge
-// functions can't easily share modules with the React app.
-function computeMaterialLaborSplit(
-  lines: Array<{ item_id: number | null; line_total: number | null }>,
-  components: Array<{ parent_product_id: number; component_product_id: number; quantity: number }>,
-  products: Array<{ id: number; cost: number | null; material_or_labor: string | null }>,
-) {
-  const productMap = new Map(products.map((p) => [p.id, p]));
-  const componentsByParent = new Map<number, typeof components>();
-  for (const c of components) {
-    const arr = componentsByParent.get(c.parent_product_id) || [];
-    arr.push(c);
-    componentsByParent.set(c.parent_product_id, arr);
-  }
+import { resolveMatLabSplit, buildSummaryRows } from "../_shared/matLabCore.ts";
 
-  function classifyLine(itemId: number | null): { materialCost: number; laborCost: number; totalCost: number; unclassified: boolean } {
-    const result = { materialCost: 0, laborCost: 0, totalCost: 0, unclassified: false };
-    if (!itemId) { result.unclassified = true; return result; }
-    const product = productMap.get(itemId);
-    const children = componentsByParent.get(itemId) || [];
-    if (children.length === 0) {
-      if (!product) { result.unclassified = true; return result; }
-      const cost = Number(product.cost) || 0;
-      if (product.material_or_labor === 'material') result.materialCost = cost;
-      else if (product.material_or_labor === 'labor') result.laborCost = cost;
-      else result.unclassified = true;
-      result.totalCost = cost;
-      return result;
-    }
-    for (const c of children) {
-      const sub = productMap.get(c.component_product_id);
-      if (!sub) { result.unclassified = true; continue; }
-      const subCost = (Number(sub.cost) || 0) * (Number(c.quantity) || 1);
-      if (sub.material_or_labor === 'material') result.materialCost += subCost;
-      else if (sub.material_or_labor === 'labor') result.laborCost += subCost;
-      else {
-        const sub2 = classifyLine(c.component_product_id);
-        if (sub2.unclassified) result.unclassified = true;
-        result.materialCost += sub2.materialCost * (Number(c.quantity) || 1);
-        result.laborCost += sub2.laborCost * (Number(c.quantity) || 1);
-      }
-    }
-    result.totalCost = result.materialCost + result.laborCost;
-    return result;
-  }
-
-  let materials = 0, includedTotal = 0, fallbackLineCount = 0;
-  for (const line of lines) {
-    const lineTotal = Number(line.line_total) || 0;
-    if (lineTotal === 0) continue;
-    includedTotal += lineTotal;
-    const breakdown = classifyLine(line.item_id);
-    if (breakdown.unclassified || breakdown.totalCost === 0) {
-      materials += lineTotal * 0.7;
-      fallbackLineCount++;
-    } else {
-      materials += lineTotal * (breakdown.materialCost / breakdown.totalCost);
-    }
-  }
-  // Residual rounding: round materials, derive labor by subtraction so
-  // materials + labor always equals the rounded line total (rounding both
-  // halves independently drifted a cent — keep in sync with
-  // src/lib/materialLaborSplit.js).
-  const round2 = (n: number) => Math.round(n * 100) / 100;
-  const roundedTotal = round2(includedTotal);
-  const roundedMaterials = round2(materials);
-  const roundedLabor = Math.max(0, round2(roundedTotal - roundedMaterials));
-  return {
-    materials: roundedMaterials,
-    labor: roundedLabor,
-    total: round2(roundedMaterials + roundedLabor),
-    fallbackLineCount,
-    totalLineCount: lines.length,
-  };
-}
+// The Material/Labor rule lives in _shared/matLabCore.ts, imported by both
+// this function and the React app (via src/lib/materialLaborSplit.js). It was
+// previously hand-copied here under a comment reading "keep the two in sync";
+// they did not stay in sync, which is why Alayda kept reporting the summary
+// invoice showing unsplit descriptions.
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -283,51 +215,55 @@ serve(async (req) => {
           (document as Record<string, unknown>).linked_utility_invoice = linkedU;
         }
 
-        // Manual Parts/Labor override wins over the computed split — and a
-        // set override means the user wants the breakdown shown even when
-        // no utility invoice is linked. Mirrors resolveMatLabSplit in
-        // src/lib/materialLaborSplit.js; keep the two in sync.
+        // A manual Parts/Labor override wins over the computed split, and a
+        // set override means the breakdown should show even with no utility
+        // invoice linked. resolveMatLabSplit in _shared/matLabCore.ts is the
+        // one place that rule lives now.
         const hasManualSplit = inv.parts_total_override != null && inv.labor_total_override != null;
-        if (hasManualSplit) {
-          const round2 = (n: number) => Math.round(n * 100) / 100;
-          const materials = round2(Number(inv.parts_total_override) || 0);
-          const labor = round2(Number(inv.labor_total_override) || 0);
-          (document as Record<string, unknown>).material_labor_split = {
-            materials,
-            labor,
-            total: round2(materials + labor),
-            fallbackLineCount: 0,
-            totalLineCount: 0,
-            source: 'manual',
-          };
-        } else if (linkedU) {
+        let splitLines: Array<{ item_id: number | null; line_total: number | null }> = [];
+        let splitComps: Array<{ parent_product_id: number; component_product_id: number; quantity: number }> = [];
+        let splitProds: Array<{ id: number; cost: number | null; material_or_labor: string | null }> = [];
+
+        if (!hasManualSplit && linkedU) {
           const { data: lines } = await supabase
             .from('invoice_lines')
             .select('item_id, line_total, quantity')
             .eq('invoice_id', inv.id);
           if (lines && lines.length > 0) {
+            splitLines = lines as typeof splitLines;
             const itemIds = [...new Set(lines.map((l) => l.item_id).filter(Boolean))];
             if (itemIds.length > 0) {
               const { data: comps } = await supabase
                 .from('product_components')
                 .select('parent_product_id, component_product_id, quantity')
                 .in('parent_product_id', itemIds);
+              splitComps = (comps || []) as typeof splitComps;
               const subIds = [
-                ...new Set([
-                  ...itemIds,
-                  ...(comps || []).map((c) => c.component_product_id),
-                ]),
+                ...new Set([...itemIds, ...(comps || []).map((c) => c.component_product_id)]),
               ];
               const { data: prods } = await supabase
                 .from('products_services')
                 .select('id, cost, material_or_labor')
                 .in('id', subIds);
-              (document as Record<string, unknown>).material_labor_split = computeMaterialLaborSplit(
-                lines as Array<{ item_id: number | null; line_total: number | null }>,
-                (comps || []) as Array<{ parent_product_id: number; component_product_id: number; quantity: number }>,
-                (prods || []) as Array<{ id: number; cost: number | null; material_or_labor: string | null }>,
-              );
+              splitProds = (prods || []) as typeof splitProds;
             }
+          }
+        }
+
+        if (hasManualSplit || splitLines.length > 0) {
+          (document as Record<string, unknown>).material_labor_split =
+            resolveMatLabSplit(inv, splitLines, splitComps, splitProds);
+
+          // THE FIX Alayda keeps reporting. The totals object above was always
+          // right; the customer never saw it, because line_items still carried
+          // the raw scope text ("Offices, Conference Room, Hall, Restrooms…").
+          // On a summary-format invoice the customer is supposed to see two
+          // rows — Material and Labor — so replace the lines with them.
+          if (inv.summary_format) {
+            const summaryRows = buildSummaryRows(inv, splitLines, splitComps, splitProds);
+            // Empty means there was nothing to split; keep the real lines
+            // rather than showing the customer two zero rows.
+            if (summaryRows.length > 0) lineItems = summaryRows;
           }
         }
       }

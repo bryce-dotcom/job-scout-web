@@ -11,7 +11,7 @@ import { toast } from '../lib/toast'
 import { jsPDF } from 'jspdf'
 import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
-import { resolveMatLabSplit, splitLinePartsLabor } from '../lib/materialLaborSplit'
+import { resolveMatLabSplit, splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
 import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
@@ -1323,14 +1323,17 @@ export default function InvoiceDetail() {
       doc.text('Amount', rightEdge - 4, y, { align: 'right' })
       y += 8
 
-      // Two rows: Parts + Labor
+      // Two rows: Material + Labor. The word comes from SUMMARY_ROW_LABELS so
+      // this PDF, the utility copy and the customer portal cannot drift apart
+      // again — this surface said "Parts" while the utility copy said
+      // "Material", which is the mismatch Alayda kept reporting.
       doc.setTextColor(0)
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(11)
-      doc.text('Parts', margin + 4, y)
+      doc.text(SUMMARY_ROW_LABELS.materials, margin + 4, y)
       doc.text(formatCurrency(partsTotal), rightEdge - 4, y, { align: 'right' })
       y += lineHeight + 2
-      doc.text('Labor', margin + 4, y)
+      doc.text(SUMMARY_ROW_LABELS.labor, margin + 4, y)
       doc.text(formatCurrency(laborTotal), rightEdge - 4, y, { align: 'right' })
       y += 6
 
@@ -3105,10 +3108,10 @@ export default function InvoiceDetail() {
                   display: 'flex', flexDirection: 'column', gap: '8px',
                 }}>
                   <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Parts / Labor Override (Summary PDF)
+                    {SUMMARY_ROW_LABELS.materials} / {SUMMARY_ROW_LABELS.labor} Override (Summary PDF)
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
-                    <span style={{ color: theme.textSecondary }}>Parts Total</span>
+                    <span style={{ color: theme.textSecondary }}>{SUMMARY_ROW_LABELS.materials} Total</span>
                     <input
                       type="number"
                       step="0.01"

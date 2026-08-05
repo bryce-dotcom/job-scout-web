@@ -160,3 +160,68 @@ describe('empty and junk input', () => {
     expect(r.total).toBeCloseTo(100, 2)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────
+// Drift guard.
+//
+// This rule used to exist twice — here, and hand-copied inside
+// get-portal-document under a comment reading "keep the two in sync". They
+// did not, which is why Alayda reported the summary invoice showing unsplit
+// descriptions over and over: each fix corrected one surface. The app now
+// imports the same file the edge function does, and these tests assert the
+// two entry points are literally the same function.
+// ─────────────────────────────────────────────────────────────────────────
+import * as core from '../../supabase/functions/_shared/matLabCore.ts'
+import { buildSummaryRows, SUMMARY_ROW_LABELS } from './materialLaborSplit'
+
+describe('the app and the edge function cannot drift apart', () => {
+  it('exposes the identical function objects, not copies', () => {
+    expect(resolveMatLabSplit).toBe(core.resolveMatLabSplit)
+    expect(computeMaterialLaborSplit).toBe(core.computeMaterialLaborSplit)
+    expect(buildSummaryRows).toBe(core.buildSummaryRows)
+  })
+
+  it('agrees on a real invoice through both import paths', () => {
+    // INV-MSG82KFQ (id 32714): manual override 10182.92 + 4364.11 = 14547.03.
+    const invoice = { parts_total_override: 10182.92, labor_total_override: 4364.11 }
+    const viaApp = resolveMatLabSplit(invoice, [], [], [])
+    const viaCore = core.resolveMatLabSplit(invoice, [], [], [])
+    expect(viaApp).toEqual(viaCore)
+    expect(viaApp.materials).toBe(10182.92)
+    expect(viaApp.labor).toBe(4364.11)
+    expect(viaApp.total).toBe(14547.03)
+  })
+})
+
+describe('the two rows the customer actually sees', () => {
+  const invoice = { parts_total_override: 10182.92, labor_total_override: 4364.11 }
+
+  it('says Material and Labor — the words Alayda asked for', () => {
+    const rows = buildSummaryRows(invoice, [], [], [])
+    expect(rows.map(r => r.description)).toEqual(['Material', 'Labor'])
+    // Never "Parts": the customer PDF said Parts while the utility copy said
+    // Material, and that mismatch is the complaint.
+    expect(rows.map(r => r.description)).not.toContain('Parts')
+    expect(SUMMARY_ROW_LABELS.materials).toBe('Material')
+  })
+
+  it('reconciles to the invoice total', () => {
+    const rows = buildSummaryRows(invoice, [], [], [])
+    expect(rows.reduce((s, r) => s + r.line_total, 0)).toBeCloseTo(14547.03, 2)
+  })
+
+  it('falls back to the real lines rather than showing two zero rows', () => {
+    // An invoice with nothing to split must keep its own line items —
+    // replacing them with Material $0 / Labor $0 would be worse than the bug.
+    expect(buildSummaryRows({}, [], [], [])).toEqual([])
+    expect(buildSummaryRows(null, null, null, null)).toEqual([])
+  })
+
+  it('builds the rows from the computed split when there is no override', () => {
+    const lines = [{ item_id: 1, line_total: 100 }]
+    const products = [{ id: 1, cost: 10, material_or_labor: 'material' }]
+    const rows = buildSummaryRows({}, lines, [], products)
+    expect(rows[0].line_total).toBeCloseTo(100, 2)
+    expect(rows[1].line_total).toBeCloseTo(0, 2)
+  })
+})

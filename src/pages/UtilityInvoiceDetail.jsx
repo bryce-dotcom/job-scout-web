@@ -9,7 +9,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { jsPDF } from 'jspdf'
 import { toast } from '../lib/toast'
-import { splitLinePartsLabor } from '../lib/materialLaborSplit'
+import { splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../lib/materialLaborSplit'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -884,7 +884,9 @@ export default function UtilityInvoiceDetail() {
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', backgroundColor: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
-                  <span style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Material</span>
+                  {/* Wording comes from SUMMARY_ROW_LABELS so this copy and the
+                      customer's cannot drift apart again. */}
+                  <span style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{SUMMARY_ROW_LABELS.materials}</span>
                   {isEditing ? (
                     <input
                       type="number"
