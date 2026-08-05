@@ -56,6 +56,19 @@ export function downPaymentEffect(job) {
     cashReceived: isDiscount ? 0 : amount,
     marginCost: isDiscount ? amount : 0,
     isDiscount,
+
+    // HOW the credit reaches the customer's balance. Exactly one of these is
+    // non-zero, because applying both would credit the same money twice.
+    //
+    //   jobscout — a discount, so it belongs in the invoice's deduction. No
+    //              cash exists, so it must never become a payment row or it
+    //              would be counted as revenue nobody paid.
+    //   customer — real cash, so it belongs in the payments table where
+    //              cash-basis revenue is computed. Putting it in the
+    //              deduction instead would reduce the balance correctly but
+    //              leave the money out of revenue entirely.
+    discountCredit: isDiscount ? amount : 0,
+    paymentAmount: isDiscount ? 0 : amount,
   }
 }
 

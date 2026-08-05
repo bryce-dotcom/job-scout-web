@@ -786,19 +786,51 @@ function JobDetailInner() {
     // already inside discount_applied survives. Switching only the funding
     // checkbox changes nothing here: both kinds credit the customer the same,
     // and which one it was must never reach the invoice.
-    if (amount != null && eff.customerCredit !== previousAmount) {
-      const delta = eff.customerCredit - previousAmount
-      const target = jobInvoices.find(i =>
-        i.invoice_type !== 'deposit' && i.payment_status !== 'Paid' && i.payment_status !== 'Void')
-      if (target) {
-        const nextDiscount = Math.max(0, (parseFloat(target.discount_applied) || 0) + delta)
-        const { error: invErr } = await supabase.from('invoices')
-          .update({ discount_applied: nextDiscount || null, updated_at: new Date().toISOString() })
-          .eq('id', target.id)
-        if (invErr) toast.error('Down payment saved, but the invoice could not be updated: ' + invErr.message)
-        else await fetchJobData()
-      }
+    const prevEff = downPaymentEffect(job)
+    const target = jobInvoices.find(i =>
+      i.invoice_type !== 'deposit' && i.payment_status !== 'Paid' && i.payment_status !== 'Void')
+
+    // The DISCOUNT half only. Changing the amount or flipping the checkbox
+    // both move it, because switching to customer-funded must take the credit
+    // back OUT of the deduction — the payment row carries it from then on.
+    const discountDelta = eff.discountCredit - prevEff.discountCredit
+    if (target && Math.abs(discountDelta) > 0.005) {
+      const nextDiscount = Math.max(0, (parseFloat(target.discount_applied) || 0) + discountDelta)
+      const { error: invErr } = await supabase.from('invoices')
+        .update({ discount_applied: nextDiscount || null, updated_at: new Date().toISOString() })
+        .eq('id', target.id)
+      if (invErr) toast.error('Down payment saved, but the invoice could not be updated: ' + invErr.message)
     }
+
+    // The CASH half. A customer's cheque is real money and cash-basis revenue
+    // reads the payments table, so without a row here the balance would look
+    // right while the revenue simply went missing. is_deposit marks it as
+    // taken before invoicing; invoice_id stays null when no invoice exists yet
+    // and cashRevenue counts it either way.
+    const dpNote = `Down payment taken on ${job.job_id || `job ${id}`}`
+    const { data: existingDp } = await supabase.from('payments')
+      .select('id, amount, invoice_id').eq('company_id', companyId).eq('job_id', parseInt(id))
+      .eq('is_deposit', true).ilike('notes', 'Down payment taken on%').maybeSingle()
+
+    if (eff.paymentAmount > 0) {
+      const row = {
+        company_id: companyId, job_id: parseInt(id), customer_id: job.customer_id || null,
+        invoice_id: existingDp?.invoice_id ?? target?.id ?? null,
+        amount: eff.paymentAmount, date: next.down_payment_date || new Date().toISOString().slice(0, 10),
+        method: next.down_payment_method || 'Check', status: 'Completed',
+        is_deposit: true, notes: dpNote,
+      }
+      const { error: payErr } = existingDp
+        ? await supabase.from('payments').update(row).eq('id', existingDp.id)
+        : await supabase.from('payments').insert(row)
+      if (payErr) toast.error('Down payment saved, but it was not recorded as revenue: ' + payErr.message)
+    } else if (existingDp) {
+      // Flipped to JobScout-funded, or cleared. No cash exists, so the payment
+      // row must go — leaving it would book revenue nobody ever paid.
+      await supabase.from('payments').delete().eq('id', existingDp.id)
+    }
+
+    await fetchJobData()
     if (eff.amount > 0) {
       toast.success(eff.isDiscount
         ? `Down payment ${formatCurrency(eff.amount)} — covered by JobScout, comes off this job's profit`
@@ -1659,8 +1691,12 @@ function JobDetailInner() {
       // or one JobScout covered. It reduces the balance exactly like a deposit
       // invoice does; the difference between the two kinds is internal and
       // never reaches this document.
+      // Only the JobScout-funded half belongs in the deduction. A customer's
+      // cheque is recorded as a PAYMENT instead, so it reduces the balance and
+      // lands in cash-basis revenue. Counting it here as well would credit the
+      // same money twice.
       const downPayment = downPaymentEffect(job)
-      const depositTotal = depositInvoiceTotal + downPayment.customerCredit
+      const depositTotal = depositInvoiceTotal + downPayment.discountCredit
       const remainingCustomerOOP = Math.max(0, customerOOP - depositTotal)
       const parentDepositId = depositInvoices[0]?.id || null
 
@@ -1703,7 +1739,7 @@ function JobDetailInner() {
       // Neutral wording on purpose. Whether the customer wrote the cheque or
       // JobScout covered it is internal; the customer document says only that
       // a down payment was credited.
-      if (downPayment.customerCredit > 0) descBits.push(`$${Math.round(downPayment.customerCredit).toLocaleString()} down payment`)
+      if (downPayment.discountCredit > 0) descBits.push(`$${Math.round(downPayment.discountCredit).toLocaleString()} down payment`)
       const description = `Lighting Project${depositTotal > 0 ? ' Balance' : ''} — ${descBits.join(', ')}`
 
       const { data: invoice, error } = await supabase

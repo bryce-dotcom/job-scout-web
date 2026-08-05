@@ -39,6 +39,32 @@ describe('but they are not the same money', () => {
   })
 })
 
+describe('the credit reaches the balance exactly once', () => {
+  // Applying both a discount AND a payment for the same down payment credits
+  // the customer twice. Exactly one route must carry it.
+  it('routes a JobScout-funded one through the invoice deduction only', () => {
+    const e = downPaymentEffect(jobscoutPaid)
+    expect(e.discountCredit).toBe(2500)
+    expect(e.paymentAmount).toBe(0)
+  })
+
+  it('routes a customer-funded one through payments only', () => {
+    // Putting it in the deduction instead would reduce the balance correctly
+    // but leave the cash out of revenue entirely.
+    const e = downPaymentEffect(customerPaid)
+    expect(e.paymentAmount).toBe(2500)
+    expect(e.discountCredit).toBe(0)
+  })
+
+  it('never has both routes carrying money', () => {
+    for (const job of [customerPaid, jobscoutPaid, { down_payment_amount: 900 }]) {
+      const e = downPaymentEffect(job)
+      expect(Math.min(e.discountCredit, e.paymentAmount)).toBe(0)
+      expect(e.discountCredit + e.paymentAmount).toBe(e.customerCredit)
+    }
+  })
+})
+
 describe('a missing flag must not invent a discount', () => {
   it('treats an unflagged down payment as customer-paid', () => {
     // Defaulting the other way would silently understate revenue on every
