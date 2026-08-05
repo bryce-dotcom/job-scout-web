@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitOpenPunches, isAbandoned, hoursOpen, MAX_SHIFT_HOURS } from './openShifts'
+import { splitOpenPunches, isAbandoned, hoursOpen, MAX_SHIFT_HOURS, shouldQueueClockOut } from './openShifts'
 
 // The case that broke the night crew: clocked in yesterday evening, still
 // working after midnight. The old calendar-day rule dropped this punch.
@@ -66,6 +66,35 @@ describe('the day crew must not change', () => {
     expect(active).toBeNull()
     expect(abandoned).toEqual([])
     expect(duplicates).toEqual([])
+  })
+})
+
+describe('deciding whether a failed clock-out can wait for signal', () => {
+  // Cameron, Aug 5: full signal, the server rejected the write, and the app
+  // told him it was saved and he could put his phone away. The queue retried
+  // forever, the timer came back, and he had to ask for a manual adjustment.
+  it('never queues a server rejection, however it is worded', () => {
+    expect(shouldQueueClockOut({ code: '42501', message: 'permission denied' })).toBe(false)
+    expect(shouldQueueClockOut({ code: 'PGRST204', message: 'column does not exist' })).toBe(false)
+    // Even if a rejection happens to mention the network, a code means the
+    // server answered.
+    expect(shouldQueueClockOut({ code: '23514', message: 'connection check failed' })).toBe(false)
+  })
+
+  it('queues when the device is actually offline', () => {
+    expect(shouldQueueClockOut({ code: '42501' }, { online: false })).toBe(true)
+    expect(shouldQueueClockOut(null, { online: false })).toBe(true)
+  })
+
+  it('queues a codeless transport failure', () => {
+    expect(shouldQueueClockOut({ message: 'Failed to fetch' })).toBe(true)
+    expect(shouldQueueClockOut({ message: 'network timeout' })).toBe(true)
+  })
+
+  it('does not queue an unrecognised codeless error', () => {
+    // Better to show something odd than to promise it was saved.
+    expect(shouldQueueClockOut({ message: 'something strange happened' })).toBe(false)
+    expect(shouldQueueClockOut(undefined)).toBe(false)
   })
 })
 

@@ -19,6 +19,25 @@
 /** Past this many hours an open punch is a missed clock-out, not a shift. */
 export const MAX_SHIFT_HOURS = 18
 
+/**
+ * Is a failed clock-out worth handing to the offline queue, or must it be
+ * shown to the tech?
+ *
+ * Queueing EVERY failure is what burned Cameron: he had full signal, the
+ * server rejected the write, and the app told him it was saved and he could
+ * put his phone away. The queue then retried something that could never
+ * succeed. Waiting for signal only helps when signal is the problem.
+ *
+ * A PostgREST error carries a `code` — that is the server having considered
+ * the request and refused it (RLS, constraint, validation). Never queue those.
+ */
+export function shouldQueueClockOut(error, { online = true } = {}) {
+  if (online === false) return true              // genuinely offline
+  if (error?.code) return false                  // server answered, and said no
+  const msg = String(error?.message || '')
+  return /fetch|network|timeout|connection|offline/i.test(msg)
+}
+
 export function hoursOpen(entry, now = new Date()) {
   const started = new Date(entry?.clock_in ?? NaN).getTime()
   if (!Number.isFinite(started)) return Infinity

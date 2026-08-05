@@ -21,7 +21,7 @@ import VictorVerify from './agents/victor/VictorVerify'
 import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours } from '../lib/bonusCalc'
 import { computeAllottedHours } from '../lib/allottedHours'
 import { verificationRequiredFor, anyUnitRequiresVerification, exemptUnitsFromPayrollConfig } from '../lib/verificationPolicy'
-import { splitOpenPunches } from '../lib/openShifts'
+import { splitOpenPunches, shouldQueueClockOut } from '../lib/openShifts'
 
 // Jobs a tech must not be able to clock into: the work is finished and, in
 // the Invoiced/Closed cases, already billed — so time logged against them is
@@ -1138,11 +1138,35 @@ export default function FieldScout() {
       // and could not be diagnosed from a screenshot. Log it.
       console.error('[FieldScout] clock-out failed after 3 attempts:', lastErr?.message || lastErr, lastErr)
 
-      // Three tries over ~1.8s is nothing on a bad connection. Cameron hit
-      // this on 2 bars with a 1% battery, and telling a tech on a roof to
-      // "tap Clock Out again" is not a fix — the shift is already over.
-      // Hand it to the offline queue so it lands when signal returns, with
-      // the ORIGINAL clock-out moment, not whenever the phone reconnects.
+      // ONLY queue a genuine connectivity failure.
+      //
+      // This used to queue EVERY failure and tell the tech "saving as soon as
+      // you have signal — you can put your phone away." Cameron had full
+      // signal: the server was rejecting the write, so the queue retried
+      // something that could never succeed, he was told it was handled, and
+      // the timer reappeared because fetchEntries re-read the still-open
+      // punch. He watched it fail and had to ask for a manual adjustment.
+      //
+      // A server rejection (RLS, constraint, validation — anything with a
+      // PostgREST code) is not going to fix itself by waiting for signal, so
+      // it must be shown, not swallowed.
+      const queueable = shouldQueueClockOut(lastErr, {
+        online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
+      })
+
+      if (!queueable) {
+        const hhmm = clockOut.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        toast.error(
+          `Clock-out at ${hhmm} was REJECTED by the server: ${lastErr?.message || 'unknown error'}` +
+          `${lastErr?.code ? ` (${lastErr.code})` : ''}. Your time is not saved — show this to an admin.`,
+          { duration: 20000 },
+        )
+        // Leave the timer running. It is the truth: they are still clocked in.
+        setClockingOut(false)
+        setGpsStatus(null)
+        return
+      }
+
       try {
         await syncQueue.enqueue({
           table: 'time_clock',
@@ -1156,7 +1180,10 @@ export default function FieldScout() {
         setActiveEntry(null)
         setClockingOut(false)
         setGpsStatus(null)
-        await fetchEntries()
+        // Deliberately NOT refetching. The punch is still open in the database
+        // until the queue drains, so re-reading it puts "Currently Working"
+        // straight back on screen — which is what Cameron saw underneath a
+        // toast telling him he could put his phone away.
         return
       } catch (queueErr) {
         console.error('[FieldScout] could not queue the clock-out:', queueErr)
