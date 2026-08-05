@@ -1586,25 +1586,38 @@ function JobDetailInner() {
       const projectDiscountAmt = parseFloat(job.discount) || 0
       let projectCost, customerIncentive, customerOOP
 
+      // "Give Me" adjustment — the rep trading some of the rebate for a lower
+      // customer price. Lives on the audit and applies whichever source the
+      // money numbers come from.
+      let additionalOOP = 0
       if (audit) {
-        // Parse the notes JSON to get Give Me adjustments
-        let additionalOOP = 0
         try {
           const pd = JSON.parse(audit.notes || '{}')
           additionalOOP = pd.giveMe?.additionalOOP || 0
         } catch (_) { /* notes may not be JSON */ }
-
-        projectCost = audit.est_project_cost || 0
-        customerIncentive = (audit.estimated_rebate || 0) - additionalOOP
-        customerOOP = (audit.net_cost || 0) + additionalOOP
-      } else {
-        // No audit — calculate from job data directly
-        const jobTotal = lineItems.reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0)
-          || parseFloat(job.job_total) || 0
-        projectCost = jobTotal
-        customerIncentive = incentiveAmt
-        customerOOP = jobTotal - incentiveAmt
       }
+
+      // THE JOB WINS OVER THE AUDIT.
+      //
+      // The audit is the original walkthrough ESTIMATE; the job is what was
+      // actually sold and what the user edits. This branched on `if (audit)`
+      // and took est_project_cost / estimated_rebate whenever an audit
+      // existed, so every invoice was created from the estimate and edits to
+      // the job never reached it. JOB-MQZGV1FN: the job said $18,203.80 with a
+      // $13,652.85 incentive, and the invoice was still born saying $17,810.36
+      // and $13,110 — the audit's numbers from the original walkthrough.
+      //
+      // Fall back to the audit only when the job has nothing to offer, which
+      // is the case for an invoice raised before any line items exist.
+      const lineTotal = lineItems.reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0)
+      const jobTotal = lineTotal || parseFloat(job.job_total) || 0
+
+      projectCost = jobTotal > 0 ? jobTotal : (parseFloat(audit?.est_project_cost) || 0)
+      const baseIncentive = incentiveAmt > 0 ? incentiveAmt : (parseFloat(audit?.estimated_rebate) || 0)
+
+      // Keep project = OOP + incentive true, so the invoice always reconciles.
+      customerIncentive = Math.max(0, baseIncentive - additionalOOP)
+      customerOOP = Math.max(0, projectCost - baseIncentive) + additionalOOP
 
       // Apply the rep's whole-project discount on top of whichever source
       // above produced the customer's share. Uniform across both branches —
