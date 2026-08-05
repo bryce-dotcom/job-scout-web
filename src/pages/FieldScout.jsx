@@ -21,6 +21,7 @@ import VictorVerify from './agents/victor/VictorVerify'
 import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours } from '../lib/bonusCalc'
 import { computeAllottedHours } from '../lib/allottedHours'
 import { verificationRequiredFor, anyUnitRequiresVerification, exemptUnitsFromPayrollConfig } from '../lib/verificationPolicy'
+import { splitOpenPunches } from '../lib/openShifts'
 
 // Jobs a tech must not be able to clock into: the work is finished and, in
 // the Invoiced/Closed cases, already billed — so time logged against them is
@@ -340,23 +341,37 @@ export default function FieldScout() {
       .gte('clock_in', todayStart.toISOString())
       .order('clock_in', { ascending: false })
 
-    if (data) {
-      setTodayEntries(data)
-      const active = data.find(e => !e.clock_out)
-      setActiveEntry(active || null)
-    }
-
-    // Prior-day dangling clock-ins: open (no clock_out) with a clock_in before
-    // today. These are missed clock-outs — surface them and flag for review so
-    // payroll corrects them instead of the hours silently vanishing.
-    const { data: stale } = await supabase
+    // Every open punch, regardless of what day it started. A shift that began
+    // at 9pm is still this tech's shift at 1am, but its clock_in is yesterday's
+    // date — the query above cannot see it. Reading the calendar day instead of
+    // elapsed time is what left the night crew with no Clock Out button.
+    const { data: openRows, error: openErr } = await supabase
       .from('time_clock')
-      .select('id, clock_in, clock_in_address, job_id, flagged_for_review')
+      .select('*')
       .eq('company_id', companyId)
       .eq('employee_id', currentEmployee.id)
       .is('clock_out', null)
-      .lt('clock_in', todayStart.toISOString())
       .order('clock_in', { ascending: false })
+
+    // A failed read is not evidence that nobody is on the clock. Keep the last
+    // known state rather than showing a working tech a Clock In button, which
+    // is how duplicate punches get created in the first place.
+    if (openErr) return
+
+    const { active, abandoned } = splitOpenPunches(openRows || [], new Date())
+    setActiveEntry(active || null)
+
+    if (data) {
+      // The shift in progress belongs on the list even when it started before
+      // midnight, or the tech sees a running timer for a shift shown nowhere.
+      const rows = active && !data.some(e => e.id === active.id) ? [active, ...data] : data
+      setTodayEntries(rows)
+    }
+
+    // What is left is a genuine missed clock-out. Surface and flag it so payroll
+    // corrects it instead of the hours silently vanishing — but never flag the
+    // shift someone is standing in the middle of.
+    const stale = abandoned
     if (stale && stale.length) {
       setStaleOpens(stale)
       // Flag any not-yet-flagged so they appear in the manager's review queue.
