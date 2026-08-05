@@ -36,6 +36,10 @@ Rules:
 - specs: the measurable facts a buyer cares about — wattage, lumens, efficacy,
   CCT, CRI, beam angle, voltage, IP/IK rating, lifetime, dimensions, weight,
   operating temperature, warranty, certifications. Use the sheet's own units.
+- Return AT MOST 25 spec rows, chosen for what decides a purchase. A sheet
+  covering a family must NOT emit one row per model: consolidate them, e.g.
+  {"label": "Lumens", "value": "10,640 - 33,440 lm depending on wattage"}.
+  Long per-model dumps overflow the reply and are unreadable on a proposal.
 - Omit a field entirely rather than guessing. An absent spec is fine; a wrong
   one ends up on a customer's proposal.
 - brand_terms must be EXHAUSTIVE. Anything that could identify the
@@ -68,12 +72,12 @@ serve(async (req) => {
       { feature: 'extract-product-specs', companyId: companyId ?? null },
       {
         model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
+        max_tokens: 8192,   // a truncated reply is invalid JSON; the big family sheets ran past 4096
         system: SYSTEM,
         messages: [
           {
             role: 'user',
-            content: `Extract the specifications for${productName ? ` "${productName}"` : ' this product'}. If the sheet covers a family of models, capture the specs that apply across the family and list per-model figures as separate spec rows.\n\nSPEC SHEET TEXT:\n"""\n${text.slice(0, 60000)}\n"""`,
+            content: `Extract the specifications for${productName ? ` "${productName}"` : ' this product'}. If the sheet covers a family of models, give the specs that apply across the family and express varying figures as a single range row.\n\nSPEC SHEET TEXT:\n"""\n${text.slice(0, 60000)}\n"""`,
           },
           // NO assistant prefill. claude-sonnet-4-6 rejects it outright:
           // "This model does not support assistant message prefill. The
