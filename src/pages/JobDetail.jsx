@@ -768,12 +768,37 @@ function JobDetailInner() {
     }
     if (fundedBy != null) patch.down_payment_funded_by = fundedBy
 
+    const previousAmount = parseFloat(job.down_payment_amount) || 0
+
     const { error } = await supabase.from('jobs').update(patch).eq('id', id)
     if (error) { toast.error('Could not save the down payment: ' + error.message); return }
     setJob(prev => ({ ...prev, ...patch }))
 
     const next = { ...job, ...patch }
     const eff = downPaymentEffect(next)
+
+    // Carry a CHANGED amount onto invoices that already exist, the same way
+    // the incentive does. Without this the down payment only ever applied to
+    // invoices created after it was entered, and editing it later silently
+    // left the customer's balance wrong.
+    //
+    // Delta against the previous amount, so a deposit credit or rep discount
+    // already inside discount_applied survives. Switching only the funding
+    // checkbox changes nothing here: both kinds credit the customer the same,
+    // and which one it was must never reach the invoice.
+    if (amount != null && eff.customerCredit !== previousAmount) {
+      const delta = eff.customerCredit - previousAmount
+      const target = jobInvoices.find(i =>
+        i.invoice_type !== 'deposit' && i.payment_status !== 'Paid' && i.payment_status !== 'Void')
+      if (target) {
+        const nextDiscount = Math.max(0, (parseFloat(target.discount_applied) || 0) + delta)
+        const { error: invErr } = await supabase.from('invoices')
+          .update({ discount_applied: nextDiscount || null, updated_at: new Date().toISOString() })
+          .eq('id', target.id)
+        if (invErr) toast.error('Down payment saved, but the invoice could not be updated: ' + invErr.message)
+        else await fetchJobData()
+      }
+    }
     if (eff.amount > 0) {
       toast.success(eff.isDiscount
         ? `Down payment ${formatCurrency(eff.amount)} — covered by JobScout, comes off this job's profit`

@@ -16,6 +16,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { reconcileInvoicePair, arReconciles } from '../src/lib/invoiceReconcile.js'
+import { downPaymentEffect } from '../src/lib/downPayment.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const env = Object.fromEntries(
@@ -42,7 +43,7 @@ async function all(table, select) {
 }
 
 const [jobs, invoices, utilities, lines] = await Promise.all([
-  all('jobs', 'id, job_id, job_total, utility_incentive'),
+  all('jobs', 'id, job_id, job_total, utility_incentive, down_payment_amount, down_payment_funded_by'),
   all('invoices', 'id, invoice_id, job_id, amount, discount_applied, invoice_type, payment_status, last_sent_at'),
   all('utility_invoices', 'id, job_id, amount, incentive_amount, project_cost, net_cost, payment_status'),
   all('invoice_lines', 'invoice_id, line_total'),
@@ -85,7 +86,12 @@ for (const job of jobs) {
   // A job with no total gives nothing to verify against, so it cannot be
   // auto-repaired either — JOB-MMTJN98Y would otherwise have had $11,285 of
   // AR written against a $0 job.
-  const target = Number(job.job_total) || 0
+  //
+  // A down payment is NOT receivable from anyone: if the customer paid it the
+  // money is already in, and if JobScout covered it it is a discount. Either
+  // way it comes off the expected AR, or every job carrying one looks broken.
+  const dp = downPaymentEffect(job)
+  const target = Math.max(0, (Number(job.job_total) || 0) - dp.customerCredit)
   if (target <= 0 || Math.abs(res.after.ar - target) > 0.01) {
     needsReview.push({ job, invoice, utility, res, target })
     continue
