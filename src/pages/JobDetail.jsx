@@ -4876,38 +4876,41 @@ function JobDetailInner() {
                   </div>
                 </div>
 
+                {/* Always visible. Hiding this until an amount was typed meant
+                    the choice looked like it didn't exist — the first thing
+                    Bryce hit. A rep needs to see that the two kinds differ
+                    BEFORE deciding what to enter. */}
+                <label
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px',
+                    fontSize: '13px', color: theme.textSecondary, cursor: 'pointer', minHeight: '32px',
+                  }}
+                  title="Internal only — never printed on the customer's invoice"
+                >
+                  <input
+                    type="checkbox"
+                    checked={job.down_payment_funded_by === FUNDED_BY_JOBSCOUT}
+                    onChange={(e) => saveDownPayment({
+                      fundedBy: e.target.checked ? FUNDED_BY_JOBSCOUT : FUNDED_BY_CUSTOMER,
+                    })}
+                    style={{ width: '17px', height: '17px', accentColor: '#4a7c59', cursor: 'pointer', flexShrink: 0 }}
+                  />
+                  <span>JobScout is covering this down payment</span>
+                </label>
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px', paddingLeft: '25px' }}>
+                  {job.down_payment_funded_by === FUNDED_BY_JOBSCOUT
+                    ? 'Discount — comes off this job’s profit, not counted as money collected.'
+                    : 'Money collected from the customer.'}
+                  {' '}The invoice shows a down payment credit either way; it never says which.
+                </div>
+
                 {(parseFloat(localDownPayment) || 0) > 0 && (
-                  <>
-                    <label
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px',
-                        fontSize: '13px', color: theme.textSecondary, cursor: 'pointer', minHeight: '32px',
-                      }}
-                      title="Internal only — never printed on the customer's invoice"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={job.down_payment_funded_by === FUNDED_BY_JOBSCOUT}
-                        onChange={(e) => saveDownPayment({
-                          fundedBy: e.target.checked ? FUNDED_BY_JOBSCOUT : FUNDED_BY_CUSTOMER,
-                        })}
-                        style={{ width: '17px', height: '17px', accentColor: '#4a7c59', cursor: 'pointer' }}
-                      />
-                      <span>JobScout is covering this down payment</span>
-                    </label>
-                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px', paddingLeft: '25px' }}>
-                      {job.down_payment_funded_by === FUNDED_BY_JOBSCOUT
-                        ? 'Treated as a discount — it comes off this job’s profit and is not counted as money collected.'
-                        : 'Treated as money collected from the customer.'}
-                      {' '}Either way the invoice just shows a down payment credit.
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '13px', color: '#4a7c59' }}>
-                      <span>Customer Still Owes</span>
-                      <span style={{ fontWeight: '700' }}>
-                        {formatCurrency(customerOutOfPocket({ projectTotal: subtotal, incentive, job }))}
-                      </span>
-                    </div>
-                  </>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '13px', color: '#4a7c59' }}>
+                    <span>Customer Still Owes</span>
+                    <span style={{ fontWeight: '700' }}>
+                      {formatCurrency(customerOutOfPocket({ projectTotal: subtotal, incentive, job }))}
+                    </span>
+                  </div>
                 )}
               </div>
             </div>
