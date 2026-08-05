@@ -15,6 +15,9 @@ import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { isLegacyNetShape } from '../lib/arHelpers'
 import { reconcileInvoicePair } from '../lib/invoiceReconcile'
 import {
+  downPaymentEffect, customerOutOfPocket, FUNDED_BY_CUSTOMER, FUNDED_BY_JOBSCOUT,
+} from '../lib/downPayment'
+import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
@@ -251,6 +254,9 @@ function JobDetailInner() {
   // Add Service Visit modal; "No" silently moves on.
   const [showScheduleFollowup, setShowScheduleFollowup] = useState(false)
   const [localIncentive, setLocalIncentive] = useState('')
+  // Down payment typed on the job. Local + onBlur, matching the incentive
+  // field, so the parent isn't updated on every keystroke.
+  const [localDownPayment, setLocalDownPayment] = useState('')
   const [localDiscount, setLocalDiscount] = useState('')
   const [discountMode, setDiscountMode] = useState('$')  // '$' = flat, '%' = percent of subtotal
 
@@ -422,6 +428,7 @@ function JobDetailInner() {
       setJob(jobData)
       setFormData(jobData)
       setLocalIncentive(jobData.utility_incentive || '')
+      setLocalDownPayment(jobData.down_payment_amount || '')
       setLocalDiscount(jobData.discount || '')
 
       // Parse assigned_team (comma-separated names) back to employee IDs for multi-select
@@ -744,6 +751,33 @@ function JobDetailInner() {
       )
     } catch (e) {
       toast.error('Incentive saved, but the invoices could not be updated: ' + (e?.message || e))
+    }
+  }
+
+  // Save the down payment. Amount and who funded it are saved the same way so
+  // there is one write path; the funded_by flag is INTERNAL and never reaches
+  // a customer document.
+  const saveDownPayment = async ({ amount, fundedBy } = {}) => {
+    const { toast } = await import('../lib/toast')
+    const patch = { updated_at: new Date().toISOString() }
+    if (amount != null) {
+      if (amount === (parseFloat(job.down_payment_amount) || 0)) return
+      patch.down_payment_amount = amount
+      // Clearing the amount clears the funding question with it.
+      if (!(amount > 0)) patch.down_payment_funded_by = FUNDED_BY_CUSTOMER
+    }
+    if (fundedBy != null) patch.down_payment_funded_by = fundedBy
+
+    const { error } = await supabase.from('jobs').update(patch).eq('id', id)
+    if (error) { toast.error('Could not save the down payment: ' + error.message); return }
+    setJob(prev => ({ ...prev, ...patch }))
+
+    const next = { ...job, ...patch }
+    const eff = downPaymentEffect(next)
+    if (eff.amount > 0) {
+      toast.success(eff.isDiscount
+        ? `Down payment ${formatCurrency(eff.amount)} — covered by JobScout, comes off this job's profit`
+        : `Down payment ${formatCurrency(eff.amount)} recorded as collected`)
     }
   }
 
@@ -1582,7 +1616,13 @@ function JobDetailInner() {
       // copayment invoice is strictly the balance due after the deposit.
       // Link the latest deposit via parent_invoice_id for traceability.
       const depositInvoices = jobInvoices.filter(i => i.invoice_type === 'deposit')
-      const depositTotal = depositInvoices.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
+      const depositInvoiceTotal = depositInvoices.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
+      // A down payment taken on the job itself — a cheque handed to the rep,
+      // or one JobScout covered. It reduces the balance exactly like a deposit
+      // invoice does; the difference between the two kinds is internal and
+      // never reaches this document.
+      const downPayment = downPaymentEffect(job)
+      const depositTotal = depositInvoiceTotal + downPayment.customerCredit
       const remainingCustomerOOP = Math.max(0, customerOOP - depositTotal)
       const parentDepositId = depositInvoices[0]?.id || null
 
@@ -1621,7 +1661,11 @@ function JobDetailInner() {
       const descBits = [`$${Math.round(projectCost).toLocaleString()} project`]
       if (projectDiscountAmt > 0) descBits.push(`$${Math.round(projectDiscountAmt).toLocaleString()} discount`)
       if (customerIncentive > 0) descBits.push(`$${Math.round(customerIncentive).toLocaleString()} incentive`)
-      if (depositTotal > 0) descBits.push(`$${Math.round(depositTotal).toLocaleString()} deposit credit`)
+      if (depositInvoiceTotal > 0) descBits.push(`$${Math.round(depositInvoiceTotal).toLocaleString()} deposit credit`)
+      // Neutral wording on purpose. Whether the customer wrote the cheque or
+      // JobScout covered it is internal; the customer document says only that
+      // a down payment was credited.
+      if (downPayment.customerCredit > 0) descBits.push(`$${Math.round(downPayment.customerCredit).toLocaleString()} down payment`)
       const description = `Lighting Project${depositTotal > 0 ? ' Balance' : ''} — ${descBits.join(', ')}`
 
       const { data: invoice, error } = await supabase
@@ -4804,6 +4848,68 @@ function JobDetailInner() {
                   <span style={{ fontWeight: '600' }}>{formatCurrency(outOfPocket)}</span>
                 </div>
               )}
+
+              {/* Down payment. Recorded straight on the job because a rep
+                  often leaves with a cheque before any invoice exists.
+                  Who funded it is INTERNAL — the customer's invoice shows the
+                  credit and never says which. */}
+              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid rgba(74,124,89,0.25)` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ color: '#4a7c59', fontSize: '14px', fontWeight: '600' }}>Down Payment</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ color: '#4a7c59', fontSize: '14px' }}>$</span>
+                    <input
+                      type="number"
+                      value={localDownPayment}
+                      onChange={(e) => setLocalDownPayment(e.target.value)}
+                      onBlur={() => saveDownPayment({ amount: parseFloat(localDownPayment) || 0 })}
+                      placeholder="0.00"
+                      step="0.01"
+                      min="0"
+                      style={{
+                        width: '110px', padding: '6px 10px', textAlign: 'right',
+                        border: `1px solid rgba(74,124,89,0.3)`, borderRadius: '6px',
+                        fontSize: '14px', color: '#4a7c59', fontWeight: '600',
+                        backgroundColor: theme.bgCard,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {(parseFloat(localDownPayment) || 0) > 0 && (
+                  <>
+                    <label
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px',
+                        fontSize: '13px', color: theme.textSecondary, cursor: 'pointer', minHeight: '32px',
+                      }}
+                      title="Internal only — never printed on the customer's invoice"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={job.down_payment_funded_by === FUNDED_BY_JOBSCOUT}
+                        onChange={(e) => saveDownPayment({
+                          fundedBy: e.target.checked ? FUNDED_BY_JOBSCOUT : FUNDED_BY_CUSTOMER,
+                        })}
+                        style={{ width: '17px', height: '17px', accentColor: '#4a7c59', cursor: 'pointer' }}
+                      />
+                      <span>JobScout is covering this down payment</span>
+                    </label>
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px', paddingLeft: '25px' }}>
+                      {job.down_payment_funded_by === FUNDED_BY_JOBSCOUT
+                        ? 'Treated as a discount — it comes off this job’s profit and is not counted as money collected.'
+                        : 'Treated as money collected from the customer.'}
+                      {' '}Either way the invoice just shows a down payment credit.
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '13px', color: '#4a7c59' }}>
+                      <span>Customer Still Owes</span>
+                      <span style={{ fontWeight: '700' }}>
+                        {formatCurrency(customerOutOfPocket({ projectTotal: subtotal, incentive, job }))}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
