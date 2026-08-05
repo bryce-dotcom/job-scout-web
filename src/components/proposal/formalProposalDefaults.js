@@ -3,6 +3,7 @@
 // Placeholders are replaced at render time by buildDefaultTerms().
 
 import { getCustomerPrimary } from '../../lib/customerDisplay'
+import { publicTitle, buildDenyTerms } from '../../lib/specScrub'
 
 const DEFAULT_LEGAL_TEMPLATE = `# Proposal Agreement
 
@@ -81,7 +82,12 @@ function buildScopeFromLineItems(lineItems = [], summary = '') {
   }
   if (lineItems.length) {
     for (const li of lineItems) {
-      const name = li.item_name || li.description || 'Item'
+      // publicTitle, because this list goes into the CONTRACT. Estimate 4484's
+      // signed terms read "- MES T8 4ft Tube W/ Lift — qty 22": the scope was
+      // built from raw product names, so the manufacturer ended up in the
+      // customer's legal document while every other surface hid it.
+      const deny = buildDenyTerms(li.item, li.item?.datasheet_json?.brand_terms || [])
+      const name = publicTitle(li.item_name || li.description || 'Item', deny)
       const qty = parseFloat(li.quantity) || 1
       const qtyPart = qty !== 1 ? ` — qty ${qty}` : ''
       lines.push(`- ${name}${qtyPart}`)

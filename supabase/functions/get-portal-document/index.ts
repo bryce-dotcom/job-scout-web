@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { resolveMatLabSplit, buildSummaryRows } from "../_shared/matLabCore.ts";
-import { publicSheet } from "../_shared/specScrub.ts";
+import { publicSheet, publicTitle, buildDenyTerms, scrubText } from "../_shared/specScrub.ts";
 
 // The Material/Labor rule lives in _shared/matLabCore.ts, imported by both
 // this function and the React app (via src/lib/materialLaborSplit.js). It was
@@ -108,6 +108,18 @@ serve(async (req) => {
           .eq('quote_id', est.id)
           .order('sort_order', { ascending: true });
 
+        // Every manufacturer this workspace buys from. A product's own fields
+        // are not enough — "SMBE MES 20/40/60/80W Canopy" has manufacturer
+        // LEDOne, so MES would have survived on the customer's page.
+        const { data: makerRows } = await supabase
+          .from('products_services')
+          .select('manufacturer')
+          .eq('company_id', tokenRow.company_id)
+          .not('manufacturer', 'is', null);
+        const knownManufacturers = [...new Set((makerRows || [])
+          .map((m: any) => String(m.manufacturer || '').trim())
+          .filter((m: string) => m.length > 1))];
+
         // Compute the customer-safe spec sheet server-side, then DROP the
         // fields that identify the manufacturer. The customer gets specs and
         // never the maker. publicSheet is the same code the PDF and the
@@ -115,14 +127,25 @@ serve(async (req) => {
         lineItems = (lines || []).map((l: any) => {
           const p = l.item;
           if (!p) return l;
-          const specs = publicSheet(p.datasheet_json, p);
+          const specs = publicSheet(p.datasheet_json, p, undefined, knownManufacturers);
+          const deny = buildDenyTerms(p, p.datasheet_json?.brand_terms || [], undefined, knownManufacturers);
           const {
             manufacturer: _m, model_number: _mn, dlc_listing_number: _d, datasheet_json: _ds,
             ...safeItem
           } = p;
+          // Some products are named after the maker outright ("MES 8ft Linear
+          // Strip"). Scrubbing the specs while the card heading says MES
+          // achieves nothing, and the card shows the name.
+          safeItem.name = publicTitle(p.name, deny);
+          // Descriptions carry internal notes. A real one, live on estimate
+          // 4399: "[Renamed 2026-06-08 — actual SMBE wattages are 40W/53W/68W/
+          // 80W per MES catalog 02382 05...]" — going to the customer verbatim.
+          if (p.description) safeItem.description = scrubText(p.description, deny);
           return {
             ...l,
             item: safeItem,
+            item_name: l.item_name ? publicTitle(l.item_name, deny) : l.item_name,
+            description: l.description ? scrubText(l.description, deny) : l.description,
             public_specs: specs.specs.length > 0
               ? { specs: specs.specs, applications: specs.applications, construction: specs.construction }
               : null,

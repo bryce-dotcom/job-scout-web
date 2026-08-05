@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildDenyTerms, scrubText, isIdentifyingRow, publicSheet, findLeaks, DEFAULT_KEEP_TERMS,
+  buildDenyTerms, scrubText, isIdentifyingRow, publicSheet, publicTitle, findLeaks, DEFAULT_KEEP_TERMS,
 } from './specScrub'
 
 // Real values from product 1374 (SMBE 50/60/70/90/110W Highbay) and its
@@ -163,5 +163,78 @@ describe('never silently change a number', () => {
     for (const v of ['50,000 hours', '120–277V', '10,640 lm', '0-10V standard', 'IP40', '152 lm/W']) {
       expect(scrubText(v, ['MES', 'LOC'])).toBe(v)
     }
+  })
+})
+
+describe('the product name itself', () => {
+  // The extraction run turned up products named after the maker outright:
+  // "MES 8ft Linear Strip 40/53/68/80W", "LEDONE 8ft Strip Light 60W/70W/90W",
+  // "Canopy 40W/50W/60W/75W (MES)". The name is the sheet title and the
+  // proposal card heading — scrubbing the specs under a branded heading
+  // achieves nothing.
+  const deny = buildDenyTerms({ manufacturer: 'MES' }, ['LEDOne', 'MES'])
+
+  it('strips a leading manufacturer name', () => {
+    expect(publicTitle('MES 8ft Linear Strip 40/53/68/80W', deny)).toBe('8ft Linear Strip 40/53/68/80W')
+  })
+
+  it('strips a trailing "(MES)" without leaving empty brackets', () => {
+    expect(publicTitle('Canopy 40W/50W/60W/75W (MES)', deny)).toBe('Canopy 40W/50W/60W/75W')
+  })
+
+  it('keeps our own line name', () => {
+    expect(publicTitle('SMBE 50/60/70/90/110W Highbay', deny)).toBe('SMBE 50/60/70/90/110W Highbay')
+  })
+
+  it('falls back to the original rather than leaving a product untitled', () => {
+    // An untitled row on a proposal is worse than a branded one; the audit
+    // script lists these for renaming instead.
+    expect(publicTitle('MES', deny)).toBe('MES')
+  })
+
+  it('does not treat our own product name as a brand just because the extractor did', () => {
+    // The extractor flags "product-line name", so it returns whole names like
+    // "SMBE 290W/320W/350W Highbay LIFT". Denying that scrubbed the sheet's
+    // own title.
+    const d = buildDenyTerms(
+      { manufacturer: 'MES' },
+      ['SMBE 290W/320W/350W Highbay LIFT', 'SMBE Canopies', 'MES', 'LEDOne'],
+    )
+    expect(d).not.toContain('SMBE 290W/320W/350W Highbay LIFT')
+    expect(d).not.toContain('SMBE Canopies')
+    expect(d).toContain('MES')
+    expect(publicTitle('SMBE 290W/320W/350W Highbay LIFT', d)).toBe('SMBE 290W/320W/350W Highbay LIFT')
+  })
+
+  it('still removes the maker from a name that also carries ours', () => {
+    const d = buildDenyTerms({ manufacturer: 'MES' }, ['SMBE MES 20/40/60/80W Canopy Relocate', 'MES'])
+    expect(publicTitle('SMBE MES 20/40/60/80W Canopy Relocate', d)).toBe('SMBE 20/40/60/80W Canopy Relocate')
+  })
+})
+
+describe('the shared manufacturer vocabulary', () => {
+  // Product 1486 is named "SMBE MES 20/40/60/80W Canopy Relocate" but its
+  // manufacturer field says LEDOne, and MES appears only inside the composite
+  // brand term "SMBE MES" — dropped for containing our own SMBE. Without the
+  // workspace-wide list, MES stayed on the customer's page.
+  const product = { manufacturer: 'LEDOne', model_number: null, dlc_listing_number: null }
+  const brandTerms = ['LEDone', 'SMBE MES', 'ledonecorp.com']
+
+  it('misses a maker that belongs to a different product without the list', () => {
+    const deny = buildDenyTerms(product, brandTerms)
+    expect(publicTitle('SMBE MES 20/40/60/80W Canopy Relocate', deny)).toContain('MES')
+  })
+
+  it('catches it once the workspace list is supplied', () => {
+    const deny = buildDenyTerms(product, brandTerms, undefined, ['MES', 'LEDOne', 'Maverick Lighting'])
+    expect(deny).toContain('MES')
+    expect(publicTitle('SMBE MES 20/40/60/80W Canopy Relocate', deny))
+      .toBe('SMBE 20/40/60/80W Canopy Relocate')
+  })
+
+  it('still keeps our own line', () => {
+    const deny = buildDenyTerms(product, brandTerms, undefined, ['MES', 'LEDOne'])
+    expect(deny).not.toContain('SMBE')
+    expect(publicTitle('SMBE 110W Highbay', deny)).toBe('SMBE 110W Highbay')
   })
 })

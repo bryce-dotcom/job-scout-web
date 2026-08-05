@@ -46,20 +46,37 @@ export function buildDenyTerms(
   product?: ScrubSource | null,
   brandTerms: string[] = [],
   keepTerms: string[] = DEFAULT_KEEP_TERMS,
+  // Every manufacturer the workspace buys from. A product's own fields are not
+  // enough: product 1486 is named "SMBE MES 20/40/60/80W Canopy Relocate", but
+  // its manufacturer field says LEDOne and "MES" only ever appears inside the
+  // composite brand term "SMBE MES" — which is dropped for containing SMBE.
+  // Without the shared vocabulary, MES stayed on the customer's page.
+  knownManufacturers: string[] = [],
 ): string[] {
   const keep = new Set(keepTerms.map(k => k.toLowerCase()));
   const raw = [
     product?.manufacturer,
     product?.model_number,
     product?.dlc_listing_number,
+    ...(knownManufacturers || []),
     ...(brandTerms || []),
   ].filter((t): t is string => typeof t === 'string' && t.trim().length > 1);
+
+  // A term CONTAINING a keep word is our own product line, not the maker's.
+  // The extractor flags "product-line name", so it returns whole names like
+  // "SMBE 290W/320W/350W Highbay LIFT" — denying that scrubs the sheet's own
+  // title. Dropping the composite is safe because the maker's own tokens
+  // (MES, LEDone) are denied separately, so "SMBE MES 20/40/60/80W Canopy"
+  // still loses the MES.
+  const containsKeep = (term: string) =>
+    keepTerms.some(k => new RegExp(`\\b${esc(k)}\\b`, 'i').test(term))
 
   const seen = new Set<string>();
   const out: string[] = [];
   for (const t of raw) {
     const term = t.trim();
     if (keep.has(term.toLowerCase())) continue;   // KEEP always wins
+    if (containsKeep(term)) continue;
     const k = term.toLowerCase();
     if (seen.has(k)) continue;
     seen.add(k);
@@ -98,6 +115,27 @@ export function scrubText(text: unknown, denyTerms: string[] = []): string {
     .trim()
 }
 
+/**
+ * The product name as a customer may see it.
+ *
+ * Some products are named after the maker outright — "MES 8ft Linear Strip",
+ * "LEDONE 8ft Strip Light" — and the name is printed as the sheet title and on
+ * the proposal card. Scrubbing the specs while the heading says MES achieves
+ * nothing. Falls back to the original when scrubbing would leave it empty,
+ * because an untitled product is worse than a branded one; the audit script
+ * lists those for renaming.
+ */
+export function publicTitle(name: unknown, denyTerms: string[] = []): string {
+  const raw = typeof name === 'string' ? name.trim() : ''
+  if (!raw) return ''
+  const cleaned = scrubText(raw, denyTerms)
+    .replace(/\(\s*\)/g, '')            // "Highbay (MES)" -> "Highbay ()"
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s\-–—/|,]+|[\s\-–—/|,]+$/g, '')
+    .trim()
+  return cleaned.length >= 3 ? cleaned : raw
+}
+
 /** True when this spec row names the part rather than describing it. */
 export function isIdentifyingRow(row: { label?: unknown; value?: unknown }): boolean {
   return IDENTIFYING_LABEL.test(String(row?.label ?? ''))
@@ -121,8 +159,9 @@ export function publicSheet(
   extraction: { specs?: Array<{ label?: unknown; value?: unknown }>; applications?: unknown[]; construction?: unknown; brand_terms?: string[] } | null | undefined,
   product?: ScrubSource | null,
   keepTerms: string[] = DEFAULT_KEEP_TERMS,
+  knownManufacturers: string[] = [],
 ): PublicSheet {
-  const deny = buildDenyTerms(product, extraction?.brand_terms || [], keepTerms)
+  const deny = buildDenyTerms(product, extraction?.brand_terms || [], keepTerms, knownManufacturers)
   const specs: Array<{ label: string; value: string }> = []
   let dropped = 0
 

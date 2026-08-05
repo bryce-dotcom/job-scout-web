@@ -10,7 +10,7 @@
 // this feature.
 
 import jsPDF from 'jspdf'
-import { publicSheet, buildDenyTerms, findLeaks } from './specScrub'
+import { publicSheet, publicTitle, buildDenyTerms, findLeaks } from './specScrub'
 
 const M = 15                 // page margin, mm
 const INK = [44, 53, 48]     // theme text
@@ -59,15 +59,19 @@ function drawHeader(doc, company, logoDataUrl, pageW) {
  * Render one product page. Returns the sheet that was actually published so a
  * caller (or a test) can assert on it.
  */
-function drawProduct(doc, product, y, pageW, pageH) {
-  const sheet = publicSheet(product?.datasheet_json, product)
+function drawProduct(doc, product, y, pageW, pageH, makers = []) {
+  const sheet = publicSheet(product?.datasheet_json, product, undefined, makers)
   const colW = (pageW - M * 2)
 
   // Title — the product's own name. SMBE survives scrubbing by design.
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(13)
   doc.setTextColor(...INK)
-  const title = doc.splitTextToSize(String(product?.name || 'Product'), colW - 46)
+  // publicTitle, not the raw name: some products are named after the maker
+  // ("MES 8ft Linear Strip"), and a scrubbed spec table under a branded
+  // heading achieves nothing.
+  const deny = buildDenyTerms(product, product?.datasheet_json?.brand_terms || [], undefined, makers)
+  const title = doc.splitTextToSize(publicTitle(product?.name, deny) || 'Product', colW - 46)
   doc.text(title, M, y)
 
   // Photo on the right, if we have one.
@@ -135,13 +139,17 @@ function drawProduct(doc, product, y, pageW, pageH) {
  * checked here rather than trusted, because the cost of being wrong is handing
  * a customer the manufacturer's name.
  */
-export function buildSpecSheetPdf({ products = [], company = {}, logoDataUrl = null } = {}) {
+export function buildSpecSheetPdf({ products = [], company = {}, logoDataUrl = null, knownManufacturers = [] } = {}) {
+  // Fall back to the manufacturers present on these products when the caller
+  // has no wider list.
+  const makers = knownManufacturers.length ? knownManufacturers
+    : [...new Set((products || []).map(p => String(p?.manufacturer || '').trim()).filter(m => m.length > 1))]
   const doc = new jsPDF({ unit: 'mm', format: 'letter' })
   const pageW = doc.internal.pageSize.getWidth()
   const pageH = doc.internal.pageSize.getHeight()
 
   const usable = (products || []).filter(p => {
-    const sheet = publicSheet(p?.datasheet_json, p)
+    const sheet = publicSheet(p?.datasheet_json, p, undefined, makers)
     return sheet.specs.length > 0
   })
 
@@ -154,10 +162,10 @@ export function buildSpecSheetPdf({ products = [], company = {}, logoDataUrl = n
   usable.forEach((product, i) => {
     if (i > 0) doc.addPage()
     let y = drawHeader(doc, company, logoDataUrl, pageW)
-    const { sheet } = drawProduct(doc, product, y, pageW, pageH)
-    const deny = buildDenyTerms(product, product?.datasheet_json?.brand_terms || [])
+    const { sheet } = drawProduct(doc, product, y, pageW, pageH, makers)
+    const deny = buildDenyTerms(product, product?.datasheet_json?.brand_terms || [], undefined, makers)
     // Check the published sheet AND the product name we printed.
-    const found = findLeaks({ ...sheet, name: product?.name }, deny)
+    const found = findLeaks({ ...sheet, name: publicTitle(product?.name, deny) }, deny)
     if (found.length) leaks.push({ product: product?.name, terms: found })
     published += 1
   })

@@ -13,6 +13,7 @@ export {
   scrubText,
   isIdentifyingRow,
   publicSheet,
+  publicTitle,
   findLeaks,
   DEFAULT_KEEP_TERMS,
 } from '../../supabase/functions/_shared/specScrub.ts'
