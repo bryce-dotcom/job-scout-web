@@ -13,6 +13,7 @@ import SignedProposalCard from '../components/SignedProposalCard'
 import { jobStatusColors as statusColors } from '../lib/statusColors'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { isLegacyNetShape } from '../lib/arHelpers'
+import { reconcileInvoicePair } from '../lib/invoiceReconcile'
 import {
   ArrowLeft, Plus, Trash2, MapPin, Clock, FileText, ExternalLink,
   Play, CheckCircle, Pencil, X, DollarSign, Calendar, User, Building2,
@@ -692,6 +693,58 @@ function JobDetailInner() {
       .eq('company_id', companyId)
       .order('created_at', { ascending: false })
     setJobExpenses(data || [])
+  }
+
+  // Push a changed utility incentive onto the invoices already created for
+  // this job, so the paperwork can't drift away from the job.
+  //
+  // The rule (amount follows the invoice's own lines; discount_applied moves
+  // by the DELTA so a deposit credit survives) lives in lib/invoiceReconcile
+  // and is unit-tested there — it must never be re-derived at a call site.
+  //
+  // Paid invoices are left alone: that money is settled, and rewriting a
+  // settled document is how ledgers stop matching the bank. An invoice that
+  // has already been SENT is still corrected — the customer's bill genuinely
+  // changed — but we say so, because it needs resending.
+  const propagateIncentiveToInvoices = async (newIncentive) => {
+    const { toast } = await import('../lib/toast')
+    try {
+      const customer = jobInvoices.find(i => i.invoice_type !== 'deposit' && i.payment_status !== 'Paid' && i.payment_status !== 'Void')
+      const utility = jobUtilityInvoices.find(u => u.payment_status !== 'Paid' && u.payment_status !== 'Void')
+      if (!customer && !utility) return
+
+      let lines = []
+      if (customer) {
+        const { data } = await supabase
+          .from('invoice_lines').select('line_total').eq('invoice_id', customer.id)
+        lines = data || []
+      }
+
+      const { invoicePatch, utilityPatch, after } = reconcileInvoicePair({
+        invoice: customer, lines, utilityInvoice: utility, incentive: newIncentive,
+      })
+      if (!invoicePatch && !utilityPatch) return
+
+      if (invoicePatch && customer) {
+        const { error } = await supabase.from('invoices')
+          .update({ ...invoicePatch, updated_at: new Date().toISOString() }).eq('id', customer.id)
+        if (error) throw error
+      }
+      if (utilityPatch && utility) {
+        const { error } = await supabase.from('utility_invoices')
+          .update({ ...utilityPatch, updated_at: new Date().toISOString() }).eq('id', utility.id)
+        if (error) throw error
+      }
+
+      await fetchJobData()
+      const wasSent = customer?.last_sent_at || utility?.last_sent_at
+      toast.success(
+        `Invoices updated — customer ${formatCurrency(after.customer)}, utility ${formatCurrency(after.utility)}` +
+        (wasSent ? '. Already sent once, so resend the corrected copy.' : ''),
+      )
+    } catch (e) {
+      toast.error('Incentive saved, but the invoices could not be updated: ' + (e?.message || e))
+    }
   }
 
   const handleReceiptCapture = async (e) => {
@@ -4721,6 +4774,11 @@ function JobDetailInner() {
                           updated_at: new Date().toISOString()
                         }).eq('id', id)
                         setJob(prev => ({ ...prev, utility_incentive: val }))
+                        // Carry the change onto invoices that already exist.
+                        // Without this the edit landed on the job alone and
+                        // the paperwork kept the old number forever — the
+                        // invoice said $13,110 while the job said $12,849.75.
+                        await propagateIncentiveToInvoices(val)
                       }
                     }}
                     placeholder="0.00"
