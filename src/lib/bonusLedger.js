@@ -84,11 +84,17 @@ export async function syncJobBonuses({
 
   const nowIso = new Date().toISOString()
   const upserts = []
+  // Jobs we actually recomputed, and the (job|employee) rows that recompute
+  // produced. Anything in the ledger for an evaluated job that is NOT in this
+  // set is stale and has to go — see the removal pass below.
+  const evaluatedJobIds = new Set()
+  const producedKeys = new Set()
   let accruedTotal = 0, pendingTotal = 0
   for (const job of jobs) {
     if (!job?.allotted_time_hours) continue
     const jobTime = timeByJob.get(job.id) || []
     if (jobTime.length === 0) continue
+    evaluatedJobIds.add(job.id)
     const rows = computeJobBonusRows({
       job, timeClockRows: jobTime, employees, skillLevels, payrollConfig,
       verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides,
@@ -104,6 +110,7 @@ export async function syncJobBonuses({
       // Preserve a payroll verification override: once a human released it,
       // don't re-flag it as needing verification on the next recompute.
       const overridden = ex && ex.needs_verification === false && ex.verification_overridden_by
+      producedKeys.add(key)
       upserts.push({
         company_id: companyId,
         job_id: job.id,
@@ -131,7 +138,41 @@ export async function syncJobBonuses({
       .upsert(upserts.slice(i, i + 200), { onConflict: 'job_id,employee_id' })
     if (error) { console.error('syncJobBonuses upsert', error.message); break }
   }
-  return { upserted: upserts.length, accruedTotal, pendingTotal }
+
+  // Remove ledger rows the recompute no longer earns.
+  //
+  // Upserting alone was not enough, and this is exactly what Alayda reported
+  // on job 21004 "175 W Warehouse": the ledger said 172.53 hours saved and
+  // paid $4,140.72, while the crew had actually clocked 1,249.3 hours against
+  // 808.18 allotted — 441 hours OVER. computeJobBonusRows correctly returns
+  // nothing for that job now (`if (savedHours <= 0) return`), but a
+  // sync-by-upsert left the old rows sitting there earning money forever.
+  //
+  // Scoped to jobs we actually recomputed, so a caller syncing one job cannot
+  // wipe the rest of the ledger. `paid` rows are never touched — money that
+  // already went out stays recorded.
+  const stale = (existing || []).filter(r =>
+    evaluatedJobIds.has(r.job_id) &&
+    r.status !== 'paid' &&
+    !producedKeys.has(`${r.job_id}|${r.employee_id}`),
+  )
+  let removed = 0
+  for (let i = 0; i < stale.length; i += 200) {
+    const chunk = stale.slice(i, i + 200)
+    for (const r of chunk) {
+      const { error } = await supabase
+        .from('job_bonuses')
+        .delete()
+        .eq('company_id', companyId)
+        .eq('job_id', r.job_id)
+        .eq('employee_id', r.employee_id)
+        .neq('status', 'paid')
+      if (error) { console.error('syncJobBonuses remove', error.message); break }
+      removed += 1
+    }
+  }
+
+  return { upserted: upserts.length, removed, accruedTotal, pendingTotal }
 }
 
 // ── Display helpers ────────────────────────────────────────────────────

@@ -230,3 +230,84 @@ describe('bonusStatusLabel', () => {
     expect(bonusStatusLabel({}).label).toBe('Upcoming')
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────
+// Removing a bonus that is no longer earned.
+//
+// Alayda, job 21004 "175 W Warehouse": the ledger claimed 172.53 hours saved
+// and $4,140.72 of bonus, while the crew had clocked 1,249.3 hours against
+// 808.18 allotted — 441 hours OVER. computeJobBonusRows correctly returns
+// nothing once hours exceed allotted, but syncJobBonuses only ever upserted,
+// so the stale rows sat there earning money no matter how many times the
+// hours were corrected. That is why "we fixed it" three times and didn't.
+// ─────────────────────────────────────────────────────────────────────────
+describe('a bonus that is no longer earned', () => {
+  const makeClient = (existing, log) => ({
+    from: () => ({
+      select: () => ({ eq: () => Promise.resolve({ data: existing }) }),
+      upsert: (rows) => { log.upserted.push(...rows); return Promise.resolve({ error: null }) },
+      delete: () => {
+        const f = {}
+        const chain = { eq: (col, val) => { f[col] = val; return chain }, neq: () => { log.deleted.push(f); return Promise.resolve({ error: null }) } }
+        return chain
+      },
+    }),
+  })
+
+  const overworkedJob = { id: 21004, allotted_time_hours: 808.18, business_unit: 'Energy Scout' }
+  // 1,249.3 hours clocked against 808.18 allotted — nothing saved.
+  const timeClockRows = [
+    { job_id: 21004, employee_id: 104, clock_in: '2026-06-01T12:00:00Z', clock_out: '2026-06-01T22:00:00Z', total_hours: 667.6 },
+    { job_id: 21004, employee_id: 19, clock_in: '2026-06-01T12:00:00Z', clock_out: '2026-06-01T22:00:00Z', total_hours: 581.7 },
+  ]
+
+  it('deletes the stale unpaid rows instead of leaving them to pay out', async () => {
+    const log = { upserted: [], deleted: [] }
+    const existing = [
+      { job_id: 21004, employee_id: 104, status: 'accrued' },
+      { job_id: 21004, employee_id: 19, status: 'accrued' },
+    ]
+    const res = await syncJobBonuses({
+      supabase: makeClient(existing, log), companyId: 3,
+      jobs: [overworkedJob], timeClockRows, employees: [], skillLevels: [], payrollConfig: {},
+    })
+    expect(res.removed).toBe(2)
+    expect(log.deleted.map(d => d.employee_id).sort((a, b) => a - b)).toEqual([19, 104])
+  })
+
+  it('never removes a bonus that was already paid', async () => {
+    const log = { upserted: [], deleted: [] }
+    const existing = [{ job_id: 21004, employee_id: 104, status: 'paid' }]
+    const res = await syncJobBonuses({
+      supabase: makeClient(existing, log), companyId: 3,
+      jobs: [overworkedJob], timeClockRows, employees: [], skillLevels: [], payrollConfig: {},
+    })
+    expect(res.removed).toBe(0)
+    expect(log.deleted).toEqual([])
+  })
+
+  it('leaves other jobs alone when syncing one job', async () => {
+    // Scoping matters: a caller syncing a single job must not wipe the ledger.
+    const log = { upserted: [], deleted: [] }
+    const existing = [
+      { job_id: 21004, employee_id: 104, status: 'accrued' },
+      { job_id: 99999, employee_id: 104, status: 'accrued' },
+    ]
+    await syncJobBonuses({
+      supabase: makeClient(existing, log), companyId: 3,
+      jobs: [overworkedJob], timeClockRows, employees: [], skillLevels: [], payrollConfig: {},
+    })
+    expect(log.deleted.map(d => d.job_id)).toEqual([21004])
+  })
+
+  it('does not touch a job it never evaluated', async () => {
+    // No time entries -> the job is skipped entirely, so its rows must stand.
+    const log = { upserted: [], deleted: [] }
+    const existing = [{ job_id: 21004, employee_id: 104, status: 'accrued' }]
+    const res = await syncJobBonuses({
+      supabase: makeClient(existing, log), companyId: 3,
+      jobs: [overworkedJob], timeClockRows: [], employees: [], skillLevels: [], payrollConfig: {},
+    })
+    expect(res.removed).toBe(0)
+  })
+})
