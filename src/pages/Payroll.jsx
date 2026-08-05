@@ -23,6 +23,7 @@ import {
 import { syncJobBonuses } from '../lib/bonusLedger'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
+import { commissionConfigIssues } from '../lib/commissionConfigIssues'
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 import { payDateForPeriod } from '../lib/payDate'
 import { VERIFICATION_EXEMPT_KEY } from '../lib/verificationPolicy'
@@ -1146,6 +1147,12 @@ export default function Payroll() {
   //                                        quote is created on the lead)
   //
   // Lead-source commissions are unaffected — they always pay on the row.
+  // Anyone configured to earn commission who mathematically cannot.
+  const commissionIssues = useMemo(
+    () => commissionConfigIssues({ employees, jobs, leads, invoices, payments }),
+    [employees, jobs, leads, invoices, payments]
+  )
+
   const setterRule = company?.setter_qualification_rule || 'appointment_set'
   // The rule itself now lives in lib/setterCommissions so My Pay can show a
   // setter the same number Payroll owes them. It used to live only here, and
@@ -3032,6 +3039,43 @@ export default function Payroll() {
             border: '1px solid rgba(59,130,246,0.3)', borderRadius: '6px',
             padding: '4px 12px', cursor: 'pointer', fontWeight: '600'
           }}>Back to Current</button>
+        </div>
+      )}
+
+      {/* Commission misconfiguration — someone set to earn commission whose
+          every rate is zero, on jobs that have already collected money. This
+          is the Damien Hargett case: four jobs sold, rate parked in the setter
+          field, $0 paid for months, and no screen ever said so. A silent zero
+          is indistinguishable from "hasn't sold anything". */}
+      {isAdmin && commissionIssues.length > 0 && (
+        <div style={{
+          padding: '14px 16px', marginBottom: '16px', borderRadius: '10px',
+          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+            <AlertTriangle size={18} style={{ color: '#ef4444' }} />
+            <span style={{ fontSize: '14px', fontWeight: '700', color: '#ef4444' }}>
+              {commissionIssues.length} {commissionIssues.length === 1 ? 'person is' : 'people are'} earning no commission
+            </span>
+          </div>
+          <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px' }}>
+            Marked as commissioned, but every rate is <strong>0</strong> — so nothing is being calculated on work that has already been paid for. Set their rate in Employees.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {commissionIssues.map(issue => (
+              <div key={issue.employeeId} style={{ fontSize: '12px', color: theme.text, display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <strong>{issue.name}</strong>
+                <span style={{ color: theme.textMuted }}>
+                  {issue.jobCount} job{issue.jobCount === 1 ? '' : 's'} · {fmt(issue.collected)} collected
+                </span>
+                {issue.rates.setter > 0 && (
+                  <span style={{ color: '#b45309' }}>
+                    rate {issue.rates.setter} is in the setter field, which rep commissions don&apos;t use
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
