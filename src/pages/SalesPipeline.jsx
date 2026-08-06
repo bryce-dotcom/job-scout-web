@@ -43,6 +43,8 @@ const STATUS_MAP = {
 }
 
 // All legacy statuses we need to fetch from DB
+import { shouldShowLeadFallback, leadRendersSomewhere } from '../lib/pipelineVisibility'
+
 const LEGACY_STATUSES = ['Assigned', 'Callback', 'Converted', 'Not Qualified']
 
 // Default pipeline stages based on lead status
@@ -948,9 +950,8 @@ export default function SalesPipeline() {
   // Pre-estimate stages show lead cards; estimate stages show one card per quote
   const PRE_ESTIMATE_STAGES = ['New', 'Contacted', 'Appointment Set', 'Qualified']
   const QUOTE_STATUS_MAP = { 'Quote Sent': 'Sent', 'Negotiation': 'Negotiation', 'Won': 'Approved', 'Lost': 'Rejected' }
-  // The quote statuses that actually produce a card. Anything else (Draft) is
-  // invisible on the board, which is why the lead must fall back to its own
-  // status instead of disappearing.
+  // Quote statuses that have actually been staged. A Draft is not among them:
+  // it has not been sent, so a drag must never promote it.
   const STAGED_QUOTE_STATUSES = new Set(Object.values(QUOTE_STATUS_MAP))
 
   const getLeadsForStage = (stageId) => {
@@ -986,11 +987,22 @@ export default function SalesPipeline() {
         // Treat "no quote in a staged status" the same as "no quotes": show
         // the lead card at the lead's own status. This can only ADD cards that
         // were missing — a lead with any staged quote is untouched.
-        const hasStagedQuote = (lead._quotes || []).some(q => STAGED_QUOTE_STATUSES.has(q.status))
-        if (!hasStagedQuote) {
-          if (lead.status === stageId) estimateCards.push(lead)
+        // The original test was "has NO staged quote at all", which missed the
+        // other half: a staged quote sitting in a DIFFERENT column from the
+        // lead. A lead marked "Quote Sent" whose only quote is "Approved"
+        // matched nothing — Quote Sent wants a Sent quote, and Won additionally
+        // requires lead.status === 'Won'. 59 leads were invisible.
+        //
+        // Noah: "i switched a project from qualified to won and it didnt go
+        // into the won tab and now i cant find it in my pipeline."
+        //
+        // shouldShowLeadFallback only fires when the lead renders in NO column
+        // AND this is its own status, so it can only ADD a missing card.
+        if (shouldShowLeadFallback(lead, stageId, QUOTE_STATUS_MAP)) {
+          estimateCards.push(lead)
           return
         }
+        if (!leadRendersSomewhere(lead, QUOTE_STATUS_MAP)) return
 
         // ── KEY FIX ─────────────────────────────────────────────────────
         // For the Won stage, the main loop must ONLY process Won-status leads.
@@ -1260,6 +1272,32 @@ export default function SalesPipeline() {
       status: targetStageId,
       updated_at: new Date().toISOString()
     })
+
+    // Dragging a lead INTO an estimate stage must move its quote too.
+    //
+    // Estimate columns render from quote.status, so writing only the lead left
+    // the card in whichever column its quote was already in. Noah: "i moved 5
+    // jobs from qualified to negotiation and they went out of qualified but
+    // didnt switch to negotiation" — they went to Quote Sent, because that is
+    // where their Sent quote lived.
+    //
+    // Only a quote that has already been staged is moved: a Draft has not been
+    // sent, and silently marking it Sent would tell a rep a customer received
+    // something they never did. A lead whose quotes are all Drafts falls back
+    // to its own lead card, so it still lands in the right column.
+    const targetQuoteStatus = QUOTE_STATUS_MAP[targetStageId]
+    if (targetQuoteStatus) {
+      const staged = (draggedLead._quotes || [])
+        .filter(q => STAGED_QUOTE_STATUSES.has(q.status))
+        .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+      const active = staged[0]
+      if (active && active.status !== targetQuoteStatus) {
+        await updateQuote(active.id, {
+          status: targetQuoteStatus,
+          updated_at: new Date().toISOString(),
+        })
+      }
+    }
 
     setDraggedLead(null)
     await fetchPipelineLeads()
