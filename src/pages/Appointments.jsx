@@ -10,17 +10,16 @@ import { Plus, X, Trash2, Upload, Download, ChevronLeft, ChevronRight, RefreshCw
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import SearchableSelect from '../components/SearchableSelect'
 import { appointmentsFields } from '../lib/importExportFields'
+import { fromZonedInput, toZonedInput, DEFAULT_TZ } from '../lib/dateTz'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 
-// Convert a Date to YYYY-MM-DDTHH:mm for datetime-local inputs (local timezone)
-const toLocalDateTimeStr = (d) => {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  const h = String(d.getHours()).padStart(2, '0')
-  const min = String(d.getMinutes()).padStart(2, '0')
-  return `${y}-${m}-${day}T${h}:${min}`
-}
+// Appointments are scheduled in the crew's timezone, not the browser's — a rep
+// on a laptop still set to Pacific must not book an hour off.
+const MT = DEFAULT_TZ
+
+// (toLocalDateTimeStr removed — it formatted in the BROWSER's zone, which is
+// the assumption that put appointments in the middle of the night. Use
+// toZonedInput/fromZonedInput from lib/dateTz, which are explicit about it.)
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -463,8 +462,11 @@ export default function Appointments() {
       lead_id: apt.lead_id || '',
       customer_id: apt.customer_id || '',
       employee_id: apt.employee_id || '',
-      start_time: apt.start_time ? toLocalDateTimeStr(new Date(apt.start_time)) : '',
-      end_time: apt.end_time ? toLocalDateTimeStr(new Date(apt.end_time)) : '',
+      // toZonedInput, not the browser's local zone: the save side now writes
+      // Mountain wall-clock, so the read side has to speak the same language
+      // or the pair drifts by the viewer's offset instead.
+      start_time: toZonedInput(apt.start_time, MT),
+      end_time: toZonedInput(apt.end_time, MT),
       location: apt.location || '',
       status: apt.status || 'Scheduled',
       appointment_type: apt.appointment_type || '',
@@ -497,8 +499,15 @@ export default function Appointments() {
       lead_id: formData.lead_id || null,
       customer_id: formData.customer_id || null,
       employee_id: formData.employee_id || null,
-      start_time: formData.start_time || null,
-      end_time: formData.end_time || null,
+      // The <input type="datetime-local"> emits a WALL-CLOCK string with no
+      // zone ("2026-08-07T07:00"). Writing that straight to a timestamptz
+      // makes Postgres read it as UTC, so a 7am Mountain appointment was
+      // stored as 07:00Z and came back as 1:00 AM — and re-typing 7am shifted
+      // it again, which is Doug's "I am unable to change it back".
+      // Live proof before this fix: "Calvin Warehouse" sat at 1:00 AM and
+      // "Syracuse Costco" at 4:34 AM. Same helper LeadSetter already uses.
+      start_time: fromZonedInput(formData.start_time, MT),
+      end_time: fromZonedInput(formData.end_time, MT),
       location: formData.location || null,
       status: formData.status,
       appointment_type: formData.appointment_type || null,
@@ -920,7 +929,7 @@ export default function Appointments() {
           {/* Day Headers */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(7, 1fr)',
+            gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
             backgroundColor: theme.accentBg,
             borderBottom: `1px solid ${theme.border}`,
             minWidth: isMobile ? '700px' : undefined
@@ -937,7 +946,7 @@ export default function Appointments() {
           </div>
 
           {/* Calendar Days */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', minWidth: isMobile ? '700px' : undefined }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', minWidth: isMobile ? '700px' : undefined }}>
             {calendarDays.map((day, index) => {
               const dayDate = day ? new Date(year, month, day) : null
               const dayEvents = dayDate ? getEventsForDate(dayDate) : []

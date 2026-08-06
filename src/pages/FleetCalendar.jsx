@@ -331,7 +331,7 @@ export default function FleetCalendar() {
         {/* Day Headers */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
+          gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
           backgroundColor: theme.accentBg,
           borderBottom: `1px solid ${theme.border}`
         }}>
@@ -351,7 +351,7 @@ export default function FleetCalendar() {
         {/* Calendar Days */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)'
+          gridTemplateColumns: 'repeat(7, minmax(0, 1fr))'
         }}>
           {calendarDays.map((day, index) => {
             const dayEvents = day ? getEventsForDate(day) : []

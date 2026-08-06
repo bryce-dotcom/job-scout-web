@@ -502,7 +502,7 @@ export default function JobCalendar() {
         {/* Day Headers */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
+          gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
           backgroundColor: theme.accentBg,
           borderBottom: `1px solid ${theme.border}`,
           minWidth: isMobile ? '700px' : undefined
@@ -523,7 +523,7 @@ export default function JobCalendar() {
         {/* Calendar Days */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
+          gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
           minWidth: isMobile ? '700px' : undefined
         }}>
           {calendarDays.map((day, index) => {

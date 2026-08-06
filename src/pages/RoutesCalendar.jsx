@@ -184,7 +184,7 @@ export default function RoutesCalendar() {
         {/* Weekday Headers */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
+          gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
           borderBottom: `1px solid ${theme.border}`
         }}>
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
@@ -202,7 +202,7 @@ export default function RoutesCalendar() {
         </div>
 
         {/* Days Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
           {calendarDays.map((day, idx) => {
             const dayRoutes = getRoutesForDate(day.date)
             return (
