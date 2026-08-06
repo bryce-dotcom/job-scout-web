@@ -96,6 +96,7 @@ import VictorWorkspace from './pages/agents/victor/VictorWorkspace'
 import ArnieWorkspace from './pages/agents/arnie/ArnieWorkspace'
 import ArnieChatPage from './pages/agents/arnie/ArnieChatPage'
 import ArnieHistory from './pages/agents/arnie/ArnieHistory'
+import ArnieSetup from './pages/agents/arnie/ArnieSetup'
 import VictorDashboard from './pages/agents/victor/VictorDashboard'
 import VictorVerify from './pages/agents/victor/VictorVerify'
 import VictorReport from './pages/agents/victor/VictorReport'
@@ -505,6 +506,7 @@ function App() {
           <Route path="/agents/arnie" element={<ArnieWorkspace />}>
             <Route index element={<ArnieChatPage />} />
             <Route path="history" element={<ArnieHistory />} />
+            <Route path="setup" element={<ArnieSetup />} />
           </Route>
 
           {/* Frankie Workspace (AI CFO) — gated by recruitment so any new
