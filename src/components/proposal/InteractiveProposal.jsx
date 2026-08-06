@@ -9,6 +9,7 @@ import PricingTiersSection from './PricingTiersSection'
 import ApprovalSection from './ApprovalSection'
 import ProposalSection from './ProposalSection'
 import proposalTheme from './proposalTheme'
+import { resolveAnnualSavings } from '../../lib/annualSavings'
 
 function formatCurrency(amount) {
   if (!amount && amount !== 0) return '$0.00'
@@ -34,7 +35,10 @@ export default function InteractiveProposal({
   const logoUrl = business_unit?.logo_url || company?.logo_url
   const isApproved = doc.status === 'Approved' || !!approval || approvalSuccess
   const totalCost = line_items?.reduce((sum, li) => sum + (parseFloat(li.total || li.line_total) || 0), 0) || 0
-  const annualSavings = findMetric(sections, 'annual_savings')
+  // The estimate's own figure wins over the snapshot baked into
+  // layout.sections when the proposal was generated. A rep who corrects the
+  // savings was still sending the customer Lenard's original number.
+  const annualSavings = resolveAnnualSavings(doc, sections)
   const incentive = parseFloat(doc.utility_incentive) || 0
   const discountAmount = parseFloat(doc.discount) || 0
 

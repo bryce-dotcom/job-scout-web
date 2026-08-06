@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import { resolveAnnualSavings } from './annualSavings'
 
 // ─── Design tokens ──────────────────────────────────────────────
 const C = {
@@ -574,7 +575,8 @@ function drawTotals(doc, estimate, lineItems, startY, m, pw, ph) {
   // first, falling back to the linked audit's annual_savings_dollars
   // (passed through from EstimateDetail). If neither is set, the line
   // is hidden.
-  const annualSavings = parseFloat(estimate.manual_annual_savings || estimate.annual_savings_dollars || estimate.audit?.annual_savings_dollars) || 0
+  // Same rule as both proposal surfaces — lib/annualSavings.
+  const annualSavings = resolveAnnualSavings(estimate)
   if (annualSavings > 0) {
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')

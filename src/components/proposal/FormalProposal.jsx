@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import SignatureModal from './SignatureModal'
 import { buildDefaultTerms, sha256Hex } from './formalProposalDefaults'
 import { getCustomerPrimary, getCustomerSecondary } from '../../lib/customerDisplay'
+import { resolveAnnualSavings } from '../../lib/annualSavings'
 
 /**
  * Formal / legal proposal view rendered inside CustomerPortal.
@@ -78,7 +79,8 @@ export default function FormalProposal({
     const netAfterIncentive = Math.max(0, contractTotal - incentive)
     // Annual savings — pull from the manual override first, fall back to the
     // linked audit's projected savings. Mirrors estimatePdf.js + InteractiveProposal.
-    const annualSavings = parseFloat(doc?.manual_annual_savings || doc?.annual_savings_dollars || doc?.audit?.annual_savings_dollars) || 0
+    // Same rule as the PDF and the interactive proposal — lib/annualSavings.
+    const annualSavings = resolveAnnualSavings(doc)
     return { subtotal, discount, incentive, total: contractTotal, netAfterIncentive, annualSavings }
   }, [lineItems, doc])
 
