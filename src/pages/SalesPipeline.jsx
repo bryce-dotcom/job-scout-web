@@ -216,6 +216,34 @@ export default function SalesPipeline() {
     savePipelineFilters(companyId, { ownerFilter, dateRange, buFilter, searchTerm, mobileFilter, customDateTo })
   }, [companyId, ownerFilter, dateRange, buFilter, searchTerm, mobileFilter, customDateTo])
 
+  // What is actually narrowing the board right now, in words. Filters survive
+  // a refresh, so an empty board is far more often a filter than an absence of
+  // deals — and the old empty state said "leads will appear here as they
+  // progress", which reads as "you have none".
+  const DATE_RANGE_LABELS = { mtd: 'This month', ytd: 'This year', last30: 'Last 30 days', last90: 'Last 90 days', custom: 'Custom dates' }
+  const activeFilterLabels = useMemo(() => {
+    const out = []
+    if (ownerFilter && ownerFilter !== 'all') {
+      const who = employees?.find(emp => String(emp.id) === String(ownerFilter))
+      out.push(`Rep: ${who?.name || ownerFilter}`)
+    }
+    if (buFilter && buFilter !== 'all') out.push(`Unit: ${buFilter}`)
+    if (searchTerm?.trim()) out.push(`Search: "${searchTerm.trim()}"`)
+    // 'mtd' is the DEFAULT and still hides most of the board early in a month,
+    // so it counts as active — that is exactly the trap.
+    if (dateRange && dateRange !== 'all') out.push(DATE_RANGE_LABELS[dateRange] || dateRange)
+    if (mobileFilter && mobileFilter !== 'All') out.push(`Stage: ${mobileFilter}`)
+    return out
+  }, [ownerFilter, buFilter, searchTerm, dateRange, mobileFilter, employees])
+
+  const clearPipelineFilters = () => {
+    setOwnerFilter('all')
+    setBuFilter('all')
+    setSearchTerm('')
+    setDateRange('all')
+    setMobileFilter('All')
+  }
+
   // The board scrolls inside containers, not the window, so a plain
   // window.scrollY restore (what Estimates does) would not help here.
   // Follow-up OVERLAY. Deals stay in their real stage; this is a worklist of
@@ -2215,8 +2243,38 @@ export default function SalesPipeline() {
                     {mobileLeads.length === 0 ? (
                       <div style={{ padding: '32px 20px', textAlign: 'center' }}>
                         <Search size={32} color={m.textMuted} style={{ marginBottom: '8px', opacity: 0.5 }} />
-                        <div style={{ fontSize: '16px', color: m.text, marginBottom: '4px' }}>No {mobileFilter === 'All' ? '' : mobileFilter + ' '}leads</div>
-                        <div style={{ fontSize: '13px', color: m.textMuted }}>Leads will appear here as they progress</div>
+                        {/* An empty board used to say "Leads will appear here as
+                            they progress" — which reads as "you have no deals"
+                            even when a saved filter is hiding all of them.
+                            Filters persist across refreshes now, so Cole
+                            refreshed Noah's phone and it still showed 0
+                            (db60e9ce). Say which filters are on, and offer one
+                            tap to clear them. */}
+                        {activeFilterLabels.length > 0 ? (
+                          <>
+                            <div style={{ fontSize: '16px', color: m.text, marginBottom: '4px' }}>
+                              Nothing matches your filters
+                            </div>
+                            <div style={{ fontSize: '13px', color: m.textMuted, marginBottom: '14px' }}>
+                              {activeFilterLabels.join(' · ')}
+                            </div>
+                            <button
+                              onClick={clearPipelineFilters}
+                              style={{
+                                minHeight: '40px', padding: '0 18px', borderRadius: '8px',
+                                border: `1px solid ${m.accent}`, backgroundColor: m.accent,
+                                color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+                              }}
+                            >
+                              Clear filters
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: '16px', color: m.text, marginBottom: '4px' }}>No {mobileFilter === 'All' ? '' : mobileFilter + ' '}leads</div>
+                            <div style={{ fontSize: '13px', color: m.textMuted }}>Leads will appear here as they progress</div>
+                          </>
+                        )}
                       </div>
                     ) : (
                       mobileLeads.map(lead => {
