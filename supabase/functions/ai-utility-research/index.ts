@@ -13,9 +13,9 @@ const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 async function callClaude(
   system: string,
   userMessage: string,
-  opts: { webSearch?: number; maxTokens?: number; retries?: number } = {}
+  opts: { webSearch?: number; maxTokens?: number; retries?: number; req?: Request } = {}
 ) {
-  const { webSearch = 0, maxTokens = 16000, retries = 1 } = opts;
+  const { webSearch = 0, maxTokens = 16000, retries = 1, req } = opts;
   const body: Record<string, unknown> = {
     model: 'claude-sonnet-4-6',
     max_tokens: maxTokens,
@@ -27,7 +27,7 @@ async function callClaude(
   }
 
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const ai = await callAnthropic({ feature: 'ai-utility-research', companyId: null }, body);
+    const ai = await callAnthropic({ feature: 'ai-utility-research', companyId: null, req }, body);
 
     if (!ai.ok) {
       if (ai.errorKind === 'rate_limit' && attempt < retries) {
@@ -260,7 +260,7 @@ For each provider, find:
 Search for actual utility program pages. Prioritize field completeness — every field in the schema should be populated (use null only when truly unknown). Maximize completeness at every level.
 
 Return the structured JSON.`,
-      { webSearch: 4, maxTokens: 32000 }
+      { webSearch: 4, maxTokens: 32000, req }
     );
 
     console.log(`[Research] API call done in ${elapsed()}ms`);

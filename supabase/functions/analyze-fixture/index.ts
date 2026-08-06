@@ -164,7 +164,7 @@ Only return valid JSON, no other text.`;
 
     // Call Claude Vision API
     const ai = await callAnthropic(
-      { feature: 'analyze-fixture', companyId: null },
+      { feature: 'analyze-fixture', companyId: null, req },
       {
         model: 'claude-sonnet-4-6',
         max_tokens: 2048,

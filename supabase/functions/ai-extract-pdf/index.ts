@@ -60,7 +60,7 @@ Rules:
     // PDF document blocks are GA on the Messages API — the old
     // 'pdfs-2024-09-25' beta header is no longer needed for either path.
     const ai = await callAnthropic(
-      { feature: 'ai-extract-pdf', companyId: null },
+      { feature: 'ai-extract-pdf', companyId: null, req },
       {
         model: 'claude-sonnet-4-6',
         max_tokens: 8192,
