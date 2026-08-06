@@ -191,3 +191,56 @@ export function findLeaks(payload: unknown, denyTerms: string[] = []): string[] 
   const text = typeof payload === 'string' ? payload : JSON.stringify(payload ?? '')
   return denyTerms.filter(term => matcherFor(term).test(text))
 }
+
+/**
+ * Normalise whatever is in products_services.datasheet_json into rows that can
+ * be rendered. NO scrubbing — this is the INTERNAL view, where a rep is meant
+ * to see the manufacturer detail.
+ *
+ * Two shapes exist in the wild:
+ *   old — a flat map the user typed by hand: { "Wattage": "110W" }
+ *   new — the extraction result: { specs: [{label, value}], applications,
+ *         construction, brand_terms, source }
+ *
+ * The Products modal rendered `Object.entries(datasheet)` and pushed the value
+ * straight into JSX, which was fine for the flat map and crashed the page for
+ * every one of the 189 products carrying the new shape — React error #31,
+ * "objects are not valid as a React child", keys {label, value}. Damien could
+ * not open a single product.
+ *
+ * Internal bookkeeping keys are dropped: they are not specifications.
+ */
+const DATASHEET_INTERNAL_KEYS = new Set(['brand_terms', 'source', 'specs', 'applications', 'construction'])
+
+export function datasheetRows(
+  datasheet: unknown,
+): Array<{ label: string; value: string }> {
+  if (!datasheet || typeof datasheet !== 'object') return []
+  const d = datasheet as Record<string, unknown>
+  const rows: Array<{ label: string; value: string }> = []
+  const push = (label: unknown, value: unknown) => {
+    const l = String(label ?? '').trim()
+    // Render arrays and objects as text rather than handing them to JSX.
+    const v = value == null ? ''
+      : Array.isArray(value) ? value.map(x => String(x ?? '').trim()).filter(Boolean).join(', ')
+      : typeof value === 'object' ? JSON.stringify(value)
+      : String(value).trim()
+    if (l && v) rows.push({ label: l, value: v })
+  }
+
+  if (Array.isArray(d.specs)) {
+    for (const row of d.specs) {
+      const r = row as { label?: unknown; value?: unknown } | null
+      push(r?.label, r?.value)
+    }
+    if (Array.isArray(d.applications) && d.applications.length) push('Applications', d.applications)
+    if (d.construction) push('Construction', d.construction)
+  }
+
+  // Any hand-entered keys alongside (or instead of) the extraction.
+  for (const [k, v] of Object.entries(d)) {
+    if (DATASHEET_INTERNAL_KEYS.has(k)) continue
+    push(k, v)
+  }
+  return rows
+}

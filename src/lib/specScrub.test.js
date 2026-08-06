@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildDenyTerms, scrubText, isIdentifyingRow, publicSheet, publicTitle, findLeaks, DEFAULT_KEEP_TERMS,
+  buildDenyTerms, scrubText, isIdentifyingRow, publicSheet, publicTitle, findLeaks, DEFAULT_KEEP_TERMS, datasheetRows,
 } from './specScrub'
 
 // Real values from product 1374 (SMBE 50/60/70/90/110W Highbay) and its
@@ -236,5 +236,64 @@ describe('the shared manufacturer vocabulary', () => {
     const deny = buildDenyTerms(product, brandTerms, undefined, ['MES', 'LEDOne'])
     expect(deny).not.toContain('SMBE')
     expect(publicTitle('SMBE 110W Highbay', deny)).toBe('SMBE 110W Highbay')
+  })
+})
+
+describe('datasheetRows — the shape that crashed the Products page', () => {
+  // products_services.datasheet_json holds TWO shapes. The Products modal
+  // rendered Object.entries(datasheet) and pushed the value into JSX, which
+  // was fine for the flat map and threw React error #31 ("objects are not
+  // valid as a React child", keys {label, value}) for all 189 products
+  // carrying the extraction. Damien could not open a single product.
+  const extracted = {
+    specs: [
+      { label: 'Wattage (this model)', value: '290W / 320W / 350W (selectable)' },
+      { label: 'CCT', value: '5000K' },
+    ],
+    applications: ['Warehouses', 'Factories'],
+    construction: 'Die formed galvanized steel',
+    brand_terms: ['LEDOne', 'MES'],
+    source: { url: 'https://example/spec.pdf', chars: 4598 },
+  }
+
+  it('returns flat label/value strings, never objects', () => {
+    const rows = datasheetRows(extracted)
+    expect(rows.length).toBeGreaterThan(0)
+    for (const r of rows) {
+      expect(typeof r.label).toBe('string')
+      expect(typeof r.value).toBe('string')
+    }
+  })
+
+  it('keeps the extracted specs', () => {
+    const rows = datasheetRows(extracted)
+    expect(rows.find(r => r.label === 'CCT')?.value).toBe('5000K')
+  })
+
+  it('renders a list as text rather than handing an array to JSX', () => {
+    expect(datasheetRows(extracted).find(r => r.label === 'Applications')?.value)
+      .toBe('Warehouses, Factories')
+  })
+
+  it('never emits the internal bookkeeping keys', () => {
+    const labels = datasheetRows(extracted).map(r => r.label)
+    expect(labels).not.toContain('brand_terms')
+    expect(labels).not.toContain('source')
+    expect(labels).not.toContain('specs')
+  })
+
+  it('still handles the old hand-typed flat map', () => {
+    expect(datasheetRows({ Wattage: '110W', CRI: '80+' })).toEqual([
+      { label: 'Wattage', value: '110W' },
+      { label: 'CRI', value: '80+' },
+    ])
+  })
+
+  it('survives junk', () => {
+    expect(datasheetRows(null)).toEqual([])
+    expect(datasheetRows({})).toEqual([])
+    expect(datasheetRows('nonsense')).toEqual([])
+    expect(datasheetRows({ specs: 'not-an-array' })).toEqual([])
+    expect(datasheetRows({ specs: [null, { label: 'A' }, { value: 'B' }] })).toEqual([])
   })
 })

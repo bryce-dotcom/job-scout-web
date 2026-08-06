@@ -16,4 +16,5 @@ export {
   publicTitle,
   findLeaks,
   DEFAULT_KEEP_TERMS,
+  datasheetRows,
 } from '../../supabase/functions/_shared/specScrub.ts'

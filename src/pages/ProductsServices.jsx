@@ -15,6 +15,7 @@ import Tooltip from '../components/Tooltip'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { isManager as checkManager, isAdmin as checkAdmin, canAccessDevTools } from '../lib/accessControl'
 import { productsServicesFields } from '../lib/importExportFields'
+import { datasheetRows } from '../lib/specScrub'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -314,7 +315,8 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborDat
   const profit = totalPrice - totalCost
   const profitMargin = totalPrice > 0 ? (profit / totalPrice * 100) : 0
   const datasheet = product.datasheet_json || {}
-  const hasSpecs = product.manufacturer || product.model_number || product.product_category || Object.keys(datasheet).length > 0
+  const datasheetSpecRows = datasheetRows(datasheet)
+  const hasSpecs = product.manufacturer || product.model_number || product.product_category || datasheetSpecRows.length > 0
 
   const sectionStyle = { padding: '14px 16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }
   const sectionTitleStyle = { fontSize: '11px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }
@@ -574,14 +576,19 @@ function ProductDetailModal({ product, theme, isMobile, formatCurrency, laborDat
                   </div>
                 )}
               </div>
-              {Object.keys(datasheet).length > 0 && (
+              {/* datasheetRows normalises BOTH shapes — the hand-typed flat
+                  map and the extraction's { specs: [{label, value}], ... }.
+                  This used to render Object.entries(datasheet) directly, which
+                  pushed the specs ARRAY into JSX and crashed the modal for
+                  every product with extracted specs (React error #31). */}
+              {datasheetSpecRows.length > 0 && (
                 <div style={{ marginTop: '12px', borderTop: `1px solid ${theme.border}`, paddingTop: '10px' }}>
                   <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px' }}>Datasheet</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
-                    {Object.entries(datasheet).map(([key, value]) => (
-                      <div key={key} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '2px 0' }}>
-                        <span style={{ fontSize: '12px', color: theme.textMuted }}>{key}</span>
-                        <span style={{ fontSize: '12px', color: theme.text, fontWeight: '500', textAlign: 'right' }}>{value}</span>
+                    {datasheetSpecRows.map((row, i) => (
+                      <div key={`${row.label}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '2px 0' }}>
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>{row.label}</span>
+                        <span style={{ fontSize: '12px', color: theme.text, fontWeight: '500', textAlign: 'right' }}>{row.value}</span>
                       </div>
                     ))}
                   </div>
@@ -1374,6 +1381,15 @@ Click OK only if you're sure this is a label correction and not a different prod
   }
 
   // Datasheet JSON helpers
+  // Only the hand-entered keys are editable as key/value pairs. The
+  // extraction's structured keys are rendered read-only above; feeding them
+  // to a text input turns an array into "[object Object]" and saving that
+  // would overwrite the real extraction.
+  const EXTRACTION_KEYS = ['specs', 'applications', 'construction', 'brand_terms', 'source']
+  const editableDatasheet = Object.fromEntries(
+    Object.entries(productForm.datasheet_json || {}).filter(([k]) => !EXTRACTION_KEYS.includes(k))
+  )
+
   const addDatasheetEntry = () => {
     setProductForm(prev => ({ ...prev, datasheet_json: { ...prev.datasheet_json, '': '' } }))
   }
@@ -2819,11 +2835,29 @@ Click OK only if you're sure this is a label correction and not a different prod
                       <PlusCircle size={14} /> Add
                     </button>
                   </div>
-                  {Object.keys(productForm.datasheet_json || {}).length === 0 ? (
+                  {/* Extracted specs are structured ({ specs: [...] }) and are
+                      NOT editable as flat key/value pairs — the inputs below
+                      would coerce the arrays to "[object Object]" and writing
+                      that back would destroy the extraction. Show them
+                      read-only; only hand-entered keys stay editable. */}
+                  {Array.isArray(productForm.datasheet_json?.specs) && productForm.datasheet_json.specs.length > 0 && (
+                    <div style={{ marginBottom: '10px', padding: '10px 12px', background: theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                      <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px' }}>
+                        Extracted from the spec sheet — read-only
+                      </div>
+                      {datasheetRows(productForm.datasheet_json).map((row, i) => (
+                        <div key={`${row.label}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', padding: '2px 0' }}>
+                          <span style={{ color: theme.textMuted }}>{row.label}</span>
+                          <span style={{ color: theme.text, textAlign: 'right' }}>{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {Object.keys(editableDatasheet).length === 0 ? (
                     <div style={{ padding: '16px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>No datasheet specs yet.</div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {Object.entries(productForm.datasheet_json || {}).map(([key, value], idx) => (
+                      {Object.entries(editableDatasheet).map(([key, value], idx) => (
                         <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                           <input type="text" value={key} onChange={(e) => updateDatasheetKey(key, e.target.value)} placeholder="Key" style={{ ...inputStyle, flex: 1, fontSize: '13px', padding: '8px 10px' }} />
                           <input type="text" value={value} onChange={(e) => updateDatasheetValue(key, e.target.value)} placeholder="Value" style={{ ...inputStyle, flex: 1, fontSize: '13px', padding: '8px 10px' }} />
