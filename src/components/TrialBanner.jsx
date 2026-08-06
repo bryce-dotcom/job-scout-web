@@ -52,6 +52,10 @@ export default function TrialBanner() {
   // Trial that's not yet at the warning threshold — also skip
   if (status === 'trialing' && (daysLeft == null || daysLeft > 7)) return null
 
+  // Hard read-only states (trial_expired, canceled) are never dismissable —
+  // the account can't be edited until they act, so the banner must persist.
+  const isReadOnly = status === 'trial_expired' || status === 'canceled'
+
   // Pick a tone + message
   let bg, fg, border, icon, title, body
   if (status === 'past_due') {
@@ -59,11 +63,16 @@ export default function TrialBanner() {
     icon = <AlertTriangle size={18} />
     title = 'Payment failed.'
     body = 'Update your card to keep using JobScout.'
+  } else if (status === 'trial_expired') {
+    bg = 'rgba(239,68,68,0.08)'; border = 'rgba(239,68,68,0.4)'; fg = '#b91c1c'
+    icon = <AlertTriangle size={18} />
+    title = 'Your free trial has ended — your account is now read-only.'
+    body = 'Your data is safe. Pick a plan to start editing again.'
   } else if (status === 'canceled') {
     bg = 'rgba(239,68,68,0.08)'; border = 'rgba(239,68,68,0.4)'; fg = '#b91c1c'
     icon = <AlertTriangle size={18} />
-    title = 'Subscription canceled.'
-    body = 'Re-subscribe to restore full access.'
+    title = 'Subscription canceled — your account is now read-only.'
+    body = 'Your data is safe. Re-subscribe to start editing again.'
   } else if (status === 'trialing' && daysLeft === 0) {
     bg = 'rgba(245,158,11,0.1)'; border = 'rgba(245,158,11,0.4)'; fg = '#b45309'
     icon = <Clock size={18} />
@@ -100,9 +109,9 @@ export default function TrialBanner() {
           fontSize: 12, fontWeight: 700,
         }}
       >
-        {status === 'past_due' || status === 'canceled' ? 'Update Payment' : 'Pick a Plan'}
+        {status === 'past_due' ? 'Update Payment' : status === 'canceled' ? 'Re-subscribe' : 'Pick a Plan'}
       </Link>
-      {status !== 'past_due' && status !== 'canceled' && (
+      {status !== 'past_due' && !isReadOnly && (
         <button
           onClick={dismissForToday}
           title="Hide for today"
