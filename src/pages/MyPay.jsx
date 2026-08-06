@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
@@ -9,7 +10,7 @@ import {
   calculateInvoiceCommissions,
   PERIODS_PER_YEAR,
 } from '../lib/bonusCalc'
-import { fetchUserBonuses, bonusStatusLabel } from '../lib/bonusLedger'
+import { fetchUserBonuses, bonusStatusLabel, bonusJobLabel } from '../lib/bonusLedger'
 import { groupHoursByDay } from '../lib/dailyHours'
 import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
@@ -115,6 +116,7 @@ function PaystubRow({ p, theme, onDownload }) {
 export default function MyPay() {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
+  const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
   const user = useStore((state) => state.user)
 
@@ -519,7 +521,36 @@ export default function MyPay() {
 
   const fmt = (n) => `$${(n || 0).toFixed(2)}`
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''
-  const bonusJobTitle = (b) => b.jobs?.job_title || b.jobs?.customer_name || `Job ${b.jobs?.job_id || b.job_id}`
+  // Customer leads, job title underneath, and the heading opens the job.
+  // Payroll already worked this way; My Pay still led with the job title, so a
+  // tech's own bonus list read as a column of identical service names. One
+  // rule now, in lib/bonusLedger — see bonusJobLabel.
+  const BonusJobHeading = ({ bonus }) => {
+    const { heading, subtitle, jobId } = bonusJobLabel(bonus)
+    return (
+      <div style={{ minWidth: 0 }}>
+        <button
+          onClick={() => jobId && navigate(`/jobs/${jobId}`)}
+          disabled={!jobId}
+          title={jobId ? 'Open this job' : undefined}
+          style={{
+            display: 'block', width: '100%', textAlign: 'left', padding: 0,
+            background: 'none', border: 'none', cursor: jobId ? 'pointer' : 'default',
+            fontSize: '13px', fontWeight: 600, color: jobId ? theme.accent : theme.text,
+            textDecoration: jobId ? 'underline' : 'none', textUnderlineOffset: '2px',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}
+        >
+          {heading}
+        </button>
+        {subtitle && (
+          <div style={{ fontSize: '11px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {subtitle}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const triggerLabel = {
     payment_received: 'paid when the customer pays the invoice',
@@ -856,7 +887,7 @@ export default function MyPay() {
               return (
                 <div key={b.id} style={{ padding: '10px 12px', backgroundColor: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bonusJobTitle(b)}</div>
+                    <BonusJobHeading bonus={b} />
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
                       Allotted {b.allotted_hours}h · Actual {Number(b.actual_hours || 0).toFixed(1)}h · Saved {Number(b.saved_hours || 0).toFixed(1)}h
                       {b.crew_size > 1 && ` · split ${b.crew_size} ways`}
@@ -899,7 +930,7 @@ export default function MyPay() {
             {paidBonuses.slice(0, 12).map((b) => (
               <div key={b.id} style={{ padding: '9px 12px', backgroundColor: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bonusJobTitle(b)}</div>
+                  <BonusJobHeading bonus={b} />
                   <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '2px', fontWeight: 600 }}>
                     Paid {fmtDate(b.paid_at)}{b.paid_pay_period_end ? ` · pay period ending ${fmtDate(b.paid_pay_period_end)}` : ''}
                   </div>

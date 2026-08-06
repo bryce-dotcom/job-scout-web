@@ -311,3 +311,52 @@ describe('a bonus that is no longer earned', () => {
     expect(res.removed).toBe(0)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────
+// How a bonus is labelled. Alayda, twice: "the bonuses are labeled by what
+// they are doing on the job not by customer, we need to be able to click into
+// the job to see what they are referring to."
+// ─────────────────────────────────────────────────────────────────────────
+import { bonusJobLabel } from './bonusLedger'
+
+describe('labelling a bonus', () => {
+  it('leads with the customer, not the service', () => {
+    const row = {
+      job_id: 23305,
+      jobs: { job_title: 'Commercial Window Cleaning - Store Front', job_id: 'JOB-X', customer: { business_name: 'Ivy Apartments' } },
+    }
+    const { heading, subtitle } = bonusJobLabel(row)
+    expect(heading).toBe('Ivy Apartments')
+    expect(subtitle).toBe('Commercial Window Cleaning - Store Front')
+  })
+
+  it('prefers the business name over a contact name', () => {
+    const row = { job_id: 1, jobs: { customer: { name: 'Jane Doe', business_name: 'Doe Holdings' } } }
+    expect(bonusJobLabel(row).heading).toBe('Doe Holdings')
+  })
+
+  it('falls back to jobs.customer_name when there is no linked customer', () => {
+    const row = { job_id: 1, jobs: { customer_name: 'Kimball Investment Co', job_title: 'Power Wash' } }
+    expect(bonusJobLabel(row).heading).toBe('Kimball Investment Co')
+  })
+
+  it('uses the job title when nothing identifies the customer', () => {
+    // Three jobs behind live bonuses have no customer at all, and their titles
+    // carry the identity: "Nicole Webster - Exterior Window Cleaning".
+    const row = { job_id: 23339, jobs: { job_title: 'Nicole Webster - Exterior Window Cleaning' } }
+    const { heading, subtitle } = bonusJobLabel(row)
+    expect(heading).toBe('Nicole Webster - Exterior Window Cleaning')
+    expect(subtitle).toBeNull()   // never repeat the heading underneath itself
+  })
+
+  it('never renders a blank row', () => {
+    expect(bonusJobLabel({ job_id: 999, jobs: {} }).heading).toBe('Job 999')
+    expect(bonusJobLabel({}).heading).toBe('Job')
+    expect(bonusJobLabel(null).heading).toBe('Job')
+  })
+
+  it('always carries the id needed to open the job', () => {
+    expect(bonusJobLabel({ job_id: 21004, jobs: {} }).jobId).toBe(21004)
+    expect(bonusJobLabel(null).jobId).toBeNull()
+  })
+})

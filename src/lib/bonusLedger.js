@@ -19,11 +19,41 @@ import { computeJobBonusRows } from './bonusCalc'
 
 // ── Reader ─────────────────────────────────────────────────────────────
 // All of one employee's bonus rows, newest first, with the job title joined.
+/**
+ * How a bonus is labelled, in ONE place.
+ *
+ * Alayda, twice: "the bonuses are labeled by what they are doing on the job
+ * not by customer, we need to be able to click into the job to see what they
+ * are referring to." On the HHH side several jobs read "Commercial Window
+ * Cleaning - Store Front" — the SERVICE, not the client — so a payroll run
+ * showed a column of identical-looking bonuses.
+ *
+ * Customer leads. The job title becomes the subtitle, because it still says
+ * WHICH job when one client has several. Falls back to the title, then the
+ * job number, so a row is never blank — three jobs behind live bonuses have
+ * no customer linked at all, and their titles ("Nicole Webster - Exterior
+ * Window Cleaning") carry the identity anyway.
+ *
+ * Payroll had this fixed inline while My Pay still led with the job title.
+ * Same rule in two places is how the invoice-line builder reached five copies.
+ */
+export function bonusJobLabel(bonusRow) {
+  const job = bonusRow?.jobs || {}
+  const customer = job.customer?.business_name || job.customer?.name || job.customer_name || null
+  const title = job.job_title || null
+  const heading = customer || title || `Job ${job.job_id || bonusRow?.job_id || ''}`.trim()
+  // Don't repeat the heading underneath it.
+  const subtitle = customer && title && title !== customer ? title : null
+  return { heading, subtitle, jobId: bonusRow?.job_id ?? null }
+}
+
 export async function fetchUserBonuses(supabase, companyId, employeeId) {
   if (!companyId || !employeeId) return []
   const { data, error } = await supabase
     .from('job_bonuses')
-    .select('*, jobs(job_title, customer_name, job_id)')
+    // The customer join, not just jobs.customer_name — that column is null on
+    // most rows, which is why My Pay fell back to the service name.
+    .select('*, jobs(job_title, customer_name, job_id, customer:customers!customer_id(name, business_name))')
     .eq('company_id', companyId)
     .eq('employee_id', employeeId)
     .order('updated_at', { ascending: false })

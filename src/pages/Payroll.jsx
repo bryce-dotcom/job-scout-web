@@ -20,7 +20,7 @@ import {
   timeClockToJobHours,
   calculateInvoiceCommissions as sharedCalculateInvoiceCommissions,
 } from '../lib/bonusCalc'
-import { syncJobBonuses } from '../lib/bonusLedger'
+import { syncJobBonuses, bonusJobLabel } from '../lib/bonusLedger'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
 import { commissionConfigIssues } from '../lib/commissionConfigIssues'
@@ -2400,10 +2400,10 @@ export default function Payroll() {
                         they were indistinguishable. Lead with the customer,
                         keep the job title underneath, and link to the job. */}
                     {(() => {
-                      const j = b.jobs || {}
-                      const customer = j.customer?.business_name || j.customer?.name || null
-                      const title = j.job_title || null
-                      const heading = customer || title || `Job ${b.job_id}`
+                      // bonusJobLabel, not a local copy — My Pay had its own
+                      // version that still led with the job title, so the same
+                      // bonus read differently depending on who opened it.
+                      const { heading, subtitle: title } = bonusJobLabel(b)
                       return (
                         <>
                           <button
@@ -2419,8 +2419,8 @@ export default function Payroll() {
                             {heading}
                           </button>
                           <div style={{ fontSize: '11.5px', color: theme.textSecondary, marginTop: '1px' }}>
-                            {customer && title && title !== customer ? `${title} · ` : ''}
-                            {j.job_id || `#${b.job_id}`}
+                            {title ? `${title} · ` : ''}
+                            {b.jobs?.job_id || `#${b.job_id}`}
                           </div>
                         </>
                       )
