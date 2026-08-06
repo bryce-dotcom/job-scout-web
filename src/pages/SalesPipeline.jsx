@@ -1073,12 +1073,24 @@ export default function SalesPipeline() {
     // Estimate card: use the specific quote amount
     if (l._isEstimate) return l._quoteAmount || 0
 
-    // Lead card with jobs: use job total
+    // Lead card with jobs: use the job total.
+    //
+    // NOT jobTotal + incentive. The incentive is the utility's share OF the
+    // job total, not money on top of it — job 23407 has job_total 46432.76 and
+    // its estimate reads 46432.76 to the cent, with the SAME utility_incentive
+    // of 32095 recorded on both. Adding them showed that deal as $78,527.
+    //
+    // Cole (716a21e2): "Pipe Line is showing number that are not real. the job
+    // totals are in correcet." Across 69 jobs carrying an incentive it
+    // overstated $1,448,077 of real work by $1,028,586 — 71% too high.
     const job = l.jobs?.[0]
     if (job) {
       const jobTotal = parseFloat(job.job_total) || 0
       const incentive = parseFloat(job.utility_incentive) || 0
-      if (jobTotal > 0 || incentive > 0) return jobTotal + incentive
+      if (jobTotal > 0) return jobTotal
+      // A utility-only job carries no job_total; there the incentive IS the
+      // value. One live job (worth $11,285) depends on this.
+      if (incentive > 0) return incentive
     }
     if (l._quoteTotal > 0) return l._quoteTotal
     return parseFloat(l.quote_amount) || 0
