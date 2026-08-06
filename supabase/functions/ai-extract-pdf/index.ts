@@ -67,7 +67,12 @@ Rules:
         system: 'You are a data extraction assistant. Respond with ONLY a valid JSON object. No markdown fences, no explanation, no preamble. Structure: {"headers": ["col1", "col2", ...], "rows": [["val1", "val2", ...], ...]}',
         messages: [
           { role: 'user', content: contentBlocks },
-          { role: 'assistant', content: '{"headers":' },
+          // No assistant prefill. claude-sonnet-4-6 rejects it outright with a
+          // 400: "This model does not support assistant message prefill. The
+          // conversation must end with a user message." Confirmed while
+          // building extract-product-specs — this function fails on every use
+          // until the prefill goes. The system prompt already demands bare
+          // JSON, and the parser below strips a fence if one appears.
         ],
       },
     );
@@ -80,8 +85,8 @@ Rules:
     const aiData = ai.data;
     const rawText = aiData.content?.[0]?.text || '';
 
-    // We prefilled with '{"headers":', so prepend it
-    const text = '{"headers":' + rawText;
+    // The reply is a bare JSON object now that the prefill is gone.
+    const text = rawText;
 
     // Try multiple parsing strategies
     let result: any = null;

@@ -95,9 +95,25 @@ function estimate(p) {
       && Math.abs(hoursBetween(p.clock_in, c.clock_in)) <= 4)
     if (mates.length) {
       const outs = mates.map(m => new Date(m.clock_out).getTime())
-      end = new Date(median(outs))
-      method = 'CREW'
-      note = `${mates.length} coworker${mates.length > 1 ? 's' : ''} on job ${p.job_id}`
+      const candidate = new Date(median(outs))
+      const impliedHours = hoursBetween(p.clock_in, candidate)
+      // Do not inherit a coworker's unusually long day. On job 23427 the only
+      // mate inside the window was Dusty, who worked 12:55pm-2:05am; pairing
+      // Lucas to him implied a 14.6h shift against his own ~6h pattern. Being
+      // generous with someone else's hours is still getting it wrong.
+      // Reference: the person's own median when it rests on enough shifts,
+      // otherwise the company median for that start window. Lucas had too few
+      // closed day shifts for his own median to count, which is exactly when
+      // an inherited outlier does the most damage.
+      const reference = (own != null && ownSample(p.employee_id, evening).length >= MIN_SAMPLE)
+        ? own
+        : companyMedian[evening]
+      const tooLong = reference != null && impliedHours > reference * 1.5
+      if (!tooLong && impliedHours > 0) {
+        end = candidate
+        method = 'CREW'
+        note = `${mates.length} coworker${mates.length > 1 ? 's' : ''} on job ${p.job_id}`
+      }
     }
   }
 
