@@ -4,7 +4,12 @@
 export const SOURCE_COLORS = {
   appointment: { bg: '#5a9bd5', border: '#4a8bc5', label: 'Appointments' },
   job:         { bg: '#22c55e', border: '#16a34a', label: 'Jobs' },
-  google:      { bg: '#8b5cf6', border: '#7c3aed', label: 'Google Calendar' }
+  google:      { bg: '#8b5cf6', border: '#7c3aed', label: 'Google Calendar' },
+  // Follow-ups a rep scheduled from the pipeline. The bg here is only the
+  // filter-pill default — each event is coloured by WHEN it is due (red past
+  // due, green today, yellow ahead) via followUpSchedule, the same traffic
+  // light the pipeline card uses.
+  followup:    { bg: '#eab308', border: '#ca8a04', label: 'Follow-ups' }
 }
 
 const statusToAppointmentColor = {
@@ -90,5 +95,38 @@ export function normalizeGoogleEvent(evt) {
     location: evt.location || '',
     meta: evt,
     readOnly: true
+  }
+}
+
+/**
+ * A scheduled follow-up as a calendar event.
+ *
+ * Bryce: "add a filter to the appointments calendar that when a rep creates a
+ * follow up it appears on this calendar" — and the colour follows the same
+ * traffic light as the pipeline card (followUpSchedule), so a deal is never
+ * green on the board and yellow here.
+ *
+ * All-day, because a follow-up is a commitment for a DAY, not a timed meeting;
+ * pinning it to the minute it was scheduled would bury it in the middle of a
+ * work day next to real appointments.
+ */
+export function normalizeFollowUp(row, schedule) {
+  if (!row?.next_follow_up_at) return null
+  const start = new Date(row.next_follow_up_at)
+  if (!Number.isFinite(start.getTime())) return null
+  const who = row.lead?.customer_name || row.job?.job_title || 'Follow-up'
+  return {
+    id: `followup-${row.id}`,
+    source: 'followup',
+    title: `Follow up: ${who}`,
+    start,
+    end: start,
+    allDay: true,
+    color: schedule?.color || SOURCE_COLORS.followup.bg,
+    borderColor: SOURCE_COLORS.followup.border,
+    status: schedule?.state || null,
+    location: row.lead?.address || '',
+    meta: row,
+    readOnly: true,   // reschedule it from the deal, not by dragging a dot
   }
 }

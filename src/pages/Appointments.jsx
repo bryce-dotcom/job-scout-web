@@ -5,7 +5,8 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { APPOINTMENT_STATUS } from '../lib/schema'
-import { SOURCE_COLORS, normalizeAppointment, normalizeJob, normalizeGoogleEvent } from '../lib/calendarUtils'
+import { SOURCE_COLORS, normalizeAppointment, normalizeJob, normalizeGoogleEvent, normalizeFollowUp } from '../lib/calendarUtils'
+import { followUpSchedule, FOLLOW_UP_COLORS, FU_OVERDUE, FU_TODAY } from '../lib/followUps'
 import { Plus, X, Trash2, Upload, Download, ChevronLeft, ChevronRight, RefreshCw, Calendar, Unlink, Ban } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import SearchableSelect from '../components/SearchableSelect'
@@ -114,6 +115,10 @@ export default function Appointments() {
   const [viewMode, setViewMode] = useState('month')
   const [sourceFilter, setSourceFilter] = useState('all')
   const [employeeFilter, setEmployeeFilter] = useState('all')
+
+  // Follow-ups scheduled from the pipeline. A rep sets "chase in 3 days" on a
+  // deal and it has to land somewhere they will actually look — this calendar.
+  const [followUps, setFollowUps] = useState([])
 
   // Google Calendar state
   const [gcalConnected, setGcalConnected] = useState(false)
@@ -266,7 +271,40 @@ export default function Appointments() {
     setGcalEvents([])
   }
 
+  // Only the LATEST touch per deal carries the live date — an older row saying
+  // "chase last week" must not keep painting a red dot after the rep pushed it
+  // out. Same latest-wins rule the pipeline strip uses.
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    supabase.from('lead_follow_ups')
+      .select('id, lead_id, job_id, employee_id, contacted_at, next_follow_up_at, lead:leads!lead_id(id, customer_name, address)')
+      .eq('company_id', companyId)
+      .not('next_follow_up_at', 'is', null)
+      .order('contacted_at', { ascending: false })
+      .then(({ data, error: err }) => {
+        if (cancelled || err) return
+        const latest = new Map()
+        for (const r of data || []) {
+          const key = r.lead_id != null ? `l${r.lead_id}` : `j${r.job_id}`
+          if (!latest.has(key)) latest.set(key, r)   // already newest-first
+        }
+        setFollowUps([...latest.values()])
+      })
+    return () => { cancelled = true }
+  }, [companyId])
+
   // ─── Normalize all events ───
+  const normalizedFollowUps = followUps
+    .map(r => normalizeFollowUp(r, followUpSchedule(r.next_follow_up_at)))
+    .filter(Boolean)
+
+  // Worst state wins on the pill: one overdue chase is the thing to surface.
+  const followUpPillColor =
+    normalizedFollowUps.some(e => e.status === FU_OVERDUE) ? FOLLOW_UP_COLORS[FU_OVERDUE]
+    : normalizedFollowUps.some(e => e.status === FU_TODAY) ? FOLLOW_UP_COLORS[FU_TODAY]
+    : SOURCE_COLORS.followup.bg
+
   const normalizedAppointments = (storeAppointments || [])
     .filter(a => a.start_time)
     .map(normalizeAppointment)
@@ -282,6 +320,7 @@ export default function Appointments() {
   if (sourceFilter === 'all' || sourceFilter === 'appointment') allEvents.push(...normalizedAppointments)
   if (sourceFilter === 'all' || sourceFilter === 'job') allEvents.push(...normalizedJobs)
   if (sourceFilter === 'all' || sourceFilter === 'google') allEvents.push(...normalizedGcal)
+  if (sourceFilter === 'all' || sourceFilter === 'followup') allEvents.push(...normalizedFollowUps)
 
   // Employee filter — "all" shows everything, selecting an employee scopes to their events
   if (employeeFilter !== 'all') {
@@ -759,6 +798,14 @@ export default function Appointments() {
             <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: sourceFilter === 'job' ? '#fff' : SOURCE_COLORS.job.bg, flexShrink: 0 }} />
             <span>Jobs</span>
             <span style={{ fontSize: '11px', opacity: 0.8 }}>({jobCount})</span>
+          </button>
+          {/* Follow-ups scheduled from the pipeline. The dot shows the worst
+              state present, so a rep can see at a glance whether anything is
+              already overdue without opening the filter. */}
+          <button onClick={() => setSourceFilter('followup')} style={pillBtn(sourceFilter === 'followup', followUpPillColor)}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: sourceFilter === 'followup' ? '#fff' : followUpPillColor, flexShrink: 0 }} />
+            <span>Follow-ups</span>
+            <span style={{ fontSize: '11px', opacity: 0.8 }}>({normalizedFollowUps.length})</span>
           </button>
           {gcalConnected ? (
             <button onClick={() => setSourceFilter('google')} style={pillBtn(sourceFilter === 'google', SOURCE_COLORS.google.bg)}>

@@ -218,3 +218,67 @@ export function isStorableId(v) {
   if (v === null || v === undefined || v === '') return false
   return Number.isFinite(Number(v)) && !/^[a-z]/i.test(String(v))
 }
+
+// ── Scheduled-date traffic light ────────────────────────────────────────
+//
+// Bryce's rule, and the one a rep actually reads at a glance:
+//   red    — past due
+//   green  — due today
+//   yellow — coming up
+//
+// followUpState above answers "how cold is this deal", which is a different
+// question and lumps due-today in with three-weeks-overdue. This answers only
+// "where does the SCHEDULED date sit relative to today", and is the single
+// definition shared by the pipeline card and the appointments calendar so the
+// two can never disagree about what colour a follow-up is.
+//
+// Compared by calendar DAY in local time, not by elapsed hours: a follow-up
+// set for 9am today is still "today" at 5pm, and one set for tomorrow is not
+// "due" merely because 24 hours have not passed.
+
+export const FU_OVERDUE = 'overdue'
+export const FU_TODAY = 'today'
+export const FU_UPCOMING = 'upcoming'
+export const FU_NONE = 'none'
+
+export const FOLLOW_UP_COLORS = {
+  [FU_OVERDUE]: '#ef4444',   // red
+  [FU_TODAY]: '#22c55e',     // green
+  [FU_UPCOMING]: '#eab308',  // yellow
+  [FU_NONE]: null,
+}
+
+const startOfLocalDay = (d) => {
+  const x = new Date(d)
+  x.setHours(0, 0, 0, 0)
+  return x.getTime()
+}
+
+/**
+ * Where a scheduled follow-up sits relative to today.
+ * @returns { state, color, label, daysUntil } — daysUntil is negative when overdue.
+ */
+export function followUpSchedule(nextFollowUpAt, now = new Date()) {
+  if (!nextFollowUpAt) return { state: FU_NONE, color: null, label: '', daysUntil: null }
+  const due = new Date(nextFollowUpAt)
+  if (!Number.isFinite(due.getTime())) return { state: FU_NONE, color: null, label: '', daysUntil: null }
+
+  const daysUntil = Math.round((startOfLocalDay(due) - startOfLocalDay(now)) / 86400000)
+  if (daysUntil < 0) {
+    const n = Math.abs(daysUntil)
+    return { state: FU_OVERDUE, color: FOLLOW_UP_COLORS[FU_OVERDUE], daysUntil, label: `${n}d overdue` }
+  }
+  if (daysUntil === 0) {
+    return { state: FU_TODAY, color: FOLLOW_UP_COLORS[FU_TODAY], daysUntil, label: 'Follow up today' }
+  }
+  return {
+    state: FU_UPCOMING, color: FOLLOW_UP_COLORS[FU_UPCOMING], daysUntil,
+    label: daysUntil === 1 ? 'Follow up tomorrow' : `Follow up in ${daysUntil}d`,
+  }
+}
+
+/** The scheduled follow-up that matters for a deal: its most recent touch. */
+export function scheduleForLead(rows = [], leadId, now = new Date()) {
+  const latest = historyFor(rows, leadId, 1)[0] || null
+  return followUpSchedule(latest?.next_follow_up_at, now)
+}

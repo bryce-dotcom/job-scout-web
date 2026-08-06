@@ -4,6 +4,7 @@ import {
   COLD, DUE, AGING, FRESH, UNTOUCHED,
   stripSummary, snoozeToIso, shortDate, attemptCount, historyFor, SNOOZE_PRESETS,
   resolveFollowUpTarget, isStorableId,
+  followUpSchedule, scheduleForLead, FU_OVERDUE, FU_TODAY, FU_UPCOMING, FU_NONE,
 } from './followUps'
 
 const NOW = new Date('2026-08-04T18:00:00Z').getTime()
@@ -264,5 +265,52 @@ describe('a card id is NOT a database id', () => {
   it('handles a card with no usable target', () => {
     expect(resolveFollowUpTarget({ id: 'quote-9', _isEstimate: true })).toEqual({ leadId: null, jobId: null })
     expect(resolveFollowUpTarget(null)).toEqual({ leadId: null, jobId: null })
+  })
+})
+
+describe('the follow-up traffic light', () => {
+  // Bryce: green for that day, yellow for coming up, red for past due.
+  // One definition, shared by the pipeline card and the appointments calendar.
+  const now = new Date('2026-08-06T14:00:00')
+  const at = (iso) => followUpSchedule(iso, now)
+
+  it('is green on the day it is due, all day', () => {
+    // Set for 9am, still "today" at 2pm — not overdue because hours passed.
+    expect(at('2026-08-06T09:00:00').state).toBe(FU_TODAY)
+    expect(at('2026-08-06T23:30:00').state).toBe(FU_TODAY)
+    expect(at('2026-08-06T09:00:00').color).toBe('#22c55e')
+  })
+
+  it('is red once the day has passed', () => {
+    expect(at('2026-08-05T23:00:00').state).toBe(FU_OVERDUE)
+    expect(at('2026-08-05T23:00:00').color).toBe('#ef4444')
+    expect(at('2026-08-01T09:00:00').label).toBe('5d overdue')
+  })
+
+  it('is yellow while it is still ahead', () => {
+    expect(at('2026-08-07T08:00:00').state).toBe(FU_UPCOMING)
+    expect(at('2026-08-07T08:00:00').color).toBe('#eab308')
+    expect(at('2026-08-07T08:00:00').label).toBe('Follow up tomorrow')
+    expect(at('2026-08-09T08:00:00').label).toBe('Follow up in 3d')
+  })
+
+  it('tomorrow at 1am is NOT overdue just because it is under 24h away', () => {
+    // The whole reason this compares calendar days rather than elapsed time.
+    expect(at('2026-08-07T01:00:00').state).toBe(FU_UPCOMING)
+  })
+
+  it('has no colour when nothing is scheduled', () => {
+    expect(at(null).state).toBe(FU_NONE)
+    expect(at(undefined).color).toBeNull()
+    expect(at('not-a-date').state).toBe(FU_NONE)
+  })
+
+  it('reads the most recent touch for a deal', () => {
+    const rows = [
+      { id: 1, lead_id: 7, contacted_at: '2026-08-01T10:00:00', next_follow_up_at: '2026-08-02T10:00:00' },
+      { id: 2, lead_id: 7, contacted_at: '2026-08-06T10:00:00', next_follow_up_at: '2026-08-06T10:00:00' },
+    ]
+    // The newer touch rescheduled it to today, so it must not read as overdue.
+    expect(scheduleForLead(rows, 7, now).state).toBe(FU_TODAY)
   })
 })

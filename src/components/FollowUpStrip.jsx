@@ -5,6 +5,7 @@ import { toast } from '../lib/toast'
 import {
   buildFollowUpRow, stripSummary, snoozeToIso, shortDate, resolveFollowUpTarget,
   attemptCount, historyFor, SNOOZE_PRESETS,
+  followUpSchedule, FOLLOW_UP_COLORS, FU_OVERDUE, FU_TODAY, FU_UPCOMING, FU_NONE,
 } from '../lib/followUps'
 
 // Follow-up lives ON the deal card, in its real stage. An earlier build pulled
@@ -59,7 +60,25 @@ export default function FollowUpStrip({
     ok: { bg: t.bg, fg: t.textSecondary, line: t.border },
     idle: { bg: t.bg, fg: t.textMuted, line: t.border },
   }
-  const tone = TONES[summary.tone] || TONES.idle
+
+  // Traffic light on the SCHEDULED date — red past due, green due today,
+  // yellow coming up. This beats the cold/aging summary whenever a rep has
+  // actually set a date, because that date is the commitment they made and
+  // the thing they scan the board for. followUpSchedule is shared with the
+  // appointments calendar so a deal cannot be one colour here and another
+  // there.
+  const sched = followUpSchedule(latest?.next_follow_up_at)
+  const SCHED_TONES = {
+    [FU_OVERDUE]: { bg: 'rgba(239,68,68,0.12)', fg: '#b91c1c', line: FOLLOW_UP_COLORS[FU_OVERDUE] },
+    [FU_TODAY]: { bg: 'rgba(34,197,94,0.12)', fg: '#15803d', line: FOLLOW_UP_COLORS[FU_TODAY] },
+    [FU_UPCOMING]: { bg: 'rgba(234,179,8,0.12)', fg: '#854F0B', line: FOLLOW_UP_COLORS[FU_UPCOMING] },
+  }
+  const scheduled = sched.state !== FU_NONE
+  const tone = scheduled
+    ? SCHED_TONES[sched.state]
+    : (TONES[summary.tone] || TONES.idle)
+  const headline = scheduled ? sched.label : summary.text
+  const pulse = scheduled ? sched.state === FU_OVERDUE : summary.pulse
 
   // Logging and rescheduling are ONE action. The end of a call is the only
   // moment a rep will ever set the next one, so the default fires here.
@@ -111,11 +130,11 @@ export default function FollowUpStrip({
         }}
       >
         <span
-          className={summary.pulse ? 'fu-live' : undefined}
+          className={pulse ? 'fu-live' : undefined}
           style={{ width: '6px', height: '6px', borderRadius: '50%', background: tone.fg, flexShrink: 0 }}
         />
         <span style={{ fontSize: '11px', color: tone.fg, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {summary.text}
+          {headline}
           {attempts > 1 && <span style={{ color: t.textMuted }}> · {attempts} attempts</span>}
         </span>
         {phone && !open && (
