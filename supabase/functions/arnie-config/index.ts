@@ -59,31 +59,42 @@ async function resolveAdmin(sb: any, req: Request): Promise<{ email: string; com
   return { email, companyId: e.company_id };
 }
 
+// Items are EITHER strings (lead_sources, service_types) OR objects with a
+// `name` and other fields we must preserve (business_units carry logo/phone/
+// address/email). Identify + display by name; never strip an object's extras.
+function nameOf(x: any): string { return typeof x === 'string' ? x : String(x?.name ?? ''); }
+function names(list: any[]): string[] { return list.map(nameOf); }
+
 // Read a taxonomy list from settings (stored as a JSON-stringified array).
-async function readList(sb: any, companyId: number, key: string): Promise<{ row: any | null; list: string[] }> {
+// Keeps items in their original shape (string OR object).
+async function readList(sb: any, companyId: number, key: string): Promise<{ row: any | null; list: any[] }> {
   const { data } = await sb.from('settings').select('id, value')
     .eq('company_id', companyId).eq('key', key).order('id').limit(1);
   const row = data?.[0] || null;
-  let list: string[] = [];
-  if (row?.value) { try { const p = JSON.parse(row.value); if (Array.isArray(p)) list = p.map(String); } catch { /* ignore */ } }
+  let list: any[] = [];
+  if (row?.value) { try { const p = JSON.parse(row.value); if (Array.isArray(p)) list = p; } catch { /* ignore */ } }
   return { row, list };
 }
 
-// Deterministically compute the new list for an action. Returns null if the
-// action is a no-op or invalid (so we don't apply meaningless changes).
-function applyToList(list: string[], action: string, value: string, newValue?: string): string[] | null {
-  const has = (v: string) => list.some((x) => x.toLowerCase() === v.toLowerCase());
+// Deterministically compute the new list, PRESERVING item shape. Returns null
+// on a no-op/invalid action so we never apply a meaningless change.
+function applyToList(list: any[], action: string, value: string, newValue: string | undefined, target: string): any[] | null {
+  // business_units items are objects; everything else is strings.
+  const objShaped = target === 'business_units' || list.some((x) => x && typeof x === 'object');
+  const has = (v: string) => list.some((x) => nameOf(x).toLowerCase() === v.toLowerCase());
   if (action === 'add') {
     if (!value || has(value)) return null;
-    return [...list, value];
+    return [...list, objShaped ? { name: value } : value];
   }
   if (action === 'remove') {
     if (!has(value)) return null;
-    return list.filter((x) => x.toLowerCase() !== value.toLowerCase());
+    return list.filter((x) => nameOf(x).toLowerCase() !== value.toLowerCase());
   }
   if (action === 'rename') {
     if (!value || !newValue || !has(value)) return null;
-    return list.map((x) => (x.toLowerCase() === value.toLowerCase() ? newValue : x));
+    return list.map((x) => nameOf(x).toLowerCase() === value.toLowerCase()
+      ? (typeof x === 'string' ? newValue : { ...x, name: newValue })  // keep logo/phone/etc.
+      : x);
   }
   return null;
 }
@@ -121,9 +132,11 @@ serve(async (req) => {
       const request = String(body.request || '').trim();
       if (!request) return json({ error: 'Tell Arnie what you want to change.' }, 400);
 
-      // Ground the model with the current lists.
+      // Ground the model with the current lists AS NAMES. (business_units are
+      // objects; showing raw objects makes the model echo an object back as
+      // the value, which then stringifies to "[object Object]".)
       const current: Record<string, string[]> = {};
-      for (const t of ALLOWED_TARGETS) current[t] = (await readList(sb, companyId, t)).list;
+      for (const t of ALLOWED_TARGETS) current[t] = names((await readList(sb, companyId, t)).list);
 
       const sys = `You configure a field-service SaaS. Convert the admin's request into EXACTLY ONE change to one of these lists. Respond with ONLY minified JSON, no prose.
 Targets and their current values:
@@ -144,16 +157,18 @@ If the request cannot be mapped to one of these lists/actions, respond {"error":
       try { parsed = JSON.parse((txt.match(/\{[\s\S]*\}/) || [txt])[0]); } catch { return json({ error: "Arnie couldn't turn that into a change. Try naming the list and item, e.g. \"add a business unit called Government\"." }, 200); }
       if (parsed.error) return json({ error: parsed.error }, 200);
 
+      // Defensive: if the model returns {name:"…"} for value, unwrap it.
+      const unwrap = (v: any) => (v && typeof v === 'object' ? v.name : v);
       const target = String(parsed.target || '');
       const act = String(parsed.action || '');
-      const value = String(parsed.value || '').trim();
-      const newValue = parsed.newValue ? String(parsed.newValue).trim() : undefined;
+      const value = String(unwrap(parsed.value) ?? '').trim();
+      const newValue = parsed.newValue != null ? String(unwrap(parsed.newValue) ?? '').trim() : undefined;
       if (!ALLOWED_TARGETS.includes(target as any) || !['add', 'rename', 'remove'].includes(act) || !value) {
         return json({ error: 'That isn\'t a change Arnie can make yet (Tier A covers business units, lead sources, and service types).' }, 200);
       }
 
       const { list } = await readList(sb, companyId, target);
-      const after = applyToList(list, act, value, newValue);
+      const after = applyToList(list, act, value, newValue, target);
       if (!after) {
         const why = act === 'add' ? `"${value}" is already in your ${TARGET_LABEL[target]}s`
           : `"${value}" isn't in your ${TARGET_LABEL[target]}s`;
@@ -167,7 +182,7 @@ If the request cannot be mapped to one of these lists/actions, respond {"error":
         before_value: list, after_value: after, status: 'pending',
       }).select().single();
       if (insErr) return json({ error: insErr.message }, 500);
-      return json({ proposal: prop, preview: { target, label: TARGET_LABEL[target], before: list, after } });
+      return json({ proposal: prop, preview: { target, label: TARGET_LABEL[target], before: names(list), after: names(after) } });
     }
 
     // ── APPLY / REJECT / ROLLBACK: operate on an existing proposal
@@ -186,7 +201,7 @@ If the request cannot be mapped to one of these lists/actions, respond {"error":
       if (prop.status !== 'pending') return json({ error: `This change is already ${prop.status}.` }, 400);
       // Re-read live list at apply time (config may have changed since propose)
       const { row, list } = await readList(sb, companyId, prop.target);
-      const after = applyToList(list, prop.action, prop.payload.value, prop.payload.newValue);
+      const after = applyToList(list, prop.action, prop.payload.value, prop.payload.newValue, prop.target);
       if (!after) {
         await sb.from('arnie_proposals').update({ status: 'failed', error: 'No longer applicable (config changed).', decided_by: caller.email, decided_at: new Date().toISOString() }).eq('id', proposalId);
         return json({ error: 'That change no longer applies — the list changed since it was drafted.' }, 409);
@@ -200,7 +215,7 @@ If the request cannot be mapped to one of these lists/actions, respond {"error":
     if (action === 'rollback') {
       if (prop.status !== 'applied') return json({ error: `Only an applied change can be rolled back (this one is ${prop.status}).` }, 400);
       const { row } = await readList(sb, companyId, prop.target);
-      const restore = Array.isArray(prop.before_value) ? prop.before_value.map(String) : [];
+      const restore = Array.isArray(prop.before_value) ? prop.before_value : [];
       await writeList(sb, companyId, prop.target, row, restore);
       await sb.from('arnie_proposals').update({ status: 'rolled_back', decided_by: caller.email, decided_at: new Date().toISOString() }).eq('id', proposalId);
       await audit(sb, companyId, caller.email, `arnie_config_rollback:${prop.target}`, proposalId, { summary: prop.summary, restored: restore });

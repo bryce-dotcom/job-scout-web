@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
-import { Wrench, Check, X, RotateCcw, Send, Sparkles, ShieldAlert } from 'lucide-react'
+import { Wrench, Check, X, RotateCcw, Send, Sparkles, ShieldAlert, MessageCircle } from 'lucide-react'
 
 const t = {
   bg: '#f7f5ef', card: '#ffffff', card2: '#f0ebdd', ink: '#2c3530', sub: '#4d5a52',
@@ -97,9 +97,17 @@ export default function ArnieSetup() {
         <Wrench size={20} color={t.accent} />
         <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>Set up your system with Arnie</h1>
       </div>
-      <p style={{ color: t.sub, margin: '0 0 18px', fontSize: 14 }}>
+      <p style={{ color: t.sub, margin: '0 0 14px', fontSize: 14 }}>
         Tell Arnie what to change in plain English. He drafts it, you review the before-and-after, and nothing changes until you approve. Every change is logged and can be rolled back.
       </p>
+
+      {/* Arnie lives in the corner guy — you can also just talk to him there. */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: t.accentBg, border: `1px solid ${t.line}`, borderRadius: 12, padding: '12px 14px', margin: '0 0 18px' }}>
+        <MessageCircle size={18} color={t.accent} style={{ flex: 'none', marginTop: 1 }} />
+        <div style={{ fontSize: 13.5, color: t.sub, lineHeight: 1.5 }}>
+          <b style={{ color: t.ink }}>Prefer to just talk? Arnie also lives in the “Ask Arnie” button in the bottom-right corner.</b> Open him from anywhere and ask him to set something up — whenever he's about to change your system, he'll bring the proposed change here for your approval first.
+        </div>
+      </div>
 
       {/* ask box */}
       <div style={{ background: t.card, border: `1.5px solid ${t.line}`, borderRadius: 14, padding: 16 }}>
