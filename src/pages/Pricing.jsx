@@ -10,7 +10,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PLANS } from '../lib/billingPlans'
-import { Check, Compass, ArrowRight, Zap } from 'lucide-react'
+import { useStore } from '../lib/store'
+import { Check, Compass, ArrowRight, ArrowLeft, Zap } from 'lucide-react'
 
 // Compute-wallet display values. Kept local so the storefront doesn't depend
 // on the wallet branch's billingPlans COMPUTE export (not yet on main). Keep
@@ -51,11 +52,12 @@ const CREW = [
 const FEATURES = {
   field_crew: ['Leads, Pipeline & Quotes', 'Jobs, Job Board & Field Scout', 'Invoices, Payments & Books', 'Customer portal'],
   field_pro: ['Everything in Crew, plus:', 'Lighting audits + utility rebates', 'Fleet management', 'Email campaigns & quality checks', 'Routes + payment plans'],
-  field_boss: ['Everything in Pro, plus:', 'Payroll runs + paystubs', 'Multi-business-unit support', 'White-label portal + custom domain', 'Priority phone support'],
+  field_boss: ['Everything in Pro, plus:', 'Payroll runs + paystubs', 'Multi-business-unit support', 'White-label customer portal + branded emails', 'Priority phone support'],
 }
 
 export default function Pricing() {
   const navigate = useNavigate()
+  const company = useStore((s) => s.company) // set when a logged-in rep opens this page
   const [hired, setHired] = useState({})
   const [period, setPeriod] = useState('mo')
 
@@ -84,7 +86,9 @@ export default function Pricing() {
           <span style={{ width: 30, height: 30, borderRadius: '50%', border: `1.5px solid ${t.accent}`, color: t.accent, display: 'grid', placeItems: 'center' }}><Compass size={16} /></span>
           JobScout
         </div>
-        <button onClick={() => navigate('/login')} style={{ ...ghostBtn, padding: '8px 14px', minHeight: 38, fontSize: 13 }}>Sign in</button>
+        {company
+          ? <button onClick={() => navigate('/')} style={{ ...ghostBtn, padding: '8px 14px', minHeight: 38, fontSize: 13 }}><ArrowLeft size={15} /> Back to app</button>
+          : <button onClick={() => navigate('/login')} style={{ ...ghostBtn, padding: '8px 14px', minHeight: 38, fontSize: 13 }}>Sign in</button>}
       </header>
 
       {/* hero */}
