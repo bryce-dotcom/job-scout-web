@@ -153,9 +153,18 @@ serve(async (req) => {
       : session.payment_intent;     // checkout session links to a PI
 
     if (!companyId) {
-      console.error('Missing company_id in checkout session metadata');
-      return new Response(JSON.stringify({ error: 'Missing metadata' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } });
+      // Not an app-generated payment — e.g. a native Stripe invoice, a
+      // Payment Link made in the Stripe dashboard, or a Virtual Terminal /
+      // phone charge keyed directly into Stripe. There's nothing for us to
+      // record, but we MUST ack with 200: returning 4xx here made Stripe
+      // count these as failures and, after enough of them, AUTO-DISABLE the
+      // endpoint — which silently dropped real app payments too (the
+      // recurring "captured in Stripe but still shows owing" bug). Ack and
+      // move on. App-generated payments always carry company_id, so this
+      // never swallows a payment we would have recorded.
+      console.warn('[stripe-webhook] event has no company_id metadata — acking (not an app payment)');
+      return new Response(JSON.stringify({ received: true, ignored: 'no app metadata' }),
+        { headers: { 'Content-Type': 'application/json' } });
     }
 
     // Look up per-company webhook secret from settings, fall back to global env
