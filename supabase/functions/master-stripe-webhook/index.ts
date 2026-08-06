@@ -29,6 +29,35 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, stripe-signature',
 };
 
+// Manual Stripe signature verification (no SDK) — mirrors the proven helper
+// in ../stripe-webhook. Recomputes HMAC-SHA256 over `${timestamp}.${payload}`
+// with the endpoint signing secret and compares to the v1 signature, with a
+// 5-minute replay window (Stripe re-signs on resend, so replays still pass).
+async function verifyStripeSignature(payload: string, sigHeader: string, secret: string): Promise<boolean> {
+  let timestamp = '';
+  let signature = '';
+  for (const part of sigHeader.split(',')) {
+    const [key, value] = part.split('=');
+    if (key === 't') timestamp = value;
+    if (key === 'v1') signature = value;
+  }
+  if (!timestamp || !signature) return false;
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - parseInt(timestamp)) > 300) return false;
+
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  );
+  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(`${timestamp}.${payload}`));
+  const expected = Array.from(new Uint8Array(mac)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  // constant-time-ish compare
+  if (expected.length !== signature.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+  return diff === 0;
+}
+
 interface StripeSubscription {
   id: string;
   status: string; // active | trialing | past_due | canceled | incomplete
@@ -80,10 +109,18 @@ serve(async (req) => {
     });
 
     const body = await req.text();
-    if (!SIGNING_SECRET) {
-      console.warn('[master-stripe-webhook] MASTER_STRIPE_WEBHOOK_SECRET not set — accepting unverified event');
+    if (SIGNING_SECRET) {
+      const sigHeader = req.headers.get('stripe-signature') || '';
+      const valid = await verifyStripeSignature(body, sigHeader, SIGNING_SECRET);
+      if (!valid) {
+        console.error('[master-stripe-webhook] invalid Stripe signature — rejecting');
+        return new Response(JSON.stringify({ error: 'Invalid signature' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      console.warn('[master-stripe-webhook] MASTER_STRIPE_WEBHOOK_SECRET not set — accepting unverified event (set the secret to enable verification)');
     }
-    // TODO: verify Stripe signature once SIGNING_SECRET is wired
 
     const event = JSON.parse(body);
     const type: string = event?.type || '';
