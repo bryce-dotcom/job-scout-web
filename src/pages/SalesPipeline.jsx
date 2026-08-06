@@ -884,21 +884,21 @@ export default function SalesPipeline() {
       })
       if (leadBu !== buFilter && !jobBuMatch) return false
     }
-    // Date-range filter — DELIBERATELY only applies to TERMINAL leads
-    // (Won, Lost, or jobs in a delivered status from the company's
-    // job_statuses settings).
+    // Date-range filter — applies to EVERY stage, but measured differently
+    // either side of the close.
     //
-    // The mental model from the rep's perspective:
-    //   "Show me everything in my open pipeline regardless of when it
-    //    came in (I need to keep working it), but for Won/Lost/Delivered
-    //    only count what closed in this window so my month-over-month
-    //    performance numbers make sense."
+    // TERMINAL leads (Won / Lost / delivered / paid) are dated by when the
+    // deal actually closed — approved_date, rejected_date — never by later job
+    // activity. A deal won in 2022 whose job got a PO today must not appear in
+    // this month's Won column.
     //
-    // So New, Contacted, Qualified, Estimate Sent, Negotiation, and
-    // every active Delivery column (Chillin, Scheduled, In Progress,
-    // etc.) IGNORE the date filter — they always show the full open
-    // pipeline. Only Won / Lost / Completed / Verified Complete /
-    // Invoiced / Closed (the user's terminal categories) respect it.
+    // OPEN leads are dated by LAST ACTIVITY. This used to be skipped
+    // altogether, on the reasoning that a rep needs to see everything they are
+    // still working. In practice it meant nothing ever left: 1,173 of 1,577
+    // cards untouched for six months, 960 over a year old, because a lead that
+    // is never moved to Won or Lost has no close date for any filter to catch.
+    // Dating them by activity keeps live work visible however old the lead is,
+    // and lets MTD/YTD mean what a rep expects.
     const cutoffStr = getDateCutoff(dateRange)
     const cutoffEndStr = dateRange === 'custom' && customDateTo ? new Date(customDateTo + 'T23:59:59').toISOString() : null
     if (applyDateFilter && cutoffStr) {
@@ -937,6 +937,31 @@ export default function SalesPipeline() {
           return true
         })
         if (!inRange) return false
+      } else {
+        // OPEN stages now respect the range too. They used to ignore it
+        // entirely, which is why Cole's board carried 1,173 cards nobody had
+        // touched in six months — 960 of them over a year old, 439 still
+        // sitting in "New". No date filter could ever clear them because they
+        // were never dispositioned to Won or Lost.
+        //
+        // Measured on LAST ACTIVITY, not creation date: a deal that came in
+        // last year but was worked this week is live and stays. A deal nobody
+        // has touched since then drops out of the window. That keeps
+        // "everything I need to keep working" on the board while letting MTD
+        // and YTD mean what a rep expects them to mean.
+        const activity = [
+          lead.last_updated,
+          lead.updated_at,
+          ...(lead._quotes || []).flatMap(q => [q.updated_at, q.created_at]),
+          ...(lead.jobs || []).flatMap(j => [j.updated_at, j.last_status_change_at]),
+          lead.created_at,
+        ].filter(Boolean)
+        const active = activity.some(d => {
+          if (d < cutoffStr) return false
+          if (cutoffEndStr && d > cutoffEndStr) return false
+          return true
+        })
+        if (!active) return false
       }
     }
     return true
