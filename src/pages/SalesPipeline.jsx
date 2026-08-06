@@ -920,6 +920,10 @@ export default function SalesPipeline() {
   // Pre-estimate stages show lead cards; estimate stages show one card per quote
   const PRE_ESTIMATE_STAGES = ['New', 'Contacted', 'Appointment Set', 'Qualified']
   const QUOTE_STATUS_MAP = { 'Quote Sent': 'Sent', 'Negotiation': 'Negotiation', 'Won': 'Approved', 'Lost': 'Rejected' }
+  // The quote statuses that actually produce a card. Anything else (Draft) is
+  // invisible on the board, which is why the lead must fall back to its own
+  // status instead of disappearing.
+  const STAGED_QUOTE_STATUSES = new Set(Object.values(QUOTE_STATUS_MAP))
 
   const getLeadsForStage = (stageId) => {
     // PRE-ESTIMATE STAGES: return lead cards (same as before)
@@ -941,8 +945,21 @@ export default function SalesPipeline() {
 
       const estimateCards = []
       filteredPipelineLeads.forEach(lead => {
-        if (!lead._quotes || lead._quotes.length === 0) {
-          // Fallback: if lead has no quotes but status matches, show as lead card
+        // A quote only produces a card if its status maps to a stage. Draft
+        // maps to nothing — so a lead whose every quote is still a Draft
+        // matched no stage AND skipped the no-quotes fallback below, and
+        // vanished from the board completely.
+        //
+        // That is Cole's "not all the estimates are pulling through": Ryder
+        // Trucking (quote 4439, Draft) sat on a lead in Negotiation and showed
+        // nowhere. Measured across the company: 485 leads worth $3.9M were
+        // invisible, including a $139,901 deal.
+        //
+        // Treat "no quote in a staged status" the same as "no quotes": show
+        // the lead card at the lead's own status. This can only ADD cards that
+        // were missing — a lead with any staged quote is untouched.
+        const hasStagedQuote = (lead._quotes || []).some(q => STAGED_QUOTE_STATUSES.has(q.status))
+        if (!hasStagedQuote) {
           if (lead.status === stageId) estimateCards.push(lead)
           return
         }
