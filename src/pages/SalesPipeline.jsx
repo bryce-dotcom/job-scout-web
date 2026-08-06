@@ -1641,7 +1641,9 @@ export default function SalesPipeline() {
     const stageMap = new Map(stages.map(s => [s.id, s]))
     const leads = filteredPipelineLeads
     const activeLeads = leads.filter(l => { const s = stageMap.get(l.status); return s && !s.isWon && !s.isLost && !s.isDelivery && !s.isClosed })
-    const wonLeadsList = leads.filter(l => l.status === 'Won')
+    // (no wonLeadsList — counting leads whose status is literally 'Won' is the
+    // definition that disagreed with the Won column. Use salesWonCount /
+    // salesWonTotal below, which come from getLeadsForStage('Won').)
     const lostLeadsList = leads.filter(l => l.status === 'Lost')
     const deliveryLeads = leads.filter(l => stageMap.get(l.status)?.isDelivery)
     const today = new Date().toDateString()
@@ -1694,10 +1696,16 @@ export default function SalesPipeline() {
       salesWon: { value: formatCurrency(salesWonTotal), label: `Sales Won`, sublabel: `${salesWonCount} deal${salesWonCount !== 1 ? 's' : ''} won`, color: '#16a34a', isFormatted: true },
       delivered: { value: formatCurrency(deliveredTotal), label: 'Delivered', sublabel: `${deliveredCount} paid/closed`, color: '#10b981', isFormatted: true },
       active: { value: activeLeads.length, label: 'Active', color: null },
-      won: { value: wonLeadsList.length, label: 'Won', color: '#22c55e' },
+      // Won counts the SAME cards the Won column shows. It used to count leads
+      // whose status was literally 'Won', which is a different dataset: a deal
+      // that is won and then moves on to Scheduled or Invoiced stops being a
+      // 'Won' lead but keeps its Approved quote, so it stays in the column and
+      // vanishes from the tile. Cole's board showed Won 0 against a Won column
+      // of 9 deals / $144,995 for exactly that reason.
+      won: { value: salesWonCount, label: 'Won', color: '#22c55e' },
       lost: { value: lostLeadsList.length, label: 'Lost', color: '#64748b' },
       totalValue: { value: formatCurrency(sumAmount(leads)), label: 'Pipeline Value', color: null, isFormatted: true },
-      wonValue: { value: formatCurrency(sumAmount(wonLeadsList)), label: 'Won Value', color: '#22c55e', isFormatted: true },
+      wonValue: { value: formatCurrency(salesWonTotal), label: 'Won Value', color: '#22c55e', isFormatted: true },
       appointments: { value: leadsWithAppointments.length, label: 'Appts', color: '#3b82f6' },
       todayAppointments: { value: todayAppointments.length, label: 'Today', color: '#16a34a' },
       quoteSent: { value: leads.filter(l => l.status === 'Quote Sent').length, label: 'Estimates', color: '#8b5cf6' },
