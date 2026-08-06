@@ -165,7 +165,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       return {
         ...m, proposalBusy: false, proposalStatus: status, proposalError: null,
         content: status === 'applied'
-          ? "Done — it's live. I logged the change, and you can roll it back anytime from Arnie's Setup tab."
+          ? "Done — it's live. I logged the change, and you can roll it back anytime from Arnie's Settings tab."
           : 'No sweat — tossed it. Nothing changed.',
       }
     }))
@@ -657,7 +657,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                       </div>
                     ) : (
                       <div style={{ fontSize: 12.5, fontWeight: 600, color: st === 'applied' ? '#7fdba0' : dark.textSecondary }}>
-                        {st === 'applied' ? 'Applied — you can roll this back from Setup.' : 'Discarded.'}
+                        {st === 'applied' ? 'Applied — you can roll this back from Settings.' : 'Discarded.'}
                       </div>
                     )}
                   </div>

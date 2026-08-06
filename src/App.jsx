@@ -506,7 +506,7 @@ function App() {
           <Route path="/agents/arnie" element={<ArnieWorkspace />}>
             <Route index element={<ArnieChatPage />} />
             <Route path="history" element={<ArnieHistory />} />
-            <Route path="setup" element={<ArnieSetup />} />
+            <Route path="settings" element={<ArnieSetup />} />
           </Route>
 
           {/* Frankie Workspace (AI CFO) — gated by recruitment so any new

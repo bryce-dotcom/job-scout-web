@@ -5,7 +5,7 @@ import AgentHeader from '../../../components/AgentHeader'
 const ARNIE_TABS = [
   { path: '/agents/arnie', label: 'Chat', icon: 'MessageCircle', end: true },
   { path: '/agents/arnie/history', label: 'History', icon: 'Clock' },
-  { path: '/agents/arnie/setup', label: 'Setup', icon: 'Wrench' },
+  { path: '/agents/arnie/settings', label: 'Settings', icon: 'Wrench' },
 ]
 
 export default function ArnieWorkspace() {

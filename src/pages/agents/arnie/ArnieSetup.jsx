@@ -95,7 +95,7 @@ export default function ArnieSetup() {
     <div style={{ maxWidth: 760, margin: '0 auto', padding: '20px 20px 60px', color: t.ink, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
         <Wrench size={20} color={t.accent} />
-        <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>Set up your system with Arnie</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>System settings with Arnie</h1>
       </div>
       <p style={{ color: t.sub, margin: '0 0 14px', fontSize: 14 }}>
         Tell Arnie what to change in plain English. He drafts it, you review the before-and-after, and nothing changes until you approve. Every change is logged and can be rolled back.
