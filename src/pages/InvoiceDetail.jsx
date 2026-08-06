@@ -1365,6 +1365,9 @@ export default function InvoiceDetail() {
         if (sections.incentive > 0) {
           drawTotalLine('Utility Incentive:', `-${formatCurrency(sections.incentive)}`, { color: [200, 0, 0] })
         }
+        if (sections.downPayment > 0) {
+          drawTotalLine('Down Payment:', `-${formatCurrency(sections.downPayment)}`, { color: [200, 0, 0] })
+        }
         if (sections.projectDiscount > 0) {
           drawTotalLine('Project Discount:', `-${formatCurrency(sections.projectDiscount)}`, { color: [200, 0, 0] })
         }
@@ -1456,6 +1459,9 @@ export default function InvoiceDetail() {
       drawTotalLine('Project Subtotal:', formatCurrency(sections.inScopeSubtotal))
       if (sections.incentive > 0) {
         drawTotalLine('Utility Incentive:', `-${formatCurrency(sections.incentive)}`, { color: [200, 0, 0] })
+      }
+      if (sections.downPayment > 0) {
+        drawTotalLine('Down Payment:', `-${formatCurrency(sections.downPayment)}`, { color: [200, 0, 0] })
       }
       if (sections.projectDiscount > 0) {
         drawTotalLine('Project Discount:', `-${formatCurrency(sections.projectDiscount)}`, { color: [200, 0, 0] })

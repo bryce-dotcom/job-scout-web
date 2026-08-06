@@ -148,4 +148,52 @@ describe('invoiceDiscountBreakout', () => {
   it('handles a missing invoice without throwing', () => {
     expect(() => invoiceDiscountBreakout(null)).not.toThrow()
   })
+
+  it('separates a down payment from the utility incentive', () => {
+    // JOB-MQZGV1FN printed "Utility Incentive -$15,602.85" when $13,652.85
+    // was the incentive and $1,950 was a down payment. Everything not
+    // otherwise attributed fell into the incentive, so the customer could not
+    // follow the arithmetic.
+    const b = invoiceDiscountBreakout({
+      amount: 18203.80, discount_applied: 15602.85, down_payment_applied: 1950,
+    })
+    expect(b.downPayment).toBe(1950)
+    expect(b.incentive).toBe(13652.85)
+    expect(b.depositCredit + b.projectDiscountField + b.downPayment + b.incentive)
+      .toBeCloseTo(b.discountApplied, 2)
+  })
+
+  it('never lets a down payment exceed what is left to attribute', () => {
+    const b = invoiceDiscountBreakout({
+      amount: 1000, discount_applied: 100, down_payment_applied: 5000,
+    })
+    expect(b.downPayment).toBe(100)
+    expect(b.incentive).toBe(0)
+  })
+
+  it('leaves the incentive alone when there is no down payment', () => {
+    const b = invoiceDiscountBreakout({ amount: 1000, discount_applied: 250 })
+    expect(b.downPayment).toBe(0)
+    expect(b.incentive).toBe(250)
+  })
+})
+
+describe('the invoice adds up on the page', () => {
+  it('shows incentive and down payment as separate deductions', () => {
+    // Subtotal − incentive − down payment must equal the balance due, with
+    // each deduction named, or the customer has to guess.
+    const invoice = { amount: 18203.80, discount_applied: 15602.85, down_payment_applied: 1950 }
+    const lines = [
+      { line_total: 10723.60, in_utility_scope: true },
+      { line_total: 3230.40, in_utility_scope: true },
+      { line_total: 4249.80, in_utility_scope: true },
+    ]
+    const s = buildInvoiceSections(invoice, lines, { utilityIncentive: 13652.85 })
+    expect(s.inScopeSubtotal).toBeCloseTo(18203.80, 2)
+    expect(s.incentive).toBeCloseTo(13652.85, 2)
+    expect(s.downPayment).toBeCloseTo(1950, 2)
+    expect(s.projectDiscount).toBeCloseTo(0, 2)
+    expect(s.netInScope).toBeCloseTo(2600.95, 2)
+    expect(s.reconciles).toBe(true)
+  })
 })

@@ -505,7 +505,13 @@ function JobDetailInner() {
       // Fetch invoices linked to this job
       const { data: invoicesData } = await supabase
         .from('invoices')
-        .select('id, invoice_id, amount, payment_status, created_at, pdf_url, invoice_type')
+        // discount_applied and project_discount are REQUIRED here, not
+        // optional detail: the "Who pays what" block computes the customer's
+        // balance as amount − discount_applied. Leaving them out of the select
+        // made discount_applied undefined, so the balance silently equalled
+        // the gross and Combined AR counted the utility incentive twice —
+        // $18,203.80 + $13,110 on a job worth $18,203.80.
+        .select('id, invoice_id, amount, discount_applied, project_discount, payment_status, created_at, pdf_url, invoice_type, last_sent_at')
         .eq('job_id', id)
         .order('created_at', { ascending: false })
       setJobInvoices(invoicesData || [])
@@ -797,7 +803,12 @@ function JobDetailInner() {
     if (target && Math.abs(discountDelta) > 0.005) {
       const nextDiscount = Math.max(0, (parseFloat(target.discount_applied) || 0) + discountDelta)
       const { error: invErr } = await supabase.from('invoices')
-        .update({ discount_applied: nextDiscount || null, updated_at: new Date().toISOString() })
+        .update({
+          discount_applied: nextDiscount || null,
+          // Keep the breakout in step, or the PDF names the wrong number.
+          down_payment_applied: eff.discountCredit > 0 ? eff.discountCredit : null,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', target.id)
       if (invErr) toast.error('Down payment saved, but the invoice could not be updated: ' + invErr.message)
     }
@@ -1756,6 +1767,9 @@ function JobDetailInner() {
           // attributes the ENTIRE discount_applied to the utility incentive
           // and the two get grouped into one line.
           project_discount: projectDiscountAmt > 0 ? projectDiscountAmt : null,
+          // Breakout so the document can name this deduction instead of
+          // burying it in the utility incentive line.
+          down_payment_applied: downPayment.discountCredit > 0 ? downPayment.discountCredit : null,
           payment_status: 'Pending',
           parent_invoice_id: parentDepositId,
           job_description: description,
@@ -1865,9 +1879,15 @@ function JobDetailInner() {
         if (audit) {
           utilityName = audit.utility_provider?.provider_name || 'Utility'
           totalFixtures = audit.total_fixtures || 0
-          incentiveAmount = audit.estimated_rebate || incentiveAmount
-          projectCost = audit.est_project_cost || 0
-          netCost = audit.net_cost || 0
+          // The JOB wins over the audit, same as the customer invoice. This
+          // read `audit.estimated_rebate || incentiveAmount`, so the audit's
+          // original walkthrough estimate overrode whatever was actually
+          // agreed — JOB-MQZGV1FN kept billing the utility $13,110 when the
+          // job said $13,652.85. The audit only fills in when the job has no
+          // incentive of its own.
+          incentiveAmount = incentiveAmount || parseFloat(audit.estimated_rebate) || 0
+          projectCost = parseFloat(job.job_total) || parseFloat(audit.est_project_cost) || 0
+          netCost = Math.max(0, projectCost - incentiveAmount)
           notes = `Lighting Audit — ${totalFixtures} fixtures, ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(incentiveAmount)} incentive`
         }
       }
@@ -8537,7 +8557,10 @@ function CustomerUtilitySplit({ job, theme }) {
     if (!job?.id) return
     let cancelled = false
     Promise.all([
-      supabase.from('invoices').select('id, invoice_id, amount, payment_status').eq('job_id', job.id),
+      // discount_applied is required to compare like with like — without it
+      // this block sums the GROSS project and reports every correct
+      // incentive invoice as a mismatch.
+      supabase.from('invoices').select('id, invoice_id, amount, discount_applied, payment_status').eq('job_id', job.id),
       supabase.from('utility_invoices').select('id, utility_invoice_id, utility_name, amount, incentive_amount, payment_status, paid_at').eq('job_id', job.id),
     ]).then(([invRes, utilRes]) => {
       if (cancelled) return
@@ -8553,9 +8576,18 @@ function CustomerUtilitySplit({ job, theme }) {
   const discount = parseFloat(job.discount) || 0
   if (utilityIncentive <= 0) return null
 
-  const customerOwes = Math.max(0, jobTotal - utilityIncentive - discount)
+  // A down payment is money the customer no longer owes, whoever funded it.
+  const dpCredit = downPaymentEffect(job).customerCredit
+  const customerOwes = Math.max(0, jobTotal - utilityIncentive - discount - dpCredit)
   const fmt = (n) => '$' + (Math.round((n || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const customerInvoiced = (customerInvoices || []).reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
+  // Compare against the invoice's NET, not its gross. This summed `amount`,
+  // which is the full project before the incentive, so a perfectly correct
+  // invoice was reported as a mismatch by exactly the incentive.
+  const customerInvoiced = (customerInvoices || []).reduce((s, i) => {
+    const g = parseFloat(i.amount) || 0
+    const d = parseFloat(i.discount_applied) || 0
+    return s + (isLegacyNetShape(g, d) ? g : Math.max(0, g - d))
+  }, 0)
   const customerInvoiceFlag = customerOwes > 0 && Math.abs(customerInvoiced - customerOwes) > Math.max(50, customerOwes * 0.10)
 
   return (

@@ -75,8 +75,16 @@ export function invoiceDiscountBreakout(invoice, parentInvoice = null) {
     Math.max(0, Number(invoice?.project_discount) || 0),
     Math.max(0, discountApplied - depositCredit)
   )
-  const incentive = Math.max(0, discountApplied - depositCredit - projectDiscountField)
-  return { isLegacyNet, discountApplied, depositCredit, projectDiscountField, incentive }
+  // A down payment taken on the job. Without its own breakout it fell into
+  // `incentive` below, so JOB-MQZGV1FN printed "Utility Incentive
+  // -$15,602.85" when the incentive was $13,652.85 and $1,950 was a down
+  // payment — the customer could not follow the arithmetic.
+  const downPayment = Math.min(
+    Math.max(0, Number(invoice?.down_payment_applied) || 0),
+    Math.max(0, discountApplied - depositCredit - projectDiscountField)
+  )
+  const incentive = Math.max(0, discountApplied - depositCredit - projectDiscountField - downPayment)
+  return { isLegacyNet, discountApplied, depositCredit, projectDiscountField, downPayment, incentive }
 }
 
 // Build the section display model for a customer invoice.
@@ -113,7 +121,7 @@ export function invoiceDiscountBreakout(invoice, parentInvoice = null) {
 // In that case the surface keeps its existing flat rendering untouched.
 export function buildInvoiceSections(invoice, lines, { parentInvoice = null, utilityIncentive = null } = {}) {
   const rows = Array.isArray(lines) ? lines : []
-  const { isLegacyNet, discountApplied, depositCredit, projectDiscountField, incentive: breakoutIncentive } =
+  const { isLegacyNet, discountApplied, depositCredit, projectDiscountField, downPayment: breakoutDownPayment, incentive: breakoutIncentive } =
     invoiceDiscountBreakout(invoice, parentInvoice)
 
   const inScope = rows.filter(lineInScope)
@@ -149,7 +157,14 @@ export function buildInvoiceSections(invoice, lines, { parentInvoice = null, uti
     ? Math.max(0, Number(utilityIncentive) || 0)
     : breakoutIncentive
   const incentive = round2(Math.min(Math.max(0, preferredIncentive), totalDeductions))
-  const projectDiscount = round2(totalDeductions - incentive)
+  // Carve the down payment out BEFORE the reconciling discount absorbs it.
+  // Otherwise it shows up as "Project Discount", which is just a different
+  // wrong label — the customer needs to see the deduction they actually made.
+  const downPayment = round2(Math.min(
+    Math.max(0, breakoutDownPayment || 0),
+    Math.max(0, totalDeductions - incentive),
+  ))
+  const projectDiscount = round2(totalDeductions - incentive - downPayment)
 
   // Only apply the two-section incentive treatment to modern-shape invoices
   // that actually have line items. Legacy-net invoices keep their flat
@@ -168,6 +183,7 @@ export function buildInvoiceSections(invoice, lines, { parentInvoice = null, uti
     inScopeSubtotal,
     inScopeLineSum,
     projectDiscount,
+    downPayment,
     incentive,
     netInScope,
     outScopeSubtotal,
