@@ -169,6 +169,12 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
           : 'No sweat — tossed it. Nothing changed.',
       }
     }))
+    // A successful apply changed a settings taxonomy list in the DB — refresh
+    // the store so the new business unit / lead source / service type shows up
+    // app-wide (dropdowns etc.) without a manual reload.
+    if (decision === 'apply' && !failed) {
+      try { await useStore.getState().fetchSettings?.() } catch { /* refresh is best-effort */ }
+    }
   }
 
   // Load existing session messages
