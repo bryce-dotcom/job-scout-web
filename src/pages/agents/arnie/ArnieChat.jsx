@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../components/Layout'
 import { useStore } from '../../../lib/store'
+import { supabase } from '../../../lib/supabase'
 import { sendMessageStream, createSession, saveMessage, updateSessionTitle, loadSessionMessages } from './arnieEngine'
 import { getUserRole } from './arnieTools'
 import ReactMarkdown from 'react-markdown'
@@ -67,6 +68,12 @@ function ArnieAvatar({ size = 36 }) {
 }
 
 
+// Does a message read like a Tier-A config request? (verb + one of the three
+// taxonomy nouns). Pure + module-level so it's stable across renders.
+const CFG_NOUN = /(business\s*units?|lead\s*sources?|service\s*types?)/i
+const CFG_VERB = /\b(add|create|rename|remove|delete|drop|change|call\s+it)\b/i
+const looksLikeConfig = (m) => CFG_NOUN.test(m) && CFG_VERB.test(m)
+
 export default function ArnieChat({ isPanel = false, onClose, sessionId: externalSessionId }) {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
@@ -107,6 +114,62 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
   const { role } = getUserRole()
   const quickActions = QUICK_ACTIONS[role] || QUICK_ACTIONS.user
+
+  // ── Arnie config (Tier A): admins can ask for changes right here in chat ──
+  // We detect a config-shaped request, ask the arnie-config function to PROPOSE
+  // a structured change, then render an approval card inline. Approve → apply.
+  // The server re-checks admin + company scope; this gate just decides routing.
+  const isAdmin = (() => {
+    if (!user) return false
+    if (user.is_developer) return true
+    const map = { User: 0, 'Team Lead': 1, Manager: 2, Admin: 3, 'Super Admin': 4, Developer: 5, Owner: 4 }
+    return (map[user.user_role] ?? map[user.role] ?? 0) >= 3
+  })()
+
+  const cfgInvoke = async (body) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('arnie-config', { body })
+      if (error) {
+        let m = error.message
+        try { m = (await error.context?.json())?.error || m } catch { /* keep default */ }
+        return { error: m }
+      }
+      return data || {}
+    } catch (e) {
+      return { error: e.message || 'Arnie config is unreachable right now.' }
+    }
+  }
+
+  // Turn an admin's config request into an inline proposal card. Returns the
+  // text placed in the assistant bubble so the caller can persist it.
+  const proposeInChat = async (msg, assistantId) => {
+    const res = await cfgInvoke({ action: 'propose', request: msg })
+    const ok = !!(res && res.proposal && res.preview)
+    const content = ok
+      ? "Here's what I'll set up, boss — give it a look and hit approve:"
+      : `Hold on, chief — ${res?.error || "I couldn't turn that into a change."}`
+    setMessages(prev => prev.map(m => m.id === assistantId
+      ? { ...m, content, proposal: ok ? res : null }
+      : m))
+    return content
+  }
+
+  const decideProposal = async (decision, proposalId, msgId) => {
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, proposalBusy: true } : m))
+    const res = await cfgInvoke({ action: decision, proposal_id: proposalId })
+    const failed = !res || res.error
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId) return m
+      if (failed) return { ...m, proposalBusy: false, proposalError: res?.error || 'That didn\'t go through.' }
+      const status = decision === 'apply' ? 'applied' : 'rejected'
+      return {
+        ...m, proposalBusy: false, proposalStatus: status, proposalError: null,
+        content: status === 'applied'
+          ? "Done — it's live. I logged the change, and you can roll it back anytime from Arnie's Setup tab."
+          : 'No sweat — tossed it. Nothing changed.',
+      }
+    }))
+  }
 
   // Load existing session messages
   useEffect(() => {
@@ -305,23 +368,33 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
       await saveMessage(sid, 'user', msg)
 
-      // Use messagesRef.current to avoid stale closure over `messages`
-      const history = messagesRef.current.map(m => ({ role: m.role, content: m.content }))
+      // Admin config request → propose a change inline (approve to apply)
+      // instead of a normal chat reply. Everything else streams as usual.
+      if (isAdmin && looksLikeConfig(msg)) {
+        const said = await proposeInChat(msg, assistantId)
+        await saveMessage(sid, 'assistant', said)
+        if (messagesRef.current.length <= 1) {
+          await updateSessionTitle(sid, msg.slice(0, 80))
+        }
+      } else {
+        // Use messagesRef.current to avoid stale closure over `messages`
+        const history = messagesRef.current.map(m => ({ role: m.role, content: m.content }))
 
-      // Stream response — text appears in real-time
-      const fullResponse = await sendMessageStream(msg, history, (partialText) => {
-        setMessages(prev => prev.map(m =>
-          m.id === assistantId ? { ...m, content: partialText } : m
-        ))
-      })
+        // Stream response — text appears in real-time
+        const fullResponse = await sendMessageStream(msg, history, (partialText) => {
+          setMessages(prev => prev.map(m =>
+            m.id === assistantId ? { ...m, content: partialText } : m
+          ))
+        })
 
-      await saveMessage(sid, 'assistant', fullResponse)
+        await saveMessage(sid, 'assistant', fullResponse)
 
-      // Speak the full response after streaming completes
-      speakText(fullResponse)
+        // Speak the full response after streaming completes
+        speakText(fullResponse)
 
-      if (messagesRef.current.length <= 1) {
-        await updateSessionTitle(sid, msg.slice(0, 80))
+        if (messagesRef.current.length <= 1) {
+          await updateSessionTitle(sid, msg.slice(0, 80))
+        }
       }
     } catch (err) {
       console.error('Arnie error:', err)
@@ -337,7 +410,10 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       sendingRef.current = false
       if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
     }
-  }, [input, loading, sessionId, speakText, pauseMic, resumeMic])
+    // proposeInChat is intentionally omitted — it only closes over stable
+    // setters, and `input` already rebuilds this callback each keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, loading, sessionId, speakText, pauseMic, resumeMic, isAdmin])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -523,6 +599,64 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                   <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
                 )}
               </div>
+              {msg.proposal && (() => {
+                const pv = msg.proposal.preview || {}
+                const afterLc = (pv.after || []).map(x => String(x).toLowerCase())
+                const beforeSet = new Set((pv.before || []).map(x => String(x).toLowerCase()))
+                const removed = (pv.before || []).filter(x => !afterLc.includes(String(x).toLowerCase()))
+                const st = msg.proposalStatus
+                return (
+                  <div style={{
+                    marginTop: 8, background: dark.bgChat,
+                    border: `1px solid ${st === 'applied' ? 'rgba(47,125,78,0.6)' : st === 'rejected' ? dark.border : 'rgba(201,129,47,0.7)'}`,
+                    borderRadius: 12, padding: 12,
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#d9963f', marginBottom: 8 }}>
+                      Change to {pv.label}s
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: st ? 10 : 12 }}>
+                      {(pv.after || []).map((x, i) => {
+                        const added = !beforeSet.has(String(x).toLowerCase())
+                        return (
+                          <span key={`a${i}`} style={{
+                            fontSize: 12.5, padding: '3px 10px', borderRadius: 20,
+                            background: added ? 'rgba(47,125,78,0.22)' : 'rgba(255,255,255,0.05)',
+                            color: added ? '#7fdba0' : dark.textSecondary,
+                            border: `1px solid ${added ? 'rgba(47,125,78,0.5)' : dark.border}`,
+                          }}>{added ? '+ ' : ''}{x}</span>
+                        )
+                      })}
+                      {removed.map((x, i) => (
+                        <span key={`r${i}`} style={{
+                          fontSize: 12.5, padding: '3px 10px', borderRadius: 20,
+                          background: 'rgba(220,80,80,0.14)', color: '#e88', textDecoration: 'line-through',
+                          border: '1px solid rgba(220,80,80,0.4)',
+                        }}>{x}</span>
+                      ))}
+                    </div>
+                    {msg.proposalError && (
+                      <div style={{ fontSize: 12.5, color: '#e88', marginBottom: 8 }}>{msg.proposalError}</div>
+                    )}
+                    {!st ? (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button disabled={msg.proposalBusy} onClick={() => decideProposal('apply', msg.proposal.proposal.id, msg.id)} style={{
+                          flex: 1, background: '#c9812f', color: '#fff', border: 0, borderRadius: 8,
+                          padding: '9px 12px', fontWeight: 650, fontSize: 13,
+                          cursor: msg.proposalBusy ? 'default' : 'pointer', opacity: msg.proposalBusy ? 0.6 : 1,
+                        }}>{msg.proposalBusy ? 'Working…' : 'Approve & apply'}</button>
+                        <button disabled={msg.proposalBusy} onClick={() => decideProposal('reject', msg.proposal.proposal.id, msg.id)} style={{
+                          background: 'transparent', color: dark.textSecondary, border: `1px solid ${dark.border}`,
+                          borderRadius: 8, padding: '9px 14px', fontSize: 13, cursor: 'pointer',
+                        }}>Discard</button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: st === 'applied' ? '#7fdba0' : dark.textSecondary }}>
+                        {st === 'applied' ? 'Applied — you can roll this back from Setup.' : 'Discarded.'}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
               {msg.role === 'assistant' && msg.content && (
                 <div className="arnie-msg-actions" style={{
                   position: 'absolute', top: -10, right: -6,

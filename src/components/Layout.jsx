@@ -4,6 +4,7 @@ import { useStore } from '../lib/store'
 import { fetchDueFollowUpCount } from '../lib/followUpDue'
 import FeedbackButton from './FeedbackButton'
 import ArnieFloatingPanel from './ArnieFloatingPanel'
+import ArnieOnboardingBanner from './ArnieOnboardingBanner'
 import GlobalSearch from './GlobalSearch'
 import TrialBanner from './TrialBanner'
 import { useLocationTracking } from '../hooks/useLocationTracking'
@@ -1619,6 +1620,7 @@ export default function Layout() {
             overflowX: 'hidden'
           }}>
             <TrialBanner />
+            <ArnieOnboardingBanner />
             <Outlet />
           </div>
         </main>

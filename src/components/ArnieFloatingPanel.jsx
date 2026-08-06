@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useStore } from '../lib/store'
 import ArnieChat from '../pages/agents/arnie/ArnieChat'
 import { X } from 'lucide-react'
@@ -19,6 +19,14 @@ export default function ArnieFloatingPanel() {
   const user = useStore(s => s.user)
   const company = useStore(s => s.company)
   const [open, setOpen] = useState(false)
+
+  // Let anything on the page pop the corner guy open — e.g. the onboarding
+  // banner's "Chat with Arnie" button dispatches window event 'arnie:open'.
+  useEffect(() => {
+    const openPanel = () => setOpen(true)
+    window.addEventListener('arnie:open', openPanel)
+    return () => window.removeEventListener('arnie:open', openPanel)
+  }, [])
 
   const handleClose = () => {
     stopSpeaking()
