@@ -549,25 +549,45 @@ function drawTotals(doc, estimate, lineItems, startY, m, pw, ph) {
   doc.line(boxX, y, pw - m, y)
   y += 5
 
-  // Total — prominent
-  doc.setFillColor(...C.primary)
-  doc.roundedRect(boxX - 4, y - 5, boxW + 4, 12, 2, 2, 'F')
-  doc.setFontSize(13)
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(...C.white)
-  doc.text('TOTAL', boxX, y + 2)
-  doc.text(fmt(total), pw - m, y + 2, { align: 'right' })
-  y += 12
-
-  // Out of pocket
+  // WHAT THE CUSTOMER PAYS is the biggest number on the page.
+  //
+  // Cole: "We are getting push back because people are looking at the PDF and
+  // seeing the total project cost in big letters and think thats what they
+  // will be paying and skipping over it." The project total was 13pt bold
+  // white in a filled box; the amount they actually owe was 10pt plain text
+  // underneath it. The emphasis was telling them the wrong thing.
+  //
+  // Only flips when an incentive exists — with no incentive the two numbers
+  // are identical and one prominent TOTAL is right.
   if (incentive > 0) {
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(...C.green)
-    doc.text('Your Cost After Incentive', boxX, y)
+    // Project total, now the quieter line.
+    doc.setFontSize(10.5)
     doc.setFont('helvetica', 'bold')
-    doc.text(fmt(outOfPocket), pw - m, y, { align: 'right' })
-    y += 8
+    doc.setTextColor(...C.text)
+    doc.text('Project Total', boxX, y + 1)
+    doc.text(fmt(total), pw - m, y + 1, { align: 'right' })
+    y += 9
+
+    // Out of pocket — the headline.
+    doc.setFillColor(...C.primary)
+    doc.roundedRect(boxX - 4, y - 5, boxW + 4, 18, 2, 2, 'F')
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...C.white)
+    doc.text('YOUR COST AFTER INCENTIVE', boxX, y)
+    doc.setFontSize(17)
+    doc.setFont('helvetica', 'bold')
+    doc.text(fmt(outOfPocket), pw - m, y + 8, { align: 'right' })
+    y += 20
+  } else {
+    doc.setFillColor(...C.primary)
+    doc.roundedRect(boxX - 4, y - 5, boxW + 4, 12, 2, 2, 'F')
+    doc.setFontSize(13)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...C.white)
+    doc.text('TOTAL', boxX, y + 2)
+    doc.text(fmt(total), pw - m, y + 2, { align: 'right' })
+    y += 12
   }
 
   // Annual energy savings — Noah flagged that the PDF was missing
