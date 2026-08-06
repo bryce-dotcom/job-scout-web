@@ -28,11 +28,19 @@ import { computeJobBonusRows } from './bonusCalc'
  * Cleaning - Store Front" — the SERVICE, not the client — so a payroll run
  * showed a column of identical-looking bonuses.
  *
- * Customer leads. The job title becomes the subtitle, because it still says
- * WHICH job when one client has several. Falls back to the title, then the
- * job number, so a row is never blank — three jobs behind live bonuses have
- * no customer linked at all, and their titles ("Nicole Webster - Exterior
- * Window Cleaning") carry the identity anyway.
+ * Both facts on one line, because neither one alone is enough and the data
+ * holds both patterns. Of 54 customers behind live bonuses, 12 cover more
+ * than one job:
+ *   Steve Auto        -> Clearfield | West Jordan | West Valley   (title = SITE)
+ *   Costco            -> Commercial Window Cleaning x2            (title = SERVICE)
+ * Leading with the customer loses the three Steve Auto sites; leading with
+ * the title gives Alayda back her column of identical "Commercial Window
+ * Cleaning" rows. "Steve Auto — Clearfield" and "Costco — Commercial Window
+ * Cleaning" are unambiguous either way.
+ *
+ * Falls back to whichever exists, then the job number, so a row is never
+ * blank — three jobs behind live bonuses have no customer at all, and their
+ * titles ("Nicole Webster - Exterior Window Cleaning") carry the identity.
  *
  * Payroll had this fixed inline while My Pay still led with the job title.
  * Same rule in two places is how the invoice-line builder reached five copies.
@@ -40,10 +48,31 @@ import { computeJobBonusRows } from './bonusCalc'
 export function bonusJobLabel(bonusRow) {
   const job = bonusRow?.jobs || {}
   const customer = job.customer?.business_name || job.customer?.name || job.customer_name || null
-  const title = job.job_title || null
-  const heading = customer || title || `Job ${job.job_id || bonusRow?.job_id || ''}`.trim()
-  // Don't repeat the heading underneath it.
-  const subtitle = customer && title && title !== customer ? title : null
+  const title = job.job_title?.trim() || null
+
+  let heading
+  if (customer && title) {
+    // "Steve Auto Clearfield" under customer "Steve Auto" would read
+    // "Steve Auto — Steve Auto Clearfield". Drop the repeated prefix so it
+    // reads "Steve Auto — Clearfield".
+    //
+    // Word by word, punctuation-insensitive: the real pair is title
+    // "Green River Merc" against customer "Green River Merc." — one trailing
+    // period, and a plain startsWith misses it.
+    const norm = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const titleWords = title.split(/\s+/)
+    const custWords = customer.split(/\s+/)
+    let i = 0
+    while (i < titleWords.length && i < custWords.length && norm(titleWords[i]) && norm(titleWords[i]) === norm(custWords[i])) i += 1
+    const site = titleWords.slice(i).join(' ').replace(/^[\s\-–—:,·|]+/, '').trim()
+    heading = site ? `${customer} — ${site}` : customer
+  } else {
+    heading = customer || title || `Job ${job.job_id || bonusRow?.job_id || ''}`.trim()
+  }
+
+  // The job number, for reference underneath. The identity is in the heading
+  // now, so this never has to disambiguate anything.
+  const subtitle = job.job_id || null
   return { heading, subtitle, jobId: bonusRow?.job_id ?? null }
 }
 

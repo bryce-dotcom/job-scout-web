@@ -320,33 +320,47 @@ describe('a bonus that is no longer earned', () => {
 import { bonusJobLabel } from './bonusLedger'
 
 describe('labelling a bonus', () => {
-  it('leads with the customer, not the service', () => {
+  it('shows the customer AND the site on one line', () => {
+    // Neither alone is enough: of 54 customers behind live bonuses, 12 cover
+    // more than one job.
     const row = {
       job_id: 23305,
-      jobs: { job_title: 'Commercial Window Cleaning - Store Front', job_id: 'JOB-X', customer: { business_name: 'Ivy Apartments' } },
+      jobs: { job_title: 'Commercial Window Cleaning - Store Front', job_id: 'JOB-X', customer: { business_name: 'Costco' } },
     }
-    const { heading, subtitle } = bonusJobLabel(row)
-    expect(heading).toBe('Ivy Apartments')
-    expect(subtitle).toBe('Commercial Window Cleaning - Store Front')
+    expect(bonusJobLabel(row).heading).toBe('Costco — Commercial Window Cleaning - Store Front')
+  })
+
+  it('does not repeat the customer when the title already starts with it', () => {
+    // Steve Auto has three sites. "Steve Auto — Steve Auto Clearfield" is noise.
+    const row = { job_id: 1, jobs: { job_title: 'Steve Auto Clearfield', customer: { business_name: 'Steve Auto' } } }
+    expect(bonusJobLabel(row).heading).toBe('Steve Auto — Clearfield')
+  })
+
+  it('collapses to one name when the site IS the account', () => {
+    const row = { job_id: 1, jobs: { job_title: 'Green River Merc', customer: { business_name: 'Green River Merc.' } } }
+    expect(bonusJobLabel(row).heading).toBe('Green River Merc.')
+  })
+
+  it('keeps a site belonging to a differently-named account', () => {
+    // Dave's account is "Green River Merc." but job 23018 is at Drinkle — the
+    // title is the real company, which is what made this row read oddly.
+    const row = { job_id: 23018, jobs: { job_title: 'WY Drinkle Ins Agency', customer: { business_name: 'Green River Merc.' } } }
+    expect(bonusJobLabel(row).heading).toBe('Green River Merc. — WY Drinkle Ins Agency')
   })
 
   it('prefers the business name over a contact name', () => {
-    const row = { job_id: 1, jobs: { customer: { name: 'Jane Doe', business_name: 'Doe Holdings' } } }
-    expect(bonusJobLabel(row).heading).toBe('Doe Holdings')
+    const row = { job_id: 1, jobs: { customer: { name: 'Dave', business_name: 'Green River Merc.' } } }
+    expect(bonusJobLabel(row).heading).toBe('Green River Merc.')
   })
 
   it('falls back to jobs.customer_name when there is no linked customer', () => {
     const row = { job_id: 1, jobs: { customer_name: 'Kimball Investment Co', job_title: 'Power Wash' } }
-    expect(bonusJobLabel(row).heading).toBe('Kimball Investment Co')
+    expect(bonusJobLabel(row).heading).toBe('Kimball Investment Co — Power Wash')
   })
 
-  it('uses the job title when nothing identifies the customer', () => {
-    // Three jobs behind live bonuses have no customer at all, and their titles
-    // carry the identity: "Nicole Webster - Exterior Window Cleaning".
+  it('uses the title alone when nothing identifies the customer', () => {
     const row = { job_id: 23339, jobs: { job_title: 'Nicole Webster - Exterior Window Cleaning' } }
-    const { heading, subtitle } = bonusJobLabel(row)
-    expect(heading).toBe('Nicole Webster - Exterior Window Cleaning')
-    expect(subtitle).toBeNull()   // never repeat the heading underneath itself
+    expect(bonusJobLabel(row).heading).toBe('Nicole Webster - Exterior Window Cleaning')
   })
 
   it('never renders a blank row', () => {
@@ -355,8 +369,10 @@ describe('labelling a bonus', () => {
     expect(bonusJobLabel(null).heading).toBe('Job')
   })
 
-  it('always carries the id needed to open the job', () => {
-    expect(bonusJobLabel({ job_id: 21004, jobs: {} }).jobId).toBe(21004)
+  it('carries the job number and the id needed to open the job', () => {
+    const row = { job_id: 21004, jobs: { job_id: 'JOB-MNQHM69Z', customer: { name: 'X' } } }
+    expect(bonusJobLabel(row).subtitle).toBe('JOB-MNQHM69Z')
+    expect(bonusJobLabel(row).jobId).toBe(21004)
     expect(bonusJobLabel(null).jobId).toBeNull()
   })
 })

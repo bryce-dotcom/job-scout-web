@@ -2397,13 +2397,13 @@ export default function Payroll() {
                         able to click into the job." On the HHH side two
                         different jobs both read "Commercial Window Cleaning -
                         Store Front..." — the SERVICE, not the client — so
-                        they were indistinguishable. Lead with the customer,
-                        keep the job title underneath, and link to the job. */}
+                        they were indistinguishable. Customer AND site on one
+                        line, job number underneath, heading opens the job. */}
                     {(() => {
                       // bonusJobLabel, not a local copy — My Pay had its own
                       // version that still led with the job title, so the same
                       // bonus read differently depending on who opened it.
-                      const { heading, subtitle: title } = bonusJobLabel(b)
+                      const { heading, subtitle } = bonusJobLabel(b)
                       return (
                         <>
                           <button
@@ -2419,8 +2419,7 @@ export default function Payroll() {
                             {heading}
                           </button>
                           <div style={{ fontSize: '11.5px', color: theme.textSecondary, marginTop: '1px' }}>
-                            {title ? `${title} · ` : ''}
-                            {b.jobs?.job_id || `#${b.job_id}`}
+                            {subtitle || `#${b.job_id}`}
                           </div>
                         </>
                       )
