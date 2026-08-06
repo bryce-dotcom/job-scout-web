@@ -71,7 +71,14 @@ function drawProduct(doc, product, y, pageW, pageH, makers = []) {
   // ("MES 8ft Linear Strip"), and a scrubbed spec table under a branded
   // heading achieves nothing.
   const deny = buildDenyTerms(product, product?.datasheet_json?.brand_terms || [], undefined, makers)
-  const title = doc.splitTextToSize(publicTitle(product?.name, deny) || 'Product', colW - 46)
+  // publicTitle returns '' when the only possible title is the maker's name.
+  // Fall back to the product CATEGORY before the generic word, so a page reads
+  // "LED Wall Pack" rather than "Product".
+  const safeCategory = publicTitle(product?.product_category, deny)
+  const title = doc.splitTextToSize(
+    publicTitle(product?.name, deny) || safeCategory || 'Product',
+    colW - 46,
+  )
   doc.text(title, M, y)
 
   // Photo on the right, if we have one.

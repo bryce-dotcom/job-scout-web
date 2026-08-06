@@ -128,12 +128,31 @@ export function scrubText(text: unknown, denyTerms: string[] = []): string {
 export function publicTitle(name: unknown, denyTerms: string[] = []): string {
   const raw = typeof name === 'string' ? name.trim() : ''
   if (!raw) return ''
-  const cleaned = scrubText(raw, denyTerms)
+  // The extraction sometimes lists the product's OWN NAME as a brand term
+  // (e.g. "MES 36W 2x2 Backlit Panel"). Scrubbing that leaves nothing, the old
+  // code then fell back to the raw name, and the leak check flagged the very
+  // string it had just restored — 7 products failed, and because the send flow
+  // builds ONE combined sheet, a single one of them withheld the whole
+  // attachment. A term covering the entire title tells us nothing about which
+  // PART is the brand, so ignore it and let the shorter terms ("MES",
+  // "Maverick LED") do the work.
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+  const usable = (denyTerms || []).filter(t => norm(String(t ?? '')) !== norm(raw))
+  const cleaned = scrubText(raw, usable)
     .replace(/\(\s*\)/g, '')            // "Highbay (MES)" -> "Highbay ()"
     .replace(/\s{2,}/g, ' ')
     .replace(/^[\s\-–—/|,]+|[\s\-–—/|,]+$/g, '')
     .trim()
-  return cleaned.length >= 3 ? cleaned : raw
+  // Never fall back to the raw name: it is known to contain a denied term,
+  // which is exactly how the manufacturer would reach a customer. Callers
+  // render 'Product' when this is empty.
+  if (cleaned.length < 3) return ''
+  // Ignoring whole-title terms above is safe only while something else still
+  // guards the result. When the name IS just the brand ("MES"), that filter
+  // removes the only term protecting it, so re-check the cleaned title against
+  // the FULL deny list and publish nothing rather than the maker's name.
+  if (findLeaks(cleaned, denyTerms).length) return ''
+  return cleaned
 }
 
 /** True when this spec row names the part rather than describing it. */

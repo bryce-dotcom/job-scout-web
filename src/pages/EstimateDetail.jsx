@@ -130,6 +130,13 @@ function EstimateDetailInner() {
   const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
+  // Every manufacturer in the catalogue, so the scrub does not depend on which
+  // products happen to share this estimate. buildSpecSheetPdf otherwise falls
+  // back to the makers on the products being rendered, which meant a product
+  // was scrubbed differently depending on its neighbours — previewing one
+  // "MES ..." product alone never denied "MES", while sending it alongside a
+  // product whose manufacturer field says MES did.
+  const [knownManufacturers, setKnownManufacturers] = useState([])
   const currentEmployee = useStore((state) => state.currentEmployee)
   const products = useStore((state) => state.products)
   const employees = useStore((state) => state.employees)
@@ -2103,6 +2110,45 @@ function EstimateDetailInner() {
   }
 
   // Email sending
+  // Open OUR spec sheet for one product, so a rep can see exactly what the
+  // customer will receive before sending it. Uses buildSpecSheetPdf — the same
+  // generator the send flow attaches — rather than rendering a preview of its
+  // own, so a preview can never disagree with what actually goes out.
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    supabase.from('products_services')
+      .select('manufacturer').eq('company_id', companyId).not('manufacturer', 'is', null)
+      .then(({ data }) => {
+        if (cancelled) return
+        setKnownManufacturers([...new Set(
+          (data || []).map(r => String(r.manufacturer || '').trim()).filter(m => m.length > 1)
+        )])
+      })
+    return () => { cancelled = true }
+  }, [companyId])
+
+  const previewPublicSpecSheet = async (product) => {
+    if (!product) return
+    try {
+      const withImage = { ...product, imageDataUrl: await imageToDataUrl(product.image_url) }
+      const { doc, leaks } = buildSpecSheetPdf({ products: [withImage], company, logoDataUrl: null, knownManufacturers })
+      // The leak check is the whole point of the feature — never show a sheet
+      // that still names the manufacturer, or a rep will screen-share it.
+      if (leaks.length) {
+        console.error('[EstimateDetail] spec sheet leak check failed', leaks)
+        toast.error(`Spec sheet withheld — it still contains: ${leaks.join(', ')}`)
+        return
+      }
+      if (!doc) { toast.error('No specifications on file for this product yet'); return }
+      const url = doc.output('bloburl')
+      const win = window.open(url, '_blank')
+      if (!win) toast.error('Allow pop-ups to preview the spec sheet')
+    } catch (e) {
+      toast.error('Could not build the spec sheet: ' + (e?.message || e))
+    }
+  }
+
   const handleSendEmail = async () => {
     if (!sendEmail) {
       toast.error('Please enter a recipient email.')
@@ -2136,7 +2182,7 @@ function EstimateDetailInner() {
           seen.add(p.id)
           products.push({ ...p, imageDataUrl: await imageToDataUrl(p.image_url) })
         }
-        const { doc, leaks } = buildSpecSheetPdf({ products, company, logoDataUrl: null })
+        const { doc, leaks } = buildSpecSheetPdf({ products, company, logoDataUrl: null, knownManufacturers })
         if (leaks.length) {
           // Never send a sheet that failed its own leak check.
           console.error('[EstimateDetail] spec sheet leak check failed', leaks)
@@ -3905,17 +3951,36 @@ function EstimateDetailInner() {
                             </div>
                           )}
                           {/* Product Documents (spec sheets, install guides) */}
-                          {(line.item?.spec_sheet_url || line.item?.install_guide_url || line.item?.dlc_document_url) && (
+                          {(line.item?.spec_sheet_url || line.item?.install_guide_url || line.item?.dlc_document_url || line.item?.datasheet_json?.specs?.length > 0) && (
                             <div style={{ marginBottom: '12px' }}>
                               <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Documents</div>
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {/* OUR sheet — the real specs with the manufacturer
+                                    removed. Listed first and styled as the primary
+                                    action because it is the one safe to show a
+                                    customer; the links beside it name the maker.
+                                    Same generator the send flow attaches, so what
+                                    the rep previews is what the customer gets. */}
+                                {line.item?.datasheet_json?.specs?.length > 0 && (
+                                  <button
+                                    onClick={() => previewPublicSpecSheet(line.item)}
+                                    style={{
+                                      display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+                                      backgroundColor: theme.accent, color: '#fff', borderRadius: '6px',
+                                      fontSize: '12px', fontWeight: '600', border: 'none', cursor: 'pointer', minHeight: '32px',
+                                    }}
+                                    title="The sheet we send customers — real specs, no manufacturer or model numbers"
+                                  >
+                                    <FileText size={14} /> Our Spec Sheet
+                                  </button>
+                                )}
                                 {line.item.spec_sheet_url && (
                                   <a href={line.item.spec_sheet_url} target="_blank" rel="noopener noreferrer" style={{
                                     display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
                                     backgroundColor: theme.accentBg, color: theme.accent, borderRadius: '6px',
                                     fontSize: '12px', fontWeight: '500', textDecoration: 'none', border: `1px solid ${theme.border}`
                                   }}>
-                                    <FileText size={14} /> Spec Sheet
+                                    <FileText size={14} /> Manufacturer Sheet
                                   </a>
                                 )}
                                 {line.item.install_guide_url && (

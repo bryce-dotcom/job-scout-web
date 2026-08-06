@@ -186,10 +186,15 @@ describe('the product name itself', () => {
     expect(publicTitle('SMBE 50/60/70/90/110W Highbay', deny)).toBe('SMBE 50/60/70/90/110W Highbay')
   })
 
-  it('falls back to the original rather than leaving a product untitled', () => {
-    // An untitled row on a proposal is worse than a branded one; the audit
-    // script lists these for renaming instead.
-    expect(publicTitle('MES', deny)).toBe('MES')
+  it('publishes NOTHING rather than the maker when the name is only the brand', () => {
+    // This previously returned the raw name, on the reasoning that an untitled
+    // row is worse than a branded one. It isn't: the whole point of the sheet
+    // is that a customer cannot identify the manufacturer and re-bid the job.
+    // It also broke the feature outright — the raw name tripped the sheet's own
+    // leak check, and because a send builds ONE combined PDF, 7 such products
+    // withheld the entire attachment for every estimate they appeared on.
+    // The caller renders the product category, or "Product", instead.
+    expect(publicTitle('MES', deny)).toBe('')
   })
 
   it('does not treat our own product name as a brand just because the extractor did', () => {
@@ -295,5 +300,39 @@ describe('datasheetRows — the shape that crashed the Products page', () => {
     expect(datasheetRows('nonsense')).toEqual([])
     expect(datasheetRows({ specs: 'not-an-array' })).toEqual([])
     expect(datasheetRows({ specs: [null, { label: 'A' }, { value: 'B' }] })).toEqual([])
+  })
+})
+
+describe('publicTitle when the product is named after its maker', () => {
+  // The extraction lists the product's OWN NAME among brand_terms, e.g.
+  // "MES 36W 2x2 Backlit Panel". Scrubbing that leaves nothing; the old code
+  // fell back to the RAW name and the leak check then flagged the string it
+  // had just restored. 7 products failed, and because a send builds ONE
+  // combined sheet, any single one of them withheld the whole attachment.
+  const deny = ['MES', 'Maverick LED', 'MES 36W 2x2 Backlit Panel']
+
+  it('strips the maker but keeps the useful name', () => {
+    expect(publicTitle('MES 36W 2x2 Backlit Panel', deny)).toBe('36W 2x2 Backlit Panel')
+  })
+
+  it('ignores a deny term that covers the entire title', () => {
+    // It says nothing about WHICH part is the brand, so it cannot be applied.
+    expect(publicTitle('MES HB Control', ['MES HB Control', 'MES'])).toBe('HB Control')
+  })
+
+  it('NEVER falls back to a raw name that contains a denied term', () => {
+    // Returning the raw name is exactly how the manufacturer reaches a
+    // customer. Empty is correct; callers render 'Product'.
+    expect(publicTitle('MES', ['MES'])).toBe('')
+    expect(publicTitle('Maverick LED', ['Maverick LED'])).toBe('')
+  })
+
+  it('leaves a clean name alone', () => {
+    expect(publicTitle('SMBE 110W Highbay', ['MES'])).toBe('SMBE 110W Highbay')
+  })
+
+  it('survives junk', () => {
+    expect(publicTitle(null, ['MES'])).toBe('')
+    expect(publicTitle('  ', ['MES'])).toBe('')
   })
 })
