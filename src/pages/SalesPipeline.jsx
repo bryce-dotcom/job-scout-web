@@ -184,7 +184,13 @@ export default function SalesPipeline() {
   const [buFilter, setBuFilter] = useState(() => savedPrefs.buFilter || 'all')
 
   // Date range filter for delivery stages
-  const [dateRange, setDateRange] = useState(() => savedPrefs.dateRange || 'mtd')
+  // YTD, not MTD. The range now filters open stages too, and on the live board
+  // MTD keeps 100 of 1,577 cards where it used to keep all of them — opening
+  // on 6% of your pipeline reads as "the app lost my deals". YTD keeps 497 and
+  // still drops the 906 cards nobody has touched in over a year, which is the
+  // clutter Cole asked to be rid of. Anyone who has set their own range keeps
+  // it; this only affects a rep who has never chosen one.
+  const [dateRange, setDateRange] = useState(() => savedPrefs.dateRange || 'ytd')
   // Referenced by three date-window calculations for dateRange === 'custom'
   // but never declared — the only reason it wasn't already throwing is that
   // 'custom' isn't offered in the range buttons, so the && short-circuits
@@ -231,8 +237,9 @@ export default function SalesPipeline() {
     }
     if (buFilter && buFilter !== 'all') out.push(`Unit: ${buFilter}`)
     if (searchTerm?.trim()) out.push(`Search: "${searchTerm.trim()}"`)
-    // 'mtd' is the DEFAULT and still hides most of the board early in a month,
-    // so it counts as active — that is exactly the trap.
+    // The range counts as active at anything but 'all', DEFAULT INCLUDED — it
+    // now filters open stages too, so it is the filter most likely to be
+    // hiding what someone is looking for.
     if (dateRange && dateRange !== 'all') out.push(DATE_RANGE_LABELS[dateRange] || dateRange)
     if (mobileFilter && mobileFilter !== 'All') out.push(`Stage: ${mobileFilter}`)
     return out
