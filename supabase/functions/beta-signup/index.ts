@@ -19,8 +19,8 @@ serve(async (req) => {
 
     const { email, password, companyName, inviteCode, tosAccepted, tosVersion } = await req.json();
 
-    if (!email || !password || !companyName || !inviteCode) {
-      return new Response(JSON.stringify({ error: 'All fields are required' }),
+    if (!email || !password || !companyName) {
+      return new Response(JSON.stringify({ error: 'Email, password, and company name are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -35,26 +35,30 @@ serve(async (req) => {
       || req.headers.get('cf-connecting-ip')
       || null;
 
-    // 1. Validate invite code
-    const { data: code, error: codeError } = await supabase
-      .from('beta_invite_codes')
-      .select('*')
-      .eq('code', inviteCode.trim().toUpperCase())
-      .single();
+    // 1. Invite code — OPTIONAL. Signup is open to anyone. A code, if
+    //    supplied, is still validated and its usage tracked (referral / beta
+    //    campaigns), but it's no longer required to create an account.
+    let code: { id: number; times_used: number; max_uses: number; expires_at?: string } | null = null;
+    if (inviteCode && String(inviteCode).trim()) {
+      const { data: found, error: codeError } = await supabase
+        .from('beta_invite_codes')
+        .select('*')
+        .eq('code', String(inviteCode).trim().toUpperCase())
+        .single();
 
-    if (codeError || !code) {
-      return new Response(JSON.stringify({ error: 'Invalid invite code' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    if (code.times_used >= code.max_uses) {
-      return new Response(JSON.stringify({ error: 'This invite code has reached its usage limit' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    if (code.expires_at && new Date(code.expires_at) < new Date()) {
-      return new Response(JSON.stringify({ error: 'This invite code has expired' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      if (codeError || !found) {
+        return new Response(JSON.stringify({ error: 'Invalid invite code' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (found.times_used >= found.max_uses) {
+        return new Response(JSON.stringify({ error: 'This invite code has reached its usage limit' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (found.expires_at && new Date(found.expires_at) < new Date()) {
+        return new Response(JSON.stringify({ error: 'This invite code has expired' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      code = found;
     }
 
     // 2. Create auth user
@@ -117,11 +121,13 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // 5. Increment times_used on invite code
-    await supabase
-      .from('beta_invite_codes')
-      .update({ times_used: code.times_used + 1 })
-      .eq('id', code.id);
+    // 5. Increment times_used on invite code (only if one was actually used)
+    if (code) {
+      await supabase
+        .from('beta_invite_codes')
+        .update({ times_used: code.times_used + 1 })
+        .eq('id', code.id);
+    }
 
     // 6. Seed sample data
     try {

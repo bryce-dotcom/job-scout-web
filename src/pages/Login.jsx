@@ -69,8 +69,12 @@ export default function Login() {
   const setCompany = useStore((state) => state.setCompany)
   const checkDeveloperStatus = useStore((state) => state.checkDeveloperStatus)
 
-  // Modes: signin, beta-signup, forgot-password
-  const [mode, setMode] = useState('signin')
+  // Modes: signin, beta-signup, forgot-password.
+  // Deep-link: /login?signup=1 (e.g. from the /pricing page) opens signup.
+  const [mode, setMode] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('signup') ? 'beta-signup' : 'signin' }
+    catch { return 'signin' }
+  })
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -443,8 +447,8 @@ export default function Login() {
             <>
               <form onSubmit={handleBetaSignup}>
                 <div style={{ marginBottom: '20px' }}>
-                  <label style={labelStyle}>Invite Code</label>
-                  <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} required placeholder="Enter your invite code" style={{ ...inputStyle, textTransform: 'uppercase', letterSpacing: '0.05em' }} onFocus={onFocus} onBlur={onBlur} />
+                  <label style={labelStyle}>Invite Code <span style={{ color: theme.textMuted, fontWeight: 400 }}>(optional)</span></label>
+                  <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="Have an invite code? Enter it here" style={{ ...inputStyle, textTransform: 'uppercase', letterSpacing: '0.05em' }} onFocus={onFocus} onBlur={onBlur} />
                 </div>
 
                 <div style={{ marginBottom: '20px' }}>

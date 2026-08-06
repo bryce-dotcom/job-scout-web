@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
 import Terms from './pages/Terms'
 import Privacy from './pages/Privacy'
+import Pricing from './pages/Pricing'
 import Onboarding from './pages/Onboarding'
 import Employees from './pages/Employees'
 import Customers from './pages/Customers'
@@ -358,6 +359,7 @@ function App() {
         <Route path="/onboarding/:token" element={<OnboardingPortal />} />
 
         {/* Public routes */}
+        <Route path="/pricing" element={<Pricing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/terms" element={<Terms />} />

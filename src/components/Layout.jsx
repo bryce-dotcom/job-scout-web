@@ -479,6 +479,7 @@ export default function Layout() {
     description: 'Reports, EOS & analytics',
     sectionIcon: BarChart3,
     items: [
+      { to: '/pricing', icon: UserPlus, label: 'Sign Up a Customer', hint: 'Walk a prospect through the plans and start their account — or send them the link' },
       { to: '/reports', icon: BarChart3, label: 'Reports', hint: 'Business reports and analytics' },
       { to: '/sales-performance', icon: Target, label: 'Sales Performance', hint: 'Per-rep funnel: meetings set, estimates written, deals closed' },
       { to: '/admin/eos', icon: Eye, label: 'EOS', hint: 'Vision, traction, rocks, scorecard, and meetings' },
