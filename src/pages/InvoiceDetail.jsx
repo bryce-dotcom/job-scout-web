@@ -13,7 +13,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
 import { resolveMatLabSplit, splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
-import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
+import { buildInvoiceSections, incentiveLineLabel, invoiceDiscountBreakout } from '../lib/invoiceSections'
 import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
 import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -1488,15 +1488,18 @@ export default function InvoiceDetail() {
       if (pdfDiscount > 0) {
         if (pdfLegacyNet) {
           drawTotalLine('Utility Incentive (applied):', formatCurrency(pdfDiscount), { color: [120, 120, 120] })
-        } else if (hasDepositBreakout || hasProjectDiscountBreakout) {
-          // Split project discount, utility incentive, and deposit credit into
-          // separate lines so the customer (and utility, if they ask) can see
+        } else if (hasDepositBreakout || hasProjectDiscountBreakout || hasDownPaymentBreakout) {
+          // Split project discount, utility incentive, down payment and
+          // deposit credit into separate lines so the customer can see
           // exactly where each deduction came from. Sum is unchanged.
           if (projectDiscountPortion > 0) {
             drawTotalLine('Project Discount:', `-${formatCurrency(projectDiscountPortion)}`, { color: [200, 0, 0] })
           }
           if (incentivePortion > 0) {
             drawTotalLine(linkedUtilityInvoice ? 'Utility Incentive:' : 'Discount:', `-${formatCurrency(incentivePortion)}`, { color: [200, 0, 0] })
+          }
+          if (downPaymentPortion > 0) {
+            drawTotalLine('Down Payment:', `-${formatCurrency(downPaymentPortion)}`, { color: [200, 0, 0] })
           }
           if (hasDepositBreakout) {
             const depositLabel = depositPaidDate
@@ -1980,21 +1983,23 @@ export default function InvoiceDetail() {
   // amount was rolled into discount_applied alongside the utility incentive
   // (see JobDetail.jsx invoice-create flow). Split them back out for display
   // so the customer can see their deposit was credited.
-  const depositCredit = (parentInvoice && parentInvoice.invoice_type === 'deposit')
-    ? (parseFloat(parentInvoice.amount) || 0)
-    : 0
-  // Same breakout idea for a whole-project discount: discount_applied stays
-  // the TOTAL deduction (so balance math everywhere is untouched), and
-  // project_discount records how much of it is a project discount vs a
-  // utility incentive. Alayda's case: $971 project discount + $3,294
-  // incentive had to share one field, so one of them always got lost.
-  const projectDiscountPortion = Math.min(
-    Math.max(0, parseFloat(invoice.project_discount) || 0),
-    Math.max(0, discountApplied - depositCredit)
-  )
-  const incentivePortion = Math.max(0, discountApplied - depositCredit - projectDiscountPortion)
+  // Split discount_applied back into its parts for display. discount_applied
+  // stays the TOTAL deduction so balance maths everywhere is untouched.
+  //
+  // This used to be a SECOND hand-written copy of invoiceDiscountBreakout,
+  // and it is why the down payment kept printing inside the utility incentive
+  // after the lib was already fixed: the PDF renders from this file, not the
+  // lib. The utility incentive is the utility incentive — nothing may be
+  // added to it — so there is now exactly one function that decides.
+  const {
+    depositCredit,
+    projectDiscountField: projectDiscountPortion,
+    downPayment: downPaymentPortion,
+    incentive: incentivePortion,
+  } = invoiceDiscountBreakout(invoice, parentInvoice)
   const hasDepositBreakout = depositCredit > 0 && !isLegacyNetInvoice && discountApplied >= depositCredit
   const hasProjectDiscountBreakout = projectDiscountPortion > 0 && !isLegacyNetInvoice
+  const hasDownPaymentBreakout = downPaymentPortion > 0 && !isLegacyNetInvoice
   const depositPaidDate = parentInvoice?.updated_at || parentInvoice?.created_at
   const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
 
@@ -3043,7 +3048,7 @@ export default function InvoiceDetail() {
                   <span style={{ color: theme.textSecondary }}>Utility Incentive (already applied)</span>
                   <span style={{ color: theme.textMuted }}>{formatCurrency(invoice.discount_applied)}</span>
                 </div>
-              ) : (hasProjectDiscountBreakout || hasDepositBreakout) ? (
+              ) : (hasProjectDiscountBreakout || hasDepositBreakout || hasDownPaymentBreakout) ? (
                 <>
                   {projectDiscountPortion > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
@@ -3055,6 +3060,12 @@ export default function InvoiceDetail() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
                       <span style={{ color: theme.textSecondary }}>{linkedUtilityInvoice ? 'Utility Incentive' : 'Discount'}</span>
                       <span style={{ color: '#dc2626' }}>-{formatCurrency(incentivePortion)}</span>
+                    </div>
+                  )}
+                  {downPaymentPortion > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                      <span style={{ color: theme.textSecondary }}>Down Payment</span>
+                      <span style={{ color: '#dc2626' }}>-{formatCurrency(downPaymentPortion)}</span>
                     </div>
                   )}
                   {hasDepositBreakout && (
