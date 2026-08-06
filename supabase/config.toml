@@ -363,6 +363,18 @@ allow_dynamic_registration = false
 [functions.resend-webhook]
 verify_jwt = false
 
+# Stripe calls these with only a `stripe-signature` header (no Supabase JWT or
+# anon key), so the gateway must not require a JWT. Same trap as resend-webhook:
+# a plain `functions deploy` (no --no-verify-jwt) resets this to true, Stripe
+# gets 401 on every delivery, and the endpoint auto-disables — which is exactly
+# what happened on 2026-08-06. Both functions verify the Stripe signature
+# themselves (HMAC over the raw body), so they are safe to expose.
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.master-stripe-webhook]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
