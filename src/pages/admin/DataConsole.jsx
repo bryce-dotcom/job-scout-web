@@ -21,6 +21,7 @@ import DataConsoleBrowser from './DataConsoleBrowser'
 import DataConsoleBulkOps from './DataConsoleBulkOps'
 import DataConsoleSQL from './DataConsoleSQL'
 import DataConsoleFeedback from './DataConsoleFeedback'
+import DataConsoleCrashes from './DataConsoleCrashes'
 import DataConsoleAuditLog from './DataConsoleAuditLog'
 import DataConsoleSystem from './DataConsoleSystem'
 import DataConsoleMigrations from './DataConsoleMigrations'
@@ -38,6 +39,7 @@ const Placeholder = ({ title }) => (
 const navItems = [
   { path: '', label: 'Dashboard', icon: LayoutDashboard },
   { path: 'feedback', label: 'Feedback', icon: MessageSquare, badge: true },
+  { path: 'crashes', label: 'Crashes', icon: AlertTriangle },
   { path: 'companies', label: 'Companies', icon: Building2 },
   { path: 'users', label: 'Users', icon: Users },
   { path: 'utilities', label: 'Utilities & Rebates', icon: Zap },
@@ -371,6 +373,7 @@ export default function DataConsole() {
         <Routes>
           <Route index element={<DataConsoleDashboard theme={theme} />} />
           <Route path="feedback" element={<DataConsoleFeedback />} />
+          <Route path="crashes" element={<DataConsoleCrashes />} />
           <Route path="companies" element={<DataConsoleCompanies />} />
           <Route path="users" element={<DataConsoleUsers />} />
           <Route path="utilities" element={<DataConsoleUtilities />} />

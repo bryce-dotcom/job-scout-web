@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.jsx'
+import { reportCrash } from './lib/crashReport'
+import { useStore } from './lib/store'
 
 // Initialize Sentry
 if (import.meta.env.VITE_SENTRY_DSN) {
@@ -77,9 +79,31 @@ if ('serviceWorker' in navigator) {
   })
 }
 
+// Record every crash in our OWN table as well as Sentry.
+//
+// Sentry.init only runs when VITE_SENTRY_DSN is set, and it never has been —
+// the production bundle contains no reference to sentry.io. So until that DSN
+// exists, Sentry.ErrorBoundary catches crashes and reports them nowhere, which
+// is why the Products page could be broken for all 189 products with specs and
+// the only signal was Damien photographing his screen.
+//
+// onError fires for the same crashes Sentry would take. It is deliberately not
+// awaited: the fallback screen must render immediately whether or not the
+// report lands.
+const handleCrash = (error, componentStack) => {
+  try {
+    const store = useStore.getState?.()
+    reportCrash(error, {
+      componentStack,
+      companyId: store?.companyId ?? null,
+      employeeId: store?.employees?.find?.(e => e.email && e.email === store?.user?.email)?.id ?? null,
+    })
+  } catch { /* a failed report must never replace the error screen */ }
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <Sentry.ErrorBoundary fallback={ErrorFallback}>
+    <Sentry.ErrorBoundary fallback={ErrorFallback} onError={handleCrash}>
       <App />
     </Sentry.ErrorBoundary>
   </StrictMode>
