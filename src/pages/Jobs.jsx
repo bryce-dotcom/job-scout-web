@@ -10,7 +10,7 @@ import { isAdmin as checkAdmin } from '../lib/accessControl'
 import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin, Map as MapIcon,
   Play, CheckCircle, FileText, ChevronRight, User, Users, Upload, Download,
-  Trophy, DollarSign, Columns3, List, ChevronLeft, Pause, ArrowRight, Coffee, ChevronDown, ChevronUp, Navigation, ExternalLink,
+  Trophy, DollarSign, List, ChevronLeft, Pause, ArrowRight, Coffee, ChevronDown, ChevronUp, Navigation, ExternalLink,
   Archive, RotateCcw
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
@@ -249,269 +249,6 @@ function RecentWins({ wins, theme, isMobile, navigate, formatDate }) {
   )
 }
 
-// ============ KANBAN COLUMN ============
-function KanbanColumn({ title, icon: Icon, jobs, color, theme, isMobile, navigate, formatDate, scheduleJob, startJob, completeJob, openMap, archiveJob, parentJobById, serviceCountByParent }) {
-  const [hoveredJobId, setHoveredJobId] = useState(null)
-  const columnTotal = jobs.reduce((sum, j) => sum + (parseFloat(j.job_total) || 0), 0)
-
-  return (
-    <div style={{
-      flex: 1,
-      minWidth: isMobile ? '100%' : '280px',
-      maxWidth: isMobile ? '100%' : '340px',
-      // Subtle color-tinted lane background
-      backgroundColor: `${color}07`,
-      borderRadius: '14px',
-      border: `1px solid ${color}28`,
-      // Bold colored top bar — the column's identity
-      borderTop: `3px solid ${color}`,
-      display: 'flex',
-      flexDirection: 'column',
-      maxHeight: isMobile ? 'none' : 'calc(100dvh - 380px)',
-      overflow: 'hidden'
-    }}>
-      {/* Column header */}
-      <div style={{
-        padding: '13px 16px 11px',
-        borderBottom: `1px solid ${color}18`,
-        backgroundColor: `${color}0C`,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: columnTotal > 0 ? '4px' : '0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{
-              width: '28px', height: '28px', borderRadius: '8px',
-              backgroundColor: `${color}22`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-            }}>
-              <Icon size={14} style={{ color }} />
-            </div>
-            <span style={{ fontSize: '14px', fontWeight: '700', color: theme.text, letterSpacing: '-0.01em' }}>{title}</span>
-          </div>
-          <span style={{
-            padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '700',
-            backgroundColor: color, color: '#fff'
-          }}>
-            {jobs.length}
-          </span>
-        </div>
-        {columnTotal > 0 && (
-          <p style={{ margin: 0, fontSize: '12px', fontWeight: '600', color, paddingLeft: '36px', opacity: 0.85 }}>
-            {formatCurrency(columnTotal)} total
-          </p>
-        )}
-      </div>
-
-      {/* Cards */}
-      <div style={{
-        padding: '8px',
-        overflowY: 'auto',
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '6px'
-      }}>
-        {jobs.length === 0 && (
-          <div style={{
-            textAlign: 'center', padding: '28px 12px',
-            fontSize: '13px', color: `${color}70`
-          }}>
-            No {title.toLowerCase()} jobs
-          </div>
-        )}
-        {jobs.map(job => {
-          const invoiceStyle = invoiceStatusColors[job.invoice_status] || invoiceStatusColors['Not Invoiced']
-          const isHovered = hoveredJobId === job.id
-          return (
-            <div
-              key={job.id}
-              onClick={() => navigate(`/jobs/${job.id}`)}
-              style={{
-                backgroundColor: theme.bgCard,
-                borderRadius: '10px',
-                border: `1px solid ${theme.border}`,
-                // Left accent bar binds card to its lane color
-                borderLeft: `3px solid ${color}`,
-                padding: '12px 14px 10px 12px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                boxShadow: isHovered
-                  ? `0 4px 16px ${color}22, 0 1px 4px rgba(0,0,0,0.06)`
-                  : '0 1px 3px rgba(0,0,0,0.05)',
-                transform: isHovered ? 'translateY(-1px)' : 'none',
-                position: 'relative'
-              }}
-              onMouseEnter={() => setHoveredJobId(job.id)}
-              onMouseLeave={() => setHoveredJobId(null)}
-            >
-              {/* Archive button — appears on hover, top-right corner */}
-              {isHovered && archiveJob && (
-                <button
-                  onClick={e => { e.stopPropagation(); archiveJob(job) }}
-                  title="Archive this job"
-                  style={{
-                    position: 'absolute', top: '8px', right: '8px',
-                    background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.22)',
-                    borderRadius: '6px', padding: '3px 6px', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: '3px',
-                    fontSize: '10px', fontWeight: '600', color: '#dc2626',
-                    zIndex: 1
-                  }}
-                >
-                  <Archive size={10} /> Archive
-                </button>
-              )}
-
-              {/* Job ID + amount */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
-                <span style={{ fontSize: '10px', fontWeight: '700', color, letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                  {job.job_id}
-                  <ExternalLink size={9} color={theme.textMuted} />
-                </span>
-                {job.job_total > 0 && (
-                  <span style={{
-                    fontSize: '11px', fontWeight: '700', color: theme.accent,
-                    paddingRight: isHovered ? '58px' : '0',
-                    transition: 'padding-right 0.12s ease'
-                  }}>
-                    {formatCurrency(job.job_total)}
-                  </span>
-                )}
-              </div>
-
-              {/* Job title */}
-              <p style={{
-                fontSize: '13px', fontWeight: '600', color: theme.text, margin: '0 0 2px',
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3
-              }}>
-                {job.job_title || 'Untitled Job'}
-              </p>
-
-              {/* Customer */}
-              <p style={{ fontSize: '12px', color: theme.textSecondary, margin: '0 0 6px', fontWeight: '500' }}>
-                {job.customer?.name || 'No customer'}
-              </p>
-
-              {/* Service-visit signals — badge for the kind + parent
-                  pointer for child visits, child-count for parent
-                  installs. Rendered ABOVE the footer so dispatch
-                  can scan the board for these at a glance. */}
-              {(job.parent_job_id || job.service_kind || serviceCountByParent?.get(job.id)) && (() => {
-                const kindStyle = job.service_kind ? serviceKindStyle(job.service_kind) : null
-                const parent = job.parent_job_id ? parentJobById?.get(job.parent_job_id) : null
-                const childCount = !job.parent_job_id ? (serviceCountByParent?.get(job.id) || 0) : 0
-                return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', margin: '0 0 6px' }}>
-                    {kindStyle && (
-                      <span style={{
-                        padding: '1px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 600,
-                        backgroundColor: kindStyle.bg, color: kindStyle.text, lineHeight: 1.5,
-                      }}>
-                        {kindStyle.label}
-                      </span>
-                    )}
-                    {parent && (
-                      <span
-                        onClick={e => { e.stopPropagation(); navigate(`/jobs/${parent.id}`) }}
-                        title={`Parent: ${parent.job_title || ''}`}
-                        style={{
-                          fontSize: '10px', color: theme.textMuted, cursor: 'pointer',
-                          textDecoration: 'underline', textUnderlineOffset: '2px',
-                        }}
-                      >
-                        ↪ {parent.job_title || parent.job_id || `#${parent.id}`}
-                      </span>
-                    )}
-                    {childCount > 0 && (
-                      <span style={{
-                        fontSize: '10px', color: theme.textMuted,
-                        padding: '1px 6px', borderRadius: '8px',
-                        backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
-                      }}>
-                        +{childCount} {childCount === 1 ? 'svc' : 'svcs'}
-                      </span>
-                    )}
-                  </div>
-                )
-              })()}
-
-              {/* Footer: date + team + invoice badge + action button */}
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                gap: '6px', flexWrap: 'wrap',
-                paddingTop: '8px',
-                borderTop: `1px solid ${theme.border}`,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: theme.textMuted }}>
-                  {(job.start_date || job.created_at) && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                      <Calendar size={10} />
-                      {job.start_date ? formatDate(job.start_date) : formatDate(job.created_at)}
-                    </span>
-                  )}
-                  {(job.job_lead?.name || job.assigned_team) && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                      <User size={10} />
-                      {job.job_lead?.name || job.assigned_team}
-                    </span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                  {job.invoice_status && (
-                    <span style={{
-                      padding: '2px 6px', borderRadius: '6px', fontSize: '10px', fontWeight: '500',
-                      backgroundColor: invoiceStyle.bg, color: invoiceStyle.text
-                    }}>
-                      {job.invoice_status}
-                    </span>
-                  )}
-                  {job.status === 'Chillin' && scheduleJob && (
-                    <button
-                      onClick={e => { e.stopPropagation(); scheduleJob(job) }}
-                      style={{
-                        padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: '700',
-                        backgroundColor: 'transparent', color: '#5a6349',
-                        border: '1.5px solid #5a634960', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: '3px'
-                      }}
-                    >
-                      <ArrowRight size={9} /> Schedule
-                    </button>
-                  )}
-                  {job.status === 'Scheduled' && (
-                    <button
-                      onClick={e => { e.stopPropagation(); startJob(job) }}
-                      style={{
-                        padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: '700',
-                        backgroundColor: '#c28b38', color: '#fff', border: 'none', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: '3px',
-                        boxShadow: '0 1px 4px rgba(194,139,56,0.35)'
-                      }}
-                    >
-                      <Play size={9} fill="#fff" /> Start
-                    </button>
-                  )}
-                  {job.status === 'In Progress' && (
-                    <button
-                      onClick={e => { e.stopPropagation(); completeJob(job) }}
-                      style={{
-                        padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: '700',
-                        backgroundColor: '#4a7c59', color: '#fff', border: 'none', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: '3px',
-                        boxShadow: '0 1px 4px rgba(74,124,89,0.35)'
-                      }}
-                    >
-                      <CheckCircle size={9} /> Done
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
 
 // ============ MAIN COMPONENT ============
 export default function Jobs() {
@@ -559,11 +296,10 @@ export default function Jobs() {
   // stage it is at — the stage strip above answers "what stage", the list
   // answers "which job", and a horizontally-scrolling kanban answered neither
   // without a lot of dragging. The board is still one click away.
-  const [viewMode, setViewMode] = useState('list')
+  const [viewMode] = useState('list')
   const [historyYear, setHistoryYear] = useState(null)
   const [historyMonth, setHistoryMonth] = useState(null)
   const [isMobile, setIsMobile] = useState(false)
-  const [calendarMonth, setCalendarMonth] = useState(() => new Date())
   const [showMap, setShowMap] = useState(false)
   const [mapLoaded, setMapLoaded] = useState(false)
   const [jobCoords, setJobCoords] = useState({})
@@ -818,13 +554,8 @@ export default function Jobs() {
 
   // Board view groups — dynamic from boardColumns
   const boardColumnIds = new Set(boardColumns.map(c => c.id))
-  const jobsByStatus = {}
-  boardColumns.forEach(col => {
-    jobsByStatus[col.id] = filteredJobs.filter(j => j.status === col.id)
-      .sort((a, b) => new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0))
-  })
-  // Jobs not in any board column (e.g. Cancelled, On Hold, or statuses not in the board)
-  const otherJobs = filteredJobs.filter(j => !boardColumnIds.has(j.status))
+  // (jobsByStatus / otherJobs removed with the kanban — the Job Board owns
+  //  the by-status view. boardColumnIds still drives the stage strip.)
 
   // Load Leaflet CSS & JS from CDN when map is shown
   useEffect(() => {
@@ -1348,36 +1079,6 @@ export default function Jobs() {
         title="Jobs"
         icon={Briefcase}
         actions={<>
-          <div style={{
-            display: 'flex', borderRadius: '8px', overflow: 'hidden',
-            border: `1px solid ${theme.border}`
-          }}>
-            <button
-              onClick={() => setViewMode('board')}
-              style={{
-                padding: '8px 12px', border: 'none', cursor: 'pointer',
-                backgroundColor: viewMode === 'board' ? theme.accent : 'transparent',
-                color: viewMode === 'board' ? '#fff' : theme.textMuted,
-                display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px'
-              }}
-            >
-              <Columns3 size={15} />
-              {!isMobile && 'Board'}
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              style={{
-                padding: '8px 12px', border: 'none', cursor: 'pointer',
-                borderLeft: `1px solid ${theme.border}`,
-                backgroundColor: viewMode === 'list' ? theme.accent : 'transparent',
-                color: viewMode === 'list' ? '#fff' : theme.textMuted,
-                display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px'
-              }}
-            >
-              <List size={15} />
-              {!isMobile && 'List'}
-            </button>
-          </div>
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={16} /> {!isMobile && 'Import'}
           </button>
@@ -1453,7 +1154,7 @@ export default function Jobs() {
           return (
             <button
               key={col.id}
-              onClick={() => { setStatusFilter(isActive ? 'all' : col.id); setViewMode('list') }}
+              onClick={() => setStatusFilter(isActive ? 'all' : col.id)}
               title={isActive ? `Show all jobs` : `Show only ${col.name}`}
               style={{
                 backgroundColor: isActive ? col.color : theme.bgCard, borderRadius: '10px',
@@ -1633,161 +1334,9 @@ export default function Jobs() {
       </div>
 
       {/* ============ BOARD VIEW ============ */}
-      {viewMode === 'board' ? (
-        <div>
-          {/* Kanban columns — color-coded lanes, horizontally scrollable */}
-          <div style={{
-            display: 'flex',
-            gap: '12px',
-            flexDirection: isMobile ? 'column' : 'row',
-            alignItems: 'flex-start',
-            overflowX: isMobile ? 'visible' : 'auto',
-            paddingBottom: isMobile ? 0 : '8px'
-          }}>
-            {boardColumns.map(col => (
-              <KanbanColumn
-                key={col.id}
-                title={col.name}
-                icon={col.icon}
-                jobs={jobsByStatus[col.id] || []}
-                color={col.color}
-                theme={theme}
-                isMobile={isMobile}
-                navigate={navigate}
-                formatDate={formatDate}
-                scheduleJob={scheduleJob}
-                startJob={startJob}
-                completeJob={completeJob}
-                openMap={openMap}
-                archiveJob={archiveJob}
-                parentJobById={parentJobById}
-                serviceCountByParent={serviceCountByParent}
-              />
-            ))}
-          </div>
-
-          {/* Other jobs not in board columns (On Hold, Cancelled, etc.) */}
-          {otherJobs.length > 0 && (
-            <details style={{ marginTop: '16px' }}>
-              <summary style={{
-                fontSize: '13px', fontWeight: '600', color: theme.textMuted,
-                cursor: 'pointer', padding: '8px 0', userSelect: 'none'
-              }}>
-                Other ({otherJobs.length})
-              </summary>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: '10px', marginTop: '10px'
-              }}>
-                {otherJobs.map(job => (
-                  <div
-                    key={job.id}
-                    onClick={() => navigate(`/jobs/${job.id}`)}
-                    style={{
-                      backgroundColor: theme.bgCard, borderRadius: '10px',
-                      border: `1px solid ${theme.border}`, padding: '12px 14px',
-                      cursor: 'pointer', opacity: 0.7
-                    }}
-                  >
-                    <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '600' }}>{job.job_id}</span>
-                    <p style={{ fontSize: '13px', fontWeight: '500', color: theme.text, margin: '4px 0 0' }}>
-                      {job.job_title || 'Untitled'}
-                    </p>
-                    <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '8px', backgroundColor: theme.bg, color: theme.textMuted }}>
-                      {job.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
-
-          {/* ── Recently Archived ────────────────────────────────────────── */}
-          {/* Shows jobs archived in the last 60 days so anyone can undo
-              accidental archives. Doug was hard-deleting to clean the board
-              — this gives a safe alternative: archive → restore if needed. */}
-          {(archivedJobs.length > 0 || archivedJobsLoading) && (
-            <details style={{ marginTop: '16px' }}>
-              <summary style={{
-                fontSize: '13px', fontWeight: '600', color: theme.textMuted,
-                cursor: 'pointer', padding: '8px 0', userSelect: 'none',
-                display: 'flex', alignItems: 'center', gap: '6px', listStyle: 'none'
-              }}>
-                <Archive size={13} style={{ color: theme.textMuted }} />
-                Recently Archived ({archivedJobs.length})
-                <span style={{ fontSize: '11px', fontWeight: '400', color: theme.textMuted }}>
-                  — last 60 days · click to restore
-                </span>
-              </summary>
-              {archivedJobsLoading ? (
-                <div style={{ padding: '12px', color: theme.textMuted, fontSize: '13px' }}>Loading…</div>
-              ) : (
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(260px, 1fr))',
-                  gap: '8px', marginTop: '10px'
-                }}>
-                  {archivedJobs.map(job => (
-                    <div
-                      key={job.id}
-                      style={{
-                        backgroundColor: theme.bgCard, borderRadius: '10px',
-                        border: `1px solid ${theme.border}`, padding: '12px 14px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        gap: '10px', opacity: 0.85
-                      }}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ fontSize: '10px', color: theme.textMuted, fontWeight: '600', display: 'block' }}>
-                          {job.job_id}
-                        </span>
-                        <p style={{
-                          fontSize: '13px', fontWeight: '500', color: theme.text,
-                          margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                        }}>
-                          {job.job_title || 'Untitled'}
-                        </p>
-                        <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                          {job.customer?.name || ''}
-                          {job.archived_at && (
-                            <> · archived {new Date(job.archived_at).toLocaleDateString()}</>
-                          )}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                        <button
-                          onClick={() => navigate(`/jobs/${job.id}`)}
-                          title="View job"
-                          style={{
-                            padding: '5px 8px', borderRadius: '7px', fontSize: '11px',
-                            backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
-                            color: theme.textSecondary, cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', gap: '3px'
-                          }}
-                        >
-                          <ExternalLink size={10} /> View
-                        </button>
-                        <button
-                          onClick={() => restoreJob(job)}
-                          title="Restore to Chillin"
-                          style={{
-                            padding: '5px 10px', borderRadius: '7px', fontSize: '11px', fontWeight: '600',
-                            backgroundColor: 'rgba(90,99,73,0.1)', border: `1px solid rgba(90,99,73,0.3)`,
-                            color: theme.accent, cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', gap: '3px'
-                          }}
-                        >
-                          <RotateCcw size={10} /> Restore
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </details>
-          )}
-
+      {/* Jobs on a map. Lifted OUT of the old board branch: it only
+          rendered while the kanban was showing, so dropping the board
+          would have silently taken the map with it. */}
           {/* Job Map — interactive Leaflet map with all job locations */}
           {showMap && (
             <div style={{
@@ -1858,137 +1407,6 @@ export default function Jobs() {
             </div>
           )}
 
-
-          {/* Month Calendar — BELOW the kanban */}
-          {(() => {
-            const year = calendarMonth.getFullYear()
-            const month = calendarMonth.getMonth()
-            const firstDay = new Date(year, month, 1)
-            const lastDay = new Date(year, month + 1, 0)
-            const startOffset = firstDay.getDay()
-            const daysInMonth = lastDay.getDate()
-            const today = new Date()
-            today.setHours(0, 0, 0, 0)
-
-            const calendarCells = []
-            for (let i = 0; i < startOffset; i++) calendarCells.push(null)
-            for (let d = 1; d <= daysInMonth; d++) calendarCells.push(d)
-            while (calendarCells.length % 7 !== 0) calendarCells.push(null)
-
-            const getJobsForDay = (dayNum) => {
-              const dayStr = new Date(year, month, dayNum).toISOString().split('T')[0]
-              return filteredJobs.filter(j => {
-                if (!j.start_date) return false
-                return new Date(j.start_date).toISOString().split('T')[0] === dayStr
-              })
-            }
-
-            const shiftMonth = (dir) => {
-              setCalendarMonth(prev => {
-                const d = new Date(prev)
-                d.setMonth(d.getMonth() + dir)
-                return d
-              })
-            }
-
-            const monthLabel = calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-            return (
-              <div style={{
-                marginTop: '20px',
-                backgroundColor: theme.bgCard,
-                borderRadius: '14px',
-                border: `1px solid ${theme.border}`,
-                overflow: 'hidden'
-              }}>
-                {/* Calendar header */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '12px 16px', borderBottom: `1px solid ${theme.border}`
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <button onClick={() => shiftMonth(-1)} style={{ padding: '4px 8px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', cursor: 'pointer', color: theme.textMuted, minHeight: '30px', display: 'flex', alignItems: 'center' }}>
-                      <ChevronLeft size={14} />
-                    </button>
-                    <button onClick={() => setCalendarMonth(new Date())} style={{ padding: '4px 10px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', cursor: 'pointer', color: theme.text, fontSize: '12px', fontWeight: '500', minHeight: '30px' }}>
-                      Today
-                    </button>
-                    <button onClick={() => shiftMonth(1)} style={{ padding: '4px 8px', background: 'none', border: `1px solid ${theme.border}`, borderRadius: '6px', cursor: 'pointer', color: theme.textMuted, minHeight: '30px', display: 'flex', alignItems: 'center' }}>
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-                  <span style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{monthLabel}</span>
-                  <button
-                    onClick={() => navigate('/jobs/calendar')}
-                    style={{ fontSize: '12px', color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '500', textDecoration: 'underline' }}
-                  >
-                    Full Calendar
-                  </button>
-                </div>
-
-                {/* Day names */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: `1px solid ${theme.border}` }}>
-                  {dayNames.map(d => (
-                    <div key={d} style={{ textAlign: 'center', padding: '6px 0', fontSize: '11px', fontWeight: '600', color: theme.textMuted }}>{d}</div>
-                  ))}
-                </div>
-
-                {/* Calendar grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-                  {calendarCells.map((dayNum, idx) => {
-                    if (dayNum === null) {
-                      return <div key={`empty-${idx}`} style={{ minHeight: '68px', borderBottom: `1px solid ${theme.border}`, borderRight: idx % 7 < 6 ? `1px solid ${theme.border}` : 'none' }} />
-                    }
-                    const isToday = dayNum === today.getDate() && month === today.getMonth() && year === today.getFullYear()
-                    const dayJobs = getJobsForDay(dayNum)
-                    return (
-                      <div key={dayNum} style={{
-                        minHeight: '68px', padding: '3px 4px',
-                        borderBottom: `1px solid ${theme.border}`,
-                        borderRight: idx % 7 < 6 ? `1px solid ${theme.border}` : 'none',
-                        backgroundColor: isToday ? theme.accentBg : 'transparent'
-                      }}>
-                        <div style={{
-                          fontSize: '12px', fontWeight: isToday ? '700' : '400',
-                          color: isToday ? theme.accent : theme.text,
-                          marginBottom: '2px', textAlign: 'right', paddingRight: '2px'
-                        }}>
-                          {dayNum}
-                        </div>
-                        {dayJobs.slice(0, 3).map(job => {
-                          const col = boardColumns.find(c => c.id === job.status)
-                          return (
-                            <div
-                              key={job.id}
-                              onClick={() => navigate(`/jobs/${job.id}`)}
-                              style={{
-                                padding: '1px 4px', borderRadius: '3px', fontSize: '10px',
-                                backgroundColor: col ? `${col.color}20` : theme.bg,
-                                color: col?.color || theme.textSecondary,
-                                fontWeight: '500', cursor: 'pointer',
-                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                marginBottom: '1px', lineHeight: '1.5'
-                              }}
-                              title={`${job.job_title} — ${job.customer?.name || ''}`}
-                            >
-                              {job.customer?.name || job.job_title || 'Job'}
-                            </div>
-                          )
-                        })}
-                        {dayJobs.length > 3 && (
-                          <div style={{ fontSize: '9px', color: theme.textMuted, textAlign: 'center' }}>+{dayJobs.length - 3} more</div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })()}
-        </div>
-      ) : (
-        /* ============ LIST VIEW ============ */
         <>
         {historyYear !== null && filteredJobs.length > 0 && (() => {
           const terminalStatuses = ['Completed', 'Complete', 'Verified', 'Verified Complete']
@@ -2238,7 +1656,6 @@ export default function Jobs() {
         )
         }
         </>
-      )}
 
       {/* Add/Edit Modal */}
       {showModal && (
