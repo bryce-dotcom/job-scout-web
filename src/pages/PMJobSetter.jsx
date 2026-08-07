@@ -14,6 +14,7 @@ import {
   Palette, Edit2, Layers, ChevronUp, MessageSquare, Mail, Phone, ExternalLink
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import JobsMap from '../components/JobsMap'
 import { companyNotify } from '../lib/companyNotify'
 import { matchAllTokens, buildBlob } from '../lib/searchUtils'
 
@@ -2529,6 +2530,30 @@ export default function PMJobSetter() {
               <GanttChart size={14} />
               {!isMobile && 'Gantt'}
             </button>
+            {/* Map — moved here from the Jobs page. Seeing WHERE the work is
+                belongs with creating and dispatching it, not with a directory
+                you use to look a job up. */}
+            <button
+              onClick={() => setViewMode('map')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 12px',
+                minHeight: '36px',
+                backgroundColor: viewMode === 'map' ? theme.bgCard : 'transparent',
+                border: 'none',
+                borderRadius: '6px',
+                color: viewMode === 'map' ? theme.accent : theme.textMuted,
+                fontSize: '13px',
+                fontWeight: viewMode === 'map' ? '600' : '400',
+                cursor: 'pointer',
+                boxShadow: viewMode === 'map' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              <MapPin size={14} />
+              {!isMobile && 'Map'}
+            </button>
           </div>
 
           {/* Calendar Selector */}
@@ -2834,7 +2859,19 @@ export default function PMJobSetter() {
       })()}
 
       {/* Main Content */}
-      {viewMode === 'kanban' ? (
+      {viewMode === 'map' && (
+        <JobsMap
+          show
+          jobs={getFilteredJobs()}
+          theme={theme}
+          navigate={navigate}
+          statusColumns={jobStatuses}
+          height={560}
+        />
+      )}
+      {/* Three modes now, so 'map' must short-circuit — without this the gantt
+          would render underneath the map as the ternary's else branch. */}
+      {viewMode === 'map' ? null : viewMode === 'kanban' ? (
       /* Kanban — FULL WIDTH, calendar below */
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {/* Kanban Jobs — full width */}
