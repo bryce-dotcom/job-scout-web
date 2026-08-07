@@ -209,6 +209,7 @@ export default function Settings() {
   const [companyForm, setCompanyForm] = useState({
     company_name: '',
     owner_email: '',
+    remit_to_email: '',
     phone: '',
     address: '',
     logo_url: '',
@@ -260,6 +261,7 @@ export default function Settings() {
       setCompanyForm({
         company_name: company.company_name || '',
         owner_email: company.owner_email || '',
+        remit_to_email: company.remit_to_email || '',
         phone: company.phone || '',
         address: company.address || '',
         logo_url: company.logo_url || '',
@@ -1238,6 +1240,25 @@ function CompanyProfileTab({ companyForm, setCompanyForm, companyId, isAdmin, sa
             <div>
               <label style={labelStyle}>Owner Email</label>
               <input type="email" value={companyForm.owner_email} onChange={(e) => setCompanyForm(prev => ({ ...prev, owner_email: e.target.value }))} style={inputStyle} />
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                Account login. Not shown to customers.
+              </div>
+            </div>
+            {/* Without this field there was NO way to set a customer-facing
+                address, so invoices fell back to the owner's login — Bryce's
+                personal details went out on documents. */}
+            <div>
+              <label style={labelStyle}>Customer-Facing Email</label>
+              <input
+                type="email"
+                value={companyForm.remit_to_email || ''}
+                onChange={(e) => setCompanyForm(prev => ({ ...prev, remit_to_email: e.target.value }))}
+                placeholder="info@yourcompany.com"
+                style={inputStyle}
+              />
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                Printed on invoices and proposals when the business unit has none of its own.
+              </div>
             </div>
             <div>
               <label style={labelStyle}>Phone</label>
@@ -2447,7 +2468,12 @@ function EstimateDefaultsTab({ theme, settings, saveSetting }) {
             </p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '480px' }}>
-              {businessUnits.map(bu => (
+              {/* A business unit is an OBJECT ({name, phone, email, address}),
+                  not a string — older tenants may still have plain strings.
+                  This rendered {bu} directly, which throws React error #31
+                  ("objects are not valid as a React child") and takes the
+                  whole tab down for anyone whose units carry contact details. */}
+              {businessUnits.map(unit => (typeof unit === 'string' ? unit : unit?.name)).filter(Boolean).map(bu => (
                 <div key={bu} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 140px', gap: '12px', alignItems: 'center' }}>
                   <label style={{ fontSize: '13px', color: theme.text }}>{bu}</label>
                   <div style={{ position: 'relative' }}>
