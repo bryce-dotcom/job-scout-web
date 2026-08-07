@@ -17,6 +17,7 @@ import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { jobsFields, jobLinesFields, jobSectionsFields } from '../lib/importExportFields'
 import { jobStatusColors as statusColors, invoiceStatusColors } from '../lib/statusColors'
+import { matchesJobSearch, jobSearchRank } from '../lib/jobSearch'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
 
@@ -554,7 +555,11 @@ export default function Jobs() {
   // have to schedule a job, then re-open it just to add line items).
   const [newJobLines, setNewJobLines] = useState([])
   const [newLineDraft, setNewLineDraft] = useState({ item_id: '', description: '', price: '', quantity: 1 })
-  const [viewMode, setViewMode] = useState('board')
+  // Opens on the LIST. This page is where someone finds a job and checks what
+  // stage it is at — the stage strip above answers "what stage", the list
+  // answers "which job", and a horizontally-scrolling kanban answered neither
+  // without a lot of dragging. The board is still one click away.
+  const [viewMode, setViewMode] = useState('list')
   const [historyYear, setHistoryYear] = useState(null)
   const [historyMonth, setHistoryMonth] = useState(null)
   const [isMobile, setIsMobile] = useState(false)
@@ -738,16 +743,12 @@ export default function Jobs() {
     .sort((a, b) => new Date(b.completed_at || b.updated_at) - new Date(a.completed_at || a.updated_at))
 
   const filteredJobs = jobs.filter(job => {
-    const term = searchTerm.toLowerCase()
-    const matchesSearch = searchTerm === '' ||
-      job.job_title?.toLowerCase().includes(term) ||
-      job.job_address?.toLowerCase().includes(term) ||
-      job.customer?.name?.toLowerCase().includes(term) ||
-      job.customer_name?.toLowerCase().includes(term) ||
-      job.job_id?.toLowerCase().includes(term) ||
-      job.customer?.business_name?.toLowerCase().includes(term) ||
-      job.business_name?.toLowerCase().includes(term) ||
-      job.notes?.toLowerCase().includes(term)
+    // lib/jobSearch: every word must match something, across any field. The
+    // chain this replaced was a single substring test, so "costco draper"
+    // found nothing — adding a word emptied the results instead of narrowing
+    // them. It also never looked at phone, email, status, crew or business
+    // unit, and "o'brien" missed "OBrien".
+    const matchesSearch = matchesJobSearch(job, searchTerm)
 
     // History mode: show all non-archived statuses filtered by year/month
     // Search mode: show all statuses so completed jobs surface
@@ -803,6 +804,17 @@ export default function Jobs() {
     }
     return m
   })()
+
+  // The list, ordered so the thing you typed comes first. Without this an
+  // exact job number could sit below thirty loose matches, which is most of
+  // why the search felt broken even when it did find the job.
+  // No search term = leave the existing order completely alone.
+  const rankedJobs = searchTerm.trim()
+    ? filteredJobs
+      .map((job, i) => ({ job, i, rank: jobSearchRank(job, searchTerm) }))
+      .sort((a, b) => a.rank - b.rank || a.i - b.i)
+      .map(x => x.job)
+    : filteredJobs
 
   // Board view groups — dynamic from boardColumns
   const boardColumnIds = new Set(boardColumns.map(c => c.id))
@@ -1433,24 +1445,47 @@ export default function Jobs() {
           const count = colJobs.length
           const value = colJobs.reduce((s, j) => s + (parseFloat(j.job_total) || 0), 0)
           const fmtK = (n) => n >= 1000000 ? `$${(n/1000000).toFixed(1)}M` : n >= 1000 ? `$${(n/1000).toFixed(0)}k` : n > 0 ? `$${Math.round(n)}` : null
+          // Clicking a stage lists those jobs underneath it. This page is for
+          // finding a job and seeing what stage it is at, so the stages drive
+          // the list rather than being a read-only scoreboard above a board
+          // you then have to scroll sideways through.
+          const isActive = statusFilter === col.id
           return (
-            <div key={col.id} style={{
-              backgroundColor: theme.bgCard, borderRadius: '10px',
-              border: `1px solid ${theme.border}`, padding: '8px 14px', textAlign: 'center',
-              minWidth: '80px', flex: '0 0 auto'
-            }}>
-              <p style={{ fontSize: '18px', fontWeight: '700', color: col.color, margin: 0 }}>{count}</p>
+            <button
+              key={col.id}
+              onClick={() => { setStatusFilter(isActive ? 'all' : col.id); setViewMode('list') }}
+              title={isActive ? `Show all jobs` : `Show only ${col.name}`}
+              style={{
+                backgroundColor: isActive ? col.color : theme.bgCard, borderRadius: '10px',
+                border: `1px solid ${isActive ? col.color : theme.border}`, padding: '8px 14px', textAlign: 'center',
+                minWidth: '80px', flex: '0 0 auto', cursor: 'pointer', minHeight: '44px',
+              }}
+            >
+              <p style={{ fontSize: '18px', fontWeight: '700', color: isActive ? '#fff' : col.color, margin: 0 }}>{count}</p>
               {fmtK(value) && (
-                <p style={{ fontSize: '11px', fontWeight: '600', color: col.color, margin: '1px 0 0', opacity: 0.75 }}>
+                <p style={{ fontSize: '11px', fontWeight: '600', color: isActive ? '#fff' : col.color, margin: '1px 0 0', opacity: isActive ? 0.9 : 0.75 }}>
                   {fmtK(value)}
                 </p>
               )}
-              <p style={{ fontSize: '10px', color: theme.textMuted, margin: '2px 0 0', whiteSpace: 'nowrap' }}>
+              <p style={{ fontSize: '10px', color: isActive ? '#fff' : theme.textMuted, margin: '2px 0 0', whiteSpace: 'nowrap' }}>
                 {col.name}
               </p>
-            </div>
+            </button>
           )
         })}
+        {statusFilter !== 'all' && (
+          <button
+            onClick={() => setStatusFilter('all')}
+            style={{
+              backgroundColor: 'transparent', borderRadius: '10px',
+              border: `1px dashed ${theme.border}`, padding: '8px 14px',
+              minWidth: '80px', flex: '0 0 auto', cursor: 'pointer', minHeight: '44px',
+              color: theme.textSecondary, fontSize: '12px', fontWeight: '600',
+            }}
+          >
+            Show all
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -2162,7 +2197,7 @@ export default function Jobs() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {filteredJobs.map((job) => {
+            {rankedJobs.map((job) => {
               const statusStyle = statusColors[job.status] || statusColors['Scheduled']
               const invoiceStyle = invoiceStatusColors[job.invoice_status] || invoiceStatusColors['Not Invoiced']
 
