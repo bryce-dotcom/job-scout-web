@@ -504,15 +504,28 @@ export default function Jobs() {
 
     if (!matchesSearch || !matchesStatus || !matchesTeam || !matchesBU || !matchesService) return false
 
-    // Year/month filter: any of start_date, completed_at, updated_at, created_at must fall in window
+    // Year/month filter — ONE date decides which year a job belongs to: when
+    // the work happened. Scheduled start, else when it was completed, else
+    // when the record was created.
+    //
+    // It used to match if ANY of start / completed / updated_at / created fell
+    // in the window, and updated_at is the problem: open a 2019 job, change a
+    // note, and its value lands in this year. Measured on the real table,
+    // 4,731 jobs worth $3,636,391 counted as 2026 for no reason other than
+    // being edited in 2026 — jobs created as far back as 2019. That is why
+    // this page read $5.4M against the dashboard's $1.68M.
+    //
+    // The dashboard dates a job by created_at alone (wonJobsInRange). The two
+    // still differ by design — a job created in December and started in
+    // January belongs to different years under each — but they are now the
+    // same order of magnitude and the difference is explainable.
     if (historyYear !== null) {
-      const dates = [job.start_date, job.completed_at, job.updated_at, job.created_at].filter(Boolean)
-      return dates.some(d => {
-        const date = new Date(d)
-        if (date.getFullYear() !== historyYear) return false
-        if (historyMonth !== null && date.getMonth() + 1 !== historyMonth) return false
-        return true
-      })
+      const effective = job.start_date || job.completed_at || job.created_at
+      if (!effective) return false
+      const date = new Date(effective)
+      if (date.getFullYear() !== historyYear) return false
+      if (historyMonth !== null && date.getMonth() + 1 !== historyMonth) return false
+      return true
     }
 
     return true
