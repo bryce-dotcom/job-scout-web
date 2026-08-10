@@ -7,6 +7,32 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Words that describe HOW money moved, not WHO it went to. A rule keyed on one
+// of these matches half the bank feed.
+//
+// Learned from real damage: "draft" was learned as Subscriptions from a single
+// confirm and then matched 107 transactions reading "Draft Withdrawal Draft
+// #731" — $173,740.92 of check drafts booked as software subscriptions, one
+// mass-accept away from the tax return. "mes" (3 characters) was learned as
+// Cost of Goods Sold and caught "Fee Withdrawal" and "Deposit by Check".
+const GENERIC_BANK_TERMS = new Set([
+  'draft', 'check', 'cheque', 'deposit', 'withdrawal', 'transfer', 'fee', 'fees',
+  'payment', 'pmt', 'ach', 'debit', 'credit', 'card', 'purchase', 'pos', 'atm',
+  'wire', 'refund', 'reversal', 'adjustment', 'misc', 'other', 'online', 'mobile',
+  'bank', 'branch', 'teller', 'service', 'charge', 'interest', 'balance',
+]);
+
+/** A pattern too short or too generic to key a rule on. */
+export function isUnsafePattern(pattern: string): boolean {
+  const p = String(pattern || '').trim().toLowerCase();
+  if (p.length < 3) return true;
+  if (GENERIC_BANK_TERMS.has(p)) return true;
+  // Every word generic ("draft withdrawal", "check deposit") is just as bad.
+  const words = p.split(/\s+/).filter(Boolean);
+  if (words.length > 0 && words.every(w => GENERIC_BANK_TERMS.has(w))) return true;
+  return false;
+}
+
 // AI Transaction Categorization via merchant rules + Claude (_shared/anthropic)
 // Actions: categorize_batch, learn_rule, reconcile
 serve(async (req) => {
@@ -89,10 +115,20 @@ serve(async (req) => {
         for (const rule of (rules || [])) {
           const pattern = (rule.merchant_pattern || '').toLowerCase();
           if (!pattern) continue;
+          // A rule learned from a generic banking word matches almost
+          // everything. "draft" was learned as Subscriptions and hit 107 rows
+          // reading "Draft Withdrawal Draft #731" — $173,740.92 of CHECK
+          // DRAFTS booked as software subscriptions. Never apply these.
+          if (isUnsafePattern(pattern)) continue;
 
           let isMatch = false;
           if (rule.match_type === 'exact') {
             isMatch = merchant === pattern;
+          } else if (pattern.length <= 6) {
+            // Short patterns match on word boundaries only — "mes" was
+            // learned as Cost of Goods Sold and caught "Fee Withdrawal" and
+            // "Deposit by Check". Same substring trap as the spec scrub.
+            isMatch = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(merchant);
           } else {
             isMatch = merchant.includes(pattern);
           }
@@ -255,6 +291,18 @@ Return ONLY a JSON array with this structure for each transaction:
 
       // Normalize merchant pattern
       const pattern = merchant_name.toLowerCase().trim();
+
+      // Refuse to learn a pattern that would match half the bank feed. One
+      // confirm on a transaction Plaid labelled "Draft" taught the rule
+      // "draft -> Subscriptions", which then claimed 107 check drafts worth
+      // $173,740.92. Learning has to be narrower than the damage it can do.
+      if (isUnsafePattern(pattern)) {
+        return jsonResponse({
+          success: false,
+          skipped: true,
+          reason: `"${pattern}" is too generic to learn as a merchant rule — it would match unrelated transactions.`,
+        });
+      }
 
       // Check if rule exists
       const { data: existing } = await supabase

@@ -822,6 +822,20 @@ export default function Books() {
           .catch(e => ({ error: e.message })),
       ])
 
+      // Refresh the BALANCES too. sync_all imports transactions and stamps
+      // sync_cursor/last_synced but never touches current_balance — that is a
+      // separate plaid-link action, and nothing called it. Every balance on
+      // this page was whatever it read the day the account was connected:
+      // seven of eight accounts showed last_synced "never" while transactions
+      // kept arriving. Bryce: "the bank amounts are not matching the actual
+      // bank."
+      const balances = await supabase.functions
+        .invoke('plaid-link', { body: { action: 'get_accounts', company_id: companyId } })
+        .then(r => r.data || { error: r.error?.message })
+        .catch(e => ({ error: e.message }))
+      if (balances?.error) console.warn('[Books] balance refresh failed:', balances.error)
+      await fetchConnectedAccounts?.()
+
       const plaidAdded = plaid?.sync?.total_added || 0
       const plaidCategorized = plaid?.categorized?.categorized || 0
       const stripeImported = stripe?.payouts_imported || 0
