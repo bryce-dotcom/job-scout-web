@@ -977,13 +977,49 @@ function EstimateDetailInner() {
       console.warn(`[EstimateDetail] ${sourceTag}: ${decision.reason} ($${current} kept, computed $${computedTotal})`)
       return
     }
+    // Never write a total computed from FEWER lines than the quote actually
+    // has. quoteWriteDecision guards against holding NO lines; this guards
+    // against holding SOME, which is how EST 4567 — a $41,491 job — was
+    // written down to $500 the moment a $500 out-of-scope fee was added.
+    const { count, error: countErr } = await supabase
+      .from('quote_lines')
+      .select('id', { count: 'exact', head: true })
+      .eq('quote_id', id)
+    if (countErr) {
+      console.warn(`[EstimateDetail] ${sourceTag}: could not verify line count, refusing to write`, countErr.message)
+      return
+    }
+    if (count != null && lineCount < count) {
+      console.warn(`[EstimateDetail] ${sourceTag}: holding ${lineCount} of ${count} lines — refusing to write $${computedTotal} over $${current}`)
+      return
+    }
     await updateQuote(id, { quote_amount: computedTotal, updated_at: new Date().toISOString() })
   }
 
   const updateEstimateTotal = async () => {
-    const allQuoteLines = useStore.getState().quoteLines || []
-    const lines = allQuoteLines.filter(l => String(l.quote_id) === String(id))
-    const total = lines.reduce((sum, line) => sum + (parseFloat(line.line_total) || 0), 0)
+    // Read the lines from the DATABASE, not the Zustand store.
+    //
+    // The store holds whatever the app happens to have loaded, which after
+    // adding a line can be just that one line. Summing it then overwrote the
+    // quote with a single line's value: EST 4567 is a $41,491 job whose
+    // quote_amount was set to $500 at 22:24:22 on Aug 6 — the exact second a
+    // $500 Project Management Fee was added. It read as $500 on the pipeline
+    // and the dashboard ever since (Damien: "my numbers in pipeline look a lot
+    // lower than what they actually are").
+    //
+    // quoteWriteDecision cannot catch this: $500 is greater than zero and one
+    // line is more than none, so it writes. The guard protects against holding
+    // NO lines; this protects against holding SOME.
+    const { data: rows, error } = await supabase
+      .from('quote_lines')
+      .select('line_total, total')
+      .eq('quote_id', id)
+    if (error) {
+      console.warn('[EstimateDetail] updateEstimateTotal: could not read lines, refusing to write', error.message)
+      return
+    }
+    const lines = rows || []
+    const total = lines.reduce((sum, line) => sum + (parseFloat(line.line_total ?? line.total) || 0), 0)
     await safeWriteQuoteAmount(total, 'updateEstimateTotal', lines.length)
   }
 
