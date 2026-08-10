@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
+import PayrollRemittancePanel from '../components/PayrollRemittancePanel'
 import {
   Inbox, AlertTriangle, CheckCircle2, FileText, Clock, UserPlus,
   Settings as SettingsIcon, ChevronRight, Calendar, Building2,
@@ -311,6 +312,9 @@ export default function PayrollInbox() {
           )}
         </div>
       )}
+
+      {/* Remit payroll taxes — print the deposit worksheet + mark each payment sent */}
+      <PayrollRemittancePanel liabilities={liabilities} theme={theme} onChange={refresh} />
 
       {/* Setup gaps */}
       {setupGaps.length > 0 && (
