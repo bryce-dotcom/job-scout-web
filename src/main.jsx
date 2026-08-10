@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.jsx'
-import { reportCrash } from './lib/crashReport'
+import { reportCrash, installGlobalCrashHandlers } from './lib/crashReport'
 import { useStore } from './lib/store'
 
 // Initialize Sentry
@@ -90,16 +90,28 @@ if ('serviceWorker' in navigator) {
 // onError fires for the same crashes Sentry would take. It is deliberately not
 // awaited: the fallback screen must render immediately whether or not the
 // report lands.
-const handleCrash = (error, componentStack) => {
+const crashContext = () => {
   try {
     const store = useStore.getState?.()
-    reportCrash(error, {
-      componentStack,
+    return {
       companyId: store?.companyId ?? null,
       employeeId: store?.employees?.find?.(e => e.email && e.email === store?.user?.email)?.id ?? null,
-    })
+    }
+  } catch { return {} }
+}
+
+const handleCrash = (error, componentStack) => {
+  try {
+    reportCrash(error, { componentStack, ...crashContext() })
   } catch { /* a failed report must never replace the error screen */ }
 }
+
+// Errors that never reach the boundary — a throw inside an onClick, a rejected
+// promise from a fetch. The app keeps running, the user sees a dead button,
+// and previously nothing was recorded at all. Installed before render so a
+// failure during startup is still caught. Works signed-out too, which is what
+// makes a crash on the customer portal visible.
+installGlobalCrashHandlers(crashContext)
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
