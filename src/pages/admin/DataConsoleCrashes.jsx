@@ -107,6 +107,24 @@ export default function DataConsoleCrashes() {
             </button>
           </div>
 
+          {/* What they did before it broke, shown WITHOUT expanding — it is
+              the part you read first, and burying it behind a click means it
+              gets skipped in favour of a stack that says less. */}
+          {r.breadcrumbs && (
+            <div style={{
+              marginTop: '10px', padding: '8px 10px', backgroundColor: t.bg,
+              border: `1px solid ${t.border}`, borderRadius: '8px',
+            }}>
+              <div style={{ fontSize: '10.5px', fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '5px' }}>
+                Leading up to it
+              </div>
+              <pre style={{
+                margin: 0, fontSize: '11px', lineHeight: 1.5, color: t.textSecondary || t.textMuted,
+                whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '150px', overflowY: 'auto',
+              }}>{r.breadcrumbs}</pre>
+            </div>
+          )}
+
           {(r.stack || r.component) && (
             <>
               <button

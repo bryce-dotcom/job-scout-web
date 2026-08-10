@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run guard && vite build",
+    "build": "npm run guard && vite build && node scripts/stash-sourcemaps.mjs",
     "build:only": "vite build",
     "guard": "node scripts/guard.mjs",
     "test": "vitest run",

@@ -57,6 +57,7 @@ serve(async (req) => {
       route: clamp(body?.route, 300),
       user_agent: clamp(req.headers.get("user-agent") ?? body?.user_agent, 300),
       app_build: clamp(body?.app_build, 100),
+      breadcrumbs: clamp(body?.breadcrumbs, 4000),
       last_seen_at: new Date().toISOString(),
     });
     if (error) throw error;

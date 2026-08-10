@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.jsx'
-import { reportCrash, installGlobalCrashHandlers } from './lib/crashReport'
+import { reportCrash, installGlobalCrashHandlers, installBreadcrumbs } from './lib/crashReport'
 import { useStore } from './lib/store'
 
 // Initialize Sentry
@@ -111,6 +111,9 @@ const handleCrash = (error, componentStack) => {
 // and previously nothing was recorded at all. Installed before render so a
 // failure during startup is still caught. Works signed-out too, which is what
 // makes a crash on the customer portal visible.
+// Record the trail BEFORE anything else, so the crumbs leading to an early
+// failure are there too.
+installBreadcrumbs()
 installGlobalCrashHandlers(crashContext)
 
 createRoot(document.getElementById('root')).render(

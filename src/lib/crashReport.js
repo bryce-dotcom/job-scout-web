@@ -60,6 +60,9 @@ export async function reportCrash(error, { componentStack = null, companyId = nu
       route,
       user_agent: typeof navigator !== 'undefined' ? String(navigator.userAgent || '').slice(0, 300) : null,
       app_build: currentBuild(),
+      // What they did in the seconds before it broke. The cheap half of
+      // session replay, and usually the half that finds the bug.
+      breadcrumbs: crumbTrail(),
       last_seen_at: new Date().toISOString(),
     }
 
@@ -143,4 +146,99 @@ export function installGlobalCrashHandlers(getContext = () => ({})) {
 
   window.addEventListener('error', (e) => handle(e?.error || e?.message, 'window.onerror'))
   window.addEventListener('unhandledrejection', (e) => handle(e?.reason, 'unhandled promise rejection'))
+}
+
+// ── Breadcrumbs ─────────────────────────────────────────────────────────
+//
+// The practical half of session replay. Watching a video of a rep's session is
+// nice; knowing "they were on /products, clicked Edit, a request to
+// products_services returned 400, then it crashed" is what actually finds the
+// bug — and it costs a ring buffer instead of a subscription.
+//
+// Kept in memory only, capped, and attached to the report at crash time.
+// Nothing is stored unless something breaks, so this is not tracking: a
+// session that never crashes leaves no record anywhere.
+
+const MAX_CRUMBS = 25
+const crumbs = []
+
+/** Text only, clamped — a breadcrumb must never carry a customer's data. */
+function pushCrumb(kind, detail) {
+  try {
+    crumbs.push({
+      t: new Date().toISOString().slice(11, 19),   // HH:MM:SS, no date noise
+      kind,
+      detail: String(detail ?? '').slice(0, 120),
+    })
+    while (crumbs.length > MAX_CRUMBS) crumbs.shift()
+  } catch { /* never let bookkeeping break the app */ }
+}
+
+export function addCrumb(kind, detail) { pushCrumb(kind, detail) }
+export function getCrumbs() { return crumbs.slice() }
+
+function crumbTrail() {
+  if (crumbs.length === 0) return null
+  return crumbs.map(c => `${c.t}  ${c.kind}  ${c.detail}`).join('\n').slice(0, 4000)
+}
+
+/**
+ * Watch the things that explain a crash: where they were, what they clicked,
+ * and which request failed. Clicks record the element's own label, never the
+ * value of any field — a breadcrumb trail that captured what someone typed
+ * would be a liability, not a debugging aid.
+ */
+export function installBreadcrumbs() {
+  if (typeof window === 'undefined' || window.__jsCrumbsInstalled) return
+  window.__jsCrumbsInstalled = true
+
+  pushCrumb('load', window.location?.pathname || '')
+
+  // Route changes, including the SPA pushState the router uses.
+  const record = () => pushCrumb('route', window.location?.pathname || '')
+  window.addEventListener('popstate', record)
+  for (const m of ['pushState', 'replaceState']) {
+    const original = history[m]
+    history[m] = function (...args) {
+      const out = original.apply(this, args)
+      record()
+      return out
+    }
+  }
+
+  // Clicks — label, not content.
+  window.addEventListener('click', (e) => {
+    try {
+      const el = e.target?.closest?.('button, a, [role="button"], select, input[type="checkbox"]')
+      if (!el) return
+      const label = (el.getAttribute?.('aria-label') || el.getAttribute?.('title')
+        || el.textContent || el.tagName || '').trim().replace(/\s+/g, ' ')
+      pushCrumb('click', label.slice(0, 60) || el.tagName)
+    } catch { /* ignore */ }
+  }, { capture: true, passive: true })
+
+  // Failed requests. Cameron's clock-out was a rejected write with no crash
+  // screen at all — the request result is the only thing that would have
+  // explained it.
+  const origFetch = window.fetch
+  if (typeof origFetch === 'function') {
+    window.fetch = async function (...args) {
+      const started = Date.now()
+      try {
+        const res = await origFetch.apply(this, args)
+        if (!res.ok) {
+          const u = String(args[0]?.url || args[0] || '').split('?')[0]
+          pushCrumb('http', `${res.status} ${u.slice(-70)} (${Date.now() - started}ms)`)
+        }
+        return res
+      } catch (err) {
+        const u = String(args[0]?.url || args[0] || '').split('?')[0]
+        pushCrumb('http', `FAILED ${u.slice(-70)} — ${err?.message || 'network'}`)
+        throw err
+      }
+    }
+  }
+
+  window.addEventListener('offline', () => pushCrumb('network', 'went offline'))
+  window.addEventListener('online', () => pushCrumb('network', 'back online'))
 }

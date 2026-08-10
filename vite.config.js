@@ -67,7 +67,11 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // 'hidden' emits the maps for stash-sourcemaps.mjs but writes NO
+    // sourceMappingURL comment, so the deployed bundle neither exposes them
+    // nor advertises that they exist. They were public until now: the .map
+    // for the live bundle returned 200 and 25.6 MB of original source.
+    sourcemap: 'hidden',
     rollupOptions: {
       output: {
         manualChunks: {
