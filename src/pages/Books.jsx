@@ -291,6 +291,7 @@ export default function Books() {
   const [txnAccountFilter, setTxnAccountFilter] = useState('all')
   const [expandedTxn, setExpandedTxn] = useState(null)
   const [txnEditCategory, setTxnEditCategory] = useState('')
+  const [txnEditIsTransfer, setTxnEditIsTransfer] = useState(false)
   const [txnEditTaxCategory, setTxnEditTaxCategory] = useState('')
   const [txnEditNotes, setTxnEditNotes] = useState('')
   const [txnEditJobId, setTxnEditJobId] = useState(null)
@@ -847,6 +848,7 @@ export default function Books() {
     setExpandedTxn(txn.id)
     setTxnEditCategory(txn.user_category || txn.ai_category || '')
     setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
+    setTxnEditIsTransfer(!!txn.is_transfer)
     setTxnEditNotes(txn.notes || '')
     setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
     setJobSearchText('')
@@ -919,8 +921,10 @@ export default function Books() {
         return
       }
       if (plaidSplits.some(l => !l.category_id)) { toast.error('Every split line needs a category'); return }
-    } else {
-      // Both category and tax category are required for non-split path.
+    } else if (!txnEditIsTransfer) {
+      // Both category and tax category are required for non-split path —
+      // EXCEPT a transfer between your own accounts, which is neither income
+      // nor an expense and has no honest answer for either dropdown.
       if (!category || !taxCategory) {
         toast.error('Expense Category and Tax Category are both required')
         return
@@ -937,10 +941,13 @@ export default function Books() {
 
     const updates = {
       confirmed: true,
+      is_transfer: txnEditIsTransfer,
       // When splits are on, the parent's single category is meaningless — null
       // it so the rollup knows to look at expense_splits rows instead.
-      user_category: plaidSplitsEnabled ? null : category,
-      user_tax_category: plaidSplitsEnabled ? null : taxCategory,
+      // A transfer carries no categories either: leaving a stale one behind
+      // would put it back into the P&L the moment someone filtered by it.
+      user_category: (plaidSplitsEnabled || txnEditIsTransfer) ? null : category,
+      user_tax_category: (plaidSplitsEnabled || txnEditIsTransfer) ? null : taxCategory,
     }
     if (txnEditNotes) updates.notes = txnEditNotes
     // Set job_id to first allocation for backward compat
@@ -2516,6 +2523,37 @@ export default function Books() {
                             )
                           })()}
                         </div>
+
+                        {/* Money moving between your OWN accounts is neither
+                            income nor an expense, so neither dropdown has a
+                            right answer — but both were required, which left
+                            Tracy stuck on a Stripe payout from Cameron's card
+                            to checking: "if I do get it to work it won't let me
+                            move on if I can't choose a tax category."
+                            is_transfer already exists and is already excluded
+                            from revenue, expenses, the P&L, EOS and Frankie —
+                            there was just no way to set it. */}
+                        <label style={{
+                          display: 'flex', alignItems: 'flex-start', gap: '10px', marginTop: '16px',
+                          padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
+                          backgroundColor: txnEditIsTransfer ? theme.accentBg : theme.bg,
+                          border: `1px solid ${txnEditIsTransfer ? theme.accent : theme.border}`,
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={txnEditIsTransfer}
+                            onChange={(e) => setTxnEditIsTransfer(e.target.checked)}
+                            style={{ marginTop: '2px', width: '16px', height: '16px', accentColor: theme.accent }}
+                          />
+                          <span style={{ fontSize: '13px', color: theme.text }}>
+                            Transfer between my own accounts
+                            <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                              Moving money you already have — card payoff, owner draw to savings, a Stripe payout landing
+                              in checking. Not income and not an expense, so it needs no categories and is left out of
+                              revenue, expenses and the P&amp;L.
+                            </span>
+                          </span>
+                        </label>
 
                         {/* Actions */}
                         <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
