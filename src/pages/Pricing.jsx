@@ -1,413 +1,529 @@
 // Public storefront + "Sign Up a Customer" page (route: /pricing, no auth).
 //
-// Doubles as the marketing page embedded on the AppSannex site. Everything on
-// it is REAL and pulled from the same sources the app uses:
-//   - Plans/prices  → lib/billingPlans.js (PLANS)  — one source of truth
-//   - Platform depth → lib/featureCatalog.js (134 features / 14 systems, and
-//     the market tools each one replaces) — auto-updates as the catalog grows
-//   - AI crew        → the 7 agents currently `active` in the agents table
-//     (Base Camp), with 12 more trades marked coming_soon
-// Signup is open (no invite code). CTAs deep-link the signup form with the plan
-// preselected: a rep can sign a customer up on the spot, or a prospect selfserve.
+// The live version of the marketing storefront we perfected: elevated hero
+// ("AI workforce"), who-it's-for, the whole-job workflow, AI-prospecting
+// spotlight, the real 7-agent crew, one-app consolidation, an honest no-swipe
+// comparison, real plans, and a final CTA. Self-contained (own palette, its own
+// <style> block for the animations/responsive polish, scout logo from /public)
+// so it lifts cleanly onto the AppSannex site.
+//
+// Prices/caps come from lib/billingPlans.js (one source of truth); marketing
+// copy is local. CTAs deep-link the signup form with the plan preselected.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PLANS } from '../lib/billingPlans'
-import { FEATURE_CATALOG } from '../lib/featureCatalog'
 import { useStore } from '../lib/store'
-import {
-  Compass, Check, ArrowRight, ArrowLeft, Zap, Star, WifiOff, Bot,
-  Users, Briefcase, Lightbulb, Truck, Sprout, Package, BookOpen,
-  Wallet, Target, Shield, Plug, BarChart3, Sparkles,
-} from 'lucide-react'
+import { PLANS as BILLING_PLANS } from '../lib/billingPlans'
 
-// Topo field-ops palette — the app's own identity (earthy green + warm paper +
-// hi-vis safety orange). Carried locally because this page renders outside the
-// authed Layout, and so it can be lifted onto the marketing site untouched.
-const t = {
-  bg: '#f3efe4', bg2: '#ece4d2', card: '#ffffff', card2: '#f1ecde',
-  ink: '#20261c', sub: '#4c5850', muted: '#7d8a7f', line: '#d7cdb6', line2: '#c7bca1',
-  accent: '#55613c', accentDk: '#3d4829', accentBg: 'rgba(85,97,60,0.10)',
-  hivis: '#cf7a1f', hivisDk: '#b0651a', hivisBg: 'rgba(207,122,31,0.12)',
-  night: '#20261c',
-}
-const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace'
-const SANS = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
-
-// The live crew — the 7 agents currently `active` in Base Camp. Names, roles,
-// and "replaces" all pulled from the real agent records + feature catalog.
 const CREW = [
-  { id: 'arnie',   ab: 'AR', name: 'OG Arnie', role: 'The Right Hand',      free: true,
-    ds: 'Ask anything about your business in plain English — then have him set up the account, fix data, and run the busywork.', repl: 'ChatGPT Team, Copilot' },
-  { id: 'zach',    ab: 'ZA', name: 'Zach',     role: 'The Yard Yeti',
-    ds: 'Measures a lawn from the sky and drops an instant quote in the prospect’s inbox — then runs the routes and treatments.', repl: 'Service Autopilot, GreenPal' },
-  { id: 'lenard',  ab: 'LE', name: 'Lenard',   role: 'The Lighting Auditor',
-    ds: 'Snaps a photo, IDs every fixture, and calculates the exact utility rebate — turnkey LED proposals in minutes.', repl: 'Snugg Pro, Rifeline' },
-  { id: 'frankie', ab: 'FR', name: 'Frankie',  role: 'The AI CFO',
-    ds: '“Why is cash tight this month?” He tracks AR/AP, flags expense anomalies, runs job profitability, and chases collections.', repl: 'Pilot.com, Bench' },
-  { id: 'freddy',  ab: 'FD', name: 'Freddy',   role: 'The Fleet Manager',
-    ds: 'Tracks every truck on phone GPS, schedules maintenance, logs fuel, and scores drivers — no $40/truck hardware.', repl: 'Fleetio, Samsara' },
-  { id: 'victor',  ab: 'VI', name: 'Victor',   role: 'The Inspector',
-    ds: 'Scores finished work against the checklist from job-site photos, flags problems, and issues a verification report.', repl: 'CompanyCam QA' },
-  { id: 'conrad',  ab: 'CO', name: 'Conrad',   role: 'The Closer',
-    ds: 'Writes and sends the campaigns and follow-ups that bring customers back — synced straight to Constant Contact.', repl: 'Mailchimp, Klaviyo' },
+  { ab: 'AR', name: 'OG Arnie', free: true, role: 'Your right hand', ds: 'Ask anything about your business in plain English. Admins can also have him configure settings and fix data — he proposes each change for approval and logs it, so nothing changes without an admin’s green light.' },
+  { ab: 'ZA', name: 'Zach', role: 'Landscaping', ds: 'Measures a property from aerial imagery and returns a priced quote to the customer — before a truck rolls.' },
+  { ab: 'LE', name: 'Lenard', role: 'Lighting & energy', ds: 'Identifies fixtures from a photo, counts them, and calculates the exact utility rebate for a turnkey LED proposal.' },
+  { ab: 'FR', name: 'Frankie', role: 'The AI CFO', ds: 'Tracks AR/AP aging, flags expense anomalies, runs job profitability, and automates collections — the CFO you don’t have to hire.' },
+  { ab: 'FD', name: 'Freddy', role: 'Fleet ops', ds: 'Tracks vehicles in real time through your WatchDog GPS, schedules maintenance, logs fuel, and scores drivers — the whole fleet in one place.' },
+  { ab: 'VI', name: 'Victor', role: 'Quality control', ds: 'Scores completed work against the checklist from job-site photos and issues a verification report before you invoice.' },
+  { ab: 'CO', name: 'Conrad', role: 'Marketing', ds: 'Writes and schedules the campaigns and win-back sequences that keep the pipeline full, synced to your email platform.' },
 ]
-// 12 trade specialists in the pipeline (agents marked coming_soon).
 const COMING = ['Plumbing', 'HVAC', 'Roofing', 'Electrical', 'Painting', 'Masonry', 'Flooring', 'Windows', 'Cleaning', 'Gutters', 'Excavation', 'Safety']
 
-// Curated wall of recognizable tools JobScout replaces (all sourced from the
-// feature catalog's `replaces` fields — the honest, brand-name subset).
-const REPLACES = [
-  'QuickBooks', 'Gusto', 'ADP', 'Jobber', 'HousecallPro', 'ServiceTitan', 'DocuSign',
-  'Calendly', 'Mailchimp', 'Apollo.io', 'ZoomInfo', 'Fleetio', 'Samsara', 'Expensify',
-  'BambooHR', 'Rippling', 'Xero', 'Pipedrive', 'HubSpot', 'CompanyCam', 'Constant Contact',
-  'Service Autopilot', 'Snugg Pro', 'Pilot.com', 'Ninety.io', 'When I Work', 'Track1099',
-  'MileIQ', 'Fishbowl', 'Trainual', 'Checkr', 'Square',
-]
-
-// Compute-wallet display values (kept in sync with _shared/computeConfig.ts).
-const COMPUTE = {
-  agentIncludedCredits: 350,
-  tierIncludedCredits: { field_crew: 250, field_pro: 750, field_boss: 2000 },
-  packs: [
-    { price: 10, credits: 140 }, { price: 25, credits: 350 },
-    { price: 50, credits: 700 }, { price: 100, credits: 1600 },
-  ],
+// Per-plan marketing copy, merged with real prices/caps from billingPlans.
+const MARKETING = {
+  field_crew: { tl: 'Owner-operator or a small crew', feats: ['Full sales-to-paid workflow', 'Invoicing, payments & books', 'Your-branded customer portal', 'Offline field app'] },
+  field_pro: { tl: 'An established shop, 5–10 on payroll', pop: true, feats: ['grp:Everything in Crew, plus', 'AI prospecting & lead gen', 'Lighting audits, rebates & fleet', 'Email marketing + quality control', 'Routes & payment plans'] },
+  field_boss: { tl: 'Multi-crew, multi-location operation', feats: ['grp:Everything in Pro, plus', 'Payroll + every tax form filled', 'Multiple business units & per-unit branding', 'Owner reporting + the EOS rhythm', 'Priority support & onboarding'] },
 }
+const PLANS = BILLING_PLANS.map((p) => ({
+  id: p.id, name: p.name, mo: p.monthly_price, yr: p.annual_price,
+  users: p.user_cap ? `Up to ${p.user_cap} users` : 'Unlimited users',
+  agents: p.agent_cap ? `${p.agent_cap} AI specialist${p.agent_cap > 1 ? 's' : ''}` : 'Every AI specialist',
+  ...MARKETING[p.id],
+}))
 
-const CAT_ICON = {
-  'Sales & CRM': Users, 'Project & Job Management': Briefcase, 'Lighting & Energy': Lightbulb,
-  'Fleet & Vehicles': Truck, 'Lawn Care': Sprout, 'Inventory & Catalog': Package,
-  'Books & Accounting': BookOpen, 'Payroll, HR & Onboarding': Wallet, 'AI Crew': Bot,
-  'EOS & Business Operations': Target, 'PWA, Offline & Mobile': WifiOff,
-  'Admin & Multi-tenant': Shield, 'Integrations': Plug, 'Reports & Insights': BarChart3,
+// Honest capability matrix: 1 = included ●, 0.5 = partial/add-on ◐, 0 = not native —
+const CMP_OTHERS = ['Field apps', 'Enterprise', 'DIY']
+const CMP_ROWS = [
+  ['Scheduling & dispatch', 1, 1, 1, 0.5],
+  ['Invoicing & payments', 1, 1, 1, 1],
+  ['Accounting & books (native)', 1, 0, 0, 1],
+  ['Payroll, W-2s & 1099s', 1, 0, 0, 1],
+  ['Fleet & vehicles', 1, 0, 0.5, 1],
+  ['CRM & sales pipeline', 1, 0.5, 1, 1],
+  ['AI prospecting (web research)', 1, 0, 0, 0.5],
+  ['Autonomous AI workforce', 1, 0, 0, 0],
+  ['Works offline in the field', 1, 0.5, 0.5, 0],
+  ['One login · one bill', 1, 0, 0, 0],
+]
+const mk = (v) => (v === 1 ? 'y' : v === 0.5 ? 'p' : 'n')
+
+const CSS = `
+  .pr{--paper:#f4efe3;--paper2:#ece3d1;--card:#fffdf7;--ink:#191d15;--sub:#4f5a4a;--muted:#848a79;--line:#d9cfb6;--line2:#cabf9f;
+    --grn:#54613a;--grnDk:#3a4526;--grnBg:rgba(84,97,58,0.10);--viz:#f26a12;--vizDk:#c9530a;--vizBg:rgba(242,106,18,0.12);
+    --night:#161b12;--nightGrn:#212819;--sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased}
+  .pr *{box-sizing:border-box}
+  .pr a{color:inherit;text-decoration:none}
+  .pr .wrap{max-width:1140px;margin:0 auto;padding:0 20px}
+  .pr .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;font-weight:750;font-size:16px;padding:15px 24px;min-height:52px;border-radius:13px;border:2px solid transparent;cursor:pointer;letter-spacing:.01em;transition:transform .12s ease,box-shadow .2s ease,background .2s ease;white-space:nowrap;font-family:inherit}
+  .pr .btn:active{transform:translateY(1px) scale(.99)}
+  .pr .btn-viz{background:var(--viz);color:#fff;box-shadow:0 6px 20px -6px rgba(242,106,18,.6)}
+  .pr .btn-viz:hover{background:var(--vizDk)}
+  .pr .btn-grn{background:var(--grn);color:#fff}
+  .pr .btn-ghost{background:transparent;color:var(--ink);border-color:var(--line2)}
+  .pr .btn-ghost.on-dark{color:#f4efe3;border-color:rgba(255,255,255,.28)}
+  .pr .ic{width:1em;height:1em;stroke:currentColor;stroke-width:2.1;fill:none;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .pr header{position:sticky;top:0;z-index:50;backdrop-filter:saturate(1.4) blur(8px);background:rgba(244,239,227,.82);border-bottom:1px solid var(--line)}
+  .pr .bar{display:flex;align-items:center;justify-content:space-between;height:60px;gap:10px}
+  .pr .logo{display:flex;align-items:center;gap:9px;font-weight:850;font-size:19px;letter-spacing:-.02em}
+  .pr .hd-right{display:flex;align-items:center;gap:10px}
+  .pr .hd-link{font-size:14px;font-weight:650;color:var(--sub);cursor:pointer;padding:8px 6px}
+  .pr .hd-cta{font-size:14px;padding:9px 16px;min-height:40px;border-radius:10px}
+  .pr .eb{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--vizDk);background:var(--vizBg);padding:6px 11px;border-radius:7px}
+  .pr .eb.on-dark{color:#ffb27a;background:rgba(242,106,18,.16)}
+  .pr h1,.pr h2,.pr h3{margin:0;letter-spacing:-.03em;text-wrap:balance}
+  .pr .kicker{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}
+  .pr .hero{background:var(--night);color:#f4efe3;border-radius:0 0 30px 30px;overflow:hidden;position:relative}
+  .pr .hero::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background:radial-gradient(120% 80% at 100% 0%,rgba(242,106,18,.15),transparent 55%),radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:auto,20px 20px}
+  .pr .hero .wrap{padding:44px 20px 40px;position:relative}
+  .pr .hero h1{font-size:clamp(37px,9.6vw,72px);font-weight:870;line-height:1.02;margin:20px 0 0}
+  .pr .hero h1 .hl{position:relative;color:#fff;white-space:nowrap}
+  .pr .hero h1 .hl::after{content:"";position:absolute;left:-2px;right:-2px;bottom:.02em;height:.4em;background:var(--viz);z-index:-1;border-radius:4px;transform:skewX(-9deg) scaleX(var(--draw,0));transform-origin:left;transition:transform .7s .2s cubic-bezier(.2,.7,.2,1)}
+  .pr .hero.lit h1 .hl::after{--draw:1}
+  .pr .hero p.lede{font-size:clamp(16.5px,4.2vw,20px);color:#d7d3c4;margin:20px 0 0;max-width:40ch;line-height:1.5}
+  .pr .hero .cta-row{display:flex;flex-direction:column;gap:12px;margin-top:26px}
+  .pr .hero .cta-row .btn{width:100%}
+  .pr .trust{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:20px;font-size:13.5px;color:#bcc0ad}
+  .pr .trust span{display:inline-flex;align-items:center;gap:6px}
+  .pr .trust .ic{font-size:14px;color:#8fbf6a}
+  .pr .crewstrip{display:flex;align-items:center;gap:8px;margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,.12);flex-wrap:wrap}
+  .pr .crewstrip .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#9aa08c}
+  .pr .chip{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:13px;background:var(--nightGrn);border:1px solid rgba(255,255,255,.14);color:#e9e5d6;opacity:0;transform:translateY(8px);animation:prpop .5s forwards}
+  @keyframes prpop{to{opacity:1;transform:none}}
+  .pr section{padding:52px 0 8px}
+  .pr .sechead h2{font-size:clamp(27px,6.4vw,42px);font-weight:850;line-height:1.05;margin-top:10px}
+  .pr .sechead p{color:var(--sub);font-size:16px;margin:12px 0 0;max-width:54ch}
+  .pr .forwho{margin-top:22px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .pr .forwho .who{font-size:14px;color:var(--sub);padding:8px 14px;border-radius:10px;background:var(--card);border:1px solid var(--line);display:inline-flex;gap:8px;align-items:center}
+  .pr .forwho .who b{color:var(--ink)}
+  .pr .forwho .who .ic{font-size:16px;color:var(--grn)}
+  .pr .flow{display:grid;grid-template-columns:1fr;gap:12px;margin-top:24px;counter-reset:step}
+  .pr .step{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;position:relative;overflow:hidden}
+  .pr .step::before{counter-increment:step;content:"0" counter(step);position:absolute;top:8px;right:14px;font-family:var(--mono);font-size:44px;font-weight:800;color:var(--paper2);letter-spacing:-.04em}
+  .pr .step .ic{font-size:25px;color:var(--viz)}
+  .pr .step h3{font-size:20px;font-weight:800;margin-top:12px}
+  .pr .step p{color:var(--sub);font-size:15px;margin:6px 0 0;max-width:40ch}
+  .pr .step .was{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:12px}
+  .pr .step .was b{color:var(--vizDk)}
+  .pr .prospect{margin-top:24px;background:var(--nightGrn);color:#eae6d7;border-radius:22px;padding:26px 22px;position:relative;overflow:hidden}
+  .pr .prospect::after{content:"";position:absolute;inset:0;opacity:.4;pointer-events:none;background:radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:18px 18px}
+  .pr .prospect .eb{margin-bottom:14px}
+  .pr .prospect h3{font-size:clamp(22px,5.4vw,30px);font-weight:840;line-height:1.08;color:#fff;position:relative}
+  .pr .prospect .say{color:#cfcbba;font-size:15px;margin:12px 0 0;max-width:44ch;position:relative}
+  .pr .term{margin-top:18px;background:#0f130c;border:1px solid rgba(255,255,255,.12);border-radius:14px;overflow:hidden;position:relative;font-family:var(--mono);font-size:12.5px}
+  .pr .term .top{display:flex;gap:6px;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.08);align-items:center}
+  .pr .term .top i{width:10px;height:10px;border-radius:50%;background:#3a4030;display:block}
+  .pr .term .q{padding:14px;color:#9fe08a}
+  .pr .term .q .cur{display:inline-block;width:8px;height:15px;background:#f26a12;vertical-align:-2px;margin-left:3px;animation:prblink 1.1s steps(1) infinite}
+  @keyframes prblink{50%{opacity:0}}
+  .pr .term .res{padding:0 14px 14px;display:flex;flex-direction:column;gap:8px}
+  .pr .term .row{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;background:#151a10;border:1px solid rgba(255,255,255,.07);border-radius:9px;color:#d6d2c2}
+  .pr .term .row .cited{color:#7fae5c;font-size:10.5px;display:inline-flex;align-items:center;gap:4px}
+  .pr .prospect .repl{font-family:var(--mono);font-size:11.5px;color:#9aa08c;margin-top:14px;position:relative}
+  .pr .prospect .repl b{color:#ffb27a}
+  .pr .crewgrid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:24px}
+  .pr .agent{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;gap:14px;align-items:flex-start}
+  .pr .agent .av{width:50px;height:50px;flex:none;border-radius:14px;display:grid;place-items:center;font-family:var(--mono);font-weight:750;font-size:16px;background:var(--grn);color:#fff}
+  .pr .agent.free .av{background:var(--viz)}
+  .pr .agent h3{font-size:18px;font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .pr .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;padding:3px 7px;border-radius:6px;background:var(--vizBg);color:var(--vizDk)}
+  .pr .agent .role{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--grnDk);margin-top:3px}
+  .pr .agent p{color:var(--sub);font-size:14.5px;margin:8px 0 0;line-height:1.45}
+  .pr .coming{margin-top:16px;padding:16px 18px;border:1.5px dashed var(--line2);border-radius:16px;background:var(--card)}
+  .pr .coming .lbl{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grnDk)}
+  .pr .coming .pills{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+  .pr .coming .pills span{font-size:13px;color:var(--sub);padding:5px 11px;border-radius:20px;background:var(--paper2);border:1px solid var(--line)}
+  .pr .oneapp{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:22px;margin-top:24px}
+  .pr .jobrow{display:flex;gap:13px;padding:15px 0;border-top:1px solid var(--line)}
+  .pr .jobrow:first-child{border-top:0;padding-top:2px}
+  .pr .jobrow .ic{font-size:22px;color:var(--grn);flex:none;margin-top:2px}
+  .pr .jobrow h3{font-size:16.5px;font-weight:800}
+  .pr .jobrow p{color:var(--sub);font-size:14px;margin:3px 0 0}
+  .pr .jobrow .bye{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:5px}
+  .pr .jobrow .bye b{color:var(--grnDk)}
+  .pr .savings{margin-top:16px;text-align:center;font-size:14.5px;color:var(--sub)}
+  .pr .savings b{color:var(--vizDk)}
+  .pr .leg{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+  .pr .leg span{font-size:12px;color:var(--sub);background:var(--paper2);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+  .pr .leg b{color:var(--ink)}
+  .pr .cmp-frame{font-size:14.5px;color:var(--sub);margin-top:14px}
+  .pr .cmp-frame b{color:var(--grnDk)}
+  .pr .cmpgrid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:14px}
+  .pr .cmpcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 16px}
+  .pr .cmpcard .cap{display:flex;gap:10px;align-items:center;font-weight:750;font-size:15px;line-height:1.25}
+  .pr .cmpcard .ck{width:26px;height:26px;flex:none;border-radius:8px;background:var(--grnBg);color:var(--grn);display:grid;place-items:center}
+  .pr .cmpcard .ck .ic{font-size:16px}
+  .pr .cmpcard .others{display:flex;flex-wrap:wrap;align-items:center;gap:8px 15px;margin-top:11px;padding-top:11px;border-top:1px dashed var(--line)}
+  .pr .cmpcard .olbl{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--muted)}
+  .pr .cmpcard .o{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--sub)}
+  .pr .mk{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+  .pr .mk.y{background:var(--grn)}.pr .mk.p{background:#d39a2e}.pr .mk.n{background:var(--line2)}
+  .pr .cmp-note{font-size:11.5px;color:var(--muted);margin-top:14px;max-width:66ch;display:flex;flex-wrap:wrap;align-items:center;gap:4px 5px}
+  .pr .edge{margin-top:16px;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--viz);border-radius:14px;padding:16px 18px}
+  .pr .edge-h{display:flex;align-items:center;gap:9px;font-weight:750;font-size:14.5px;color:var(--ink)}
+  .pr .edge-h .ic{font-size:17px;color:var(--vizDk);flex:none}
+  .pr .edge p{color:var(--sub);font-size:13.5px;margin:9px 0 0;line-height:1.5;max-width:68ch}
+  .pr .edge b{color:var(--vizDk)}
+  .pr .stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-top:24px}
+  .pr .stats div{background:var(--card);padding:20px}
+  .pr .stats .n{font-size:33px;font-weight:850;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+  .pr .stats .n .u{font-size:15px;color:var(--viz)}
+  .pr .stats .l{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .pr .toggle{display:inline-flex;background:var(--paper2);border:1px solid var(--line);border-radius:12px;padding:4px;margin-top:16px}
+  .pr .toggle button{border:0;background:transparent;color:var(--muted);font-weight:700;font-size:14px;padding:10px 16px;border-radius:9px;cursor:pointer;min-height:44px;font-family:inherit}
+  .pr .toggle button.sel{background:var(--card);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  .pr .plans{display:grid;grid-template-columns:1fr;gap:14px;margin-top:22px}
+  .pr .plan{background:var(--card);border:1.5px solid var(--line);border-radius:20px;padding:24px;position:relative;display:flex;flex-direction:column}
+  .pr .plan.pop{border-color:var(--grn);border-width:2px;box-shadow:0 14px 40px -18px rgba(84,97,58,.45)}
+  .pr .plan .flag{position:absolute;top:-12px;left:22px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#fff;background:var(--grn);padding:5px 11px;border-radius:7px;display:inline-flex;gap:5px;align-items:center}
+  .pr .plan h3{font-size:23px;font-weight:850}
+  .pr .plan .tl{color:var(--muted);font-size:13.5px;margin-top:3px;min-height:2.6em}
+  .pr .price{display:flex;align-items:baseline;gap:3px;margin:14px 0 2px}
+  .pr .price .d{font-size:22px;font-weight:750;align-self:flex-start;margin-top:8px}
+  .pr .price .v{font-size:52px;font-weight:850;letter-spacing:-.035em;line-height:1;font-variant-numeric:tabular-nums}
+  .pr .price .per{color:var(--muted);font-size:15px}
+  .pr .yr{font-family:var(--mono);font-size:12px;color:var(--muted);min-height:1.3em}
+  .pr .plan ul{list-style:none;padding:0;margin:18px 0 22px;display:flex;flex-direction:column;gap:11px}
+  .pr .plan li{display:flex;gap:10px;font-size:14.5px;align-items:flex-start}
+  .pr .plan li .ic{font-size:17px;color:var(--grn);flex:none;margin-top:2px}
+  .pr .plan li.grp{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+  .pr .plan .btn{width:100%;margin-top:auto}
+  .pr .import{text-align:center;margin-top:16px;font-size:14px;color:var(--muted)}
+  .pr .import b{color:var(--grnDk)}
+  .pr .final{background:var(--night);color:#f4efe3;border-radius:26px;padding:44px 24px;text-align:center;position:relative;overflow:hidden;margin-top:20px}
+  .pr .final::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background:radial-gradient(120% 90% at 50% 0%,rgba(242,106,18,.16),transparent 55%),radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:auto,20px 20px}
+  .pr .final h2{font-size:clamp(28px,6.6vw,46px);font-weight:850;line-height:1.05;max-width:18ch;margin:14px auto 0}
+  .pr .final p{color:#d7d3c4;font-size:16px;margin:14px auto 0;max-width:42ch}
+  .pr .final .cta-row{display:flex;flex-direction:column;gap:12px;margin-top:26px}
+  .pr .final .cta-row .btn{width:100%}
+  .pr footer{border-top:1px solid var(--line);margin-top:44px}
+  .pr footer .bar{height:auto;padding:22px 0 44px;flex-wrap:wrap;gap:14px;color:var(--muted);font-size:13px}
+  .pr footer .links{display:flex;gap:18px}
+  .pr .sticky{position:fixed;left:0;right:0;bottom:0;z-index:60;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:rgba(244,239,227,.9);backdrop-filter:blur(10px);border-top:1px solid var(--line);transform:translateY(120%);transition:transform .3s ease}
+  .pr .sticky.show{transform:none}
+  .pr .sticky .btn{width:100%}
+  .pr .spacer{height:78px}
+  .pr .rv{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease}
+  .pr .rv.in{opacity:1;transform:none}
+  @media(min-width:720px){
+    .pr .hero .cta-row{flex-direction:row}.pr .hero .cta-row .btn{width:auto}
+    .pr .flow{grid-template-columns:1fr 1fr}
+    .pr .crewgrid{grid-template-columns:1fr 1fr}
+    .pr .cmpgrid{grid-template-columns:1fr 1fr}
+    .pr .stats{grid-template-columns:repeat(4,1fr)}
+    .pr .plans{grid-template-columns:repeat(3,1fr);align-items:stretch}
+    .pr .final .cta-row{flex-direction:row;justify-content:center}.pr .final .cta-row .btn{width:auto}
+    .pr .sticky{display:none}.pr .spacer{display:none}
+    .pr .term .res{flex-direction:row;flex-wrap:wrap}.pr .term .row{flex:1 1 260px}
+  }
+  @media(min-width:980px){ .pr .hero .wrap{padding:64px 20px 54px} .pr .flow{grid-template-columns:repeat(4,1fr)} }
+  @media(prefers-reduced-motion:reduce){ .pr .rv,.pr .chip,.pr .hero h1 .hl::after,.pr .term .q .cur{transition:none;animation:none;opacity:1;transform:none}.pr .hero h1 .hl::after{--draw:1} }
+`
+
+function Icon({ id, style }) {
+  return <svg className="ic" style={style}><use href={`#${id}`} /></svg>
 }
 
 export default function Pricing() {
   const navigate = useNavigate()
-  const company = useStore((s) => s.company) // set when a logged-in rep opens this
-  const [hired, setHired] = useState({})
-  const [period, setPeriod] = useState('mo')
-
-  const featureCount = FEATURE_CATALOG.reduce((s, c) => s + (c.features?.length || 0), 0)
-
-  // Plan-sizer: count paid specialists hired (Arnie is free, always included).
-  const n = CREW.filter((a) => hired[a.id] && !a.free).length
-  const rec = n <= 1 ? PLANS[0] : n <= 5 ? PLANS[1] : PLANS[2]
-  const recCredits = (COMPUTE.tierIncludedCredits[rec.id] || 0) + COMPUTE.agentIncludedCredits * n
-  const recWhy = n === 0 ? 'Start solo — Arnie’s free with every plan. Add specialists and we’ll size it up.'
-    : n <= 1 ? 'One paid specialist fits the Field Crew plan just right.'
-    : n <= 5 ? 'A full bench like this runs best on Field Pro.'
-    : 'That’s the whole crew — Field Boss unlocks every agent, live and future.'
+  const company = useStore((s) => s.company)
+  const rootRef = useRef(null)
+  const heroRef = useRef(null)
+  const [per, setPer] = useState('mo')
+  const [lit, setLit] = useState(false)
+  const [showSticky, setShowSticky] = useState(false)
 
   const goSignup = (planId) => navigate(`/login?signup=1&plan=${planId}`)
+  const toPlans = () => document.getElementById('pr-plans')?.scrollIntoView({ behavior: 'smooth' })
 
-  const btn = (bg, fg) => ({
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-    padding: '13px 22px', minHeight: 46, borderRadius: 11, border: '1.5px solid transparent',
-    background: bg, color: fg, fontSize: 14.5, fontWeight: 700, cursor: 'pointer',
-    textDecoration: 'none', letterSpacing: '0.01em',
-  })
-  const ghost = { ...btn('transparent', t.ink), border: `1.5px solid ${t.line2}` }
-  const eyebrow = { fontFamily: MONO, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: t.muted }
-  const h2 = { fontSize: 'clamp(26px, 4vw, 38px)', fontWeight: 800, letterSpacing: '-0.025em', margin: 0, textWrap: 'balance' }
+  // Reveal-on-scroll + hero underline draw + mobile sticky CTA.
+  useEffect(() => {
+    const reduce = window.matchMedia('(prefers-reduced-motion:reduce)').matches
+    const rvs = rootRef.current ? Array.from(rootRef.current.querySelectorAll('.rv')) : []
+    let io
+    if ('IntersectionObserver' in window && !reduce) {
+      io = new IntersectionObserver((es) => es.forEach((e) => {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target) }
+      }), { threshold: 0.12 })
+      rvs.forEach((el) => io.observe(el))
+    } else {
+      rvs.forEach((el) => el.classList.add('in'))
+    }
+    const raf = requestAnimationFrame(() => setLit(true))
+    let hio
+    if ('IntersectionObserver' in window && heroRef.current) {
+      hio = new IntersectionObserver(([e]) => setShowSticky(!e.isIntersecting), { threshold: 0 })
+      hio.observe(heroRef.current)
+    }
+    return () => { io && io.disconnect(); hio && hio.disconnect(); cancelAnimationFrame(raf) }
+  }, [])
 
   return (
-    <div style={{ minHeight: '100vh', background: t.bg, color: t.ink, fontFamily: SANS }}>
-      {/* topo contour texture, very faint */}
-      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', opacity: 0.5, zIndex: 0,
-        backgroundImage: `radial-gradient(${t.line} 0.5px, transparent 0.5px)`, backgroundSize: '22px 22px' }} />
-      <div style={{ position: 'relative', zIndex: 1 }}>
+    <div className="pr" ref={rootRef}>
+      <style>{CSS}</style>
+      <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" /></symbol>
+        <symbol id="i-quote" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h6" /></symbol>
+        <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></symbol>
+        <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.5 6.5a3.5 3.5 0 0 0 4.6 4.6L21 13l-8 8-2-2 1.9-6.9a3.5 3.5 0 0 1 1.6-1.6z" /><path d="M5 21l4-4" /></symbol>
+        <symbol id="i-dollar" viewBox="0 0 24 24"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></symbol>
+        <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z" /></symbol>
+        <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 6h11v9H3zM14 9h4l3 3v3h-7z" /><circle cx="7" cy="18" r="2" /><circle cx="17" cy="18" r="2" /></symbol>
+        <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2" /><path d="M3 20a6 6 0 0 1 12 0M16 6a3 3 0 0 1 0 6M15 20a6 6 0 0 1 6-2" /></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></symbol>
+        <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 0-2 2z" /><path d="M4 5v14" /></symbol>
+        <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17M15 9h4a1 1 0 0 1 1 1v11M8 7h3M8 11h3M8 15h3" /></symbol>
+        <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5M3 17l9 5 9-5" /></symbol>
+        <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17.8 6.6 20l1-6.1L3.2 9.5l6.1-.9z" /></symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></symbol>
+      </defs></svg>
 
-        {/* top bar */}
-        <header style={{ maxWidth: 1140, margin: '0 auto', padding: '18px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 800, fontSize: 19, letterSpacing: '-0.02em' }}>
-            <span style={{ width: 32, height: 32, borderRadius: '50%', border: `1.5px solid ${t.accent}`, color: t.accent, display: 'grid', placeItems: 'center' }}><Compass size={17} /></span>
-            JobScout
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <a href="#plans" style={{ ...ghost, padding: '8px 15px', minHeight: 40, fontSize: 13, fontWeight: 650 }}>See plans</a>
+      <header>
+        <div className="wrap bar">
+          <div className="logo"><img alt="JobScout" style={{ height: 34, width: 'auto', display: 'block' }} src="/Scout_LOGO_GUY.png" />JobScout</div>
+          <div className="hd-right">
             {company
-              ? <button onClick={() => navigate('/')} style={{ ...ghost, padding: '8px 14px', minHeight: 40, fontSize: 13, fontWeight: 650 }}><ArrowLeft size={15} /> Back to app</button>
-              : <button onClick={() => navigate('/login')} style={{ ...btn(t.accent, '#fff'), padding: '8px 16px', minHeight: 40, fontSize: 13 }}>Sign in</button>}
+              ? <span className="hd-link" onClick={() => navigate('/')}>Back to app</span>
+              : <span className="hd-link" onClick={() => navigate('/login')}>Sign in</span>}
+            <button className="btn btn-viz hd-cta" onClick={toPlans}>Start free</button>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* ─────────────── HERO ─────────────── */}
-        <section style={{ maxWidth: 980, margin: '0 auto', padding: '48px 22px 8px' }}>
-          <div style={eyebrow}>The operating system for field-service crews</div>
-          <h1 style={{ fontSize: 'clamp(36px, 7vw, 68px)', fontWeight: 800, letterSpacing: '-0.035em', lineHeight: 1.02, margin: '18px 0 0', textWrap: 'balance' }}>
-            Run the whole operation from one app —<br />
-            <span style={{ color: t.accentDk }}>with an AI crew that </span>
-            <span style={{ position: 'relative', whiteSpace: 'nowrap' }}>never clocks out
-              <span style={{ position: 'absolute', left: 0, right: 0, bottom: '0.04em', height: '0.16em', background: t.hivis, opacity: 0.55, borderRadius: 2 }} />
-            </span>.
-          </h1>
-          <p style={{ fontSize: 'clamp(16px, 2.1vw, 20px)', color: t.sub, margin: '22px 0 0', maxWidth: '62ch', lineHeight: 1.55 }}>
-            Leads, quotes, jobs, invoices, books, payroll, fleet — JobScout replaces the pile of apps
-            you’re duct-taping together, and comes with a bench of AI specialists who quote lawns, audit
-            lighting, chase invoices, and check the work. <b style={{ color: t.ink }}>Pick your crew. We’ll size the plan.</b>
-          </p>
-          <div style={{ display: 'flex', gap: 12, marginTop: 30, flexWrap: 'wrap' }}>
-            <button onClick={() => goSignup(rec.id)} style={btn(t.hivis, '#fff')}>
-              {company ? 'Sign this customer up' : 'Start free — 30 days'} <ArrowRight size={17} />
-            </button>
-            <a href="#crew" style={ghost}>Meet the crew</a>
-          </div>
-          {/* live stat strip */}
-          <div style={{ display: 'flex', gap: 0, marginTop: 40, flexWrap: 'wrap', border: `1.5px solid ${t.line}`, borderRadius: 14, overflow: 'hidden', background: t.card }}>
-            {[
-              [`${featureCount}`, 'features, shipped'],
-              ['14', 'systems in one login'],
-              ['7', 'AI specialists live'],
-              ['100%', 'works offline in the field'],
-            ].map(([big, small], i) => (
-              <div key={i} style={{ flex: '1 1 160px', minWidth: 140, padding: '18px 20px', borderLeft: i ? `1.5px solid ${t.line}` : 'none' }}>
-                <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>{big}</div>
-                <div style={{ fontSize: 12.5, color: t.muted, marginTop: 2 }}>{small}</div>
-              </div>
-            ))}
+      <main>
+        <section className={`hero${lit ? ' lit' : ''}`} ref={heroRef} style={{ paddingTop: 0 }}>
+          <div className="wrap">
+            <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> The operating system for service businesses</span>
+            <h1>One platform runs the operation. An <span className="hl">AI workforce</span> runs the busywork.</h1>
+            <p className="lede">Sales, scheduling, invoicing, payroll, books, fleet — the entire back office in one system. Plus AI that sources new customers, quotes the job, and closes the month.</p>
+            <div className="cta-row">
+              <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
+              <a className="btn btn-ghost on-dark" href="#pr-compare">See how it compares</a>
+            </div>
+            <div className="trust">
+              <span><Icon id="i-check" /> Live in an afternoon</span>
+              <span><Icon id="i-check" /> No consultants, no six-month rollout</span>
+              <span><Icon id="i-check" /> Runs offline in the field</span>
+            </div>
+            <div className="crewstrip">
+              <span className="lbl">Your AI workforce, on the clock →</span>
+              {CREW.map((a, i) => <span key={a.ab} className="chip" style={{ animationDelay: `${120 + i * 90}ms` }}>{a.ab}</span>)}
+            </div>
           </div>
         </section>
 
-        {/* ─────────────── REPLACE YOUR STACK ─────────────── */}
-        <section style={{ maxWidth: 1140, margin: '0 auto', padding: '56px 22px 12px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,0.9fr) minmax(0,1.1fr)', gap: 34, alignItems: 'center' }} className="pr-split">
-            <div>
-              <div style={{ ...eyebrow, color: t.hivisDk }}>One subscription, not twelve</div>
-              <h2 style={{ ...h2, margin: '10px 0 0' }}>Cancel the stack you’re already paying for.</h2>
-              <p style={{ color: t.sub, fontSize: 15.5, margin: '14px 0 0', maxWidth: '46ch', lineHeight: 1.55 }}>
-                Every feature was built to retire a tool you’re bleeding money on each month. Here’s a sample of
-                what one JobScout login stands in for — the whole list runs past <b>{REPLACES.length}+</b> apps.
-              </p>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 20, padding: '10px 15px', borderRadius: 10, background: t.hivisBg, color: t.hivisDk, fontWeight: 700, fontSize: 13.5 }}>
-                <Zap size={15} /> One bill. One login. One source of truth.
-              </div>
+        <section>
+          <div className="wrap">
+            <div className="sechead rv">
+              <span className="kicker">Built to scale with you</span>
+              <h2>From two trucks to twenty crews.</h2>
+              <p>The same platform runs a solo operator and a multi-location company — sophisticated where you need it, simple where you don’t. Landscaping, lighting &amp; energy, cleaning, pest control, HVAC, security, home services, and the trades.</p>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {REPLACES.map((tool) => (
-                <span key={tool} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 12px', borderRadius: 9, background: t.card, border: `1.5px solid ${t.line}`, fontSize: 13, color: t.muted, fontWeight: 600 }}>
-                  <span aria-hidden style={{ width: 6, height: 6, borderRadius: 2, background: t.hivis, transform: 'rotate(45deg)' }} />
-                  <span style={{ textDecoration: 'line-through', textDecorationColor: t.line2 }}>{tool}</span>
-                </span>
+            <div className="forwho rv">
+              <span className="who"><Icon id="i-users" /> <b>Owner-operators</b> &amp; small crews</span>
+              <span className="who"><Icon id="i-building" /> <b>Established shops</b>, 5–50 on payroll</span>
+              <span className="who"><Icon id="i-layers" /> <b>Multi-crew, multi-location</b> operations</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div className="wrap">
+            <div className="sechead rv">
+              <span className="kicker">One flow, from first touch to paid in full</span>
+              <h2>The whole job, start to finish.</h2>
+              <p>Not five apps stitched together — one system that follows the work.</p>
+            </div>
+            <div className="flow">
+              <div className="step rv"><Icon id="i-quote" /><h3>Quote it</h3><p>Build a priced proposal on site, send a link, capture an e-signature from their phone.</p><div className="was">replaces <b>DocuSign, Jobber estimates</b></div></div>
+              <div className="step rv"><Icon id="i-cal" /><h3>Schedule it</h3><p>Dispatch crews to jobs and days, optimize routes, and track a GPS time clock.</p><div className="was">replaces <b>Calendly, When I Work</b></div></div>
+              <div className="step rv"><Icon id="i-wrench" /><h3>Run the work</h3><p>Photos, checklists, and signatures from the field — fully offline, synced when you’re back on signal.</p><div className="was">replaces <b>CompanyCam</b></div></div>
+              <div className="step rv"><Icon id="i-dollar" /><h3>Get paid</h3><p>Invoice with a pay link, take card or ACH, and reconcile it against the bank automatically.</p><div className="was">replaces <b>QuickBooks invoicing</b></div></div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div className="wrap">
+            <div className="prospect rv">
+              <span className="eb on-dark"><Icon id="i-search" style={{ fontSize: 13 }} /> AI lead generation, built in</span>
+              <h3>Describe your next customer. The AI goes and finds them.</h3>
+              <p className="say">Your setters type a plain-English target. JobScout researches the live web, returns real companies with cited sources, reveals contacts, and bulk-imports them straight to the pipeline — no data broker, no spreadsheet.</p>
+              <div className="term">
+                <div className="top"><i /><i /><i /><span style={{ color: '#6b7160', marginLeft: 6 }}>prospect-scout</span></div>
+                <div className="q">&gt; find HOA-managed communities over 150 units in Maricopa County<span className="cur" /></div>
+                <div className="res">
+                  <div className="row"><span>Sunland Village HOA · 220 units · Mesa AZ</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> sourced</span></div>
+                  <div className="row"><span>Ironwood Community Assn · 340 units · Gilbert AZ</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> sourced</span></div>
+                </div>
+              </div>
+              <div className="repl">replaces <b>Apollo.io, ZoomInfo, Lusha</b> — and the prospecting agency.</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="pr-crew">
+          <div className="wrap">
+            <div className="sechead rv">
+              <span className="kicker">The part the others don’t have</span>
+              <h2>An AI workforce, not another dashboard.</h2>
+              <p>Each specialist owns a real job and does it autonomously — included in your plan, not billed by the seat. Plain-language in, finished work out.</p>
+            </div>
+            <div className="crewgrid">
+              {CREW.map((a) => (
+                <div key={a.ab} className={`agent rv${a.free ? ' free' : ''}`}>
+                  <div className="av">{a.ab}</div>
+                  <div>
+                    <h3>{a.name}{a.free && <span className="tag">Free · every plan</span>}</h3>
+                    <div className="role">{a.role}</div>
+                    <p>{a.ds}</p>
+                  </div>
+                </div>
               ))}
-              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '7px 12px', borderRadius: 9, background: t.accentBg, border: `1.5px solid ${t.accent}`, fontSize: 13, color: t.accentDk, fontWeight: 700 }}>+ many more</span>
+            </div>
+            <div className="coming rv">
+              <span className="lbl">12 more trade specialists rolling out</span>
+              <div className="pills">{COMING.map((c) => <span key={c}>{c}</span>)}</div>
             </div>
           </div>
         </section>
 
-        {/* ─────────────── AI CREW + PLAN SIZER ─────────────── */}
-        <section id="crew" style={{ maxWidth: 1140, margin: '0 auto', padding: '56px 22px 12px' }}>
-          <div style={eyebrow}>The differentiator</div>
-          <h2 style={{ ...h2, margin: '10px 0 6px' }}>Build the crew. We’ll size the plan.</h2>
-          <p style={{ color: t.sub, margin: '0 0 26px', maxWidth: '64ch', fontSize: 15.5 }}>
-            Every teammate is an AI specialist that replaces a whole category of software — included in your plan,
-            not billed by the seat. Toggle who you’d put to work; the panel sizes your plan and monthly compute live.
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,1fr)', gap: 18, alignItems: 'start' }} className="pr-builder">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
-              {CREW.map((a) => {
-                const on = a.free || !!hired[a.id]
+        <section>
+          <div className="wrap">
+            <div className="sechead rv">
+              <span className="kicker">One system, not a stack of subscriptions</span>
+              <h2>Everything the office needs. In your pocket.</h2>
+              <p>The sophisticated back office a growing company actually runs on — native, in one login.</p>
+            </div>
+            <div className="oneapp rv">
+              <div className="jobrow"><Icon id="i-search" /><div><h3>Source &amp; win the work</h3><p>AI prospecting, leads, pipeline, instant quotes, e-signatures, a customer portal.</p><div className="bye">replaces <b>Apollo, ZoomInfo, HubSpot, DocuSign</b></div></div></div>
+              <div className="jobrow"><Icon id="i-cal" /><div><h3>Run the operation</h3><p>Scheduling, dispatch board, route optimization, GPS time clock.</p><div className="bye">replaces <b>ServiceTitan dispatch, When I Work</b></div></div></div>
+              <div className="jobrow"><Icon id="i-dollar" /><div><h3>Bill, collect &amp; keep the books</h3><p>Invoices with pay links, card + ACH, bank sync, expenses, a real P&amp;L and job costing.</p><div className="bye">replaces <b>QuickBooks, Expensify</b></div></div></div>
+              <div className="jobrow"><Icon id="i-book" /><div><h3>Payroll, HR &amp; compliance</h3><p>Calculates every paycheck and tax to the penny (IRS Pub 15-T), fills your 941s, W-2s and 1099s, and flags every deposit deadline — plus onboarding and I-9s.</p><div className="bye">replaces <b>Gusto, ADP, BambooHR</b></div></div></div>
+              <div className="jobrow"><Icon id="i-truck" /><div><h3>Fleet &amp; assets</h3><p>Real-time vehicle tracking (WatchDog GPS), fuel logs, and maintenance — one place.</p><div className="bye">replaces <b>Fleetio, Samsara</b></div></div></div>
+              <div className="jobrow"><Icon id="i-layers" /><div><h3>Run the company</h3><p>Owner dashboards and reporting, plus a built-in operating rhythm — quarterly priorities, a weekly scorecard, and structured leadership meetings (the EOS / “Traction” system, no extra app).</p><div className="bye">replaces <b>Ninety.io, Tableau</b></div></div></div>
+            </div>
+            <p className="savings rv"><b>134 features across 14 systems</b> — the stack it stands in for runs past <b>30 subscriptions</b>.</p>
+          </div>
+        </section>
+
+        <section id="pr-compare">
+          <div className="wrap">
+            <div className="sechead rv">
+              <span className="kicker">The honest comparison</span>
+              <h2>Where JobScout fits.</h2>
+              <p>Field-service apps schedule and invoice — then you bolt on accounting, payroll, a CRM, fleet, and marketing. Enterprise suites <b>match the breadth</b>, but at enterprise prices and a months-long rollout with a consultant on the payroll. JobScout hands you the whole operation — plus an AI workforce and AI prospecting the others don’t have — live in an afternoon, priced for a company that’s still growing.</p>
+            </div>
+            <div className="leg rv">
+              <span><b>Field-service apps</b> · Jobber, HousecallPro</span>
+              <span><b>Enterprise suites</b> · ServiceTitan, Salesforce</span>
+              <span><b>DIY stack</b> · QuickBooks + Gusto + …</span>
+            </div>
+            <p className="cmp-frame rv">Every capability below ships <b>inside JobScout</b>. Here’s how the alternatives stack up.</p>
+            <div className="cmpgrid">
+              {CMP_ROWS.map((r, ri) => (
+                <div key={ri} className="cmpcard rv">
+                  <div className="cap"><span className="ck"><Icon id="i-check" /></span><span>{r[0]}</span></div>
+                  <div className="others"><span className="olbl">OTHERS</span>
+                    {r.slice(2).map((v, i) => <span key={i} className="o"><i className={`mk ${mk(v)}`} />{CMP_OTHERS[i]}</span>)}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="edge rv">
+              <div className="edge-h"><Icon id="i-bolt" /> Straight talk — where the big suites still edge us</div>
+              <p>A short list of things the enterprise platforms have that we don’t <b>yet</b>: consumer financing at checkout, recurring service memberships, built-in call recording &amp; IVR telephony, and a third-party app marketplace. All on the roadmap. What none of them hands you is the AI workforce — and that’s the part that’s hard to copy.</p>
+            </div>
+            <p className="cmp-note"><i className="mk y" /> included &nbsp;<i className="mk p" /> partial / add-on &nbsp;<i className="mk n" /> not native &nbsp;— reflects one subscription vs. integrations or higher tiers. Names are trademarks of their owners.</p>
+          </div>
+        </section>
+
+        <section>
+          <div className="wrap">
+            <div className="stats rv">
+              <div><div className="n">134</div><div className="l">features, shipped</div></div>
+              <div><div className="n">7<span className="u">+12</span></div><div className="l">AI specialists</div></div>
+              <div><div className="n">14</div><div className="l">systems, one login</div></div>
+              <div><div className="n">0<span className="u">bars</span></div><div className="l">and it still runs</div></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="pr-plans">
+          <div className="wrap">
+            <div className="sechead rv">
+              <span className="kicker">Straight pricing, no per-seat games</span>
+              <h2>Plans that scale with the operation.</h2>
+              <div className="toggle" role="tablist">
+                <button className={per === 'mo' ? 'sel' : ''} onClick={() => setPer('mo')}>Monthly</button>
+                <button className={per === 'yr' ? 'sel' : ''} onClick={() => setPer('yr')}>Annual · 2 months free</button>
+              </div>
+            </div>
+            <div className="plans">
+              {PLANS.map((p) => {
+                const m = per === 'yr' ? Math.round(p.yr / 12) : p.mo
                 return (
-                  <button key={a.id} onClick={() => !a.free && setHired((h) => ({ ...h, [a.id]: !h[a.id] }))}
-                    style={{ textAlign: 'left', display: 'flex', gap: 12, alignItems: 'flex-start', padding: '15px 16px', borderRadius: 13,
-                      cursor: a.free ? 'default' : 'pointer', background: on ? t.accentBg : t.card,
-                      border: `1.5px solid ${on ? t.accent : t.line}`, minHeight: 44, position: 'relative' }}>
-                    <span style={{ width: 40, height: 40, flex: 'none', borderRadius: 10, display: 'grid', placeItems: 'center', fontFamily: MONO, fontWeight: 700, fontSize: 14,
-                      background: on ? t.accent : t.card2, color: on ? '#fff' : t.accentDk }}>{a.ab}</span>
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                        <b style={{ fontSize: 15 }}>{a.name}</b>
-                        {a.free && <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: t.hivisDk, background: t.hivisBg, padding: '2px 6px', borderRadius: 5, fontWeight: 700 }}>Free</span>}
-                      </span>
-                      <span style={{ display: 'block', fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.05em', textTransform: 'uppercase', color: t.accentDk, marginTop: 3 }}>{a.role}</span>
-                      <span style={{ display: 'block', fontSize: 12.5, color: t.sub, marginTop: 6, lineHeight: 1.4 }}>{a.ds}</span>
-                      <span style={{ display: 'block', fontFamily: MONO, fontSize: 10.5, color: t.muted, marginTop: 7 }}>replaces <span style={{ color: t.hivisDk }}>{a.repl}</span></span>
-                    </span>
-                    {!a.free && (
-                      <span style={{ width: 22, height: 22, flex: 'none', borderRadius: 7, display: 'grid', placeItems: 'center',
-                        background: on ? t.accent : t.card, border: `1.5px solid ${on ? t.accent : t.line2}`, color: '#fff' }}>{on && <Check size={14} />}</span>
-                    )}
-                  </button>
+                  <div key={p.id} className={`plan rv${p.pop ? ' pop' : ''}`}>
+                    {p.pop && <span className="flag"><Icon id="i-star" style={{ fontSize: 11 }} /> Most popular</span>}
+                    <h3>{p.name}</h3>
+                    <div className="tl">{p.tl}</div>
+                    <div className="price"><span className="d">$</span><span className="v">{m}</span><span className="per">/mo</span></div>
+                    <div className="yr">{per === 'yr' ? `$${p.yr.toLocaleString()} billed yearly` : ' '}</div>
+                    <ul>
+                      <li><Icon id="i-check" /><b>{p.users}</b></li>
+                      <li><Icon id="i-check" /><b>{p.agents}</b> + Arnie free</li>
+                      {p.feats.map((f, i) => f.startsWith('grp:')
+                        ? <li key={i} className="grp">{f.slice(4)}</li>
+                        : <li key={i}><Icon id="i-check" />{f}</li>)}
+                    </ul>
+                    <button className={`btn ${p.pop ? 'btn-viz' : 'btn-grn'}`} onClick={() => goSignup(p.id)}>Start 30-day trial</button>
+                  </div>
                 )
               })}
             </div>
-            {/* sizer readout */}
-            <aside style={{ background: t.night, color: t.bg, borderRadius: 18, padding: 26, position: 'sticky', top: 16,
-              backgroundImage: `radial-gradient(rgba(255,255,255,0.05) 0.5px, transparent 0.5px)`, backgroundSize: '18px 18px' }}>
-              <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.16em', textTransform: 'uppercase', opacity: 0.6 }}>Recommended plan</div>
-              <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.025em', margin: '5px 0 0' }}>{rec.name}</div>
-              <div style={{ fontSize: 12.5, opacity: 0.72, marginTop: 5, minHeight: '3.6em', lineHeight: 1.4 }}>{recWhy}</div>
-              <div style={{ height: 1, background: 'currentColor', opacity: 0.16, margin: '16px 0' }} />
-              {[['Crew hired', `${n + 1} on the bench`], ['Seats', rec.user_cap ? `${rec.user_cap} users` : 'Unlimited'], ['Price', `$${rec.monthly_price}/mo`]].map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontFamily: MONO, fontSize: 12, padding: '5px 0' }}>
-                  <span style={{ opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{k}</span><span style={{ fontWeight: 600 }}>{v}</span>
-                </div>
-              ))}
-              <div style={{ height: 1, background: 'currentColor', opacity: 0.16, margin: '16px 0' }} />
-              <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.16em', textTransform: 'uppercase', opacity: 0.6 }}>Monthly compute included</div>
-              <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1, marginTop: 5 }}>{recCredits.toLocaleString()} <span style={{ fontSize: 14, opacity: 0.7 }}>credits</span></div>
-              <div style={{ fontSize: 12, opacity: 0.72, marginTop: 6 }}>Enough for a normal month. Top up anytime.</div>
-              <button onClick={() => goSignup(rec.id)} style={{ ...btn(t.hivis, '#fff'), width: '100%', marginTop: 20 }}>Start with {rec.name} <ArrowRight size={16} /></button>
-            </aside>
-          </div>
-          {/* coming soon strip */}
-          <div style={{ marginTop: 20, padding: '16px 18px', borderRadius: 14, border: `1.5px dashed ${t.line2}`, background: t.card, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: MONO, fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.accentDk, fontWeight: 700 }}>12 more trades rolling in</span>
-            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-              {COMING.map((c) => (
-                <span key={c} style={{ fontSize: 12.5, color: t.muted, padding: '4px 10px', borderRadius: 20, background: t.card2, border: `1px solid ${t.line}` }}>{c}</span>
-              ))}
-            </div>
-            <span style={{ fontSize: 12.5, color: t.muted, marginLeft: 'auto' }}>Field Boss gets every new agent first.</span>
+            <p className="import rv">Migrating from HousecallPro? <b>One-click import</b> brings customers, jobs, and invoices across with full history.</p>
           </div>
         </section>
 
-        {/* ─────────────── PLATFORM BREADTH ─────────────── */}
-        <section style={{ maxWidth: 1140, margin: '0 auto', padding: '56px 22px 12px' }}>
-          <div style={eyebrow}>Not an AI wrapper — the whole business</div>
-          <h2 style={{ ...h2, margin: '10px 0 6px' }}>{featureCount} features. 14 systems. One app.</h2>
-          <p style={{ color: t.sub, margin: '0 0 26px', maxWidth: '62ch', fontSize: 15.5 }}>
-            The AI crew rides on top of a full operations platform — the same one that runs real lighting, lawn,
-            and fleet companies today, from the first cold lead to the W-2 at year end.
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 14 }}>
-            {FEATURE_CATALOG.map((cat) => {
-              const Icon = CAT_ICON[cat.category] || Sparkles
-              return (
-                <div key={cat.category} style={{ background: t.card, border: `1.5px solid ${t.line}`, borderRadius: 14, padding: '18px 18px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ width: 38, height: 38, borderRadius: 10, background: t.accentBg, color: t.accent, display: 'grid', placeItems: 'center' }}><Icon size={19} /></span>
-                    <span style={{ fontFamily: MONO, fontSize: 11, color: t.muted }}>{(cat.features || []).length} features</span>
-                  </div>
-                  <div style={{ fontWeight: 700, fontSize: 15.5, marginTop: 12 }}>{cat.category}</div>
-                  <div style={{ fontSize: 12.5, color: t.sub, marginTop: 5, lineHeight: 1.45 }}>{cat.summary}</div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-
-        {/* ─────────────── PLANS ─────────────── */}
-        <section id="plans" style={{ maxWidth: 1140, margin: '0 auto', padding: '56px 22px 12px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
-            <div>
-              <div style={eyebrow}>Straightforward pricing</div>
-              <h2 style={{ ...h2, margin: '10px 0 0' }}>Plans that grow with the trucks.</h2>
-            </div>
-            <div style={{ display: 'inline-flex', background: t.card2, border: `1.5px solid ${t.line}`, borderRadius: 11, padding: 4 }}>
-              {['mo', 'yr'].map((p) => (
-                <button key={p} onClick={() => setPeriod(p)} style={{ border: 0, background: period === p ? t.card : 'transparent', color: period === p ? t.ink : t.muted,
-                  padding: '9px 16px', borderRadius: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13, minHeight: 40 }}>
-                  {p === 'mo' ? 'Monthly' : 'Annual · 2 months free'}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: 16, alignItems: 'stretch' }}>
-            {PLANS.map((p) => {
-              const isRec = p.id === rec.id
-              const monthly = period === 'yr' ? Math.round(p.annual_price / 12) : p.monthly_price
-              return (
-                <div key={p.id} style={{ background: t.card, border: `${p.popular ? 2 : 1.5}px solid ${isRec ? t.hivis : p.popular ? t.accent : t.line}`, borderRadius: 18, padding: 26,
-                  display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: isRec ? `0 0 0 4px ${t.hivisBg}` : 'none' }}>
-                  {p.popular && <span style={badge(t.accent)}><Star size={11} /> Most popular</span>}
-                  {isRec && !p.popular && <span style={badge(t.hivis)}>Your pick</span>}
-                  <h3 style={{ fontSize: 23, fontWeight: 800, letterSpacing: '-0.02em', margin: '2px 0 0' }}>{p.name}</h3>
-                  <div style={{ color: t.muted, fontSize: 13, marginTop: 4, minHeight: '2.6em' }}>{p.tagline}</div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, margin: '16px 0 2px' }}>
-                    <span style={{ fontWeight: 700, fontSize: 20, alignSelf: 'flex-start', marginTop: 8 }}>$</span>
-                    <span style={{ fontSize: 48, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{monthly}</span>
-                    <span style={{ color: t.muted, fontSize: 14 }}>/mo</span>
-                  </div>
-                  <div style={{ fontFamily: MONO, fontSize: 11.5, color: t.muted, minHeight: '1.3em' }}>{period === 'yr' ? `$${p.annual_price.toLocaleString()} billed yearly` : ' '}</div>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: '18px 0 22px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <li style={li}><Check size={16} color={t.accent} style={{ flex: 'none', marginTop: 2 }} /><span><b>{p.user_cap ? `Up to ${p.user_cap} users` : 'Unlimited users'}</b></span></li>
-                    <li style={li}><Check size={16} color={t.accent} style={{ flex: 'none', marginTop: 2 }} /><span><b>{p.agent_cap ? `${p.agent_cap} AI specialist${p.agent_cap > 1 ? 's' : ''}` : 'Every AI specialist'}</b>{p.agent_cap ? ' of your choice' : ' + new ones first'}</span></li>
-                    <li style={li}><Check size={16} color={t.accent} style={{ flex: 'none', marginTop: 2 }} /><span>Arnie, your AI assistant — <b>free</b></span></li>
-                    <li style={li}><Check size={16} color={t.accent} style={{ flex: 'none', marginTop: 2 }} /><span><b>{(COMPUTE.tierIncludedCredits[p.id] || 0).toLocaleString()}</b> compute credits / mo</span></li>
-                    {(p.features || []).slice(2).map((f, i) => f.startsWith('Everything')
-                      ? <li key={i} style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.muted, marginTop: 5 }}>{f}</li>
-                      : <li key={i} style={li}><Check size={16} color={t.accent} style={{ flex: 'none', marginTop: 2 }} /><span>{f}</span></li>)}
-                  </ul>
-                  <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 9 }}>
-                    <button onClick={() => goSignup(p.id)} style={{ ...btn(isRec ? t.hivis : t.accent, '#fff'), width: '100%' }}>Start 30-day trial</button>
-                    <button onClick={() => goSignup(p.id)} style={{ ...ghost, width: '100%' }}>Subscribe now <ArrowRight size={15} /></button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          <div style={{ textAlign: 'center', marginTop: 16, fontSize: 13, color: t.muted }}>
-            Switching from HousecallPro? <b style={{ color: t.accentDk }}>One-click import</b> brings your customers, jobs, and invoices over.
-          </div>
-        </section>
-
-        {/* ─────────────── COMPUTE ─────────────── */}
-        <section style={{ maxWidth: 1140, margin: '0 auto', padding: '40px 22px' }}>
-          <div style={{ background: t.card, border: `1.5px solid ${t.line}`, borderRadius: 18, padding: '28px 30px', display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,1fr)', gap: 30, alignItems: 'center' }} className="pr-split">
-            <div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, ...eyebrow, color: t.accentDk }}><Zap size={13} /> Fair by design</div>
-              <h3 style={{ fontSize: 23, fontWeight: 800, letterSpacing: '-0.02em', margin: '10px 0 0' }}>You only pay for the AI you actually use.</h3>
-              <p style={{ color: t.sub, fontSize: 14.5, margin: '10px 0 0', maxWidth: '48ch', lineHeight: 1.5 }}>
-                Every plan includes a monthly compute allowance sized for a normal month, and each specialist you
-                activate adds <b>{COMPUTE.agentIncludedCredits} credits</b> to the pool. Big month? Top up in one tap — no surprise bills, ever.
-              </p>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-              {COMPUTE.packs.map((k) => (
-                <div key={k.price} style={{ flex: '1 1 120px', minWidth: 118, background: t.card2, border: `1.5px solid ${t.line}`, borderRadius: 12, padding: '13px 15px' }}>
-                  <div style={{ fontSize: 21, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>${k.price}</div>
-                  <div style={{ fontFamily: MONO, fontSize: 11.5, color: t.accentDk, marginTop: 2 }}><b style={{ color: t.ink }}>{k.credits.toLocaleString()}</b> credits</div>
-                </div>
-              ))}
+        <section>
+          <div className="wrap">
+            <div className="final rv">
+              <span className="eb on-dark">Free for 30 days · No card · Cancel anytime</span>
+              <h2>Replace the stack. Keep the crew.</h2>
+              <p>Stand up your whole operation in an afternoon, bring your customers over in a click, and put the AI workforce to work.</p>
+              <div className="cta-row">
+                <button className="btn btn-viz" onClick={toPlans}>Start your free trial <Icon id="i-arrow" /></button>
+                <a className="btn btn-ghost on-dark" href="#pr-compare">Compare the platforms</a>
+              </div>
             </div>
           </div>
         </section>
+      </main>
 
-        {/* ─────────────── FINAL CTA ─────────────── */}
-        <section style={{ maxWidth: 1140, margin: '0 auto', padding: '20px 22px 60px' }}>
-          <div style={{ background: t.night, color: t.bg, borderRadius: 22, padding: 'clamp(32px, 6vw, 56px)', textAlign: 'center', position: 'relative', overflow: 'hidden',
-            backgroundImage: `radial-gradient(rgba(255,255,255,0.05) 0.5px, transparent 0.5px)`, backgroundSize: '20px 20px' }}>
-            <div style={{ ...eyebrow, opacity: 0.6 }}>Free for 30 days · No card to start · Cancel anytime</div>
-            <h2 style={{ fontSize: 'clamp(28px, 5vw, 46px)', fontWeight: 800, letterSpacing: '-0.03em', margin: '14px auto 0', maxWidth: '18ch', textWrap: 'balance', lineHeight: 1.05 }}>
-              Put the whole crew to work this week.
-            </h2>
-            <p style={{ opacity: 0.75, fontSize: 16, margin: '16px auto 0', maxWidth: '46ch', lineHeight: 1.5 }}>
-              Set up in an afternoon, import your customers in a click, and let the AI crew handle the busywork while you run the trucks.
-            </p>
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 28, flexWrap: 'wrap' }}>
-              <button onClick={() => goSignup(rec.id)} style={btn(t.hivis, '#fff')}>{company ? 'Sign this customer up' : 'Start your free trial'} <ArrowRight size={17} /></button>
-              <a href="#crew" style={{ ...btn('transparent', t.bg), border: `1.5px solid rgba(255,255,255,0.25)` }}>Meet the crew again</a>
-            </div>
+      <footer>
+        <div className="wrap bar">
+          <div className="logo" style={{ fontSize: 17 }}><img alt="JobScout" style={{ height: 28, width: 'auto', display: 'block' }} src="/Scout_LOGO_GUY.png" />JobScout</div>
+          <div className="links">
+            <a href="#pr-compare">Compare</a>
+            <a href="#pr-plans">Plans</a>
+            <a href="#pr-crew">AI</a>
+            <span style={{ cursor: 'pointer' }} onClick={() => navigate('/login')}>Sign in</span>
           </div>
-        </section>
+        </div>
+      </footer>
 
-        <footer style={{ borderTop: `1.5px solid ${t.line}` }}>
-          <div style={{ maxWidth: 1140, margin: '0 auto', padding: '24px 22px 46px', display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', alignItems: 'center', color: t.muted, fontSize: 13 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, color: t.ink }}><Compass size={18} color={t.accent} /> JobScout</div>
-            <div style={{ display: 'flex', gap: 18 }}>
-              <a href="/terms" style={{ color: t.muted, textDecoration: 'none' }}>Terms</a>
-              <a href="/privacy" style={{ color: t.muted, textDecoration: 'none' }}>Privacy</a>
-              <a href="/login" style={{ color: t.muted, textDecoration: 'none' }}>Sign in</a>
-            </div>
-          </div>
-        </footer>
+      <div className="spacer" />
+      <div className={`sticky${showSticky ? ' show' : ''}`}>
+        <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
       </div>
-
-      <style>{`
-        @media (max-width: 900px) {
-          .pr-split { grid-template-columns: minmax(0,1fr) !important; }
-          .pr-builder { grid-template-columns: minmax(0,1fr) !important; }
-        }
-      `}</style>
     </div>
   )
 }
-
-const li = { fontSize: 13.5, display: 'flex', gap: 9, alignItems: 'flex-start', color: '#20261c' }
-const badge = (bg) => ({
-  position: 'absolute', top: -11, left: 24, display: 'inline-flex', alignItems: 'center', gap: 5,
-  fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700,
-  background: bg, color: '#fff', padding: '4px 10px', borderRadius: 6,
-})
