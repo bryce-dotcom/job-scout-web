@@ -18,6 +18,16 @@ const SCROLL_KEY = (companyId) => `pipeline_scroll_${companyId}`
 // Only these are remembered. Anything not listed is deliberately transient.
 const FIELDS = ['ownerFilter', 'dateRange', 'buFilter', 'searchTerm', 'mobileFilter', 'customDateTo']
 
+// Bumped when a DEFAULT changes. Filters are written on every change, so the
+// old default is already sitting in everyone's browser as if they had chosen
+// it — changing the default in code reaches new users only. Each entry drops
+// the one field whose default moved, and nothing else the user set up.
+//
+//   2: default date range mtd -> ytd. The board was hiding most of the year's
+//      work, and MTD was never a choice anyone made.
+const PREFS_VERSION = 2
+const RESET_ON_UPGRADE = { 2: ['dateRange'] }
+
 export function loadPipelineFilters(companyId) {
   if (!companyId) return {}
   try {
@@ -27,6 +37,16 @@ export function loadPipelineFilters(companyId) {
     if (!parsed || typeof parsed !== 'object') return {}
     const out = {}
     for (const f of FIELDS) if (typeof parsed[f] === 'string') out[f] = parsed[f]
+
+    // Anything saved before a default moved forgets only that field, so the
+    // new default applies once. Someone who genuinely wanted the old value
+    // re-picks it and it sticks from then on.
+    const was = Number(parsed.v) || 1
+    if (was < PREFS_VERSION) {
+      for (let v = was + 1; v <= PREFS_VERSION; v += 1) {
+        for (const f of RESET_ON_UPGRADE[v] || []) delete out[f]
+      }
+    }
     return out
   } catch { return {} }   // private mode, or someone hand-edited it
 }
@@ -34,7 +54,7 @@ export function loadPipelineFilters(companyId) {
 export function savePipelineFilters(companyId, filters) {
   if (!companyId || !filters) return
   try {
-    const out = {}
+    const out = { v: PREFS_VERSION }
     for (const f of FIELDS) if (typeof filters[f] === 'string') out[f] = filters[f]
     localStorage.setItem(FILTER_KEY(companyId), JSON.stringify(out))
   } catch { /* private mode */ }

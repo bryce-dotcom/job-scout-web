@@ -28,6 +28,32 @@ describe('filters survive the round trip', () => {
     expect(loadPipelineFilters(3)).toEqual({ ownerFilter: '16', dateRange: 'ytd', buFilter: 'Energy Scout' })
   })
 
+  // Changing a default in code reaches new users only: everyone else already
+  // has the OLD default written to their browser by the auto-save, looking
+  // exactly like a deliberate choice.
+  describe('a changed default reaches people who already used the board', () => {
+    it('forgets a pre-version date range so the new default applies', () => {
+      localStorage.setItem('pipeline_filters_3',
+        JSON.stringify({ dateRange: 'mtd', ownerFilter: '16', buFilter: 'Energy Scout' }))
+      const got = loadPipelineFilters(3)
+      expect(got.dateRange).toBeUndefined()      // falls through to the new default
+      expect(got.ownerFilter).toBe('16')         // everything else they set up survives
+      expect(got.buFilter).toBe('Energy Scout')
+    })
+
+    it('only forgets it once — a later choice sticks', () => {
+      localStorage.setItem('pipeline_filters_3', JSON.stringify({ dateRange: 'mtd' }))
+      expect(loadPipelineFilters(3).dateRange).toBeUndefined()
+      savePipelineFilters(3, { dateRange: 'mtd' })              // user picks MTD on purpose
+      expect(loadPipelineFilters(3).dateRange).toBe('mtd')      // and keeps it
+    })
+
+    it('leaves current saves alone', () => {
+      savePipelineFilters(3, { dateRange: 'last90', ownerFilter: 'all' })
+      expect(loadPipelineFilters(3).dateRange).toBe('last90')
+    })
+  })
+
   it('keeps each company separate', () => {
     savePipelineFilters(3, { dateRange: 'ytd' })
     savePipelineFilters(9, { dateRange: 'mtd' })
