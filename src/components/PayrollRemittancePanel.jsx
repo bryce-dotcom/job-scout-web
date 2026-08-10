@@ -70,6 +70,31 @@ export default function PayrollRemittancePanel({ liabilities = [], theme, onChan
     doc.save(`payroll-tax-deposit-${stamp}.pdf`)
   }
 
+  const downloadDD = async (g) => {
+    setBusy('dd-' + g.key)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/payroll-dd-export`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session?.access_token || ''}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ payroll_run_id: Number(g.key) }),
+      })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); alert('Direct-deposit export failed: ' + (e.error || res.status)); return }
+      const missing = Number(res.headers.get('X-DD-Missing') || 0)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = `direct-deposit-${(g.run?.pay_date || g.key)}.csv`; a.click()
+      URL.revokeObjectURL(url)
+      alert(`Direct-deposit file downloaded.\n\nReview it before uploading to your bank — it contains full account numbers.` +
+        (missing ? `\n\n${missing} employee(s) have no direct deposit on file and are marked "pay by check".` : ''))
+    } catch (err) { alert('Direct-deposit export failed: ' + err.message) } finally { setBusy(null) }
+  }
+
   const markPaid = async (bucket) => {
     setBusy(bucket.liabilityIds.join(','))
     const { error } = await supabase.from('payroll_tax_liabilities')
@@ -108,10 +133,19 @@ export default function PayrollRemittancePanel({ liabilities = [], theme, onChan
               {g.run?.pay_date ? `Pay date ${fmtDate(g.run.pay_date)}` : 'Payroll'}
               {g.run?.period_start && <span style={{ color: sub, fontWeight: 400 }}> · {fmtDate(g.run.period_start)}–{fmtDate(g.run.period_end)}</span>}
             </div>
-            <button onClick={() => printWorksheet(g)} style={{ background: t.accent || '#55613c', color: '#fff', border: 0,
-              borderRadius: 9, padding: '9px 14px', fontSize: 13, fontWeight: 650, cursor: 'pointer', minHeight: 40 }}>
-              Print deposit worksheet
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {g.key !== 'unassigned' && (
+                <button onClick={() => downloadDD(g)} disabled={busy === 'dd-' + g.key}
+                  style={{ background: 'transparent', color: t.accent || '#55613c', border: `1px solid ${t.accent || '#55613c'}`,
+                    borderRadius: 9, padding: '9px 14px', fontSize: 13, fontWeight: 650, cursor: 'pointer', minHeight: 40, whiteSpace: 'nowrap' }}>
+                  {busy === 'dd-' + g.key ? '…' : 'Direct-deposit file (CSV)'}
+                </button>
+              )}
+              <button onClick={() => printWorksheet(g)} style={{ background: t.accent || '#55613c', color: '#fff', border: 0,
+                borderRadius: 9, padding: '9px 14px', fontSize: 13, fontWeight: 650, cursor: 'pointer', minHeight: 40, whiteSpace: 'nowrap' }}>
+                Print deposit worksheet
+              </button>
+            </div>
           </div>
 
           {g.buckets.map((b) => (
