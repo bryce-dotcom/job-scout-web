@@ -1,12 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callAnthropic } from "../_shared/anthropic.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// AI Transaction Categorization via Gemini + merchant rules
+// AI Transaction Categorization via merchant rules + Claude (_shared/anthropic)
 // Actions: categorize_batch, learn_rule, reconcile
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -14,7 +15,6 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
     const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('VITE_GEMINI_API_KEY');
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false }
@@ -114,9 +114,21 @@ serve(async (req) => {
         }
       }
 
-      // Phase 2: AI categorization for remaining
+      // Phase 2: AI categorization for remaining.
+      //
+      // This was gated on GEMINI_API_KEY and SILENTLY skipped the whole phase
+      // when it was not set — no error, no log, a 200 reading
+      // "ai_categorized: 0". It has read 0 for eight months: of 2,102
+      // transactions only 110 ever got an AI suggestion, all in March. Tracy
+      // has 1,143 unconfirmed with 1,132 carrying no suggestion at all, which
+      // is why categorizing is "a struggle" — every one is hand-typed.
+      //
+      // Now on _shared/anthropic, like every other AI feature here: one
+      // provider, metered into ai_usage, billing alerts, and a failure that
+      // reports itself instead of returning success with nothing done.
       let aiCategorized = 0;
-      if (needsAI.length > 0 && GEMINI_API_KEY) {
+      let aiError: string | null = null;
+      if (needsAI.length > 0) {
         // Process in batches of 50
         for (let i = 0; i < needsAI.length; i += 50) {
           const batch = needsAI.slice(i, i + 50);
@@ -179,23 +191,29 @@ Return ONLY a JSON array with this structure for each transaction:
 [{"id": number, "category": "string", "tax_category": "string", "form_1065_line": "string", "confidence": number (0-1), "is_transfer": boolean, "job_id": number|null, "job_confidence": number|null}]`;
 
           try {
-            const geminiRes = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+            const ai = await callAnthropic(
+              { feature: 'categorize-transactions', companyId: company_id },
               {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  contents: [{ parts: [{ text: prompt }] }],
-                  generationConfig: {
-                    temperature: 0.1,
-                    responseMimeType: 'application/json',
-                  },
-                }),
-              }
+                model: 'claude-sonnet-4-6',
+                max_tokens: 8192,
+                temperature: 0,
+                system: 'You are a bookkeeping assistant. Respond with ONLY a JSON array. No markdown fences, no explanation, no preamble.',
+                // No assistant prefill — claude-sonnet-4-6 rejects it with a
+                // 400 ("the conversation must end with a user message").
+                messages: [{ role: 'user', content: prompt }],
+              },
             );
 
-            const geminiData = await geminiRes.json();
-            const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!ai.ok) {
+              aiError = ai.raw || ai.friendly || 'AI call failed';
+              console.error('[categorize-transactions] AI failed:', aiError);
+              break;   // a key/billing problem will not fix itself on the next batch
+            }
+
+            const raw = ai.data?.content?.[0]?.text ?? '';
+            // Tolerate a fence or stray prose around the array.
+            const match = raw.match(/\[[\s\S]*\]/);
+            const text = match ? match[0] : '';
 
             if (text) {
               const results = JSON.parse(text);
@@ -213,7 +231,8 @@ Return ONLY a JSON array with this structure for each transaction:
               }
             }
           } catch (e) {
-            console.error('Gemini categorization error:', e);
+            aiError = (e as Error).message;
+            console.error('[categorize-transactions] AI batch failed:', aiError);
           }
         }
       }
