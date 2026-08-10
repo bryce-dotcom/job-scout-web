@@ -19,6 +19,9 @@ import {
 } from 'lucide-react'
 import { toast } from '../lib/toast'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
+import {
+  isTransferCategory, resolveIsTransfer, transferFields, needsCategories,
+} from '../../supabase/functions/_shared/transferRule.ts'
 
 // Single source of truth for the Tax Category dropdown (IRS Form 1065 lines).
 // Used in the transaction edit modal and wherever Tax Category picking happens.
@@ -922,6 +925,10 @@ export default function Books() {
   const handleConfirmTxn = async (txnId) => {
     const category = txnEditCategory
     const taxCategory = txnEditTaxCategory
+    // The checkbox and the dropdown's "Transfer (between accounts)" are the
+    // same statement. Resolve once, here, so validation and the write can never
+    // disagree about which one counts.
+    const isTransfer = resolveIsTransfer({ category, flagged: txnEditIsTransfer })
     const txnRow = plaidTransactions.find(t => t.id === txnId)
     const txnAbs = Math.abs(parseFloat(txnRow?.amount) || 0)
 
@@ -935,7 +942,7 @@ export default function Books() {
         return
       }
       if (plaidSplits.some(l => !l.category_id)) { toast.error('Every split line needs a category'); return }
-    } else if (!txnEditIsTransfer) {
+    } else if (needsCategories({ category, flagged: txnEditIsTransfer })) {
       // Both category and tax category are required for non-split path —
       // EXCEPT a transfer between your own accounts, which is neither income
       // nor an expense and has no honest answer for either dropdown.
@@ -955,13 +962,13 @@ export default function Books() {
 
     const updates = {
       confirmed: true,
-      is_transfer: txnEditIsTransfer,
+      is_transfer: isTransfer,
       // When splits are on, the parent's single category is meaningless — null
       // it so the rollup knows to look at expense_splits rows instead.
       // A transfer carries no categories either: leaving a stale one behind
       // would put it back into the P&L the moment someone filtered by it.
-      user_category: (plaidSplitsEnabled || txnEditIsTransfer) ? null : category,
-      user_tax_category: (plaidSplitsEnabled || txnEditIsTransfer) ? null : taxCategory,
+      user_category: (plaidSplitsEnabled || isTransfer) ? null : category,
+      user_tax_category: (plaidSplitsEnabled || isTransfer) ? null : taxCategory,
     }
     if (txnEditNotes) updates.notes = txnEditNotes
     // Set job_id to first allocation for backward compat
@@ -2054,6 +2061,14 @@ export default function Books() {
                               if (val && !existingTax && match?.default_tax_category) {
                                 updates.user_tax_category = match.default_tax_category
                               }
+                              // Picking Transfer here means exactly what ticking
+                              // the box in the modal means — is_transfer is the
+                              // only field the reports read.
+                              if (isTransferCategory(val)) {
+                                Object.assign(updates, transferFields({ category: val }))
+                              } else if (txn.is_transfer) {
+                                updates.is_transfer = false   // moved off Transfer
+                              }
                               await supabase.from('plaid_transactions').update(updates).eq('id', txn.id)
                               await fetchPlaidTransactions()
                             }}
@@ -2555,8 +2570,15 @@ export default function Books() {
                         }}>
                           <input
                             type="checkbox"
-                            checked={txnEditIsTransfer}
-                            onChange={(e) => setTxnEditIsTransfer(e.target.checked)}
+                            // Reflects the dropdown too, so the box never says
+                            // "no" while the category above it says Transfer.
+                            checked={resolveIsTransfer({ category: txnEditCategory, flagged: txnEditIsTransfer })}
+                            onChange={(e) => {
+                              setTxnEditIsTransfer(e.target.checked)
+                              // Unticking has to be able to win, so clear the
+                              // dropdown that would otherwise re-tick it.
+                              if (!e.target.checked && isTransferCategory(txnEditCategory)) setTxnEditCategory('')
+                            }}
                             style={{ marginTop: '2px', width: '16px', height: '16px', accentColor: theme.accent }}
                           />
                           <span style={{ fontSize: '13px', color: theme.text }}>

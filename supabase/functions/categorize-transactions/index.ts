@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAnthropic } from "../_shared/anthropic.ts";
+import { resolveIsTransfer } from "../_shared/transferRule.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -259,7 +260,11 @@ Return ONLY a JSON array with this structure for each transaction:
                   ai_tax_category: result.tax_category,
                   ai_form_1065_line: result.form_1065_line,
                   ai_confidence: result.confidence,
-                  is_transfer: result.is_transfer || false,
+                  // The model answers in two fields that can disagree — it says
+                  // category "Transfer" and leaves is_transfer false. Reports
+                  // read only the flag, so resolve them the same way the screen
+                  // does or the AI quietly recreates the 48-row hole by hand.
+                  is_transfer: resolveIsTransfer({ category: result.category, flagged: result.is_transfer }),
                   ai_job_id: result.job_id || null,
                   ai_job_confidence: result.job_confidence || null,
                 }).eq('id', result.id);
