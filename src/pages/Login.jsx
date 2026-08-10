@@ -2,55 +2,30 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
-import { Eye, EyeOff } from 'lucide-react'
+import { PLANS } from '../lib/billingPlans'
+import { Eye, EyeOff, Check, ArrowRight } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
 
-// Job Scout Theme - Light Topo
+// Storefront palette (matches /pricing) so the signup flows straight out of the
+// marketing page without a plain-form cliff. Green = structure, hi-vis orange =
+// the money CTA.
 const theme = {
-  bg: '#f7f5ef',
-  bgCard: '#ffffff',
-  bgCardHover: '#eef2eb',
-  border: '#d6cdb8',
-  text: '#2c3530',
-  textSecondary: '#4d5a52',
-  textMuted: '#7d8a7f',
-  accent: '#5a6349',
-  accentHover: '#4a5239',
-  accentBg: 'rgba(90,99,73,0.12)',
+  bg: '#f4efe3',
+  bgCard: '#fffdf7',
+  bgCardHover: '#f0ebdd',
+  border: '#d9cfb6',
+  text: '#191d15',
+  textSecondary: '#4f5a4a',
+  textMuted: '#848a79',
+  accent: '#54613a',
+  accentHover: '#3a4526',
+  accentBg: 'rgba(84,97,58,0.10)',
+  hivis: '#f26a12',
+  hivisHover: '#c9530a',
+  night: '#161b12',
   shadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
-  shadowLg: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.08)'
+  shadowLg: '0 14px 40px -18px rgba(25,29,21,0.35)',
 }
-
-// SVG Topo Map Pattern - subtle tan contour lines
-const TopoBackground = () => (
-  <svg
-    style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      width: '100%',
-      height: '100%',
-      opacity: 0.06,
-      pointerEvents: 'none'
-    }}
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <defs>
-      <pattern id="topoPatternLogin" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
-        <path d="M0,40 Q30,20 60,35 Q100,55 140,30 Q180,10 200,40" fill="none" stroke="#c4b59a" strokeWidth="1" />
-        <path d="M0,70 Q50,50 100,70 T200,70" fill="none" stroke="#c4b59a" strokeWidth="1" />
-        <path d="M0,100 Q25,80 50,95 Q80,115 120,85 Q160,55 200,100" fill="none" stroke="#c4b59a" strokeWidth="1" />
-        <path d="M0,130 Q40,110 80,125 Q130,145 170,115 Q200,90 200,130" fill="none" stroke="#c4b59a" strokeWidth="1" />
-        <path d="M0,160 Q60,140 100,160 T200,160" fill="none" stroke="#c4b59a" strokeWidth="1" />
-        <path d="M0,190 Q35,170 70,185 Q110,200 150,175 Q200,150 200,190" fill="none" stroke="#c4b59a" strokeWidth="1" />
-        <path d="M40,0 Q25,50 40,100 Q55,150 40,200" fill="none" stroke="#c4b59a" strokeWidth="0.8" />
-        <path d="M100,0 Q85,40 100,80 Q115,120 100,160 Q85,200 100,200" fill="none" stroke="#c4b59a" strokeWidth="0.8" />
-        <path d="M160,0 Q175,50 160,100 Q145,150 160,200" fill="none" stroke="#c4b59a" strokeWidth="0.8" />
-      </pattern>
-    </defs>
-    <rect width="100%" height="100%" fill="url(#topoPatternLogin)" />
-  </svg>
-)
 
 // Google "G" Icon SVG
 const GoogleIcon = () => (
@@ -70,11 +45,12 @@ export default function Login() {
   const checkDeveloperStatus = useStore((state) => state.checkDeveloperStatus)
 
   // Modes: signin, beta-signup, forgot-password.
-  // Deep-link: /login?signup=1 (e.g. from the /pricing page) opens signup.
-  const [mode, setMode] = useState(() => {
-    try { return new URLSearchParams(window.location.search).get('signup') ? 'beta-signup' : 'signin' }
-    catch { return 'signin' }
-  })
+  // Deep-link: /login?signup=1&plan=field_pro (from /pricing) opens signup with
+  // the chosen plan shown.
+  const params = (() => { try { return new URLSearchParams(window.location.search) } catch { return new URLSearchParams() } })()
+  const [mode, setMode] = useState(params.get('signup') ? 'beta-signup' : 'signin')
+  const selectedPlan = PLANS.find((p) => p.id === params.get('plan')) || null
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -98,17 +74,13 @@ export default function Login() {
       return { success: false, error: 'No account found for this email. Contact your administrator.' }
     }
 
-    // Filter to those with valid companies
     const withCompany = employees.filter(e => e.company)
     if (withCompany.length === 0) {
       await supabase.auth.signOut()
       return { success: false, error: 'Company not found. Contact your administrator.' }
     }
 
-    // If multiple companies, use the most recent (highest id)
-    // Default to the earliest company (the one actively in use)
     const employee = withCompany.sort((a, b) => a.company_id - b.company_id)[0]
-
     return { success: true, employee, company: employee.company }
   }
 
@@ -137,7 +109,6 @@ export default function Login() {
 
       setUser(result.employee)
       setCompany(result.company)
-      // Don't await these — let them run in background so login isn't blocked
       checkDeveloperStatus().catch(() => {})
       supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
       navigate(result.company.setup_complete === false ? '/onboarding' : '/')
@@ -177,6 +148,7 @@ export default function Login() {
         body: {
           email, password, companyName,
           inviteCode: inviteCode.trim().toUpperCase(),
+          plan: selectedPlan?.id || null,
           tosAccepted: true,
           tosVersion: 'v1-2026-05-07',
         }
@@ -195,7 +167,6 @@ export default function Login() {
         return
       }
 
-      // Auto-sign in
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
 
       if (signInError) {
@@ -270,301 +241,232 @@ export default function Login() {
   }
 
   const inputStyle = {
-    width: '100%',
-    padding: '14px 16px',
-    backgroundColor: theme.bg,
-    border: `1px solid ${theme.border}`,
-    borderRadius: '10px',
-    color: theme.text,
-    fontSize: '15px',
-    outline: 'none',
-    transition: 'all 0.15s ease',
-    boxSizing: 'border-box'
+    width: '100%', padding: '14px 16px', backgroundColor: theme.bg,
+    border: `1px solid ${theme.border}`, borderRadius: '11px', color: theme.text,
+    fontSize: '15px', outline: 'none', transition: 'all 0.15s ease', boxSizing: 'border-box',
+    fontFamily: 'inherit',
   }
+  const labelStyle = { display: 'block', marginBottom: '8px', fontSize: '13.5px', fontWeight: 600, color: theme.textSecondary }
+  const onFocus = (e) => { e.target.style.borderColor = theme.hivis; e.target.style.boxShadow = `0 0 0 3px ${theme.vizBg || 'rgba(242,106,18,0.12)'}` }
+  const onBlur = (e) => { e.target.style.borderColor = theme.border; e.target.style.boxShadow = 'none' }
 
-  const labelStyle = {
-    display: 'block',
-    marginBottom: '8px',
-    fontSize: '14px',
-    fontWeight: '500',
-    color: theme.textSecondary
-  }
-
-  const onFocus = (e) => {
-    e.target.style.borderColor = theme.accent
-    e.target.style.boxShadow = `0 0 0 3px ${theme.accentBg}`
-  }
-
-  const onBlur = (e) => {
-    e.target.style.borderColor = theme.border
-    e.target.style.boxShadow = 'none'
-  }
+  // Primary (hi-vis) button — the money CTA.
+  const primaryBtn = (disabled) => ({
+    width: '100%', padding: '15px', backgroundColor: disabled ? theme.textMuted : theme.hivis,
+    color: '#fff', border: 'none', borderRadius: '11px', fontSize: '15.5px', fontWeight: 700,
+    cursor: (loading || disabled) ? 'not-allowed' : 'pointer', opacity: loading ? 0.75 : 1,
+    transition: 'all 0.15s ease', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+  })
 
   const getTitle = () => {
     switch (mode) {
-      case 'beta-signup': return 'Start Your Beta Trial'
-      case 'forgot-password': return 'Reset Password'
-      default: return 'Sign in to your account'
+      case 'beta-signup': return selectedPlan ? `Start your ${selectedPlan.name} trial` : 'Start your free trial'
+      case 'forgot-password': return 'Reset your password'
+      default: return 'Welcome back'
+    }
+  }
+  const getSub = () => {
+    switch (mode) {
+      case 'beta-signup': return '30 days free · no card required · cancel anytime'
+      case 'forgot-password': return 'We’ll email you a reset link'
+      default: return 'Sign in to your JobScout account'
     }
   }
 
-  return (
+  const money = (n) => '$' + (Number(n) || 0).toLocaleString()
+
+  // ── Brand panel (desktop) — dark, on-brand, shows what they’re signing up for.
+  const brandPanel = (
     <div style={{
-      minHeight: '100dvh',
-      backgroundColor: theme.bg,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: isMobile ? '16px' : '24px',
-      position: 'relative'
+      flex: '1 1 46%', maxWidth: 560, background: theme.night, color: '#f4efe3',
+      padding: '48px 44px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      position: 'relative', overflow: 'hidden',
+      backgroundImage: 'radial-gradient(120% 80% at 100% 0%, rgba(242,106,18,0.16), transparent 55%), radial-gradient(rgba(255,255,255,0.05) 0.6px, transparent 0.6px)',
+      backgroundSize: 'auto, 20px 20px',
     }}>
-      <TopoBackground />
-
-      <div style={{
-        width: '100%',
-        maxWidth: '420px',
-        position: 'relative',
-        zIndex: 1
-      }}>
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <img
-            src="/Scout_LOGO_GUY.png"
-            alt="Job Scout"
-            style={{ width: '100px', height: '100px', objectFit: 'contain', marginBottom: '16px' }}
-          />
-          <h1 style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: '700', color: theme.accent, marginBottom: '8px', letterSpacing: '-0.02em' }}>
-            Job Scout
-          </h1>
-          <p style={{ fontSize: '15px', color: theme.textMuted }}>
-            {getTitle()}
-          </p>
+      <div style={{ position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 850, fontSize: 20, letterSpacing: '-0.02em' }}>
+          <img src="/Scout_LOGO_GUY.png" alt="JobScout" style={{ height: 40, width: 'auto', display: 'block' }} />
+          JobScout
         </div>
-
-        {/* Card */}
-        <div style={{
-          backgroundColor: theme.bgCard,
-          borderRadius: '16px',
-          padding: isMobile ? '20px' : '32px',
-          border: `1px solid ${theme.border}`,
-          boxShadow: theme.shadowLg
-        }}>
-          {error && (
-            <div style={{
-              marginBottom: '20px', padding: '14px 16px',
-              backgroundColor: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)',
-              borderRadius: '10px', color: '#b91c1c', fontSize: '14px'
-            }}>
-              {error}
-            </div>
-          )}
-
-          {message && (
-            <div style={{
-              marginBottom: '20px', padding: '14px 16px',
-              backgroundColor: theme.accentBg, border: `1px solid ${theme.accent}30`,
-              borderRadius: '10px', color: theme.accent, fontSize: '14px'
-            }}>
-              {message}
-            </div>
-          )}
-
-          {/* ============ SIGN IN MODE ============ */}
-          {mode === 'signin' && (
-            <>
-              <form onSubmit={handleSignIn}>
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={labelStyle}>Email</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@company.com" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
-                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                    Use the email your admin invited you with
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={labelStyle}>Password</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)}
-                      required minLength={6} placeholder="Enter password"
-                      style={{ ...inputStyle, paddingRight: '48px' }} onFocus={onFocus} onBlur={onBlur}
-                    />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', padding: '4px' }}>
-                      {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Forgot Password Link */}
-                <div style={{ textAlign: 'right', marginBottom: '20px' }}>
-                  <button type="button" onClick={() => switchMode('forgot-password')} style={{ background: 'none', border: 'none', color: theme.accent, cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>
-                    Forgot password?
-                  </button>
-                </div>
-
-                <button type="submit" disabled={loading} style={{
-                  width: '100%', padding: '14px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: '600',
-                  cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, transition: 'all 0.15s ease'
-                }}
-                  onMouseEnter={(e) => { if (!loading) e.currentTarget.style.backgroundColor = theme.accentHover }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = theme.accent }}
-                >
-                  {loading ? 'Signing in...' : 'Sign In'}
-                </button>
-              </form>
-
-              {/* Divider */}
-              <div style={{ display: 'flex', alignItems: 'center', margin: '24px 0', gap: '16px' }}>
-                <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
-                <span style={{ fontSize: '13px', color: theme.textMuted }}>or</span>
-                <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
-              </div>
-
-              {/* Google OAuth Button */}
-              <button onClick={handleGoogleOAuth} style={{
-                width: '100%', padding: '14px', backgroundColor: '#fff', color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '10px', fontSize: '15px', fontWeight: '500',
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', transition: 'all 0.15s ease', boxSizing: 'border-box'
-              }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f8f8f8'; e.currentTarget.style.borderColor = theme.textMuted }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#fff'; e.currentTarget.style.borderColor = theme.border }}
-              >
-                <GoogleIcon />
-                Sign in with Google
-              </button>
-
-              {/* Switch to Beta Signup */}
-              <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '14px', color: theme.textMuted }}>
-                Don't have an account?{' '}
-                <button type="button" onClick={() => switchMode('beta-signup')} style={{ background: 'none', border: 'none', color: theme.accent, cursor: 'pointer', fontWeight: '500', fontSize: '14px' }}>
-                  Start free beta trial
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* ============ BETA SIGNUP MODE ============ */}
-          {mode === 'beta-signup' && (
-            <>
-              <form onSubmit={handleBetaSignup}>
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={labelStyle}>Invite Code <span style={{ color: theme.textMuted, fontWeight: 400 }}>(optional)</span></label>
-                  <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="Have an invite code? Enter it here" style={{ ...inputStyle, textTransform: 'uppercase', letterSpacing: '0.05em' }} onFocus={onFocus} onBlur={onBlur} />
-                </div>
-
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={labelStyle}>Company Name</label>
-                  <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} required placeholder="Your company name" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
-                </div>
-
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={labelStyle}>Email</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@company.com" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
-                </div>
-
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={labelStyle}>Password</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)}
-                      required minLength={6} placeholder="Create a password"
-                      style={{ ...inputStyle, paddingRight: '48px' }} onFocus={onFocus} onBlur={onBlur}
-                    />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', padding: '4px' }}>
-                      {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={labelStyle}>Confirm Password</label>
-                  <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={6} placeholder="Confirm password" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
-                </div>
-
-                <label style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 10,
-                  marginBottom: 18, padding: 12, borderRadius: 10,
-                  backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
-                  cursor: 'pointer', userSelect: 'none',
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={tosAccepted}
-                    onChange={(e) => setTosAccepted(e.target.checked)}
-                    style={{ marginTop: 3, accentColor: theme.accent, cursor: 'pointer', width: 16, height: 16, flexShrink: 0 }}
-                    required
-                  />
-                  <span style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 1.5 }}>
-                    I agree to the{' '}
-                    <a href="/terms" target="_blank" rel="noreferrer" style={{ color: theme.accent, fontWeight: 600 }}>
-                      Terms of Service
-                    </a>{' '}
-                    and{' '}
-                    <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: theme.accent, fontWeight: 600 }}>
-                      Privacy Policy
-                    </a>
-                    .
-                  </span>
-                </label>
-
-                <button type="submit" disabled={loading || !tosAccepted} style={{
-                  width: '100%', padding: '14px',
-                  backgroundColor: tosAccepted ? theme.accent : theme.textMuted,
-                  color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: '600',
-                  cursor: (loading || !tosAccepted) ? 'not-allowed' : 'pointer',
-                  opacity: loading ? 0.7 : 1, transition: 'all 0.15s ease'
-                }}
-                  onMouseEnter={(e) => { if (!loading && tosAccepted) e.currentTarget.style.backgroundColor = theme.accentHover }}
-                  onMouseLeave={(e) => { if (tosAccepted) e.currentTarget.style.backgroundColor = theme.accent }}
-                >
-                  {loading ? 'Creating your account...' : 'Create Account & Start Trial'}
-                </button>
-              </form>
-
-              <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '14px', color: theme.textMuted }}>
-                Already have an account?{' '}
-                <button type="button" onClick={() => switchMode('signin')} style={{ background: 'none', border: 'none', color: theme.accent, cursor: 'pointer', fontWeight: '500', fontSize: '14px' }}>
-                  Sign in
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* ============ FORGOT PASSWORD MODE ============ */}
-          {mode === 'forgot-password' && (
-            <>
-              <div style={{ marginBottom: '16px', fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5' }}>
-                Enter the email address you use to sign in. First time? Use "Forgot password" to set one up.
-              </div>
-              <form onSubmit={handleForgotPassword}>
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={labelStyle}>Email</label>
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@company.com" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
-                </div>
-
-                <button type="submit" disabled={loading} style={{
-                  width: '100%', padding: '14px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: '600',
-                  cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, transition: 'all 0.15s ease'
-                }}
-                  onMouseEnter={(e) => { if (!loading) e.currentTarget.style.backgroundColor = theme.accentHover }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = theme.accent }}
-                >
-                  {loading ? 'Sending...' : 'Send Reset Link'}
-                </button>
-              </form>
-
-              <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '14px', color: theme.textMuted }}>
-                <button type="button" onClick={() => switchMode('signin')} style={{ background: 'none', border: 'none', color: theme.accent, cursor: 'pointer', fontWeight: '500', fontSize: '14px' }}>
-                  Back to sign in
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        <p style={{ textAlign: 'center', marginTop: '24px', fontSize: '13px', color: theme.textMuted }}>
-          Powered by OG DiX Apps Annex
+        <h2 style={{ fontSize: 34, fontWeight: 850, letterSpacing: '-0.03em', lineHeight: 1.05, margin: '48px 0 0', maxWidth: '14ch', textWrap: 'balance' }}>
+          Put the whole crew to work today.
+        </h2>
+        <p style={{ color: '#cfcbba', fontSize: 15.5, margin: '16px 0 0', maxWidth: '34ch', lineHeight: 1.5 }}>
+          The entire back office in one login — plus an AI workforce that quotes, prospects, and closes the books.
         </p>
+        <div style={{ marginTop: 26, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {['Live in an afternoon', 'Import your customers in one click', 'Runs offline in the field'].map((tp) => (
+            <div key={tp} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14.5, color: '#e2ddce' }}>
+              <span style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(143,191,106,0.16)', color: '#8fbf6a', display: 'grid', placeItems: 'center', flexShrink: 0 }}><Check size={13} /></span>
+              {tp}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {selectedPlan && mode === 'beta-signup' && (
+        <div style={{ position: 'relative', marginTop: 36, padding: '18px 20px', borderRadius: 16, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)' }}>
+          <div style={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#ffb27a' }}>You’re starting</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginTop: 6 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{selectedPlan.name}</div>
+            <div style={{ fontSize: 15, color: '#cfcbba' }}><b style={{ color: '#fff', fontSize: 20 }}>{money(selectedPlan.monthly_price)}</b>/mo</div>
+          </div>
+          <div style={{ fontSize: 12.5, color: '#a9ad9c', marginTop: 4 }}>Free for 30 days, then {money(selectedPlan.monthly_price)}/mo. Change or cancel anytime.</div>
+        </div>
+      )}
+    </div>
+  )
+
+  const errBox = error && (
+    <div style={{ marginBottom: 18, padding: '13px 15px', backgroundColor: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.22)', borderRadius: 11, color: '#b91c1c', fontSize: 14 }}>{error}</div>
+  )
+  const msgBox = message && (
+    <div style={{ marginBottom: 18, padding: '13px 15px', backgroundColor: theme.accentBg, border: `1px solid ${theme.accent}30`, borderRadius: 11, color: theme.accent, fontSize: 14 }}>{message}</div>
+  )
+
+  return (
+    <div style={{ minHeight: '100dvh', background: theme.bg, display: 'flex', fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', color: theme.text }}>
+      {!isMobile && brandPanel}
+
+      {/* Form side */}
+      <div style={{ flex: '1 1 54%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobile ? '28px 18px' : '40px' }}>
+        <div style={{ width: '100%', maxWidth: 430 }}>
+          {/* Mobile brand header */}
+          {isMobile && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 850, fontSize: 19, marginBottom: 22 }}>
+              <img src="/Scout_LOGO_GUY.png" alt="JobScout" style={{ height: 34, width: 'auto' }} /> JobScout
+            </div>
+          )}
+
+          {/* Mobile plan chip */}
+          {isMobile && selectedPlan && mode === 'beta-signup' && (
+            <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 12, background: theme.night, color: '#f4efe3', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div><span style={{ fontSize: 11, color: '#ffb27a' }}>Starting</span><div style={{ fontWeight: 800, fontSize: 16 }}>{selectedPlan.name}</div></div>
+              <div style={{ fontSize: 13, color: '#cfcbba' }}><b style={{ color: '#fff', fontSize: 17 }}>{money(selectedPlan.monthly_price)}</b>/mo · 30-day trial</div>
+            </div>
+          )}
+
+          <h1 style={{ fontSize: isMobile ? 25 : 30, fontWeight: 850, letterSpacing: '-0.03em', margin: 0, textWrap: 'balance' }}>{getTitle()}</h1>
+          <p style={{ fontSize: 14.5, color: theme.textMuted, margin: '8px 0 24px' }}>{getSub()}</p>
+
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: 18, padding: isMobile ? '20px' : '28px', border: `1px solid ${theme.border}`, boxShadow: theme.shadowLg }}>
+            {errBox}
+            {msgBox}
+
+            {/* ============ SIGN IN ============ */}
+            {mode === 'signin' && (
+              <>
+                <form onSubmit={handleSignIn}>
+                  <div style={{ marginBottom: 18 }}>
+                    <label style={labelStyle}>Email</label>
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@company.com" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
+                  </div>
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={labelStyle}>Password</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} placeholder="Enter password" style={{ ...inputStyle, paddingRight: 48 }} onFocus={onFocus} onBlur={onBlur} />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', padding: 4 }}>
+                        {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', marginBottom: 20 }}>
+                    <button type="button" onClick={() => switchMode('forgot-password')} style={{ background: 'none', border: 'none', color: theme.accent, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Forgot password?</button>
+                  </div>
+                  <button type="submit" disabled={loading} style={primaryBtn(false)}>{loading ? 'Signing in…' : 'Sign in'} {!loading && <ArrowRight size={17} />}</button>
+                </form>
+
+                <div style={{ display: 'flex', alignItems: 'center', margin: '22px 0', gap: 16 }}>
+                  <div style={{ flex: 1, height: 1, backgroundColor: theme.border }} />
+                  <span style={{ fontSize: 13, color: theme.textMuted }}>or</span>
+                  <div style={{ flex: 1, height: 1, backgroundColor: theme.border }} />
+                </div>
+
+                <button onClick={handleGoogleOAuth} style={{ width: '100%', padding: 14, backgroundColor: '#fff', color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 11, fontSize: 15, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxSizing: 'border-box' }}>
+                  <GoogleIcon /> Sign in with Google
+                </button>
+
+                <div style={{ marginTop: 22, textAlign: 'center', fontSize: 14, color: theme.textMuted }}>
+                  New to JobScout?{' '}
+                  <button type="button" onClick={() => switchMode('beta-signup')} style={{ background: 'none', border: 'none', color: theme.hivis, cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>Start a free trial</button>
+                </div>
+              </>
+            )}
+
+            {/* ============ SIGN UP ============ */}
+            {mode === 'beta-signup' && (
+              <>
+                <form onSubmit={handleBetaSignup}>
+                  <div style={{ marginBottom: 18 }}>
+                    <label style={labelStyle}>Company name</label>
+                    <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} required placeholder="Your company name" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
+                  </div>
+                  <div style={{ marginBottom: 18 }}>
+                    <label style={labelStyle}>Work email</label>
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@company.com" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+                    <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                      <label style={labelStyle}>Password</label>
+                      <div style={{ position: 'relative' }}>
+                        <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} placeholder="Create password" style={{ ...inputStyle, paddingRight: 44 }} onFocus={onFocus} onBlur={onBlur} />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', padding: 4 }}>
+                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                      <label style={labelStyle}>Confirm</label>
+                      <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={6} placeholder="Confirm password" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: 18 }}>
+                    <label style={labelStyle}>Invite code <span style={{ color: theme.textMuted, fontWeight: 400 }}>(optional)</span></label>
+                    <input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="Have one? Enter it" style={{ ...inputStyle, textTransform: 'uppercase', letterSpacing: '0.05em' }} onFocus={onFocus} onBlur={onBlur} />
+                  </div>
+
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 18, padding: 12, borderRadius: 11, backgroundColor: theme.bg, border: `1px solid ${theme.border}`, cursor: 'pointer', userSelect: 'none' }}>
+                    <input type="checkbox" checked={tosAccepted} onChange={(e) => setTosAccepted(e.target.checked)} style={{ marginTop: 3, accentColor: theme.hivis, cursor: 'pointer', width: 16, height: 16, flexShrink: 0 }} required />
+                    <span style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 1.5 }}>
+                      I agree to the <a href="/terms" target="_blank" rel="noreferrer" style={{ color: theme.accent, fontWeight: 600 }}>Terms of Service</a> and <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: theme.accent, fontWeight: 600 }}>Privacy Policy</a>.
+                    </span>
+                  </label>
+
+                  <button type="submit" disabled={loading || !tosAccepted} style={primaryBtn(!tosAccepted)}>
+                    {loading ? 'Creating your account…' : 'Create account & start trial'} {!loading && <ArrowRight size={17} />}
+                  </button>
+                </form>
+
+                <div style={{ marginTop: 22, textAlign: 'center', fontSize: 14, color: theme.textMuted }}>
+                  Already have an account?{' '}
+                  <button type="button" onClick={() => switchMode('signin')} style={{ background: 'none', border: 'none', color: theme.accent, cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>Sign in</button>
+                </div>
+              </>
+            )}
+
+            {/* ============ FORGOT PASSWORD ============ */}
+            {mode === 'forgot-password' && (
+              <>
+                <div style={{ marginBottom: 16, fontSize: 13, color: theme.textSecondary, lineHeight: 1.5 }}>
+                  Enter the email you use to sign in. First time? Use this to set a password.
+                </div>
+                <form onSubmit={handleForgotPassword}>
+                  <div style={{ marginBottom: 18 }}>
+                    <label style={labelStyle}>Email</label>
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@company.com" style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
+                  </div>
+                  <button type="submit" disabled={loading} style={primaryBtn(false)}>{loading ? 'Sending…' : 'Send reset link'}</button>
+                </form>
+                <div style={{ marginTop: 22, textAlign: 'center', fontSize: 14, color: theme.textMuted }}>
+                  <button type="button" onClick={() => switchMode('signin')} style={{ background: 'none', border: 'none', color: theme.accent, cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>Back to sign in</button>
+                </div>
+              </>
+            )}
+          </div>
+
+          <p style={{ textAlign: 'center', marginTop: 22, fontSize: 12.5, color: theme.textMuted }}>Powered by OG DiX · Apps Annex</p>
+        </div>
       </div>
     </div>
   )
