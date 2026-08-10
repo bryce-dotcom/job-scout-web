@@ -1028,14 +1028,17 @@ export default function Books() {
     toast.success('Transaction confirmed')
   }
 
+  // Everything a transaction needs before it can be confirmed. A transfer needs
+  // NOTHING — it has no honest category or tax category — so requiring both
+  // left every transfer permanently unconfirmable and permanently counted as
+  // "missing categories".
+  const isFullyReviewed = (t) => {
+    if (resolveIsTransfer({ category: t.user_category || t.ai_category, flagged: t.is_transfer })) return true
+    return Boolean((t.user_category || t.ai_category) && (t.user_tax_category || t.ai_tax_category))
+  }
+
   const handleConfirmAll = async () => {
-    // Only confirm transactions that have BOTH category and tax category
-    const unreviewed = plaidTransactions.filter(t => {
-      if (t.confirmed) return false
-      const hasCat = t.user_category || t.ai_category
-      const hasTax = t.user_tax_category || t.ai_tax_category
-      return hasCat && hasTax
-    })
+    const unreviewed = plaidTransactions.filter(t => !t.confirmed && isFullyReviewed(t))
     if (unreviewed.length === 0) {
       toast.error('No fully categorized transactions to confirm (need both expense & tax category)')
       return
@@ -1043,13 +1046,23 @@ export default function Books() {
     // Set user_category/user_tax_category from AI if not already user-set
     for (const t of unreviewed) {
       const updates = { confirmed: true }
-      if (!t.user_category && t.ai_category) updates.user_category = t.ai_category
-      if (!t.user_tax_category && t.ai_tax_category) updates.user_tax_category = t.ai_tax_category
+      if (resolveIsTransfer({ category: t.user_category || t.ai_category, flagged: t.is_transfer })) {
+        // Promote it to a real transfer and drop the categories, exactly as
+        // confirming it one at a time now does.
+        Object.assign(updates, transferFields({ flagged: true }))
+      } else {
+        if (!t.user_category && t.ai_category) updates.user_category = t.ai_category
+        if (!t.user_tax_category && t.ai_tax_category) updates.user_tax_category = t.ai_tax_category
+      }
       if (!t.job_id && t.ai_job_id) updates.job_id = t.ai_job_id
       await supabase.from('plaid_transactions').update(updates).eq('id', t.id)
     }
     await fetchPlaidTransactions()
-    const skipped = plaidTransactions.filter(t => !t.confirmed && !(t.user_category || t.ai_category) || !(t.user_tax_category || t.ai_tax_category)).length
+    // Was `!confirmed && !hasCat || !hasTax`, which binds as
+    // `(!confirmed && !hasCat) || !hasTax` — so every already-confirmed row
+    // without a tax category counted as skipped, and after this change that
+    // would have meant every transfer in the account.
+    const skipped = plaidTransactions.filter(t => !t.confirmed && !isFullyReviewed(t)).length
     toast.success(`Confirmed ${unreviewed.length} transactions${skipped > 0 ? ` (${skipped} skipped — missing categories)` : ''}`)
   }
 
