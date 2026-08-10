@@ -25,8 +25,19 @@ const env = Object.fromEntries(
 const sb = createClient(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 const WRITE = process.argv.includes('--write')
 const APPROVE = process.argv.includes('--approve')
+// Which estimates to touch. A write MUST name them: the report surfaces ~500
+// rows, most of them long-standing drift that other surfaces already ignore,
+// and looping over the report would be a 500-row blind write to fix six.
+const idsArg = process.argv.indexOf('--ids')
+const ONLY_IDS = idsArg >= 0
+  ? String(process.argv[idsArg + 1] || '').split(',').map(s => Number(s.trim())).filter(Boolean)
+  : []
 if (WRITE && !APPROVE) {
   console.log('\n  --write needs --approve too. These drive the pipeline and dashboard; refusing.\n')
+  process.exit(1)
+}
+if (WRITE && ONLY_IDS.length === 0) {
+  console.log('\n  --write needs --ids too. Refusing to rewrite every row in the report.\n')
   process.exit(1)
 }
 
@@ -87,14 +98,17 @@ for (const r of rows.slice(0, 25)) {
 if (rows.length > 25) console.log(`  ... and ${rows.length - 25} more`)
 
 if (WRITE) {
-  console.log('')
-  for (const r of rows) {
+  const targets = rows.filter(r => ONLY_IDS.includes(r.q.id))
+  const missing = ONLY_IDS.filter(id => !rows.some(r => r.q.id === id))
+  if (missing.length) console.log(`\n  NOT in the mismatch list, skipping: ${missing.join(', ')}`)
+  console.log(`\n  repairing ${targets.length} of ${rows.length} reported:`)
+  for (const r of targets) {
     const { error } = await sb.from('quotes')
       .update({ quote_amount: Math.round(r.sum * 100) / 100, updated_at: new Date().toISOString() })
       .eq('id', r.q.id).eq('company_id', 3)
     console.log(error ? `  FAILED ${r.q.id}: ${error.message}` : `  ${r.q.id}: $${r.stored.toFixed(0)} -> $${r.sum.toFixed(0)}`)
   }
-  console.log('\n  Done. Every value now equals the sum of that estimate\'s own lines.\n')
+  console.log('\n  Done. Only the named estimates were touched.\n')
 } else {
   console.log('\n  Report only. Re-run with --write --approve to set each to its line sum.\n')
 }
