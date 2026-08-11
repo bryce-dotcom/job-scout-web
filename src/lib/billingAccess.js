@@ -4,8 +4,16 @@
 // database (public.company_can_write — see the trial_readonly_write_gate
 // migration): a lapsed/canceled tenant's INSERT/UPDATE/DELETE are rejected
 // server-side no matter what the UI does. This module is the UI mirror of
-// that rule — it lets pages disable Save/Create buttons and show a clear
-// "read-only" message instead of letting a write fail with a raw RLS error.
+// that rule, meant to let pages disable Save/Create buttons before a write is
+// attempted.
+//
+// NOT WIRED UP: useBillingAccess() is currently called by no page. What
+// actually protects a locked-out customer is lib/writeGate.js, which turns the
+// database's refusal into a sentence about billing wherever an error surfaces.
+// That is global, so unlike per-page button-disabling it cannot be forgotten on
+// a new page — which is exactly how this hook ended up unused. Reach for the
+// hook only to make a screen read as read-only BEFORE someone clicks; do not
+// assume it is guarding anything today.
 //
 // Keep READ_ONLY_STATUSES in sync with company_can_write() in that migration.
 
