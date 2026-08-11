@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { writeErrorMessage } from '../lib/writeGate'
 import { MessageSquare, X, Bug, Lightbulb, HelpCircle, Star, Send, CheckCircle, Inbox, Mail, Clock } from 'lucide-react'
 
 const FEEDBACK_TYPES = [
@@ -134,7 +135,10 @@ export default function FeedbackButton() {
         closeModal()
       }, 2000)
     } catch (err) {
-      alert('Error submitting feedback: ' + err.message)
+      // Never show a policy name to someone trying to reach us. Feedback is no
+      // longer gated by the trial, so this should not fire — but if any write
+      // is refused, the person still gets a sentence they can act on.
+      alert(writeErrorMessage(err, 'Error submitting feedback: '))
     } finally {
       setSubmitting(false)
     }

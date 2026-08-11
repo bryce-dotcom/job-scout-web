@@ -1,4 +1,6 @@
 // Simple toast notification store
+import { friendlyWriteError } from './writeGate'
+
 let listeners = []
 let toasts = []
 let toastId = 0
@@ -37,7 +39,12 @@ export const toast = {
     return toastStore.addToast({ type: 'success', message, ...options })
   },
   error(message, options = {}) {
-    return toastStore.addToast({ type: 'error', message, duration: 5000, ...options })
+    // Hundreds of call sites do toast.error('Failed to save: ' + err.message).
+    // When the account is read-only after a trial ends, that leaks the RLS
+    // policy name and never mentions billing — so translate here, once, rather
+    // than editing every one of them. Ordinary errors pass through untouched.
+    const friendly = friendlyWriteError(message)
+    return toastStore.addToast({ type: 'error', message: friendly || message, duration: 5000, ...options })
   },
   info(message, options = {}) {
     return toastStore.addToast({ type: 'info', message, ...options })
