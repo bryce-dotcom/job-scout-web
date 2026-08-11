@@ -668,17 +668,29 @@ export const useStore = create(
         const cached = await offlineDb.getAll('expenses');
         if (cached.length > 0 && get().expenses.length === 0) set({ expenses: cached });
 
-        // Network refresh
+        // Network refresh — paginate (Supabase caps a single request at 1000
+        // rows). Manual expenses are light for most tenants today, but the
+        // default ceiling would silently truncate a busy year, so loop like
+        // fetchPayments/fetchInvoices for safety.
         try {
-          const { data, error } = await supabase
-            .from(TABLES.expenses)
-            .select(QUERIES.expenses)
-            .eq('company_id', companyId)
-            .order('date', { ascending: false });
-
-          if (!error) {
-            set({ expenses: data || [] });
-            await offlineDb.putAll('expenses', data || []);
+          let allData = [];
+          let from = 0;
+          const PAGE = 1000;
+          while (true) {
+            const { data, error } = await supabase
+              .from(TABLES.expenses)
+              .select(QUERIES.expenses)
+              .eq('company_id', companyId)
+              .order('date', { ascending: false })
+              .range(from, from + PAGE - 1);
+            if (error) break;
+            allData = allData.concat(data || []);
+            if (!data || data.length < PAGE) break;
+            from += PAGE;
+          }
+          if (allData.length > 0) {
+            set({ expenses: allData });
+            await offlineDb.putAll('expenses', allData);
           }
         } catch (e) {
           console.log('[fetchExpenses] Offline, using cache');
@@ -1658,17 +1670,30 @@ export const useStore = create(
         const { companyId } = get();
         if (!companyId) return;
 
+        // Paginate like fetchPayments/fetchInvoices. Supabase caps a single
+        // request at 1000 rows, and the old `.limit(500)` silently held only
+        // the newest 500 bank transactions — so for a high-volume tenant
+        // (e.g. HHH) the year's earlier expenses AND bank deposits dropped
+        // off, undercounting every YTD expense/P&L number and the cash
+        // reconciliation. Loop until a short page so the full history loads.
+        const SELECT = '*, account:connected_accounts(id, account_name, mask, institution_name), job:jobs!plaid_transactions_job_id_fkey(id, job_title, customer:customers!customer_id(id, name)), ai_job:jobs!plaid_transactions_ai_job_id_fkey(id, job_title, customer:customers!customer_id(id, name))';
         try {
-          const { data, error } = await supabase
-            .from('plaid_transactions')
-            .select('*, account:connected_accounts(id, account_name, mask, institution_name), job:jobs!plaid_transactions_job_id_fkey(id, job_title, customer:customers!customer_id(id, name)), ai_job:jobs!plaid_transactions_ai_job_id_fkey(id, job_title, customer:customers!customer_id(id, name))')
-            .eq('company_id', companyId)
-            .order('date', { ascending: false })
-            .limit(500);
-
-          if (!error) {
-            set({ plaidTransactions: data || [] });
+          let allData = [];
+          let from = 0;
+          const PAGE = 1000;
+          while (true) {
+            const { data, error } = await supabase
+              .from('plaid_transactions')
+              .select(SELECT)
+              .eq('company_id', companyId)
+              .order('date', { ascending: false })
+              .range(from, from + PAGE - 1);
+            if (error) break;
+            allData = allData.concat(data || []);
+            if (!data || data.length < PAGE) break;
+            from += PAGE;
           }
+          if (allData.length > 0) set({ plaidTransactions: allData });
         } catch (e) {
           console.log('[fetchPlaidTransactions] Offline');
         }
