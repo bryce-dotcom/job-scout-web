@@ -17,7 +17,12 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    const { email, password, companyName, inviteCode, tosAccepted, tosVersion } = await req.json();
+    const { email, password, companyName, inviteCode, tosAccepted, tosVersion, plan } = await req.json();
+
+    // The plan the customer picked on /pricing (deep-linked as ?plan=…). Validate
+    // against the real tiers; fall back to Field Crew if missing/unknown.
+    const VALID_TIERS = ['field_crew', 'field_pro', 'field_boss'];
+    const tier = VALID_TIERS.includes(plan) ? plan : 'field_crew';
 
     if (!email || !password || !companyName) {
       return new Response(JSON.stringify({ error: 'Email, password, and company name are required' }),
@@ -83,9 +88,9 @@ serve(async (req) => {
         tos_accepted_at: new Date().toISOString(),
         tos_version: tosVersion || 'v1-2026-05-07',
         tos_accepted_ip: acceptedIp,
-        // Start a 30-day Field Crew trial. The Settings → Billing UI
-        // upgrades them to Pro/Boss + saves a card before the trial ends.
-        subscription_tier: 'field_crew',
+        // Start a 30-day trial on the plan they chose on /pricing (defaults to
+        // Field Crew). Settings → Billing saves a card before the trial ends.
+        subscription_tier: tier,
         billing_status:    'trialing',
         trial_ends_at:     new Date(Date.now() + 30 * 86400 * 1000).toISOString(),
         billing_email:     email,
