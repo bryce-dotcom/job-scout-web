@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { isReadOnlyGate, isPermissionError, friendlyWriteError, writeErrorMessage } from './writeGate'
+import { READ_ONLY_WRITE_REASON } from './billingMessages'
 
 // The exact string Antonio's tester was shown.
 const ANTONIO = {
@@ -12,15 +13,21 @@ describe('the error a locked-out account actually gets', () => {
     expect(isReadOnlyGate(ANTONIO)).toBe(true)
   })
 
-  it('explains the trial instead of naming a policy', () => {
+  it('explains the billing stop instead of naming a policy', () => {
     const msg = writeErrorMessage(ANTONIO)
-    expect(msg).toMatch(/trial has ended/i)
+    expect(msg).toMatch(/trial/i)
     expect(msg).toMatch(/read-only/i)
     expect(msg).not.toMatch(/require_writable|row-level|policy|feedback/i)
   })
 
   it('says the data is still there — that is the actual worry', () => {
     expect(writeErrorMessage(ANTONIO)).toMatch(/still here/i)
+  })
+
+  // Pinned to the shared constant, not to a phrasing: the banner and a refused
+  // write must keep saying the same thing, but either may be reworded.
+  it('uses the wording billingMessages owns, so the banner cannot disagree', () => {
+    expect(writeErrorMessage(ANTONIO)).toBe(READ_ONLY_WRITE_REASON)
   })
 
   it('still catches it if the policy gets renamed', () => {
@@ -50,7 +57,7 @@ describe('the shape call sites actually pass', () => {
   it('translates a concatenated string', () => {
     const asToastSees = 'Failed to save job: ' + ANTONIO.message
     expect(isReadOnlyGate(asToastSees)).toBe(true)
-    expect(friendlyWriteError(asToastSees)).toMatch(/trial has ended/i)
+    expect(friendlyWriteError(asToastSees)).toBe(READ_ONLY_WRITE_REASON)
   })
 
   it('leaves an ordinary toast string alone', () => {

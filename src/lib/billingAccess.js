@@ -13,19 +13,14 @@ import { useEffect, useState } from 'react'
 import { useStore } from './store'
 import { supabase } from './supabase'
 
-// Hard billing stops → read-only. 'past_due' is intentionally NOT here:
-// a paying customer whose card just failed keeps a grace period (the
-// banner nags them) rather than being locked out mid-work.
-export const READ_ONLY_STATUSES = ['trial_expired', 'canceled']
-
-export function isReadOnlyStatus(status) {
-  return READ_ONLY_STATUSES.includes(status)
-}
-
-const READ_ONLY_REASON = {
-  trial_expired: 'Your free trial has ended. Pick a plan to start editing again — your data is safe and still here.',
-  canceled: 'Your subscription is canceled. Re-subscribe to start editing again — your data is safe and still here.',
-}
+// The statuses and the wording live in billingMessages.js — a leaf module, so
+// that a refused write can share them without pulling React and the supabase
+// client in behind it. Re-exported here because this is where callers look.
+export {
+  READ_ONLY_STATUSES, READ_ONLY_REASON, READ_ONLY_WRITE_REASON,
+  isReadOnlyStatus, readOnlyReason,
+} from './billingMessages'
+import { isReadOnlyStatus, readOnlyReason } from './billingMessages'
 
 // Reactive access state for the current company. Mirrors the DB gate so the
 // UI can prevent writes it knows will be rejected. Fails OPEN (writable)
@@ -59,6 +54,6 @@ export function useBillingAccess() {
     billingStatus,
     loading,
     readOnly,
-    reason: readOnly ? (READ_ONLY_REASON[billingStatus] || 'This account is read-only.') : null,
+    reason: readOnly ? readOnlyReason(billingStatus) : null,
   }
 }

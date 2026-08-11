@@ -12,7 +12,11 @@
 // renewing, and it is the first thing a prospective customer sees at exactly
 // the moment we are asking them to pay.
 //
-// One translation, used everywhere an error reaches a person.
+// One translation, used everywhere an error reaches a person. The WORDING is
+// owned by billingAccess.js alongside the banner's, so a refused write and the
+// banner above it can never tell the customer two different stories.
+
+import { READ_ONLY_WRITE_REASON } from './billingMessages'
 
 /** Postgres insufficient_privilege — what RLS raises when a policy refuses. */
 const RLS_CODE = '42501'
@@ -42,10 +46,7 @@ export function isPermissionError(err) {
  * reported as-is, so this never swallows a real message.
  */
 export function friendlyWriteError(err) {
-  if (isReadOnlyGate(err)) {
-    return 'Your trial has ended, so the account is read-only. Everything is still here — ' +
-      'renew from Settings › Billing to start making changes again.'
-  }
+  if (isReadOnlyGate(err)) return READ_ONLY_WRITE_REASON
   if (isPermissionError(err)) {
     return "You don't have access to change this. Ask an admin on your team if you think you should."
   }
