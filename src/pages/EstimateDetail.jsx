@@ -6569,7 +6569,7 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
               border: `1px solid ${theme.border}`,
             }}>
               <p style={{ fontSize: '13px', fontWeight: '600', color: theme.text, margin: '0 0 6px' }}>
-                Interactive Proposal
+                Interactive Quote
               </p>
               {(() => {
                 // Stale-layout detection: if the estimate was updated AFTER
@@ -7391,7 +7391,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                   }}>
                     <FileText size={36} color={theme.textMuted} style={{ marginBottom: '12px' }} />
                     <p style={{ color: theme.text, fontWeight: '600', fontSize: '16px', margin: '0 0 6px' }}>
-                      Create Interactive Proposal
+                      Create Interactive Quote
                     </p>
                     <p style={{ color: theme.textMuted, fontSize: '13px', margin: '0 0 16px', lineHeight: 1.6, maxWidth: '360px', marginLeft: 'auto', marginRight: 'auto' }}>
                       AI will write compelling copy for each section based on your line items and estimate details.

@@ -9,12 +9,12 @@ describe('the button says what is actually being sent', () => {
   // reported it as the link not showing savings.
   it('names the mode, not the generic word', () => {
     expect(sendButtonLabel('pdf')).toBe('Send Regular Estimate')
-    expect(sendButtonLabel('interactive')).toBe('Send Interactive Proposal')
+    expect(sendButtonLabel('interactive')).toBe('Send Interactive Quote')
     expect(sendButtonLabel('formal')).toBe('Send Formal Proposal')
   })
 
   it('switches to resend once it has gone out', () => {
-    expect(sendButtonLabel('interactive', true)).toBe('Resend Interactive Proposal')
+    expect(sendButtonLabel('interactive', true)).toBe('Resend Interactive Quote')
     expect(sendButtonLabel('pdf', true)).toBe('Resend Regular Estimate')
   })
 
