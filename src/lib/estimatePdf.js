@@ -301,7 +301,7 @@ function drawEstimate(doc, { estimate, lineItems, company, brand, logo, settings
   y = drawTable(doc, lineItems, settings, y, m, cw, pw, ph)
 
   // ── Totals ──
-  y = drawTotals(doc, estimate, lineItems, y, m, pw, ph)
+  y = drawTotals(doc, estimate, lineItems, y, m, pw, ph, settings)
 
   // ── Notes (after totals, before footer) ──
   if (estimate.notes) {
@@ -500,7 +500,7 @@ function drawTable(doc, lineItems, settings, startY, m, cw, pw, ph) {
 }
 
 // ─── Totals section ─────────────────────────────────────────────
-function drawTotals(doc, estimate, lineItems, startY, m, pw, ph) {
+function drawTotals(doc, estimate, lineItems, startY, m, pw, ph, settings) {
   let y = startY + 4
 
   if (y > ph - 50) { doc.addPage(); y = m }
@@ -596,7 +596,15 @@ function drawTotals(doc, estimate, lineItems, startY, m, pw, ph) {
   // (passed through from EstimateDetail). If neither is set, the line
   // is hidden.
   // Same rule as both proposal surfaces — lib/annualSavings.
-  const annualSavings = resolveAnnualSavings(estimate)
+  //
+  // Whether it appears at all is now a SETTING, because two reps want opposite
+  // things: Noah asked for savings on the PDF, and Bryce wants the regular
+  // estimate to be a price document — incentive yes, savings no, "a quote, not
+  // a pitch". Defaults to Bryce's rule; Noah turns it back on rather than
+  // being silently overridden. The interactive proposal carries the full case
+  // either way, so nobody loses the argument, they just pick a mode.
+  const showSavings = settings?.estimate_pdf_show_savings === true
+  const annualSavings = showSavings ? resolveAnnualSavings(estimate) : 0
   if (annualSavings > 0) {
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')

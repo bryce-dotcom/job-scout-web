@@ -5,6 +5,7 @@ import { quoteWriteDecision, WRITE, quoteSummary } from '../lib/quoteTotal'
 import { withAssets } from '../lib/productAssets'
 import { publicSheet } from '../lib/specScrub'
 import { buildSpecSheetPdf, imageToDataUrl } from '../lib/specSheetPdf'
+import { proposalMode, sendButtonLabel, proposalModeOptions } from '../lib/proposalModes'
 import { findMatchingCustomer } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { RecordHistoryButton } from '../components/RecordHistory'
@@ -4586,12 +4587,17 @@ function EstimateDetailInner() {
                   cursor: saving ? 'not-allowed' : 'pointer',
                   opacity: saving ? 0.6 : 1
                 }}
-                title={estimate.status === 'Sent'
-                  ? 'Re-send this proposal with the latest line items / changes'
-                  : 'Send proposal to customer for the first time'}
+                title={proposalMode(getEffectiveSettings().presentation_mode).blurb}
               >
                 <Send size={18} />
-                {estimate.last_sent_at || estimate.status === 'Sent' ? 'Resend Proposal' : 'Send Proposal'}
+                {/* Names the MODE, not the generic word. It said "Send
+                    Proposal" for all three, so a rep could not tell which one
+                    the customer would get — and 79 of 110 sends went as the
+                    bare document while the interactive one sat unused. */}
+                {sendButtonLabel(
+                  getEffectiveSettings().presentation_mode,
+                  !!(estimate.last_sent_at || estimate.status === 'Sent'),
+                )}
               </button>
 
               {/* Formal Legal Proposal — reuses the Create Proposal preview+send modal
@@ -6447,10 +6453,38 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
               onChange={(e) => setLocalSettings(prev => ({ ...prev, presentation_mode: e.target.value }))}
               style={inputStyle}
             >
-              <option value="pdf">PDF Document</option>
-              <option value="interactive">Interactive Proposal</option>
-              <option value="formal">Formal Legal Proposal</option>
+              {proposalModeOptions().map(m => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
             </select>
+            {/* Always say what the selected mode carries. The difference
+                between these is the whole reason a rep picks one, and it was
+                never stated on the screen where the choice is made. */}
+            <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0', lineHeight: 1.5 }}>
+              {proposalMode(localSettings.presentation_mode).blurb}
+            </p>
+
+            {/* Only meaningful on the regular estimate — the other two always
+                carry the full case. Off by default: it is a price document.
+                Noah asked for savings on the PDF and Bryce wants them off, so
+                it is a switch rather than one of them losing. */}
+            {(localSettings.presentation_mode || 'pdf') === 'pdf' && (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '10px', cursor: 'pointer', minHeight: '32px' }}>
+                <input
+                  type="checkbox"
+                  checked={localSettings.estimate_pdf_show_savings === true}
+                  onChange={(e) => setLocalSettings(prev => ({ ...prev, estimate_pdf_show_savings: e.target.checked }))}
+                  style={{ marginTop: '3px', width: '16px', height: '16px', accentColor: theme.accent }}
+                />
+                <span style={{ fontSize: '13px', color: theme.text }}>
+                  Also show annual savings and payback
+                  <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                    Off by default — the regular estimate is a price document. The utility incentive always shows.
+                  </span>
+                </span>
+              </label>
+            )}
+
             {localSettings.presentation_mode === 'interactive' && (
               <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0', lineHeight: 1.5 }}>
                 Customer portal will show an animated, chart-rich scrolling proposal instead of the standard view.
@@ -7124,7 +7158,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
               </div>
             ) : (
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>
-                {mode === 'formal' ? 'Send Formal Proposal' : mode === 'interactive' ? 'Send Proposal' : 'Send Estimate'}
+                {sendButtonLabel(mode)}
               </h2>
             )}
           </div>
@@ -7593,7 +7627,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
                 }}>
                 <Mail size={16} />
-                {sendingEmail ? 'Sending...' : (mode === 'formal' ? 'Send Formal Proposal' : mode === 'interactive' ? 'Send Proposal' : 'Send Email')}
+                {sendingEmail ? 'Sending...' : sendButtonLabel(mode)}
               </button>
             </div>
           </div>
