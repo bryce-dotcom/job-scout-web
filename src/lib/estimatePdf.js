@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf'
 import { resolveAnnualSavings } from './annualSavings'
+import { sanitizeValueSection } from './valueClaims'
 
 // ─── Design tokens ──────────────────────────────────────────────
 const C = {
@@ -302,6 +303,16 @@ function drawEstimate(doc, { estimate, lineItems, company, brand, logo, settings
 
   // ── Totals ──
   y = drawTotals(doc, estimate, lineItems, y, m, pw, ph, settings)
+
+  // ── Additional considerations (after totals, clearly separate) ──
+  //
+  // Noah's value section, on the regular estimate too. Deliberately BELOW the
+  // totals and under its own heading with a rule above it: these are reasons
+  // to do the work, not part of the priced scope, and the layout has to say so
+  // without anyone having to read carefully. The claims are already filtered
+  // by lib/valueClaims — no figure on a tax claim, property claims stated as
+  // typical rather than promised.
+  y = drawValueSection(doc, settings, y, m, pw, ph, cw)
 
   // ── Notes (after totals, before footer) ──
   if (estimate.notes) {
@@ -758,4 +769,85 @@ function drawEnvelopePage(doc, { estimate, company, brand, logo, settings, m, pw
   // Bottom accent
   doc.setFillColor(...C.primary)
   doc.rect(0, ph - 3, pw, 3, 'F')
+}
+
+// Additional considerations — why the project is worth doing beyond the price.
+//
+// Rendered under its own heading, below the totals, with a rule above it, so
+// nobody can mistake it for part of the priced scope. That separation is the
+// condition on which this belongs on a quote at all: the claims persuade, and
+// they must not read as things being sold.
+//
+// Claims come from the proposal layout the rep generated, and were already
+// sanitised by lib/valueClaims — a tax claim never carries a figure and always
+// carries the advisor line; property claims are typical cases with a basis,
+// never promises. Nothing is drawn if no layout has been generated.
+function drawValueSection(doc, settings, startY, m, pw, ph, cw) {
+  let y = startY
+  if (settings?.include_value_section === false) return y
+
+  const section = sanitizeValueSection(
+    (settings?.proposal_layout?.sections || []).find(s => s?.type === 'added_value')
+  )
+  if (!section) return y
+
+  const need = 30 + section.claims.length * 16
+  if (y + need > ph - 30) { doc.addPage(); y = m }
+
+  y += 8
+  doc.setDrawColor(...C.border)
+  doc.setLineWidth(0.4)
+  doc.line(m, y, pw - m, y)
+  y += 7
+
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(...C.primaryDk)
+  doc.text((section.heading || 'Additional Considerations').toUpperCase(), m, y)
+  y += 4
+
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'italic')
+  doc.setTextColor(...C.light)
+  doc.text('Not part of the priced scope', m, y)
+  y += 6
+
+  for (const c of section.claims) {
+    if (y + 16 > ph - 30) { doc.addPage(); y = m }
+    doc.setFontSize(9.5)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...C.text)
+    doc.text(c.title, m, y)
+    y += 4.5
+
+    doc.setFontSize(8.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...C.muted)
+    for (const line of doc.splitTextToSize(c.detail, cw)) {
+      if (y + 4 > ph - 30) { doc.addPage(); y = m }
+      doc.text(line, m, y)
+      y += 4
+    }
+
+    // The basis is what keeps a claim defensible, so it travels with it.
+    if (c.basis) {
+      doc.setFontSize(7.5)
+      doc.setFont('helvetica', 'italic')
+      doc.setTextColor(...C.light)
+      for (const line of doc.splitTextToSize(c.basis, cw)) {
+        doc.text(line, m, y)
+        y += 3.5
+      }
+    }
+    if (c.disclaimer) {
+      doc.setFontSize(7.5)
+      doc.setFont('helvetica', 'italic')
+      doc.setTextColor(...C.light)
+      doc.text(c.disclaimer, m, y)
+      y += 3.5
+    }
+    y += 2.5
+  }
+
+  return y
 }

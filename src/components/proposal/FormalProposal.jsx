@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import SignatureModal from './SignatureModal'
 import { buildDefaultTerms, sha256Hex } from './formalProposalDefaults'
+import { sanitizeValueSection } from '../../lib/valueClaims'
 import { getCustomerPrimary, getCustomerSecondary } from '../../lib/customerDisplay'
 import { resolveAnnualSavings } from '../../lib/annualSavings'
 
@@ -282,6 +283,48 @@ export default function FormalProposal({
             </div>
           )}
         </section>
+
+        {/* Additional considerations — Noah's value section, on the contract
+            too but held deliberately OUTSIDE the priced scope and above the
+            terms, in a bordered block that says what it is.
+
+            The separation is the condition on which this belongs here at all.
+            A persuasive claim sitting above a signature line stops being
+            marketing and becomes something the company has contracted on, so
+            it is set apart visually AND labelled. Claims arrive pre-filtered
+            by lib/valueClaims — no figure on a tax claim, property claims
+            stated as typical with a basis rather than promised — and are
+            re-filtered here because a layout saved weeks ago predates the
+            filter. */}
+        {(() => {
+          const layout = data?.document?.settings_overrides?.proposal_layout
+          if (data?.document?.settings_overrides?.include_value_section === false) return null
+          const value = sanitizeValueSection((layout?.sections || []).find(s => s?.type === 'added_value'))
+          if (!value) return null
+          return (
+            <section style={{ marginBottom: 24 }}>
+              <div style={{
+                border: '1px solid #d6cdb8', borderRadius: 8, padding: '16px 18px', background: '#faf9f5',
+              }}>
+                <div style={{ fontSize: 11, color: '#7d8a7f', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>
+                  Additional considerations · not part of the priced scope
+                </div>
+                <h2 style={{ ...styles.sectionHeading, marginTop: 0 }}>{value.heading}</h2>
+                {value.content && (
+                  <p style={{ fontSize: 13, color: '#4d5a52', lineHeight: 1.6, margin: '0 0 12px' }}>{value.content}</p>
+                )}
+                {value.claims.map((c, i) => (
+                  <div key={i} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#2c3530' }}>{c.title}</div>
+                    <div style={{ fontSize: 12.5, color: '#4d5a52', lineHeight: 1.55 }}>{c.detail}</div>
+                    {c.basis && <div style={{ fontSize: 11, color: '#7d8a7f', fontStyle: 'italic' }}>{c.basis}</div>}
+                    {c.disclaimer && <div style={{ fontSize: 11, color: '#7d8a7f', fontStyle: 'italic' }}>{c.disclaimer}</div>}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )
+        })()}
 
         {/* Terms & Conditions */}
         <section style={{ marginBottom: 24 }}>

@@ -6410,8 +6410,13 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
                 working under it. Written per project type when the layout is
                 generated, so a window-cleaning job argues appearance while a
                 retrofit argues light quality and property value. */}
-            {localSettings.presentation_mode === 'interactive' && (
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '10px', cursor: 'pointer', minHeight: '32px' }}>
+            {/* Applies to ALL THREE now. On the regular estimate and the
+                contract it renders as a clearly separated block headed
+                "Additional considerations", outside the priced scope — on the
+                contract that separation matters, because a persuasive claim
+                above a signature line stops being marketing and becomes
+                something you have contracted on. */}
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '10px', cursor: 'pointer', minHeight: '32px' }}>
                 <input
                   type="checkbox"
                   checked={localSettings.include_value_section !== false}
@@ -6423,10 +6428,10 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
                   <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
                     Property value, tenants, appearance, safety and tax treatment — chosen to fit this
                     project. Tax is stated as eligibility to confirm with their advisor, never a figure.
+                    Shown on all three, separated from the priced scope.
                   </span>
                 </span>
               </label>
-            )}
 
             {localSettings.presentation_mode === 'interactive' && (
               <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0', lineHeight: 1.5 }}>
