@@ -6350,6 +6350,9 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
           total: lineItems?.reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0) || 0,
           utility_incentive: estimate?.utility_incentive || 0,
           discount: estimate?.discount || 0,
+          // Noah: show owners what the project does beyond the power bill.
+          // On unless a rep turns it off.
+          include_value_section: localSettings?.include_value_section !== false,
           manual_annual_savings: estimate?.manual_annual_savings || 0,
           audit_data: auditData,
           audit_areas_data: auditAreasData,
@@ -6480,6 +6483,29 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
                   Also show annual savings and payback
                   <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
                     Off by default — the regular estimate is a price document. The utility incentive always shows.
+                  </span>
+                </span>
+              </label>
+            )}
+
+            {/* Noah's ask: owners buy for reasons beyond the power bill —
+                what it does to the building, to tenants, to the people
+                working under it. Written per project type when the layout is
+                generated, so a window-cleaning job argues appearance while a
+                retrofit argues light quality and property value. */}
+            {localSettings.presentation_mode === 'interactive' && (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '10px', cursor: 'pointer', minHeight: '32px' }}>
+                <input
+                  type="checkbox"
+                  checked={localSettings.include_value_section !== false}
+                  onChange={(e) => setLocalSettings(prev => ({ ...prev, include_value_section: e.target.checked }))}
+                  style={{ marginTop: '3px', width: '16px', height: '16px', accentColor: theme.accent }}
+                />
+                <span style={{ fontSize: '13px', color: theme.text }}>
+                  Include the value beyond savings
+                  <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                    Property value, tenants, appearance, safety and tax treatment — chosen to fit this
+                    project. Tax is stated as eligibility to confirm with their advisor, never a figure.
                   </span>
                 </span>
               </label>
@@ -7004,6 +7030,9 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
           total: lineItems?.reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0) || 0,
           utility_incentive: estimate?.utility_incentive || 0,
           discount: estimate?.discount || 0,
+          // Noah: show owners what the project does beyond the power bill.
+          // On unless a rep turns it off.
+          include_value_section: settings?.include_value_section !== false,
           user_direction: direction || '',
           existing_layout: direction && direction !== '__fresh__' && proposalLayout ? proposalLayout : null,
           manual_annual_savings: estimate?.manual_annual_savings || 0,

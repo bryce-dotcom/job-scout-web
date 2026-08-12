@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callAnthropic } from "../_shared/anthropic.ts";
+import { sanitizeValueSection } from "../_shared/valueClaims.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -27,6 +28,7 @@ serve(async (req) => {
       include_tiers,
       eos_data,
       manual_annual_savings,
+      include_value_section,
     } = await req.json();
 
     const totalNum = parseFloat(total) || 0;
@@ -35,6 +37,12 @@ serve(async (req) => {
     const manualSavingsNum = parseFloat(manual_annual_savings) || 0;
     const isFresh = user_direction === '__fresh__';
     const hasDirection = !isFresh && user_direction && user_direction.trim().length > 0;
+    // Noah's ask: show building owners what the project does beyond the power
+    // bill. On unless a rep turns it off — the reasons people actually buy are
+    // rarely only the savings, and an opt-in nobody discovers is the same as
+    // not building it (79 of 110 sends never switched to the interactive mode
+    // for exactly that reason).
+    const includeValueSection = include_value_section !== false;
     const hasExisting = existing_layout && existing_layout.sections;
     const hasAudit = audit_data && audit_data.annual_savings_kwh > 0;
     // Canonical annual savings: manual override (set by user on the estimate) wins over audit.
@@ -240,6 +248,26 @@ Return ONLY valid JSON (no markdown fences):
       { "id": "better", "name": "descriptive name", "price": <good price + warranty & value-add cost>, "net_price": <price - ${incentiveNum.toFixed(2)} (SAME incentive)>, "description": "base scope + 2-year extended warranty + value-adds like recycling old fixtures, priority scheduling", "features": ["everything in Good", "2-Year Extended Warranty", "Old Fixture Recycling & Disposal", "Priority Scheduling"]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} },
       { "id": "best", "name": "descriptive name", "price": <better price + premium extras cost>, "net_price": <price - ${incentiveNum.toFixed(2)} (SAME incentive)>, "description": "the premium experience — 3-year warranty, remote monitoring, everything in Better plus more", "features": ["everything in Better", "3-Year Extended Warranty", "Remote Monitoring", "Annual Maintenance Check", "Emergency Priority Service"]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} }
     ] },` : ''}
+    ${includeValueSection ? `{ "type": "added_value", "heading": "a heading about what this does for their BUILDING and their PEOPLE, not their power bill", "content": "1-2 sentences on why owners do this even before the savings", "claims": [
+      { "kind": "one of: property_value | tax | rentability | appearance | productivity | safety | maintenance | comfort | compliance", "title": "short label", "detail": "2 sentences, concrete and specific to THIS project type and THIS customer", "basis": "where the claim comes from — REQUIRED for property_value and rentability" }
+    ] },
+    /* PICK 3-5 CLAIMS THAT FIT THE ACTUAL WORK, and only those an owner of THIS
+       building would care about. A lighting retrofit argues property value,
+       light quality and how people work under it. Window cleaning argues
+       appearance, tenant impression and glass longevity. Pressure washing
+       argues kerb appeal, slip safety and surface life. Fleet work argues
+       uptime and driver safety. Do not list all nine.
+
+       HARD RULES — these print on a document the customer signs:
+       - NEVER put a dollar amount or a percentage on a TAX claim. Eligibility
+         depends on their tax position. Say they may qualify and to confirm
+         with their own advisor.
+       - NEVER promise a property value or rent increase. Describe what owners
+         TYPICALLY see and give the basis it rests on.
+       - The words guaranteed, will increase, is worth are forbidden. Write
+         typically, commonly, often.
+       - Emotional is good. Invented is not. If a claim cannot be supported,
+         leave it out. */` : ''}
     { "type": "team" },
     { "type": "approval", "cta_text": "Approve & Schedule", "content": "create urgency — pricing, scheduling, incentive deadlines, seasonal timing. Make them feel like waiting costs money." }
   ]${hasAudit ? `,
@@ -292,6 +320,17 @@ Be specific to ${customer_name} and this project. Generic copy = lost deal. Sell
     // produced anyway. The prompt forbids it, but a prompt is a request, not a
     // guarantee — and the cost of the model ignoring it is a fabricated energy
     // promise printed on a proposal under the company's logo. Belt and braces.
+    // ENFORCEMENT: the value section becomes part of a signed document, and
+    // the model wrote it. No figure may sit on a tax claim, and property/rent
+    // claims must be ranges rather than promises. Filtered here as well as at
+    // render time, so a layout saved today cannot leak tomorrow.
+    if (Array.isArray(proposalLayout.sections)) {
+      proposalLayout.sections = proposalLayout.sections
+        .map((s: Record<string, unknown>) =>
+          s?.type === 'added_value' ? sanitizeValueSection(s) : s)
+        .filter(Boolean);
+    }
+
     if (!hasRealSavings && proposalLayout.sections) {
       const before = proposalLayout.sections.length;
       proposalLayout.sections = proposalLayout.sections.filter(

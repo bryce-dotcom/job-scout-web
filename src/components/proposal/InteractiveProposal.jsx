@@ -5,6 +5,8 @@ import SolutionSection from './SolutionSection'
 import CostBreakdownSection from './CostBreakdownSection'
 import SavingsSection from './SavingsSection'
 import ROISection from './ROISection'
+import AddedValueSection from './AddedValueSection'
+import { sanitizeValueSection } from '../../lib/valueClaims'
 import PricingTiersSection from './PricingTiersSection'
 import ApprovalSection from './ApprovalSection'
 import ProposalSection from './ProposalSection'
@@ -371,6 +373,16 @@ export default function InteractiveProposal({
                 </p>
               </div>
             </ProposalSection>
+          </div>
+        )
+
+      case 'added_value':
+        // Sanitised at generation time; sanitised AGAIN here because an older
+        // stored layout predates the filter and a customer must never see an
+        // unfiltered tax figure just because it was saved last week.
+        return (
+          <div key={index}>
+            <AddedValueSection section={sanitizeValueSection(section)} />
           </div>
         )
 
