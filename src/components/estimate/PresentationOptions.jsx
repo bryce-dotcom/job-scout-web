@@ -29,6 +29,7 @@ export default function PresentationOptions({
   currentMode,
   alreadySent = false,
   saving = false,
+  busy = false,        // an AI call is running before the modal opens
   generatingPdf = false,
   pdfUrl = null,
   notice = null,     // one-line warning shown above the rows
@@ -94,7 +95,7 @@ export default function PresentationOptions({
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 onClick={() => onSend?.(m.id)}
-                disabled={saving}
+                disabled={saving || busy}
                 style={{
                   flex: 1,
                   minWidth: '150px',
@@ -113,7 +114,10 @@ export default function PresentationOptions({
                 title={m.blurb}
               >
                 <Send size={15} />
-                {sendButtonLabel(m.id, alreadySent && isActive)}
+                {/* Say what is happening. Generating the value section takes a
+                    handful of seconds before the modal opens, and a button
+                    that just goes dead reads as the app having frozen. */}
+                {busy ? 'Preparing…' : sendButtonLabel(m.id, alreadySent && isActive)}
               </button>
 
               {/* Only the plain estimate has a file to look at or keep. The

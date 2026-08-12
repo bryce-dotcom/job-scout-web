@@ -2561,6 +2561,11 @@ function EstimateDetailInner() {
   }
 
   // Settings save — updates local state immediately without triggering a full reload
+  // Shared with SettingsModal so the layout can also be generated automatically
+  // on first send — the claims are written per estimate, and a rep should not
+  // have to know a button exists on another screen.
+  const [generatingLayout, setGeneratingLayout] = useState(false)
+
   const saveSettingsOverrides = async (newSettings, { silent } = {}) => {
     await updateQuote(id, { settings_overrides: newSettings, updated_at: new Date().toISOString() })
     if (silent) {
@@ -2569,6 +2574,117 @@ function EstimateDetailInner() {
     } else {
       await fetchEstimateData()
     }
+  }
+
+  const generateProposalLayout = async ({ forceInteractive = true, silent = false } = {}) => {
+    const base = getEffectiveSettings()
+    const customer = estimate?.customer || estimate?.lead || null
+    setGeneratingLayout(true)
+    try {
+      const brandName = estimate?.business_unit || company?.company_name || ''
+
+      // Fetch audit data if linked
+      let auditData = null
+      let auditAreasData = null
+      if (estimate?.audit_id) {
+        const { data: audit } = await supabase
+          .from('lighting_audits')
+          .select('*')
+          .eq('id', estimate.audit_id)
+          .single()
+        if (audit) {
+          auditData = {
+            annual_savings_kwh: audit.annual_savings_kwh || 0,
+            annual_savings_dollars: audit.annual_savings_dollars || 0,
+            electric_rate: audit.electric_rate || 0,
+            operating_hours: audit.operating_hours || 0,
+            operating_days: audit.operating_days || 0,
+            total_existing_watts: audit.total_existing_watts || 0,
+            total_proposed_watts: audit.total_proposed_watts || 0,
+            watts_reduced: audit.watts_reduced || 0,
+            total_fixtures: audit.total_fixtures || 0,
+            estimated_rebate: audit.estimated_rebate || 0,
+          }
+          const { data: areas } = await supabase
+            .from('audit_areas')
+            .select('*')
+            .eq('audit_id', estimate.audit_id)
+          if (areas?.length) {
+            auditAreasData = areas.map(a => ({
+              area_name: a.area_name || a.name || 'Area',
+              fixture_count: a.fixture_count || 0,
+              existing_wattage: a.existing_wattage || 0,
+              led_wattage: a.led_wattage || 0,
+              total_existing_watts: a.total_existing_watts || 0,
+              total_led_watts: a.total_led_watts || 0,
+              area_watts_reduced: a.area_watts_reduced || 0,
+              ceiling_height: a.ceiling_height || '',
+              fixture_category: a.fixture_category || '',
+              // Bryce flagged (May 19): product detail not pulling through.
+              // Proposal showed area name only, not the LED product chosen.
+              // Lenard stores it in override_notes ("SBE Product: …") and
+              // led_replacement_id (link to products_services). Pass both.
+              lighting_type: a.lighting_type || '',
+              led_replacement_id: a.led_replacement_id || null,
+              override_notes: a.override_notes || '',
+              area_rebate_estimate: a.area_rebate_estimate || 0,
+            }))
+          }
+        }
+      }
+
+      // Get proposal notes
+      const storeSettings = useStore.getState().settings || []
+      const defaultsSetting = storeSettings.find(s => s.key === 'estimate_defaults')
+      let proposalNotes = ''
+      if (defaultsSetting) {
+        try {
+          const parsed = JSON.parse(defaultsSetting.value)
+          proposalNotes = parsed.proposal_notes || ''
+        } catch {}
+      }
+
+      const { error, data } = await supabase.functions.invoke('generate-proposal-layout', {
+        body: {
+          estimate_id: estimate?.id,
+          company_name: brandName,
+          customer_name: customer?.business_name || customer?.name || '',
+          customer_address: customer?.address || '',
+          estimate_message: estimate?.estimate_message || '',
+          line_items: (lineItems || []).map(li => ({
+            item_name: li.item_name || li.description,
+            description: li.description,
+            quantity: li.quantity,
+            price: li.price,
+            total: li.line_total || li.total,
+            category: li.category,
+          })),
+          total: lineItems?.reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0) || 0,
+          utility_incentive: estimate?.utility_incentive || 0,
+          discount: estimate?.discount || 0,
+          // Noah: show owners what the project does beyond the power bill.
+          // On unless a rep turns it off.
+          include_value_section: base?.include_value_section !== false,
+          manual_annual_savings: estimate?.manual_annual_savings || 0,
+          audit_data: auditData,
+          audit_areas_data: auditAreasData,
+          proposal_notes: proposalNotes,
+          include_tiers: base.include_tiers || false,
+        }
+      })
+      if (error) throw error
+      if (data?.proposal_layout) {
+        const updated = { ...base, proposal_layout: data.proposal_layout }
+        if (forceInteractive) updated.presentation_mode = 'interactive'
+        // Save immediately so the layout is persisted
+        await saveSettingsOverrides(updated, { silent: true })
+        if (!silent) toast.success('Proposal layout generated!')
+        return data.proposal_layout
+      }
+    } catch (err) {
+      toast.error('Failed to generate proposal: ' + err.message)
+    }
+    setGeneratingLayout(false)
   }
 
   const calculateIncentive = async () => {
@@ -4530,6 +4646,7 @@ function EstimateDetailInner() {
                 currentMode={getEffectiveSettings().presentation_mode}
                 alreadySent={!!(estimate.last_sent_at || estimate.status === 'Sent')}
                 saving={saving}
+                busy={generatingLayout}
                 generatingPdf={generatingPdf}
                 pdfUrl={estimate.pdf_url}
                 notice={(() => {
@@ -4552,6 +4669,28 @@ function EstimateDetailInner() {
                   if (current.presentation_mode !== modeId) {
                     await saveSettingsOverrides({ ...current, presentation_mode: modeId }, { silent: true })
                   }
+
+                  // Write the layout the first time it is needed, instead of
+                  // relying on a rep finding "Generate with AI" on another
+                  // screen. The claims are written per estimate, so the value
+                  // section is empty until this runs — and an opt-in nobody
+                  // discovers is the same as not building it, which is exactly
+                  // how the interactive quote ended up on 19% of sends.
+                  //
+                  // forceInteractive false: generating for a regular estimate
+                  // must NOT quietly switch what the customer receives.
+                  const needsLayout = current.include_value_section !== false
+                    && !(current.proposal_layout?.sections || [])
+                      .some(s => s?.type === 'added_value' && (s.claims || []).length > 0)
+                  if (needsLayout) {
+                    // Never block the send on it. If the AI is down or slow,
+                    // the rep still gets their modal — a missing value section
+                    // is worse than nothing only if it stops the quote going.
+                    try {
+                      await generateProposalLayout({ forceInteractive: false, silent: true })
+                    } catch { /* toast already shown by the generator */ }
+                  }
+
                   setShowSendModal(true)
                 }}
                 onPreviewPdf={handleGeneratePdf}
@@ -5323,6 +5462,8 @@ function EstimateDetailInner() {
           labelStyle={labelStyle}
           onSettingsUpdate={saveSettingsOverrides}
           customer={estimate?.customer || estimate?.lead}
+          onGenerateLayout={generateProposalLayout}
+          generatingLayout={generatingLayout}
           sendSubject={sendSubject}
           setSendSubject={setSendSubject}
           sendAttachments={sendAttachments}
@@ -6191,117 +6332,9 @@ function FormalProposalEditor({ localSettings, setLocalSettings, theme, labelSty
   )
 }
 
-function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle, labelStyle, estimate, lineItems, company, customer, onSettingsUpdate }) {
+function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle, labelStyle, estimate, lineItems, company, customer, onSettingsUpdate, onGenerateLayout, generatingLayout }) {
   const [localSettings, setLocalSettings] = useState(settings)
-  const [generatingProposal, setGeneratingProposal] = useState(false)
 
-  const handleGenerateProposal = async () => {
-    setGeneratingProposal(true)
-    try {
-      const brandName = estimate?.business_unit || company?.company_name || ''
-
-      // Fetch audit data if linked
-      let auditData = null
-      let auditAreasData = null
-      if (estimate?.audit_id) {
-        const { data: audit } = await supabase
-          .from('lighting_audits')
-          .select('*')
-          .eq('id', estimate.audit_id)
-          .single()
-        if (audit) {
-          auditData = {
-            annual_savings_kwh: audit.annual_savings_kwh || 0,
-            annual_savings_dollars: audit.annual_savings_dollars || 0,
-            electric_rate: audit.electric_rate || 0,
-            operating_hours: audit.operating_hours || 0,
-            operating_days: audit.operating_days || 0,
-            total_existing_watts: audit.total_existing_watts || 0,
-            total_proposed_watts: audit.total_proposed_watts || 0,
-            watts_reduced: audit.watts_reduced || 0,
-            total_fixtures: audit.total_fixtures || 0,
-            estimated_rebate: audit.estimated_rebate || 0,
-          }
-          const { data: areas } = await supabase
-            .from('audit_areas')
-            .select('*')
-            .eq('audit_id', estimate.audit_id)
-          if (areas?.length) {
-            auditAreasData = areas.map(a => ({
-              area_name: a.area_name || a.name || 'Area',
-              fixture_count: a.fixture_count || 0,
-              existing_wattage: a.existing_wattage || 0,
-              led_wattage: a.led_wattage || 0,
-              total_existing_watts: a.total_existing_watts || 0,
-              total_led_watts: a.total_led_watts || 0,
-              area_watts_reduced: a.area_watts_reduced || 0,
-              ceiling_height: a.ceiling_height || '',
-              fixture_category: a.fixture_category || '',
-              // Bryce flagged (May 19): product detail not pulling through.
-              // Proposal showed area name only, not the LED product chosen.
-              // Lenard stores it in override_notes ("SBE Product: …") and
-              // led_replacement_id (link to products_services). Pass both.
-              lighting_type: a.lighting_type || '',
-              led_replacement_id: a.led_replacement_id || null,
-              override_notes: a.override_notes || '',
-              area_rebate_estimate: a.area_rebate_estimate || 0,
-            }))
-          }
-        }
-      }
-
-      // Get proposal notes
-      const storeSettings = useStore.getState().settings || []
-      const defaultsSetting = storeSettings.find(s => s.key === 'estimate_defaults')
-      let proposalNotes = ''
-      if (defaultsSetting) {
-        try {
-          const parsed = JSON.parse(defaultsSetting.value)
-          proposalNotes = parsed.proposal_notes || ''
-        } catch {}
-      }
-
-      const { error, data } = await supabase.functions.invoke('generate-proposal-layout', {
-        body: {
-          estimate_id: estimate?.id,
-          company_name: brandName,
-          customer_name: customer?.business_name || customer?.name || '',
-          customer_address: customer?.address || '',
-          estimate_message: estimate?.estimate_message || '',
-          line_items: (lineItems || []).map(li => ({
-            item_name: li.item_name || li.description,
-            description: li.description,
-            quantity: li.quantity,
-            price: li.price,
-            total: li.line_total || li.total,
-            category: li.category,
-          })),
-          total: lineItems?.reduce((sum, li) => sum + (parseFloat(li.line_total || li.total) || 0), 0) || 0,
-          utility_incentive: estimate?.utility_incentive || 0,
-          discount: estimate?.discount || 0,
-          // Noah: show owners what the project does beyond the power bill.
-          // On unless a rep turns it off.
-          include_value_section: localSettings?.include_value_section !== false,
-          manual_annual_savings: estimate?.manual_annual_savings || 0,
-          audit_data: auditData,
-          audit_areas_data: auditAreasData,
-          proposal_notes: proposalNotes,
-          include_tiers: localSettings.include_tiers || false,
-        }
-      })
-      if (error) throw error
-      if (data?.proposal_layout) {
-        const updated = { ...localSettings, presentation_mode: 'interactive', proposal_layout: data.proposal_layout }
-        setLocalSettings(updated)
-        // Save immediately so the layout is persisted
-        await onSettingsUpdate(updated, { silent: true })
-        toast.success('Proposal layout generated!')
-      }
-    } catch (err) {
-      toast.error('Failed to generate proposal: ' + err.message)
-    }
-    setGeneratingProposal(false)
-  }
 
   const toggle = (key) => {
     setLocalSettings(prev => ({ ...prev, [key]: !prev[key] }))
@@ -6573,25 +6606,25 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
                 </div>
               </label>
               <button
-                onClick={handleGenerateProposal}
-                disabled={generatingProposal}
+                onClick={() => onGenerateLayout?.({ forceInteractive: true })}
+                disabled={generatingLayout}
                 style={{
                   width: '100%',
                   padding: '10px 16px',
-                  backgroundColor: generatingProposal ? theme.textMuted : theme.accent,
+                  backgroundColor: generatingLayout ? theme.textMuted : theme.accent,
                   color: '#ffffff',
                   border: 'none',
                   borderRadius: '8px',
                   fontSize: '14px',
                   fontWeight: '500',
-                  cursor: generatingProposal ? 'not-allowed' : 'pointer',
+                  cursor: generatingLayout ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
                 }}
               >
-                {generatingProposal ? 'Generating...' : 'Generate with AI'}
+                {generatingLayout ? 'Generating...' : 'Generate with AI'}
               </button>
             </div>
           )}
