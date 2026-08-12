@@ -4532,6 +4532,18 @@ function EstimateDetailInner() {
                 saving={saving}
                 generatingPdf={generatingPdf}
                 pdfUrl={estimate.pdf_url}
+                notice={(() => {
+                  // The value section is WRITTEN per estimate, so the toggle
+                  // alone produces nothing. Said here because this is the
+                  // screen reps send from — most never open settings, and
+                  // finding out afterwards means the quote already went.
+                  const s = getEffectiveSettings()
+                  if (s.include_value_section === false) return null
+                  const ready = (s.proposal_layout?.sections || [])
+                    .some(x => x?.type === 'added_value' && (x.claims || []).length > 0)
+                  return ready ? null
+                    : 'The "value beyond savings" section is on but nothing is written for this project yet — open Settings and press "Generate with AI" to create it.'
+                })()}
                 onSend={async (modeId) => {
                   // The button you press IS the choice — no need to have found
                   // a dropdown first. Persisted so the modal and the send path
@@ -6432,6 +6444,29 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
                   </span>
                 </span>
               </label>
+
+            {/* Ticking the box is not enough, and a toggle that silently does
+                nothing is the same trap as the mode dropdown nobody found.
+                The claims are WRITTEN per estimate, so until the layout is
+                generated there is nothing to show — say that here, where the
+                rep just ticked the box, rather than letting them send a quote
+                and wonder why it is missing. */}
+            {localSettings.include_value_section !== false && (() => {
+              const hasClaims = (localSettings.proposal_layout?.sections || [])
+                .some(s => s?.type === 'added_value' && (s.claims || []).length > 0)
+              return (
+                <div style={{
+                  marginTop: '8px', marginLeft: '25px', padding: '8px 10px',
+                  borderRadius: '6px', fontSize: '12px', lineHeight: 1.5,
+                  backgroundColor: hasClaims ? 'rgba(34,197,94,0.10)' : 'rgba(234,179,8,0.12)',
+                  color: hasClaims ? '#15803d' : '#854F0B',
+                }}>
+                  {hasClaims
+                    ? 'Written for this project and ready to send.'
+                    : 'Nothing written yet — press "Generate with AI" below. The claims are written for this specific project, so this section stays empty until you do.'}
+                </div>
+              )
+            })()}
 
             {localSettings.presentation_mode === 'interactive' && (
               <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0', lineHeight: 1.5 }}>

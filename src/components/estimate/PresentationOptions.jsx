@@ -31,6 +31,7 @@ export default function PresentationOptions({
   saving = false,
   generatingPdf = false,
   pdfUrl = null,
+  notice = null,     // one-line warning shown above the rows
   onSend,            // (modeId) => void   — set the mode and open the send modal
   onPreviewPdf,      // ()      => void
   onDownloadPdf,     // ()      => void
@@ -42,6 +43,19 @@ export default function PresentationOptions({
       <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 2px', lineHeight: 1.5 }}>
         Three ways to send this. Pick the one that fits the customer.
       </p>
+
+      {/* Said HERE as well as in settings, because this is the screen a rep
+          actually sends from and most never open settings. The value section
+          is written per estimate, so ticking the box is not enough — without
+          this they send the quote and find it missing afterwards. */}
+      {notice && (
+        <div style={{
+          padding: '8px 10px', borderRadius: '6px', fontSize: '12px', lineHeight: 1.5,
+          backgroundColor: 'rgba(234,179,8,0.12)', color: '#854F0B',
+        }}>
+          {notice}
+        </div>
+      )}
 
       {proposalModeOptions().map((m) => {
         const Icon = ICONS[m.id] || FileText
