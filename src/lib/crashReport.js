@@ -112,7 +112,22 @@ const IGNORED = [
   /^Script error\.?$/i,          // cross-origin, carries no detail
   /chrome-extension:|moz-extension:|safari-extension:/i,
   /Failed to fetch dynamically imported module/i,  // stale chunk after a deploy
+  // An AbortError is an AbortController doing exactly its job: the user
+  // navigated away, or a newer request replaced this one. Nothing crashed and
+  // nobody saw an error screen — these arrive as unhandled rejections only
+  // because the aborted promise has no catch, which is the normal way to write
+  // it. Four of the five open crash reports were this, one from simply going
+  // Lead Setter -> Leads. A genuinely stuck request still shows up, as the
+  // FAILED http crumb that precedes it, so nothing real is lost here.
+  /^AbortError\b/i,
+  /signal is aborted without reason/i,
+  /(the user aborted a request|the operation was aborted)/i,
 ]
+
+/** True for an abort however it arrives — DOMException carries the name even
+ *  when the message is empty, which message matching alone would miss. */
+const isAbort = (error) =>
+  error?.name === 'AbortError' || error?.code === 20   // DOMException.ABORT_ERR
 
 // One report per distinct problem per page load. A handler that throws on
 // every mousemove must not write thousands of rows, and the server-side count
@@ -128,6 +143,7 @@ export function installGlobalCrashHandlers(getContext = () => ({})) {
     try {
       const message = String(error?.message || error || '')
       if (!message) return
+      if (isAbort(error)) return
       if (IGNORED.some(re => re.test(message))) return
       if (seenThisSession.size >= MAX_PER_SESSION) return
 
