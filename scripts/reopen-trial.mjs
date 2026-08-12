@@ -53,16 +53,21 @@ console.log(`    trial_ends_at   ${co.trial_ends_at || '-'}`)
 console.log(`    tier            ${co.subscription_tier}   active=${co.active}`)
 console.log(`    people          ${activePeople.length} active: ${activePeople.map(p => p.name || p.email).join(', ')}`)
 
-if (!wasLocked) {
-  console.log(`\n  Not locked — nothing to reopen.\n`)
+// Three cases, not two. Reopening a locked account and extending one that is
+// already running are the same edit to the same two fields — refusing the
+// second just means doing it by hand later.
+const onTrial = co.billing_status === 'trialing'
+if (!wasLocked && !onTrial) {
+  console.log(`\n  ${co.billing_status} — not on a trial, so there is no window to set.\n`)
   process.exit(0)
 }
+const verb = wasLocked ? 'reopen' : 'extend'
 
 // Same shape beta-signup writes for a new account.
 const endsAt = new Date(Date.now() + DAYS * 86400 * 1000).toISOString()
 
 if (!APPROVE) {
-  console.log(`\n  would set: billing_status 'trialing', trial_ends_at ${endsAt.slice(0, 10)} (${DAYS} days)`)
+  console.log(`\n  would ${verb}: billing_status 'trialing', trial_ends_at ${endsAt.slice(0, 10)} (${DAYS} days from today)`)
   console.log(`  re-run with --approve to apply.\n`)
   process.exit(0)
 }
@@ -75,6 +80,7 @@ if (ue) throw new Error(`update: ${ue.message}`)
 const { data: after } = await sb.from('companies')
   .select('billing_status, trial_ends_at').eq('id', companyId).single()
 const stillLocked = READ_ONLY_STATUSES.includes(after.billing_status)
-console.log(`\n  now: ${after.billing_status}, ends ${String(after.trial_ends_at).slice(0, 10)}`)
+const daysLeft = Math.round((new Date(after.trial_ends_at) - Date.now()) / 86400000)
+console.log(`\n  now: ${after.billing_status}, ends ${String(after.trial_ends_at).slice(0, 10)} (${daysLeft} days)`)
 console.log(`  writes allowed: ${stillLocked ? 'NO — something else is wrong' : 'yes'}`)
-console.log(`  ${activePeople.length} people can work again.\n`)
+console.log(`  ${activePeople.length} active ${activePeople.length === 1 ? 'person' : 'people'} unaffected by the gate.\n`)
