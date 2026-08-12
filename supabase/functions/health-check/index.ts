@@ -95,6 +95,76 @@ const CHECKS: Check[] = [
   },
 ];
 
+// ── Conditions ────────────────────────────────────────────────────────────
+//
+// The checks above ask "when did this last work?" — the right question for
+// something that silently stops. Some failures are not a stopped heartbeat but
+// a state that is simply wrong right now, and an account locked out is the one
+// we have already been bitten by: Antonino Lawn Care sat read-only from
+// 2026-06-08 to 2026-08-10, and we found out from a photograph of an error
+// dialog. The account least able to report it is exactly the one it happens to.
+//
+// These are platform-wide, not per-tenant, so they ignore the company_id above.
+
+type Condition = {
+  id: string;
+  label: string;
+  /** null when fine, otherwise a sentence naming what is wrong. */
+  problem: (sb: any) => Promise<string | null>;
+  fix: string;
+};
+
+const ENDING_SOON_DAYS = 7;
+
+const daysUntil = (iso: string | null) =>
+  iso == null ? Infinity : Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+
+/** Ask the gate itself, never a copy of its rules. */
+const accounts = async (sb: any) => {
+  const { data, error } = await sb.rpc('account_access_report');
+  if (error) throw new Error(`account_access_report: ${error.message}`);
+  return data ?? [];
+};
+
+const CONDITIONS: Condition[] = [
+  {
+    id: 'accounts_read_only',
+    label: 'Customer accounts able to work',
+    problem: async (sb) => {
+      // Only accounts with people in them: an empty company being read-only is
+      // bookkeeping, not somebody sitting there unable to do their job.
+      const locked = (await accounts(sb)).filter((a: any) => !a.can_write && a.active_users > 0);
+      if (locked.length === 0) return null;
+      return locked.map((a: any) =>
+        `${a.company_name} (company ${a.company_id}) is read-only — ${a.billing_status}` +
+        `${a.trial_ends_at ? `, since ${String(a.trial_ends_at).slice(0, 10)}` : ''}` +
+        `. ${a.active_users} ${a.active_users === 1 ? 'person' : 'people'} cannot change anything.`,
+      ).join('\n    ');
+    },
+    fix: 'npx vite-node scripts/reopen-trial.mjs <companyId> --approve  (or take the payment)',
+  },
+  {
+    id: 'trials_ending_soon',
+    label: 'Trials with time left on them',
+    // The point is to act BEFORE someone is locked out. Finding out afterwards
+    // is what already cost us two months of a tester's time.
+    problem: async (sb) => {
+      const soon = (await accounts(sb))
+        .filter((a: any) => a.can_write && a.billing_status === 'trialing' && a.active_users > 0)
+        .map((a: any) => ({ ...a, days: daysUntil(a.trial_ends_at) }))
+        .filter((a: any) => a.days <= ENDING_SOON_DAYS)
+        .sort((a: any, b: any) => a.days - b.days);
+      if (soon.length === 0) return null;
+      return soon.map((a: any) =>
+        `${a.company_name} (company ${a.company_id}) goes read-only in ${a.days} ` +
+        `${a.days === 1 ? 'day' : 'days'}, on ${String(a.trial_ends_at).slice(0, 10)} — ` +
+        `${a.active_users} active ${a.active_users === 1 ? 'user' : 'users'}.`,
+      ).join('\n    ');
+    },
+    fix: 'Convert them, or extend: npx vite-node scripts/reopen-trial.mjs <companyId> --days 30 --approve',
+  },
+];
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -132,6 +202,31 @@ serve(async (req) => {
       if (isStale) stale.push({ ...row, fix: check.fix });
     }
 
+    for (const condition of CONDITIONS) {
+      let detail: string | null = null;
+      let error: string | null = null;
+      try {
+        detail = await condition.problem(sb);
+      } catch (e) {
+        error = (e as Error).message;
+      }
+      // Same rule as above: a condition that cannot be evaluated counts as
+      // failing, or a broken probe would quietly read as "all fine".
+      const isBad = error != null || detail != null;
+      const row = {
+        id: condition.id,
+        label: condition.label,
+        last_success: null,
+        age_hours: null,
+        max_age_hours: null,
+        detail,
+        ok: !isBad,
+        error,
+      };
+      results.push(row);
+      if (isBad) stale.push({ ...row, fix: condition.fix });
+    }
+
     if (stale.length > 0 && !dryRun) {
       // Throttle on the exact set that is failing, so a NEW failure alerts
       // immediately even while an old one is still open.
@@ -148,8 +243,13 @@ serve(async (req) => {
           : `JobScout: ${stale.length} things have stopped working`;
         const lines = stale.map(s =>
           `• ${s.label}\n` +
-          `    last worked: ${s.last_success ? `${s.age_hours}h ago (${String(s.last_success).slice(0, 16)})` : 'never'}\n` +
-          `    expected at least every ${s.max_age_hours}h\n` +
+          // A stopped heartbeat is described by when it last beat; a wrong
+          // state describes itself. Showing "last worked: never" for an account
+          // that is locked out would be noise dressed up as a measurement.
+          (s.detail
+            ? `    ${s.detail}\n`
+            : `    last worked: ${s.last_success ? `${s.age_hours}h ago (${String(s.last_success).slice(0, 16)})` : 'never'}\n` +
+              `    expected at least every ${s.max_age_hours}h\n`) +
           (s.error ? `    the check itself failed: ${s.error}\n` : '') +
           `    ${s.fix}`,
         ).join('\n\n');
