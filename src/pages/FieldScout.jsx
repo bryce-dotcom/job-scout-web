@@ -18,7 +18,7 @@ import {
   Camera, Calendar as CalendarIcon, ArrowRight
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
-import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours } from '../lib/bonusCalc'
+import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours, bonusRowAmount } from '../lib/bonusCalc'
 import { computeAllottedHours } from '../lib/allottedHours'
 import { verificationRequiredFor, anyUnitRequiresVerification, exemptUnitsFromPayrollConfig } from '../lib/verificationPolicy'
 import { splitOpenPunches, shouldQueueClockOut } from '../lib/openShifts'
@@ -2631,9 +2631,16 @@ export default function FieldScout() {
                 ${bonusSummary.bonus.toFixed(2)}
               </div>
               <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                {/* Counted through bonusRowAmount so a HELD bonus counts as a
+                    job. Filtering on d.bonusAmount read "From 0 jobs — $0.00"
+                    while the breakdown underneath listed real earnings, which
+                    is what a tech sees before concluding the bonus vanished. */}
                 {bonusSummary.details.length === 0
                   ? 'Finish a job under allotted hours to start earning'
-                  : `From ${bonusSummary.details.filter(d => d.bonusAmount > 0).length} job${bonusSummary.details.filter(d => d.bonusAmount > 0).length === 1 ? '' : 's'} — tap to see breakdown`}
+                  : (() => {
+                    const n = bonusSummary.details.filter(d => bonusRowAmount(d).amount > 0).length
+                    return `From ${n} job${n === 1 ? '' : 's'} — tap to see breakdown`
+                  })()}
               </div>
             </div>
             {bonusSummary.details.length > 0 && (
@@ -2659,17 +2666,34 @@ export default function FieldScout() {
                       {d.jobTitle}
                     </div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                      Allotted {d.allottedHours}h · Actual {d.actualHours.toFixed(1)}h · Saved {d.savedHours.toFixed(1)}h
+                      Allotted {d.allottedHours}h · Actual {(Number(d.actualHours) || 0).toFixed(1)}h · Saved {(Number(d.savedHours) || 0).toFixed(1)}h
                       {d.crewSize > 1 && ` · Split ${d.crewSize} ways`}
                     </div>
+                    {/* A held bonus is real money waiting on a photo, not a
+                        zero. Saying nothing here is how a tech concludes the
+                        bonus was taken away. */}
+                    {bonusRowAmount(d).held && bonusRowAmount(d).amount > 0 && (
+                      <div style={{ fontSize: '11px', color: '#d4940a', marginTop: '3px', fontWeight: '600' }}>
+                        Waiting on verification
+                      </div>
+                    )}
                   </div>
-                  <div style={{
-                    fontSize: '14px', fontWeight: '700',
-                    color: d.bonusAmount > 0 ? '#8b5cf6' : theme.textMuted,
-                    flexShrink: 0, marginLeft: '8px'
-                  }}>
-                    ${d.bonusAmount.toFixed(2)}
-                  </div>
+                  {(() => {
+                    // bonusRowAmount owns "what is this row worth" — a BLOCKED
+                    // row has wouldHaveEarned and NO bonusAmount, and reading
+                    // d.bonusAmount.toFixed directly crashed this whole page
+                    // the moment a tech tapped the card with one in it.
+                    const { amount, held } = bonusRowAmount(d)
+                    return (
+                      <div style={{
+                        fontSize: '14px', fontWeight: '700',
+                        color: amount > 0 ? (held ? '#d4940a' : '#8b5cf6') : theme.textMuted,
+                        flexShrink: 0, marginLeft: '8px'
+                      }}>
+                        ${amount.toFixed(2)}
+                      </div>
+                    )
+                  })()}
                 </div>
               ))}
             </div>

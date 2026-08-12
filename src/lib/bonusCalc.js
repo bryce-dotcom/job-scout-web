@@ -380,10 +380,8 @@ export function computeJobBonusRows({
     //      `bonusAmount + coveragePenalty`.
     // The ledger stores the FULL earned share (no penalty) and flags
     // needs_verification unless a passing Victor *completion* check exists.
-    const released = d.bonusAmount != null && !d.weightedOut
-    const amount = released
-      ? +(d.bonusAmount || 0) + +(d.coveragePenalty || 0)
-      : +(d.wouldHaveEarned || 0)
+    const { amount, held } = bonusRowAmount(d)
+    const released = !held
     if (amount <= 0) continue
     // Only a passing completion verification clears the flag. Money-threshold
     // / gate-off releases still want a human or Victor to confirm the work.
@@ -807,4 +805,27 @@ export function calculateEfficiencyBonus({
   })
 
   return { bonus: totalBonus, details }
+}
+
+/**
+ * What one bonus detail row is worth, and whether it is being held.
+ *
+ * A blocked row carries `wouldHaveEarned` and NO `bonusAmount`, because
+ * verification is a flag rather than a wipe. FieldScout rendered
+ * `d.bonusAmount.toFixed(2)` directly and crashed the whole page the moment a
+ * tech tapped the bonus card with a held row in it — caught in production:
+ * "undefined is not an object (evaluating 'ut.bonusAmount.toFixed')" on
+ * /field-scout, right after Clock Out.
+ *
+ * Same rule as syncJobBonuses uses, extracted so the two cannot drift: a held
+ * bonus must show its REAL value everywhere, never $0.00, or a tech is told
+ * they earned nothing when the money is only waiting on a photo.
+ */
+export function bonusRowAmount(d) {
+  if (!d) return { amount: 0, held: false }
+  const released = d.bonusAmount != null && !d.weightedOut
+  if (released) {
+    return { amount: +(d.bonusAmount || 0) + +(d.coveragePenalty || 0), held: false }
+  }
+  return { amount: +(d.wouldHaveEarned || 0), held: true }
 }
