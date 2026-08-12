@@ -134,6 +134,12 @@ That full reload is what threw you out and what made it crawl — the more event
 
 If the AI prospect page is still kicking you out, tell me and I will treat it separately; that one had a different cause and should also be fixed.`,
 
+  '39a7c289': `Nothing was broken — you were sending a different document than you thought, and the app gave you no way to tell.
+
+The interactive proposal has savings, payback, ROI and the charts, all fully built. But the send defaulted to the plain PDF and the green button read "Send Proposal" for all three options, so there was no way to know which one the customer would open. Across 110 sent estimates, 79 went as the bare PDF and only 21 went interactive.
+
+The button now says which one it will send — "Send Regular Estimate", "Send Interactive Proposal", or "Send Formal Proposal" — and the selector states what each one carries. Pick Interactive and the customer gets the savings and incentive.`,
+
   'bf496b45': `Fixed. That error meant the AI's answer came back wrapped in extra text and the parser gave up on the whole thing.
 
 It now pulls the data out of a wrapped response instead of failing, so enrichment stops erroring on the way to finding a decision maker.`,
