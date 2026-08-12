@@ -6,6 +6,7 @@ import { withAssets } from '../lib/productAssets'
 import { publicSheet } from '../lib/specScrub'
 import { buildSpecSheetPdf, imageToDataUrl } from '../lib/specSheetPdf'
 import { proposalMode, sendButtonLabel, proposalModeOptions } from '../lib/proposalModes'
+import PresentationOptions from '../components/estimate/PresentationOptions'
 import { findMatchingCustomer } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { RecordHistoryButton } from '../components/RecordHistory'
@@ -4517,117 +4518,33 @@ function EstimateDetailInner() {
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {/* PDF Actions */}
-              <button
-                onClick={handleGeneratePdf}
-                disabled={generatingPdf || saving}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  padding: '12px 16px',
-                  backgroundColor: 'transparent',
-                  color: theme.accent,
-                  border: `1px solid ${theme.border}`,
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: (generatingPdf || saving) ? 'not-allowed' : 'pointer',
-                  opacity: (generatingPdf || saving) ? 0.6 : 1
-                }}
-              >
-                <FileText size={18} />
-                {generatingPdf ? 'Generating...' : 'Preview PDF'}
-              </button>
-
-              {estimate.pdf_url && (
-                <button
-                  onClick={handleDownloadPdf}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    padding: '12px 16px',
-                    backgroundColor: 'transparent',
-                    color: theme.textSecondary,
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <Download size={18} />
-                  Download PDF
-                </button>
-              )}
-
-              {/* Send / Proposal — label adapts so reps know they CAN
-                  resend a sent estimate (Alayda + Christopher + Natasha
-                  all reported "can't re-send" because the button just
-                  said "Create Proposal" and they didn't realize it was
-                  also the resend path). */}
-              <button
-                onClick={() => setShowSendModal(true)}
-                disabled={saving}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  padding: '12px 16px',
-                  backgroundColor: theme.accent,
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '500',
-                  cursor: saving ? 'not-allowed' : 'pointer',
-                  opacity: saving ? 0.6 : 1
-                }}
-                title={proposalMode(getEffectiveSettings().presentation_mode).blurb}
-              >
-                <Send size={18} />
-                {/* Names the MODE, not the generic word. It said "Send
-                    Proposal" for all three, so a rep could not tell which one
-                    the customer would get — and 79 of 110 sends went as the
-                    bare document while the interactive one sat unused. */}
-                {sendButtonLabel(
-                  getEffectiveSettings().presentation_mode,
-                  !!(estimate.last_sent_at || estimate.status === 'Sent'),
-                )}
-              </button>
-
-              {/* Formal Legal Proposal — reuses the Create Proposal preview+send modal
-                  with presentation_mode pre-set to 'formal' */}
-              <button
-                onClick={async () => {
+              {/* Three ways to present this quote, shown as three choices.
+                  It was four buttons that did not read as a set — "Preview
+                  PDF", "Download PDF", a green Send whose behaviour depended
+                  on a mode hidden in a settings modal, and "Formal Legal
+                  Proposal", which IS one of the modes but looked like a
+                  separate feature. A rep who had never used the system could
+                  not tell what any of them would send. */}
+              <PresentationOptions
+                theme={theme}
+                currentMode={getEffectiveSettings().presentation_mode}
+                alreadySent={!!(estimate.last_sent_at || estimate.status === 'Sent')}
+                saving={saving}
+                generatingPdf={generatingPdf}
+                pdfUrl={estimate.pdf_url}
+                onSend={async (modeId) => {
+                  // The button you press IS the choice — no need to have found
+                  // a dropdown first. Persisted so the modal and the send path
+                  // agree on what is going out.
                   const current = getEffectiveSettings()
-                  await saveSettingsOverrides({ ...current, presentation_mode: 'formal' }, { silent: true })
+                  if (current.presentation_mode !== modeId) {
+                    await saveSettingsOverrides({ ...current, presentation_mode: modeId }, { silent: true })
+                  }
                   setShowSendModal(true)
                 }}
-                disabled={saving}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  padding: '12px 16px',
-                  backgroundColor: 'transparent',
-                  color: theme.accent,
-                  border: `1.5px solid ${theme.accent}`,
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: saving ? 'not-allowed' : 'pointer',
-                  opacity: saving ? 0.6 : 1
-                }}
-              >
-                <FileText size={18} />
-                Formal Legal Proposal
-              </button>
+                onPreviewPdf={handleGeneratePdf}
+                onDownloadPdf={handleDownloadPdf}
+              />
 
               {/* Portal Link */}
               {estimate.portal_token && (
