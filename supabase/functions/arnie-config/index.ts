@@ -19,11 +19,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const ALLOWED_TARGETS = ['business_units', 'lead_sources', 'service_types'] as const;
+const ALLOWED_TARGETS = ['business_units', 'lead_sources', 'service_types', 'upsells'] as const;
 const TARGET_LABEL: Record<string, string> = {
   business_units: 'business unit',
   lead_sources: 'lead source',
   service_types: 'service type',
+  upsells: 'upsell',
 };
 
 function json(body: unknown, status = 200) {
@@ -79,8 +80,12 @@ async function readList(sb: any, companyId: number, key: string): Promise<{ row:
 // Deterministically compute the new list, PRESERVING item shape. Returns null
 // on a no-op/invalid action so we never apply a meaningless change.
 function applyToList(list: any[], action: string, value: string, newValue: string | undefined, target: string): any[] | null {
-  // business_units items are objects; everything else is strings.
-  const objShaped = target === 'business_units' || list.some((x) => x && typeof x === 'object');
+  // business_units and upsells are OBJECTS (name plus fields that must be
+  // preserved); everything else is plain strings. Named explicitly rather than
+  // inferred from the contents, because inference gets it wrong on an empty
+  // list — the first upsell Arnie added would be stored as a bare string and
+  // silently lose its tier and price.
+  const objShaped = target === 'business_units' || target === 'upsells' || list.some((x) => x && typeof x === 'object');
   const has = (v: string) => list.some((x) => nameOf(x).toLowerCase() === v.toLowerCase());
   if (action === 'add') {
     if (!value || has(value)) return null;
@@ -143,7 +148,8 @@ Targets and their current values:
 - business_units: ${JSON.stringify(current.business_units)}
 - lead_sources: ${JSON.stringify(current.lead_sources)}
 - service_types: ${JSON.stringify(current.service_types)}
-Schema: {"target":"business_units|lead_sources|service_types","action":"add|rename|remove","value":"<item>","newValue":"<only for rename>","summary":"<one plain sentence>"}
+- upsells: ${JSON.stringify(current.upsells)}   (add-ons offered in the Better/Best proposal packages)
+Schema: {"target":"business_units|lead_sources|service_types|upsells","action":"add|rename|remove","value":"<item>","newValue":"<only for rename>","summary":"<one plain sentence>"}
 If the request cannot be mapped to one of these lists/actions, respond {"error":"<why, and what you CAN change>"}.`;
 
       const ai = await callAnthropic(
