@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callAnthropic } from "../_shared/anthropic.ts";
 import { sanitizeValueSection } from "../_shared/valueClaims.ts";
+import { normalizeUpsells, buildTiers } from "../_shared/upsells.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,6 +30,7 @@ serve(async (req) => {
       eos_data,
       manual_annual_savings,
       include_value_section,
+      upsells,
     } = await req.json();
 
     const totalNum = parseFloat(total) || 0;
@@ -43,6 +45,17 @@ serve(async (req) => {
     // not building it (79 of 110 sends never switched to the interactive mode
     // for exactly that reason).
     const includeValueSection = include_value_section !== false;
+
+    // The upsell catalogue the company actually sells, with REAL prices.
+    // Previously the seven upsells were hardcoded in the prompt below and the
+    // package prices were left for the model to invent
+    // (`<good price + warranty & value-add cost>`), so customers chose between
+    // Good/Better/Best at numbers nobody had set. Computed here, and written
+    // over the model's output after it returns.
+    const catalogue = normalizeUpsells(upsells);
+    const computedTiers = buildTiers(totalNum, incentiveNum, catalogue);
+    const betterFeatures = computedTiers[1].features;
+    const bestFeatures = computedTiers[2].features;
     const hasExisting = existing_layout && existing_layout.sections;
     const hasAudit = audit_data && audit_data.annual_savings_kwh > 0;
     // Canonical annual savings: manual override (set by user on the estimate) wins over audit.
@@ -245,9 +258,14 @@ Return ONLY valid JSON (no markdown fences):
     ${incentiveNum > 0 ? '{ "type": "utility_incentive", "content": "This is free money — explain why they need to claim it now" },' : ''}
     ${include_tiers ? `{ "type": "pricing_tiers", "heading": "Choose Your Package", "content": "compelling subheading about options", "recommended": "better", "tiers": [
       { "id": "good", "name": "descriptive name", "price": ${totalNum.toFixed(2)}, "net_price": ${(totalNum - incentiveNum).toFixed(2)}, "description": "the base scope — everything in the estimate", "features": ["feature 1", "feature 2", "feature 3"]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} },
-      { "id": "better", "name": "descriptive name", "price": <good price + warranty & value-add cost>, "net_price": <price - ${incentiveNum.toFixed(2)} (SAME incentive)>, "description": "base scope + 2-year extended warranty + value-adds like recycling old fixtures, priority scheduling", "features": ["everything in Good", "2-Year Extended Warranty", "Old Fixture Recycling & Disposal", "Priority Scheduling"]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} },
-      { "id": "best", "name": "descriptive name", "price": <better price + premium extras cost>, "net_price": <price - ${incentiveNum.toFixed(2)} (SAME incentive)>, "description": "the premium experience — 3-year warranty, remote monitoring, everything in Better plus more", "features": ["everything in Better", "3-Year Extended Warranty", "Remote Monitoring", "Annual Maintenance Check", "Emergency Priority Service"]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} }
-    ] },` : ''}
+      { "id": "better", "name": "descriptive name", "price": ${computedTiers[1].price.toFixed(2)}, "net_price": ${computedTiers[1].net_price.toFixed(2)}, "description": "base scope plus: ${betterFeatures.join(', ')}", "features": ["everything in Good"${betterFeatures.length ? ', ' + betterFeatures.map(f => JSON.stringify(f)).join(', ') : ''}]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} },
+      { "id": "best", "name": "descriptive name", "price": ${computedTiers[2].price.toFixed(2)}, "net_price": ${computedTiers[2].net_price.toFixed(2)}, "description": "everything in Better plus: ${bestFeatures.join(', ')}", "features": ["everything in Better"${bestFeatures.length ? ', ' + bestFeatures.map(f => JSON.stringify(f)).join(', ') : ''}]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} }
+    ],
+    /* The prices and the feature lists above are the COMPANY'S OWN catalogue
+       and its real pricing. Reproduce them EXACTLY. Do not invent, round,
+       re-order or add an upsell — write only the package "name" and
+       "description" copy. A price you make up is a number nobody here set,
+       on the document the customer chooses from. */ },` : ''}
     ${includeValueSection ? `{ "type": "added_value", "heading": "a heading about what this does for their BUILDING and their PEOPLE, not their power bill", "content": "1-2 sentences on why owners do this even before the savings", "claims": [
       { "kind": "one of: property_value | tax | rentability | appearance | productivity | safety | maintenance | comfort | compliance", "title": "short label", "detail": "2 sentences, concrete and specific to THIS project type and THIS customer", "basis": "where the claim comes from — REQUIRED for property_value and rentability" }
     ] },
@@ -329,6 +347,26 @@ Be specific to ${customer_name} and this project. Generic copy = lost deal. Sell
         .map((s: Record<string, unknown>) =>
           s?.type === 'added_value' ? sanitizeValueSection(s) : s)
         .filter(Boolean);
+    }
+
+    // ENFORCEMENT: package prices and feature lists come from the CATALOGUE,
+    // never from the model. It is asked nicely above, but a prompt is a
+    // request — and the failure here is a customer choosing a package at a
+    // price nobody in the company set. Copy (name, description) is left alone,
+    // because that is the part the model is genuinely good at.
+    if (catalogue.length > 0 && Array.isArray(proposalLayout.sections)) {
+      for (const section of proposalLayout.sections) {
+        if (section?.type !== 'pricing_tiers' || !Array.isArray(section.tiers)) continue;
+        for (const tier of section.tiers) {
+          const truth = computedTiers.find((t) => t.id === tier?.id);
+          if (!truth) continue;
+          tier.price = truth.price;
+          tier.net_price = truth.net_price;
+          tier.features = truth.id === 'good'
+            ? (Array.isArray(tier.features) ? tier.features : [])
+            : [truth.id === 'better' ? 'everything in Good' : 'everything in Better', ...truth.features];
+        }
+      }
     }
 
     if (!hasRealSavings && proposalLayout.sections) {

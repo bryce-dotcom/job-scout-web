@@ -27,10 +27,9 @@ const CATALOGUE = [
   // sides; the rename is the resolution.
   { name: 'Commissioning', tier: 'best', price: 0, price_type: 'flat', description: 'Controls programmed, tuned and proven on site.' },
 
-  // Bryce: warranty is a PERCENTAGE of the project, so it scales instead of
-  // being re-typed per estimate. Percentages left at 0 until he sets them —
-  // inventing a rate would put a made-up number on a customer document.
-  { name: 'Extended Warranty', tier: 'better', price: 0, price_type: 'percent', description: 'Parts and labour cover beyond the standard term.' },
+  // Bryce: warranty is a PERCENTAGE of the project so it scales with job size
+  // instead of being re-typed per estimate, and he set the default at 5%.
+  { name: 'Extended Warranty', tier: 'better', price: 5, price_type: 'percent', description: 'Parts and labour cover beyond the standard term.' },
 
   // CONFLICT: on both of Cole's lists. Seeded active, flagged for a decision.
   { name: 'Spec & Cut Sheet Package', tier: 'better', price: 0, price_type: 'flat', description: 'Full product documentation for your records.' },

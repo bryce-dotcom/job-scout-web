@@ -2665,6 +2665,13 @@ function EstimateDetailInner() {
           // Noah: show owners what the project does beyond the power bill.
           // On unless a rep turns it off.
           include_value_section: base?.include_value_section !== false,
+          // The company's real upsell catalogue. Without it the function falls
+          // back to nothing and the packages carry no add-ons at all — the
+          // prices are computed from this, never invented by the model.
+          upsells: (() => {
+            try { return JSON.parse((settings || []).find(r => r.key === 'upsells')?.value || '[]') }
+            catch { return [] }
+          })(),
           manual_annual_savings: estimate?.manual_annual_savings || 0,
           audit_data: auditData,
           audit_areas_data: auditAreasData,
@@ -7023,6 +7030,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
           // Noah: show owners what the project does beyond the power bill.
           // On unless a rep turns it off.
           include_value_section: settings?.include_value_section !== false,
+          upsells: Array.isArray(settings?.upsells) ? settings.upsells : [],
           user_direction: direction || '',
           existing_layout: direction && direction !== '__fresh__' && proposalLayout ? proposalLayout : null,
           manual_annual_savings: estimate?.manual_annual_savings || 0,
