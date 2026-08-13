@@ -375,6 +375,12 @@ verify_jwt = false
 [functions.master-stripe-webhook]
 verify_jwt = false
 
+# Customer-membership subscription lifecycle. Same trap: Stripe sends only a
+# stripe-signature header, so it must not require a JWT. Verifies the signature
+# itself (per-tenant secret). Deploy with --no-verify-jwt.
+[functions.customer-subscription-webhook]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

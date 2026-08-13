@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { Repeat, Calendar, Wrench, ChevronRight, Users, Info } from 'lucide-react'
+import { Repeat, Calendar, Wrench, ChevronRight, Users, Info, CreditCard } from 'lucide-react'
+import MembershipsPanel from '../components/MembershipsPanel'
 
 // Recurring Jobs — the "repeat engine" management surface. Lists every active
 // recurring series (jobs with a recurrence set), one row per chain, so an owner
@@ -48,6 +49,7 @@ export default function RecurringJobs() {
 
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState('recurring')
 
   useEffect(() => {
     if (!companyId) return
@@ -102,6 +104,17 @@ export default function RecurringJobs() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 6, borderBottom: `1px solid ${theme.border}`, margin: '16px 0 18px' }}>
+        <button onClick={() => setTab('recurring')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', fontSize: 14, fontWeight: 650, cursor: 'pointer', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === 'recurring' ? REC : 'transparent'}`, color: tab === 'recurring' ? REC_DK : theme.textMuted, marginBottom: -1 }}>
+          <Repeat size={16} /> Recurring jobs
+        </button>
+        <button onClick={() => setTab('memberships')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', fontSize: 14, fontWeight: 650, cursor: 'pointer', background: 'transparent', border: 'none', borderBottom: `2px solid ${tab === 'memberships' ? REC : 'transparent'}`, color: tab === 'memberships' ? REC_DK : theme.textMuted, marginBottom: -1 }}>
+          <CreditCard size={16} /> Membership plans
+        </button>
+      </div>
+
+      {tab === 'recurring' && (<>
       {/* How it works */}
       <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', background: theme.accentBg, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '11px 14px', margin: '14px 0 18px', fontSize: 13, color: theme.textSecondary }}>
         <Info size={16} style={{ color: theme.accent, marginTop: 1, flex: 'none' }} />
@@ -158,6 +171,9 @@ export default function RecurringJobs() {
           })}
         </div>
       )}
+      </>)}
+
+      {tab === 'memberships' && <MembershipsPanel theme={theme} companyId={companyId} />}
     </div>
   )
 }
