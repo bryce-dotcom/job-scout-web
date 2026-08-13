@@ -51,6 +51,7 @@ import Settings from './pages/Settings'
 import DocumentRules from './pages/DocumentRules'
 import Reports from './pages/Reports'
 import UpcomingServices from './pages/UpcomingServices'
+import RecurringJobs from './pages/RecurringJobs'
 import CommunicationsLog from './pages/CommunicationsLog'
 import Expenses from './pages/Expenses'
 import Appointments from './pages/Appointments'
@@ -422,6 +423,7 @@ function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/document-rules" element={<DocumentRules />} />
           <Route path="/services/upcoming" element={<UpcomingServices />} />
+          <Route path="/recurring" element={<RecurringJobs />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/reports/:reportType" element={<Reports />} />
           <Route path="/communications" element={<CommunicationsLog />} />

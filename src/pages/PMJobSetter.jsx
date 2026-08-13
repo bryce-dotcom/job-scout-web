@@ -14,6 +14,7 @@ import {
   Palette, Edit2, Layers, ChevronUp, MessageSquare, Mail, Phone, ExternalLink
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import RecurrencePicker from '../components/RecurrencePicker'
 import JobsMap from '../components/JobsMap'
 import { companyNotify } from '../lib/companyNotify'
 import { matchAllTokens, buildBlob } from '../lib/searchUtils'
@@ -317,6 +318,8 @@ export default function PMJobSetter() {
     notes: '',
     recurrence: 'None',
     recurrence_end: '',
+    recurrence_end_date: null,
+    recurrence_landing: 'schedule',
     createAppointment: true,
     sendText: false,
     sendEmail: false,
@@ -1766,126 +1769,15 @@ export default function PMJobSetter() {
       return
     }
 
-    // Also save recurrence on the job record
+    // Save recurrence settings on the job. The DB trigger spawn_next_recurring_job
+    // creates the NEXT occurrence one-at-a-time when a job is completed, so we no
+    // longer eagerly bulk-create future jobs here — that old path double-spawned
+    // (see migration 20260812120000_recurring_jobs_unify.sql).
     if (scheduleForm.recurrence && scheduleForm.recurrence !== 'None') {
-      await supabase.from('jobs').update({ recurrence: scheduleForm.recurrence }).eq('id', scheduleJob.id)
-    }
-
-    // Create recurring future jobs
-    if (scheduleForm.recurrence && scheduleForm.recurrence !== 'None' && scheduleForm.recurrence_end) {
-      const recurEnd = new Date(scheduleForm.recurrence_end)
-      const intervalMap = {
-        'Daily': 1, 'Weekly': 7, 'Bi-Weekly': 14, 'Monthly': null, 'Quarterly': null
-      }
-      const futureJobs = []
-      let nextStart = new Date(startTime)
-
-      while (true) {
-        if (scheduleForm.recurrence === 'Monthly') {
-          nextStart = new Date(nextStart)
-          nextStart.setMonth(nextStart.getMonth() + 1)
-        } else if (scheduleForm.recurrence === 'Quarterly') {
-          nextStart = new Date(nextStart)
-          nextStart.setMonth(nextStart.getMonth() + 3)
-        } else {
-          const days = intervalMap[scheduleForm.recurrence] || 7
-          nextStart = new Date(nextStart)
-          nextStart.setDate(nextStart.getDate() + days)
-        }
-
-        if (nextStart > recurEnd) break
-
-        const nextEnd = new Date(nextStart)
-        nextEnd.setHours(nextEnd.getHours() + (scheduleForm.duration_hours || 4))
-
-        futureJobs.push({
-          company_id: companyId,
-          job_id: `JOB-${Date.now().toString(36).toUpperCase()}${futureJobs.length}`,
-          job_title: scheduleJob.job_title || scheduleJob.job_id,
-          job_address: scheduleJob.job_address || null,
-          customer_id: scheduleJob.customer?.id || null,
-          salesperson_id: scheduleJob.salesperson_id || null,
-          status: scheduledStatus || 'Scheduled',
-          assigned_team: updateData.assigned_team || scheduleJob.assigned_team || null,
-          business_unit: scheduleJob.business_unit || null,
-          pm_id: pmId ? parseInt(pmId) : null,
-          job_lead_id: scheduleForm.job_lead_id ? parseInt(scheduleForm.job_lead_id) : null,
-          start_date: nextStart.toISOString(),
-          end_date: nextEnd.toISOString(),
-          allotted_time_hours: scheduleJob.allotted_time_hours || null,
-          recurrence: scheduleForm.recurrence,
-          notes: scheduleForm.notes || scheduleJob.notes || null,
-          details: scheduleJob.details || null,
-          job_total: scheduleJob.job_total || null,
-          updated_at: new Date().toISOString()
-        })
-      }
-
-      if (futureJobs.length > 0) {
-        const { data: createdJobs, error: recurError } = await supabase
-          .from('jobs')
-          .insert(futureJobs)
-          .select('id')
-
-        if (recurError) {
-          console.error('[Schedule] Recurring job creation error:', recurError)
-        } else {
-          console.log('[Schedule] Created', futureJobs.length, 'recurring jobs')
-
-          // Copy job_lines from original job to each recurring job
-          const { data: origLines } = await supabase
-            .from('job_lines')
-            .select('item_id, quantity, price, total, description, notes')
-            .eq('job_id', scheduleJob.id)
-
-          if (origLines?.length > 0 && createdJobs?.length > 0) {
-            const allLines = createdJobs.flatMap(cj =>
-              origLines.map(line => ({
-                company_id: companyId,
-                job_id: cj.id,
-                item_id: line.item_id,
-                quantity: line.quantity,
-                price: line.price,
-                total: line.total,
-                description: line.description,
-                notes: line.notes
-              }))
-            )
-            await supabase.from('job_lines').insert(allLines)
-          }
-
-          // Create appointments for each recurring job
-          if (scheduleForm.createAppointment) {
-            const assignedIds = scheduleForm.assigned_employee_ids.length > 0
-              ? scheduleForm.assigned_employee_ids
-              : (pmId ? [pmId] : [])
-
-            if (assignedIds.length > 0 && createdJobs?.length > 0) {
-              const recurAppts = []
-              createdJobs.forEach((cj, idx) => {
-                const fjob = futureJobs[idx]
-                assignedIds.forEach(empId => {
-                  const emp = employees.find(e => String(e.id) === String(empId))
-                  recurAppts.push({
-                    company_id: companyId,
-                    title: fjob.job_title,
-                    start_time: fjob.start_date,
-                    end_time: fjob.end_date,
-                    location: fjob.job_address || '',
-                    status: 'Scheduled',
-                    employee_id: parseInt(empId),
-                    customer_id: fjob.customer_id,
-                    appointment_type: 'Recurring Job',
-                    notes: `Recurring: ${scheduleForm.recurrence}${emp ? ` | ${emp.name}` : ''}`,
-                    created_at: new Date().toISOString()
-                  })
-                })
-              })
-              await supabase.from('appointments').insert(recurAppts)
-            }
-          }
-        }
-      }
+      const recurUpdate = { recurrence: scheduleForm.recurrence }
+      if (scheduleForm.recurrence_end_date !== undefined) recurUpdate.recurrence_end_date = scheduleForm.recurrence_end_date || null
+      if (scheduleForm.recurrence_landing) recurUpdate.recurrence_landing = scheduleForm.recurrence_landing
+      await supabase.from('jobs').update(recurUpdate).eq('id', scheduleJob.id)
     }
 
     // Create appointment(s) for each assigned employee — insert directly to ensure they exist before calendar refetch
@@ -3200,7 +3092,7 @@ export default function PMJobSetter() {
                         return (
                           <div key={job.id} draggable onDragStart={(e) => handleJobDragStart(e, job)} onDragEnd={handleDragEnd}>
                             <EntityCard name={job.customer?.name} businessName={job.customer?.business_name} style={{ padding: '0px', overflow: 'hidden', cursor: 'grab' }}>
-                              <div onClick={() => setDetailJob(job)} onDoubleClick={() => navigate(`/jobs/${job.id}`)} style={{ padding: '10px 12px 10px 10px', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: '8px', borderLeft: `3px solid ${status.color}` }}>
+                              <div onClick={() => setDetailJob(job)} onDoubleClick={() => navigate(`/jobs/${job.id}`)} style={{ padding: '10px 12px 10px 10px', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: '8px', borderLeft: `3px solid ${(job.recurrence && job.recurrence !== 'None') ? '#8b5cf6' : status.color}` }}>
                                 <span onClick={(e) => { e.stopPropagation(); toggleJobExpanded(job.id) }} title={isExpanded ? 'Collapse sections' : 'Expand sections'} style={{ flexShrink: 0, marginTop: '2px', cursor: 'pointer', padding: '2px', margin: '-2px' }}>
                                   {isExpanded ? <ChevronDown size={16} style={{ color: theme.textMuted }} /> : <ChevronRight size={16} style={{ color: theme.textMuted }} />}
                                 </span>
@@ -3222,6 +3114,11 @@ export default function PMJobSetter() {
                                     )}
                                     {job.pm?.name && <span style={{ fontSize: '11px', color: theme.textSecondary, display: 'flex', alignItems: 'center' }}><User size={10} style={{ marginRight: '3px' }} />{job.pm.name}</span>}
                                     {job.start_date && <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center' }}><Calendar size={10} style={{ marginRight: '3px' }} />{new Date(job.start_date).toLocaleDateString()}</span>}
+                                    {job.recurrence && job.recurrence !== 'None' && (
+                                      <span style={{ fontSize: '10px', fontWeight: 700, color: '#6b21a8', backgroundColor: 'rgba(139,92,246,0.12)', padding: '1px 6px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                        <RefreshCw size={9} /> {job.membership_id ? 'Club' : 'Recurring'}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -5249,72 +5146,13 @@ export default function PMJobSetter() {
                   </p>
                 </div>
 
-                {/* Recurrence */}
-                <div style={{
-                  padding: '16px',
-                  backgroundColor: theme.accentBg,
-                  borderRadius: '10px',
-                  border: `1px solid ${theme.border}`
-                }}>
-                  <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <RefreshCw size={14} style={{ color: theme.accent }} />
-                    Recurring Job
-                  </div>
-
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{ ...labelStyle, marginBottom: '4px' }}>Frequency</label>
-                    <select
-                      value={scheduleForm.recurrence}
-                      onChange={(e) => setScheduleForm(prev => ({ ...prev, recurrence: e.target.value }))}
-                      style={inputStyle}
-                    >
-                      <option value="None">Does not repeat</option>
-                      <option value="Daily">Daily</option>
-                      <option value="Weekly">Weekly</option>
-                      <option value="Bi-Weekly">Every 2 weeks</option>
-                      <option value="Monthly">Monthly</option>
-                      <option value="Every 6 Weeks">Every 6 weeks</option>
-                      <option value="Bi-Monthly">Every 2 months</option>
-                      <option value="Quarterly">Every 3 months (Quarterly)</option>
-                      <option value="Bi-Annually">Every 6 months (Bi-Annually)</option>
-                      <option value="Annually">Annually</option>
-                    </select>
-                  </div>
-
-                  {scheduleForm.recurrence !== 'None' && (
-                    <div>
-                      <label style={{ ...labelStyle, marginBottom: '4px' }}>Repeat until</label>
-                      <input
-                        type="date"
-                        value={scheduleForm.recurrence_end}
-                        onChange={(e) => setScheduleForm(prev => ({ ...prev, recurrence_end: e.target.value }))}
-                        style={inputStyle}
-                      />
-                      {scheduleForm.recurrence_end && scheduleForm.start_time && (
-                        <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '6px' }}>
-                          {(() => {
-                            const start = new Date(scheduleForm.start_time)
-                            const end = new Date(scheduleForm.recurrence_end)
-                            let count = 0
-                            let next = new Date(start)
-                            while (true) {
-                              if (scheduleForm.recurrence === 'Monthly') next.setMonth(next.getMonth() + 1)
-                              else if (scheduleForm.recurrence === 'Quarterly') next.setMonth(next.getMonth() + 3)
-                              else if (scheduleForm.recurrence === 'Bi-Weekly') next.setDate(next.getDate() + 14)
-                              else if (scheduleForm.recurrence === 'Weekly') next.setDate(next.getDate() + 7)
-                              else next.setDate(next.getDate() + 1)
-                              if (next > end) break
-                              count++
-                            }
-                            return count > 0
-                              ? `Will create ${count} additional job${count !== 1 ? 's' : ''} (${count + 1} total including this one)`
-                              : 'End date is too soon — no recurring jobs will be created'
-                          })()}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
+                {/* Recurrence — unified picker (writes recurrence + recurrence_end_date + recurrence_landing) */}
+                <RecurrencePicker
+                  value={{ recurrence: scheduleForm.recurrence, recurrence_end_date: scheduleForm.recurrence_end_date, recurrence_landing: scheduleForm.recurrence_landing }}
+                  startDate={scheduleForm.start_time}
+                  onChange={(r) => setScheduleForm(prev => ({ ...prev, recurrence: r.recurrence, recurrence_end_date: r.recurrence_end_date, recurrence_landing: r.recurrence_landing }))}
+                  theme={theme}
+                />
 
                 <div>
                   <label style={labelStyle}>Notes</label>

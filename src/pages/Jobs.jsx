@@ -11,9 +11,10 @@ import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin,
   Play, CheckCircle, FileText, ChevronRight, User, Users, Upload, Download,
   Trophy, DollarSign, List, ChevronLeft, Pause, ArrowRight, Coffee, ChevronDown, ChevronUp, ExternalLink,
-  Archive, RotateCcw
+  Archive, RotateCcw, Repeat
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import RecurrencePicker from '../components/RecurrencePicker'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { jobsFields, jobLinesFields, jobSectionsFields } from '../lib/importExportFields'
 import { jobStatusColors as statusColors, invoiceStatusColors } from '../lib/statusColors'
@@ -59,6 +60,8 @@ const emptyJob = {
   details: '',
   notes: '',
   recurrence: 'None',
+  recurrence_end_date: null,
+  recurrence_landing: 'schedule',
   utility_incentive: '',
   discount: '',
   discount_description: ''
@@ -610,6 +613,8 @@ export default function Jobs() {
       details: job.details || '',
       notes: job.notes || '',
       recurrence: job.recurrence || 'None',
+      recurrence_end_date: job.recurrence_end_date || null,
+      recurrence_landing: job.recurrence_landing || 'schedule',
       utility_incentive: job.utility_incentive || '',
       discount: job.discount || '',
       discount_description: job.discount_description || ''
@@ -696,6 +701,8 @@ export default function Jobs() {
       details: formData.details || null,
       notes: formData.notes || null,
       recurrence: formData.recurrence || 'None',
+      recurrence_end_date: formData.recurrence_end_date || null,
+      recurrence_landing: formData.recurrence_landing || 'schedule',
       utility_incentive: formData.utility_incentive || null,
       discount: formData.discount || null,
       discount_description: formData.discount_description || null,
@@ -1293,6 +1300,7 @@ export default function Jobs() {
                   key={job.id}
                   name={job.customer?.name}
                   businessName={job.customer?.business_name}
+                  accentColor={job.recurrence && job.recurrence !== 'None' ? '#8b5cf6' : undefined}
                   onClick={() => navigate(`/jobs/${job.id}`)}
                   style={{ padding: '16px 20px' }}
                 >
@@ -1313,6 +1321,15 @@ export default function Jobs() {
                         }}>
                           {job.status}
                         </span>
+                        {job.recurrence && job.recurrence !== 'None' && (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '3px',
+                            padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600,
+                            backgroundColor: 'rgba(139,92,246,0.12)', color: '#6b21a8',
+                          }}>
+                            <Repeat size={10} /> {job.membership_id ? 'Club' : 'Recurring'}
+                          </span>
+                        )}
                         {job.invoice_status && (
                           <span style={{
                             padding: '2px 8px',
@@ -1799,32 +1816,20 @@ export default function Jobs() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={labelStyle}>Allotted Hours{!isAdmin && <span style={{ fontWeight: 400, color: theme.textMuted, fontSize: '11px' }}> · admin only</span>}</label>
-                    {/* Allotted hours drives the efficiency-bonus math (saved = allotted - actual) — Admin+ only. */}
-                    <input type="number" name="allotted_time_hours" value={formData.allotted_time_hours} onChange={handleChange} step="0.25" disabled={!isAdmin} title={!isAdmin ? 'Only an admin can change allotted hours' : undefined} style={{ ...inputStyle, ...(!isAdmin ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Recurrence</label>
-                    <select name="recurrence" value={formData.recurrence} onChange={handleChange} style={inputStyle}>
-                      <option value="None">None</option>
-                      <option value="Daily">Daily</option>
-                      <option value="Weekly">Weekly</option>
-                      <option value="Bi-Weekly">Bi-Weekly (every 2 weeks)</option>
-                      <option value="Monthly">Monthly</option>
-                      <option value="Every 6 Weeks">Every 6 Weeks</option>
-                      <option value="Bi-Monthly">Bi-Monthly (every 2 months)</option>
-                      <option value="Quarterly">Quarterly (every 3 months)</option>
-                      <option value="Bi-Annually">Bi-Annually (every 6 months)</option>
-                      <option value="Annually">Annually</option>
-                    </select>
-                    {formData.recurrence && formData.recurrence !== 'None' && (
-                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px', lineHeight: 1.4 }}>
-                        When this job is marked Completed, the next one is created automatically on the {formData.recurrence.toLowerCase()} date — same scope and crew, no re-entry.
-                      </div>
-                    )}
-                  </div>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={labelStyle}>Allotted Hours{!isAdmin && <span style={{ fontWeight: 400, color: theme.textMuted, fontSize: '11px' }}> · admin only</span>}</label>
+                  {/* Allotted hours drives the efficiency-bonus math (saved = allotted - actual) — Admin+ only. */}
+                  <input type="number" name="allotted_time_hours" value={formData.allotted_time_hours} onChange={handleChange} step="0.25" disabled={!isAdmin} title={!isAdmin ? 'Only an admin can change allotted hours' : undefined} style={{ ...inputStyle, ...(!isAdmin ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Repeat</label>
+                  {/* Unified recurrence picker — writes recurrence + recurrence_end_date + recurrence_landing; the DB trigger spawns each occurrence on completion. */}
+                  <RecurrencePicker
+                    value={{ recurrence: formData.recurrence, recurrence_end_date: formData.recurrence_end_date, recurrence_landing: formData.recurrence_landing }}
+                    startDate={formData.start_date}
+                    onChange={(r) => setFormData(prev => ({ ...prev, recurrence: r.recurrence, recurrence_end_date: r.recurrence_end_date, recurrence_landing: r.recurrence_landing }))}
+                    theme={theme}
+                  />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '16px' }}>

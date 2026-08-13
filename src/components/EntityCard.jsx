@@ -96,7 +96,8 @@ export default function EntityCard({
   businessName,
   children,
   onClick,
-  style
+  style,
+  accentColor  // optional override for the left rail (e.g. violet for recurring jobs)
 }) {
   const isBusiness = !!businessName
   const tint = getGenderTint(name)
@@ -112,7 +113,7 @@ export default function EntityCard({
       ? bg
       : `linear-gradient(to bottom, ${bg}, ${tint ? bg.replace('0.12)', '0.07)') : '#fafafa'})`,
     border: `1px solid ${theme.border}`,
-    borderLeft: `5px solid ${accent}`,
+    borderLeft: `5px solid ${accentColor || accent}`,
     borderRadius: isBusiness ? '4px' : '16px',
     boxShadow: isBusiness ? 'none' : personShadow,
     padding: '16px',
