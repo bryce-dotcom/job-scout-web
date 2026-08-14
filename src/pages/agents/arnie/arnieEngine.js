@@ -2,6 +2,7 @@ import { getUserRole, assembleDataContext, getDataLoadStatus } from './arnieTool
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { JOBSCOUT_KNOWLEDGE, getFeatureContextForMessage } from './arnieKnowledge'
+import { toApiMessages, withCurrentTurn } from '../../../lib/chatAttachments'
 
 function buildSystemPrompt(user, company, role) {
   const roleNames = { developer: 'Developer', super_admin: 'Owner/Super Admin', admin: 'Admin', manager: 'Manager', team_lead: 'Team Lead', user: 'User' }
@@ -45,6 +46,14 @@ function buildSystemPrompt(user, company, role) {
 - Help with general business questions
 - Entertain, motivate, and keep morale up
 - **Help techs on the job** — you know what job they're clocked into and what page they're viewing. You can see their assigned sections/tasks, line items (what to install/service), customer info, and job details. Walk them through their work step by step if they ask.
+
+## Attachments — people send you screenshots, photos and PDFs
+- You can SEE images and read PDFs the user attaches. Look at them properly before answering.
+- A screenshot of an error or a weird screen: say what it shows, what caused it, and the exact next step in JobScout. Name the page and the button.
+- A photo from the field (a fixture, a panel, a label, a nameplate): read the numbers off it and tell them what it means for the job.
+- A bill, invoice, or utility statement: pull the real figures out of it and lay them out. Never invent a number that isn't visible — if it's cut off or blurry, say so and ask for a better shot.
+- A spreadsheet or list they want entered: read it back as a clean table and tell them where it goes in JobScout. You can't write data yourself, so hand them the steps.
+- If an image is too dark, cropped, or unreadable, say that plainly instead of guessing.
 
 ## Job Context Awareness
 - When a tech asks for help, you automatically see what job they're clocked into and what page they're on.
@@ -237,10 +246,7 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
     ? `\n\n## Current Data Context (REAL DATA — use ONLY these facts)\nBelow is the ACTUAL company data pulled from the database. Use ONLY these numbers and facts when answering data questions. If something is not listed here AND no tool can fetch it, you do NOT have it.\n\n${dataContext}`
     : '\n\n## Current Data Context\nNo preloaded data — call a query_* tool to fetch what you need.'
 
-  const messages = conversationHistory.map(msg => ({
-    role: msg.role === 'user' ? 'user' : 'assistant',
-    content: msg.content,
-  }))
+  const messages = toApiMessages(conversationHistory)
 
   const fullSystemPrompt = systemPrompt + contextMessage
 
@@ -308,8 +314,9 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
   return full
 }
 
-// Send a message through the full pipeline with streaming
-export async function sendMessageStream(message, history = [], onChunk) {
+// Send a message through the full pipeline with streaming.
+// `attachments` are screenshots/photos/PDFs the user added to THIS turn.
+export async function sendMessageStream(message, history = [], onChunk, attachments = []) {
   let role, userId
   try {
     const ur = getUserRole()
@@ -373,10 +380,7 @@ export async function sendMessageStream(message, history = [], onChunk) {
     console.error('[Arnie] feature context injection failed:', e)
   }
 
-  const conversationHistory = [
-    ...history,
-    { role: 'user', content: message }
-  ]
+  const conversationHistory = withCurrentTurn(history, message, attachments)
 
   const { companyId } = useStore.getState()
   const response = await callClaude(conversationHistory, systemPrompt, dataContext, onChunk, companyId, role)

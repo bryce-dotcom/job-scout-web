@@ -316,7 +316,10 @@ Deno.serve(async (req) => {
       return jsonError('messages array is required', 400)
     }
 
-    // Sanitize messages — alternate user/assistant, start with user
+    // Sanitize messages — alternate user/assistant, start with user.
+    // `content` may be a string or an array of blocks (a message carrying an
+    // image or PDF attachment); the array passes through untouched, which is
+    // why attachments needed no change on this side.
     const cleaned: any[] = []
     for (const msg of messages) {
       const r = msg.role === 'user' ? 'user' : 'assistant'

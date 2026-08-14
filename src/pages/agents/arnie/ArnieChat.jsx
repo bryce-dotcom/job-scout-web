@@ -6,7 +6,8 @@ import { sendMessageStream, createSession, saveMessage, updateSessionTitle, load
 import { getUserRole } from './arnieTools'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download } from 'lucide-react'
+import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X } from 'lucide-react'
+import { readAttachment, attachmentNote, describeAttachments, ACCEPT_ATTR, MAX_ATTACHMENTS } from '../../../lib/chatAttachments'
 import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, ARNIE_VOICES, unlockAudio } from './arnieVoice'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 
@@ -85,6 +86,10 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   const [loading, setLoading] = useState(false)
   const [sessionId, setSessionId] = useState(externalSessionId || null)
   const [copiedId, setCopiedId] = useState(null)
+  const [attachments, setAttachments] = useState([])
+  const [attachError, setAttachError] = useState('')
+  const [reading, setReading] = useState(false)
+  const fileInputRef = useRef(null)
   const [exportedId, setExportedId] = useState(null)
 
   // Voice state
@@ -335,21 +340,69 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     transcriptRef.current = ''
   }
 
+  // ── Attachments ─────────────────────────────────────────────────────
+
+  const addFiles = useCallback(async (fileList) => {
+    const files = Array.from(fileList || []).filter(f => f && f.size >= 0)
+    if (!files.length) return
+    setAttachError('')
+    setReading(true)
+    const added = []
+    const problems = []
+    for (const file of files) {
+      if (attachments.length + added.length >= MAX_ATTACHMENTS) {
+        problems.push(`I can take ${MAX_ATTACHMENTS} at a time — ${file.name} didn't make the cut.`)
+        continue
+      }
+      try {
+        added.push(await readAttachment(file))
+      } catch (err) {
+        problems.push(err.message)
+      }
+    }
+    if (added.length) setAttachments(prev => [...prev, ...added])
+    setAttachError(problems.join(' '))
+    setReading(false)
+  }, [attachments.length])
+
+  const removeAttachment = (id) => {
+    setAttachments(prev => prev.filter(a => a.id !== id))
+    setAttachError('')
+  }
+
+  // Ctrl+V a screenshot straight into the box — how people actually share one.
+  const handlePaste = (e) => {
+    const files = Array.from(e.clipboardData?.items || [])
+      .filter(i => i.kind === 'file')
+      .map(i => i.getAsFile())
+      .filter(Boolean)
+    if (files.length) {
+      e.preventDefault()
+      addFiles(files)
+    }
+  }
+
   // ── Send message ────────────────────────────────────────────────────
 
   const sendingRef = useRef(false)
 
-  const handleSend = useCallback(async (text) => {
+  // `canned` marks a quick-action chip — a fixed prompt that shouldn't swallow
+  // a photo the user is still composing around. Voice does carry it: on a job
+  // site "what is this?" spoken over a snapshot is the normal way to ask.
+  const handleSend = useCallback(async (text, { canned = false } = {}) => {
     const msg = (text || input).trim()
-    if (!msg || loading || sendingRef.current) return
+    const files = canned ? [] : attachments
+    if ((!msg && !files.length) || loading || reading || sendingRef.current) return
     sendingRef.current = true
 
     unlockAudio()
     pauseMic()
     setInput('')
+    if (files.length) setAttachments([])
+    setAttachError('')
     transcriptRef.current = ''
 
-    const userMsg = { id: Date.now(), role: 'user', content: msg }
+    const userMsg = { id: Date.now(), role: 'user', content: msg, attachments: files }
     const assistantId = Date.now() + 1
     setMessages(prev => [...prev, userMsg])
     setLoading(true)
@@ -365,14 +418,21 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     }, 30000)
 
     try {
+      // The files themselves aren't stored, so the saved transcript has to name
+      // them or a reopened session reads as a non-sequitur. An attachment with
+      // no typed text still needs a title.
+      const note = attachmentNote(files)
+      const savedText = note ? (msg ? `${msg}\n\n${note}` : note) : msg
+      const title = (msg || describeAttachments(files) || 'New conversation').slice(0, 80)
+
       let sid = sessionId
       if (!sid) {
-        const session = await createSession(msg.slice(0, 80))
+        const session = await createSession(title)
         sid = session?.session_id
         setSessionId(sid)
       }
 
-      await saveMessage(sid, 'user', msg)
+      await saveMessage(sid, 'user', savedText)
 
       // Admin config request → propose a change inline (approve to apply)
       // instead of a normal chat reply. Everything else streams as usual.
@@ -380,18 +440,18 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         const said = await proposeInChat(msg, assistantId)
         await saveMessage(sid, 'assistant', said)
         if (messagesRef.current.length <= 1) {
-          await updateSessionTitle(sid, msg.slice(0, 80))
+          await updateSessionTitle(sid, title)
         }
       } else {
         // Use messagesRef.current to avoid stale closure over `messages`
-        const history = messagesRef.current.map(m => ({ role: m.role, content: m.content }))
+        const history = messagesRef.current.map(m => ({ role: m.role, content: m.content, attachments: m.attachments }))
 
         // Stream response — text appears in real-time
         const fullResponse = await sendMessageStream(msg, history, (partialText) => {
           setMessages(prev => prev.map(m =>
             m.id === assistantId ? { ...m, content: partialText } : m
           ))
-        })
+        }, files)
 
         await saveMessage(sid, 'assistant', fullResponse)
 
@@ -399,7 +459,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         speakText(fullResponse)
 
         if (messagesRef.current.length <= 1) {
-          await updateSessionTitle(sid, msg.slice(0, 80))
+          await updateSessionTitle(sid, title)
         }
       }
     } catch (err) {
@@ -419,7 +479,11 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     // proposeInChat is intentionally omitted — it only closes over stable
     // setters, and `input` already rebuilds this callback each keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, loading, sessionId, speakText, pauseMic, resumeMic, isAdmin])
+  }, [input, attachments, reading, loading, sessionId, speakText, pauseMic, resumeMic, isAdmin])
+
+  // An attached file is enough on its own — a screenshot with no caption is a
+  // perfectly clear question.
+  const canSend = (!!input.trim() || attachments.length > 0) && !loading && !reading
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -555,7 +619,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
               {quickActions.map((action) => (
                 <button
                   key={action.label}
-                  onClick={() => handleSend(action.prompt)}
+                  onClick={() => handleSend(action.prompt, { canned: true })}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6,
                     padding: '8px 14px', borderRadius: 20,
@@ -602,7 +666,31 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                   </div>
                 ) : (
-                  <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                  <>
+                    {msg.attachments?.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: msg.content ? 8 : 0 }}>
+                        {msg.attachments.map(att => att.previewUrl ? (
+                          <img
+                            key={att.id} src={att.previewUrl} alt={att.name}
+                            style={{
+                              maxWidth: 180, maxHeight: 180, borderRadius: 8,
+                              border: '1px solid rgba(255,255,255,0.25)', display: 'block',
+                            }}
+                          />
+                        ) : (
+                          <span key={att.id} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            background: 'rgba(255,255,255,0.18)', borderRadius: 8,
+                            padding: '6px 10px', fontSize: 12.5, maxWidth: 200,
+                          }}>
+                            <FileText size={13} style={{ flexShrink: 0 }} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{att.name}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {msg.content && <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>}
+                  </>
                 )}
               </div>
               {msg.proposal && (() => {
@@ -713,7 +801,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
           {quickActions.slice(0, 4).map((action) => (
             <button
               key={action.label}
-              onClick={() => handleSend(action.prompt)}
+              onClick={() => handleSend(action.prompt, { canned: true })}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
                 padding: '6px 12px', borderRadius: 16,
@@ -737,13 +825,79 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         padding: isPanel ? '10px 14px 14px' : (isMobile ? '10px 10px 16px' : '12px 16px 20px'),
         backgroundColor: dark.bg, borderTop: `1px solid ${dark.border}`, flexShrink: 0,
       }}>
+        {/* Pending attachments */}
+        {(attachments.length > 0 || reading || attachError) && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            {attachments.map(att => (
+              <div key={att.id} style={{
+                position: 'relative', display: 'flex', alignItems: 'center', gap: 6,
+                background: dark.inputBg, border: `1px solid ${dark.borderLight}`,
+                borderRadius: 10, maxWidth: 190,
+                padding: att.previewUrl ? '4px 22px 4px 4px' : '7px 26px 7px 10px',
+              }}>
+                {att.previewUrl ? (
+                  <img src={att.previewUrl} alt={att.name} style={{ height: 46, width: 46, objectFit: 'cover', borderRadius: 7, display: 'block' }} />
+                ) : (
+                  <FileText size={14} style={{ color: dark.orange, flexShrink: 0 }} />
+                )}
+                <span style={{
+                  fontSize: 12, color: dark.textSecondary, overflow: 'hidden',
+                  textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100,
+                }}>{att.name}</span>
+                <button
+                  onClick={() => removeAttachment(att.id)}
+                  title={`Remove ${att.name}`}
+                  style={{
+                    position: 'absolute', top: 3, right: 3, width: 18, height: 18,
+                    borderRadius: 9, border: 'none', background: 'rgba(0,0,0,0.72)',
+                    color: '#fff', cursor: 'pointer', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1,
+                  }}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+            {reading && (
+              <span style={{ fontSize: 12, color: dark.textSecondary, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Loader2 size={13} style={{ animation: 'arnieSpin 1s linear infinite' }} /> Reading…
+              </span>
+            )}
+            {attachError && <span style={{ fontSize: 12, color: dark.red }}>{attachError}</span>}
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ACCEPT_ATTR}
+            style={{ display: 'none' }}
+            onChange={e => { addFiles(e.target.files); e.target.value = '' }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach a photo, screenshot or PDF"
+            style={{
+              width: 44, height: 44, borderRadius: 12,
+              border: `1px solid ${dark.borderLight}`, backgroundColor: dark.inputBg,
+              color: dark.textSecondary, display: 'flex', alignItems: 'center',
+              justifyContent: 'center', cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = dark.orange; e.currentTarget.style.color = dark.orange }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = dark.borderLight; e.currentTarget.style.color = dark.textSecondary }}
+          >
+            <Paperclip size={18} />
+          </button>
+
           <textarea
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={listening ? 'Listening...' : 'Tap mic or type...'}
+            onPaste={handlePaste}
+            placeholder={listening ? 'Listening...' : 'Tap mic, type, or attach a photo...'}
             rows={1}
             style={{
               flex: 1, padding: '10px 14px', borderRadius: 12,
@@ -776,12 +930,12 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
           <button
             onClick={() => handleSend()}
-            disabled={!input.trim() || loading}
+            disabled={!canSend}
             style={{
               width: 44, height: 44, borderRadius: 12, border: 'none',
-              backgroundColor: input.trim() && !loading ? dark.orange : dark.borderLight,
+              backgroundColor: canSend ? dark.orange : dark.borderLight,
               color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: input.trim() && !loading ? 'pointer' : 'default',
+              cursor: canSend ? 'pointer' : 'default',
               transition: 'background-color 0.15s', flexShrink: 0,
             }}
           >
