@@ -29,7 +29,7 @@ const COMING = ['Plumbing', 'HVAC', 'Roofing', 'Electrical', 'Painting', 'Masonr
 // Per-plan marketing copy, merged with real prices/caps from billingPlans.
 const MARKETING = {
   field_crew: { tl: 'Owner-operator or a small crew', feats: ['Full sales-to-paid workflow', 'Invoicing, payments & books', 'Your-branded customer portal', 'Offline field app'] },
-  field_pro: { tl: 'An established shop, 5–10 on payroll', pop: true, feats: ['grp:Everything in Crew, plus', 'AI prospecting & lead gen', 'Lighting audits, rebates & fleet', 'Email marketing + quality control', 'Routes & payment plans'] },
+  field_pro: { tl: 'An established shop, 5–10 on payroll', pop: true, feats: ['grp:Everything in Crew, plus', 'AI prospecting & lead gen', 'Lighting audits, rebates & fleet', 'Recurring jobs & customer memberships', 'Routes, payment plans & marketing'] },
   field_boss: { tl: 'Multi-crew, multi-location operation', feats: ['grp:Everything in Pro, plus', 'Payroll + every tax form filled', 'Multiple business units & per-unit branding', 'Owner reporting + the EOS rhythm', 'Priority support & onboarding'] },
 }
 const PLANS = BILLING_PLANS.map((p) => ({
@@ -440,7 +440,7 @@ export default function Pricing() {
             </div>
             <div className="edge rv">
               <div className="edge-h"><Icon id="i-bolt" /> Straight talk — where the big suites still edge us</div>
-              <p>A short list of things the enterprise platforms have that we don’t <b>yet</b>: consumer financing at checkout, recurring service memberships, built-in call recording &amp; IVR telephony, and a third-party app marketplace. All on the roadmap. What none of them hands you is the AI workforce — and that’s the part that’s hard to copy.</p>
+              <p>A short list of things the enterprise platforms have that we don’t <b>yet</b>: consumer financing at checkout, built-in call recording &amp; IVR telephony, and a third-party app marketplace. All on the roadmap. What none of them hands you is the AI workforce — and that’s the part that’s hard to copy.</p>
             </div>
             <p className="cmp-note"><i className="mk y" /> included &nbsp;<i className="mk p" /> partial / add-on &nbsp;<i className="mk n" /> not native &nbsp;— reflects one subscription vs. integrations or higher tiers. Names are trademarks of their owners.</p>
           </div>
