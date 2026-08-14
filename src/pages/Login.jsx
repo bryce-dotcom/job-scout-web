@@ -290,10 +290,10 @@ export default function Login() {
           JobScout
         </div>
         <h2 style={{ fontSize: 34, fontWeight: 850, letterSpacing: '-0.03em', lineHeight: 1.05, margin: '48px 0 0', maxWidth: '14ch', textWrap: 'balance' }}>
-          Put the whole crew to work today.
+          F**k the status quo.
         </h2>
         <p style={{ color: '#cfcbba', fontSize: 15.5, margin: '16px 0 0', maxWidth: '34ch', lineHeight: 1.5 }}>
-          The entire back office in one login — plus an AI workforce that quotes, prospects, and closes the books.
+          The business operating system — your whole back office in one login, plus a crew of AI robots doing the busywork while you do the work.
         </p>
         <div style={{ marginTop: 26, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {['Live in an afternoon', 'Import your customers in one click', 'Runs offline in the field'].map((tp) => (

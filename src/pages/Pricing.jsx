@@ -301,9 +301,9 @@ export default function Pricing() {
       <main>
         <section className={`hero${lit ? ' lit' : ''}`} ref={heroRef} style={{ paddingTop: 0 }}>
           <div className="wrap">
-            <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> The operating system for service businesses</span>
-            <h1>One platform runs the operation. An <span className="hl">AI workforce</span> runs the busywork.</h1>
-            <p className="lede">Sales, scheduling, invoicing, payroll, books, fleet — the entire back office in one system. Plus AI that sources new customers, quotes the job, and closes the month.</p>
+            <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> The business operating system, built by the people who do the work</span>
+            <h1>F**k the status quo. Welcome to <span className="hl">the AI age</span>.</h1>
+            <p className="lede">One system for the entire operation — sales, jobs, invoicing, books, payroll — running on AI with enough compute to handle your whole back office while you’re out doing the work. Not a CRM. Not another app to babysit. A business operating system so far ahead it makes whatever you’re running now look like a museum piece — and it’s going to blow your freaking mind.</p>
             <div className="cta-row">
               <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
               <a className="btn btn-ghost on-dark" href="#pr-compare">See how it compares</a>
@@ -323,8 +323,8 @@ export default function Pricing() {
         <section>
           <div className="wrap">
             <div className="sechead rv">
-              <span className="kicker">Built to scale with you</span>
-              <h2>From two trucks to twenty crews.</h2>
+              <span className="kicker">One truck or a hundred</span>
+              <h2>It scales without turning into Salesforce.</h2>
               <p>The same platform runs a solo operator and a multi-location company — sophisticated where you need it, simple where you don’t. Landscaping, lighting &amp; energy, cleaning, pest control, HVAC, security, home services, and the trades.</p>
             </div>
             <div className="forwho rv">
@@ -497,8 +497,8 @@ export default function Pricing() {
           <div className="wrap">
             <div className="final rv">
               <span className="eb on-dark">Free for 30 days · No card · Cancel anytime</span>
-              <h2>Replace the stack. Keep the crew.</h2>
-              <p>Stand up your whole operation in an afternoon, bring your customers over in a click, and put the AI workforce to work.</p>
+              <h2>Get the paperwork off your plate. Keep the parts you love.</h2>
+              <p>Set it up this afternoon, import your customers in one click, and let the robots take the busywork. Cancel anytime — though something tells me you won’t miss the data entry.</p>
               <div className="cta-row">
                 <button className="btn btn-viz" onClick={toPlans}>Start your free trial <Icon id="i-arrow" /></button>
                 <a className="btn btn-ghost on-dark" href="#pr-compare">Compare the platforms</a>
