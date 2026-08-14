@@ -106,6 +106,29 @@ serve(async (req) => {
 
     const { interval, count } = stripeInterval(plan.billing_interval || 'month');
 
+    // Ensure a reusable Stripe Price exists for this plan. Subscription items
+    // require an existing Price/Product — inline product_data is Checkout-only.
+    const sPost = async (path: string, o: Record<string, string>) => {
+      const r = await fetch('https://api.stripe.com/v1/' + path, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(o).toString(),
+      });
+      return { ok: r.ok, body: await r.json() };
+    };
+    let priceId: string | null = plan.stripe_price_id || null;
+    if (!priceId) {
+      const prod = await sPost('products', { name: plan.name || 'Membership' });
+      if (!prod.ok) return json({ error: `Stripe: ${prod.body?.error?.message || 'could not create product'}` }, 502);
+      const price = await sPost('prices', {
+        product: prod.body.id, currency: 'usd', unit_amount: String(plan.price_cents || 0),
+        'recurring[interval]': interval, 'recurring[interval_count]': String(count),
+      });
+      if (!price.ok) return json({ error: `Stripe: ${price.body?.error?.message || 'could not create price'}` }, 502);
+      priceId = price.body.id;
+      await sb.from('membership_plans').update({ stripe_price_id: priceId }).eq('id', plan.id);
+    }
+
     // Record the membership first (incomplete) so we can stamp its id on the sub.
     const { data: mem, error: memErr } = await sb.from('customer_memberships').insert({
       company_id: companyId, customer_id, membership_plan_id: plan.id,
@@ -116,15 +139,11 @@ serve(async (req) => {
     if (memErr) return json({ error: 'Could not create membership: ' + memErr.message }, 500);
     const membershipId = mem.id;
 
-    // Create the Stripe subscription on the tenant's account, inline price_data.
+    // Create the Stripe subscription on the tenant's account.
     const p = new URLSearchParams();
     p.append('customer', cust.stripe_customer_id);
     p.append('default_payment_method', pmId);
-    p.append('items[0][price_data][currency]', 'usd');
-    p.append('items[0][price_data][product_data][name]', plan.name || 'Membership');
-    p.append('items[0][price_data][unit_amount]', String(plan.price_cents || 0));
-    p.append('items[0][price_data][recurring][interval]', interval);
-    p.append('items[0][price_data][recurring][interval_count]', String(count));
+    p.append('items[0][price]', priceId as string);
     p.append('payment_behavior', 'allow_incomplete');
     p.append('expand[0]', 'latest_invoice');
     p.append('metadata[subscription_kind]', 'customer_membership');
