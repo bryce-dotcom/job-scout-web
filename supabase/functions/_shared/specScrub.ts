@@ -20,10 +20,29 @@
 // the on-screen panel cannot disagree about what leaks.
 
 /** Terms that survive scrubbing no matter who flags them. */
-export const DEFAULT_KEEP_TERMS = ['SMBE']
+// Never scrub these.
+//
+// SMBE is our own product line. The rest are CERTIFICATIONS and standards,
+// which the extractor kept classifying as brand terms — so "DLC listed; TAA
+// Compliant option available" came out as "listed; Compliant option
+// available". DLC is the accreditation that qualifies the fixture for the
+// utility rebate, so scrubbing it removed the customer's reason to believe the
+// incentive applies. None of these identify a manufacturer; the model NUMBER
+// does, and that is denied separately along with its prefix.
+export const DEFAULT_KEEP_TERMS = [
+  'SMBE',
+  'DLC', 'DesignLights', 'TAA', 'NSF', 'ETL', 'UL', 'cUL', 'CE', 'RoHS',
+  'Energy Star', 'ENERGY STAR', 'Zhaga', 'IP65', 'IP66', 'IK08',
+]
 
 /** Spec rows that identify the part no matter how the value is scrubbed. */
-const IDENTIFYING_LABEL = /catalog|model|part\s*(no|number|#)|sku|order\s*code|listing|dlc|manufacturer|brand|series/i
+// "dlc" and bare "listing" used to be here wholesale, which dropped EVERY DLC
+// row — including "DLC Listed: Yes". That is a certification, and the thing
+// that qualifies the fixture for the utility rebate, so removing it cost a
+// selling point and left the customer unable to see why the incentive applies.
+// Only the DLC listing NUMBER identifies the part (it searches straight back to
+// the manufacturer), so only that is dropped now.
+const IDENTIFYING_LABEL = /catalog|model|part\s*(no|number|#)|sku|order\s*code|manufacturer|brand|series|dlc\s*(listing|number|id|product)|listing\s*(no|number|#|id)/i
 
 const URL_RE = /\b(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+\.(?:com|net|org|io|co)\b/gi
 const EMAIL_RE = /\b[\w.+-]+@[\w.-]+\.\w{2,}\b/gi
@@ -82,10 +101,45 @@ export function buildDenyTerms(
     seen.add(k);
     out.push(term);
   }
+
+  // Deny the manufacturer's model PREFIX as well as the exact codes.
+  //
+  // The deny list is full catalogue numbers, which only match themselves — so
+  // a DIFFERENT code from the same maker walked straight through. "LOC-" is
+  // LED One Corp, and a customer can search one LOC- number as easily as
+  // another. Verified leaking on EST-MSF2UIQ3 before this: the sheet carried
+  // no maker NAME but still carried their part numbering.
+  //
+  // Prefixes are derived from the denied terms only, so a keep term (SMBE) can
+  // never produce one.
+  for (const prefix of modelPrefixes(out)) {
+    if (keep.has(prefix.toLowerCase().replace(/-$/, ''))) continue;
+    if (seen.has(prefix.toLowerCase())) continue;
+    seen.add(prefix.toLowerCase());
+    out.push(prefix);
+  }
+
   return out.sort((a, b) => b.length - a.length);
 }
 
 /** A short all-caps token is an acronym — only ever match it standalone. */
+/**
+ * Manufacturer model prefixes, derived from the model-shaped deny terms.
+ *
+ * A deny list of full catalogue numbers only matches those exact strings, so a
+ * DIFFERENT code from the same maker leaked: "LOC-" is LED One Corp, and a
+ * customer can search one LOC- number as easily as another. Verified leaking
+ * on EST-MSF2UIQ3 before this.
+ */
+export function modelPrefixes(terms: string[] = []): string[] {
+  const out = new Set<string>()
+  for (const t of terms) {
+    const m = String(t || '').match(/^([A-Za-z]{2,5})-[A-Za-z0-9]/)   // LOC-4FT… , MES-PHB…
+    if (m) out.add(m[1] + '-')
+  }
+  return [...out]
+}
+
 function matcherFor(term: string): RegExp {
   const isShortAcronym = term.length <= 5 && /^[A-Z0-9-]+$/.test(term)
   return isShortAcronym
