@@ -2625,6 +2625,7 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
     stripe_publishable_key: '',
     stripe_secret_key: '',
     stripe_webhook_secret: '',
+    stripe_subscription_webhook_secret: '',
     paypal_enabled: false,
     paypal_mode: 'sandbox',
     paypal_client_id: '',
@@ -2993,6 +2994,20 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
                     placeholder="whsec_..."
                     style={inputStyle}
                   />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Subscription Webhook Secret <span style={{ fontWeight: 400, color: theme.textMuted, fontSize: '11px' }}>· enables memberships</span></label>
+                  <input
+                    type="password"
+                    value={form.stripe_subscription_webhook_secret}
+                    onChange={(e) => setForm(prev => ({ ...prev, stripe_subscription_webhook_secret: e.target.value }))}
+                    placeholder="whsec_... (customer-subscription-webhook endpoint)"
+                    style={inputStyle}
+                  />
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px', lineHeight: 1.4 }}>
+                    Add a Stripe webhook to <span style={{ fontFamily: 'monospace' }}>…/functions/v1/customer-subscription-webhook</span> (events: customer.subscription.*, invoice.paid, invoice.payment_failed) and paste its signing secret here to turn on memberships.
+                  </div>
                 </div>
 
                 {/* Stripe Account Health — pulls account state directly

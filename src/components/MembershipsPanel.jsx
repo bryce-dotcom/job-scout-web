@@ -27,6 +27,7 @@ export default function MembershipsPanel({ theme, companyId }) {
   const [members, setMembers] = useState([])
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
+  const [configured, setConfigured] = useState(false)
   const [showPlanForm, setShowPlanForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [enrollError, setEnrollError] = useState(null)
@@ -38,11 +39,14 @@ export default function MembershipsPanel({ theme, companyId }) {
   const load = useCallback(async () => {
     if (!companyId) return
     setLoading(true)
-    const [{ data: p }, { data: m }, { data: c }] = await Promise.all([
+    const [{ data: p }, { data: m }, { data: c }, { data: cfg }] = await Promise.all([
       supabase.from('membership_plans').select('*').eq('company_id', companyId).order('created_at', { ascending: false }),
       supabase.from('customer_memberships').select('*, customer:customers!customer_id(id, name, business_name)').eq('company_id', companyId).order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, business_name').eq('company_id', companyId).order('name').limit(2000),
+      supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payment_config').maybeSingle(),
     ])
+    let pc = null; if (cfg?.value) { try { pc = JSON.parse(cfg.value) } catch { /* ignore */ } }
+    setConfigured(!!(pc?.stripe_subscription_webhook_secret && pc?.stripe_secret_key))
     setPlans(p || []); setMembers(m || []); setCustomers(c || []); setLoading(false)
   }, [companyId])
   useEffect(() => { (async () => { await load() })() }, [load])
@@ -175,8 +179,15 @@ export default function MembershipsPanel({ theme, companyId }) {
         ))}
       </div>
 
-      {/* Enroll */}
-      {plans.filter(p => p.active).length > 0 && (
+      {/* Enroll — gated on the tenant configuring the subscription webhook, so
+          nobody can charge a real card before memberships are deliberately set up. */}
+      {!configured && (
+        <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.35)', borderRadius: 12, padding: '12px 14px', marginBottom: 22, fontSize: 13, color: theme.textSecondary }}>
+          <AlertCircle size={16} style={{ color: '#a16207', marginTop: 1, flex: 'none' }} />
+          <div><b>Memberships aren't turned on yet.</b> Add your <b>Subscription Webhook Secret</b> in Settings → Payments to enable enrollment. You can still build plans below.</div>
+        </div>
+      )}
+      {configured && plans.filter(p => p.active).length > 0 && (
         <form onSubmit={doEnroll} style={{ background: theme.accentBg, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 16, marginBottom: 22 }}>
           <h3 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 800, color: theme.text }}>Enroll a customer</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%,200px), 1fr))', gap: 12, alignItems: 'end' }}>
