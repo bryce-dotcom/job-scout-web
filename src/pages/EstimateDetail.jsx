@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { quoteWriteDecision, WRITE, quoteSummary } from '../lib/quoteTotal'
 import { withAssets } from '../lib/productAssets'
 import { publicSheet } from '../lib/specScrub'
-import { buildSpecSheetPdf, imageToDataUrl } from '../lib/specSheetPdf'
+import { buildSpecSheetPdf, imageToDataUrl, specCoverage } from '../lib/specSheetPdf'
 import { proposalMode, sendButtonLabel, proposalModeOptions } from '../lib/proposalModes'
 import PresentationOptions from '../components/estimate/PresentationOptions'
 import { findMatchingCustomer } from '../lib/customerMatch'
@@ -124,6 +124,11 @@ function classifyAddOn(svc) {
   if (/permit|compliance|title\s*24|iecc|hazmat|\bpcb\b|audit|incentive\s+processing|tax\s+deduction|179d/.test(n)) return 'Compliance & Permits'
   return 'Services & Labor'
 }
+
+// The name the generated sheet actually goes out under. Used by the send path
+// AND by the manifest the rep reads before hitting send, so what's promised and
+// what's attached can't drift apart.
+const SPEC_SHEET_FILENAME = 'Project Specifications.pdf'
 
 function EstimateDetailInner() {
   const { id } = useParams()
@@ -2207,11 +2212,23 @@ function EstimateDetailInner() {
     return () => { cancelled = true }
   }, [companyId])
 
+  // Our spec sheet exists to replace the manufacturer's branded one, so it has
+  // to carry OUR brand — it was going out with the maker stripped off and
+  // nothing put in their place. Business unit first, then the configured
+  // company logo, matching what the estimate PDF itself uses.
+  const brandLogoUrl = () => {
+    const bu = getBusinessUnitObject()
+    if (bu?.logo_url) return bu.logo_url
+    const setting = useStore.getState().settings?.find?.(s => s.key === 'company_logo_url')
+    return setting?.value || company?.logo_url || ''
+  }
+
   const previewPublicSpecSheet = async (product) => {
     if (!product) return
     try {
       const withImage = { ...product, imageDataUrl: await imageToDataUrl(product.image_url) }
-      const { doc, leaks } = buildSpecSheetPdf({ products: [withImage], company, logoDataUrl: null, knownManufacturers })
+      const logoDataUrl = await imageToDataUrl(brandLogoUrl())
+      const { doc, leaks } = buildSpecSheetPdf({ products: [withImage], company, logoDataUrl, knownManufacturers })
       // The leak check is the whole point of the feature — never show a sheet
       // that still names the manufacturer, or a rep will screen-share it.
       if (leaks.length) {
@@ -2261,14 +2278,15 @@ function EstimateDetailInner() {
           seen.add(p.id)
           products.push({ ...p, imageDataUrl: await imageToDataUrl(p.image_url) })
         }
-        const { doc, leaks } = buildSpecSheetPdf({ products, company, logoDataUrl: null, knownManufacturers })
+        const logoDataUrl = await imageToDataUrl(brandLogoUrl())
+        const { doc, leaks } = buildSpecSheetPdf({ products, company, logoDataUrl, knownManufacturers })
         if (leaks.length) {
           // Never send a sheet that failed its own leak check.
           console.error('[EstimateDetail] spec sheet leak check failed', leaks)
           toast.error('Specification sheet withheld — it failed its safety check.')
         } else if (doc) {
           specAttachments.push({
-            filename: 'Project Specifications.pdf',
+            filename: SPEC_SHEET_FILENAME,
             content: doc.output('datauristring').split(',')[1],
           })
         }
@@ -5479,11 +5497,7 @@ function EstimateDetailInner() {
           setIncludeSpecSheet={setIncludeSpecSheet}
           includeManufacturerSheets={includeManufacturerSheets}
           setIncludeManufacturerSheets={setIncludeManufacturerSheets}
-          specProductCount={
-            new Set((lineItems || [])
-              .filter(li => li.item?.datasheet_json?.specs?.length)
-              .map(li => li.item.id)).size
-          }
+          specCoverage={specCoverage(lineItems)}
         />
       )}
 
@@ -6866,7 +6880,7 @@ function EstimatePreview({ estimate, lineItems, company, businessUnit, settings 
 }
 
 // Preview + Send modal with two steps
-function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUnit, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle, onSettingsUpdate, customer, sendSubject, setSendSubject, sendAttachments, setSendAttachments, includeSpecSheet, setIncludeSpecSheet, includeManufacturerSheets, setIncludeManufacturerSheets, specProductCount = 0 }) {
+function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUnit, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle, onSettingsUpdate, customer, sendSubject, setSendSubject, sendAttachments, setSendAttachments, includeSpecSheet, setIncludeSpecSheet, includeManufacturerSheets, setIncludeManufacturerSheets, specCoverage = { products: 0, withSpecs: 0, missing: 0, manufacturerPdfs: 0 } }) {
   const [step, setStep] = useState('preview') // 'preview' | 'send'
   const [mode, setMode] = useState(settings.presentation_mode || 'pdf')
   const [generating, setGenerating] = useState(false)
@@ -7563,23 +7577,30 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                 style={inputStyle} />
             </div>
 
-            {/* Specifications. The generated sheet carries the real specs with
-                the manufacturer removed; the manufacturer's own PDF carries
-                their name, phone and domain — which is what lets a customer
-                take this proposal to another vendor. Hence the default. */}
-            <div style={{ border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '12px 14px', backgroundColor: theme.bg }}>
-              <label style={{ ...labelStyle, marginBottom: '10px', display: 'block' }}>Product Specifications</label>
+            {/* Spec & cut sheets. Ours carries the real specs with the maker
+                removed; the manufacturer's own PDF carries their name, phone
+                and domain — which is what lets a customer take this proposal to
+                another vendor. Hence the default, and hence spelling out the
+                difference rather than leaving a rep to guess from two similar
+                checkbox labels. */}
+            <div style={{ border: `1px solid ${theme.accent}`, borderRadius: '8px', padding: '12px 14px', backgroundColor: theme.accentBg || 'rgba(90,99,73,0.06)' }}>
+              <label style={{ ...labelStyle, marginBottom: '10px', display: 'block' }}>Spec &amp; Cut Sheets</label>
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', minHeight: '32px' }}>
                 <input type="checkbox" checked={includeSpecSheet}
                   onChange={(e) => setIncludeSpecSheet(e.target.checked)}
                   style={{ marginTop: '3px', width: '16px', height: '16px', accentColor: theme.accent }} />
                 <span style={{ fontSize: '13px', color: theme.text }}>
-                  Attach our specification sheet
+                  Our spec sheet <span style={{ color: theme.textMuted, fontWeight: 400 }}>&mdash; safe to send</span>
                   <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                    {specProductCount > 0
-                      ? `${specProductCount} product${specProductCount === 1 ? '' : 's'} — real specs, no manufacturer or model numbers`
-                      : 'No product on this estimate has specifications on file yet'}
+                    {specCoverage.withSpecs > 0
+                      ? `Real specs for ${specCoverage.withSpecs} of ${specCoverage.products} product${specCoverage.products === 1 ? '' : 's'}, with the manufacturer and model numbers stripped out.`
+                      : 'None of the products on this estimate have specs on file yet — nothing will be attached.'}
                   </span>
+                  {specCoverage.withSpecs > 0 && specCoverage.missing > 0 && (
+                    <span style={{ display: 'block', fontSize: '12px', color: theme.warning || '#eab308', marginTop: '3px' }}>
+                      {specCoverage.missing} product{specCoverage.missing === 1 ? ' has' : 's have'} no specs on file and will be left off.
+                    </span>
+                  )}
                 </span>
               </label>
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', marginTop: '10px', minHeight: '32px' }}>
@@ -7587,16 +7608,22 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                   onChange={(e) => setIncludeManufacturerSheets(e.target.checked)}
                   style={{ marginTop: '3px', width: '16px', height: '16px', accentColor: theme.accent }} />
                 <span style={{ fontSize: '13px', color: theme.text }}>
-                  Also attach the manufacturer&rsquo;s sheets
+                  The manufacturer&rsquo;s own cut sheets
                   <span style={{ display: 'block', fontSize: '12px', color: theme.error || '#ef4444', marginTop: '2px' }}>
-                    Names the manufacturer and model — the customer can shop this quote
+                    {specCoverage.manufacturerPdfs > 0
+                      ? `${specCoverage.manufacturerPdfs} file${specCoverage.manufacturerPdfs === 1 ? '' : 's'}. These name the brand and model — the customer can shop your quote. Only for a GC or engineer who insists.`
+                      : 'No manufacturer sheets on file for these products.'}
                   </span>
                 </span>
               </label>
             </div>
 
             <div>
-              <label style={labelStyle}>Attachments <span style={{ color: theme.textMuted, fontWeight: '400' }}>(spec sheets, documents)</span></label>
+              {/* Named "Additional files", not "Attachments (spec sheets…)" —
+                  the spec sheets have their own section directly above and two
+                  controls calling themselves the same thing is why a rep can
+                  look straight at this screen and not find the toggle. */}
+              <label style={labelStyle}>Additional files <span style={{ color: theme.textMuted, fontWeight: '400' }}>(anything else you want to send)</span></label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {sendAttachments.map((att, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}` }}>
@@ -7630,15 +7657,34 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', backgroundColor: (mode === 'interactive' || mode === 'formal') ? 'rgba(90,99,73,0.08)' : theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: (mode === 'interactive' || mode === 'formal') ? theme.accent : theme.textMuted }} />
-              <p style={{ fontSize: '13px', color: theme.textSecondary, margin: 0 }}>
-                {mode === 'formal'
-                  ? 'Customer will receive a link to a formal legal contract they can sign and pay from.'
-                  : mode === 'interactive'
-                  ? 'Customer will receive a link to an interactive proposal.'
-                  : 'A PDF will be generated and attached to the email.'}
+            {/* The manifest. This used to describe only the main document, so a
+                rep could read it, hit send, and have no idea a spec sheet went
+                with it — or that one didn't. It now lists everything actually
+                in the email, which is the point where "is the spec sheet
+                attached?" should stop being a question. */}
+            <div style={{ padding: '10px 14px', backgroundColor: (mode === 'interactive' || mode === 'formal') ? 'rgba(90,99,73,0.08)' : theme.bg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+              <p style={{ fontSize: '12px', fontWeight: 600, color: theme.textSecondary, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                The customer gets
               </p>
+              <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: theme.textSecondary, lineHeight: 1.7 }}>
+                <li>{mode === 'formal'
+                  ? 'A link to a formal contract they can sign and pay from'
+                  : mode === 'interactive'
+                  ? 'A link to the interactive proposal'
+                  : 'The estimate as a PDF'}</li>
+                {includeSpecSheet && specCoverage.withSpecs > 0 && (
+                  <li><strong style={{ color: theme.text }}>{SPEC_SHEET_FILENAME}</strong> &mdash; {specCoverage.withSpecs} product{specCoverage.withSpecs === 1 ? '' : 's'}, no brand or model numbers</li>
+                )}
+                {includeManufacturerSheets && specCoverage.manufacturerPdfs > 0 && (
+                  <li style={{ color: theme.error || '#ef4444' }}>{specCoverage.manufacturerPdfs} manufacturer cut sheet{specCoverage.manufacturerPdfs === 1 ? '' : 's'} &mdash; these name the brand</li>
+                )}
+                {sendAttachments.length > 0 && (
+                  <li>{sendAttachments.length} file{sendAttachments.length === 1 ? '' : 's'} you added</li>
+                )}
+                {!includeSpecSheet && specCoverage.withSpecs > 0 && (
+                  <li style={{ color: theme.textMuted }}>No spec sheet &mdash; you turned it off above</li>
+                )}
+              </ul>
             </div>
 
             <div style={{ display: 'flex', gap: '12px' }}>

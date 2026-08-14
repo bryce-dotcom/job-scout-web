@@ -20,6 +20,33 @@ const ACCENT = [90, 99, 73]
 
 /** Fetch an image as a data URL. Returns null rather than throwing — a
  *  missing photo must never stop a proposal going out. */
+// What a rep is really attaching, counted off the estimate's own lines.
+//
+// 47 products in the catalogue have a manufacturer PDF on file but nothing
+// extracted from it. Those are silently left out of the generated sheet, so a
+// bare "7 products" is a lie on an estimate carrying nine — the count has to
+// say which of the two numbers it is. Labour and service lines are skipped
+// entirely: they have no specs to show and would otherwise inflate "missing"
+// with rows nobody expected a spec for.
+export function specCoverage(lineItems = []) {
+  const seen = new Set()
+  let products = 0, withSpecs = 0, manufacturerPdfs = 0
+  for (const li of lineItems) {
+    const p = li?.item
+    if (!p || seen.has(p.id)) continue
+    seen.add(p.id)
+    const hasSpecs = p.datasheet_json?.specs?.length > 0
+    const hasPdf = !!p.spec_sheet_url
+    if (!hasSpecs && !hasPdf) continue
+    products++
+    if (hasSpecs) withSpecs++
+    if (hasPdf) manufacturerPdfs++
+  }
+  return { products, withSpecs, missing: products - withSpecs, manufacturerPdfs }
+}
+
+// Generic fetch -> data URL. Named for its first use; it carries the
+// manufacturer's PDF too, which is why it must not touch the bytes.
 export async function imageToDataUrl(url) {
   if (!url || typeof url !== 'string') return null
   try {
