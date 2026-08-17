@@ -1030,7 +1030,7 @@ export default function DocumentRules() {
             {/* Table Header */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '80px 1fr 120px 80px 100px 80px',
+              gridTemplateColumns: '80px minmax(0, 1fr) 120px 80px 100px 80px',
               gap: '12px',
               padding: '12px 16px',
               backgroundColor: theme.bg,
@@ -1071,7 +1071,7 @@ export default function DocumentRules() {
                     key={template.id}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '80px 1fr 120px 80px 100px 80px',
+                      gridTemplateColumns: '80px minmax(0, 1fr) 120px 80px 100px 80px',
                       gap: '12px',
                       padding: '12px 16px',
                       borderBottom: `1px solid ${theme.border}`,

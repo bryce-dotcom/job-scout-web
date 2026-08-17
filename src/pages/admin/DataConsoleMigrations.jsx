@@ -68,7 +68,7 @@ export default function DataConsoleMigrations() {
             const isOpen = !!open[r.id]
             return (
               <div key={r.id} style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 8 }}>
-                <div onClick={() => setOpen(o => ({ ...o, [r.id]: !o[r.id] }))} style={{ padding: 12, display: 'grid', gridTemplateColumns: '20px 60px 1fr 200px 200px 100px', gap: 12, alignItems: 'center', cursor: 'pointer' }}>
+                <div onClick={() => setOpen(o => ({ ...o, [r.id]: !o[r.id] }))} style={{ padding: 12, display: 'grid', gridTemplateColumns: '20px 60px minmax(0, 1fr) 200px 200px 100px', gap: 12, alignItems: 'center', cursor: 'pointer' }}>
                   {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   <div style={{ color: theme.textMuted, fontSize: 12 }}>#{r.id}</div>
                   <div>

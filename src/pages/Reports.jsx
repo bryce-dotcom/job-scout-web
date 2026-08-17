@@ -1485,7 +1485,7 @@ function JobsReport({ theme, companyId, jobs, employees, formatCurrency, inputSt
                               <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Line Items</div>
                               <div style={{ borderRadius: '8px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
                                 {j.lineItems.map((item, idx) => (
-                                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 60px 100px 100px', gap: '8px', padding: '6px 12px', fontSize: '12px', borderBottom: idx < j.lineItems.length - 1 ? `1px solid ${theme.border}` : 'none', backgroundColor: idx % 2 === 0 ? theme.bgCard : theme.bg }}>
+                                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) 60px 100px 100px', gap: '8px', padding: '6px 12px', fontSize: '12px', borderBottom: idx < j.lineItems.length - 1 ? `1px solid ${theme.border}` : 'none', backgroundColor: idx % 2 === 0 ? theme.bgCard : theme.bg }}>
                                     <span style={{ color: theme.text }}>{item.name}</span>
                                     <span style={{ textAlign: 'right', color: theme.textMuted }}>x{item.qty}</span>
                                     <span style={{ textAlign: 'right', color: theme.textSecondary }}>{formatCurrency(item.cost)}</span>

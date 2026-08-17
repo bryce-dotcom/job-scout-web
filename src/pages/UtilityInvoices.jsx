@@ -379,7 +379,7 @@ export default function UtilityInvoices() {
           }}>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',
+              gridTemplateColumns: '90px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 80px 100px 100px 100px 70px',
               gap: '12px',
               padding: '14px 20px',
               backgroundColor: theme.accentBg,
@@ -406,7 +406,7 @@ export default function UtilityInvoices() {
                 onClick={() => navigate(`/utility-invoices/${invoice.id}`, { state: { from: window.location.pathname } })}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '90px 1fr 1fr 1fr 80px 100px 100px 100px 70px',
+                  gridTemplateColumns: '90px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 80px 100px 100px 100px 70px',
                   gap: '12px',
                   padding: '16px 20px',
                   borderBottom: `1px solid ${theme.border}`,

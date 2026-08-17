@@ -865,7 +865,7 @@ function ScorecardTab({ data, save, theme, employees, storeData, entities, isMob
         <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
           <div style={{ minWidth: isMobile ? '600px' : 'auto' }}>
             {scorecard.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 80px 90px 90px 40px', gap: '8px', padding: '8px 12px', fontSize: '10px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) 80px 90px 90px 40px', gap: '8px', padding: '8px 12px', fontSize: '10px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 <span>Metric</span><span>Owner</span><span>Goal</span><span>Wk of {getWeekRange(1).label}</span><span>Wk of {getWeekRange(2).label}</span><span></span>
               </div>
             )}
@@ -880,7 +880,7 @@ function ScorecardTab({ data, save, theme, employees, storeData, entities, isMob
                 const fmt = isAuto ? AUTO_SOURCES[m.source]?.format : null
                 return (
                   <div key={m.id} style={{
-                    display: 'grid', gridTemplateColumns: '2fr 1fr 80px 90px 90px 40px', gap: '8px',
+                    display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) 80px 90px 90px 40px', gap: '8px',
                     padding: '10px 12px', borderRadius: '8px', backgroundColor: theme.bg,
                     alignItems: 'center', border: `1px solid ${theme.border}`,
                   }}>
