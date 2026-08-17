@@ -528,7 +528,7 @@ function UsageBar({ label, used, limit, theme }) {
 // SetupIntent client_secret returned by tenant-billing-setup-intent,
 // then calls tenant-billing-create-subscription with the resulting
 // payment_method.id.
-function CardCaptureModal({ companyId, planId, interval, theme, onClose, onSuccess }) {
+export function CardCaptureModal({ companyId, planId, interval, theme, onClose, onSuccess }) {
   const [stripeReady, setStripeReady] = useState(false)
   const [stripe, setStripe] = useState(null)
   const [elements, setElements] = useState(null)

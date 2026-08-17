@@ -5,6 +5,7 @@ import { useStore } from '../lib/store'
 import { PLANS } from '../lib/billingPlans'
 import { Eye, EyeOff, Check, ArrowRight } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { CardCaptureModal } from '../components/BillingTab'
 
 // Storefront palette (matches /pricing) so the signup flows straight out of the
 // marketing page without a plain-form cliff. Green = structure, hi-vis orange =
@@ -49,6 +50,7 @@ export default function Login() {
   // the chosen plan shown.
   const params = (() => { try { return new URLSearchParams(window.location.search) } catch { return new URLSearchParams() } })()
   const [mode, setMode] = useState(params.get('signup') ? 'beta-signup' : 'signin')
+  const [cardStep, setCardStep] = useState(null) // { companyId } — card capture shown after the account is created
   const selectedPlan = PLANS.find((p) => p.id === params.get('plan')) || null
 
   const [email, setEmail] = useState('')
@@ -188,6 +190,14 @@ export default function Login() {
       setCompany(result.company)
       await checkDeveloperStatus()
       supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
+      // The account already exists (trialing). If a plan was chosen, capture a card
+      // now to activate the trial — the first charge lands at day 30. Reuses the
+      // proven CardCaptureModal (SetupIntent -> create-subscription on master Stripe).
+      if (selectedPlan?.id && data.companyId) {
+        setLoading(false)
+        setCardStep({ companyId: data.companyId })
+        return
+      }
       navigate('/onboarding')
     } catch (err) {
       setError(err.message || 'An unexpected error occurred')
@@ -267,7 +277,7 @@ export default function Login() {
   }
   const getSub = () => {
     switch (mode) {
-      case 'beta-signup': return '30 days free · no card required · cancel anytime'
+      case 'beta-signup': return '30 days free · cancel anytime · card required to start'
       case 'forgot-password': return 'We’ll email you a reset link'
       default: return 'Sign in to your JobScout account'
     }
@@ -327,6 +337,16 @@ export default function Login() {
 
   return (
     <div style={{ minHeight: '100dvh', background: theme.bg, display: 'flex', fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', color: theme.text }}>
+      {cardStep && (
+        <CardCaptureModal
+          companyId={cardStep.companyId}
+          planId={selectedPlan?.id}
+          interval="monthly"
+          theme={theme}
+          onClose={() => navigate('/onboarding')}
+          onSuccess={() => navigate('/onboarding')}
+        />
+      )}
       {!isMobile && brandPanel}
 
       {/* Form side */}
