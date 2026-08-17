@@ -977,7 +977,7 @@ export default function PurchaseOrderDetail() {
                 {/* Column header */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '1fr 90px 110px 110px 36px',
+                  gridTemplateColumns: 'minmax(0, 1fr) 90px 110px 110px 36px',
                   gap: 8, fontSize: 11, fontWeight: 600,
                   color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.5,
                   padding: '0 4px',
@@ -992,7 +992,7 @@ export default function PurchaseOrderDetail() {
                   <div key={line.id} style={{ borderTop: `1px solid ${theme.border}`, padding: '8px 4px' }}>
                     <div style={{
                       display: 'grid',
-                      gridTemplateColumns: '1fr 90px 110px 110px 36px',
+                      gridTemplateColumns: 'minmax(0, 1fr) 90px 110px 110px 36px',
                       gap: 8, alignItems: 'center',
                     }}>
                       {isLineEditable ? (
@@ -1117,7 +1117,7 @@ export default function PurchaseOrderDetail() {
             {isEditable && (
               <div style={{
                 marginTop: 14, paddingTop: 14, borderTop: `1px dashed ${theme.border}`,
-                display: 'grid', gridTemplateColumns: '1fr 90px 110px auto', gap: 8, alignItems: 'center',
+                display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 90px 110px auto', gap: 8, alignItems: 'center',
               }}>
                 <input
                   type="text" placeholder="Custom line description (no product)"
@@ -1484,7 +1484,7 @@ export default function PurchaseOrderDetail() {
             {/* Per-line received qty inputs */}
             <div style={{ marginBottom: 14 }}>
               <div style={{
-                display: 'grid', gridTemplateColumns: '1fr 90px 90px 90px',
+                display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 90px 90px 90px',
                 gap: 8, fontSize: 11, fontWeight: 600, color: theme.textMuted,
                 textTransform: 'uppercase', letterSpacing: 0.5, padding: '0 4px 6px',
               }}>
@@ -1500,7 +1500,7 @@ export default function PurchaseOrderDetail() {
                 const remaining = Math.max(0, ordered - already)
                 return (
                   <div key={line.id} style={{
-                    display: 'grid', gridTemplateColumns: '1fr 90px 90px 90px',
+                    display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 90px 90px 90px',
                     gap: 8, alignItems: 'center', padding: '8px 4px',
                     borderTop: `1px solid ${theme.border}`,
                   }}>

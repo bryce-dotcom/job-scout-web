@@ -345,7 +345,7 @@ export default function Incentives() {
         }}>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr 100px 100px 80px',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) 100px 100px 80px',
             gap: '16px',
             padding: '14px 20px',
             backgroundColor: theme.accentBg,
@@ -369,7 +369,7 @@ export default function Incentives() {
                 key={incentive.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '1fr 1fr 100px 100px 80px',
+                  gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) 100px 100px 80px',
                   gap: '16px',
                   padding: '16px 20px',
                   borderBottom: `1px solid ${theme.border}`,

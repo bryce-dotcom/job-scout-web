@@ -45,6 +45,41 @@ const RULES = [
       'owing $0 because one copy was missed.',
     ],
   },
+  {
+    id: 'clipped-table-grid',
+    // Not a pattern match — the decision needs the track list counted.
+    test: (line) => {
+      const m = /gridTemplateColumns:\s*(['`])([^'`]*)\1/.exec(line)
+      if (!m) return false
+      // Split on whitespace outside parens so minmax(0, 1fr) stays one track.
+      const tracks = m[2].trim().split(/\s+(?![^()]*\))/)
+      const bareFr = tracks.some(t => /^[0-9.]*fr$/.test(t))
+      const fixed = tracks.filter(t => /^[0-9.]+px$/.test(t)).length
+      // The data-table shape: a flexible column beside fixed ones. Narrow
+      // equal-column grids ('1fr 1fr' in a modal) cannot hide a control and
+      // are deliberately not flagged — a guard that cries wolf gets disabled.
+      return bareFr && tracks.length >= 4 && fixed >= 2
+    },
+    allow: [],
+    why: [
+      'A bare fr track in a data-table grid. Use minmax(0, 1fr).',
+      '',
+      'A bare `fr` track has a minimum of AUTO, not zero. Long content in that',
+      'column refuses to shrink, the row grows wider than the page, and because',
+      'html/body carry overflow-x: hidden (src/index.css) the excess is CLIPPED',
+      'rather than scrolled. No scrollbar appears. The fixed columns on the right',
+      'simply are not reachable.',
+      '',
+      'Christopher had to zoom his browser to about 25% to edit a price on an',
+      'estimate — "I can\'t even see the numbers I\'m trying to change" — because',
+      'the Price column sat past the clipped edge. It read as a mystery rather',
+      'than a layout bug precisely because nothing visibly overflows.',
+      '',
+      'Only flags 4+ tracks mixing a bare fr with 2+ fixed px columns: the shape',
+      'where a column can be pushed out of reach. Narrow equal-column grids are',
+      'fine and are not flagged.',
+    ],
+  },
 ]
 
 function walk(dir, out = []) {
@@ -77,7 +112,9 @@ for (const rule of RULES) {
       // Skip comments — the rule is discussed in prose in several headers.
       const trimmed = line.trim()
       if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) continue
-      if (rule.pattern.test(line)) {
+      // A rule is either a regex or, when the decision needs more than pattern
+      // matching (counting grid tracks, say), a predicate.
+      if (rule.test ? rule.test(line) : rule.pattern.test(line)) {
         violations.push({ rule, file: rel, line: i + 1, text: trimmed })
       }
     }

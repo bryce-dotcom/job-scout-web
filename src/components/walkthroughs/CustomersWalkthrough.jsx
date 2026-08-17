@@ -571,7 +571,7 @@ function JobsTimeline() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {jobs.map((j, i) => (
           <motion.div key={j.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.12 }} style={{
-            display: 'grid', gridTemplateColumns: '110px 110px 1fr 80px 90px', gap: 12, alignItems: 'center',
+            display: 'grid', gridTemplateColumns: '110px 110px minmax(0, 1fr) 80px 90px', gap: 12, alignItems: 'center',
             padding: '10px 12px', background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12,
           }}>
             <div style={{ fontFamily: 'monospace', fontSize: 11, color: T.accent, fontWeight: 700 }}>{j.id}</div>
