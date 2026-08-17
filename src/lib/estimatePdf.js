@@ -82,6 +82,22 @@ async function loadPhotoForPdf(url, maxSide = 600) {
  * @param {Object} [opts.businessUnit] – { name, logo_url, address, phone, email }
  * @returns {Promise<Blob>}
  */
+/**
+ * Does the regular estimate PDF carry annual savings and the payback period?
+ *
+ * Default ON. It shipped default-off this afternoon on the "a quote, not a
+ * pitch" argument, and within the hour Damien filed that the payback period had
+ * vanished — Noah had already asked for the same line. Two reps who sell with
+ * this every day beat a default set a few hours earlier, and whoever wants a
+ * bare price document turns it off on a control they can actually see.
+ * Explicit false is always honoured, so nobody's saved choice is overridden.
+ *
+ * THE one definition: the PDF renderer and the checkbox both ask this, because
+ * a default written in two places is how the screen ends up disagreeing with
+ * the document it claims to describe.
+ */
+export const showsSavingsOnPdf = (settings) => settings?.estimate_pdf_show_savings !== false
+
 export async function generateEstimatePdf({ estimate, lineItems, company, settings, layout = 'email', businessUnit }) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
   const pw = doc.internal.pageSize.getWidth()   // 215.9
@@ -614,7 +630,7 @@ function drawTotals(doc, estimate, lineItems, startY, m, pw, ph, settings) {
   // a pitch". Defaults to Bryce's rule; Noah turns it back on rather than
   // being silently overridden. The interactive proposal carries the full case
   // either way, so nobody loses the argument, they just pick a mode.
-  const showSavings = settings?.estimate_pdf_show_savings === true
+  const showSavings = showsSavingsOnPdf(settings)
   const annualSavings = showSavings ? resolveAnnualSavings(estimate) : 0
   if (annualSavings > 0) {
     doc.setFontSize(10)
