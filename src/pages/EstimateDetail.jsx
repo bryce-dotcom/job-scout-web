@@ -21,7 +21,7 @@ import DealBreadcrumb from '../components/DealBreadcrumb'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
-import { generateEstimatePdf } from '../lib/estimatePdf'
+import { generateEstimatePdf, showsSavingsOnPdf } from '../lib/estimatePdf'
 import { toast } from '../lib/toast'
 import { companyNotify } from '../lib/companyNotify'
 import SignedProposalCard from '../components/SignedProposalCard'
@@ -129,6 +129,25 @@ function classifyAddOn(svc) {
 // AND by the manifest the rep reads before hitting send, so what's promised and
 // what's attached can't drift apart.
 const SPEC_SHEET_FILENAME = 'Project Specifications.pdf'
+
+/**
+ * Column tracks for the line-item table. ONE definition, used by both the
+ * header row and every line — they were written out separately, so fixing one
+ * silently misaligned it against the other.
+ *
+ * The flexible tracks are minmax(0, …), never a bare 2fr/1.5fr. A bare fr track
+ * has a minimum of AUTO, so a long item name or description refuses to shrink
+ * and pushes the row wider than the page. html/body carry overflow-x: hidden
+ * (index.css), so that overflow is CLIPPED rather than scrolled: the Price
+ * column ends up past the right edge with no way to reach it, and the only
+ * escape is zooming the browser out. Christopher was down to roughly 25% to
+ * edit a price — "I can't even see the numbers I'm trying to change."
+ *
+ * The mobile track was already written correctly; the desktop one was not.
+ */
+const LINE_GRID = (isMobile) => isMobile
+  ? '16px minmax(0, 1fr) 44px 62px 64px 28px'
+  : '20px minmax(0, 2fr) minmax(0, 1.5fr) 80px 100px 90px 100px 72px'
 
 function EstimateDetailInner() {
   const { id } = useParams()
@@ -3876,9 +3895,7 @@ function EstimateDetailInner() {
                 {/* Header */}
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: isMobile
-                    ? '16px minmax(0, 1fr) 44px 62px 64px 28px'
-                    : '20px 2fr 1.5fr 80px 100px 90px 100px 72px',
+                  gridTemplateColumns: LINE_GRID(isMobile),
                   gap: isMobile ? '6px' : '12px',
                   padding: isMobile ? '10px 12px' : '12px 20px',
                   backgroundColor: theme.accentBg,
@@ -3910,9 +3927,7 @@ function EstimateDetailInner() {
                         onClick={() => setExpandedLineId(isExpanded ? null : line.id)}
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: isMobile
-                            ? '16px minmax(0, 1fr) 44px 62px 64px 28px'
-                            : '20px 2fr 1.5fr 80px 100px 90px 100px 72px',
+                          gridTemplateColumns: LINE_GRID(isMobile),
                           gap: isMobile ? '6px' : '12px',
                           padding: isMobile ? '10px 12px' : '14px 20px',
                           alignItems: 'center',
@@ -6450,26 +6465,27 @@ function SettingsModal({ theme, settings, defaults, onSave, onClose, inputStyle,
               {proposalMode(localSettings.presentation_mode).blurb}
             </p>
 
-            {/* Only meaningful on the regular estimate — the other two always
-                carry the full case. Off by default: it is a price document.
-                Noah asked for savings on the PDF and Bryce wants them off, so
-                it is a switch rather than one of them losing. */}
-            {(localSettings.presentation_mode || 'pdf') === 'pdf' && (
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '10px', cursor: 'pointer', minHeight: '32px' }}>
-                <input
-                  type="checkbox"
-                  checked={localSettings.estimate_pdf_show_savings === true}
-                  onChange={(e) => setLocalSettings(prev => ({ ...prev, estimate_pdf_show_savings: e.target.checked }))}
-                  style={{ marginTop: '3px', width: '16px', height: '16px', accentColor: theme.accent }}
-                />
-                <span style={{ fontSize: '13px', color: theme.text }}>
-                  Also show annual savings and payback
-                  <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                    Off by default — the regular estimate is a price document. The utility incentive always shows.
-                  </span>
+            {/* Shown in EVERY mode, not just 'pdf'. The plain PDF is still
+                downloaded and emailed from the interactive and formal modes —
+                it is the tab next to them — so hiding the switch that governs
+                it left Damien looking for a control that was not on the screen
+                he was on. It was set on zero estimates out of 3,106, which is
+                what a control nobody can find looks like in the data. */}
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '10px', cursor: 'pointer', minHeight: '32px' }}>
+              <input
+                type="checkbox"
+                checked={showsSavingsOnPdf(localSettings)}
+                onChange={(e) => setLocalSettings(prev => ({ ...prev, estimate_pdf_show_savings: e.target.checked }))}
+                style={{ marginTop: '3px', width: '16px', height: '16px', accentColor: theme.accent }}
+              />
+              <span style={{ fontSize: '13px', color: theme.text }}>
+                Show annual savings and payback on the estimate PDF
+                <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                  On by default. Turn it off to send a bare price document — the utility
+                  incentive shows either way.
                 </span>
-              </label>
-            )}
+              </span>
+            </label>
 
             {/* Noah's ask: owners buy for reasons beyond the power bill —
                 what it does to the building, to tenants, to the people
