@@ -75,3 +75,39 @@ describe('crashKey', () => {
     expect(crashKey('boom', '/leads')).not.toBe(crashKey('boom', '/estimates'))
   })
 })
+
+describe('a dev server is not a customer', () => {
+  // The only crash that ever reached 8 occurrences came from localhost:5176
+  // with a dev React build in the stack — one of our own dev servers, alerted
+  // on as though a rep had hit it. Noise in this table is worse than an empty
+  // one: it teaches whoever reads the alert to stop reading them.
+  const rejectFrom = (hostname, reason) => {
+    for (const k of Object.keys(listeners)) delete listeners[k]
+    captured.length = 0
+    vi.stubGlobal('window', {
+      addEventListener: (name, fn) => { listeners[name] = fn },
+      location: { pathname: '/', hostname },
+    })
+    installGlobalCrashHandlers(() => ({ companyId: 3, employeeId: 1 }))
+    listeners.unhandledrejection?.({ reason })
+    return captured.length
+  }
+
+  // seenThisSession is module-level and intentionally persists for the life of
+  // a page load, so each case needs its own message or the second one is
+  // deduped away rather than gated.
+  const realBug = (n) => new TypeError(`Failed to execute 'removeChild' on 'Node' #${n}`)
+
+  it('drops a crash reported from localhost', () => {
+    expect(rejectFrom('localhost', realBug(1))).toBe(0)
+  })
+
+  it('drops one from a loopback address or a .local host', () => {
+    expect(rejectFrom('127.0.0.1', realBug(2))).toBe(0)
+    expect(rejectFrom('macbook.local', realBug(3))).toBe(0)
+  })
+
+  it('still reports the same crash from production', () => {
+    expect(rejectFrom('jobscout.appsannex.com', realBug(4))).toBe(1)
+  })
+})

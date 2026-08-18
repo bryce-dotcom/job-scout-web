@@ -45,6 +45,15 @@ export function crashKey(message, route) {
 }
 
 export async function reportCrash(error, { componentStack = null, companyId = null, employeeId = null } = {}) {
+  // A developer machine is not a customer. The one crash that ever reached
+  // 8 occurrences came from localhost:5176 with a dev React build in the
+  // stack — one of our own dev servers, reported and alerted on as though a
+  // rep had hit it. Real reports have to be the only thing in this table, or
+  // nobody reads it, and then it's worth nothing when something real lands.
+  if (typeof window !== 'undefined') {
+    const host = window.location?.hostname || ''
+    if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.local')) return
+  }
   try {
     const message = String(error?.message || error || 'Unknown error').slice(0, 500)
     const route = typeof window !== 'undefined'

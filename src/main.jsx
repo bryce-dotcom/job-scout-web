@@ -58,16 +58,22 @@ window.addEventListener('vite:preloadError', (event) => {
 // Service worker management
 if ('serviceWorker' in navigator) {
   // Clean up conflicting sw-lenard.js registrations (now handled by main Vite PWA sw.js)
+  // Each of these returns a promise, and a phone on a job site drops the
+  // connection mid-fetch constantly. Unhandled, that rejection reached the
+  // global handler and was filed as "the app showed an error screen to
+  // someone" — twice on an iPhone in one day, for a failed background update
+  // nobody saw and nothing broke. The app runs on the service worker it
+  // already has; the next load tries again.
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => {
       const url = (r.active || r.installing || r.waiting)?.scriptURL || ''
       if (url.includes('sw-lenard')) {
-        r.unregister()
+        r.unregister().catch(() => {})
       } else {
-        r.update()
+        r.update().catch(() => {})
       }
     })
-  })
+  }).catch(() => {})
   // Listen for new SW and reload when it takes over (guarded to prevent loops)
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     const key = 'sw_reloaded_at'
