@@ -304,6 +304,12 @@ export default function Books() {
   // seconds — the page visibly froze. Fetching all of them is right; Tracy needs
   // the whole backlog reachable. Rendering all of them is not.
   const [txnShowCount, setTxnShowCount] = useState(TXN_PAGE)
+  // Narrowing the list should show the top of the NEW result set, not leave you
+  // 600 rows deep in the old one. This MUST sit up here with the other hooks:
+  // there is an `if (loading) return` further down, and putting it below that
+  // changed the hook count between renders — React #310, a white "Something
+  // went wrong" screen on Books in production.
+  useEffect(() => { setTxnShowCount(TXN_PAGE) }, [txnFilter, txnAccountFilter, txnSearch])
   const [expandedTxn, setExpandedTxn] = useState(null)
   const [txnEditCategory, setTxnEditCategory] = useState('')
   const [txnEditIsTransfer, setTxnEditIsTransfer] = useState(false)
@@ -1327,10 +1333,6 @@ export default function Books() {
   if (loading) {
     return <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>Loading financial data...</div>
   }
-
-  // Narrowing the list should show you the top of the NEW result set, not leave
-  // you 600 rows deep in the old one.
-  useEffect(() => { setTxnShowCount(TXN_PAGE) }, [txnFilter, txnAccountFilter, txnSearch])
 
   // ─── Filtered transactions ───
   const filteredTxns = plaidTransactions.filter(t => {
