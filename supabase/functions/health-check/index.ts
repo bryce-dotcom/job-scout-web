@@ -144,6 +144,26 @@ const CONDITIONS: Condition[] = [
     fix: 'npx vite-node scripts/reopen-trial.mjs <companyId> --approve  (or take the payment)',
   },
   {
+    id: 'payroll_tax_year',
+    label: 'Payroll tax tables current',
+    // Bryce: "payroll taxes dont match gusto's". The method matches Pub 15-T,
+    // the same one Gusto uses — but the brackets are stamped with a year, and
+    // nothing announced when that year passed. A wrong tax figure is the kind
+    // that gets filed before anyone checks it.
+    problem: async (sb) => {
+      const { data, error } = await sb.from('settings').select('value').eq('key', 'payroll_tax_year').maybeSingle();
+      if (error) throw new Error(`settings: ${error.message}`);
+      // The app's tables are stamped in code; the year they claim is mirrored
+      // here so this check can see it without importing the app bundle.
+      const tableYear = Number(data?.value) || 2025;
+      const now = new Date().getFullYear();
+      if (now <= tableYear) return null;
+      return `Payroll tax tables are ${tableYear}; it is ${now}. Federal withholding and state wage bases ` +
+        `will not match a current-year provider such as Gusto. FICA rates are unchanged and should still agree.`;
+    },
+    fix: 'Update the brackets and wage bases in src/lib/payrollTax.js, bump TAX_YEAR, and set the payroll_tax_year setting to match.',
+  },
+  {
     id: 'trials_ending_soon',
     label: 'Trials with time left on them',
     // The point is to act BEFORE someone is locked out. Finding out afterwards

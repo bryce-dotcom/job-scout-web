@@ -22,6 +22,35 @@
 
 export const TAX_YEAR = 2025
 
+/**
+ * Are these tables the ones the IRS is actually using right now?
+ *
+ * Bryce: "payroll taxes dont match gusto's". This is the likeliest reason —
+ * not a wrong formula but a stale calendar. The withholding method here is
+ * Pub 15-T's Annual Percentage Method, which is what Gusto uses too, so the
+ * arithmetic agrees; the BRACKETS do not, because they are last year's.
+ *
+ * The flat rates (6.2% SS, 1.45% Medicare, 0.6% FUTA) do not change year to
+ * year, so FICA should still match Gusto to the cent. Expect the difference
+ * in federal income tax withholding and the state wage bases.
+ *
+ * Returns null when current, or a description of the gap. Deliberately a
+ * value rather than a console warning: a number nobody can trust must be
+ * able to say so on screen and in the daily health check.
+ */
+export function taxTablesStale(now = new Date()) {
+  const year = now.getFullYear()
+  if (year <= TAX_YEAR) return null
+  return {
+    tableYear: TAX_YEAR,
+    currentYear: year,
+    yearsBehind: year - TAX_YEAR,
+    message: `Payroll tax tables are ${TAX_YEAR}; it is ${year}. Federal withholding ` +
+      `and state wage bases will not match a current-year payroll provider. ` +
+      `FICA rates are unchanged and should still agree.`,
+  }
+}
+
 // ---- Federal Pub 15-T 2025 — Annual Percentage Method ---------------
 // "Form W-4, Step 2, Checkbox, withholding rate schedules" if multiple
 // jobs is checked; otherwise the standard schedule.
