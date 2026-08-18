@@ -152,17 +152,57 @@ let undefFailed = false
     raw = `${e.stdout || ''}`   // eslint exits non-zero when it finds errors
   }
   let hits = null
+  let hookCounts = null
   try {
     const start = raw.indexOf('[')
     if (start >= 0) {
       hits = []
+      hookCounts = {}
       for (const f of JSON.parse(raw.slice(start))) {
+        const rel = relative(ROOT, f.filePath).replace(/\\/g, '/')
         for (const m of f.messages || []) {
-          if (m.ruleId === 'no-undef') hits.push(`${relative(ROOT, f.filePath)}:${m.line}  ${m.message}`)
+          if (m.ruleId === 'no-undef') hits.push(`${rel}:${m.line}  ${m.message}`)
+          if (m.ruleId === 'react-hooks/rules-of-hooks') hookCounts[rel] = (hookCounts[rel] || 0) + 1
         }
       }
     }
-  } catch { hits = null }
+  } catch { hits = null; hookCounts = null }
+
+  // A hook called after an early return changes the hook count between renders.
+  // React throws #310 and the error boundary paints a white screen over the
+  // whole page. That took Books down in production, and guard + 845 tests +
+  // vite build ALL passed on the broken commit — a misplaced hook is invisible
+  // until it renders.
+  //
+  // 28 of these already exist (Payroll has 8, Inventory 3), so this cannot be
+  // a hard fail without a rewrite nobody asked for. It is a ratchet instead:
+  // the existing ones are recorded, and the build fails the moment a NEW one
+  // appears or a recorded file grows another. Regenerate deliberately with
+  // `node scripts/guard.mjs --update-hooks-baseline` after genuinely fixing
+  // some — never to make a failure go away.
+  if (hookCounts) {
+    const { readFileSync, writeFileSync, existsSync } = await import('node:fs')
+    const BASELINE = join(ROOT, 'scripts', 'hooks-baseline.json')
+    if (process.argv.includes('--update-hooks-baseline')) {
+      writeFileSync(BASELINE, JSON.stringify(hookCounts, null, 2) + '\n')
+      console.log(`guard: hooks baseline rewritten — ${Object.values(hookCounts).reduce((a, b) => a + b, 0)} known violation(s) in ${Object.keys(hookCounts).length} file(s)`)
+    } else {
+      let base = {}
+      if (existsSync(BASELINE)) { try { base = JSON.parse(readFileSync(BASELINE, 'utf8')) } catch { base = {} } }
+      const worse = []
+      for (const [file, n] of Object.entries(hookCounts)) {
+        const allowed = base[file] || 0
+        if (n > allowed) worse.push(`${file}  ${n} violation(s), baseline allows ${allowed}`)
+      }
+      if (worse.length) {
+        undefFailed = true
+        console.error('\nguard: FAILED — new conditional React hook(s). These build clean and white-screen the page:\n')
+        worse.forEach(w => console.error('    ' + w))
+        console.error('\n  A hook must not sit after an early return. Move it up with the other hooks.')
+        console.error('  npx eslint <file> shows the exact line.\n')
+      }
+    }
+  }
 
   if (hits === null) {
     undefFailed = true

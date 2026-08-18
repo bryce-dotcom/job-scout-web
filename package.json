@@ -15,7 +15,11 @@
     "check": "npm run guard && npm test",
     "lint": "eslint .",
     "preview": "vite preview",
-    "import-data": "node scripts/importData.js"
+    "import-data": "node scripts/importData.js",
+    "where": "node scripts/where.mjs",
+    "ship": "node scripts/ship.mjs",
+    "deployed": "node scripts/deployed.mjs",
+    "setup:sessions": "node scripts/setup-sessions.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.36.0",
