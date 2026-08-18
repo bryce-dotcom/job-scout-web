@@ -186,10 +186,25 @@ export default function CompanyMap() {
   useEffect(() => {
     if (!hasMapsKey()) { setMapError('Google Maps key is not configured (VITE_GOOGLE_MAPS_API_KEY).'); return }
     let cancelled = false
+    const ready = () => { if (!cancelled) setMapsReady(true) }
+
     loadGoogleMaps()
-      .then(() => { if (!cancelled) setMapsReady(true) })
+      .then(ready)
       .catch(e => { if (!cancelled) setMapError(e.message || 'Failed to load Google Maps') })
-    return () => { cancelled = true }
+
+    // Backstop, because the loader resolves off a `callback=` query param.
+    // If anything else on the page has already injected the Maps script,
+    // Google ignores the duplicate include and never invokes our callback —
+    // so that promise settles neither way. No .then, no .catch, no error, and
+    // the map is simply never constructed. That is exactly how this failed in
+    // production while every health signal looked fine.
+    //
+    // window.google.maps is the thing we actually need, so wait for that
+    // rather than for the notification that it arrived.
+    const poll = setInterval(() => {
+      if (window.google && window.google.maps) { clearInterval(poll); ready() }
+    }, 200)
+    return () => { cancelled = true; clearInterval(poll) }
   }, [])
 
   useEffect(() => {
