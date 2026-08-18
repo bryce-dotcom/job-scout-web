@@ -65,6 +65,12 @@ export const TAX_CATEGORIES = [
 // Flat list for reverse lookup (value -> label).
 export const TAX_CATEGORY_OPTIONS = TAX_CATEGORIES.flatMap(g => g.options)
 
+// How many transaction rows to put in the DOM at once. Each row carries a
+// category select and a tax-category select, and the tax list alone is ~15
+// options — so a row is roughly 40 nodes. All 2,134 at once measured 88,482
+// nodes and a 1.7-second forced layout.
+const TXN_PAGE = 150
+
 // Build a CPA-handoff ZIP for the given date range. Bundles every report
 // an accountant typically asks for so the user doesn't have to assemble
 // it themselves. Plain-English filenames inside the ZIP so the accountant
@@ -293,6 +299,11 @@ export default function Books() {
   const [txnSearch, setTxnSearch] = useState('')
   const [txnFilter, setTxnFilter] = useState('all') // 'all' | 'unreviewed' | 'reviewed'
   const [txnAccountFilter, setTxnAccountFilter] = useState('all')
+  // Every row carries two <select>s. Rendering all 2,134 built 88,482 DOM nodes
+  // and 32,962 <option>s, and a single reflow blocked the main thread for 1.7
+  // seconds — the page visibly froze. Fetching all of them is right; Tracy needs
+  // the whole backlog reachable. Rendering all of them is not.
+  const [txnShowCount, setTxnShowCount] = useState(TXN_PAGE)
   const [expandedTxn, setExpandedTxn] = useState(null)
   const [txnEditCategory, setTxnEditCategory] = useState('')
   const [txnEditIsTransfer, setTxnEditIsTransfer] = useState(false)
@@ -1317,6 +1328,10 @@ export default function Books() {
     return <div style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>Loading financial data...</div>
   }
 
+  // Narrowing the list should show you the top of the NEW result set, not leave
+  // you 600 rows deep in the old one.
+  useEffect(() => { setTxnShowCount(TXN_PAGE) }, [txnFilter, txnAccountFilter, txnSearch])
+
   // ─── Filtered transactions ───
   const filteredTxns = plaidTransactions.filter(t => {
     if (txnFilter === 'unreviewed' && t.confirmed) return false
@@ -2008,7 +2023,7 @@ export default function Books() {
             />
           ) : (
             <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
-              {filteredTxns.map((txn, idx) => {
+              {filteredTxns.slice(0, txnShowCount).map((txn, idx) => {
                 const isExpanded = expandedTxn === txn.id
                 const category = txn.user_category || txn.ai_category
                 const taxCat = txn.user_tax_category || txn.ai_tax_category
@@ -2655,6 +2670,23 @@ export default function Books() {
                   </div>
                 )
               })}
+              {filteredTxns.length > txnShowCount && (
+                <div style={{ padding: '16px', textAlign: 'center', borderTop: `1px solid ${theme.border}` }}>
+                  <button
+                    onClick={() => setTxnShowCount(c => c + TXN_PAGE)}
+                    style={{
+                      padding: '10px 20px', backgroundColor: theme.bg, color: theme.text,
+                      border: `1px solid ${theme.border}`, borderRadius: '8px',
+                      fontSize: '13px', fontWeight: '500', cursor: 'pointer', minHeight: '44px',
+                    }}
+                  >
+                    Show {Math.min(TXN_PAGE, filteredTxns.length - txnShowCount)} more
+                  </button>
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '8px' }}>
+                    Showing {txnShowCount} of {filteredTxns.length}. Use search or the filters above to jump straight to one.
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>
