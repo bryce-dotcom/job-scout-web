@@ -1281,7 +1281,16 @@ export default function Books() {
     const num = parseFloat(val) || 0
     return num.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
   }
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString() : ''
+  // A bare 'YYYY-MM-DD' parses as UTC midnight, which in Mountain time lands on
+  // the previous evening — so a transaction dated 2026-08-17 rendered as
+  // 8/16/2026, every row one day early. Anchoring at noon keeps the date on the
+  // day it says. Two other call sites in this file already did this; formatDate
+  // did not, which is the usual shape of these bugs.
+  const formatDate = (d) => {
+    if (!d) return ''
+    const s = String(d)
+    return new Date(s.length === 10 ? `${s}T12:00` : s).toLocaleDateString()
+  }
 
   const inputStyle = { width: '100%', padding: '10px 12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }
   const labelStyle = { display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500', color: theme.text }
@@ -1979,7 +1988,10 @@ export default function Books() {
               <select value={txnAccountFilter} onChange={(e) => setTxnAccountFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '160px' }}>
                 <option value="all">All Accounts</option>
                 {activeConnected.map(a => (
-                  <option key={a.id} value={a.id}>{a.institution_name} ****{a.mask}</option>
+                  // Same reason as the row above: every option read
+                  // "Mountain America Credit Union ****3032", so the account
+                  // filter offered nine identical-looking choices.
+                  <option key={a.id} value={a.id}>{a.account_name || a.institution_name}{a.mask ? ` ····${a.mask}` : ''}</option>
                 ))}
               </select>
             )}
@@ -2026,8 +2038,17 @@ export default function Books() {
                         <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {txn.merchant_name || txn.name || 'Unknown'}
                         </div>
+                        {/* The account NAME, not just the mask. All nine of this
+                            tenant's accounts report mask 3032, so "Mountain
+                            America Credit Union ****3032" printed against every
+                            row and the account was indistinguishable on screen —
+                            the checking account and an employee card looked
+                            identical. */}
                         {txn.account && (
-                          <div style={{ fontSize: '11px', color: theme.textMuted }}>{txn.account.institution_name} ****{txn.account.mask}</div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                            {txn.account.account_name || txn.account.institution_name}
+                            {txn.account.account_name && txn.account.mask ? ` ····${txn.account.mask}` : ''}
+                          </div>
                         )}
                       </div>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: isIncome ? '#22c55e' : '#ef4444', minWidth: '80px', textAlign: 'right' }}>
