@@ -40,28 +40,42 @@ module.exports = async function handler(req, res) {
     const companyIds = [...new Set((accounts || []).map(a => a.company_id))].filter(Boolean)
     const results = []
 
+    const call = (companyId, action) =>
+      fetch(`${url}/functions/v1/plaid-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+          apikey: key,
+        },
+        body: JSON.stringify({ action, company_id: companyId }),
+      }).then(r => r.json().catch(() => ({})))
+
     for (const companyId of companyIds) {
       try {
-        const r = await fetch(`${url}/functions/v1/plaid-link`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`,
-            apikey: key,
-          },
-          body: JSON.stringify({ action: 'sync_all', company_id: companyId }),
-        })
-        const json = await r.json().catch(() => ({}))
+        const json = await call(companyId, 'sync_all')
+
+        // Balances are a SEPARATE action. sync_all stamps last_synced but never
+        // touches current_balance — and the health check reads last_synced to
+        // decide whether BALANCES are fresh. Running the transaction sync alone
+        // on a schedule would therefore report healthy balances forever while
+        // they sat frozen at whatever they were the day the account was
+        // connected. That is the exact failure Books had to be fixed for
+        // ("the bank amounts are not matching the actual bank"); putting it on
+        // a cron would have made it permanent and silent.
+        const balances = await call(companyId, 'get_accounts')
+
         results.push({
           company_id: companyId,
-          ok: r.ok && !json.error,
+          ok: !json.error,
           added: json.total_added ?? 0,
           modified: json.total_modified ?? 0,
+          balances_refreshed: !balances?.error,
           // Surfaced rather than swallowed: an account at the bank that isn't
           // connected here means transactions we are choosing not to import,
           // and that has to be visible in the cron log.
           warnings: json.warnings || [],
-          error: json.error || null,
+          error: json.error || balances?.error || null,
         })
       } catch (err) {
         results.push({ company_id: companyId, ok: false, error: err.message })
