@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Component } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { mergeJobHourSources } from '../lib/jobHours'
 import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
 import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
@@ -398,9 +399,29 @@ function JobDetailInner() {
         notes: t.adjustment_reason || null,
       }
     })
-    // Include any legacy time_log rows for this job too (rare but real).
-    const legacy = (timeLogs || []).filter(t => t.job_id === parseInt(id))
-    setJobTimeLogs([...fromTimeClock, ...legacy])
+    // Legacy time_log rows count ONLY where no punch already covers them.
+    // Berger had the same 8.84-hour shift in both stores, so concatenating
+    // showed 17.68 on the job while the bonus read 8.84 — the two numbers
+    // Alayda reported. mergeJobHourSources is the one place that decides.
+    const merged = mergeJobHourSources({
+      timeClock: (jobTimeEntries || []),
+      timeLog: (timeLogs || []).filter(t => t.job_id === parseInt(id)),
+    })
+    const legacyKept = merged.filter(r => r._source === 'time_log').map(r => ({
+      id: `legacy-${r._legacy_id}`,
+      _source: 'time_log',
+      _source_id: r._legacy_id,
+      job_id: r.job_id,
+      employee_id: r.employee_id,
+      employee: employees.find(e => e.id === r.employee_id)
+        ? { id: r.employee_id, name: employees.find(e => e.id === r.employee_id).name }
+        : null,
+      hours: r.total_hours,
+      date: r.clock_in,
+      category: 'legacy',
+      notes: null,
+    }))
+    setJobTimeLogs([...fromTimeClock, ...legacyKept])
   }, [jobTimeEntries, timeLogs, employees, id])
 
   // Close status dropdown on outside click
