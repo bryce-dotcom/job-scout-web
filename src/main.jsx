@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.jsx'
 import { reportCrash, installGlobalCrashHandlers, installBreadcrumbs } from './lib/crashReport'
+import { installOverflowWatch } from './lib/overflowWatch'
 import { useStore } from './lib/store'
 
 // Initialize Sentry
@@ -115,6 +116,10 @@ const handleCrash = (error, componentStack) => {
 // failure are there too.
 installBreadcrumbs()
 installGlobalCrashHandlers(crashContext)
+// A clipped layout looks identical to a working one, so it can only be found
+// by measuring. This reports when a control has been pushed out of reach —
+// the failure Christopher had to photograph his monitor to tell us about.
+installOverflowWatch()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

@@ -60,9 +60,21 @@ serve(async (req) => {
 
     let sent = 0;
     for (const [companyId, rows] of byCompany) {
+      // Not everything here is a crash. The overflow watcher reports controls
+      // pushed off-screen, where nothing threw and no error screen appeared.
+      // Calling that "App crash" trains the reader to distrust the subject
+      // line, and a distrusted alert is an ignored one.
+      const isLayout = (m: string) => String(m).startsWith("Off-screen content:");
+      const layoutCount = rows.filter(r => isLayout(r.message)).length;
+      const crashCount = rows.length - layoutCount;
+
       const subject = rows.length === 1
-        ? `App crash: ${String(rows[0].message).slice(0, 80)}`
-        : `${rows.length} new app crashes`;
+        ? (isLayout(rows[0].message)
+            ? `Layout: content off-screen on ${rows[0].route || "a page"}`
+            : `App crash: ${String(rows[0].message).slice(0, 80)}`)
+        : crashCount === 0
+          ? `${layoutCount} pages with content off-screen`
+          : `${crashCount} new app crashes${layoutCount ? ` + ${layoutCount} layout` : ""}`;
 
       const lines = rows.map(r =>
         `• ${r.message}\n` +
@@ -72,7 +84,11 @@ serve(async (req) => {
       ).join("\n\n");
 
       const message =
-        `The app showed an error screen to someone.\n\n${lines}\n\n` +
+        `${crashCount ? "The app showed an error screen to someone." : "Content was pushed off-screen where nobody could reach it — nothing crashed, which is why this kind of failure used to surface only when someone photographed their monitor."}
+
+${lines}
+
+` +
         `Full stacks and resolve/reopen: Data Console > Crashes.\n\n` +
         `You are told once per distinct crash. If it keeps happening the count ` +
         `rises there rather than sending more email. Marking one resolved and ` +
