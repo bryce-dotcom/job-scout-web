@@ -349,7 +349,6 @@ export default function Layout() {
       description: 'Employees, time tracking & payroll',
       sectionIcon: Users,
       baseItems: [
-        { to: '/company-calendar', icon: CalendarDays, label: 'Company Calendar', hint: 'Sales, scheduled work and time off in one month view' },
         { to: '/employees', icon: UserCog, label: 'Employees', hint: 'Manage team members and roles' },
         { to: '/time-clock', icon: Clock, label: 'Time Clock', hint: 'Clock in and out track hours worked' },
         { to: '/my-pay', icon: DollarSign, label: 'My Pay', hint: 'Your commissions, pending payouts, and hours' },
@@ -831,6 +830,24 @@ export default function Layout() {
                 <LayoutDashboard size={20} />
                 Dashboard
               </NavLink>
+              {/* Directly under Dashboard, not buried in TEAM. It answers
+                  "who is working and who is off today" — the question you ask
+                  before anything else, so it belongs where the day starts. */}
+              <NavLink
+                to="/company-calendar"
+                title="Sales, scheduled work and time off in one month view"
+                style={({ isActive }) => ({
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '10px 12px', borderRadius: '8px',
+                  color: isActive ? theme.accent : theme.textMuted,
+                  backgroundColor: isActive ? theme.accentBg : 'transparent',
+                  textDecoration: 'none', fontSize: '14px', fontWeight: '600',
+                  transition: 'all 0.15s ease'
+                })}
+              >
+                <CalendarDays size={20} />
+                Company Calendar
+              </NavLink>
             </div>
 
             {/* Sales Flow - Numbered Steps (hidden for Field Techs) */}
@@ -1296,6 +1313,21 @@ export default function Layout() {
                   >
                     <LayoutDashboard size={20} />
                     Dashboard
+                  </NavLink>
+                  <NavLink
+                    to="/company-calendar"
+                    onClick={() => setMobileMenuOpen(false)}
+                    style={({ isActive }) => ({
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '10px 12px', borderRadius: '8px',
+                      color: isActive ? theme.accent : theme.textMuted,
+                      backgroundColor: isActive ? theme.accentBg : 'transparent',
+                      textDecoration: 'none', fontSize: '14px', fontWeight: '600',
+                      transition: 'all 0.15s ease', minHeight: '44px'
+                    })}
+                  >
+                    <CalendarDays size={20} />
+                    Company Calendar
                   </NavLink>
                 </div>
 

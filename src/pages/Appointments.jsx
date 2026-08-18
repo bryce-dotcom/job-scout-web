@@ -1,7 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+// The same builder the Company Calendar uses. Time off is one definition of
+// "who is away on this day" — deriving it a second time here is how the two
+// screens end up disagreeing about whether someone is on holiday.
+import { buildCalendarEvents, groupEventsByDay, dayKeyOfLocalDate } from '../lib/companyCalendar'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { APPOINTMENT_STATUS } from '../lib/schema'
@@ -113,6 +117,7 @@ export default function Appointments() {
   // Calendar state
   const [currentDate, setCurrentDate] = useState(new Date())
   const [viewMode, setViewMode] = useState('month')
+  const [timeOff, setTimeOff] = useState([])
   const [sourceFilter, setSourceFilter] = useState('all')
   const [employeeFilter, setEmployeeFilter] = useState('all')
 
@@ -132,6 +137,22 @@ export default function Appointments() {
   const [dragOverSlot, setDragOverSlot] = useState(null) // { day: Date, hour: number }
 
   const isAdmin = checkAdmin(user)
+
+  // Small table, not in the store — same query the Company Calendar runs.
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('time_off_requests')
+        .select('id, employee_id, start_date, end_date, request_type, status')
+        .eq('company_id', companyId)
+      // A failed read must not wipe what is already on screen.
+      if (error) { console.warn('[Appointments] time off fetch failed:', error.message); return }
+      if (!cancelled) setTimeOff(data || [])
+    })()
+    return () => { cancelled = true }
+  }, [companyId])
 
   useEffect(() => {
     if (!companyId) navigate('/')
@@ -615,6 +636,15 @@ export default function Appointments() {
   for (let i = 0; i < startDay; i++) calendarDays.push(null)
   for (let day = 1; day <= daysInMonth; day++) calendarDays.push(day)
 
+  // Who is off, by day. Built by the Company Calendar's own builder so both
+  // screens answer this from one place — including how a multi-day request
+  // expands across the days it covers, which is the part worth not rewriting.
+  const timeOffByDay = useMemo(() => {
+    const events = buildCalendarEvents({ timeOff, employees })
+      .filter(ev => ev.kind === 'timeoff')
+    return groupEventsByDay(events)
+  }, [timeOff, employees])
+
   // ─── Styles ───
   const inputStyle = {
     width: '100%',
@@ -1021,6 +1051,25 @@ export default function Appointments() {
                         color: isToday(dayDate) ? theme.accent : theme.text,
                         marginBottom: '6px'
                       }}>{day}</div>
+                      {/* Who is off, before the day's work. A scheduler needs
+                          this BEFORE booking, not after — it is the reason the
+                          day may not be as free as the empty space suggests. */}
+                      {(() => {
+                        const off = timeOffByDay[dayKeyOfLocalDate(dayDate)] || []
+                        if (!off.length) return null
+                        const names = off.map(e => e.title).join(', ')
+                        return (
+                          <div title={names} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            maxWidth: '100%', marginBottom: '4px', padding: '1px 6px',
+                            borderRadius: '999px', backgroundColor: 'rgba(168,85,247,0.12)',
+                            color: '#7e22ce', fontSize: '10px', fontWeight: '600',
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                          }}>
+                            {off.length === 1 ? off[0].title : `${off.length} off`}
+                          </div>
+                        )
+                      })()}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                         {dayEvents.slice(0, 3).map(evt => renderEventChip(evt))}
                         {dayEvents.length > 3 && (

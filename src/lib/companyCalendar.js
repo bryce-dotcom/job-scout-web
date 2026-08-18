@@ -22,6 +22,22 @@ export const KINDS = {
 
 const dayKeyOfDate = (d) => String(d || '').slice(0, 10)
 
+/**
+ * The day key for a JS Date, from its LOCAL parts.
+ *
+ * Lives here beside dayKeyOfDate so the two formats cannot drift: a lookup
+ * built with a different key silently finds nothing, which looks exactly like
+ * 'nobody is off today' rather than like a bug. Deliberately not
+ * toISOString(), which converts to UTC and lands on the previous day for any
+ * viewer far enough east.
+ */
+export const dayKeyOfLocalDate = (d) => {
+  if (!(d instanceof Date) || isNaN(d)) return ''
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+
 // Every YYYY-MM-DD from start..end inclusive (time off spans days).
 export function expandDateRange(start, end) {
   const s = dayKeyOfDate(start)
