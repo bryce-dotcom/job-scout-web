@@ -1,0 +1,69 @@
+{
+  "version": "5",
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.112.2"
+  },
+  "remote": {
+    "https://deno.land/std@0.168.0/async/abortable.ts": "80b2ac399f142cc528f95a037a7d0e653296352d95c681e284533765961de409",
+    "https://deno.land/std@0.168.0/async/deadline.ts": "2c2deb53c7c28ca1dda7a3ad81e70508b1ebc25db52559de6b8636c9278fd41f",
+    "https://deno.land/std@0.168.0/async/debounce.ts": "60301ffb37e730cd2d6f9dadfd0ecb2a38857681bd7aaf6b0a106b06e5210a98",
+    "https://deno.land/std@0.168.0/async/deferred.ts": "77d3f84255c3627f1cc88699d8472b664d7635990d5358c4351623e098e917d6",
+    "https://deno.land/std@0.168.0/async/delay.ts": "5a9bfba8de38840308a7a33786a0155a7f6c1f7a859558ddcec5fe06e16daf57",
+    "https://deno.land/std@0.168.0/async/mod.ts": "7809ad4bb223e40f5fdc043e5c7ca04e0e25eed35c32c3c32e28697c553fa6d9",
+    "https://deno.land/std@0.168.0/async/mux_async_iterator.ts": "770a0ff26c59f8bbbda6b703a2235f04e379f73238e8d66a087edc68c2a2c35f",
+    "https://deno.land/std@0.168.0/async/pool.ts": "6854d8cd675a74c73391c82005cbbe4cc58183bddcd1fbbd7c2bcda42b61cf69",
+    "https://deno.land/std@0.168.0/async/retry.ts": "e8e5173623915bbc0ddc537698fa418cf875456c347eda1ed453528645b42e67",
+    "https://deno.land/std@0.168.0/async/tee.ts": "3a47cc4e9a940904fd4341f0224907e199121c80b831faa5ec2b054c6d2eff5e",
+    "https://deno.land/std@0.168.0/http/server.ts": "e99c1bee8a3f6571ee4cdeb2966efad465b8f6fe62bec1bdb59c1f007cc4d155",
+    "https://esm.sh/@supabase/supabase-js@2.112.2": "ea8a8dc3bcfe3cd929a9f6f83a5c266ad3f9d8101c34f71d465dd73f7ff1b796"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@eslint/js@^9.39.1",
+        "npm:@sentry/react@^10.36.0",
+        "npm:@stripe/react-stripe-js@^5.6.1",
+        "npm:@stripe/stripe-js@^8.9.0",
+        "npm:@supabase/supabase-js@^2.91.1",
+        "npm:@tailwindcss/postcss@^4.1.18",
+        "npm:@types/react-dom@^19.2.3",
+        "npm:@types/react@^19.2.5",
+        "npm:@vitejs/plugin-react@^5.1.1",
+        "npm:autoprefixer@^10.4.23",
+        "npm:canvas-confetti@^1.9.4",
+        "npm:dotenv@^16.4.5",
+        "npm:eslint-plugin-react-hooks@^7.0.1",
+        "npm:eslint-plugin-react-refresh@~0.4.24",
+        "npm:eslint@^9.39.1",
+        "npm:file-saver@^2.0.5",
+        "npm:framer-motion@^12.38.0",
+        "npm:globals@^16.5.0",
+        "npm:heic2any@^0.0.4",
+        "npm:html2canvas@^1.4.1",
+        "npm:idb@^8.0.3",
+        "npm:jspdf@^4.1.0",
+        "npm:jszip@^3.10.1",
+        "npm:leaflet@^1.9.4",
+        "npm:lucide-react@0.562",
+        "npm:pdf-lib@^1.17.1",
+        "npm:pdfjs-dist@^5.5.207",
+        "npm:postcss@^8.5.6",
+        "npm:react-dom@^19.2.0",
+        "npm:react-markdown@^10.1.0",
+        "npm:react-plaid-link@^4.1.1",
+        "npm:react-router-dom@^7.13.0",
+        "npm:react@^19.2.0",
+        "npm:recharts@^3.8.0",
+        "npm:remark-gfm@^4.0.1",
+        "npm:sharp@~0.34.5",
+        "npm:signature_pad@^5.1.3",
+        "npm:tailwindcss@^4.1.18",
+        "npm:vite-plugin-pwa@^1.2.0",
+        "npm:vite@^7.2.4",
+        "npm:vitest@^4.1.10",
+        "npm:xlsx@~0.18.5",
+        "npm:zustand@^5.0.10"
+      ]
+    }
+  }
+}
