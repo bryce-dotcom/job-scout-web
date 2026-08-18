@@ -323,7 +323,6 @@ export default function Layout() {
       baseItems: [
         { to: '/field-scout', icon: Compass, label: 'Field Scout (Clock)', hint: 'Daily dashboard + clock in/out for field techs' },
         { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'Active & scheduled work — schedule and dispatch your crews across the kanban' },
-        { to: '/company-map', icon: MapIcon, label: 'Company Map', hint: 'Live map of everyone on the clock and every tracked vehicle' },
         { to: '/recurring', icon: Repeat, label: 'Recurring Jobs', hint: 'Repeat rhythms & membership plans — set a job to repeat weekly, monthly, quarterly or yearly and it spawns the next one automatically' },
         { to: '/services/upcoming', icon: Wrench, label: 'Services', hint: 'Upcoming visits due (warranty, annual, tune-ups) — schedule them and remind the customer' },
         { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
@@ -851,6 +850,24 @@ export default function Layout() {
                 <CalendarDays size={20} />
                 Company Calendar
               </NavLink>
+              {/* Paired with Company Calendar on purpose: the calendar is
+                  where the day is, this is where the day IS. Same question,
+                  one across time and one across space. */}
+              <NavLink
+                to="/company-map"
+                title="Live map of everyone on the clock and every tracked vehicle"
+                style={({ isActive }) => ({
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '10px 12px', borderRadius: '8px',
+                  color: isActive ? theme.accent : theme.textMuted,
+                  backgroundColor: isActive ? theme.accentBg : 'transparent',
+                  textDecoration: 'none', fontSize: '14px', fontWeight: '600',
+                  transition: 'all 0.15s ease'
+                })}
+              >
+                <MapIcon size={20} />
+                Company Map
+              </NavLink>
             </div>
 
             {/* Sales Flow - Numbered Steps (hidden for Field Techs) */}
@@ -1331,6 +1348,21 @@ export default function Layout() {
                   >
                     <CalendarDays size={20} />
                     Company Calendar
+                  </NavLink>
+                  <NavLink
+                    to="/company-map"
+                    onClick={() => setMobileMenuOpen(false)}
+                    style={({ isActive }) => ({
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '10px 12px', borderRadius: '8px',
+                      color: isActive ? theme.accent : theme.textMuted,
+                      backgroundColor: isActive ? theme.accentBg : 'transparent',
+                      textDecoration: 'none', fontSize: '14px', fontWeight: '600',
+                      transition: 'all 0.15s ease', minHeight: '44px'
+                    })}
+                  >
+                    <MapIcon size={20} />
+                    Company Map
                   </NavLink>
                 </div>
 
