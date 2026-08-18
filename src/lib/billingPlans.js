@@ -58,7 +58,7 @@ export const PLANS = [
     monthly_price: 599,
     annual_price: 5990,
     user_cap: null,            // unlimited
-    agent_cap: null,           // all 19 agents + future
+    agent_cap: null,           // every live agent + future
     storage_gb: 100,
     features: [
       'Unlimited users',

@@ -2,7 +2,7 @@
 //
 // The live version of the marketing storefront we perfected: elevated hero
 // ("AI workforce"), who-it's-for, the whole-job workflow, AI-prospecting
-// spotlight, the real 7-agent crew, one-app consolidation, an honest no-swipe
+// spotlight, the real 8-agent crew, one-app consolidation, an honest no-swipe
 // comparison, real plans, and a final CTA. Self-contained (own palette, its own
 // <style> block for the animations/responsive polish, scout logo from /public)
 // so it lifts cleanly onto the AppSannex site.
@@ -23,8 +23,23 @@ const CREW = [
   { ab: 'FD', name: 'Freddy', role: 'Fleet ops', ds: 'Tracks vehicles in real time through your WatchDog GPS, schedules maintenance, logs fuel, and scores drivers — the whole fleet in one place.' },
   { ab: 'VI', name: 'Victor', role: 'Quality control', ds: 'Scores completed work against the checklist from job-site photos and issues a verification report before you invoice.' },
   { ab: 'CO', name: 'Conrad', role: 'Marketing', ds: 'Writes and schedules the campaigns and win-back sequences that keep the pipeline full, synced to your email platform.' },
+  { ab: 'DG', name: 'Dougie', role: 'Document reading', ds: 'Reads utility bills, receipts, and rebate forms from a photo or PDF, pulls out every field that matters, and learns your corrections so the data entry just stops.' },
 ]
 const COMING = ['Plumbing', 'HVAC', 'Roofing', 'Electrical', 'Painting', 'Masonry', 'Flooring', 'Windows', 'Cleaning', 'Gutters', 'Excavation', 'Safety']
+
+// Live "AI workforce, on the clock" hero feed — real work the crew does, cycling.
+const ACTIVITY = [
+  { ab: 'FR', name: 'Frankie', msg: 'flagged a 45-day overdue invoice', meta: '$3,200' },
+  { ab: 'ZA', name: 'Zach', msg: 'measured a 0.41-acre yard → quote sent', meta: 'just now' },
+  { ab: 'DG', name: 'Dougie', msg: 'read 12 utility bills, fields pulled', meta: '1m' },
+  { ab: 'VI', name: 'Victor', msg: 'verified Job #4471 before invoice', meta: '✓' },
+  { ab: 'CO', name: 'Conrad', msg: 'queued a win-back to 38 quiet customers', meta: '2m' },
+  { ab: 'LE', name: 'Lenard', msg: 'counted 214 fixtures → rebate priced', meta: '3m' },
+  { ab: 'AR', name: 'OG Arnie', free: true, msg: 'proposed a pricebook cleanup', meta: 'needs OK' },
+  { ab: 'FD', name: 'Freddy', msg: 'logged PM due on Truck #3', meta: '5m' },
+  { ab: 'FR', name: 'Frankie', msg: 'matched 6 bank deposits to invoices', meta: '6m' },
+  { ab: 'ZA', name: 'Zach', msg: 'priced a spring cleanup bundle', meta: '8m' },
+]
 
 // Per-plan marketing copy, merged with real prices/caps from billingPlans.
 const MARKETING = {
@@ -85,7 +100,7 @@ const CSS = `
   .pr .hero::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background:radial-gradient(120% 80% at 100% 0%,rgba(242,106,18,.15),transparent 55%),radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:auto,20px 20px}
   .pr .hero .wrap{padding:44px 20px 40px;position:relative}
   .pr .hero h1{font-size:clamp(37px,9.6vw,72px);font-weight:870;line-height:1.02;margin:20px 0 0}
-  .pr .hero h1 .hl{position:relative;color:#fff;white-space:nowrap}
+  .pr .hero h1 .hl{position:relative;z-index:0;color:#fff;white-space:nowrap}
   .pr .hero h1 .hl::after{content:"";position:absolute;left:-2px;right:-2px;bottom:.02em;height:.4em;background:var(--viz);z-index:-1;border-radius:4px;transform:skewX(-9deg) scaleX(var(--draw,0));transform-origin:left;transition:transform .7s .2s cubic-bezier(.2,.7,.2,1)}
   .pr .hero.lit h1 .hl::after{--draw:1}
   .pr .hero p.lede{font-size:clamp(16.5px,4.2vw,20px);color:#d7d3c4;margin:20px 0 0;max-width:40ch;line-height:1.5}
@@ -98,6 +113,21 @@ const CSS = `
   .pr .crewstrip .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#9aa08c}
   .pr .chip{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:13px;background:var(--nightGrn);border:1px solid rgba(255,255,255,.14);color:#e9e5d6;opacity:0;transform:translateY(8px);animation:prpop .5s forwards}
   @keyframes prpop{to{opacity:1;transform:none}}
+  .pr .hero-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:26px}
+  .pr .hero-left{min-width:0}
+  .pr .hero-panel{display:none;background:var(--nightGrn);border:1px solid rgba(255,255,255,.13);border-radius:18px;padding:15px 15px 9px;position:relative;overflow:hidden}
+  .pr .hero-panel::after{content:"";position:absolute;inset:0;opacity:.35;pointer-events:none;background:radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:16px 16px}
+  .pr .hp-head{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:#9aa08c;padding:2px 4px 13px;position:relative}
+  .pr .hp-dot{width:8px;height:8px;border-radius:50%;background:#8fbf6a;flex:none;animation:hppulse 2.2s infinite}
+  @keyframes hppulse{0%{box-shadow:0 0 0 0 rgba(143,191,106,.5)}70%{box-shadow:0 0 0 7px rgba(143,191,106,0)}100%{box-shadow:0 0 0 0 rgba(143,191,106,0)}}
+  .pr .hp-feed{display:flex;flex-direction:column;gap:8px;position:relative;-webkit-mask-image:linear-gradient(to bottom,#000 76%,transparent);mask-image:linear-gradient(to bottom,#000 76%,transparent)}
+  .pr .hp-row{display:flex;align-items:center;gap:11px;padding:10px 11px;background:#151a10;border:1px solid rgba(255,255,255,.07);border-radius:11px;animation:hpin .55s cubic-bezier(.2,.7,.2,1)}
+  @keyframes hpin{from{opacity:0;transform:translateY(-9px)}to{opacity:1;transform:none}}
+  .pr .hp-av{width:32px;height:32px;flex:none;border-radius:9px;display:grid;place-items:center;font-family:var(--mono);font-weight:750;font-size:12px;background:var(--grn);color:#fff}
+  .pr .hp-av.free{background:var(--viz)}
+  .pr .hp-txt{font-size:13px;color:#d6d2c2;line-height:1.35;min-width:0}
+  .pr .hp-txt b{color:#fff;font-weight:750}
+  .pr .hp-meta{margin-left:auto;font-family:var(--mono);font-size:11px;color:#7fae5c;flex:none;white-space:nowrap;align-self:flex-start;padding-top:3px}
   .pr section{padding:52px 0 8px}
   .pr .sechead h2{font-size:clamp(27px,6.4vw,42px);font-weight:850;line-height:1.05;margin-top:10px}
   .pr .sechead p{color:var(--sub);font-size:16px;margin:12px 0 0;max-width:54ch}
@@ -224,8 +254,13 @@ const CSS = `
     .pr .sticky{display:none}.pr .spacer{display:none}
     .pr .term .res{flex-direction:row;flex-wrap:wrap}.pr .term .row{flex:1 1 260px}
   }
+  @media(min-width:900px){
+    .pr .hero-grid{grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);gap:38px;align-items:center}
+    .pr .hero-panel{display:block}
+    .pr .crewstrip{display:none}
+  }
   @media(min-width:980px){ .pr .hero .wrap{padding:64px 20px 54px} .pr .flow{grid-template-columns:repeat(4,1fr)} }
-  @media(prefers-reduced-motion:reduce){ .pr .rv,.pr .chip,.pr .hero h1 .hl::after,.pr .term .q .cur{transition:none;animation:none;opacity:1;transform:none}.pr .hero h1 .hl::after{--draw:1} }
+  @media(prefers-reduced-motion:reduce){ .pr .rv,.pr .chip,.pr .hp-dot,.pr .hp-row,.pr .hero h1 .hl::after,.pr .term .q .cur{transition:none;animation:none;opacity:1;transform:none}.pr .hero h1 .hl::after{--draw:1} }
 `
 
 function Icon({ id, style }) {
@@ -240,6 +275,7 @@ export default function Pricing() {
   const [per, setPer] = useState('mo')
   const [lit, setLit] = useState(false)
   const [showSticky, setShowSticky] = useState(false)
+  const [feed, setFeed] = useState(() => ACTIVITY.slice(0, 5).map((a, i) => ({ ...a, _k: i })))
 
   const goSignup = (planId) => navigate(`/login?signup=1&plan=${planId}`)
   const toPlans = () => document.getElementById('pr-plans')?.scrollIntoView({ behavior: 'smooth' })
@@ -264,6 +300,16 @@ export default function Pricing() {
       hio.observe(heroRef.current)
     }
     return () => { io && io.disconnect(); hio && hio.disconnect(); cancelAnimationFrame(raf) }
+  }, [])
+
+  // Live hero feed — a new bit of "work" slides in on top every few seconds.
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion:reduce)').matches) return
+    let i = 5
+    const t = setInterval(() => {
+      setFeed((prev) => [{ ...ACTIVITY[i % ACTIVITY.length], _k: i++ }, ...prev.slice(0, 4)])
+    }, 2800)
+    return () => clearInterval(t)
   }, [])
 
   return (
@@ -301,17 +347,33 @@ export default function Pricing() {
       <main>
         <section className={`hero${lit ? ' lit' : ''}`} ref={heroRef} style={{ paddingTop: 0 }}>
           <div className="wrap">
-            <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> The business operating system, built by the people who do the work</span>
-            <h1>F**k the status quo. Welcome to <span className="hl">the AI age</span>.</h1>
-            <p className="lede">One system for the entire operation — sales, jobs, invoicing, books, payroll — running on AI with enough compute to handle your whole back office while you’re out doing the work. Not a CRM. Not another app to babysit. A business operating system so far ahead it makes whatever you’re running now look like a museum piece — and it’s going to blow your freaking mind.</p>
-            <div className="cta-row">
-              <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
-              <a className="btn btn-ghost on-dark" href="#pr-compare">See how it compares</a>
-            </div>
-            <div className="trust">
-              <span><Icon id="i-check" /> Live in an afternoon</span>
-              <span><Icon id="i-check" /> No consultants, no six-month rollout</span>
-              <span><Icon id="i-check" /> Runs offline in the field</span>
+            <div className="hero-grid">
+              <div className="hero-left">
+                <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> The business operating system, built by the people who do the work</span>
+                <h1>F**k the status quo. Welcome to <span className="hl">the AI age</span>.</h1>
+                <p className="lede">One system for the entire operation — sales, jobs, invoicing, books, payroll — running on AI with enough compute to handle your whole back office while you’re out doing the work. Not a CRM. Not another app to babysit. A business operating system so far ahead it makes whatever you’re running now look like a museum piece — and it’s going to blow your freaking mind.</p>
+                <div className="cta-row">
+                  <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
+                  <a className="btn btn-ghost on-dark" href="#pr-compare">See how it compares</a>
+                </div>
+                <div className="trust">
+                  <span><Icon id="i-check" /> Live in an afternoon</span>
+                  <span><Icon id="i-check" /> No consultants, no six-month rollout</span>
+                  <span><Icon id="i-check" /> Runs offline in the field</span>
+                </div>
+              </div>
+              <aside className="hero-panel" aria-hidden="true">
+                <div className="hp-head"><span className="hp-dot" /> Live · your crew on the clock</div>
+                <div className="hp-feed">
+                  {feed.map((a) => (
+                    <div key={a._k} className="hp-row">
+                      <span className={`hp-av${a.free ? ' free' : ''}`}>{a.ab}</span>
+                      <span className="hp-txt"><b>{a.name}</b> {a.msg}</span>
+                      {a.meta && <span className="hp-meta">{a.meta}</span>}
+                    </div>
+                  ))}
+                </div>
+              </aside>
             </div>
             <div className="crewstrip">
               <span className="lbl">Your AI workforce, on the clock →</span>
@@ -366,6 +428,7 @@ export default function Pricing() {
                 </div>
               </div>
               <div className="repl">replaces <b>Apollo.io, ZoomInfo, Lusha</b> — and the prospecting agency.</div>
+              <div className="repl" style={{ marginTop: 6 }}>Free on every plan to start. <b>Prospecting Pro</b> scales it to 50 searches + 200 enrichments a month — $49/mo, shared across your team.</div>
             </div>
           </div>
         </section>
@@ -450,7 +513,7 @@ export default function Pricing() {
           <div className="wrap">
             <div className="stats rv">
               <div><div className="n">134</div><div className="l">features, shipped</div></div>
-              <div><div className="n">7<span className="u">+12</span></div><div className="l">AI specialists</div></div>
+              <div><div className="n">8<span className="u">+12</span></div><div className="l">AI specialists</div></div>
               <div><div className="n">14</div><div className="l">systems, one login</div></div>
               <div><div className="n">0<span className="u">bars</span></div><div className="l">and it still runs</div></div>
             </div>
@@ -489,6 +552,7 @@ export default function Pricing() {
                 )
               })}
             </div>
+            <p className="import rv" style={{ marginTop: 10 }}>Every plan includes free AI prospecting. Need volume? <b>Prospecting Pro</b> — 50 searches + 200 enrichments a month, shared across your team — <b>$49/mo</b>.</p>
             <p className="import rv">Migrating from HousecallPro? <b>One-click import</b> brings customers, jobs, and invoices across with full history.</p>
           </div>
         </section>
