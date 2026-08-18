@@ -74,6 +74,9 @@ export default function CompanyMap() {
                                                   // separate so load()'s
                                                   // setError(null) can't wipe it
   const [now, setNow] = useState(() => Date.now())
+  // Whether the Maps script is loaded, tracked as state rather than acted on
+  // inside the loader's .then(). See the init effects below.
+  const [mapsReady, setMapsReady] = useState(false)
 
   // Re-render each minute so the "3m ago" labels don't quietly go stale.
   useEffect(() => {
@@ -168,24 +171,40 @@ export default function CompanyMap() {
     return () => { supabase.removeChannel(ch) }
   }, [companyId])
 
+  // Loading the script and creating the map are deliberately two effects.
+  //
+  // Doing both inside loadGoogleMaps().then() looks simpler but loses the map
+  // whenever the promise resolves across a mount boundary: the first mount's
+  // cleanup sets cancelled, the .then() returns early, and because the loader
+  // hands back one cached promise the second mount's .then() can resolve into
+  // a closure that has already been cancelled too. Nothing throws, so no error
+  // shows — the container just sits there empty, which is exactly how this
+  // failed in production while reporting healthy.
+  //
+  // Splitting them means map creation happens in a render-driven effect where
+  // the ref is guaranteed attached, and it re-attempts on any remount.
   useEffect(() => {
     if (!hasMapsKey()) { setMapError('Google Maps key is not configured (VITE_GOOGLE_MAPS_API_KEY).'); return }
     let cancelled = false
-    loadGoogleMaps().then(google => {
-      if (cancelled || !mapElRef.current || mapRef.current) return
-      mapRef.current = new google.maps.Map(mapElRef.current, {
-        center: { lat: 40.4297, lng: -111.7977 },
-        zoom: 10,
-        mapTypeId: 'roadmap',
-        streetViewControl: false,
-        fullscreenControl: false,
-        mapTypeControl: false,
-        gestureHandling: 'greedy',
-      })
-      infoRef.current = new google.maps.InfoWindow()
-    }).catch(e => setMapError(e.message || 'Failed to load Google Maps'))
+    loadGoogleMaps()
+      .then(() => { if (!cancelled) setMapsReady(true) })
+      .catch(e => { if (!cancelled) setMapError(e.message || 'Failed to load Google Maps') })
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    if (!mapsReady || mapRef.current || !mapElRef.current || !window.google) return
+    mapRef.current = new window.google.maps.Map(mapElRef.current, {
+      center: { lat: 40.4297, lng: -111.7977 },
+      zoom: 10,
+      mapTypeId: 'roadmap',
+      streetViewControl: false,
+      fullscreenControl: false,
+      mapTypeControl: false,
+      gestureHandling: 'greedy',
+    })
+    infoRef.current = new window.google.maps.InfoWindow()
+  }, [mapsReady])
 
   const visible = useMemo(() => [
     ...(showPeople ? people : []),
@@ -271,7 +290,7 @@ export default function CompanyMap() {
       }
       didFitRef.current = true
     }
-  }, [located])
+  }, [located, mapsReady])
 
   const fitAll = () => {
     const map = mapRef.current
