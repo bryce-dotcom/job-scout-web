@@ -134,3 +134,69 @@ export function hoursForJob(jobId, sources = {}) {
       return sum + (h > 0 ? h : 0)
     }, 0)
 }
+
+/**
+ * What would change if typed hours counted.
+ *
+ * The same merge the ledger uses, run side by side with today's punch-only
+ * total, so the Payroll screen can show the difference BEFORE any bonus moves.
+ * Returns one row per job whose hours change, newest impact first.
+ *
+ * Pure — reads nothing, writes nothing.
+ */
+export function previewTypedHourImpact({ jobs = [], timeClock = [], timeLog = [], bonuses = [] } = {}) {
+  const group = (rows) => {
+    const m = new Map()
+    for (const r of rows || []) {
+      if (r?.job_id == null) continue
+      const k = String(r.job_id)
+      if (!m.has(k)) m.set(k, [])
+      m.get(k).push(r)
+    }
+    return m
+  }
+  const hours = (rows) => (rows || []).reduce((s, r) => {
+    const h = parseFloat(r.total_hours)
+    if (Number.isFinite(h) && h > 0) return s + h
+    if (r.clock_in && r.clock_out) {
+      const span = (new Date(r.clock_out) - new Date(r.clock_in)) / 36e5
+      return s + (span > 0 ? span : 0)
+    }
+    return s
+  }, 0)
+
+  const punchBy = group(timeClock)
+  const typedBy = group(timeLog)
+  const jobById = new Map((jobs || []).map(j => [String(j.id), j]))
+  const out = []
+
+  for (const [jobKey, typedRows] of typedBy) {
+    const punches = punchBy.get(jobKey) || []
+    const before = hours(punches)
+    const after = hours(mergeJobHourSources({ timeClock: punches, timeLog: typedRows }))
+    const added = after - before
+    if (Math.abs(added) < 0.01) continue
+
+    const job = jobById.get(jobKey)
+    const allotted = Number(job?.allotted_time_hours) || 0
+    const jobBonuses = (bonuses || []).filter(b => String(b.job_id) === jobKey)
+    out.push({
+      job_id: job?.id ?? jobKey,
+      label: job?.job_title || job?.job_id || `Job ${jobKey}`,
+      allotted,
+      punchHours: before,
+      typedHours: added,
+      totalHours: after,
+      savedBefore: allotted - before,
+      savedAfter: allotted - after,
+      bonusNow: jobBonuses.reduce((s, b) => s + (Number(b.amount) || 0), 0),
+      // A paid row is frozen by the ledger, so it cannot change whatever happens.
+      frozen: jobBonuses.some(b => b.status === 'paid'),
+      // How many typed entries the guards refused — duplicates of a punch,
+      // whole-job totals stamped on a crew, or implausible values.
+      refusedEntries: typedRows.length -
+        mergeJobHourSources({ timeClock: punches, timeLog: typedRows }).filter(r => r._source === 'time_log').length,
+    })
+  }
+  return out.sort((a, b) => b.typedHours - a.typedHours)
+}

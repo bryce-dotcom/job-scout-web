@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Component } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { mergeJobHourSources } from '../lib/jobHours'
+import { validateTimeEntry } from '../lib/timeEntry'
 import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
 import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
@@ -1115,7 +1116,14 @@ function JobDetailInner() {
   }
 
   const addTimeEntry = async () => {
-    if (!newTime.employee_id || !newTime.hours) return
+    // Validate before writing. Hiding the button stops a tech; this stops a
+    // typo — and these hours now reach job cost and bonuses.
+    const check = validateTimeEntry({ employee_id: newTime.employee_id, hours: newTime.hours })
+    if (!check.ok) {
+      const { toast } = await import('../lib/toast')
+      toast.error(check.error)
+      return
+    }
 
     setSaving(true)
 
@@ -1149,6 +1157,11 @@ function JobDetailInner() {
   // worked, so once an entry was wrong (typo'd hours, wrong category) the
   // only fix was to ask an admin.
   const updateTimeEntry = async (entryId, patch) => {
+    // Same rule when correcting an entry as when creating one.
+    if (patch?.hours !== undefined) {
+      const c = validateTimeEntry({ employee_id: patch.employee_id ?? 1, hours: patch.hours })
+      if (!c.ok) { const { toast } = await import('../lib/toast'); toast.error(c.error); return false }
+    }
     const { error } = await supabase.from('time_log')
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq('id', entryId)
@@ -5302,6 +5315,10 @@ function JobDetailInner() {
               padding: '16px 20px', borderBottom: `1px solid ${theme.border}`
             }}>
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>Time Tracking</h3>
+              {/* Typed hours count toward job cost and bonuses, so entering
+                  them is an admin action — same rule as Allotted Hours above.
+                  A tech records time by clocking in, not by typing a number. */}
+              {isAdmin && (
               <button onClick={() => setShowAddTime(true)} style={{
                 display: 'flex', alignItems: 'center', gap: '6px',
                 padding: '8px 12px', backgroundColor: theme.accent, color: '#ffffff',
@@ -5310,6 +5327,7 @@ function JobDetailInner() {
                 <Plus size={16} />
                 Add Time
               </button>
+              )}
             </div>
 
             {/* Progress Bar */}

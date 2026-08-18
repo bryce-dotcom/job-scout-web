@@ -16,6 +16,7 @@
 //                       needed to split crew bonuses correctly, so it owns writes.
 
 import { computeJobBonusRows } from './bonusCalc'
+import { mergeJobHourSources } from './jobHours'
 
 // ── Reader ─────────────────────────────────────────────────────────────
 // All of one employee's bonus rows, newest first, with the job title joined.
@@ -114,6 +115,16 @@ export async function syncJobBonuses({
   companyId,
   jobs = [],                 // jobs with allotted_time_hours
   timeClockRows = [],        // all company time_clock rows (job_id set)
+  // Hours an admin typed on the job page. Bryce: "it should count". They are
+  // merged through jobHours so a typed entry that merely repeats a punch is
+  // not counted twice, and a whole-job total stamped on the crew is refused
+  // rather than multiplying the job by the crew size.
+  timeLogRows = [],
+  // OFF by default, deliberately. Counting typed hours lowers 14 bonuses by
+  // roughly $3,750 — correct, because those hours are real work that never
+  // counted against the allotment, but nobody should discover it as a number
+  // that quietly changed. Payroll shows the list first and turns this on.
+  countTypedHours = false,
   employees = [],
   skillLevels = [],
   payrollConfig = {},
@@ -135,7 +146,9 @@ export async function syncJobBonuses({
   const existingByKey = new Map((existing || []).map(r => [`${r.job_id}|${r.employee_id}`, r]))
 
   const timeByJob = new Map()
-  for (const t of timeClockRows) {
+  // ONE definition of the hours on a job — punches plus admissible typed
+  // entries, each counted once.
+  for (const t of mergeJobHourSources({ timeClock: timeClockRows, timeLog: countTypedHours ? timeLogRows : [] })) {
     if (!t.job_id) continue
     if (!timeByJob.has(t.job_id)) timeByJob.set(t.job_id, [])
     timeByJob.get(t.job_id).push(t)

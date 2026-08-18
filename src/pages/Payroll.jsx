@@ -21,6 +21,9 @@ import {
   calculateInvoiceCommissions as sharedCalculateInvoiceCommissions,
 } from '../lib/bonusCalc'
 import { syncJobBonuses, bonusJobLabel } from '../lib/bonusLedger'
+import { toast } from '../lib/toast'
+import { previewTypedHourImpact } from '../lib/jobHours'
+import TypedHoursReview from '../components/TypedHoursReview'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
 import { commissionConfigIssues } from '../lib/commissionConfigIssues'
@@ -271,6 +274,11 @@ export default function Payroll() {
   // Unfiltered, job-attached punches for the bonus ledger. Kept separate from
   // timeEntries because pay is per-period but a bonus is per-job-lifetime.
   const [bonusTimeEntries, setBonusTimeEntries] = useState([])
+  // Typed-in job hours for the SAME whole-job window. The period-scoped
+  // time_log fetch below is for pay; a bonus is per-job-lifetime.
+  const [bonusTimeLogs, setBonusTimeLogs] = useState([])
+  const [applyingTypedHours, setApplyingTypedHours] = useState(false)
+  const [typedHoursApplied, setTypedHoursApplied] = useState(false)
   // Open/dangling clock-ins (missed clock-out) — fetched separately from the
   // pay-calc entries so a forgotten clock-out surfaces for correction instead
   // of silently counting as zero hours (London lost her whole AZ week this way).
@@ -586,7 +594,7 @@ export default function Payroll() {
       const periodEndStr = localDateStr(periodEnd)
       const legacyPeriodEndStr = localDateStr(new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate() + 1))
 
-      const [entriesRes, bonusEntriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes, leadsRes, allPaymentsRes, utilityRes] = await Promise.all([
+      const [entriesRes, bonusEntriesRes, bonusTimeLogRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes, leadsRes, allPaymentsRes, utilityRes] = await Promise.all([
         // Time clock entries for current period
         supabase
           .from('time_clock')
@@ -615,6 +623,14 @@ export default function Payroll() {
           .eq('company_id', companyId)
           .not('job_id', 'is', null)
           .not('clock_out', 'is', null)
+          .order('id', { ascending: true })),
+
+        // Typed job hours, whole-job (not period-scoped), for the bonus ledger.
+        fetchAllPages(() => supabase
+          .from('time_log')
+          .select('id, employee_id, job_id, hours, date, category, clock_in_time, clock_out_time')
+          .eq('company_id', companyId)
+          .not('job_id', 'is', null)
           .order('id', { ascending: true })),
 
         // Time log entries (job-level hours) for current period
@@ -737,6 +753,7 @@ export default function Payroll() {
 
       setTimeEntries(entriesRes.data || [])
       setBonusTimeEntries(bonusEntriesRes.data || [])
+      setBonusTimeLogs(bonusTimeLogRes.data || [])
       // Incomplete shifts. These never enter the pay calc, so surface them for
       // a manager to set the real clock-out. Company-wide and
       // period-independent so a ghost from a past period can't hide once we
@@ -1295,6 +1312,39 @@ export default function Payroll() {
     bonusOverrides,
   })
 
+  // What counting typed hours WOULD do. Shown before anything moves — the
+  // ledger below still runs punch-only until someone presses the button.
+  // Plain call, not useMemo: this file already carries 19 grandfathered
+  // conditional hooks and a 20th is one white screen away. previewTypedHourImpact
+  // is pure and reads a few thousand rows — cheap next to what this page
+  // already does per render.
+  const typedHourImpact = previewTypedHourImpact({
+    jobs, timeClock: bonusTimeEntries, timeLog: bonusTimeLogs, bonuses: ledgerBonuses || [],
+  })
+
+  // Recalculate WITH the typed hours counted. Paid rows are frozen inside
+  // syncJobBonuses, so this can only move what is still owed.
+  const applyTypedHours = async () => {
+    setApplyingTypedHours(true)
+    try {
+      await syncJobBonuses({
+        supabase, companyId, jobs,
+        timeClockRows: bonusTimeEntries,
+        timeLogRows: bonusTimeLogs,
+        countTypedHours: true,
+        employees, skillLevels: skillLevelSettings, payrollConfig,
+        verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides,
+      })
+      setTypedHoursApplied(true)
+      toast.success('Bonuses recalculated with the typed hours counted.')
+      await fetchData()
+    } catch (e) {
+      toast.error('Could not recalculate: ' + (e?.message || e))
+    } finally {
+      setApplyingTypedHours(false)
+    }
+  }
+
   // Payroll is the WRITER for the persistent bonus ledger — it's the only
   // surface with the full employees + skill-levels set needed to split crew
   // bonuses correctly. Whenever the underlying data settles, recompute every
@@ -1304,8 +1354,9 @@ export default function Payroll() {
   // loading or when the bonus feature is off.
   useEffect(() => {
     if (loading) return
+
     if (!companyId || !payrollConfig.efficiency_bonus_enabled) return
-    if (!jobs.length || !bonusTimeEntries.length) return
+    if (!jobs.length || (!bonusTimeEntries.length && !bonusTimeLogs.length)) return
     let cancelled = false
     ;(async () => {
       await syncJobBonuses({
@@ -1314,6 +1365,7 @@ export default function Payroll() {
         jobs,
         // Whole-job hours, not the pay period's. See the bonus fetch above.
         timeClockRows: bonusTimeEntries,
+        timeLogRows: bonusTimeLogs,
         employees,
         skillLevels: skillLevelSettings,
         payrollConfig,
@@ -1331,7 +1383,7 @@ export default function Payroll() {
       if (!cancelled) setLedgerBonuses(data || [])
     })()
     return () => { cancelled = true }
-  }, [loading, companyId, jobs, bonusTimeEntries, employees, skillLevelSettings, payrollConfig, verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides])
+  }, [loading, companyId, jobs, bonusTimeEntries, bonusTimeLogs, employees, skillLevelSettings, payrollConfig, verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides])
 
   // Rep (%) commission ledger — freeze new payments into rows, then read them.
   // Insert-only; never rewrites an earned amount. Mirrors the bonus sync so
@@ -3044,6 +3096,18 @@ export default function Payroll() {
             padding: '4px 12px', cursor: 'pointer', fontWeight: '600'
           }}>Back to Current</button>
         </div>
+      )}
+
+      {/* Hours typed on a job that bonuses never counted. Shown before any
+          number moves — the same reason the commission warning above exists:
+          a figure that quietly changed is a figure nobody trusts again. */}
+      {!typedHoursApplied && (
+        <TypedHoursReview
+          rows={typedHourImpact}
+          theme={theme}
+          applying={applyingTypedHours}
+          onApply={applyTypedHours}
+        />
       )}
 
       {/* Commission misconfiguration — someone set to earn commission whose

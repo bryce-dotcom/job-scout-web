@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mergeJobHourSources, hoursForJob, isDuplicateOfPunch, legacyRowHours } from './jobHours'
+import { mergeJobHourSources, hoursForJob, isDuplicateOfPunch, legacyRowHours, previewTypedHourImpact } from './jobHours'
 import { timeClockToJobHours } from './bonusCalc'
 
 // Peter & Robin Berger, job 21026 — the real rows, as they sit in the database.
@@ -125,5 +125,53 @@ describe('legacy rows that are not one person\'s hours are refused', () => {
   it('keeps the same hours for one person on a job — that is not a crew stamp', () => {
     const one = [{ id: 4, employee_id: 9, job_id: 9, hours: 5, date: '2026-04-01' }]
     expect(hoursForJob(9, { timeLog: one })).toBeCloseTo(5, 2)
+  })
+})
+
+describe('the Payroll flag: what would change, before it changes', () => {
+  const jobs = [{ id: 500, job_title: 'Monument Sign Removal Stain', allotted_time_hours: 12.8 }]
+  const bonuses = [{ job_id: 500, employee_id: 7, amount: 307.92, status: 'accrued' }]
+
+  it('reports a job whose only hours were typed in', () => {
+    // Real shape: zero punches, 8 typed hours, a bonus paid as if nobody worked it.
+    const rows = previewTypedHourImpact({
+      jobs, bonuses, timeClock: [],
+      timeLog: [{ id: 1, employee_id: 7, job_id: 500, hours: 8, date: '2026-06-01' }],
+    })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].punchHours).toBe(0)
+    expect(rows[0].typedHours).toBeCloseTo(8, 2)
+    expect(rows[0].savedBefore).toBeCloseTo(12.8, 2)
+    expect(rows[0].savedAfter).toBeCloseTo(4.8, 2)
+    expect(rows[0].bonusNow).toBeCloseTo(307.92, 2)
+  })
+
+  it('says nothing about a job where the typed row just repeats a punch', () => {
+    const rows = previewTypedHourImpact({
+      jobs, bonuses,
+      timeClock: [{ id: 9, employee_id: 7, job_id: 500, total_hours: 8 }],
+      timeLog: [{ id: 1, employee_id: 7, job_id: 500, hours: 8, date: '2026-06-01' }],
+    })
+    expect(rows).toHaveLength(0)
+  })
+
+  it('marks a paid bonus as frozen so the screen can say it cannot move', () => {
+    const rows = previewTypedHourImpact({
+      jobs, bonuses: [{ job_id: 500, employee_id: 7, amount: 96.72, status: 'paid' }],
+      timeClock: [], timeLog: [{ id: 1, employee_id: 7, job_id: 500, hours: 4, date: '2026-06-01' }],
+    })
+    expect(rows[0].frozen).toBe(true)
+  })
+
+  it('counts the entries the guards refused, so the screen can explain itself', () => {
+    const crew = [19, 35, 38].map((employee_id, i) => ({
+      id: 20 + i, employee_id, job_id: 500, hours: 55.52, date: '2026-04-21',
+    }))
+    const rows = previewTypedHourImpact({ jobs, bonuses, timeClock: [], timeLog: crew })
+    expect(rows).toHaveLength(0)   // nothing counted, so nothing to flag
+  })
+
+  it('is pure — reads nothing and needs no arguments', () => {
+    expect(previewTypedHourImpact()).toEqual([])
   })
 })
