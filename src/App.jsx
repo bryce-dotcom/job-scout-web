@@ -36,6 +36,7 @@ import PurchaseOrderDetail from './pages/PurchaseOrderDetail'
 import Procurement from './pages/Procurement'
 import Bills from './pages/Bills'
 import BillDetail from './pages/BillDetail'
+import CompanyMap from './pages/CompanyMap'
 import Fleet from './pages/Fleet'
 import FleetDetail from './pages/FleetDetail'
 import FleetCalendar from './pages/FleetCalendar'
@@ -410,6 +411,7 @@ function App() {
           <Route path="/procurement" element={<Procurement />} />
           <Route path="/bills" element={<Bills />} />
           <Route path="/bills/:id" element={<BillDetail />} />
+          <Route path="/company-map" element={<CompanyMap />} />
           <Route path="/fleet" element={<AgentRequired slug="freddy-fleet"><Fleet /></AgentRequired>} />
           <Route path="/fleet/calendar" element={<AgentRequired slug="freddy-fleet"><FleetCalendar /></AgentRequired>} />
           <Route path="/fleet/:id" element={<AgentRequired slug="freddy-fleet"><FleetDetail /></AgentRequired>} />

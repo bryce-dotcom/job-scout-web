@@ -1,0 +1,51 @@
+# Fly deploy config for the headless login service.
+#
+#   fly launch --no-deploy --name jobscout-watchdog-login
+#   fly secrets set LOGIN_SERVICE_SECRET="$(openssl rand -hex 32)"
+#   fly deploy
+#
+# auto_stop_machines is the whole cost argument. This service is idle almost
+# all the time — it wakes up when a company's session expires (roughly daily),
+# runs for ~20 seconds, and stops. Scaling to zero between those means the
+# bill is rounding-error territory even with a few hundred tenants.
+#
+# min_machines_running = 0 does mean a cold start on the first login of the
+# day. That's fine here: nothing user-facing blocks on it. The sync runs on a
+# cron, and the Settings screen's "Connect" button already expects to wait.
+
+app = "jobscout-watchdog-login"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  NAV_TIMEOUT_MS = "45000"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    # Each request drives a real browser context. Packing more than a couple
+    # onto one small machine just makes them all time out.
+    soft_limit = 2
+    hard_limit = 4
+
+[[vm]]
+  # Chromium is memory-hungry; 512MB gets OOM-killed mid-navigation.
+  size = "shared-cpu-1x"
+  memory = "1gb"
+
+[checks.health]
+  type = "http"
+  port = 8080
+  path = "/health"
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "20s"

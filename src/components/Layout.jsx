@@ -13,6 +13,8 @@ import {
   UserPlus,
   GitBranch,
   CalendarDays,
+
+  Map as MapIcon,
   Users,
   FileText,
   Briefcase,
@@ -321,6 +323,7 @@ export default function Layout() {
       baseItems: [
         { to: '/field-scout', icon: Compass, label: 'Field Scout (Clock)', hint: 'Daily dashboard + clock in/out for field techs' },
         { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'Active & scheduled work — schedule and dispatch your crews across the kanban' },
+        { to: '/company-map', icon: MapIcon, label: 'Company Map', hint: 'Live map of everyone on the clock and every tracked vehicle' },
         { to: '/recurring', icon: Repeat, label: 'Recurring Jobs', hint: 'Repeat rhythms & membership plans — set a job to repeat weekly, monthly, quarterly or yearly and it spawns the next one automatically' },
         { to: '/services/upcoming', icon: Wrench, label: 'Services', hint: 'Upcoming visits due (warranty, annual, tune-ups) — schedule them and remind the customer' },
         { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
