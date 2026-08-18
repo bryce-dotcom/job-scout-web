@@ -1,7 +1,13 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ],
   "crons": [
     {
@@ -19,6 +25,10 @@
     {
       "path": "/api/cron/expire-trials",
       "schedule": "23 8 * * *"
+    },
+    {
+      "path": "/api/cron/plaid-sync",
+      "schedule": "30 */6 * * *"
     }
   ],
   "functions": {
@@ -33,6 +43,9 @@
     },
     "api/cron/expire-trials.js": {
       "maxDuration": 60
+    },
+    "api/cron/plaid-sync.js": {
+      "maxDuration": 300
     }
   }
 }

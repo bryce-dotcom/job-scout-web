@@ -1,5 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  groupByItem, pullItem, previewAttribution, buildAccountMap,
+  attribute, itemCursor, mapTransaction, chunk,
+} from "../_shared/plaidSync.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -196,72 +200,58 @@ serve(async (req) => {
       const item = config.items?.[account.plaid_item_id];
       if (!item?.access_token) return jsonResponse({ error: 'No access token for this account' }, 400);
 
-      let cursor = account.sync_cursor || undefined;
-      let added = 0;
-      let modified = 0;
-      let removed = 0;
-      let hasMore = true;
+      // Syncing "one account" is not a thing Plaid offers: /transactions/sync is
+      // per ITEM. Pretending otherwise is the original bug, so this pulls the
+      // item and attributes every transaction to its real account — including
+      // the siblings of the account that was asked for.
+      const { data: siblings } = await supabase
+        .from('connected_accounts')
+        .select('id, plaid_item_id, plaid_account_id, account_name, sync_cursor')
+        .eq('company_id', company_id)
+        .eq('plaid_item_id', account.plaid_item_id)
+        .eq('status', 'active')
+        .order('id');
 
-      while (hasMore) {
-        const syncBody: Record<string, unknown> = {
-          client_id: clientId,
-          secret,
-          access_token: item.access_token,
-        };
-        if (cursor) syncBody.cursor = cursor;
+      const rows = siblings?.length ? siblings : [account];
+      const pull = await pullItem({
+        plaidBase,
+        clientId,
+        secret,
+        accessToken: item.access_token,
+        cursor: itemCursor(rows),
+      });
 
-        const syncRes = await fetch(`${plaidBase}/transactions/sync`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(syncBody),
-        });
-
-        const syncData = await syncRes.json();
-        if (!syncRes.ok) {
-          return jsonResponse({ error: syncData.error_message || 'Sync failed' }, 400);
-        }
-
-        // Process added transactions
-        for (const txn of (syncData.added || [])) {
-          const row = mapTransaction(txn, company_id, account.id);
-          const { data: existing } = await supabase
-            .from('plaid_transactions')
-            .select('id')
-            .eq('plaid_transaction_id', txn.transaction_id)
-            .single();
-
-          if (existing) {
-            await supabase.from('plaid_transactions').update(row).eq('id', existing.id);
-          } else {
-            await supabase.from('plaid_transactions').insert(row);
-          }
-          added++;
-        }
-
-        // Process modified transactions
-        for (const txn of (syncData.modified || [])) {
-          const row = mapTransaction(txn, company_id, account.id);
-          await supabase.from('plaid_transactions').update(row).eq('plaid_transaction_id', txn.transaction_id);
-          modified++;
-        }
-
-        // Process removed transactions
-        for (const txn of (syncData.removed || [])) {
-          await supabase.from('plaid_transactions').delete().eq('plaid_transaction_id', txn.transaction_id);
-          removed++;
-        }
-
-        cursor = syncData.next_cursor;
-        hasMore = syncData.has_more;
+      const accountMap = buildAccountMap(rows);
+      const upserts: Array<Record<string, unknown>> = [];
+      let unplaced = 0;
+      for (const txn of [...pull.added, ...pull.modified]) {
+        const connectedAccountId = attribute(txn, accountMap);
+        if (connectedAccountId === null) { unplaced++; continue; }
+        upserts.push(mapTransaction(txn, company_id, connectedAccountId));
+      }
+      for (const batch of chunk(upserts, 500)) {
+        const { error: upErr } = await supabase
+          .from('plaid_transactions')
+          .upsert(batch, { onConflict: 'plaid_transaction_id' });
+        if (upErr) return jsonResponse({ error: `Transaction write failed: ${upErr.message}` }, 500);
+      }
+      for (const batch of chunk(pull.removed, 200)) {
+        await supabase.from('plaid_transactions').delete().in('plaid_transaction_id', batch);
       }
 
-      // Update cursor and last_synced
       await supabase.from('connected_accounts').update({
-        sync_cursor: cursor,
+        sync_cursor: pull.nextCursor,
         last_synced: new Date().toISOString(),
-      }).eq('id', connected_account_id);
+      }).in('id', rows.map(r => r.id));
 
-      return jsonResponse({ success: true, added, modified, removed });
+      return jsonResponse({
+        success: true,
+        added: pull.added.length,
+        modified: pull.modified.length,
+        removed: pull.removed.length,
+        accounts_touched: rows.length,
+        unattributed: unplaced,
+      });
     }
 
     // ─── GET ACCOUNTS (refresh balances) ───
@@ -352,13 +342,79 @@ serve(async (req) => {
       return jsonResponse({ success: true });
     }
 
-    // ─── SYNC ALL ───
-    if (action === 'sync_all') {
+    // ─── SYNC PREVIEW (read-only) ───
+    //
+    // Answers one question without writing anything: which account SHOULD each
+    // transaction be on? The stored attribution is wrong because the old
+    // per-account loop stamped whichever row it was iterating, so this pulls the
+    // item's full history, resolves each transaction through txn.account_id, and
+    // reports the correct owner beside the count sitting in the table today.
+    if (action === 'sync_preview') {
       const { data: accounts } = await supabase
         .from('connected_accounts')
-        .select('id, plaid_item_id')
+        .select('id, plaid_account_id, plaid_item_id, account_name, sync_cursor')
         .eq('company_id', company_id)
-        .eq('status', 'active');
+        .eq('status', 'active')
+        .order('id');
+
+      if (!accounts?.length) return jsonResponse({ items: [], note: 'no active connected accounts' });
+
+      // What the table says now.
+      const stored: Record<string, number> = {};
+      for (const a of accounts) {
+        const { count } = await supabase
+          .from('plaid_transactions')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', company_id)
+          .eq('connected_account_id', a.id);
+        stored[String(a.id)] = count || 0;
+      }
+
+      const out: Array<Record<string, unknown>> = [];
+      for (const [itemId, rows] of groupByItem(accounts)) {
+        const item = config.items?.[itemId];
+        if (!item?.access_token) {
+          out.push({ item: itemId, error: 'no access token' });
+          continue;
+        }
+        try {
+          // cursor omitted on purpose: a preview wants the whole history so the
+          // per-account totals are comparable to what is stored.
+          const pull = await pullItem({ plaidBase, clientId, secret, accessToken: item.access_token });
+          const preview = previewAttribution([...pull.added, ...pull.modified], rows);
+          out.push({
+            item: itemId,
+            institution: item.institution_name || null,
+            pages: pull.pages,
+            transactions: pull.added.length + pull.modified.length,
+            unattributed: preview.unattributed,
+            unknown_plaid_accounts: preview.unknownPlaidAccounts,
+            accounts: preview.perAccount.map(a => ({
+              account: a.name,
+              should_have: a.correct,
+              currently_has: stored[String(a.id)] ?? 0,
+            })),
+          });
+        } catch (e) {
+          out.push({ item: itemId, error: (e as Error).message });
+        }
+      }
+      return jsonResponse({ dry_run: true, wrote_nothing: true, items: out });
+    }
+
+    // ─── SYNC ALL ───
+    if (action === 'sync_all') {
+      // plaid_account_id and sync_cursor are REQUIRED here: without the former
+      // the account map is empty and every transaction is dropped as
+      // unattributable, silently writing nothing. Ordered so a run is
+      // reproducible — the old query had no ORDER BY, which is why which
+      // accounts happened to sync was effectively random.
+      const { data: accounts } = await supabase
+        .from('connected_accounts')
+        .select('id, plaid_item_id, plaid_account_id, account_name, sync_cursor')
+        .eq('company_id', company_id)
+        .eq('status', 'active')
+        .order('id');
 
       if (!accounts?.length) return jsonResponse({ success: true, total_added: 0, total_modified: 0, accounts_synced: 0 });
 
@@ -367,78 +423,75 @@ serve(async (req) => {
       let totalRemoved = 0;
       let synced = 0;
 
-      for (const account of accounts) {
-        const item = config.items?.[account.plaid_item_id];
-        if (!item?.access_token) continue;
-
-        let cursor = undefined;
-
-        // Get current cursor
-        const { data: fullAcct } = await supabase
-          .from('connected_accounts')
-          .select('sync_cursor')
-          .eq('id', account.id)
-          .single();
-        cursor = fullAcct?.sync_cursor || undefined;
-
-        let hasMore = true;
-        while (hasMore) {
-          const syncBody: Record<string, unknown> = {
-            client_id: clientId,
-            secret,
-            access_token: item.access_token,
-          };
-          if (cursor) syncBody.cursor = cursor;
-
-          const syncRes = await fetch(`${plaidBase}/transactions/sync`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(syncBody),
-          });
-
-          const syncData = await syncRes.json();
-          if (!syncRes.ok) break;
-
-          for (const txn of (syncData.added || [])) {
-            const row = mapTransaction(txn, company_id, account.id);
-            const { data: existing } = await supabase
-              .from('plaid_transactions')
-              .select('id')
-              .eq('plaid_transaction_id', txn.transaction_id)
-              .single();
-
-            if (existing) {
-              await supabase.from('plaid_transactions').update(row).eq('id', existing.id);
-            } else {
-              await supabase.from('plaid_transactions').insert(row);
-            }
-            totalAdded++;
-          }
-
-          for (const txn of (syncData.modified || [])) {
-            const row = mapTransaction(txn, company_id, account.id);
-            await supabase.from('plaid_transactions').update(row).eq('plaid_transaction_id', txn.transaction_id);
-            totalModified++;
-          }
-
-          for (const txn of (syncData.removed || [])) {
-            await supabase.from('plaid_transactions').delete().eq('plaid_transaction_id', txn.transaction_id);
-            totalRemoved++;
-          }
-
-          cursor = syncData.next_cursor;
-          hasMore = syncData.has_more;
+      // ONE pull per Plaid item, not per account. /transactions/sync takes an
+      // access_token and returns the whole item, so calling it once per account
+      // fetched the same data nine times over — and stamped it onto whichever
+      // account row the loop was on. See _shared/plaidSync.ts.
+      const warnings: string[] = [];
+      for (const [itemId, rows] of groupByItem(accounts)) {
+        const item = config.items?.[itemId];
+        if (!item?.access_token) {
+          warnings.push(`No access token for item ${itemId} — reconnect it in Settings.`);
+          continue;
         }
 
-        await supabase.from('connected_accounts').update({
-          sync_cursor: cursor,
-          last_synced: new Date().toISOString(),
-        }).eq('id', account.id);
+        const pull = await pullItem({
+          plaidBase,
+          clientId,
+          secret,
+          accessToken: item.access_token,
+          cursor: itemCursor(rows),
+        });
 
-        synced++;
+        const accountMap = buildAccountMap(rows);
+        const upserts: Array<Record<string, unknown>> = [];
+        let unplaced = 0;
+        for (const txn of [...pull.added, ...pull.modified]) {
+          const connectedAccountId = attribute(txn, accountMap);
+          if (connectedAccountId === null) { unplaced++; continue; }
+          upserts.push(mapTransaction(txn, company_id, connectedAccountId));
+        }
+
+        // Batched upsert on the unique plaid_transaction_id. The old path did a
+        // SELECT then an INSERT/UPDATE per transaction — about 29,000 sequential
+        // round trips for this item, which is why the sync timed out mid-loop
+        // and most accounts never got a cursor at all.
+        for (const batch of chunk(upserts, 500)) {
+          const { error: upErr } = await supabase
+            .from('plaid_transactions')
+            .upsert(batch, { onConflict: 'plaid_transaction_id' });
+          if (upErr) return jsonResponse({ error: `Transaction write failed: ${upErr.message}` }, 500);
+        }
+        for (const batch of chunk(pull.removed, 200)) {
+          await supabase.from('plaid_transactions').delete().in('plaid_transaction_id', batch);
+        }
+
+        // The cursor is the ITEM's, so every row for the item carries it. Leave
+        // one behind and the next sync re-pulls the whole history through that
+        // row — which is how the re-stamping happened in the first place.
+        await supabase.from('connected_accounts').update({
+          sync_cursor: pull.nextCursor,
+          last_synced: new Date().toISOString(),
+        }).in('id', rows.map(r => r.id));
+
+        totalAdded += pull.added.length;
+        totalModified += pull.modified.length;
+        totalRemoved += pull.removed.length;
+        synced += rows.length;
+        if (unplaced) {
+          warnings.push(`${unplaced} transactions belong to accounts at ${item.institution_name || itemId} that are not connected here — reconnect to include them.`);
+        }
       }
 
-      return jsonResponse({ success: true, total_added: totalAdded, total_modified: totalModified, total_removed: totalRemoved, accounts_synced: synced });
+      // total_added / accounts_synced are read by the Settings toast — keep them.
+      return jsonResponse({
+        success: true,
+        total_added: totalAdded,
+        total_modified: totalModified,
+        total_removed: totalRemoved,
+        accounts_synced: synced,
+        warnings,
+      });
     }
 
     return jsonResponse({ error: `Unknown action: ${action}` }, 400);
@@ -474,18 +527,7 @@ async function saveConfig(supabase: ReturnType<typeof createClient>, companyId: 
   }
 }
 
-function mapTransaction(txn: Record<string, unknown>, companyId: string, connectedAccountId: number) {
-  return {
-    company_id: companyId,
-    connected_account_id: connectedAccountId,
-    plaid_transaction_id: txn.transaction_id,
-    amount: txn.amount,
-    date: txn.date,
-    authorized_date: txn.authorized_date || null,
-    merchant_name: txn.merchant_name || null,
-    name: txn.name || null,
-    plaid_category: txn.category || null,
-    plaid_personal_finance_category: txn.personal_finance_category?.primary || null,
-    pending: txn.pending || false,
-  };
-}
+// mapTransaction used to live here. It is imported from _shared/plaidSync.ts
+// now, because the version here took the account to stamp as an argument and
+// every caller passed the wrong one. One definition, and it can only be reached
+// by resolving txn.account_id first.
