@@ -15,6 +15,7 @@ import { groupHoursByDay } from '../lib/dailyHours'
 import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
 import { canViewHR } from '../lib/accessControl'
+import { localDateStr } from '../lib/localDate'
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const BENEFIT_LABELS = { health: 'Health', dental: 'Dental', vision: 'Vision', life: 'Life', disability: 'Disability', retirement_401k: '401(k)', hsa: 'HSA', fsa: 'FSA', other: 'Other' }
@@ -262,8 +263,8 @@ export default function MyPay() {
         }
 
         const { periodStart, periodEnd } = getCurrentPayPeriod(cfg, periodOffset)
-        const periodStartStr = periodStart.toISOString().split('T')[0]
-        const periodEndStr = periodEnd.toISOString().split('T')[0]
+        const periodStartStr = localDateStr(periodStart)
+        const periodEndStr = localDateStr(periodEnd)
 
         // Leads owned by this rep (explicit or via salesperson_ids array).
         // Needed because most ownership lives on leads, not jobs.
@@ -420,8 +421,8 @@ export default function MyPay() {
   }
 
   const { periodStart, periodEnd } = getCurrentPayPeriod(payrollConfig, periodOffset)
-  const periodStartStr = periodStart.toISOString().split('T')[0]
-  const periodEndStr = periodEnd.toISOString().split('T')[0]
+  const periodStartStr = localDateStr(periodStart)
+  const periodEndStr = localDateStr(periodEnd)
 
   // Build a Map<invoice_id, lifetimePaid> once — feeds both the
   // calculateInvoiceCommissions pending bucket and the paid-threshold

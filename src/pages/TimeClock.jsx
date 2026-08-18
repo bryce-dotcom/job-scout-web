@@ -5,6 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { isAdmin as checkAdmin, isTeamLead as checkTeamLead, canViewHR } from '../lib/accessControl'
+import { localDateStr } from '../lib/localDate'
 import {
   Clock, Play, Square, Coffee, MapPin, Calendar, AlertTriangle,
   Plus, X, ChevronRight, DollarSign, TrendingUp, Award
@@ -199,7 +200,7 @@ export default function TimeClock() {
         supabase.from('lead_commissions').select('*').eq('company_id', companyId)
           .gte('created_at', periodStart.toISOString()).lte('created_at', periodEnd.toISOString()),
         supabase.from('payments').select('*').eq('company_id', companyId)
-          .gte('date', periodStart.toISOString().split('T')[0]).lte('date', periodEnd.toISOString().split('T')[0]),
+          .gte('date', localDateStr(periodStart)).lte('date', localDateStr(periodEnd)),
         supabase.from('invoices').select('*').eq('company_id', companyId),
         supabase.from('jobs').select('id, company_id, job_id, salesperson_id, allotted_time_hours, status, customer_name, job_title, assigned_team')
           .eq('company_id', companyId),

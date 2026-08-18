@@ -28,6 +28,7 @@ import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 import { payDateForPeriod } from '../lib/payDate'
 import { VERIFICATION_EXEMPT_KEY } from '../lib/verificationPolicy'
 import { needsAttention } from '../lib/openPunches'
+import { localDateStr } from '../lib/localDate'
 
 // Roll the per-employee tax breakdowns up into one row per tax-kind +
 // jurisdiction with the right due date based on the company's deposit
@@ -137,9 +138,8 @@ function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodE
   return rows
 }
 
-function toDateStr(d) {
-  return new Date(d).toISOString().split('T')[0]
-}
+// Was toISOString(), which rolled a late-evening local time into tomorrow.
+const toDateStr = localDateStr
 
 // Federal deposit due date by schedule. Approximations — the IRS
 // semi-weekly rule has Wed/Fri shipping windows; v1 uses next Wednesday
@@ -582,8 +582,9 @@ export default function Payroll() {
       const { periodStart, periodEnd } = getCurrentPeriod()
 
       // Parallel fetches for all data
-      const periodStartStr = periodStart.toISOString().split('T')[0]
-      const periodEndStr = periodEnd.toISOString().split('T')[0]
+      const periodStartStr = localDateStr(periodStart)
+      const periodEndStr = localDateStr(periodEnd)
+      const legacyPeriodEndStr = localDateStr(new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate() + 1))
 
       const [entriesRes, bonusEntriesRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes, leadsRes, allPaymentsRes, utilityRes] = await Promise.all([
         // Time clock entries for current period
@@ -688,8 +689,12 @@ export default function Payroll() {
         supabase
           .from('payroll_adjustments')
           .select('*')
+        // Adjustments saved before the period-end correction carry an end one
+        // day late — 31 Aug was written as 1 Sep. Match BOTH so correcting the
+        // date does not orphan money already entered, rather than rewriting
+        // completed payroll records to suit new code.
           .eq('company_id', companyId)
-          .or(`and(pay_period_start.eq.${periodStartStr},pay_period_end.eq.${periodEndStr}),recurring.eq.true`),
+          .or(`and(pay_period_start.eq.${periodStartStr},pay_period_end.in.(${periodEndStr},${legacyPeriodEndStr})),recurring.eq.true`),
 
         // Victor verification reports — needed to gate efficiency bonus on
         // completion + daily checks. We pull all reports in the period and
@@ -948,8 +953,8 @@ export default function Payroll() {
       allPaymentsByInvoiceId,
       utilityInvoices: utilityInvoicesState,
       payrollConfig,
-      periodStartStr: periodStart.toISOString().split('T')[0],
-      periodEndStr: periodEnd.toISOString().split('T')[0],
+      periodStartStr: localDateStr(periodStart),
+      periodEndStr: localDateStr(periodEnd),
     })
   }
 
@@ -1001,8 +1006,8 @@ export default function Payroll() {
 
     // Current period window — needed for payment_received trigger
     const { periodStart, periodEnd } = getCurrentPeriod()
-    const periodStartStr = periodStart.toISOString().split('T')[0]
-    const periodEndStr = periodEnd.toISOString().split('T')[0]
+    const periodStartStr = localDateStr(periodStart)
+    const periodEndStr = localDateStr(periodEnd)
 
     empInvoices.forEach(inv => {
       const invAmount = parseFloat(inv.amount) || 0
@@ -1422,7 +1427,7 @@ export default function Payroll() {
     const invoiceComm = calculateInvoiceCommissions(employee.id) // still drives the pending/waiting display
     const leadComm = calculateLeadCommissions(employee.id)
     const { periodStart: cfpStart, periodEnd: cfpEnd } = getCurrentPeriod()
-    const cfpS = cfpStart.toISOString().split('T')[0], cfpE = cfpEnd.toISOString().split('T')[0]
+    const cfpS = localDateStr(cfpStart), cfpE = localDateStr(cfpEnd)
     // ALL rep commissions (invoice + utility + processor) are frozen rows now,
     // so the whole commission is queued-driven — no live component in the gross.
     const queuedSetter = (leadComm.details || []).filter(c => c.queued_for_payroll).reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
@@ -1697,8 +1702,8 @@ export default function Payroll() {
         amount: parseFloat(formData.amount) || 0,
         reason: formData.reason || '',
         recurring: formData.recurring || false,
-        pay_period_start: ps.toISOString().split('T')[0],
-        pay_period_end: pe.toISOString().split('T')[0],
+        pay_period_start: localDateStr(ps),
+        pay_period_end: localDateStr(pe),
         created_by: adminEmp?.id || null,
       })
       if (error) throw error
@@ -1769,8 +1774,8 @@ export default function Payroll() {
         .from('payroll_runs')
         .insert({
           company_id: companyId,
-          period_start: periodStart.toISOString().split('T')[0],
-          period_end: periodEnd.toISOString().split('T')[0],
+          period_start: localDateStr(periodStart),
+          period_end: localDateStr(periodEnd),
           pay_date: payDate.toISOString().split('T')[0],
           total_gross: totalPayroll,
           employee_count: activeEmployees.length,
@@ -1788,8 +1793,8 @@ export default function Payroll() {
           company_id: companyId,
           employee_id: emp.id,
           payroll_run_id: payrollRun.id,
-          period_start: periodStart.toISOString().split('T')[0],
-          period_end: periodEnd.toISOString().split('T')[0],
+          period_start: localDateStr(periodStart),
+          period_end: localDateStr(periodEnd),
           pay_date: payDate.toISOString().split('T')[0],
           regular_hours: data.regularHours,
           overtime_hours: data.overtimeHours,
@@ -1827,8 +1832,8 @@ export default function Payroll() {
         const adminEmp = employees.find(e => e.email === user?.email)
         const paidEmpIds = activeEmployees.map(e => e.id)
         const stamp = {
-          paid_pay_period_start: periodStart.toISOString().split('T')[0],
-          paid_pay_period_end: periodEnd.toISOString().split('T')[0],
+          paid_pay_period_start: localDateStr(periodStart),
+          paid_pay_period_end: localDateStr(periodEnd),
           updated_at: new Date().toISOString(),
         }
         if (paidEmpIds.length) {

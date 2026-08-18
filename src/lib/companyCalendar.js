@@ -1,3 +1,4 @@
+import { localDateStr } from './localDate'
 // Company Calendar — one month view combining what the business actually has
 // on the books: Sales (appointments), Delivery (scheduled jobs), and Employee
 // time off. Alayda: "seeing events on the calendar would be super helpful —
@@ -31,12 +32,8 @@ const dayKeyOfDate = (d) => String(d || '').slice(0, 10)
  * toISOString(), which converts to UTC and lands on the previous day for any
  * viewer far enough east.
  */
-export const dayKeyOfLocalDate = (d) => {
-  if (!(d instanceof Date) || isNaN(d)) return ''
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${m}-${day}`
-}
+// The same rule payroll needs, so there is one implementation of it.
+export const dayKeyOfLocalDate = localDateStr
 
 // Every YYYY-MM-DD from start..end inclusive (time off spans days).
 export function expandDateRange(start, end) {
