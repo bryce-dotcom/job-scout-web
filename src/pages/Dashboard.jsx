@@ -5,6 +5,7 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import WhosWorking from '../components/WhosWorking'
+import { checkCanClockIn, hoursSince } from '../lib/timeClock'
 import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
@@ -269,6 +270,20 @@ export default function Dashboard() {
       await supabase.from('time_clock').update({ clock_out: clockOut.toISOString(), total_hours: totalHours }).eq('id', activeTimeLog.id)
       setClockedIn(false); setActiveTimeLog(null)
     } else {
+      // Same one-open-shift rule as Field Scout. This path doesn't show the
+      // field tech's shift list, so a stale row here is even easier to miss.
+      const gate = await checkCanClockIn(companyId, currentEmployee?.id)
+      if (!gate.ok) {
+        if (gate.reason === 'stale_open') {
+          const days = Math.floor(hoursSince(gate.openShift.clock_in) / 24)
+          alert(`You still have a shift open from ${days} day(s) ago. Close it out in Payroll so the hours land on the right day.`)
+        } else {
+          // Already clocked in elsewhere — reflect reality rather than
+          // silently doing nothing.
+          setClockedIn(true); setActiveTimeLog(gate.openShift)
+        }
+        return
+      }
       const { data } = await supabase.from('time_clock').insert({ company_id: companyId, employee_id: currentEmployee?.id, clock_in: new Date().toISOString() }).select().single()
       if (data) { setClockedIn(true); setActiveTimeLog(data) }
     }

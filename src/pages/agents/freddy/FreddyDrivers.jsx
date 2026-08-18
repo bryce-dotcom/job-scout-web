@@ -3,6 +3,7 @@ import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
+import { useGpsIntegration } from '../../../hooks/useGpsIntegration'
 import {
   UserCheck, Shield, Gauge, AlertTriangle, Clock, Fuel,
   TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp,
@@ -88,10 +89,7 @@ export default function FreddyDrivers() {
   const employees = useStore(s => s.employees)
   const fetchFleet = useStore(s => s.fetchFleet)
   const fetchEmployees = useStore(s => s.fetchEmployees)
-  const getCompanyAgent = useStore(s => s.getCompanyAgent)
-  const companyAgent = getCompanyAgent('freddy-fleet')
-  const authToken = companyAgent?.settings?.watchdog_auth_token
-
+  const { connected: gpsConnected } = useGpsIntegration()
   const [alerts, setAlerts] = useState([])
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(false)
@@ -108,20 +106,20 @@ export default function FreddyDrivers() {
   }, [companyId, fetchFleet, fetchEmployees])
 
   useEffect(() => {
-    if (!authToken) return
+    if (!gpsConnected) return
     fetchData()
-  }, [authToken])
+  }, [gpsConnected])
 
   const fetchData = async () => {
-    if (!authToken) return
+    if (!gpsConnected) return
     setLoading(true)
     try {
       const [alertsRes, tripsRes] = await Promise.all([
         supabase.functions.invoke('watchdog-proxy', {
-          body: { action: 'alerts', auth_token: authToken }
+          body: { action: 'alerts' }
         }),
         supabase.functions.invoke('watchdog-proxy', {
-          body: { action: 'trips_completed', auth_token: authToken }
+          body: { action: 'trips_completed' }
         }),
       ])
       if (alertsRes.data?.alerts) setAlerts(alertsRes.data.alerts)
@@ -207,6 +205,12 @@ export default function FreddyDrivers() {
   const totalIdleHours = driverData.reduce((sum, d) => sum + d.idleHours, 0)
   const idleFuelWaste = totalIdleHours * fuelBurnRate * fuelCostPerGallon
 
+  // True only if at least one trip actually carried an idle field. Zero trips
+  // reporting idle is not evidence of zero idling.
+  const idleDataAvailable = useMemo(() => trips.some(t =>
+    t?.idle_duration != null || t?.idle_time_seconds != null || t?.idle_minutes != null
+  ), [trips])
+
   // Styles
   const cardStyle = {
     background: theme.bgCard,
@@ -223,7 +227,7 @@ export default function FreddyDrivers() {
     textAlign: 'center',
   }
 
-  if (!authToken) {
+  if (!gpsConnected) {
     return (
       <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '800px', margin: '0 auto' }}>
         <div style={{
@@ -341,10 +345,15 @@ export default function FreddyDrivers() {
           }}>
             <Clock size={18} color="#f97316" />
           </div>
-          <div style={{ fontSize: '24px', fontWeight: '700', color: theme.text }}>
-            {totalIdleHours.toFixed(1)}
+          <div style={{ fontSize: '24px', fontWeight: '700', color: idleDataAvailable ? theme.text : theme.textMuted }}>
+            {idleDataAvailable ? totalIdleHours.toFixed(1) : '—'}
           </div>
           <div style={{ fontSize: '12px', color: theme.textMuted }}>Idle Hours (Week)</div>
+          {!idleDataAvailable && (
+          <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: 2, lineHeight: 1.3 }}>
+            Your GPS provider doesn't report idle time
+          </div>
+          )}
         </div>
 
         <div style={summaryCardStyle}>
@@ -356,10 +365,15 @@ export default function FreddyDrivers() {
           }}>
             <Fuel size={18} color="#ef4444" />
           </div>
-          <div style={{ fontSize: '24px', fontWeight: '700', color: '#ef4444' }}>
-            ${idleFuelWaste.toFixed(2)}
+          <div style={{ fontSize: '24px', fontWeight: '700', color: idleDataAvailable ? '#ef4444' : theme.textMuted }}>
+            {idleDataAvailable ? `$${idleFuelWaste.toFixed(2)}` : '—'}
           </div>
           <div style={{ fontSize: '12px', color: theme.textMuted }}>Idle Fuel Waste</div>
+          {!idleDataAvailable && (
+          <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: 2, lineHeight: 1.3 }}>
+            Your GPS provider doesn't report idle time
+          </div>
+          )}
         </div>
       </div>
 

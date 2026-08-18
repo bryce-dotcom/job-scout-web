@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { supabase } from '../lib/supabase'
+import { checkCanClockIn, hoursSince } from '../lib/timeClock'
 import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
@@ -907,6 +908,32 @@ export default function FieldScout() {
   const handleClockIn = async (jobId) => {
     if (clockingIn) return
     setClockingIn(true)
+    try {
+      // One person, one open shift. Without this, closing the app without
+      // clocking out just opens another row the next morning — which is how
+      // one employee ended up holding three at once, two of them a week old.
+      const gate = await checkCanClockIn(companyId, currentEmployee?.id)
+      if (!gate.ok) {
+        if (gate.reason === 'stale_open') {
+          // Only they know when they actually stopped working, so send them
+          // to fix it rather than inventing a clock_out on their behalf.
+          const days = Math.floor(hoursSince(gate.openShift.clock_in) / 24)
+          alert(
+            `You still have a shift open from ${days} day(s) ago.
+
+` +
+            `Close it out first so the hours land on the right day — open it ` +
+            `from Today's Shifts below, or ask an admin to fix it in Payroll.`
+          )
+        }
+        // 'already_open' needs no message: that's a double-tap or a second
+        // tab, and the user already appears clocked in.
+        setClockingIn(false)
+        return
+      }
+    } catch {
+      // A failed guard must never cost someone a punch — fall through.
+    }
     const { lat, lng } = await getCoordsFast()
     try {
       const { data: inserted, error } = await supabase
