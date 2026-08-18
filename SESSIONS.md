@@ -47,6 +47,17 @@ Two things now stop it: the local `main` branch is deleted from these worktrees,
 so that command errors loudly instead of lying; and a `pre-push` hook blocks any
 push to `main` that did not come from `ship`.
 
+If your branch predates these scripts, `npm run ship` will not exist in your
+worktree. Use the synced copy, which works from any worktree on any branch:
+
+```bash
+node /c/JobScout/.jstools/ship.mjs
+node /c/JobScout/.jstools/where.mjs
+```
+
+`npm run setup:sessions` refreshes those from the repo, which stays the source
+of truth.
+
 ## Confirming a deploy
 
 ```bash

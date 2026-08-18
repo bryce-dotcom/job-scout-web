@@ -39,6 +39,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   echo "  how work ends up on the wrong branch with a green checkmark on it." >&2
   echo "" >&2
   echo "  Land it, and prove it landed:   npm run ship" >&2
+  echo "  (branch predates that script?  node /c/JobScout/.jstools/ship.mjs)" >&2
   echo "" >&2
   blocked=1
 done

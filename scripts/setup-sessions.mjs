@@ -34,6 +34,36 @@ for (const f of readdirSync(HOOKS_SRC)) {
 }
 console.log(`hooks installed -> ${HOOKS_DST}`)
 
+// ── 1b. the tools, at the same stable path ───────────────────────────────
+// A worktree sitting on a branch that predates these scripts gets blocked from
+// pushing to main by the hook but has no `npm run ship` to use instead — all it
+// can do is give up or work around the guard. Syncing the tools somewhere every
+// worktree can reach, whatever branch it is on, keeps the sanctioned path
+// available. The repo copy stays the source of truth; this is a deployment of
+// it, refreshed every time setup runs.
+const TOOLS_DST = join(PARENT, '.jstools')
+mkdirSync(TOOLS_DST, { recursive: true })
+for (const f of ['ship.mjs', 'where.mjs', 'deployed.mjs']) {
+  copyFileSync(join(ROOT, 'scripts', f), join(TOOLS_DST, f))
+}
+console.log(`tools installed -> ${TOOLS_DST}  (usable from any worktree, any branch)`)
+
+// ── 1c. no local `main` branch ───────────────────────────────────────────
+// `git push origin main` pushes the local `main` REF. When that ref exists and
+// matches the remote, the push is a no-op that prints "Everything up-to-date"
+// and exits 0 — and git skips pre-push entirely for a no-op, so no hook can
+// catch it. With no local `main`, the same command fails loudly with "src
+// refspec main does not match any". Recreated by some fetch/worktree
+// operations, so it is removed on every setup run.
+try {
+  const checkedOut = git(['worktree', 'list']).split('\n').some(l => /\[main\]/.test(l))
+  const exists = git(['branch', '--list', 'main']).trim().length > 0
+  if (exists && !checkedOut) {
+    git(['branch', '-D', 'main'])
+    console.log('removed the local `main` branch (use origin/main; land work with npm run ship)')
+  }
+} catch { /* nothing to remove */ }
+
 // ── 2. every worktree uses them ──────────────────────────────────────────
 const worktrees = git(['worktree', 'list', '--porcelain'])
   .split('\n\n')

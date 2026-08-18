@@ -25,7 +25,10 @@ import { rmSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+// Resolved from the CURRENT directory, not from where this file lives, so a
+// session whose branch predates these scripts can still run the copy that
+// setup-sessions syncs to a stable path outside the worktrees.
+const ROOT = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
 const git = (args, opts = {}) =>
   execFileSync('git', args, { cwd: opts.cwd || ROOT, encoding: 'utf8', stdio: opts.stdio || 'pipe' }).trim()
 const tryGit = (args, opts = {}) => { try { return { ok: true, out: git(args, opts) } } catch (e) { return { ok: false, out: (e.stdout || '') + (e.stderr || '') } } }
