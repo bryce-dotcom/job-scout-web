@@ -232,6 +232,7 @@ export default function Books() {
   const leadPayments = useStore((state) => state.leadPayments)
   const connectedAccounts = useStore((state) => state.connectedAccounts)
   const plaidTransactions = useStore((state) => state.plaidTransactions)
+  const plaidDuplicatesHidden = useStore((state) => state.plaidDuplicatesHidden)
   const fetchConnectedAccounts = useStore((state) => state.fetchConnectedAccounts)
   const fetchPlaidTransactions = useStore((state) => state.fetchPlaidTransactions)
   const syncPlaidTransactions = useStore((state) => state.syncPlaidTransactions)
@@ -1755,7 +1756,15 @@ export default function Books() {
                 </div>
                 <div>
                   <div style={{ fontWeight: '600', color: theme.text }}>{unreviewedCount} transaction{unreviewedCount !== 1 ? 's' : ''} need{unreviewedCount === 1 ? 's' : ''} review</div>
-                  <div style={{ fontSize: '12px', color: theme.textMuted }}>AI categorized them — just confirm or adjust</div>
+                  <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                    AI categorized them — just confirm or adjust
+                    {plaidDuplicatesHidden > 0 && (
+                      // The list is deliberately shorter than the table behind
+                      // it. Saying so beats someone counting rows and finding
+                      // money apparently missing.
+                      <> &middot; {plaidDuplicatesHidden} Stripe payout{plaidDuplicatesHidden !== 1 ? 's' : ''} hidden, already in the bank feed</>
+                    )}
+                  </div>
                 </div>
               </div>
               <button

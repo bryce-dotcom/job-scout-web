@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 import { TABLES, QUERIES } from './schema';
 import { offlineDb } from './offlineDb';
 import { syncQueue } from './syncQueue';
+import { dedupeStripePayouts } from './bankLedger';
 
 // Sidebar-menu templates for each agent slug. Recruiting an agent inserts
 // into company_agents (subscription record) AND ai_modules (sidebar entry),
@@ -130,6 +131,10 @@ export const useStore = create(
       // Plaid / Books
       connectedAccounts: [],
       plaidTransactions: [],
+      // Stripe payout journals suppressed because the bank feed already carries
+      // the same movement. Surfaced in Books so the list isn't quietly shorter
+      // than the data behind it.
+      plaidDuplicatesHidden: 0,
       categoryRules: [],
 
       // Conrad Connect (Email Marketing)
@@ -1658,17 +1663,35 @@ export const useStore = create(
         const { companyId } = get();
         if (!companyId) return;
 
+        // Paginate for ALL of them. This was .limit(500), which stopped at
+        // 2026-06-24 out of 2,155 rows and put 652 uncategorised transactions
+        // beyond Tracy's reach — she could scroll to the bottom of Books and
+        // simply not find the backlog she was being asked to clear. Supabase
+        // caps a request at 1000, so the loop is the only way to see them all.
         try {
-          const { data, error } = await supabase
-            .from('plaid_transactions')
-            .select('*, account:connected_accounts(id, account_name, mask, institution_name), job:jobs!plaid_transactions_job_id_fkey(id, job_title, customer:customers!customer_id(id, name)), ai_job:jobs!plaid_transactions_ai_job_id_fkey(id, job_title, customer:customers!customer_id(id, name))')
-            .eq('company_id', companyId)
-            .order('date', { ascending: false })
-            .limit(500);
-
-          if (!error) {
-            set({ plaidTransactions: data || [] });
+          let allData = [];
+          let from = 0;
+          const PAGE = 1000;
+          while (true) {
+            const { data, error } = await supabase
+              .from('plaid_transactions')
+              .select('*, account:connected_accounts(id, account_name, mask, institution_name), job:jobs!plaid_transactions_job_id_fkey(id, job_title, customer:customers!customer_id(id, name)), ai_job:jobs!plaid_transactions_ai_job_id_fkey(id, job_title, customer:customers!customer_id(id, name))')
+              .eq('company_id', companyId)
+              .order('date', { ascending: false })
+              .range(from, from + PAGE - 1);
+            if (error) break;
+            allData = allData.concat(data || []);
+            if (!data || data.length < PAGE) break;
+            from += PAGE;
           }
+
+          // One movement of money, imported twice: stripe-sync-books writes a
+          // synthetic payout journal AND the bank feed carries the matching
+          // transfer. Both sides were categorised "Sales" and confirmed, so
+          // $24,898.88 was counted twice. The synthetic row is the one hidden,
+          // never the bank transaction — see lib/bankLedger.js.
+          const { rows, hidden } = dedupeStripePayouts(allData);
+          set({ plaidTransactions: rows, plaidDuplicatesHidden: hidden });
         } catch (e) {
           console.log('[fetchPlaidTransactions] Offline');
         }
