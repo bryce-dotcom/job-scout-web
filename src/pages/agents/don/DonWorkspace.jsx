@@ -5,7 +5,8 @@ import AgentHeader from '../../../components/AgentHeader'
 const DON_TABS = [
   { path: '/agents/don',            label: 'Sites',      icon: 'MapPin', end: true },
   { path: '/agents/don/takeoff',    label: 'Takeoff',    icon: 'Ruler' },
-  { path: '/agents/don/price-book', label: 'Price Book', icon: 'DollarSign' },
+  { path: '/agents/don/ground-truth', label: 'Actuals',    icon: 'Gauge' },
+  { path: '/agents/don/price-book', label: 'Prices',     icon: 'DollarSign' },
   { path: '/agents/don/settings',   label: 'Settings',   icon: 'Settings' },
 ]
 
