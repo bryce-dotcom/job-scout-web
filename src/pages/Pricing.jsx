@@ -427,7 +427,7 @@ export default function Pricing() {
             <div className="hero-grid">
               <div className="hero-left">
                 <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> The business operating system, built by the people who do the work</span>
-                <h1>F**k the status quo. Welcome to <span className="hl">the AI age</span>.</h1>
+                <h1>Burn the status quo. Welcome to <span className="hl">the AI age</span>.</h1>
                 <p className="lede">One system for the entire operation — sales, jobs, invoicing, books, payroll — running on AI with enough compute to handle your whole back office while you’re out doing the work. Not a CRM. Not another app to babysit. A business operating system so far ahead it makes whatever you’re running now look like a museum piece — and it’s going to blow your freaking mind.</p>
                 <div className="cta-row">
                   <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
