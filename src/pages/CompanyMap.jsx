@@ -307,6 +307,31 @@ export default function CompanyMap() {
     }
   }, [located, mapsReady])
 
+  // Google Maps caches its container size exactly as Leaflet does, and the
+  // map is sized in vh on a phone — which changes when the device rotates and
+  // again when the address bar collapses on first scroll. Without a resize
+  // event the map keeps rendering at the old size, leaving grey bands.
+  useEffect(() => {
+    if (!mapsReady) return
+    const onResize = () => {
+      const map = mapRef.current
+      if (!map || !window.google) return
+      const centre = map.getCenter()
+      window.google.maps.event.trigger(map, 'resize')
+      // Re-centring after a resize: without it the map keeps the old centre
+      // pixel, which slides the view off whatever the user was looking at.
+      if (centre) map.setCenter(centre)
+    }
+    window.addEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    const settle = setTimeout(onResize, 250)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+      clearTimeout(settle)
+    }
+  }, [mapsReady, isMobile])
+
   const fitAll = () => {
     const map = mapRef.current
     if (!map || !window.google || located.length === 0) return
@@ -388,8 +413,21 @@ export default function CompanyMap() {
         gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 2.2fr) minmax(0, 1fr)',
         gap: 16,
       }}>
-        <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.border}`, minHeight: 320 }}>
-          <div ref={mapElRef} style={{ width: '100%', height: isMobile ? 340 : 560 }} />
+        {/* Edge to edge on a phone. This is the screen someone opens to ask
+            where their crew and their iron are; a map inset inside page
+            padding answers that worse at every size. */}
+        <div style={{
+          position: 'relative', overflow: 'hidden', minHeight: 320,
+          borderRadius: isMobile ? 0 : 12,
+          border: isMobile ? 'none' : `1px solid ${theme.border}`,
+          borderTop: isMobile ? `1px solid ${theme.border}` : undefined,
+          borderBottom: isMobile ? `1px solid ${theme.border}` : undefined,
+          margin: isMobile ? `0 -${16}px` : undefined,
+        }}>
+          {/* 52vh rather than a fixed height: tall enough to be a map, and it
+              still leaves roster rows visible so the list below is
+              discoverable without scrolling first. */}
+          <div ref={mapElRef} style={{ width: '100%', height: isMobile ? '52vh' : 560 }} />
           {(mapError || (!loading && located.length === 0)) && (
             <div style={{
               position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
