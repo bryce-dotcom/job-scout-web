@@ -43,7 +43,6 @@ export default function FreddySettings() {
   const theme = themeContext?.theme || defaultTheme
   const isMobile = useIsMobile()
 
-  const companyId = useStore(s => s.companyId)
   const getCompanyAgent = useStore(s => s.getCompanyAgent)
   const companyAgent = getCompanyAgent('freddy-fleet')
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../../lib/supabase'
-import { useStore } from '../../../lib/store'
+import { useGpsIntegration } from '../../../hooks/useGpsIntegration'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import {
@@ -85,10 +85,17 @@ export default function FreddyAlerts() {
   const theme = themeContext?.theme || defaultTheme
   const isMobile = useIsMobile()
 
-  const companyId = useStore(s => s.companyId)
-  const getCompanyAgent = useStore(s => s.getCompanyAgent)
-  const companyAgent = getCompanyAgent('freddy-fleet')
-  const authToken = companyAgent?.settings?.watchdog_auth_token
+  // Platform mode holds one JobScout-owned provider account, so there is no
+
+  // per-company token any more. watchdog-proxy answers from the cache and
+
+  // ignores auth_token; gating on it kept these pages empty while their
+
+  // data sat in Postgres.
+
+  const { connected: gpsConnected } = useGpsIntegration()
+
+  const authToken = gpsConnected ? 'platform' : ''
 
   // Tab state
   const [activeTab, setActiveTab] = useState('alerts')
