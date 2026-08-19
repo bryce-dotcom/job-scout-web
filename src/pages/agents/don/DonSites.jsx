@@ -6,11 +6,12 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, MapPin, Search, Mountain, Droplets, Truck, Trash2, ChevronRight, Layers } from 'lucide-react'
+import { Plus, MapPin, Search, Mountain, Droplets, Truck, Trash2, ChevronRight, Layers, Binoculars } from 'lucide-react'
 import { useStore } from '../../../lib/store'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { supabase } from '../../../lib/supabase'
 import { SOIL_PROFILES } from '../../../lib/digEstimator'
+import SiteScout from '../../../components/don/SiteScout'
 import {
   T, Screen, Card, Btn, Chip, Field, TextInput, NumInput, Select, Sheet,
   Empty, Badge, SectionLabel, Note, fmtNum,
@@ -43,6 +44,7 @@ export default function DonSites() {
   const [editingId, setEditingId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [scoutSite, setScoutSite] = useState(null)
 
   const load = async () => {
     if (!companyId) return
@@ -241,6 +243,7 @@ export default function DonSites() {
 
                     <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                       <Btn variant="ghost" onClick={() => openEdit(site)} style={{ flex: 1, padding: '0 10px' }}>Edit</Btn>
+                      <Btn variant="ghost" onClick={() => setScoutSite(site)} style={{ padding: '0 12px' }} aria-label="Scout the site from photos"><Binoculars size={17} /></Btn>
                       <Btn onClick={() => startTakeoff(site)} style={{ flex: 2, padding: '0 10px' }}>
                         Take off <ChevronRight size={16} />
                       </Btn>
@@ -252,6 +255,14 @@ export default function DonSites() {
           </>
         )}
       </Screen>
+
+      <SiteScout
+        open={!!scoutSite}
+        onClose={() => setScoutSite(null)}
+        isMobile={isMobile}
+        site={scoutSite}
+        onSaved={load}
+      />
 
       <Sheet
         open={showForm}
