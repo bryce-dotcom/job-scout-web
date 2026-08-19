@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import LifecycleInputs from '../components/LifecycleInputs'
+import RepairsPanel from '../components/RepairsPanel'
 import LifecycleBar from '../components/LifecycleBar'
 import { useFleetLifecycle } from '../hooks/useFleetLifecycle'
 import { useTheme } from '../components/Layout'
@@ -798,6 +799,13 @@ export default function FleetDetail() {
         }}>
           <LifecycleBar lifecycle={lc.lifecycle} recommendation={lc.recommendation} theme={theme} />
         </div>
+      )}
+
+      {/* The spend behind the verdict above. Repairs are what make the
+          operating curve climb, so this is where the sell decision gets its
+          evidence. */}
+      {asset && (
+        <RepairsPanel asset={asset} theme={theme} onChanged={fetchFleet} />
       )}
 
       {/* Tabs */}
