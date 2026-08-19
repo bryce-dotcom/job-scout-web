@@ -565,6 +565,31 @@ export default function InvoiceDetail() {
 
     const paymentAmount = parseFloat(paymentData.amount)
 
+    // The utility incentive is already counted — as discount_applied here, so
+    // the customer only owes the net, and on the utility invoice, which is
+    // where cashRevenue reads it from. Recording it again as a payment makes
+    // the invoice read as overpaid AND counts the money twice in revenue.
+    // It happened three times before anyone noticed: $219,289.69, including
+    // $162,789.21 on Kimball. Ask, rather than accept it silently.
+    const incentive = Number(linkedUtilityInvoice?.amount) || 0
+    if (incentive > 0 && Math.abs(paymentAmount - incentive) < 0.25) {
+      const ok = window.confirm(
+        `That is the utility incentive, not a customer payment.
+
+` +
+        `${formatCurrency(incentive)} is already recorded on the utility invoice` +
+        `${linkedUtilityInvoice?.payment_status ? ` (${linkedUtilityInvoice.payment_status})` : ''}, ` +
+        `and it is already taken off what this customer owes.
+
+` +
+        `Adding it here would show the invoice as overpaid and count the money ` +
+        `twice in revenue.
+
+Add it anyway?`,
+      )
+      if (!ok) { setSaving(false); return }
+    }
+
     // If paying by CC and fee is enabled, update the invoice credit_card_fee
     let ccFeeAmount = 0
     if (paymentData.method === 'Credit Card' && ccFeeEnabled) {
