@@ -22,6 +22,7 @@ import VictorVerify from './agents/victor/VictorVerify'
 import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours, bonusRowAmount } from '../lib/bonusCalc'
 import { computeAllottedHours } from '../lib/allottedHours'
 import { verificationRequiredFor, anyUnitRequiresVerification, exemptUnitsFromPayrollConfig } from '../lib/verificationPolicy'
+import { wrongJobCorrection, correctionChoices, CORRECTION_NONE, CORRECTION_SWITCH } from '../lib/clockCorrection'
 import { splitOpenPunches, shouldQueueClockOut } from '../lib/openShifts'
 
 // Jobs a tech must not be able to clock into: the work is finished and, in
@@ -217,6 +218,15 @@ export default function FieldScout() {
   // whole page down, which is why this read as 'clock out not working' even
   // though the shift saved. Christopher, 2026-08-05.
   const [pendingVerifyJobId, setPendingVerifyJobId] = useState(null)
+  // The shift we just closed, kept so "I was on the wrong job" still works
+  // AFTER clocking out. London, 2026-08-19: someone clocked into the wrong job,
+  // clocked out, and Victor asked them to verify work they never did. The way
+  // out was offered — "On the wrong job? Switch to…" — but that block is gated
+  // on activeEntry, and a successful clock-out clears activeEntry while the
+  // verification panel stays on screen. So the escape hatch vanished at exactly
+  // the moment it was needed, and switching would have been the wrong verb
+  // anyway: there is no running clock left to move.
+  const [lastClosedShift, setLastClosedShift] = useState(null) // { id, job_id }
   const [hasDailyVerification, setHasDailyVerification] = useState(false) // field roles need this
 
   // Invoice presentation
@@ -991,6 +1001,55 @@ export default function FieldScout() {
   // gate here: switching means the tech is CONTINUING work, not ending the
   // day — the clock-out verification still applies when they actually
   // leave. The closed punch is stamped so payroll can see it was a switch.
+  // "I was on the wrong job" AFTER the shift has ended.
+  //
+  // There is no running clock to switch, so this moves the hours that were just
+  // recorded onto the job they were actually worked on, and re-points the
+  // verification prompt at that job. Without it a tech who clocked into the
+  // wrong job was left being asked to photograph work they never did, with no
+  // way to say so — the switch buttons disappear with activeEntry.
+  //
+  // The times are never touched, only which job they belong to. The original
+  // job is written into notes so payroll can see what happened.
+  const handleReassignLastShift = async (newJobId) => {
+    const shift = lastClosedShift
+    if (!shift?.id || !newJobId || shift.job_id === newJobId) return
+    setClockingIn(true)
+    try {
+      const { data: row } = await supabase
+        .from('time_clock').select('notes').eq('id', shift.id).maybeSingle()
+      const stamp = `[WRONG JOB CORRECTED ${new Date().toISOString()} — moved from job ${shift.job_id || 'General'} to job ${newJobId} by ${currentEmployee?.name || 'tech'}]`
+      const { error } = await supabase
+        .from('time_clock')
+        .update({
+          job_id: newJobId,
+          notes: row?.notes ? `${row.notes}\n${stamp}` : stamp,
+          adjusted_by: currentEmployee?.id || null,
+          adjusted_at: new Date().toISOString(),
+          adjustment_reason: `Clocked into the wrong job; hours moved to job ${newJobId}`,
+        })
+        .eq('id', shift.id)
+        .eq('company_id', companyId)
+      if (error) throw error
+
+      setLastClosedShift({ id: shift.id, job_id: newJobId })
+      // The prompt was asking about the wrong job. Point it at the real one, or
+      // drop it entirely if that job's business unit doesn't verify.
+      if (jobRequiresVerification(newJobId) && !verifiedJobs.has(newJobId)) {
+        setPendingVerifyJobId(newJobId)
+      } else {
+        setPendingVerifyJobId(null)
+        setClockOutBlocked(false)
+      }
+      await fetchEntries()
+      toast.success('Fixed — your hours moved to the right job')
+    } catch (err) {
+      toast.error(`Could not move those hours: ${err.message}`)
+    } finally {
+      setClockingIn(false)
+    }
+  }
+
   const handleSwitchJob = async (newJobId) => {
     if (!activeEntry || clockingIn || clockingOut) return
     if (activeEntry.job_id === newJobId) return
@@ -1089,6 +1148,10 @@ export default function FieldScout() {
       setPendingVerifyJobId(activeEntry.job_id || null)
       setClockOutBlocked(true)
     }
+    // Remember which row we are closing. activeEntry is cleared the moment the
+    // clock-out lands, and without this the "wrong job" fix has nothing to
+    // point at.
+    setLastClosedShift({ id: activeEntry.id, job_id: activeEntry.job_id || null })
     setClockingOut(true)
     const entryId = activeEntry.id
     // Capture the clock-out moment IMMEDIATELY — before anything async — so a
@@ -2511,8 +2574,15 @@ export default function FieldScout() {
                   which you never see while you're stuck staring at a blocked
                   Clock Out. Offer the way out at the point of the problem.
                   Switching keeps the clock running and moves the time. */}
-              {activeEntry?.job_id && (() => {
-                const others = todaysJobs.filter(j => j.id !== activeEntry.job_id).slice(0, 3)
+              {(() => {
+                // Rule lives in lib/clockCorrection.js and is unit-tested —
+                // gating this on activeEntry alone made the escape hatch vanish
+                // the instant the shift closed, while the verification panel it
+                // lives inside stayed on screen.
+                const correction = wrongJobCorrection(activeEntry, lastClosedShift)
+                if (correction.mode === CORRECTION_NONE) return null
+                const stillRunning = correction.mode === CORRECTION_SWITCH
+                const others = correctionChoices(todaysJobs, correction.jobId)
                 if (others.length === 0) return null
                 return (
                   <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }}>
@@ -2520,13 +2590,28 @@ export default function FieldScout() {
                       On the wrong job?
                     </div>
                     <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px', lineHeight: 1.45 }}>
-                      Switch instead — no clock-out needed, and the time you&apos;ve worked moves with you.
+                      {stillRunning
+                        ? <>Switch instead — no clock-out needed, and the time you&apos;ve worked moves with you.</>
+                        : <>Pick the job you were actually on. Your hours move across, and Victor will ask about that job instead.</>}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {others.map(j => (
                         <button
                           key={j.id}
-                          onClick={() => { setClockOutBlocked(false); setPendingVerifyJobId(null); handleSwitchJob(j.id) }}
+                          onClick={() => {
+                            // Before the clock-out lands there is a running
+                            // clock to move; afterwards there is only a saved
+                            // shift to re-file. Calling switch in the second
+                            // case did nothing at all — it returns immediately
+                            // when activeEntry is null, with no error and no
+                            // toast, which is what London's tech was tapping.
+                            if (stillRunning) {
+                              setClockOutBlocked(false); setPendingVerifyJobId(null)
+                              handleSwitchJob(j.id)
+                            } else {
+                              handleReassignLastShift(j.id)
+                            }
+                          }}
                           disabled={clockingIn || clockingOut}
                           style={{
                             width: '100%', padding: '10px 12px', minHeight: '44px',
@@ -2536,7 +2621,7 @@ export default function FieldScout() {
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                           }}
                         >
-                          Switch to {j.job_title || j.job_id}
+                          {stillRunning ? 'Switch to' : 'I was on'} {j.job_title || j.job_id}
                         </button>
                       ))}
                     </div>
