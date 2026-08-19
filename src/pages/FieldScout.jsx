@@ -983,6 +983,21 @@ export default function FieldScout() {
       // Fill in the address in the background — doesn't block the UI.
       if (inserted?.id && lat != null) backfillAddress(inserted.id, lat, lng, 'in')
     } catch (err) {
+      // 23505 = the one-open-punch index. A second clock-in landed while an
+      // earlier punch was still open — two tabs, two devices, a retry, or the
+      // offline queue replaying. Before that index existed this simply
+      // succeeded, and 90 hours across 15 pairs got counted twice since May.
+      // Say what happened in words a tech can act on, not a constraint name.
+      if (err?.code === '23505' || /idx_time_clock_one_open_per_employee|duplicate key/i.test(err?.message || '')) {
+        await fetchEntries()
+        alert(
+          "You're already clocked in.\n\n" +
+          "Your earlier shift is still running — it's on screen now. Clock out " +
+          "of that one first, or use Switch to move onto this job without " +
+          "losing any time."
+        )
+        return
+      }
       alert('Error clocking in: ' + err.message)
     } finally {
       setClockingIn(false)
