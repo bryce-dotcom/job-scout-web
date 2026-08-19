@@ -40,6 +40,38 @@ These are the things that, if we get them wrong, make Don a toy.
 
 ---
 
+## 2.5 Verticals are toggles, not a fork
+
+**Decision (2026-08-19):** Don does not pick a vertical. He ships all of them and the company turns on the ones they do.
+
+Excavation is one trade with three job shapes, and plenty of outfits do two or all three. Forking the product by vertical would mean three price books, three UIs, and a migration path when a trenching customer picks up a septic contract. Instead: one generic engine, and a per-company toggle set that decides what the UI offers and which price-book pack gets seeded.
+
+```
+dig_settings.verticals = {
+  trenching: true,    // utility — water/sewer/storm/electric
+  sitework:  true,    // mass ex, cut/fill, pads, road base
+  foundation: true,   // footings, basements, septic, driveways
+  demolition: false,  // (later) structure demo + haul
+  land_clearing: false
+}
+```
+
+What a toggle actually controls:
+
+| Layer | Effect of a toggle |
+|---|---|
+| Takeoff UI | Which item types appear in the "add item" picker and which geometry form each opens (trench form vs area/depth form vs footing perimeter form) |
+| Price book | Which seed pack gets installed on first enable (trenching: bedding, pipe, shoring, compaction testing · sitework: strip/stockpile, mass ex, import fill, fine grade · foundation: footing over-dig, tank set, leach field, driveway base) |
+| Plan reader | Which schedules `don-read-plan` looks hardest for (pipe schedule vs earthwork table vs footing schedule) |
+| Bid template | Section headings and default assumptions/exclusions |
+| Calibration | Production rates are keyed by work_type, so a company running two verticals learns two sets — no cross-contamination |
+
+The engine itself is vertical-blind: every geometry function, every volume conversion, every truck and production calculation is shared. A trench and a footing over-dig are the same prism math with different defaults. That is the point — one tested engine, five façades.
+
+Default on first recruit: all three core verticals on, so nobody hits an empty app. Settings tab lets them switch off what they don't do, which just tidies the pickers.
+
+---
+
 ## 3. The engine — `src/lib/digEstimator.js`
 
 Pure functions, no I/O, fully unit-tested. This is the part that has to be bulletproof; everything else is UI around it.
@@ -71,7 +103,7 @@ Seed factors by soil class (per-company overridable — these are starting value
 | Weathered rock / rippable | 40% | — | A | 0.75:1 | 3,600 lb/BCY |
 | Rock (blasted) | 55% | — | — | vertical | 4,100 lb/BCY |
 
-**The #1 estimating error this prevents:** you haul loose and you pay for bank. 1,000 BCY of stiff clay is 1,350 LCY on the road. At 14 LCY per tri-axle that's 97 loads, not 72. That 25-load gap is the whole profit on a small job.
+**The #1 estimating error this prevents:** you haul loose and you pay for bank. 1,000 BCY of stiff clay is 1,350 LCY on the road. Counting off bank yards at a 15 CY tri-axle gives 67 loads; the real answer is **97**. That 30-load gap is the whole profit on a small job. (Both numbers are asserted in `digEstimator.test.js` — the naive one included, so the gap can't quietly close.)
 
 **The #2 error:** import fill. A pad calling for 900 CCY of structural fill needs ~1,060 BCY from the pit and arrives as ~1,300 LCY / ~1,400 tons. Quoting 900 of anything is a five-figure miss.
 
@@ -94,7 +126,7 @@ loads = ceil(LCY / effective_truck_capacity)
 effective_capacity = min(volumetric_cy, weight_limit_tons / loose_density_ton_per_lcy)
 ```
 
-A tri-axle rated 14 CY hauling wet clay (~1.55 ton/LCY) at a 16-ton payload limit is a **10 CY truck**. Volume-only math under-counts loads by 30% and it is the single most common way a dirt bid loses money.
+A 15 CY tri-axle at a 16-ton payload limit is really a **13.9 CY truck** in stiff clay and a **12.1 CY truck** in blasted rock — and less again in saturated material or under a lower legal axle limit. On the seed densities that is a 7–19% under-count, and it compounds with the swell error above: get both wrong on the same job and the truck line is off by a third.
 
 Cycle time = load + haul + dump + return + queue. Trucks required to keep the hoe working = `truck_cycle_min / load_time_min`. Don sizes the fleet and prices either per-hour or per-load, whichever the company bids.
 
@@ -125,9 +157,13 @@ The risk adders are not decoration. Rock and water are what turn a good excavati
 
 ### 3.6 Output
 
-`estimateDig({ site, takeoffItems, priceBook, soilProfiles, calibration })` → `{ bidItems[], rollup, volumes, loads, machineHours, exposures[], assumptions[], confidence }`
+`estimateDig({ items, priceBook, settings, ctx })` → `{ bidItems[], rollup, volumes, loads, machine_hours, assumptions[], warnings[], unpriced_count, low_confidence_count, ready_to_send }`
 
-`assumptions[]` is a first-class output — it becomes the qualifications/exclusions page of the proposal, which is how excavators protect themselves.
+`assumptions[]` is a first-class output — the engine writes its own qualifications/exclusions page (soil priced for, sloping basis, weight-limited hauling, mobilization count), which is how excavators keep a surprise from becoming their problem.
+
+`ready_to_send` is a gate, not advice: false while any line is unpriced or any sub-threshold AI guess is unconfirmed. The UI disables the send button on it.
+
+**Status: built and green.** `src/lib/digEstimator.js` + `src/lib/digEstimator.test.js`, 69 tests passing — volume states, trench sloping and the OSHA flags, weight-vs-volume trucking, haul cycles, production rates, the calibration clamp, provenance pass-through, vertical toggles, pricing with minimum charges, the rollup order, and the `quote_lines` handoff.
 
 ---
 
@@ -173,6 +209,7 @@ All tables `company_id`-scoped, RLS-on in the same migration. Prefix `dig_` (mir
 | `dig_soil_profiles` | Per-company soil factors | swell, shrink, OSHA type, slope ratio, density, difficulty multiplier, rock adder |
 | `dig_actuals` | As-built | machine hours, loads, tons in/out, tied to `job_id`; sourced from `time_clock`, `job_lines`, expenses, and hauling tickets |
 | `dig_calibration` | Learned factors | per company × work_type × soil_class: factor + sample_n (≥3 to apply, Zach's rule) |
+| `dig_settings` | Per-company config | `verticals` toggles (§2.5), confidence threshold, default truck/soil, units, bid template prefs |
 
 **Reused, not rebuilt:** `dougie_corrections` (learning loop), `products_services` + `product_components` (sellable items and assemblies), `quotes`/`quote_lines`, `jobs`/`job_lines`, `project-documents` and `audit-photos` buckets, `ai_usage`/compute ledger.
 
@@ -241,8 +278,8 @@ Each slice ships on its own and is independently useful. **Slice 1 is the produc
 
 | # | Slice | Contents | Done when |
 |---|---|---|---|
-| **0** | Foundation | migration (8 tables + RLS), `AGENT_MODULE_TEMPLATES` entry, routes, workspace shell, Sites CRUD | Recruit Don in Base Camp → he appears in the sidebar → create a site |
-| **1** | **The engine** | `digEstimator.js` + full unit test suite, price book, soil profiles, manual takeoff entry, bid sheet, **push to quote + line items** | A real excavator hand-enters a job and the bid matches their own spreadsheet within a few percent |
+| **0** | Foundation | migration (9 tables + RLS), `AGENT_MODULE_TEMPLATES` entry, routes, workspace shell, Sites CRUD, vertical toggles | Recruit Don in Base Camp → he appears in the sidebar → create a site |
+| **1** | **The engine** | `digEstimator.js` + full unit test suite (all verticals), price-book seed packs per vertical, soil profiles, manual takeoff entry, bid sheet, **push to quote + line items** | A real excavator hand-enters a job and the bid matches their own spreadsheet within a few percent |
 | **2** | Dirt Dougie | `don-read-notes` + `don-read-plan`, review/correct UI, corrections loop | Photo of a legal pad becomes takeoff items you only have to fix, not retype |
 | **3** | Measure | plan scale calibration + trace tools, aerial site tracing, `don-read-site` | Trace a pipe run on a plan → LF → priced line |
 | **4** | Ground truth | `dig_actuals` from time clock + field entry, variance report, `dig_calibration` feeding rates | Second bid on similar soil prices off *their* real production, not our seed table |
@@ -264,6 +301,6 @@ Each slice ships on its own and is independently useful. **Slice 1 is the produc
 
 ## 11. Open questions for Bryce
 
-1. **Which excavation vertical first?** Site work/grading, utility trenching, or residential septic/foundation. They share the engine but differ in which takeoff shapes and price-book items get built first.
+1. ~~Which excavation vertical first?~~ **Answered 2026-08-19: all of them, behind per-company toggles.** See §2.5.
 2. **Is there a design partner** — a real dirt contractor whose plans, price book, and last five bids we can calibrate against? Slice 1's acceptance test needs one, and it is the difference between "plausible" and "they want it bad."
 3. **Bid-form output:** do they bid public work with mandated bid schedules (needs an exportable line-item form) or private proposals (the existing estimate PDF is enough)?
