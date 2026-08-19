@@ -14,7 +14,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Plus, Trash2, ArrowLeft, Send, AlertTriangle, CheckCircle2, Layers,
-  Truck, Clock, Pencil, ShieldCheck, TriangleAlert, FileText, ScanLine,
+  Truck, Clock, Pencil, ShieldCheck, TriangleAlert, FileText, ScanLine, Ruler,
 } from 'lucide-react'
 import { useStore } from '../../../lib/store'
 import { useIsMobile } from '../../../hooks/useIsMobile'
@@ -26,6 +26,7 @@ import {
 } from '../../../lib/digEstimator'
 import { DEFAULT_VERTICALS } from '../../../lib/donPriceBook'
 import ReadSheet from '../../../components/don/ReadSheet'
+import PlanMeasure from '../../../components/don/PlanMeasure'
 import {
   T, Screen, Card, Btn, Chip, Field, TextInput, NumInput, Select, Sheet,
   Empty, Badge, SectionLabel, Note, StatBar, SourceBadge, fmtNum, fmtMoney,
@@ -98,6 +99,7 @@ export default function DonTakeoffDetail() {
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [readOpen, setReadOpen] = useState(false)
+  const [measureOpen, setMeasureOpen] = useState(false)
   const [draft, setDraft] = useState(blankItem)
   const [editingId, setEditingId] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -367,6 +369,7 @@ export default function DonTakeoffDetail() {
           </div>
           {!isMobile && (
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <Btn variant="ghost" onClick={() => setMeasureOpen(true)}><Ruler size={18} /> Measure</Btn>
               <Btn variant="clay" onClick={() => setReadOpen(true)}><ScanLine size={18} /> Read a page</Btn>
               <Btn onClick={openAdd}><Plus size={18} /> Add item</Btn>
             </div>
@@ -395,6 +398,7 @@ export default function DonTakeoffDetail() {
             action={
               <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
                 <Btn variant="clay" onClick={() => setReadOpen(true)}><ScanLine size={18} /> Read a page</Btn>
+                <Btn variant="ghost" onClick={() => setMeasureOpen(true)}><Ruler size={18} /> Measure</Btn>
                 <Btn variant="ghost" onClick={openAdd}><Plus size={18} /> Add by hand</Btn>
               </div>
             }
@@ -529,7 +533,10 @@ export default function DonTakeoffDetail() {
           action={
             isMobile ? (
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                <Btn variant="clay" onClick={() => setReadOpen(true)} style={{ padding: '0 13px' }} aria-label="Read a page">
+                <Btn variant="ghost" onClick={() => setMeasureOpen(true)} style={{ padding: '0 11px' }} aria-label="Measure off a plan">
+                  <Ruler size={19} />
+                </Btn>
+                <Btn variant="clay" onClick={() => setReadOpen(true)} style={{ padding: '0 11px' }} aria-label="Read a page">
                   <ScanLine size={20} />
                 </Btn>
                 <Btn onClick={openAdd} style={{ padding: '0 13px' }} aria-label="Add item">
@@ -566,6 +573,15 @@ export default function DonTakeoffDetail() {
           )
           load()
         }}
+      />
+
+      <PlanMeasure
+        open={measureOpen}
+        onClose={() => setMeasureOpen(false)}
+        takeoffId={Number(id)}
+        site={site}
+        existingCount={rows.length}
+        onAdded={({ label }) => { setFlash(`Traced ${label.toLowerCase()} off the sheet and added it.`); load() }}
       />
 
       {/* ── Add / edit item sheet ─────────────────────────────────────── */}
