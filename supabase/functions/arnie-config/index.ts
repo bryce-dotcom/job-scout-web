@@ -13,6 +13,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { applyToList, proposeChange, readList, writeList } from "../_shared/arnieConfig.ts";
+import { resolveCaller, type Caller } from "../_shared/auth.ts";
+import { isRecordTarget } from "../_shared/arnieRecords.ts";
+import { applyRecordProposal, mayChange, rollbackRecordProposal } from "../_shared/arnieRecordPropose.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -32,31 +35,18 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-// Decode the caller's JWT email (mirrors _shared/auth.ts).
-function jwtEmail(req: Request): string | null {
-  try {
-    const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
-    const part = token.split('.')[1];
-    if (!part) return null;
-    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)));
-    return (payload?.email || '').toLowerCase() || null;
-  } catch { return null; }
-}
-
-async function resolveAdmin(sb: any, req: Request): Promise<{ email: string; companyId: number } | null> {
-  const email = jwtEmail(req);
-  if (!email) return null;
-  const { data } = await sb.from('employees')
-    .select('company_id, role, user_role, is_admin, is_developer')
-    .ilike('email', email).eq('active', true).limit(1);
-  const e = data?.[0];
-  if (!e) return null;
-  const admin = e.is_developer === true || e.is_admin === true
-    || ['Admin', 'admin', 'Owner', 'owner'].includes(e.user_role)
-    || ['Admin', 'Owner'].includes(e.role);
-  if (!admin) return null;
-  return { email, companyId: e.company_id };
+// Who may decide this proposal?
+//
+// Config changes remain admin-only, as they always were. Record changes defer
+// to the target's own rule, re-checked here at decision time rather than
+// trusted from whenever the draft was made.
+async function mayDecide(rest: { url: string; key: string }, caller: Caller, prop: any) {
+  if (isRecordTarget(prop.target)) {
+    return await mayChange(rest, caller, prop.target, prop.payload?.entity_id ?? null);
+  }
+  return caller.level >= 3
+    ? { ok: true as const }
+    : { ok: false as const, error: 'Only an admin can change company settings.' };
 }
 
 async function audit(sb: any, companyId: number, email: string, action: string, proposalId: number, details: unknown) {
@@ -74,8 +64,10 @@ serve(async (req) => {
     const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const caller = await resolveAdmin(sb, req);
-    if (!caller) return json({ error: 'Only an admin can configure the system.' }, 403);
+    const caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY);
+    if (!caller || caller.companyId == null) {
+      return json({ error: 'Sign in with a company account to change settings.' }, 403);
+    }
     const companyId = caller.companyId;
 
     const body = await req.json().catch(() => ({}));
@@ -84,6 +76,7 @@ serve(async (req) => {
     // ── PROPOSE: shared with arnie-chat, so a change asked for in conversation
     // and the same change asked for in Setup produce an identical proposal.
     if (action === 'propose') {
+      if (caller.level < 3) return json({ error: 'Only an admin can change company settings.' }, 403);
       const request = String(body.request || '').trim();
       if (!request) return json({ error: 'Tell Arnie what you want to change.' }, 400);
       const res = await proposeChange(rest, companyId, caller.email, request);
@@ -96,6 +89,10 @@ serve(async (req) => {
     const { data: prop } = await sb.from('arnie_proposals').select('*').eq('id', proposalId).eq('company_id', companyId).maybeSingle();
     if (!prop) return json({ error: 'Proposal not found.' }, 404);
 
+    const permitted = await mayDecide(rest, caller, prop);
+    if (!permitted.ok) return json({ error: permitted.error }, 403);
+    const isRecord = isRecordTarget(prop.target);
+
     if (action === 'reject') {
       if (prop.status !== 'pending') return json({ error: `Can't reject a ${prop.status} change.` }, 400);
       await sb.from('arnie_proposals').update({ status: 'rejected', decided_by: caller.email, decided_at: new Date().toISOString() }).eq('id', proposalId);
@@ -104,6 +101,25 @@ serve(async (req) => {
 
     if (action === 'apply') {
       if (prop.status !== 'pending') return json({ error: `This change is already ${prop.status}.` }, 400);
+      if (isRecord) {
+        const res = await applyRecordProposal(rest, companyId, prop);
+        if (!res.ok) {
+          if (res.stale) {
+            await sb.from('arnie_proposals').update({
+              status: 'failed', error: res.error, decided_by: caller.email, decided_at: new Date().toISOString(),
+            }).eq('id', proposalId);
+            return json({ error: res.error }, 409);
+          }
+          return json({ error: res.error }, 500);
+        }
+        await sb.from('arnie_proposals').update({
+          status: 'applied', decided_by: caller.email, decided_at: new Date().toISOString(),
+        }).eq('id', proposalId);
+        await audit(sb, companyId, caller.email, `arnie_record_apply:${prop.target}`, proposalId, {
+          summary: prop.summary, entity: prop.payload?.entity_label, before: res.before, after: res.after,
+        });
+        return json({ ok: true, status: 'applied', target: prop.target });
+      }
       // Re-read live list at apply time (config may have changed since propose)
       const { row, list } = await readList(rest, companyId, prop.target);
       const after = applyToList(list, prop.action, prop.payload.value, prop.payload.newValue, prop.target);
@@ -119,6 +135,17 @@ serve(async (req) => {
 
     if (action === 'rollback') {
       if (prop.status !== 'applied') return json({ error: `Only an applied change can be rolled back (this one is ${prop.status}).` }, 400);
+      if (isRecord) {
+        const res = await rollbackRecordProposal(rest, companyId, prop);
+        if (!res.ok) return json({ error: res.error }, 500);
+        await sb.from('arnie_proposals').update({
+          status: 'rolled_back', decided_by: caller.email, decided_at: new Date().toISOString(),
+        }).eq('id', proposalId);
+        await audit(sb, companyId, caller.email, `arnie_record_rollback:${prop.target}`, proposalId, {
+          summary: prop.summary, entity: prop.payload?.entity_label, restored: res.restored,
+        });
+        return json({ ok: true, status: 'rolled_back', target: prop.target });
+      }
       const { row } = await readList(rest, companyId, prop.target);
       const restore = Array.isArray(prop.before_value) ? prop.before_value : [];
       await writeList(rest, companyId, prop.target, row, restore);

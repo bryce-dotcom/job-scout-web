@@ -35,7 +35,14 @@ export default function ArnieSetup() {
     const map = { 'User': 0, 'Team Lead': 1, 'Manager': 2, 'Admin': 3, 'Super Admin': 4, 'Developer': 5, 'Owner': 4 }
     return map[user.user_role] ?? map[user.role] ?? 0
   })()
+  // Proposing a settings change is admin-only, as it always was. Seeing the
+  // history is not: Tier B lets a manager change a job or lead through Arnie,
+  // and the chat card tells them they can roll it back from here. Locking
+  // managers out of this page would make that promise a lie. Every button is
+  // re-checked server-side against the proposal's own rule, so what a manager
+  // sees here is not what they can necessarily undo.
   const isAdmin = level >= 3
+  const canSeeHistory = level >= 2
 
   const [request, setRequest] = useState('')
   const [busy, setBusy] = useState(false)
@@ -47,7 +54,7 @@ export default function ArnieSetup() {
     const { data } = await supabase.from('arnie_proposals').select('*').order('created_at', { ascending: false }).limit(25)
     setHistory(data || [])
   }, [])
-  useEffect(() => { if (isAdmin) loadHistory() }, [isAdmin, loadHistory])
+  useEffect(() => { if (canSeeHistory) loadHistory() }, [canSeeHistory, loadHistory])
 
   const invoke = async (body) => {
     const { data, error: fnErr } = await supabase.functions.invoke('arnie-config', { body })
@@ -77,12 +84,12 @@ export default function ArnieSetup() {
     setBusy(false)
   }
 
-  if (!isAdmin) {
+  if (!canSeeHistory) {
     return (
       <div style={{ maxWidth: 620, margin: '48px auto', padding: 24, textAlign: 'center', color: t.sub }}>
         <ShieldAlert size={28} color={t.muted} />
-        <h2 style={{ color: t.ink, margin: '12px 0 6px' }}>Owner / Admin only</h2>
-        <p>Configuring the system with Arnie is limited to owners and admins.</p>
+        <h2 style={{ color: t.ink, margin: '12px 0 6px' }}>Manager access or above</h2>
+        <p>Changes Arnie makes are reviewed and rolled back from here, which is limited to managers, admins and owners.</p>
       </div>
     )
   }
@@ -98,7 +105,9 @@ export default function ArnieSetup() {
         <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>System settings with Arnie</h1>
       </div>
       <p style={{ color: t.sub, margin: '0 0 14px', fontSize: 14 }}>
-        Tell Arnie what to change in plain English. He drafts it, you review the before-and-after, and nothing changes until you approve. Every change is logged and can be rolled back.
+        {isAdmin
+          ? 'Tell Arnie what to change in plain English. He drafts it, you review the before-and-after, and nothing changes until you approve. Every change is logged and can be rolled back.'
+          : 'Every change Arnie makes for you lands here — what it was, what it became, and a way to put it back.'}
       </p>
 
       {/* Arnie lives in the corner guy — you can also just talk to him there. */}
@@ -109,7 +118,8 @@ export default function ArnieSetup() {
         </div>
       </div>
 
-      {/* ask box */}
+      {/* ask box — proposing a settings change stays admin-only */}
+      {isAdmin && (
       <div style={{ background: t.card, border: `1.5px solid ${t.line}`, borderRadius: 14, padding: 16 }}>
         <textarea
           value={request} onChange={(e) => setRequest(e.target.value)}
@@ -129,6 +139,7 @@ export default function ArnieSetup() {
           </button>
         </div>
       </div>
+      )}
 
       {error && (
         <div style={{ marginTop: 14, background: t.rmBg, border: `1px solid ${t.rm}33`, color: t.rm, borderRadius: 10, padding: '11px 14px', fontSize: 13.5 }}>{error}</div>

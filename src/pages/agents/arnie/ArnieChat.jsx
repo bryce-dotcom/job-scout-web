@@ -66,6 +66,10 @@ const QUICK_ACTIONS = {
   ]
 }
 
+// Tier A proposals preview a whole taxonomy list; Tier B previews one field on
+// one record. They need different cards, and this is how a message says which.
+const pv0 = (msg) => msg.proposal?.preview || {}
+
 function ArnieAvatar({ size = 36 }) {
   return (
     <div style={{
@@ -680,7 +684,58 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                   </>
                 )}
               </div>
-              {msg.proposal && (() => {
+              {msg.proposal && pv0(msg).kind === 'record' && (() => {
+                // A record change is one field on one row, so the chip diff
+                // used for taxonomy lists would say nothing useful. What
+                // matters here is WHICH record — a valid change applied to
+                // the wrong job is the failure this card exists to prevent.
+                const pv = msg.proposal.preview || {}
+                const st = msg.proposalStatus
+                return (
+                  <div style={{
+                    marginTop: 8, background: dark.bgChat,
+                    border: `1px solid ${st === 'applied' ? 'rgba(47,125,78,0.6)' : st === 'rejected' ? dark.border : 'rgba(201,129,47,0.7)'}`,
+                    borderRadius: 12, padding: 12,
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#d9963f', marginBottom: 6 }}>
+                      Change to {pv.label}
+                    </div>
+                    <div style={{ fontSize: 13.5, fontWeight: 650, color: dark.text, marginBottom: 8 }}>{pv.entity}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: st ? 10 : 12 }}>
+                      <span style={{
+                        fontSize: 12.5, padding: '3px 10px', borderRadius: 8, maxWidth: '100%',
+                        background: 'rgba(220,80,80,0.14)', color: '#e88', border: '1px solid rgba(220,80,80,0.4)',
+                      }}>{pv.before}</span>
+                      <span style={{ color: dark.textMuted, fontSize: 13 }}>→</span>
+                      <span style={{
+                        fontSize: 12.5, padding: '3px 10px', borderRadius: 8, maxWidth: '100%',
+                        background: 'rgba(47,125,78,0.22)', color: '#7fdba0', border: '1px solid rgba(47,125,78,0.5)',
+                      }}>{pv.after}</span>
+                    </div>
+                    {msg.proposalError && (
+                      <div style={{ fontSize: 12.5, color: '#e88', marginBottom: 8 }}>{msg.proposalError}</div>
+                    )}
+                    {!st ? (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button disabled={msg.proposalBusy} onClick={() => decideProposal('apply', msg.proposal.proposal.id, msg.id)} style={{
+                          flex: 1, background: '#c9812f', color: '#fff', border: 0, borderRadius: 8,
+                          padding: '9px 12px', fontWeight: 650, fontSize: 13,
+                          cursor: msg.proposalBusy ? 'default' : 'pointer', opacity: msg.proposalBusy ? 0.6 : 1,
+                        }}>{msg.proposalBusy ? 'Working…' : 'Approve & apply'}</button>
+                        <button disabled={msg.proposalBusy} onClick={() => decideProposal('reject', msg.proposal.proposal.id, msg.id)} style={{
+                          background: 'transparent', color: dark.textSecondary, border: `1px solid ${dark.border}`,
+                          borderRadius: 8, padding: '9px 14px', fontSize: 13, cursor: 'pointer',
+                        }}>Discard</button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: st === 'applied' ? '#7fdba0' : dark.textSecondary }}>
+                        {st === 'applied' ? 'Applied — you can roll this back from Settings.' : 'Discarded.'}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+              {msg.proposal && pv0(msg).kind !== 'record' && (() => {
                 const pv = msg.proposal.preview || {}
                 const afterLc = (pv.after || []).map(x => String(x).toLowerCase())
                 const beforeSet = new Set((pv.before || []).map(x => String(x).toLowerCase()))

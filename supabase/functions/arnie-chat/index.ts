@@ -2,6 +2,8 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { callAnthropic, reportAnthropicFailure, logAnthropicSuccess } from '../_shared/anthropic.ts'
 import { resolveCaller, type Caller } from '../_shared/auth.ts'
 import { proposeChange, targetsSentence } from '../_shared/arnieConfig.ts'
+import { recordTargetsSentence } from '../_shared/arnieRecords.ts'
+import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
 
 // Still read directly here: the SSE streaming path keeps its own fetch
 // (the shared wrapper buffers responses, which would break streaming).
@@ -263,11 +265,36 @@ const PROPOSE_TOOL = {
   },
 }
 
-// Admins get the write tool; everyone else never sees it exists, so the
-// model cannot offer a change the caller has no standing to make.
+// Tier B: change one field on one record. The model deliberately CANNOT pass
+// a row id it made up — it describes the record and the server looks it up.
+// Handed thousands of job ids a model will eventually pick a plausible wrong
+// one, and a valid change to the wrong job looks exactly like a correct one
+// on the approval card.
+const PROPOSE_RECORD_TOOL = {
+  name: 'propose_record_change',
+  description:
+    'Draft a change to ONE field on ONE record, for a human to approve. Targets: ' +
+    recordTargetsSentence() +
+    '. Describe the record in words via record_query (a name, address, job number) — do NOT invent a record_id. If the reply comes back with needs_choice, ask the user which one they meant and call again passing record_id. Nothing is written until they approve, so never say the change is done.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      target: { type: 'string', description: 'One of: job_status, job_note, job_schedule, lead_status, lead_note' },
+      record_query: { type: 'string', description: 'How the user identified the record, e.g. "the Drinkle insurance job" or "JOB-ABC123"' },
+      record_id: { type: 'integer', description: 'Only after a needs_choice reply, or when the user gave an exact id' },
+      value: { type: 'string', description: 'The new status, the note text, or a YYYY-MM-DD date' },
+    },
+    required: ['target', 'value'],
+  },
+}
+
+// Everyone can see the record tool, because a clocked-in tech is allowed to
+// note their own job; the executor decides per target and per row. The config
+// tool stays hidden from non-admins, so the model never offers a settings
+// change to someone who could not make one.
 function toolsFor(role: string) {
   const isAdmin = ['developer', 'super_admin', 'admin'].includes(role)
-  return isAdmin ? [...TOOLS, PROPOSE_TOOL] : TOOLS
+  return isAdmin ? [...TOOLS, PROPOSE_TOOL, PROPOSE_RECORD_TOOL] : [...TOOLS, PROPOSE_RECORD_TOOL]
 }
 
 // ============================================================
@@ -494,6 +521,14 @@ async function execTool(name: string, input: any, caller: Caller) {
         products: got.rows,
         ...(got.truncated ? { note: `Showing ${got.rows.length} of ${got.total} matches.` } : {}),
       }
+    }
+
+    if (name === 'propose_record_change') {
+      return await proposeRecordChange(
+        { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY },
+        caller,
+        { target: String(input?.target || ''), record_query: input?.record_query, record_id: input?.record_id, value: String(input?.value ?? '') },
+      )
     }
 
     if (name === 'propose_change') {
@@ -818,7 +853,8 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             // A drafted change has to reach the UI as a card, not as prose —
             // the model describing a diff is not the same as the admin seeing
             // one and clicking approve.
-            if (tu.name === 'propose_change' && result?.proposal && result?.preview) {
+            if ((tu.name === 'propose_change' || tu.name === 'propose_record_change')
+                && result?.proposal && result?.preview) {
               send('proposal', { proposal: result.proposal, preview: result.preview })
             }
             toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) })
