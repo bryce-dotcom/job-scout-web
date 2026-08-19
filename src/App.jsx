@@ -91,6 +91,7 @@ import DonWorkspace from './pages/agents/don/DonWorkspace'
 import DonSites from './pages/agents/don/DonSites'
 import DonTakeoffs from './pages/agents/don/DonTakeoffs'
 import DonTakeoffDetail from './pages/agents/don/DonTakeoffDetail'
+import DonGroundTruth from './pages/agents/don/DonGroundTruth'
 import DonPriceBook from './pages/agents/don/DonPriceBook'
 import DonSettings from './pages/agents/don/DonSettings'
 import ConradWorkspace from './pages/agents/conrad/ConradWorkspace'
@@ -500,6 +501,7 @@ function App() {
             <Route index element={<DonSites />} />
             <Route path="takeoff" element={<DonTakeoffs />} />
             <Route path="takeoff/:id" element={<DonTakeoffDetail />} />
+            <Route path="ground-truth" element={<DonGroundTruth />} />
             <Route path="price-book" element={<DonPriceBook />} />
             <Route path="settings" element={<DonSettings />} />
           </Route>
