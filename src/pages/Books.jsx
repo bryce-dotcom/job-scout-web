@@ -522,7 +522,7 @@ export default function Books() {
   //      backfill a payment dated to the invoice's updated_at.
   const [paymentsByInvoiceId, setPaymentsByInvoiceId] = useState(new Map())
   const [paymentsLoaded, setPaymentsLoaded] = useState(false)
-  const [matchModal, setMatchModal] = useState({ open: false, deposit: null, invoices: [], loading: false, query: '', selectedId: null, saving: false })
+  const [matchModal, setMatchModal] = useState({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })
   const [backfilling, setBackfillingInvoiceId] = useState(null)
 
   const fetchPaymentsLifetime = async () => {
@@ -559,7 +559,7 @@ export default function Books() {
     const depName = ((deposit.merchant_name || deposit.name || '') + '').toLowerCase()
     const { data, error } = await supabase
       .from('invoices')
-      .select('id, invoice_id, amount, payment_status, created_at, customer_id, job_id, customer:customers(name)')
+      .select('id, invoice_id, amount, discount_applied, payment_status, created_at, customer_id, job_id, customer:customers(name)')
       .eq('company_id', companyId)
       .neq('payment_status', 'Paid')
       .neq('payment_status', 'Cancelled')
@@ -570,10 +570,16 @@ export default function Books() {
       setMatchModal(m => ({ ...m, open: false }))
       return
     }
-    // Compute open balance per invoice (amount − payments already on it).
+    // What the CUSTOMER owes, not the gross project. On an Energy Scout
+    // invoice the utility incentive is in discount_applied, so gross minus
+    // payments overstates the balance by the whole incentive — and because
+    // payAmount is capped at this number, the full deposit got applied.
+    // INV-MSG82KFQ owes $8,023.03 and carries $14,547.03, overpaid by exactly
+    // the $6,524 incentive. invoiceCustomerBalance is the one definition of
+    // this and it was already in this file, 175 lines below.
     const ranked = (data || []).map(inv => {
       const paid = paymentsByInvoiceId.get(inv.id) || 0
-      const open = Math.max(0, (parseFloat(inv.amount) || 0) - paid)
+      const open = Math.max(0, invoiceCustomerBalance(inv) - paid)
       const custName = (inv.customer?.name || '').toLowerCase()
       let score = 0
       if (Math.abs(open - depAmount) < 0.01) score += 100
@@ -582,7 +588,59 @@ export default function Books() {
       return { ...inv, _open: open, _score: score }
     }).filter(inv => inv._open > 0.01)
       .sort((a, b) => (b._score - a._score) || (b.created_at < a.created_at ? 1 : -1))
-    setMatchModal(m => ({ ...m, invoices: ranked, loading: false, selectedId: ranked[0]?._score >= 100 ? ranked[0].id : null }))
+    // A deposit is often the bank side of a payment someone already entered
+    // by hand. Those invoices are Paid, so they were filtered out of the list
+    // entirely — leaving the closest OPEN invoice as the only choice. That is
+    // how Tracy's $14,537 Seven Skies check landed on Ryan Kimball's invoice,
+    // $10.03 away. Offer the recorded payment instead of forcing a wrong pick.
+    const { data: already } = await supabase
+      .from('payments')
+      .select('id, invoice_id, amount, date, method, source_transaction_id, invoice:invoices(invoice_id, customer:customers(name))')
+      .eq('company_id', companyId)
+      .is('source_transaction_id', null)
+      .gte('amount', depAmount - 0.01)
+      .lte('amount', depAmount + 0.01)
+      .limit(20)
+    // Within a fortnight either side — a check is banked days after it is
+    // entered, but two months apart is a different payment of the same size.
+    const depTime = new Date(deposit.date).getTime()
+    const recorded = (already || []).filter(p => {
+      const d = new Date(p.date).getTime()
+      return Number.isFinite(d) && Math.abs(d - depTime) <= 14 * 86400000
+    })
+    // Do not pre-select an invoice when the deposit looks like a payment we
+    // already have — the recorded one is almost certainly the right answer,
+    // and a pre-ticked invoice is what gets confirmed without reading.
+    setMatchModal(m => ({
+      ...m, invoices: ranked, recorded, loading: false,
+      selectedId: recorded.length === 0 && ranked[0]?._score >= 100 ? ranked[0].id : null,
+    }))
+  }
+
+  // Link the deposit to a payment that is ALREADY recorded, instead of
+  // creating a second one. This is the case the matcher had no answer for:
+  // the money is already on the right invoice, the bank row just needs to
+  // stop looking unmatched. No payment is created, so nothing double-counts.
+  const linkToRecordedPayment = async (payment) => {
+    const { deposit } = matchModal
+    if (!deposit || !payment) return
+    setMatchModal(m => ({ ...m, saving: true }))
+    const { error } = await supabase.from('plaid_transactions').update({
+      matched_invoice_id: payment.invoice_id,
+      matched_payment_id: payment.id,
+      matched_at: new Date().toISOString(),
+    }).eq('id', deposit.id)
+    if (error) {
+      toast.error('Could not link the deposit: ' + error.message)
+      setMatchModal(m => ({ ...m, saving: false }))
+      return
+    }
+    // Point the payment back at the bank row too, so this deposit can never
+    // be offered as "already recorded" for something else.
+    await supabase.from('payments').update({ source_transaction_id: deposit.id }).eq('id', payment.id)
+    toast.success(`Linked to the payment already on ${payment.invoice?.invoice_id || `invoice ${payment.invoice_id}`}. No new payment created.`)
+    setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })
+    await fetchPlaidTransactions?.()
   }
 
   // Confirm the match: insert a payments row dated to the deposit, then
@@ -651,7 +709,7 @@ export default function Books() {
       await supabase.from('invoices').update({ payment_status: 'Partially Paid', updated_at: new Date().toISOString() }).eq('id', inv.id)
     }
     toast.success(`Matched $${payAmount.toFixed(2)} to invoice ${inv.invoice_id || inv.id}`)
-    setMatchModal({ open: false, deposit: null, invoices: [], loading: false, query: '', selectedId: null, saving: false })
+    setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })
     await Promise.all([fetchPaymentsLifetime(), fetchPlaidTransactions()])
   }
 
@@ -3822,13 +3880,13 @@ export default function Books() {
           amount-similarity + customer-name fuzzy match, with the deposit's
           context up top so the user can confirm visually. */}
       {matchModal.open && matchModal.deposit && (
-        <div onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], loading: false, query: '', selectedId: null, saving: false })}
+        <div onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })}
              style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div onClick={e => e.stopPropagation()}
                style={{ backgroundColor: theme.bgCard, borderRadius: '10px', maxWidth: '700px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '16px 24px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h3 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0 }}>Match deposit to invoice</h3>
-              <button onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], loading: false, query: '', selectedId: null, saving: false })}
+              <button onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
                 <X size={18} />
               </button>
@@ -3861,6 +3919,52 @@ export default function Books() {
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
               {matchModal.loading && <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>Loading open invoices…</div>}
+              {/* A payment already on the books for this exact amount. Shown
+                  FIRST because it is almost always the answer: the check was
+                  entered when it arrived, and this is the same money reaching
+                  the bank days later. Matching it to an open invoice instead
+                  is what put Tracy's $14,537 on the wrong customer. */}
+              {!matchModal.loading && (matchModal.recorded || []).length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '4px 2px' }}>
+                    Already recorded — this is probably the same money
+                  </div>
+                  {(matchModal.recorded || []).map(pmt => (
+                    <div key={`rec-${pmt.id}`} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                      padding: '10px 12px', marginTop: 6, borderRadius: 10,
+                      border: `1px solid ${theme.accent}`, backgroundColor: theme.accentBg,
+                    }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {pmt.invoice?.invoice_id || `Invoice ${pmt.invoice_id}`}
+                          {pmt.invoice?.customer?.name ? ` — ${pmt.invoice.customer.name}` : ''}
+                        </div>
+                        <div style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
+                          {formatCurrency(Number(pmt.amount) || 0)} recorded {formatDate(pmt.date)}
+                          {pmt.method ? ` · ${pmt.method}` : ''} · no bank deposit linked yet
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => linkToRecordedPayment(pmt)}
+                        disabled={matchModal.saving}
+                        style={{
+                          flexShrink: 0, padding: '8px 12px', borderRadius: 8, border: 'none',
+                          backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600,
+                          cursor: matchModal.saving ? 'default' : 'pointer', minHeight: 36,
+                        }}
+                      >
+                        This is that payment
+                      </button>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 8, lineHeight: 1.5 }}>
+                    Linking marks the deposit as reconciled without creating a second payment,
+                    so the invoice is not paid twice. Only pick an invoice below if this deposit is different money.
+                  </div>
+                </div>
+              )}
+
               {!matchModal.loading && matchModal.invoices.length === 0 && (
                 <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
                   No open invoices to match against. Create the invoice first, then come back and match this deposit.
@@ -3913,7 +4017,7 @@ export default function Books() {
                   : 'Select an invoice to enable Match.'}
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], loading: false, query: '', selectedId: null, saving: false })}
+                <button onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })}
                         disabled={matchModal.saving}
                         style={{ padding: '8px 14px', backgroundColor: 'transparent', color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>
                   Cancel
