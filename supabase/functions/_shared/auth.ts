@@ -43,3 +43,81 @@ export async function resolveCompanyId(
     return null
   }
 }
+
+// ── Full caller identity ────────────────────────────────────────────────
+// resolveCompanyId() above answers "which tenant is this?" for metering.
+// resolveCaller() answers the harder question the DATA functions need:
+// "who is this, what company, and what may they see?" — derived ENTIRELY
+// from the caller's JWT.
+//
+// Why this exists: arnie-chat used to read `companyId` and `role` out of the
+// request BODY and hand them straight to service-role queries. Any signed-in
+// user could edit those two fields in devtools and read another tenant's
+// invoices, leads and payroll. The JWT is the only trustworthy input.
+//
+// Mirrors src/lib/accessControl.js#getAccessLevel — is_developer wins, then
+// user_role, then a job-title `role` but only if it is admin-or-above.
+// Keep the two in sync; they are the same rule written in two languages.
+
+export type CallerRole =
+  | 'developer' | 'super_admin' | 'admin' | 'manager' | 'team_lead' | 'user'
+
+export interface Caller {
+  email: string
+  companyId: number
+  employeeId: number | null
+  role: CallerRole
+  level: number
+}
+
+const ROLE_LEVEL: Record<string, number> = {
+  'User': 0, 'Team Lead': 1, 'Manager': 2,
+  'Admin': 3, 'Super Admin': 4, 'Developer': 5,
+  'Owner': 4, // legacy — Owner has always meant Super Admin
+}
+const LEVEL_ROLE: CallerRole[] =
+  ['user', 'team_lead', 'manager', 'admin', 'super_admin', 'developer']
+
+function accessLevel(emp: Record<string, unknown>): number {
+  if (emp?.is_developer === true) return 5
+  const ur = emp?.user_role as string | undefined
+  if (ur && ROLE_LEVEL[ur] !== undefined) return ROLE_LEVEL[ur]
+  // Legacy fallback: a job-title in `role`, honoured only when admin-or-above
+  const r = emp?.role as string | undefined
+  if (r && ROLE_LEVEL[r] !== undefined && ROLE_LEVEL[r] >= 3) return ROLE_LEVEL[r]
+  return 0
+}
+
+export async function resolveCaller(
+  req: Request,
+  supabaseUrl?: string | null,
+  serviceKey?: string | null,
+): Promise<Caller | null> {
+  try {
+    if (!supabaseUrl || !serviceKey) return null
+    const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
+    if (!token || token === serviceKey) return null // anon/service call — no user
+    const email = decodeJwtEmail(token)
+    if (!email) return null
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/employees` +
+        `?select=id,company_id,role,user_role,is_admin,is_developer` +
+        `&active=eq.true&email=ilike.${encodeURIComponent(email)}&limit=1`,
+      { headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey } },
+    )
+    if (!res.ok) return null
+    const emp = (await res.json())?.[0]
+    if (!emp || emp.company_id == null) return null
+    // is_admin is a separate legacy boolean some tenants still set on its own.
+    const level = Math.max(accessLevel(emp), emp.is_admin === true ? 3 : 0)
+    return {
+      email,
+      companyId: emp.company_id,
+      employeeId: emp.id ?? null,
+      role: LEVEL_ROLE[level] || 'user',
+      level,
+    }
+  } catch {
+    return null
+  }
+}

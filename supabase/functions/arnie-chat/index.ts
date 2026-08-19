@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { callAnthropic, reportAnthropicFailure, logAnthropicSuccess } from '../_shared/anthropic.ts'
+import { resolveCaller } from '../_shared/auth.ts'
 
 // Still read directly here: the SSE streaming path keeps its own fetch
 // (the shared wrapper buffers responses, which would break streaming).
@@ -310,7 +311,17 @@ Deno.serve(async (req) => {
       return jsonError('ANTHROPIC_API_KEY not configured', 500)
     }
 
-    const { messages, systemPrompt, sessionId, companyId, role, stream } = await req.json()
+    const { messages, systemPrompt, stream } = await req.json()
+
+    // Identity comes from the JWT — NEVER from the body. `companyId` and
+    // `role` used to be read off the request and handed straight to the
+    // service-role queries below, so any signed-in user could retarget them
+    // at another tenant by editing two fields in devtools. Whatever the
+    // client sends for these is now ignored outright.
+    const caller = await resolveCaller(req, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    if (!caller) return jsonError('Sign in to talk to Arnie.', 401)
+    const companyId = caller.companyId
+    const role = caller.role
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return jsonError('messages array is required', 400)
