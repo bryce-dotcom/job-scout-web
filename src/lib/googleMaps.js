@@ -8,6 +8,26 @@
 
 let loaderPromise = null
 
+// The libraries this app actually constructs from: Map/Marker/InfoWindow/
+// Polygon/SymbolPath (maps), Geocoder (geocoding), Autocomplete (places),
+// DrawingManager (drawing), spherical area (geometry).
+const REQUIRED_LIBRARIES = ['maps', 'geocoding', 'places', 'drawing', 'geometry']
+
+/**
+ * With loading=async the callback fires when the LOADER is ready, not when the
+ * classes exist — those arrive through importLibrary. So google.maps is present
+ * while google.maps.Map is still undefined, which is exactly the crash a rep
+ * hit on /company-map: "window.google.maps.Map is not a constructor".
+ *
+ * Awaiting the libraries makes the promise mean what its callers assume: when
+ * it resolves, you can construct a map.
+ */
+export async function awaitLibraries(google) {
+  if (!google?.maps?.importLibrary) return google   // classic loader: already there
+  await Promise.all(REQUIRED_LIBRARIES.map(lib => google.maps.importLibrary(lib)))
+  return google
+}
+
 export const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 
 export function hasMapsKey() {
