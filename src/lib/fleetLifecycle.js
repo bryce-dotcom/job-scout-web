@@ -39,30 +39,30 @@
 //               lot. Heavy iron barely notices, and trailers not at all.
 // ---------------------------------------------------------------------
 export const CLASS_CURVES = {
-  pickup:         { basis: 'miles', life: 200_000, residual: 0.12, earlyDrop: 0.18, opsPerUnit: 0.42, opsGrowth: 1.6 },
-  service_truck:  { basis: 'miles', life: 250_000, residual: 0.14, earlyDrop: 0.16, opsPerUnit: 0.55, opsGrowth: 1.7 },
-  van:            { basis: 'miles', life: 220_000, residual: 0.10, earlyDrop: 0.18, opsPerUnit: 0.44, opsGrowth: 1.6 },
-  box_truck:      { basis: 'miles', life: 300_000, residual: 0.15, earlyDrop: 0.15, opsPerUnit: 0.62, opsGrowth: 1.8 },
-  dump_truck:     { basis: 'miles', life: 350_000, residual: 0.18, earlyDrop: 0.14, opsPerUnit: 0.85, opsGrowth: 2.0 },
+  pickup:         { basis: 'miles', life: 200_000, residual: 0.12, earlyDrop: 0.18, opsPerUnit: 0.42, opsGrowth: 1.6, lifeYears: 12, ageDecay: 0.16 },
+  service_truck:  { basis: 'miles', life: 250_000, residual: 0.14, earlyDrop: 0.16, opsPerUnit: 0.55, opsGrowth: 1.7, lifeYears: 12, ageDecay: 0.15 },
+  van:            { basis: 'miles', life: 220_000, residual: 0.10, earlyDrop: 0.18, opsPerUnit: 0.44, opsGrowth: 1.6, lifeYears: 12, ageDecay: 0.16 },
+  box_truck:      { basis: 'miles', life: 300_000, residual: 0.15, earlyDrop: 0.15, opsPerUnit: 0.62, opsGrowth: 1.8, lifeYears: 15, ageDecay: 0.13 },
+  dump_truck:     { basis: 'miles', life: 350_000, residual: 0.18, earlyDrop: 0.14, opsPerUnit: 0.85, opsGrowth: 2.0, lifeYears: 15, ageDecay: 0.12 },
 
   // Hour-metered iron holds value far better and wears on a longer curve.
-  skid_steer:     { basis: 'hours', life: 6_000,  residual: 0.28, earlyDrop: 0.10, opsPerUnit: 12,  opsGrowth: 2.2 },
-  track_loader:   { basis: 'hours', life: 6_000,  residual: 0.28, earlyDrop: 0.10, opsPerUnit: 14,  opsGrowth: 2.3 },
-  mini_excavator: { basis: 'hours', life: 8_000,  residual: 0.32, earlyDrop: 0.09, opsPerUnit: 11,  opsGrowth: 2.0 },
-  excavator:      { basis: 'hours', life: 12_000, residual: 0.30, earlyDrop: 0.09, opsPerUnit: 26,  opsGrowth: 2.1 },
-  backhoe:        { basis: 'hours', life: 10_000, residual: 0.26, earlyDrop: 0.10, opsPerUnit: 16,  opsGrowth: 2.2 },
-  wheel_loader:   { basis: 'hours', life: 12_000, residual: 0.30, earlyDrop: 0.09, opsPerUnit: 24,  opsGrowth: 2.0 },
-  dozer:          { basis: 'hours', life: 12_000, residual: 0.28, earlyDrop: 0.10, opsPerUnit: 32,  opsGrowth: 2.2 },
-  telehandler:    { basis: 'hours', life: 10_000, residual: 0.30, earlyDrop: 0.10, opsPerUnit: 14,  opsGrowth: 2.0 },
-  boom_lift:      { basis: 'hours', life: 10_000, residual: 0.25, earlyDrop: 0.12, opsPerUnit: 12,  opsGrowth: 2.1 },
-  scissor_lift:   { basis: 'hours', life: 10_000, residual: 0.22, earlyDrop: 0.12, opsPerUnit: 8,   opsGrowth: 2.0 },
-  compactor:      { basis: 'hours', life: 8_000,  residual: 0.24, earlyDrop: 0.11, opsPerUnit: 10,  opsGrowth: 2.1 },
-  generator:      { basis: 'hours', life: 15_000, residual: 0.20, earlyDrop: 0.12, opsPerUnit: 6,   opsGrowth: 1.8 },
+  skid_steer:     { basis: 'hours', life: 6_000,  residual: 0.28, earlyDrop: 0.10, opsPerUnit: 12,  opsGrowth: 2.2, lifeYears: 12, ageDecay: 0.08 },
+  track_loader:   { basis: 'hours', life: 6_000,  residual: 0.28, earlyDrop: 0.10, opsPerUnit: 14,  opsGrowth: 2.3, lifeYears: 12, ageDecay: 0.08 },
+  mini_excavator: { basis: 'hours', life: 8_000,  residual: 0.32, earlyDrop: 0.09, opsPerUnit: 11,  opsGrowth: 2.0, lifeYears: 15, ageDecay: 0.07 },
+  excavator:      { basis: 'hours', life: 12_000, residual: 0.30, earlyDrop: 0.09, opsPerUnit: 26,  opsGrowth: 2.1, lifeYears: 15, ageDecay: 0.07 },
+  backhoe:        { basis: 'hours', life: 10_000, residual: 0.26, earlyDrop: 0.10, opsPerUnit: 16,  opsGrowth: 2.2, lifeYears: 15, ageDecay: 0.08 },
+  wheel_loader:   { basis: 'hours', life: 12_000, residual: 0.30, earlyDrop: 0.09, opsPerUnit: 24,  opsGrowth: 2.0, lifeYears: 15, ageDecay: 0.07 },
+  dozer:          { basis: 'hours', life: 12_000, residual: 0.28, earlyDrop: 0.10, opsPerUnit: 32,  opsGrowth: 2.2, lifeYears: 15, ageDecay: 0.07 },
+  telehandler:    { basis: 'hours', life: 10_000, residual: 0.30, earlyDrop: 0.10, opsPerUnit: 14,  opsGrowth: 2.0, lifeYears: 15, ageDecay: 0.07 },
+  boom_lift:      { basis: 'hours', life: 10_000, residual: 0.25, earlyDrop: 0.12, opsPerUnit: 12,  opsGrowth: 2.1, lifeYears: 15, ageDecay: 0.08 },
+  scissor_lift:   { basis: 'hours', life: 10_000, residual: 0.22, earlyDrop: 0.12, opsPerUnit: 8,   opsGrowth: 2.0, lifeYears: 15, ageDecay: 0.08 },
+  compactor:      { basis: 'hours', life: 8_000,  residual: 0.24, earlyDrop: 0.11, opsPerUnit: 10,  opsGrowth: 2.1, lifeYears: 12, ageDecay: 0.08 },
+  generator:      { basis: 'hours', life: 15_000, residual: 0.20, earlyDrop: 0.12, opsPerUnit: 6,   opsGrowth: 1.8, lifeYears: 20, ageDecay: 0.06 },
 
   // Barely depreciates, barely breaks. Almost never worth replacing early.
-  trailer:        { basis: 'miles', life: 400_000, residual: 0.35, earlyDrop: 0.08, opsPerUnit: 0.10, opsGrowth: 1.2 },
-  attachment:     { basis: 'hours', life: 8_000,  residual: 0.25, earlyDrop: 0.10, opsPerUnit: 2,   opsGrowth: 1.5 },
-  other:          { basis: 'hours', life: 10_000, residual: 0.25, earlyDrop: 0.12, opsPerUnit: 10,  opsGrowth: 2.0 },
+  trailer:        { basis: 'miles', life: 400_000, residual: 0.35, earlyDrop: 0.08, opsPerUnit: 0.10, opsGrowth: 1.2, lifeYears: 25, ageDecay: 0.04 },
+  attachment:     { basis: 'hours', life: 8_000,  residual: 0.25, earlyDrop: 0.10, opsPerUnit: 2,   opsGrowth: 1.5, lifeYears: 12, ageDecay: 0.07 },
+  other:          { basis: 'hours', life: 10_000, residual: 0.25, earlyDrop: 0.12, opsPerUnit: 10,  opsGrowth: 2.0, lifeYears: 12, ageDecay: 0.09 },
 }
 
 export const DEFAULT_CURVE = CLASS_CURVES.other
@@ -95,25 +95,53 @@ export function curveFor(assetClass) {
  * value than the last third, which is precisely the fact a straight-line
  * schedule hides from the owner.
  */
-export function residualFraction(used, curve = DEFAULT_CURVE) {
+export function residualFraction(used, curve = DEFAULT_CURVE, ageYears = null) {
   const life = curve.life || 1
-  const u = Math.max(0, Number(used) || 0) / life
+  const u = Math.max(0, num(used) ?? 0) / life
   const floor = curve.residual
   const start = 1 - (curve.earlyDrop || 0)
-  if (u <= 0) return 1
-  // k chosen so the curve lands on `floor` at exactly one life.
+  const age = num(ageYears)
+
+  // Meter-only: the original curve, still correct when age is unknown.
   const k = Math.log((start - floor) / Math.max(floor * 0.01, 1e-6)) || 3
-  const decayed = floor + (start - floor) * Math.exp(-k * u)
-  return Math.min(1, Math.max(floor * 0.5, decayed))
+  const byMeter = u <= 0 ? 1 : Math.min(1, Math.max(floor * 0.5, floor + (start - floor) * Math.exp(-k * u)))
+
+  // Note the ordering: age is checked BEFORE the zero-meter shortcut. A brand
+  // new machine that has not moved is worth full price; a four-year-old one
+  // that has not moved is emphatically not, and returning 1 for both is how a
+  // model ends up insisting an unused asset never lost a cent.
+  if (age === null || age <= 0) return byMeter
+
+  // Age matters independently of use, and on a lightly-driven asset it is the
+  // whole story. An $83k truck with 3,898 miles has lost real money to being
+  // a 2025 rather than to being driven; a miles-only curve calls it nearly
+  // new and says keep, while the market has already moved on.
+  //
+  // Modelled the way used vehicles actually price: model-year decay, adjusted
+  // for whether this one carries more or fewer miles than its age predicts.
+  // Low miles earn a premium — real, but far smaller than owners expect,
+  // which is exactly the gap worth showing them.
+  const byAge = start * Math.pow(1 - (curve.ageDecay || 0.1), age)
+  const expectedByNow = (life / (curve.lifeYears || 12)) * age
+  const ratio = expectedByNow > 0 ? (num(used) ?? 0) / expectedByNow : 1
+  const adjust = Math.min(1.15, Math.max(0.55, 1 - (ratio - 1) * 0.22))
+
+  // Age IS the model once it's known, with mileage as the adjustment — not a
+  // minimum against the meter curve. Both curves carry the new-to-used drop,
+  // so taking the lower of the two applies it twice and lets mileage dominate
+  // absurdly: a four-year-old truck came out 2.9x the value of the same truck
+  // with average miles, when the real spread is nearer 1.3x.
+  return Math.min(1, Math.max(floor * 0.5, byAge * adjust))
 }
 
+
 /** Modelled market value. Falls back to the class curve when no comp exists. */
-export function estimateValue({ purchasePrice, used, curve, comp, override }) {
+export function estimateValue({ purchasePrice, used, curve, comp, override, ageYears = null }) {
   if (num(override) !== null) return { value: num(override), source: 'override' }
   if (num(comp) !== null) return { value: num(comp), source: 'comps' }
   const price = num(purchasePrice)
   if (price === null) return { value: null, source: null }
-  return { value: Math.round(price * residualFraction(used, curve)), source: 'curve' }
+  return { value: Math.round(price * residualFraction(used, curve, ageYears)), source: 'curve' }
 }
 
 /**
@@ -202,6 +230,7 @@ export function computeLifecycle({
   // 193 miles, and treating that as the odometer produced a confident
   // $29.01/mile — arithmetically correct, economically nonsense.
   meterAnchored = true,
+  ageYears = null,   // years since purchase; lets calendar decay be seen at all
   maintenanceSpend = 0,
   repairSpend = 0,
   fuelSpend = 0,
@@ -228,7 +257,7 @@ export function computeLifecycle({
   // A curve value needs a real meter. A comp or an owner override does not,
   // since both are statements about this machine rather than derivations.
   const { value, source: valueSource } = lifetimeKnown
-    ? estimateValue({ purchasePrice, used: lifetimeUsed, curve, comp: compValue, override: overrideValue })
+    ? estimateValue({ purchasePrice, used: lifetimeUsed, curve, comp: compValue, override: overrideValue, ageYears })
     : estimateValue({ purchasePrice: null, used: 0, curve, comp: compValue, override: overrideValue })
 
   const optimal = optimalReplacementPoint({ purchasePrice, curve, measuredRate })
@@ -247,15 +276,30 @@ export function computeLifecycle({
     planUntil: optimalAt / barMax,
   }
 
-  const position = (lifetimeKnown && barMax > 0) ? Math.min(lifetimeUsed / barMax, 1) : null
   // No meter, no verdict. 'unknown' is a state the card can render honestly;
   // a default of 'keep' would be advice nobody computed.
+  // Two clocks run on every asset and the earlier one decides. Wear is the
+  // obvious clock. Model year is the one that catches lightly-used equipment:
+  // an $83k truck driven 5,000 miles a year needs 57 years to wear out, so a
+  // miles-only verdict says 'keep' forever while it quietly ages to nothing.
+  const ageFraction = ageYears !== null && curve.lifeYears ? ageYears / curve.lifeYears : null
+  const wearFraction = lifetimeKnown && optimalAt > 0 ? lifetimeUsed / optimalAt : null
+  const spent = Math.max(ageFraction ?? 0, wearFraction ?? 0)
+
   let verdict = 'unknown'
-  if (lifetimeKnown) {
+  if (lifetimeKnown || ageFraction !== null) {
     verdict = 'keep'
-    if (lifetimeUsed >= optimalAt) verdict = 'replace'
-    else if (lifetimeUsed >= optimalAt * 0.8) verdict = 'plan'
+    if (spent >= 1) verdict = 'replace'
+    else if (spent >= 0.8) verdict = 'plan'
   }
+
+  // Which clock is actually binding — the thing to say out loud, because the
+  // answer for an under-driven asset is 'age', and that surprises people.
+  const limitedBy = ageFraction === null ? 'wear'
+    : wearFraction === null ? 'age'
+    : (ageFraction > wearFraction ? 'age' : 'wear')
+
+  const position = (lifetimeKnown || ageFraction !== null) ? Math.min(Math.max(spent * 0.69, 0), 1) : null
 
   const remaining = lifetimeKnown ? Math.max(0, optimalAt - lifetimeUsed) : null
 
@@ -275,6 +319,16 @@ export function computeLifecycle({
     measuredRate,
     optimalAt,
     remainingToOptimal: remaining,
+    ageYears,
+    ageFraction,
+    wearFraction,
+    limitedBy,
+    // Years to wear out at the current rate. A number in the decades is the
+    // clearest possible signal that this asset will never justify its price
+    // through use, whatever the wear curve says.
+    yearsToWearOut: (remaining !== null && ageYears > 0 && ownerUsed > 0)
+      ? Math.round(remaining / (ownerUsed / ageYears))
+      : null,
     position,
     zones,
     verdict,
@@ -300,6 +354,12 @@ export function utilisation({ meterUsed, daysOwned, curve = DEFAULT_CURVE, expec
 
 export function recommend(lifecycle, util) {
   if (!lifecycle?.ok) return { action: 'incomplete', reason: `needs ${lifecycle?.missing?.join(', ')}` }
+  if (lifecycle.limitedBy === 'age' && lifecycle.yearsToWearOut !== null && lifecycle.yearsToWearOut > 25) {
+    return {
+      action: 'sell_or_rent',
+      reason: `at this usage it needs ~${lifecycle.yearsToWearOut} years to wear out — it will age to nothing long before it earns its price`,
+    }
+  }
   if (util?.rate != null && util.rate < 0.35) {
     return {
       action: 'sell_or_rent',

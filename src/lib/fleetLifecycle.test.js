@@ -207,6 +207,62 @@ describe('an un-anchored meter', () => {
   })
 })
 
+describe('the second clock: age', () => {
+  // A miles-only curve cannot see a machine ageing in a yard. For lightly
+  // used equipment that is the entire cost, and the model said 'keep'.
+  const rho = {
+    purchasePrice: 83000, assetClass: 'pickup',
+    meterUsed: 3898, meterAtPurchase: 0, meterAnchored: true, ageYears: 0.76,
+  }
+
+  it('names age as the binding constraint on an under-driven asset', () => {
+    const r = computeLifecycle(rho)
+    expect(r.limitedBy).toBe('age')
+    expect(r.ageFraction).toBeGreaterThan(r.wearFraction)
+  })
+
+  it('names wear as binding on a hard-worked one', () => {
+    const r = computeLifecycle({ ...rho, meterUsed: 160000, ageYears: 3 })
+    expect(r.limitedBy).toBe('wear')
+  })
+
+  it('will not call a barely-driven six-year-old truck nearly new', () => {
+    // The failure age exists to catch. On miles alone a 3,898-mile truck reads
+    // as almost untouched however long it has sat; the market disagrees
+    // violently by year six.
+    const old = computeLifecycle({ ...rho, ageYears: 6 }).value
+    const milesOnly = computeLifecycle({ ...rho, ageYears: null }).value
+    expect(old).toBeLessThan(milesOnly * 0.6)
+  })
+
+  it('reports the decades needed to wear it out', () => {
+    // The clearest possible signal that use will never justify the price.
+    expect(computeLifecycle(rho).yearsToWearOut).toBeGreaterThan(25)
+  })
+
+  it('recommends selling or renting, citing the age reason', () => {
+    const u = utilisation({ meterUsed: 3898, daysOwned: 276, curve: curveFor('pickup') })
+    const rec = recommend(computeLifecycle(rho), u)
+    expect(rec.action).toBe('sell_or_rent')
+    expect(rec.reason).toMatch(/wear out/)
+  })
+
+  it('credits low mileage for the age, but only modestly', () => {
+    // Low miles are worth a premium — real, and far smaller than owners
+    // expect, which is the gap this exists to show.
+    const low = residualFraction(20000, pickup, 4)
+    const high = residualFraction(90000, pickup, 4)
+    expect(low).toBeGreaterThan(high)
+    expect(low / high).toBeLessThan(1.6)
+  })
+
+  it('leaves iron far less age-sensitive than road vehicles', () => {
+    const truck = residualFraction(0, curveFor('pickup'), 5)
+    const digger = residualFraction(0, curveFor('excavator'), 5)
+    expect(digger).toBeGreaterThan(truck)
+  })
+})
+
 describe('utilisation and recommendation', () => {
   it('flags an under-used asset for sale or rent regardless of curve position', () => {
     // Capital sitting in a yard. Most fleets never see this because nobody
