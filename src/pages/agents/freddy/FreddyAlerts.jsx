@@ -7,7 +7,8 @@ import {
   Bell, Gauge, MapPin, Move, Zap, Clock, Settings,
   RefreshCw, Filter, Plus, Edit3, Trash2, X,
   ToggleLeft, ToggleRight, Circle, Hexagon,
-  ChevronDown, ChevronUp, Save, AlertTriangle, Navigation
+  ChevronDown, ChevronUp, Save, AlertTriangle, Navigation,
+  Truck,
 } from 'lucide-react'
 
 const defaultTheme = {

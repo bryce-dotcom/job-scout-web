@@ -80,6 +80,76 @@ const RULES = [
       'fine and are not flagged.',
     ],
   },
+  {
+    id: 'jsx-component-not-imported',
+    // eslint's no-undef does NOT see this. Verified with a probe: a file using
+    // <NotImportedAnywhere /> produces ZERO eslint findings, and the build is
+    // clean too — it fails at runtime as a white screen. It nearly shipped
+    // today: the Info icon was used in Books.jsx without an import and the
+    // guard said ok.
+    fileTest: (src, rel) => {
+      if (!rel.endsWith('.jsx')) return []
+      const lines = src.split(/\r?\n/)
+
+      // Everything this file could legitimately be referring to.
+      const known = new Set(['React', 'Fragment', 'Suspense', 'StrictMode', 'Profiler'])
+      // import X, { A as B, C } from '...'   and   import * as NS from '...'
+      // [^'"] so a side-effect import (import './index.css') cannot span forward
+      // to the next `from` and swallow that import's names.
+      for (const m of src.matchAll(/import\s+([^'"]*?)\s+from\s+['"][^'"]+['"]/g)) {
+        for (const part of m[1].replace(/[{}]/g, ' ').split(',')) {
+          const name = part.trim().split(/\s+as\s+/).pop().trim().replace(/^\*\s*/, '')
+          if (name) known.add(name)
+        }
+      }
+      // Declared in this file: function Foo, class Foo, const Foo = ...
+      for (const m of src.matchAll(/(?:function|class)\s+([A-Z][A-Za-z0-9_]*)/g)) known.add(m[1])
+      for (const m of src.matchAll(/(?:const|let|var)\s+([A-Z][A-Za-z0-9_]*)/g)) known.add(m[1])
+      // Function parameters, including callbacks: .map((Icon, i) => <Icon/>)
+      for (const m of src.matchAll(/\(([^()]*)\)\s*=>/g)) {
+        for (const part of m[1].split(',')) {
+          const name = part.trim().replace(/=.*$/, '').replace(/^[^A-Za-z_$]+/, '').trim()
+          if (/^[A-Z][A-Za-z0-9_]*$/.test(name)) known.add(name)
+        }
+      }
+      // Destructured or assigned anywhere: { Foo }, Foo: Bar, Foo = ...
+      for (const m of src.matchAll(/([A-Z][A-Za-z0-9_]*)\s*[:=]/g)) known.add(m[1])
+      for (const m of src.matchAll(/\{([^}]*)\}/g)) {
+        for (const part of m[1].split(',')) {
+          const name = part.split(':').pop().trim().replace(/=.*$/, '').trim()
+          if (/^[A-Z][A-Za-z0-9_]*$/.test(name)) known.add(name)
+        }
+      }
+
+      const out = []
+      const seen = new Set()
+      for (let n = 0; n < lines.length; n++) {
+        const trimmed = lines[n].trim()
+        if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) continue
+        for (const m of lines[n].matchAll(/<([A-Z][A-Za-z0-9_]*)/g)) {
+          const root = m[1]
+          if (known.has(root) || seen.has(root)) continue
+          seen.add(root)
+          out.push({ line: n + 1, text: trimmed.slice(0, 120) })
+        }
+      }
+      return out
+    },
+    allow: [],
+    why: [
+      'A JSX component used without importing or defining it.',
+      '',
+      'This compiles, builds clean, and white-screens the page at runtime with',
+      '"X is not defined". eslint no-undef does NOT catch it — a probe file using',
+      'an undefined component produces zero findings — so the undefined-reference',
+      'check below is blind to the most common React version of exactly the bug',
+      'it exists to stop.',
+      '',
+      'It nearly shipped on the Books transaction modal: the Info icon was used',
+      'without being imported and the guard passed.',
+    ],
+  },
+
 ]
 
 function walk(dir, out = []) {
@@ -106,6 +176,14 @@ for (const rule of RULES) {
     if (allow.has(rel)) continue
     let src
     try { src = readFileSync(file, 'utf8') } catch { continue }
+    // A rule may inspect the WHOLE file when a line cannot decide on its own —
+    // knowing whether a component was imported means reading the imports.
+    if (rule.fileTest) {
+      for (const hit of rule.fileTest(src, rel) || []) {
+        violations.push({ rule, file: rel, line: hit.line, text: hit.text })
+      }
+      continue
+    }
     const lines = src.split(/\r?\n/)
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
