@@ -16,14 +16,46 @@ import { useStore } from '../lib/store'
 import { PLANS as BILLING_PLANS } from '../lib/billingPlans'
 
 const CREW = [
-  { ab: 'AR', name: 'OG Arnie', free: true, role: 'Your right hand', ds: 'Ask anything about your business in plain English. Admins can also have him configure settings and fix data — he proposes each change for approval and logs it, so nothing changes without an admin’s green light.' },
-  { ab: 'ZA', name: 'Zach', role: 'Landscaping', ds: 'Measures a property from aerial imagery and returns a priced quote to the customer — before a truck rolls.' },
-  { ab: 'LE', name: 'Lenard', role: 'Lighting & energy', ds: 'Identifies fixtures from a photo, counts them, and calculates the exact utility rebate for a turnkey LED proposal.' },
-  { ab: 'FR', name: 'Frankie', role: 'The AI CFO', ds: 'Tracks AR/AP aging, flags expense anomalies, runs job profitability, and automates collections — the CFO you don’t have to hire.' },
-  { ab: 'FD', name: 'Freddy', role: 'Fleet ops', ds: 'Tracks vehicles in real time through your WatchDog GPS, schedules maintenance, logs fuel, and scores drivers — the whole fleet in one place.' },
-  { ab: 'VI', name: 'Victor', role: 'Quality control', ds: 'Scores completed work against the checklist from job-site photos and issues a verification report before you invoice.' },
-  { ab: 'CO', name: 'Conrad', role: 'Marketing', ds: 'Writes and schedules the campaigns and win-back sequences that keep the pipeline full, synced to your email platform.' },
-  { ab: 'DG', name: 'Dougie', role: 'Document reading', ds: 'Reads utility bills, receipts, and rebate forms from a photo or PDF, pulls out every field that matters, and learns your corrections so the data entry just stops.' },
+  { ab: 'AR', name: 'OG Arnie', free: true, role: 'Your right hand',
+    hook: 'Ask anything about your business in plain English — then have him fix the setting, not just answer it.',
+    hi: ['Knows all 32 of your systems', 'Answers with your real numbers', 'Proposes config changes for your OK', 'Logs every change he makes'],
+    rep: ['a business analyst', 'hours of admin busywork'],
+    out: { kicker: 'answered in chat', head: '“Who hasn’t paid me in 60 days?”', rows: ['3 customers · $14,200 outstanding', 'Oldest: Ridgeline HOA · 74 days'], done: 'Want me to send all 3 reminders?' } },
+  { ab: 'ZA', name: 'Zach', role: 'Landscaping',
+    hook: 'A prospect drops their address; Zach measures the yard from the sky and emails a price — before you roll a truck.',
+    hi: ['AI turf detection from aerial imagery', 'Per-sq-ft pricing tiers', 'Auto-creates the lead in your pipeline', 'Public quote link — no login'],
+    rep: ['GreenPal', 'on-site measuring', 'measuring wheels'],
+    out: { kicker: 'measured from aerial', head: '1600 Elm St, Mesa AZ', rows: ['0.41 acre of turf detected', '$2,400 / season · Standard tier'], done: 'quote emailed + lead created ✓' } },
+  { ab: 'LE', name: 'Lenard', role: 'Lighting & energy',
+    hook: 'Photograph a warehouse; Lenard IDs every fixture, counts the bulbs, and prices the rebate into a signed proposal.',
+    hi: ['AI fixture ID from a photo', 'Counts + tags every fixture', 'Utility rebate math baked in', 'Signed proposal on-site'],
+    rep: ['Snugg Pro', 'Rifeline', 'energy consultants'],
+    out: { kicker: 'audited a building', head: '60,000 sq ft warehouse', rows: ['214 fixtures · metal-halide → LED', '$18,000 rebate · 1.4-yr payback'], done: 'turnkey proposal generated ✓' } },
+  { ab: 'FR', name: 'Frankie', role: 'The AI CFO',
+    hook: 'Ask “why is cash tight this month?” and get the answer — receipts attached, collection reminders already drafted.',
+    hi: ['Plain-English finance Q&A', 'AR/AP aging + auto-collections', 'Per-job profitability', 'Expense anomaly detection'],
+    rep: ['Pilot.com', 'Bench', 'a fractional CFO'],
+    out: { kicker: 'answered the owner', head: '“Why is cash tight this month?”', rows: ['3 customers 60+ days late · $9,100', 'Materials spend up 18% vs last month'], done: '3 reminders drafted — send them?' } },
+  { ab: 'FD', name: 'Freddy', role: 'Fleet & equipment',
+    hook: 'The whole fleet, watched by an AI that catches a fuel-card thief and a missed service before they cost you.',
+    hi: ['Fuel-theft & leak detection', 'Predictive service reminders', 'Auto fuel-card reconciliation', 'Insurance-ready driver history'],
+    rep: ['Fleetio', 'Samsara'],
+    out: { kicker: 'swept the fleet', head: 'This morning’s fleet check', rows: ['⚠ Truck 12 · burning 2× fuel — leak or theft', 'Truck 7 · service due in 568 mi (~2 wks)'], done: 'both pushed to your inbox ✓' } },
+  { ab: 'VI', name: 'Victor', role: 'Quality control',
+    hook: 'Before you invoice, Victor grades the job from the photos — and catches the half-done work the customer would’ve caught.',
+    hi: ['AI workmanship + completeness scoring', 'Missing-shot detection', 'Before / after pairing', 'Letter-grade report on the job'],
+    rep: ['CompanyCam Insights', 'PM walk-throughs'],
+    out: { kicker: 'graded a job', head: 'Job #4471 · Highbay retrofit', rows: ['Grade A · 94/100 · 8 of 8 bays shot', '2 missing after-photos flagged'], done: 'tech sent back before invoice ✓' } },
+  { ab: 'CO', name: 'Conrad', role: 'Marketing',
+    hook: 'Tell Conrad the offer; he writes the campaign, picks the audience, sends it, and shows you who booked.',
+    hi: ['AI-drafted campaigns', 'Smart customer segments', 'Open + click tracking', 'Set-and-forget drip automations'],
+    rep: ['Mailchimp', 'Klaviyo', 'HubSpot'],
+    out: { kicker: 'ran a campaign', head: '“Spring maintenance special”', rows: ['86 spring customers segmented', '34% opened · 11 clicked'], done: '6 jobs booked from one email ✓' } },
+  { ab: 'DG', name: 'Dougie', role: 'Document reading',
+    hook: 'Drop in a bill, receipt, or rebate form; Dougie pulls the fields, learns your corrections, and the data entry stops.',
+    hi: ['OCR + structured field extraction', 'Learns your corrections', 'Pre-fills rebate & audit forms', 'PDF or phone photo in'],
+    rep: ['Veryfi', 'Mindee', 'manual data entry'],
+    out: { kicker: 'read a document', head: 'SRP_utility_bill.pdf · 12 pages', rows: ['12 fields pulled · 48,200 kWh · $6,410', 'Demand peak 214 kW · period tagged'], done: 'rebate form pre-filled ✓' } },
 ]
 const COMING = ['Plumbing', 'HVAC', 'Roofing', 'Electrical', 'Painting', 'Masonry', 'Flooring', 'Windows', 'Cleaning', 'Gutters', 'Excavation', 'Safety']
 
@@ -167,6 +199,41 @@ const CSS = `
   .pr .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;padding:3px 7px;border-radius:6px;background:var(--vizBg);color:var(--vizDk)}
   .pr .agent .role{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--grnDk);margin-top:3px}
   .pr .agent p{color:var(--sub);font-size:14.5px;margin:8px 0 0;line-height:1.45}
+  .pr .agshow{margin-top:22px}
+  .pr .agrail{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}
+  .pr .agrail::-webkit-scrollbar{display:none}
+  .pr .agpick{flex:none;display:inline-flex;align-items:center;gap:8px;padding:7px 13px 7px 7px;border-radius:12px;border:1.5px solid var(--line);background:var(--card);cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s}
+  .pr .agpick .ab{width:29px;height:29px;flex:none;border-radius:8px;display:grid;place-items:center;font-family:var(--mono);font-weight:750;font-size:11px;background:var(--grn);color:#fff}
+  .pr .agpick.free .ab{background:var(--viz)}
+  .pr .agpick .pn{font-size:13.5px;font-weight:700;color:var(--sub);white-space:nowrap}
+  .pr .agpick.on{border-color:var(--grn);background:var(--grnBg)}
+  .pr .agpick.on .pn{color:var(--ink)}
+  .pr .agpick.on.free{border-color:var(--viz);background:var(--vizBg)}
+  .pr .agstage{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;margin-top:6px;animation:agfade .45s cubic-bezier(.2,.7,.2,1)}
+  @keyframes agfade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .pr .agid{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;display:flex;flex-direction:column}
+  .pr .agtop{display:flex;align-items:center;gap:13px}
+  .pr .agav{width:52px;height:52px;flex:none;border-radius:14px;display:grid;place-items:center;font-family:var(--mono);font-weight:750;font-size:17px;background:var(--grn);color:#fff}
+  .pr .agav.free{background:var(--viz)}
+  .pr .agid h3{font-size:20px;font-weight:850;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .pr .agid .role{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--grnDk);margin-top:4px}
+  .pr .aghook{font-size:16px;color:var(--ink);line-height:1.45;margin:15px 0 0;font-weight:550}
+  .pr .aghi{list-style:none;padding:0;margin:14px 0 0;display:grid;grid-template-columns:1fr;gap:9px}
+  .pr .aghi li{display:flex;gap:9px;font-size:14px;color:var(--sub);align-items:flex-start}
+  .pr .aghi li .ic{font-size:15px;color:var(--grn);flex:none;margin-top:2px}
+  .pr .agrep{margin-top:16px;padding-top:14px;border-top:1px dashed var(--line);font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .pr .agrep .rl{color:var(--vizDk);font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10.5px;margin-right:7px}
+  .pr .agout{background:#0f130c;border:1px solid rgba(255,255,255,.12);border-radius:18px;overflow:hidden;position:relative;font-family:var(--mono);display:flex;flex-direction:column}
+  .pr .agout-top{display:flex;gap:6px;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.08);align-items:center}
+  .pr .agout-top i{width:10px;height:10px;border-radius:50%;background:#3a4030;display:block}
+  .pr .agout-top .ot{color:#6b7160;font-size:11px;margin-left:6px}
+  .pr .agout-body{padding:15px 15px 16px;display:flex;flex-direction:column;gap:9px;flex:1}
+  .pr .agout-kick{display:flex;align-items:center;gap:9px;font-family:var(--sans);font-size:12px;color:#9aa08c}
+  .pr .agout-av{width:24px;height:24px;flex:none;border-radius:7px;display:grid;place-items:center;font-weight:750;font-size:10px;background:var(--grn);color:#fff}
+  .pr .agout-av.free{background:var(--viz)}
+  .pr .agout-head{font-size:15px;color:#f3efe2;font-weight:600;font-family:var(--sans);margin-top:2px}
+  .pr .agout-row{font-size:12.5px;color:#cdd0c2;background:#151a10;border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:9px 11px;line-height:1.4}
+  .pr .agout-done{margin-top:auto;font-family:var(--sans);font-size:12.5px;font-weight:650;color:#ffcf8f;background:rgba(242,106,18,.12);border:1px solid rgba(242,106,18,.25);border-radius:9px;padding:10px 11px}
   .pr .coming{margin-top:16px;padding:16px 18px;border:1.5px dashed var(--line2);border-radius:16px;background:var(--card)}
   .pr .coming .lbl{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grnDk)}
   .pr .coming .pills{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
@@ -259,8 +326,9 @@ const CSS = `
     .pr .hero-panel{display:block}
     .pr .crewstrip{display:none}
   }
+  @media(min-width:820px){ .pr .agstage{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:stretch} }
   @media(min-width:980px){ .pr .hero .wrap{padding:64px 20px 54px} .pr .flow{grid-template-columns:repeat(4,1fr)} }
-  @media(prefers-reduced-motion:reduce){ .pr .rv,.pr .chip,.pr .hp-dot,.pr .hp-row,.pr .hero h1 .hl::after,.pr .term .q .cur{transition:none;animation:none;opacity:1;transform:none}.pr .hero h1 .hl::after{--draw:1} }
+  @media(prefers-reduced-motion:reduce){ .pr .rv,.pr .chip,.pr .hp-dot,.pr .hp-row,.pr .agstage,.pr .hero h1 .hl::after,.pr .term .q .cur{transition:none;animation:none;opacity:1;transform:none}.pr .hero h1 .hl::after{--draw:1} }
 `
 
 function Icon({ id, style }) {
@@ -276,6 +344,8 @@ export default function Pricing() {
   const [lit, setLit] = useState(false)
   const [showSticky, setShowSticky] = useState(false)
   const [feed, setFeed] = useState(() => ACTIVITY.slice(0, 5).map((a, i) => ({ ...a, _k: i })))
+  const [ag, setAg] = useState(0)
+  const [agLock, setAgLock] = useState(false)
 
   const goSignup = (planId) => navigate(`/login?signup=1&plan=${planId}`)
   const toPlans = () => document.getElementById('pr-plans')?.scrollIntoView({ behavior: 'smooth' })
@@ -311,6 +381,13 @@ export default function Pricing() {
     }, 2800)
     return () => clearInterval(t)
   }, [])
+
+  // Agent showcase — auto-advances until the visitor takes the wheel.
+  useEffect(() => {
+    if (agLock || window.matchMedia('(prefers-reduced-motion:reduce)').matches) return
+    const t = setInterval(() => setAg((a) => (a + 1) % CREW.length), 4200)
+    return () => clearInterval(t)
+  }, [agLock])
 
   return (
     <div className="pr" ref={rootRef}>
@@ -438,19 +515,49 @@ export default function Pricing() {
             <div className="sechead rv">
               <span className="kicker">The part the others don’t have</span>
               <h2>An AI workforce, not another dashboard.</h2>
-              <p>Each specialist owns a real job and does it autonomously — included in your plan, not billed by the seat. Plain-language in, finished work out.</p>
+              <p>Eight specialists, each owning a real job — included in your plan, not billed by the seat. Tap one and watch it work.</p>
             </div>
-            <div className="crewgrid">
-              {CREW.map((a) => (
-                <div key={a.ab} className={`agent rv${a.free ? ' free' : ''}`}>
-                  <div className="av">{a.ab}</div>
-                  <div>
-                    <h3>{a.name}{a.free && <span className="tag">Free · every plan</span>}</h3>
-                    <div className="role">{a.role}</div>
-                    <p>{a.ds}</p>
+            <div className="agshow rv">
+              <div className="agrail" role="tablist" aria-label="AI specialists">
+                {CREW.map((a, i) => (
+                  <button key={a.ab} type="button" role="tab" aria-selected={i === ag}
+                    className={`agpick${i === ag ? ' on' : ''}${a.free ? ' free' : ''}`}
+                    onClick={() => { setAg(i); setAgLock(true) }}>
+                    <span className="ab">{a.ab}</span>
+                    <span className="pn">{a.name.replace('OG ', '')}</span>
+                  </button>
+                ))}
+              </div>
+              {(() => {
+                const a = CREW[ag]
+                return (
+                  <div className="agstage" key={a.ab} onMouseEnter={() => setAgLock(true)}>
+                    <div className="agid">
+                      <div className="agtop">
+                        <div className={`agav${a.free ? ' free' : ''}`}>{a.ab}</div>
+                        <div>
+                          <h3>{a.name}{a.free && <span className="tag">Free · every plan</span>}</h3>
+                          <div className="role">{a.role}</div>
+                        </div>
+                      </div>
+                      <p className="aghook">{a.hook}</p>
+                      <ul className="aghi">
+                        {a.hi.map((h, i) => <li key={i}><Icon id="i-check" />{h}</li>)}
+                      </ul>
+                      <div className="agrep"><span className="rl">Cancel</span>{a.rep.join(' · ')}</div>
+                    </div>
+                    <div className="agout">
+                      <div className="agout-top"><i /><i /><i /><span className="ot">{a.name.replace('OG ', '').toLowerCase()} · working</span></div>
+                      <div className="agout-body">
+                        <div className="agout-kick"><span className={`agout-av${a.free ? ' free' : ''}`}>{a.ab}</span>{a.name.replace('OG ', '')} {a.out.kicker}</div>
+                        <div className="agout-head">{a.out.head}</div>
+                        {a.out.rows.map((r, i) => <div key={i} className="agout-row">{r}</div>)}
+                        <div className="agout-done">{a.out.done}</div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })()}
             </div>
             <div className="coming rv">
               <span className="lbl">12 more trade specialists rolling out</span>
