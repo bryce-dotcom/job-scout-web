@@ -290,7 +290,9 @@ export default function FreddyCosts() {
     padding: '10px 12px',
     border: `1px solid ${theme.border}`,
     borderRadius: '8px',
-    fontSize: '14px',
+    // 16px on a phone: iOS zooms the whole page when a focused input is
+    // any smaller, and the user then has to pinch back out to see the form.
+    fontSize: isMobile ? '16px' : '14px',
     color: theme.text,
     backgroundColor: theme.bgCard,
     outline: 'none',

@@ -54,6 +54,20 @@ export default function FreddyTrips() {
   const theme = themeContext?.theme || defaultTheme
   const isMobile = useIsMobile()
 
+  // Leaflet measures its container once and keeps the figure. The replay
+  // map is sized in vh now, and vh moves on a phone — device rotation, and
+  // the address bar collapsing on first scroll. Without re-measuring, half
+  // the map renders grey and nothing is logged anywhere.
+  useEffect(() => {
+    const refresh = () => mapRef.current?.invalidateSize?.()
+    window.addEventListener('resize', refresh)
+    window.addEventListener('orientationchange', refresh)
+    return () => {
+      window.removeEventListener('resize', refresh)
+      window.removeEventListener('orientationchange', refresh)
+    }
+  }, [])
+
   const fleet = useStore(s => s.fleet)
   // Platform mode holds one JobScout-owned provider account, so there is no
 
@@ -255,7 +269,9 @@ export default function FreddyTrips() {
     padding: '10px 12px',
     border: `1px solid ${theme.border}`,
     borderRadius: '8px',
-    fontSize: '14px',
+    // 16px on a phone: iOS zooms the whole page when a focused input is
+    // any smaller, and the user then has to pinch back out to see the form.
+    fontSize: isMobile ? '16px' : '14px',
     color: theme.text,
     backgroundColor: theme.bgCard,
     outline: 'none',
@@ -313,7 +329,7 @@ export default function FreddyTrips() {
       }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr auto',
+          gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(3, minmax(0, 1fr)) auto',
           gap: '12px',
           alignItems: 'end',
         }}>
@@ -501,7 +517,7 @@ export default function FreddyTrips() {
                     </span>
                     <ChevronRight size={16} style={{ color: theme.textMuted }} />
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '12px', color: theme.textSecondary }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '6px', fontSize: '12px', color: theme.textSecondary }}>
                     <div>
                       <span style={{ color: theme.textMuted }}>From: </span>
                       {formatTime(trip.start_time || trip.started_at)}
@@ -598,7 +614,9 @@ export default function FreddyTrips() {
             <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
               {/* Map */}
               <div style={{
-                height: isMobile ? '250px' : '320px',
+                // A route replay at 250px on a phone shows a squiggle, not a
+                // route. vh instead, so it scales with the device.
+                height: isMobile ? '46vh' : '320px',
                 borderRadius: '10px',
                 overflow: 'hidden',
                 border: `1px solid ${theme.border}`,
@@ -637,7 +655,7 @@ export default function FreddyTrips() {
               {/* Trip Summary Stats */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 1fr 1fr 1fr',
+                gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(5, minmax(0, 1fr))',
                 gap: '10px',
                 marginBottom: '16px',
               }}>
@@ -708,7 +726,7 @@ export default function FreddyTrips() {
               {/* Addresses */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))',
                 gap: '12px',
                 marginBottom: '16px',
               }}>

@@ -299,7 +299,9 @@ export default function FreddyAlerts() {
     border: `1px solid ${theme.border}`,
     background: theme.bg,
     color: theme.text,
-    fontSize: '14px',
+    // 16px on a phone: iOS zooms the whole page when a focused input is
+    // any smaller, and the user then has to pinch back out to see the form.
+    fontSize: isMobile ? '16px' : '14px',
     outline: 'none',
     fontFamily: 'inherit',
     boxSizing: 'border-box',
@@ -826,7 +828,7 @@ export default function FreddyAlerts() {
               </div>
 
               {/* Lat/Lng */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
                 <div>
                   <label style={labelStyle}>Latitude</label>
                   <input

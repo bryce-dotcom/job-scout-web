@@ -130,7 +130,9 @@ export default function FreddySettings() {
   const inputStyle = {
     width: '100%', padding: '10px 12px', borderRadius: '8px',
     border: `1px solid ${theme.border}`, background: theme.bg,
-    color: theme.text, fontSize: '14px', outline: 'none',
+    color: theme.text, // 16px on a phone: iOS zooms the whole page when a focused input is
+    // any smaller, and the user then has to pinch back out to see the form.
+    fontSize: isMobile ? '16px' : '14px', outline: 'none',
     fontFamily: 'inherit', boxSizing: 'border-box'
   }
 
