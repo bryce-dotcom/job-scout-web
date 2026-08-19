@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   TRANSFER_CATEGORY, isTransferCategory, resolveIsTransfer, transferFields, needsCategories,
+  processorPayoutNote,
 } from '../../supabase/functions/_shared/transferRule.ts'
 
 // Tracy's ticket, as tests. She picked "Transfer (between accounts)" from the
@@ -63,5 +64,33 @@ describe('what the save is allowed to demand', () => {
 
   it('still asks everything else for both', () => {
     expect(needsCategories({ category: 'Supplies' })).toBe(true)
+  })
+})
+
+describe('why a processor payout is not income', () => {
+  it('explains a Stripe payout', () => {
+    expect(processorPayoutNote('Stripe Payout')).toMatch(/already counted as income/i)
+    expect(processorPayoutNote('Transfer from Stripe')).toMatch(/report the revenue twice/i)
+  })
+
+  it('covers the other processors on the same footing', () => {
+    expect(processorPayoutNote('PayPal Transfer')).not.toBe(null)
+    expect(processorPayoutNote('Square payout')).not.toBe(null)
+  })
+
+  it('says nothing about an ordinary deposit', () => {
+    // A customer check IS income — it must not get the payout explanation.
+    expect(processorPayoutNote('Check Deposit - Remote Deposit')).toBe(null)
+    expect(processorPayoutNote('Ach Deposit Company: Evergreen')).toBe(null)
+    expect(processorPayoutNote('Home banking Deposit Transfer from S0059')).toBe(null)
+  })
+
+  it('says nothing about a Stripe FEE, which is a real expense', () => {
+    expect(processorPayoutNote('Stripe fee')).toBe(null)
+  })
+
+  it('survives an empty description', () => {
+    expect(processorPayoutNote('')).toBe(null)
+    expect(processorPayoutNote(null)).toBe(null)
   })
 })

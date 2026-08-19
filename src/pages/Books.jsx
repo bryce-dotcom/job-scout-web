@@ -15,12 +15,14 @@ import {
   Calendar, FileText, Search, Zap, Landmark, RefreshCw,
   Sparkles, Check, CheckCircle, ChevronDown, ChevronRight,
   Download, Filter, AlertCircle, Settings as SettingsIcon,
-  Link, Briefcase
+  Link, Briefcase,
+  Info,
 } from 'lucide-react'
 import { toast } from '../lib/toast'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import {
   isTransferCategory, resolveIsTransfer, transferFields, needsCategories,
+  processorPayoutNote,
 } from '../../supabase/functions/_shared/transferRule.ts'
 
 // Single source of truth for the Tax Category dropdown (IRS Form 1065 lines).
@@ -2680,6 +2682,27 @@ export default function Books() {
                             is_transfer already exists and is already excluded
                             from revenue, expenses, the P&L, EOS and Frankie —
                             there was just no way to set it. */}
+                        {/* Tracy asked why a Stripe deposit will not take an
+                            income category. It is a fair question and nothing
+                            answered it: the customer's payment is already
+                            recorded when they pay, so counting the payout too
+                            reports the revenue twice. Say so where she decides,
+                            not in a reply she has to remember. */}
+                        {(() => {
+                          const note = processorPayoutNote(txn.merchant_name || txn.name)
+                          if (!note) return null
+                          return (
+                            <div style={{
+                              display: 'flex', gap: 8, alignItems: 'flex-start',
+                              padding: '8px 10px', marginBottom: 8, borderRadius: 8,
+                              backgroundColor: theme.accentBg, border: `1px solid ${theme.border}`,
+                              fontSize: 12, color: theme.textSecondary, lineHeight: 1.5,
+                            }}>
+                              <Info size={14} style={{ flexShrink: 0, marginTop: 1, color: theme.accent }} />
+                              <span>{note}</span>
+                            </div>
+                          )
+                        })()}
                         <label style={{
                           display: 'flex', alignItems: 'flex-start', gap: '10px', marginTop: '16px',
                           padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',

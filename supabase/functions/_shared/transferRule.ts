@@ -71,3 +71,28 @@ export function needsCategories(
 ): boolean {
   return !resolveIsTransfer({ category, flagged })
 }
+
+/**
+ * Why a payout from a card processor is a transfer and not income.
+ *
+ * Tracy, 14 Aug: "There is a Stripe deposit transaction on Aug 5 in the amount
+ * of $407. It should just let me choose income in the first category... The AI
+ * automatically categorizes it to a transfer between accounts."
+ *
+ * A reasonable thing to think — from the bank statement it looks exactly like
+ * money arriving. But the customer's payment is already recorded when they pay:
+ * there are 30 Stripe payment rows on this company, and revenue is counted from
+ * those. The payout is the same money moving from the Stripe balance into the
+ * bank, so counting it again would report the revenue twice.
+ *
+ * Nothing said that anywhere, so it read as the app being wrong. Returns the
+ * sentence to show on the transaction, or null when it does not apply.
+ */
+const PROCESSOR_PAYOUT = /\b(stripe|square|paypal|shopify)\b.*\b(payout|transfer)\b|\btransfer from (stripe|square|paypal)\b/i
+
+export function processorPayoutNote(description: unknown): string | null {
+  if (!PROCESSOR_PAYOUT.test(String(description ?? ''))) return null
+  return 'Already counted as income when the customer paid — this is that money ' +
+    'moving from the processor into the bank, so it is a transfer rather than a ' +
+    'second sale. Categorising it as income would report the revenue twice.'
+}
