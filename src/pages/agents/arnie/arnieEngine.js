@@ -71,8 +71,13 @@ function buildSystemPrompt(user, company, role) {
 - It's OK to give general business advice, explain features, or chat casually without data. But when answering data questions, stick to what's provided.
 - **Check the "Data Load Status" section first.** If a record count is 0, that data simply hasn't loaded — tell the user honestly.
 
+## Changing settings — the one thing you can actually do
+- An admin can ask you to add, rename or remove a **business unit, lead source, service type or upsell**. Call **propose_change** and pass their request through in their own words.
+- You are DRAFTING, not doing. An approval card appears and they decide. Say what you drafted — never "done", never "I've added it".
+- Everything else in the app (jobs, customers, invoices, prices, employees) you still cannot change. Say so plainly and point them at the right page in JobScout.
+
 ## What You Cannot Do
-- You cannot modify data — you are read-only
+- You cannot modify records — only the settings lists above, and only as a proposal an admin approves
 - You cannot access data outside the user's role permissions
 - You do not have real-time external data (weather, traffic, etc.)
 - You CANNOT guess or estimate data you don't have — always be honest about gaps
@@ -111,6 +116,7 @@ You have access to live database query tools. USE THEM when the data context doe
 - **query_customers** — customer search/lookup
 - **query_employees** — employee details with stats
 - **query_inventory** — stock levels, low-stock alerts
+- **propose_change** — ADMIN ONLY, and the only tool that changes anything. Drafts a settings change for an admin to approve.
 
 When in doubt, call a tool rather than guessing. Tools return the live truth from the database. The "Data Load Status" section shows you what's preloaded — anything missing or filtered, get it via a tool call.`
 }
@@ -299,7 +305,12 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
             full += payload.delta
             onChunk(full) // pass cumulative text for replace-style rendering
           } else if (currentEvent === 'tool_call') {
-            onChunk(full + `\n\n_…looking that up (${payload.name})_`, { tool: payload.name })
+            const hint = payload.name === 'propose_change' ? 'writing that up' : `looking that up (${payload.name})`
+            onChunk(full + `\n\n_…${hint}_`, { tool: payload.name })
+          } else if (currentEvent === 'proposal') {
+            // Arnie drafted a config change. Nothing is applied — the caller
+            // renders an approve/reject card from this payload.
+            onChunk(full, { proposal: payload })
           } else if (currentEvent === 'error') {
             throw new Error(payload.message || 'stream error')
           }

@@ -69,16 +69,18 @@ function ArnieAvatar({ size = 36 }) {
 }
 
 
-// Does a message read like a Tier-A config request? (verb + one of the three
-// taxonomy nouns). Pure + module-level so it's stable across renders.
-const CFG_NOUN = /(business\s*units?|lead\s*sources?|service\s*types?)/i
-const CFG_VERB = /\b(add|create|rename|remove|delete|drop|change|call\s+it)\b/i
-const looksLikeConfig = (m) => CFG_NOUN.test(m) && CFG_VERB.test(m)
+// Config requests used to be routed by a regex over the message text here:
+// a verb plus one of three taxonomy nouns. It missed "upsell" entirely — a
+// supported target the pattern never mentioned — and any phrasing that did
+// not name the list outright ("we don't sell to government any more").
+//
+// Arnie now decides for himself: propose_change is a tool on his rail, and
+// the drafted proposal arrives on the stream as a `proposal` event. Deciding
+// what the user meant is the model's job, not a pattern's.
 
 export default function ArnieChat({ isPanel = false, onClose, sessionId: externalSessionId }) {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
-  const user = useStore(s => s.user)
   const company = useStore(s => s.company)
 
   const [messages, setMessages] = useState([])
@@ -121,16 +123,11 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   const quickActions = QUICK_ACTIONS[role] || QUICK_ACTIONS.user
 
   // ── Arnie config (Tier A): admins can ask for changes right here in chat ──
-  // We detect a config-shaped request, ask the arnie-config function to PROPOSE
-  // a structured change, then render an approval card inline. Approve → apply.
-  // The server re-checks admin + company scope; this gate just decides routing.
-  const isAdmin = (() => {
-    if (!user) return false
-    if (user.is_developer) return true
-    const map = { User: 0, 'Team Lead': 1, Manager: 2, Admin: 3, 'Super Admin': 4, Developer: 5, Owner: 4 }
-    return (map[user.user_role] ?? map[user.role] ?? 0) >= 3
-  })()
-
+  // Arnie drafts the change himself via the propose_change tool; this side
+  // only renders the resulting card and relays the admin's decision. There is
+  // deliberately no client-side admin check any more — the edge function
+  // decides who may propose, from the JWT, and a check here would only be a
+  // second copy of that rule that could drift out of step with it.
   const cfgInvoke = async (body) => {
     try {
       const { data, error } = await supabase.functions.invoke('arnie-config', { body })
@@ -143,20 +140,6 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     } catch (e) {
       return { error: e.message || 'Arnie config is unreachable right now.' }
     }
-  }
-
-  // Turn an admin's config request into an inline proposal card. Returns the
-  // text placed in the assistant bubble so the caller can persist it.
-  const proposeInChat = async (msg, assistantId) => {
-    const res = await cfgInvoke({ action: 'propose', request: msg })
-    const ok = !!(res && res.proposal && res.preview)
-    const content = ok
-      ? "Here's what I'll set up, boss — give it a look and hit approve:"
-      : `Hold on, chief — ${res?.error || "I couldn't turn that into a change."}`
-    setMessages(prev => prev.map(m => m.id === assistantId
-      ? { ...m, content, proposal: ok ? res : null }
-      : m))
-    return content
   }
 
   const decideProposal = async (decision, proposalId, msgId) => {
@@ -434,33 +417,27 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
       await saveMessage(sid, 'user', savedText)
 
-      // Admin config request → propose a change inline (approve to apply)
-      // instead of a normal chat reply. Everything else streams as usual.
-      if (isAdmin && looksLikeConfig(msg)) {
-        const said = await proposeInChat(msg, assistantId)
-        await saveMessage(sid, 'assistant', said)
-        if (messagesRef.current.length <= 1) {
-          await updateSessionTitle(sid, title)
-        }
-      } else {
-        // Use messagesRef.current to avoid stale closure over `messages`
-        const history = messagesRef.current.map(m => ({ role: m.role, content: m.content, attachments: m.attachments }))
+      // Use messagesRef.current to avoid stale closure over `messages`
+      const history = messagesRef.current.map(m => ({ role: m.role, content: m.content, attachments: m.attachments }))
 
-        // Stream response — text appears in real-time
-        const fullResponse = await sendMessageStream(msg, history, (partialText) => {
-          setMessages(prev => prev.map(m =>
-            m.id === assistantId ? { ...m, content: partialText } : m
-          ))
-        }, files)
+      // Stream response — text appears in real-time. A config request is no
+      // longer a separate branch: Arnie reaches for propose_change himself,
+      // and the drafted change arrives here as `meta.proposal` mid-stream.
+      const fullResponse = await sendMessageStream(msg, history, (partialText, meta) => {
+        setMessages(prev => prev.map(m =>
+          m.id === assistantId
+            ? { ...m, content: partialText, ...(meta?.proposal ? { proposal: meta.proposal } : {}) }
+            : m
+        ))
+      }, files)
 
-        await saveMessage(sid, 'assistant', fullResponse)
+      await saveMessage(sid, 'assistant', fullResponse)
 
-        // Speak the full response after streaming completes
-        speakText(fullResponse)
+      // Speak the full response after streaming completes
+      speakText(fullResponse)
 
-        if (messagesRef.current.length <= 1) {
-          await updateSessionTitle(sid, title)
-        }
+      if (messagesRef.current.length <= 1) {
+        await updateSessionTitle(sid, title)
       }
     } catch (err) {
       console.error('Arnie error:', err)
@@ -476,10 +453,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       sendingRef.current = false
       if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
     }
-    // proposeInChat is intentionally omitted — it only closes over stable
-    // setters, and `input` already rebuilds this callback each keystroke.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, attachments, reading, loading, sessionId, speakText, pauseMic, resumeMic, isAdmin])
+  }, [input, attachments, reading, loading, sessionId, speakText, pauseMic, resumeMic])
 
   // An attached file is enough on its own — a screenshot with no caption is a
   // perfectly clear question.

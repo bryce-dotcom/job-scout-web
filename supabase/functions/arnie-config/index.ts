@@ -12,20 +12,21 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callAnthropic } from "../_shared/anthropic.ts";
+import { applyToList, proposeChange, readList, writeList } from "../_shared/arnieConfig.ts";
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const rest = { url: SUPABASE_URL, key: SERVICE_KEY };
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const ALLOWED_TARGETS = ['business_units', 'lead_sources', 'service_types', 'upsells'] as const;
-const TARGET_LABEL: Record<string, string> = {
-  business_units: 'business unit',
-  lead_sources: 'lead source',
-  service_types: 'service type',
-  upsells: 'upsell',
-};
+// Everything about WHAT may change and HOW a list is edited now lives in
+// _shared/arnieConfig.ts, shared with arnie-chat. What stays here is the part
+// that is specific to this endpoint: who is allowed to ask, and the
+// approve / reject / rollback lifecycle.
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -43,8 +44,6 @@ function jwtEmail(req: Request): string | null {
   } catch { return null; }
 }
 
-// Resolve the caller to an admin of a company, from their JWT — never trust a
-// company_id in the body.
 async function resolveAdmin(sb: any, req: Request): Promise<{ email: string; companyId: number } | null> {
   const email = jwtEmail(req);
   if (!email) return null;
@@ -60,56 +59,6 @@ async function resolveAdmin(sb: any, req: Request): Promise<{ email: string; com
   return { email, companyId: e.company_id };
 }
 
-// Items are EITHER strings (lead_sources, service_types) OR objects with a
-// `name` and other fields we must preserve (business_units carry logo/phone/
-// address/email). Identify + display by name; never strip an object's extras.
-function nameOf(x: any): string { return typeof x === 'string' ? x : String(x?.name ?? ''); }
-function names(list: any[]): string[] { return list.map(nameOf); }
-
-// Read a taxonomy list from settings (stored as a JSON-stringified array).
-// Keeps items in their original shape (string OR object).
-async function readList(sb: any, companyId: number, key: string): Promise<{ row: any | null; list: any[] }> {
-  const { data } = await sb.from('settings').select('id, value')
-    .eq('company_id', companyId).eq('key', key).order('id').limit(1);
-  const row = data?.[0] || null;
-  let list: any[] = [];
-  if (row?.value) { try { const p = JSON.parse(row.value); if (Array.isArray(p)) list = p; } catch { /* ignore */ } }
-  return { row, list };
-}
-
-// Deterministically compute the new list, PRESERVING item shape. Returns null
-// on a no-op/invalid action so we never apply a meaningless change.
-function applyToList(list: any[], action: string, value: string, newValue: string | undefined, target: string): any[] | null {
-  // business_units and upsells are OBJECTS (name plus fields that must be
-  // preserved); everything else is plain strings. Named explicitly rather than
-  // inferred from the contents, because inference gets it wrong on an empty
-  // list — the first upsell Arnie added would be stored as a bare string and
-  // silently lose its tier and price.
-  const objShaped = target === 'business_units' || target === 'upsells' || list.some((x) => x && typeof x === 'object');
-  const has = (v: string) => list.some((x) => nameOf(x).toLowerCase() === v.toLowerCase());
-  if (action === 'add') {
-    if (!value || has(value)) return null;
-    return [...list, objShaped ? { name: value } : value];
-  }
-  if (action === 'remove') {
-    if (!has(value)) return null;
-    return list.filter((x) => nameOf(x).toLowerCase() !== value.toLowerCase());
-  }
-  if (action === 'rename') {
-    if (!value || !newValue || !has(value)) return null;
-    return list.map((x) => nameOf(x).toLowerCase() === value.toLowerCase()
-      ? (typeof x === 'string' ? newValue : { ...x, name: newValue })  // keep logo/phone/etc.
-      : x);
-  }
-  return null;
-}
-
-async function writeList(sb: any, companyId: number, key: string, row: any | null, list: string[]) {
-  const value = JSON.stringify(list);
-  if (row) await sb.from('settings').update({ value }).eq('id', row.id);
-  else await sb.from('settings').insert({ company_id: companyId, key, value });
-}
-
 async function audit(sb: any, companyId: number, email: string, action: string, proposalId: number, details: unknown) {
   try {
     await sb.from('audit_log').insert({
@@ -122,7 +71,7 @@ async function audit(sb: any, companyId: number, email: string, action: string, 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
-    const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
+    const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const caller = await resolveAdmin(sb, req);
@@ -132,63 +81,13 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = body.action;
 
-    // ── PROPOSE: Arnie parses the request into a structured, validated change
+    // ── PROPOSE: shared with arnie-chat, so a change asked for in conversation
+    // and the same change asked for in Setup produce an identical proposal.
     if (action === 'propose') {
       const request = String(body.request || '').trim();
       if (!request) return json({ error: 'Tell Arnie what you want to change.' }, 400);
-
-      // Ground the model with the current lists AS NAMES. (business_units are
-      // objects; showing raw objects makes the model echo an object back as
-      // the value, which then stringifies to "[object Object]".)
-      const current: Record<string, string[]> = {};
-      for (const t of ALLOWED_TARGETS) current[t] = names((await readList(sb, companyId, t)).list);
-
-      const sys = `You configure a field-service SaaS. Convert the admin's request into EXACTLY ONE change to one of these lists. Respond with ONLY minified JSON, no prose.
-Targets and their current values:
-- business_units: ${JSON.stringify(current.business_units)}
-- lead_sources: ${JSON.stringify(current.lead_sources)}
-- service_types: ${JSON.stringify(current.service_types)}
-- upsells: ${JSON.stringify(current.upsells)}   (add-ons offered in the Better/Best proposal packages)
-Schema: {"target":"business_units|lead_sources|service_types|upsells","action":"add|rename|remove","value":"<item>","newValue":"<only for rename>","summary":"<one plain sentence>"}
-If the request cannot be mapped to one of these lists/actions, respond {"error":"<why, and what you CAN change>"}.`;
-
-      const ai = await callAnthropic(
-        { feature: 'arnie-config', companyId },
-        { model: 'claude-sonnet-4-5-20250929', max_tokens: 400, system: sys, messages: [{ role: 'user', content: request }] },
-      );
-      if (!ai.ok) return json({ error: ai.friendly || 'Arnie is unavailable right now.', ai_unavailable: ai.unavailable === true }, 200);
-
-      const txt = (ai.data?.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join('');
-      let parsed: any;
-      try { parsed = JSON.parse((txt.match(/\{[\s\S]*\}/) || [txt])[0]); } catch { return json({ error: "Arnie couldn't turn that into a change. Try naming the list and item, e.g. \"add a business unit called Government\"." }, 200); }
-      if (parsed.error) return json({ error: parsed.error }, 200);
-
-      // Defensive: if the model returns {name:"…"} for value, unwrap it.
-      const unwrap = (v: any) => (v && typeof v === 'object' ? v.name : v);
-      const target = String(parsed.target || '');
-      const act = String(parsed.action || '');
-      const value = String(unwrap(parsed.value) ?? '').trim();
-      const newValue = parsed.newValue != null ? String(unwrap(parsed.newValue) ?? '').trim() : undefined;
-      if (!ALLOWED_TARGETS.includes(target as any) || !['add', 'rename', 'remove'].includes(act) || !value) {
-        return json({ error: 'That isn\'t a change Arnie can make yet (Tier A covers business units, lead sources, and service types).' }, 200);
-      }
-
-      const { list } = await readList(sb, companyId, target);
-      const after = applyToList(list, act, value, newValue, target);
-      if (!after) {
-        const why = act === 'add' ? `"${value}" is already in your ${TARGET_LABEL[target]}s`
-          : `"${value}" isn't in your ${TARGET_LABEL[target]}s`;
-        return json({ error: `Nothing to do — ${why}.` }, 200);
-      }
-
-      const summary = String(parsed.summary || `${act} ${TARGET_LABEL[target]} "${value}"`);
-      const { data: prop, error: insErr } = await sb.from('arnie_proposals').insert({
-        company_id: companyId, created_by: caller.email, request_text: request,
-        target, action: act, payload: { value, newValue }, summary,
-        before_value: list, after_value: after, status: 'pending',
-      }).select().single();
-      if (insErr) return json({ error: insErr.message }, 500);
-      return json({ proposal: prop, preview: { target, label: TARGET_LABEL[target], before: names(list), after: names(after) } });
+      const res = await proposeChange(rest, companyId, caller.email, request);
+      return json(res, 200);
     }
 
     // ── APPLY / REJECT / ROLLBACK: operate on an existing proposal
@@ -206,13 +105,13 @@ If the request cannot be mapped to one of these lists/actions, respond {"error":
     if (action === 'apply') {
       if (prop.status !== 'pending') return json({ error: `This change is already ${prop.status}.` }, 400);
       // Re-read live list at apply time (config may have changed since propose)
-      const { row, list } = await readList(sb, companyId, prop.target);
+      const { row, list } = await readList(rest, companyId, prop.target);
       const after = applyToList(list, prop.action, prop.payload.value, prop.payload.newValue, prop.target);
       if (!after) {
         await sb.from('arnie_proposals').update({ status: 'failed', error: 'No longer applicable (config changed).', decided_by: caller.email, decided_at: new Date().toISOString() }).eq('id', proposalId);
         return json({ error: 'That change no longer applies — the list changed since it was drafted.' }, 409);
       }
-      await writeList(sb, companyId, prop.target, row, after);
+      await writeList(rest, companyId, prop.target, row, after);
       await sb.from('arnie_proposals').update({ status: 'applied', before_value: list, after_value: after, decided_by: caller.email, decided_at: new Date().toISOString() }).eq('id', proposalId);
       await audit(sb, companyId, caller.email, `arnie_config_apply:${prop.target}`, proposalId, { summary: prop.summary, before: list, after });
       return json({ ok: true, status: 'applied', target: prop.target, before: list, after });
@@ -220,9 +119,9 @@ If the request cannot be mapped to one of these lists/actions, respond {"error":
 
     if (action === 'rollback') {
       if (prop.status !== 'applied') return json({ error: `Only an applied change can be rolled back (this one is ${prop.status}).` }, 400);
-      const { row } = await readList(sb, companyId, prop.target);
+      const { row } = await readList(rest, companyId, prop.target);
       const restore = Array.isArray(prop.before_value) ? prop.before_value : [];
-      await writeList(sb, companyId, prop.target, row, restore);
+      await writeList(rest, companyId, prop.target, row, restore);
       await sb.from('arnie_proposals').update({ status: 'rolled_back', decided_by: caller.email, decided_at: new Date().toISOString() }).eq('id', proposalId);
       await audit(sb, companyId, caller.email, `arnie_config_rollback:${prop.target}`, proposalId, { summary: prop.summary, restored: restore });
       return json({ ok: true, status: 'rolled_back', target: prop.target, restored: restore });

@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { callAnthropic, reportAnthropicFailure, logAnthropicSuccess } from '../_shared/anthropic.ts'
 import { resolveCaller } from '../_shared/auth.ts'
+import { proposeChange, targetsSentence } from '../_shared/arnieConfig.ts'
 
 // Still read directly here: the SSE streaming path keeps its own fetch
 // (the shared wrapper buffers responses, which would break streaming).
@@ -167,10 +168,40 @@ async function fetchRows(
   return { rows, total, truncated: rows.length < total }
 }
 
+// The one tool that changes anything. It does NOT apply the change: it
+// drafts a proposal and the UI renders an approve/reject card, so a human
+// still makes every decision. Living on the tool rail is what matters —
+// routing used to be a regex over the message text, which meant Arnie
+// could only hear a change request phrased three specific ways.
+const PROPOSE_TOOL = {
+  name: 'propose_change',
+  description:
+    'Draft a change to this company\'s configuration for an admin to approve. Use this whenever an admin asks to add, rename or remove one of: ' +
+    targetsSentence() +
+    '. Pass their request through in their own words — do not reformat it. The change is NOT applied: an approval card appears and the admin decides. Say briefly what you drafted; never claim it is done.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      request: {
+        type: 'string',
+        description: 'The admin\'s change request, verbatim, e.g. "add a lead source called Trade Show".',
+      },
+    },
+    required: ['request'],
+  },
+}
+
+// Admins get the write tool; everyone else never sees it exists, so the
+// model cannot offer a change the caller has no standing to make.
+function toolsFor(role: string) {
+  const isAdmin = ['developer', 'super_admin', 'admin'].includes(role)
+  return isAdmin ? [...TOOLS, PROPOSE_TOOL] : TOOLS
+}
+
 // ============================================================
 // TOOL EXECUTORS — server-side queries, always company_id scoped
 // ============================================================
-async function execTool(name: string, input: any, companyId: number, role: string) {
+async function execTool(name: string, input: any, companyId: number, role: string, email = '') {
   const sb = (path: string) => `${SUPABASE_URL}/rest/v1/${path}`
   const hdr = { 'apikey': SUPABASE_SERVICE_ROLE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
 
@@ -293,6 +324,15 @@ async function execTool(name: string, input: any, companyId: number, role: strin
         ...(items.length > 50 ? { note: `Showing the first 50 of ${items.length}.` } : {}),
         ...(got.truncated ? { WARNING: `Read ${got.rows.length} of ${got.total} inventory rows — this count is a floor, not a total.` } : {}),
       }
+    }
+
+    if (name === 'propose_change') {
+      // Re-checked here rather than trusted from toolsFor(): the tool list is
+      // an affordance, this is the gate.
+      if (!isAdmin) return { restricted: 'Only an admin can change company settings.' }
+      const request = String(input?.request || '').trim()
+      if (!request) return { error: 'Nothing to propose — no request text.' }
+      return await proposeChange({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, companyId, email, request)
     }
 
     return { error: `Unknown tool: ${name}` }
@@ -433,11 +473,11 @@ Deno.serve(async (req) => {
 
     // === STREAMING + TOOL USE LOOP ===
     if (stream) {
-      return streamWithTools(cleaned, systemPrompt, companyId, role)
+      return streamWithTools(cleaned, systemPrompt, companyId, role, caller.email)
     }
 
     // === NON-STREAMING (with tool support) ===
-    const reply = await callWithTools(cleaned, systemPrompt, companyId, role)
+    const reply = await callWithTools(cleaned, systemPrompt, companyId, role, caller.email)
     return new Response(JSON.stringify({ reply }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
@@ -459,7 +499,7 @@ function jsonError(msg: string, status: number, extra?: Record<string, unknown>)
 }
 
 // Run a non-streaming completion with tool use support (multi-turn)
-async function callWithTools(messages: any[], systemPrompt: string, companyId: number, role: string): Promise<string> {
+async function callWithTools(messages: any[], systemPrompt: string, companyId: number, role: string, email = ''): Promise<string> {
   let convo = [...messages]
   // Only advertise tools if we have a companyId to scope queries safely
   const includeTools = !!companyId
@@ -470,7 +510,7 @@ async function callWithTools(messages: any[], systemPrompt: string, companyId: n
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 4096,
         system: systemPrompt || '',
-        ...(includeTools ? { tools: TOOLS } : {}),
+        ...(includeTools ? { tools: toolsFor(role) } : {}),
         messages: convo,
       },
     )
@@ -489,7 +529,7 @@ async function callWithTools(messages: any[], systemPrompt: string, companyId: n
     convo.push({ role: 'assistant', content: blocks })
     const toolResults = []
     for (const tu of toolUses) {
-      const result = await execTool(tu.name, tu.input, companyId, role)
+      const result = await execTool(tu.name, tu.input, companyId, role, email)
       toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) })
     }
     convo.push({ role: 'user', content: toolResults })
@@ -498,7 +538,7 @@ async function callWithTools(messages: any[], systemPrompt: string, companyId: n
 }
 
 // Streaming version with tool support — emits SSE
-async function streamWithTools(messages: any[], systemPrompt: string, companyId: number, role: string) {
+async function streamWithTools(messages: any[], systemPrompt: string, companyId: number, role: string, email = '') {
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
@@ -521,7 +561,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, companyId:
               model: 'claude-sonnet-4-5-20250929',
               max_tokens: 4096,
               system: systemPrompt || '',
-              ...(includeTools ? { tools: TOOLS } : {}),
+              ...(includeTools ? { tools: toolsFor(role) } : {}),
               messages: convo,
               stream: true,
             }),
@@ -598,7 +638,13 @@ async function streamWithTools(messages: any[], systemPrompt: string, companyId:
           convo.push({ role: 'assistant', content: blocks })
           const toolResults = []
           for (const tu of toolUses) {
-            const result = await execTool(tu.name, tu.input, companyId, role)
+            const result = await execTool(tu.name, tu.input, companyId, role, email)
+            // A drafted change has to reach the UI as a card, not as prose —
+            // the model describing a diff is not the same as the admin seeing
+            // one and clicking approve.
+            if (tu.name === 'propose_change' && result?.proposal && result?.preview) {
+              send('proposal', { proposal: result.proposal, preview: result.preview })
+            }
             toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) })
           }
           convo.push({ role: 'user', content: toolResults })
