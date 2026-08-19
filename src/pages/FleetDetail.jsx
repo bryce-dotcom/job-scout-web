@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
+import LifecycleInputs from '../components/LifecycleInputs'
+import LifecycleBar from '../components/LifecycleBar'
+import { useFleetLifecycle } from '../hooks/useFleetLifecycle'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
@@ -194,6 +197,12 @@ export default function FleetDetail() {
   }
 
   const asset = fleet.find(a => a.id === parseInt(id))
+
+  // Lifecycle for this one asset, through the same hook the grid uses so the
+  // two screens can never disagree about whether to sell it.
+  const lifecycleRows = useMemo(() => (asset ? [asset] : []), [asset])
+  const { byId: lifecycleById } = useFleetLifecycle(lifecycleRows)
+  const lc = asset ? lifecycleById.get(asset.id) : null
 
   // Filter maintenance and rentals for this asset
   const assetMaintenance = fleetMaintenance.filter(m => m.asset_id === parseInt(id))
@@ -771,6 +780,23 @@ export default function FleetDetail() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Ownership facts, and what they say about keeping this machine. */}
+      {asset && (
+        <LifecycleInputs
+          asset={asset}
+          theme={theme}
+          onSaved={fetchFleet}
+        />
+      )}
+      {lc && lc.lifecycle && (
+        <div style={{
+          background: theme.bgCard, border: `1px solid ${theme.border}`,
+          borderRadius: 12, padding: 20, marginBottom: 20,
+        }}>
+          <LifecycleBar lifecycle={lc.lifecycle} recommendation={lc.recommendation} theme={theme} />
         </div>
       )}
 

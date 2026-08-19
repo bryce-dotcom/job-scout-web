@@ -52,7 +52,7 @@ export function useFleetLifecycle(fleetRows) {
     ;(async () => {
       const inList = `(${ids.join(',')})`
       const [meters, repairs, maintenance, fuel, overrides] = await Promise.all([
-        supabase.from('fleet_current_meters').select('fleet_id,engine_hours,idle_hours,odometer_miles,recorded_at,source').eq('company_id', companyId),
+        supabase.from('fleet_current_meters').select('fleet_id,engine_hours,idle_hours,odometer_miles,recorded_at,anchored').eq('company_id', companyId),
         supabase.from('fleet_repairs').select('fleet_id,cost,category').eq('company_id', companyId).filter('fleet_id', 'in', inList),
         supabase.from('fleet_maintenance').select('asset_id,cost').eq('company_id', companyId).filter('asset_id', 'in', inList),
         supabase.from('fleet_fuel_logs').select('fleet_id,total_cost').eq('company_id', companyId),
@@ -93,7 +93,7 @@ export function useFleetLifecycle(fleetRows) {
       // telematics: the tracker knows only what it has watched since install,
       // and a truck bought used carries miles nobody observed.
       const raw = basis === 'hours' ? meter?.engine_hours : meter?.odometer_miles
-      const anchored = meter?.source === 'manual' || meter?.source === 'import' || meter?.source === 'maintenance'
+      const anchored = Boolean(meter?.anchored)
       const meterUsed = raw === null || raw === undefined ? null : Number(raw)
 
       const ageYears = f.purchase_date
