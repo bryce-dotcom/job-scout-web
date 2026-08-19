@@ -27,7 +27,7 @@ import {
   attachFleetIds, upsert, pg, partnerFetch, partnerConfigured,
   type ExtractorConfig, type Integration,
 } from '../_shared/watchdog.ts'
-import { computeMeters, tripsToIntervals, odometerFromTrips } from '../_shared/fleetMeters.ts'
+import { computeMeters, tripsToIntervals, odometerFromTrips, idleSecondsFromBreadcrumbs } from '../_shared/fleetMeters.ts'
 
 // When every tenant's trackers live in one JobScout-owned Watchdog company,
 // there is exactly one account to poll no matter how many customers there are.
@@ -156,7 +156,7 @@ async function syncPlatform(): Promise<Record<string, unknown>> {
 
   const touched = new Set<number>()
   let unattributed = 0
-  const counts = { devices: 0, positions: 0, trips: 0, alerts: 0, engineEvents: 0, meterReadings: 0 }
+  const counts = { devices: 0, positions: 0, trips: 0, alerts: 0, engineEvents: 0, meterReadings: 0, tripsIdled: 0 }
   let apiCalls = 2 // /devices + /alerts; per-device trip calls added below
   let error: string | null = null
 
@@ -270,6 +270,45 @@ async function syncPlatform(): Promise<Record<string, unknown>> {
     apiCalls += linked.length
     counts.engineEvents = await upsert('fleet_engine_events', events, 'company_id,external_id')
 
+    // ---- real idle, from breadcrumbs ----
+    //
+    // Trip windows run first-movement to last-movement, so they cannot tell
+    // parked-with-the-engine-running from moving. Breadcrumbs can: every point
+    // carries a speed, roughly every 20 seconds. On the live account 37% of
+    // in-trip time turns out to be stationary, against the 0% the trip windows
+    // implied.
+    //
+    // One call per trip, so it is computed once and stored. Only trips with no
+    // idle figure yet are fetched, and the run is capped: a fleet's first sync
+    // would otherwise try to walk every trip it has ever made and hit the
+    // function timeout. The remainder is picked up by the next run.
+    const PER_RUN_BREADCRUMB_BUDGET = 40
+    let breadcrumbBudget = PER_RUN_BREADCRUMB_BUDGET
+    for (const companyId of touched) {
+      if (breadcrumbBudget <= 0) break
+      const pending = await pg(
+        `fleet_trips?company_id=eq.${companyId}&idle_seconds=is.null&ended_at=not.is.null` +
+        `&select=external_id&order=ended_at.desc&limit=${breadcrumbBudget}`,
+      ).catch(() => [])
+      for (const trip of pending || []) {
+        if (breadcrumbBudget <= 0) break
+        breadcrumbBudget--
+        try {
+          const pts = await platformGet(`/trips/${trip.external_id}/locations`)
+          apiCalls++
+          const { idleSeconds } = idleSecondsFromBreadcrumbs(pts)
+          await pg(`fleet_trips?company_id=eq.${companyId}&external_id=eq.${encodeURIComponent(trip.external_id)}`, {
+            method: 'PATCH',
+            headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ idle_seconds: idleSeconds }),
+          })
+          counts.tripsIdled++
+        } catch (err) {
+          console.error(`[watchdog-sync] breadcrumbs ${trip.external_id}:`, (err as Error).message)
+        }
+      }
+    }
+
     // Recompute from everything on record for each asset.
     for (const device of linked) {
       const deviceId = String(device.external_id)
@@ -282,6 +321,58 @@ async function syncPlatform(): Promise<Record<string, unknown>> {
 
       const deviceTrips = tripsByDevice.get(deviceId) || []
       const m = computeMeters(stored, tripsToIntervals(deviceTrips))
+
+      // Total idle has two parts, and only together do they mean anything:
+      //   outside trips  engine running with no trip at all — the old floor
+      //   inside trips   stationary time measured from breadcrumbs
+      // Reporting only the first is what made a truck that idles 37% of its
+      // working time read as never idling.
+      // Restricted to the engine-observation window on purpose.
+      //
+      // Ignition events only go back ~30 records, while trips go back much
+      // further, so summing idle across all trips mixes a wide window into a
+      // narrow one. It reported 3.17h of idle against 5.22h of engine time
+      // when the trips alone contained 11.89h of movement — engine-on cannot
+      // be less than moving time, and the ratio was meaningless. Both numbers
+      // must describe the same stretch of time or neither means anything.
+      const idleRows = m.observedFrom && m.observedTo
+        ? await pg(
+            `fleet_trips?company_id=eq.${owner.companyId}&device_id=eq.${encodeURIComponent(deviceId)}` +
+            `&idle_seconds=not.is.null` +
+            `&started_at=gte.${encodeURIComponent(m.observedFrom)}` +
+            `&ended_at=lte.${encodeURIComponent(m.observedTo)}` +
+            `&select=idle_seconds,started_at,ended_at`,
+          ).catch(() => [])
+        : []
+      const inTripIdleHours = (idleRows || []).reduce((t: number, r: any) => t + (Number(r.idle_seconds) || 0), 0) / 3600
+
+      // Is the ignition record actually complete for this window?
+      //
+      // The provider returns roughly the last 30 events — 15 on/off pairs —
+      // while trips reach back much further. A window can therefore contain
+      // 18 trips and only 15 ignition cycles, and engine hours then under-
+      // report against movement that demonstrably happened. Measured here:
+      // 5.22 engine hours across a window holding 15.90 hours of trips.
+      //
+      // Movement cannot exceed engine-on time. When it does, the ignition
+      // record has holes and every ratio built on it is fiction, so idle is
+      // recorded as unknown rather than as a confident percentage. This heals
+      // itself: the cron accumulates events every 15 minutes, and once history
+      // is dense enough the check passes on its own.
+      // Compared against the OUTER trip window, not the movement window.
+      // A trip's outer window is its ignition cycle, so engine-on must cover
+      // at least that much. Checking against movement instead compares two
+      // small numbers and passes while the record is plainly full of holes.
+      const tripHours = (idleRows || []).reduce((t: number, r: any) => {
+        const a = Date.parse(r.started_at), b = Date.parse(r.ended_at)
+        return Number.isFinite(a) && Number.isFinite(b) && b > a ? t + (b - a) / 3_600_000 : t
+      }, 0)
+      const movementHours = tripHours
+      const engineRecordComplete = m.engineHours >= movementHours - 0.05
+
+      const totalIdleHours = engineRecordComplete
+        ? Math.min(Math.round((m.idleFloorHours + inTripIdleHours) * 100) / 100, m.engineHours)
+        : null
       const odometer = odometerFromTrips(deviceTrips)
 
       // Skip a reading that would say nothing — an asset with no ignition
@@ -295,14 +386,18 @@ async function syncPlatform(): Promise<Record<string, unknown>> {
         recorded_at: finishedAtIso,
         engine_hours: m.engineHours,
         // Stored as a floor, never as total idle — see fleetMeters.ts.
-        idle_hours: m.idleFloorHours,
+        idle_hours: totalIdleHours,
         odometer_miles: odometer,
         source: 'telematics',
         // Observed window and unpaired count travel with the number so a
         // reader can tell a confident figure from a patchy one.
         notes: `observed ${m.observedFrom ?? '?'} .. ${m.observedTo ?? '?'}` +
                (m.unpaired ? ` | ${m.unpaired} unpaired event(s)` : '') +
-               (m.openSince ? ` | running since ${m.openSince}` : ''),
+               (m.openSince ? ` | running since ${m.openSince}` : '') +
+               (engineRecordComplete
+                 ? ''
+                 : ` | PARTIAL: ${movementHours.toFixed(2)}h of trips vs ${m.engineHours}h ignition —` +
+                   ' idle withheld until the event history fills in'),
       }], 'company_id,fleet_id,recorded_at,source')
       counts.meterReadings++
     }

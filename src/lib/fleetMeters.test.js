@@ -16,6 +16,7 @@ import {
   mergeIntervals,
   subtractCoverage,
   odometerFromTrips,
+  idleSecondsFromBreadcrumbs,
   tripsToIntervals,
 } from '../../supabase/functions/_shared/fleetMeters.ts'
 
@@ -164,5 +165,63 @@ describe('trip shapes', () => {
 
   it('skips trips that never ended', () => {
     expect(tripsToIntervals([{ start_time: new Date(T0).toISOString(), end_time: null }])).toHaveLength(0)
+  })
+})
+
+describe('idle from breadcrumbs', () => {
+  // The measurement that makes idle real. Trip windows run first-movement to
+  // last-movement and swallow every stop; breadcrumbs carry a speed roughly
+  // every 20 seconds and can tell parked from moving.
+  const pt = (secs, speed) => ({ occurred_at: new Date(T0 + secs * 1000).toISOString(), speed })
+
+  it('counts an interval only when both ends are stationary', () => {
+    expect(idleSecondsFromBreadcrumbs([pt(0, 0), pt(60, 0)]).idleSeconds).toBe(60)
+  })
+
+  it('ignores the decelerating and accelerating halves of a stop', () => {
+    // Requiring both ends stationary. Counting one-ended intervals would make
+    // most of a delivery route read as idle.
+    expect(idleSecondsFromBreadcrumbs([pt(0, 30), pt(60, 0)]).idleSeconds).toBe(0)
+    expect(idleSecondsFromBreadcrumbs([pt(0, 0), pt(60, 30)]).idleSeconds).toBe(0)
+  })
+
+  it('treats GPS jitter as stationary', () => {
+    // A parked vehicle reports 0.3-0.8 mph, so zero is the wrong threshold.
+    expect(idleSecondsFromBreadcrumbs([pt(0, 0.6), pt(60, 0.4)]).idleSeconds).toBe(60)
+  })
+
+  it('will not manufacture idle across a hole in the data', () => {
+    // Live gaps reach 20 minutes. Counting the whole gap because both ends
+    // read zero invents idle that was never observed.
+    const r = idleSecondsFromBreadcrumbs([pt(0, 0), pt(1200, 0)], { maxGapSeconds: 120 })
+    expect(r.idleSeconds).toBe(120)
+    expect(r.cappedGaps).toBe(1)
+  })
+
+  it('sorts points that arrive newest-first', () => {
+    // The provider returns them in descending time order.
+    expect(idleSecondsFromBreadcrumbs([pt(60, 0), pt(0, 0)]).idleSeconds).toBe(60)
+  })
+
+  it('accumulates several stops in one trip', () => {
+    const r = idleSecondsFromBreadcrumbs([
+      pt(0, 0), pt(30, 0),      // 30s stopped
+      pt(60, 25), pt(90, 25),   // moving
+      pt(120, 0), pt(150, 0),   // 30s stopped
+    ])
+    expect(r.idleSeconds).toBe(60)
+  })
+
+  it('returns zero for empty or single-point trails', () => {
+    expect(idleSecondsFromBreadcrumbs([]).idleSeconds).toBe(0)
+    expect(idleSecondsFromBreadcrumbs([pt(0, 0)]).idleSeconds).toBe(0)
+  })
+
+  it('skips points with unusable timestamps or speeds', () => {
+    const r = idleSecondsFromBreadcrumbs([
+      { occurred_at: 'nonsense', speed: 0 }, pt(0, 0), pt(60, 0), { occurred_at: null, speed: 0 },
+    ])
+    expect(r.idleSeconds).toBe(60)
+    expect(r.sampled).toBe(2)
   })
 })

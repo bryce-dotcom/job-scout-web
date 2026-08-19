@@ -228,3 +228,57 @@ export function odometerFromTrips(trips: any[]): number | null {
   }
   return best === null ? null : Math.round(best * 10) / 10
 }
+
+/**
+ * Stationary seconds inside one trip, from its breadcrumb trail.
+ *
+ * This is what makes idle real. Trip windows cannot separate moving from
+ * parked-with-the-engine-running — they run first movement to last movement
+ * and swallow every stop in between. The breadcrumbs can: each point carries
+ * a speed, sampled about every 20 seconds.
+ *
+ * Why it matters more than the fuel: hours accrued while parked wear and
+ * depreciate a machine exactly as fast as hours spent working, and earn
+ * nothing. On hour-metered iron the resale value burned while idling dwarfs
+ * the diesel burned, and nobody bills for it because nobody can see it.
+ *
+ * Two guards against inventing idle out of missing data:
+ *
+ *   stationaryMph  GPS jitter parks a stationary vehicle at 0.3-0.8 mph, so
+ *                  zero is the wrong threshold. 1 mph is below walking pace.
+ *   maxGapSeconds  sample gaps here reach 20 minutes. Counting a whole gap as
+ *                  stationary because the points either side read zero would
+ *                  manufacture idle across a hole in the data, so each gap is
+ *                  capped at a plausible sampling interval.
+ */
+export function idleSecondsFromBreadcrumbs(
+  points: any[],
+  { stationaryMph = 1, maxGapSeconds = 120 } = {},
+): { idleSeconds: number; sampled: number; cappedGaps: number } {
+  const rows = (points || [])
+    .map(p => ({ t: new Date(p?.occurred_at ?? 0).getTime(), v: Number(p?.speed) }))
+    .filter(p => Number.isFinite(p.t) && p.t > 0)
+    .sort((a, b) => a.t - b.t)
+
+  let idle = 0
+  let capped = 0
+  for (let i = 1; i < rows.length; i++) {
+    const prev = rows[i - 1]
+    const cur = rows[i]
+    const gap = (cur.t - prev.t) / 1000
+    if (gap <= 0) continue
+
+    // The interval counts as stationary only if BOTH ends are stationary.
+    // Requiring both avoids counting the decelerating half of every stop and
+    // the accelerating half of every departure as idle, which on a delivery
+    // route would be most of the day.
+    const prevStill = Number.isFinite(prev.v) && prev.v <= stationaryMph
+    const curStill = Number.isFinite(cur.v) && cur.v <= stationaryMph
+    if (!prevStill || !curStill) continue
+
+    if (gap > maxGapSeconds) capped++
+    idle += Math.min(gap, maxGapSeconds)
+  }
+
+  return { idleSeconds: Math.round(idle), sampled: rows.length, cappedGaps: capped }
+}
