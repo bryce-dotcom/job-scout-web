@@ -14,7 +14,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Plus, Trash2, ArrowLeft, Send, AlertTriangle, CheckCircle2, Layers,
-  Truck, Clock, Pencil, ShieldCheck, TriangleAlert, FileText,
+  Truck, Clock, Pencil, ShieldCheck, TriangleAlert, FileText, ScanLine,
 } from 'lucide-react'
 import { useStore } from '../../../lib/store'
 import { useIsMobile } from '../../../hooks/useIsMobile'
@@ -25,6 +25,7 @@ import {
   DEFAULT_BID_SETTINGS,
 } from '../../../lib/digEstimator'
 import { DEFAULT_VERTICALS } from '../../../lib/donPriceBook'
+import ReadSheet from '../../../components/don/ReadSheet'
 import {
   T, Screen, Card, Btn, Chip, Field, TextInput, NumInput, Select, Sheet,
   Empty, Badge, SectionLabel, Note, StatBar, SourceBadge, fmtNum, fmtMoney,
@@ -39,7 +40,7 @@ const blankItem = {
   length_ft: '', width_ft: '', depth_ft: '', perimeter_ft: '',
   area_sf: '', top_area_sf: '', bottom_area_sf: '', count: '',
   protection: 'sloped', slope_ratio: '', overdig_each_side_ft: '',
-  volume_bcy_input: '', equipment: '', truck: '', notes: '',
+  volume_bcy_input: '', tons_input: '', loads_input: '', equipment: '', truck: '', notes: '',
 }
 
 // Row shape the engine wants — strings from inputs become numbers here, once.
@@ -61,6 +62,9 @@ function toEngineItem(row, site) {
     slope_ratio: n(row.slope_ratio),
     overdig_each_side_ft: n(row.overdig_each_side_ft),
     volume_bcy: n(row.volume_bcy_input) ?? n(row.volume_bcy),
+    // Stated beats derived — see digEstimator.quantifyItem.
+    tons: n(row.tons_input),
+    loads: n(row.loads_input),
     equipment: row.equipment || undefined,
     truck: row.truck || undefined,
     source: row.source || 'manual',
@@ -93,6 +97,7 @@ export default function DonTakeoffDetail() {
   const [loading, setLoading] = useState(true)
 
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [readOpen, setReadOpen] = useState(false)
   const [draft, setDraft] = useState(blankItem)
   const [editingId, setEditingId] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -208,6 +213,7 @@ export default function DonTakeoffDetail() {
       count: row.count ?? '', slope_ratio: row.slope_ratio ?? '',
       overdig_each_side_ft: row.overdig_each_side_ft ?? '',
       volume_bcy_input: row.volume_bcy_input ?? '',
+      tons_input: row.tons_input ?? '', loads_input: row.loads_input ?? '',
       equipment: row.equipment ?? '', truck: row.truck ?? '',
       soil_class: row.soil_class ?? '',
     })
@@ -238,6 +244,8 @@ export default function DonTakeoffDetail() {
       slope_ratio: draft.slope_ratio === '' ? null : Number(draft.slope_ratio),
       overdig_each_side_ft: draft.overdig_each_side_ft === '' ? null : Number(draft.overdig_each_side_ft),
       volume_bcy_input: draft.volume_bcy_input === '' ? null : Number(draft.volume_bcy_input),
+      tons_input: draft.tons_input === '' || draft.tons_input == null ? null : Number(draft.tons_input),
+      loads_input: draft.loads_input === '' || draft.loads_input == null ? null : Number(draft.loads_input),
       equipment: draft.equipment || null,
       truck: draft.truck || null,
       // Engine output, persisted so PDFs and lists never recompute.
@@ -357,7 +365,12 @@ export default function DonTakeoffDetail() {
               {site?.default_soil_class ? ` · ${SOIL_PROFILES[site.default_soil_class]?.label}` : ''}
             </div>
           </div>
-          {!isMobile && <Btn onClick={openAdd}><Plus size={18} /> Add item</Btn>}
+          {!isMobile && (
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <Btn variant="clay" onClick={() => setReadOpen(true)}><ScanLine size={18} /> Read a page</Btn>
+              <Btn onClick={openAdd}><Plus size={18} /> Add item</Btn>
+            </div>
+          )}
         </div>
 
         {flash && <div style={{ marginBottom: 12 }}><Note tone="accent" icon={CheckCircle2}>{flash}</Note></div>}
@@ -378,8 +391,13 @@ export default function DonTakeoffDetail() {
           <Empty
             icon={Layers}
             title="Nothing taken off yet"
-            body="Add the first item — a trench run, a pad, a footing. The volumes, truck loads and machine hours come out the other side."
-            action={<Btn onClick={openAdd}><Plus size={18} /> Add item</Btn>}
+            body="Photograph the notes you already wrote, or add items by hand. Either way the volumes, truck loads and machine hours come out the other side."
+            action={
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <Btn variant="clay" onClick={() => setReadOpen(true)}><ScanLine size={18} /> Read a page</Btn>
+                <Btn variant="ghost" onClick={openAdd}><Plus size={18} /> Add by hand</Btn>
+              </div>
+            }
           />
         ) : (
           <>
@@ -510,7 +528,14 @@ export default function DonTakeoffDetail() {
           ]}
           action={
             isMobile ? (
-              <Btn onClick={openAdd} style={{ padding: '0 16px', flexShrink: 0 }}><Plus size={20} /></Btn>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <Btn variant="clay" onClick={() => setReadOpen(true)} style={{ padding: '0 13px' }} aria-label="Read a page">
+                  <ScanLine size={20} />
+                </Btn>
+                <Btn onClick={openAdd} style={{ padding: '0 13px' }} aria-label="Add item">
+                  <Plus size={20} />
+                </Btn>
+              </div>
             ) : null
           }
         />
@@ -524,6 +549,24 @@ export default function DonTakeoffDetail() {
           </Btn>
         </div>
       )}
+
+      {/* ── Don reads a page ──────────────────────────────────────────── */}
+      <ReadSheet
+        open={readOpen}
+        onClose={() => setReadOpen(false)}
+        isMobile={isMobile}
+        takeoffId={Number(id)}
+        site={site}
+        existingCount={rows.length}
+        onAdded={({ items, corrections, actuals }) => {
+          setFlash(
+            `Added ${items} item${items === 1 ? '' : 's'} from the page` +
+            (corrections ? ` · ${corrections} correction${corrections === 1 ? '' : 's'} logged, Don will remember` : '') +
+            (actuals ? ` · ${actuals} logged to actuals` : '') + '.'
+          )
+          load()
+        }}
+      />
 
       {/* ── Add / edit item sheet ─────────────────────────────────────── */}
       <Sheet
@@ -644,6 +687,20 @@ export default function DonTakeoffDetail() {
 
               {WORK_TYPES[draft.work_type]?.uom === 'EA' && (
                 <Field label="How many"><NumInput big value={draft.count} onChange={(v) => setDraft({ ...draft, count: v })} unit="ea" /></Field>
+              )}
+
+              {/* Stated beats derived. A delivery ticket knows the tonnage
+                  better than anything we work out from a volume, and a load
+                  somebody counted is not up for recalculation. */}
+              {WORK_TYPES[draft.work_type]?.uom === 'TON' && (
+                <Field label="Tons" hint="Off the ticket. Leave blank to derive it from the volume above.">
+                  <NumInput big value={draft.tons_input} onChange={(v) => setDraft({ ...draft, tons_input: v })} unit="ton" />
+                </Field>
+              )}
+              {WORK_TYPES[draft.work_type]?.uom === 'LOAD' && (
+                <Field label="Loads" hint="If you counted them. Leave blank and Don works them out from the loose volume.">
+                  <NumInput big value={draft.loads_input} onChange={(v) => setDraft({ ...draft, loads_input: v })} unit="loads" />
+                </Field>
               )}
 
               {/* The live readout — this is what makes the sheet feel alive */}

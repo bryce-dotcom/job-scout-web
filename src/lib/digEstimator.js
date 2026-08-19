@@ -392,6 +392,14 @@ export function quantifyItem(item, ctx = {}) {
   const truck = item.truck || ctx.default_truck || 'tri_axle'
   const haul = spec.uom === 'SF' ? null : haulLoads({ lcy: states.lcy, truck, soil })
 
+  // Stated beats derived. A delivery ticket says 40 tons of base and a note
+  // says 14 loads to the pit; those are measured facts, and recomputing them
+  // from a volume nobody entered gives zero. Before this, "40 ton base for
+  // drive" read off a field note priced at $0 — the quantity was there, the
+  // engine just never looked at it.
+  const statedTons = num(item.tons)
+  const statedLoads = num(item.loads)
+
   const calFactor = ctx.calibration?.[item.work_type]?.factor ?? ctx.calibration?.[soil.label]?.factor ?? 1
   const equipment = item.equipment || ctx.default_equipment || 'ex_160'
   const hours = machineHours({
@@ -416,8 +424,10 @@ export function quantifyItem(item, ctx = {}) {
     volume_bcy: states.bcy,
     volume_lcy: states.lcy,
     volume_ccy: states.ccy,
-    loads: haul?.loads ?? 0,
-    tons: haul?.tons ?? 0,
+    loads: statedLoads > 0 ? statedLoads : (haul?.loads ?? 0),
+    tons: statedTons > 0 ? statedTons : (haul?.tons ?? 0),
+    loads_stated: statedLoads > 0,
+    tons_stated: statedTons > 0,
     truck_bound_by: haul?.bound_by ?? null,
     truck_effective_cy: haul?.effective_cy ?? null,
     machine_hours: hours.hours,
