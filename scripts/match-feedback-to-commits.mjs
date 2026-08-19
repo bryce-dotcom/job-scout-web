@@ -23,6 +23,8 @@ import { execSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+// The SAME rules the nightly sweep uses — see api/cron/feedback-sweep.js.
+import { quotedMatch as sharedQuotedMatch, resolutionNote } from '../src/lib/feedbackMatch.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const env = Object.fromEntries(
@@ -80,32 +82,7 @@ if (error) throw new Error(`feedback: ${error.message}`)
 
 const firstName = (email) => String(email || '').split('@')[0].split('.')[0].toLowerCase()
 
-const quotedMatch = (ticket) => {
-  const w = words(`${ticket.subject || ''} ${ticket.message || ''}`)
-  if (w.length < QUOTE_RUN) return null
-  const filedAt = ticket.created_at
-  let best = null
-  for (let i = 0; i + QUOTE_RUN <= w.length; i++) {
-    for (const c of commits) {
-      // Instant, not day. A crash reported at 23:00 is not fixed by a commit
-      // pushed at 10:08 that morning — the day comparison said it was.
-      if (c.iso < filedAt) continue
-      if (!c.normFull.includes(w.slice(i, i + QUOTE_RUN).join(' '))) continue
-      // Extend while it still matches, so the evidence shown is the whole
-      // quoted span rather than an arbitrary six-word window.
-      let end = i + QUOTE_RUN
-      while (end < w.length && c.normFull.includes(w.slice(i, end + 1).join(' '))) end++
-      const run = w.slice(i, end).join(' ')
-      // "i need to be able to" is a six-word verbatim match between any two
-      // pieces of English. A run only counts as a QUOTE if it carries content
-      // words — otherwise a live bug gets closed on a coincidence of grammar.
-      const content = run.split(' ').filter(x => x.length >= 4 && !STOP.has(x))
-      if (content.length < QUOTE_MIN_CONTENT) continue
-      if (!best || run.length > best.run.length) best = { commit: c, run, content }
-    }
-  }
-  return best
-}
+const quotedMatch = (ticket) => sharedQuotedMatch(ticket, commits)
 
 const likelyMatch = (ticket) => {
   const t = terms(`${ticket.subject || ''} ${ticket.message || ''}`)
