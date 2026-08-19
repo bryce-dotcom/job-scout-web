@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { computeLifecycle, utilisation, recommend, curveFor } from '../lib/fleetLifecycle'
+import { annualRecurringByAsset, isActiveOn } from '../lib/fleetRecurringCosts'
 
 const DAY = 86_400_000
 
@@ -51,11 +52,12 @@ export function useFleetLifecycle(fleetRows) {
 
     ;(async () => {
       const inList = `(${ids.join(',')})`
-      const [meters, repairs, maintenance, fuel, overrides] = await Promise.all([
+      const [meters, repairs, maintenance, fuel, recurring, overrides] = await Promise.all([
         supabase.from('fleet_current_meters').select('fleet_id,engine_hours,idle_hours,odometer_miles,recorded_at,anchored').eq('company_id', companyId),
         supabase.from('fleet_repairs').select('fleet_id,cost,category').eq('company_id', companyId).filter('fleet_id', 'in', inList),
         supabase.from('fleet_maintenance').select('asset_id,cost').eq('company_id', companyId).filter('asset_id', 'in', inList),
         supabase.from('fleet_fuel_logs').select('fleet_id,total_cost').eq('company_id', companyId),
+        supabase.from('fleet_recurring_costs').select('*').eq('company_id', companyId),
         supabase.from('fleet_value_overrides').select('fleet_id,value,as_of').eq('company_id', companyId).order('as_of', { ascending: false }),
       ])
       if (cancelled) return
@@ -66,6 +68,7 @@ export function useFleetLifecycle(fleetRows) {
         // fleet_fuel_logs uses fleet_id in the migration but asset_id in the
         // code that writes it; tolerate both rather than silently drop fuel.
         fuel: (fuel.data || []).map(r => ({ ...r, fleet_id: r.fleet_id ?? r.asset_id })),
+        recurring: recurring.data || [],
         overrides: overrides.data || [],
       })
     })().catch(() => { if (!cancelled) setData({}) })   // failed is loaded, just empty
@@ -83,6 +86,20 @@ export function useFleetLifecycle(fleetRows) {
     const fuelBy = groupBy(d.fuel, 'fleet_id')
     const overrideBy = new Map()
     for (const o of d.overrides || []) if (!overrideBy.has(o.fleet_id)) overrideBy.set(o.fleet_id, o.value)
+
+    // Insurance and drivers land here as an ANNUAL figure per asset, already
+    // including each machine's share of any fleet-wide policy. Resolved once
+    // for the whole set because a fleet-wide split cannot be computed one
+    // asset at a time — it needs every asset's weight.
+    const activeRecurring = (d.recurring || []).filter(r => isActiveOn(r))
+    const recurringPerAsset = annualRecurringByAsset(
+      activeRecurring,
+      (fleetRows || []).map(f => ({
+        id: f.id,
+        value: f.purchase_price ?? null,   // pre-lifecycle: price is the only weight available
+        meter: meterBy.get(f.id)?.odometer_miles ?? meterBy.get(f.id)?.engine_hours ?? null,
+      })),
+    ).perAsset
 
     const byId = new Map()
     for (const f of fleetRows || []) {
@@ -115,6 +132,9 @@ export function useFleetLifecycle(fleetRows) {
         maintenanceSpend: sum(maintBy.get(f.id), 'cost'),
         repairSpend: sum(repairBy.get(f.id), 'cost'),
         fuelSpend: sum(fuelBy.get(f.id), 'total_cost'),
+        // Annual cost scaled to how long this owner has had it, so a policy
+        // is not charged for years the machine was not owned.
+        recurringSpend: ageYears ? (recurringPerAsset.get(f.id) || 0) * ageYears : 0,
         overrideValue: overrideBy.get(f.id) ?? null,
       })
 

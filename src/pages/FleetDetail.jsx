@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import LifecycleInputs from '../components/LifecycleInputs'
 import RepairsPanel from '../components/RepairsPanel'
+import RecurringCostsPanel from '../components/RecurringCostsPanel'
 import LifecycleBar from '../components/LifecycleBar'
 import { useFleetLifecycle } from '../hooks/useFleetLifecycle'
 import { useTheme } from '../components/Layout'
@@ -203,6 +204,8 @@ export default function FleetDetail() {
   // two screens can never disagree about whether to sell it.
   const lifecycleRows = useMemo(() => (asset ? [asset] : []), [asset])
   const { byId: lifecycleById } = useFleetLifecycle(lifecycleRows)
+  // Every asset's value, so a fleet-wide cost can be weighted.
+  const { byId: allLifecycleById } = useFleetLifecycle(fleet)
   const lc = asset ? lifecycleById.get(asset.id) : null
 
   // Filter maintenance and rentals for this asset
@@ -806,6 +809,18 @@ export default function FleetDetail() {
           evidence. */}
       {asset && (
         <RepairsPanel asset={asset} theme={theme} onChanged={fetchFleet} />
+      )}
+
+      {/* Needs the whole fleet, not just this asset: a fleet-wide premium can
+          only be split once you know what every machine is worth. */}
+      {asset && (
+        <RecurringCostsPanel
+          asset={asset}
+          fleet={fleet}
+          lifecycleById={allLifecycleById}
+          theme={theme}
+          onChanged={fetchFleet}
+        />
       )}
 
       {/* Tabs */}

@@ -234,6 +234,8 @@ export function computeLifecycle({
   maintenanceSpend = 0,
   repairSpend = 0,
   fuelSpend = 0,
+  // Insurance, drivers, registration — already scaled to the ownership period.
+  recurringSpend = 0,
   compValue = null,
   overrideValue = null,
 } = {}) {
@@ -251,7 +253,8 @@ export function computeLifecycle({
   const lifetimeUsed = lifetimeKnown ? Number(meterAtPurchase) + (Number(meterUsed) || 0) : null
   const ownerUsed = Number(meterUsed) || 0
 
-  const spend = (Number(maintenanceSpend) || 0) + (Number(repairSpend) || 0) + (Number(fuelSpend) || 0)
+  const spend = (Number(maintenanceSpend) || 0) + (Number(repairSpend) || 0) +
+    (Number(fuelSpend) || 0) + (Number(recurringSpend) || 0)
   const measuredRate = ownerUsed > 0 && spend > 0 ? spend / ownerUsed : null
 
   // A curve value needs a real meter. A comp or an owner override does not,
