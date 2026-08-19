@@ -61,13 +61,14 @@ const words = (s) => norm(s).split(' ').filter(Boolean)
 const terms = (s) => [...new Set(words(s).filter(w => w.length >= 4 && !STOP.has(w)))]
 
 // ── commits ──────────────────────────────────────────────────────────────
-const RAW = execSync('git log --no-merges --format=%H%x1f%ad%x1f%s%x1f%b%x1e --date=short', {
+const RAW = execSync('git log --no-merges --format=%H%x1f%aI%x1f%s%x1f%b%x1e', {
   cwd: path.resolve(HERE, '..'), maxBuffer: 256 * 1024 * 1024, encoding: 'utf8',
 })
 const commits = RAW.split('\x1e').map(c => c.trim()).filter(Boolean).map(chunk => {
-  const [hash, date, subject, body = ''] = chunk.split('\x1f')
+  const [hash, iso, subject, body = ''] = chunk.split('\x1f')
+  const date = String(iso).slice(0, 10)
   const full = `${subject}\n${body}`
-  return { hash, date, subject, body, full, normFull: norm(full), termSet: new Set(terms(full)) }
+  return { hash, iso, date, subject, body, full, normFull: norm(full), termSet: new Set(terms(full)) }
 })
 
 // ── tickets ──────────────────────────────────────────────────────────────
@@ -82,11 +83,13 @@ const firstName = (email) => String(email || '').split('@')[0].split('.')[0].toL
 const quotedMatch = (ticket) => {
   const w = words(`${ticket.subject || ''} ${ticket.message || ''}`)
   if (w.length < QUOTE_RUN) return null
-  const filedOn = ticket.created_at.slice(0, 10)
+  const filedAt = ticket.created_at
   let best = null
   for (let i = 0; i + QUOTE_RUN <= w.length; i++) {
     for (const c of commits) {
-      if (c.date < filedOn) continue   // cannot have fixed a report that did not exist
+      // Instant, not day. A crash reported at 23:00 is not fixed by a commit
+      // pushed at 10:08 that morning — the day comparison said it was.
+      if (c.iso < filedAt) continue
       if (!c.normFull.includes(w.slice(i, i + QUOTE_RUN).join(' '))) continue
       // Extend while it still matches, so the evidence shown is the whole
       // quoted span rather than an arbitrary six-word window.
@@ -108,13 +111,13 @@ const likelyMatch = (ticket) => {
   const t = terms(`${ticket.subject || ''} ${ticket.message || ''}`)
   if (t.length < LIKELY_MIN_TERMS) return null
   const name = firstName(ticket.user_email)
-  const filedOn = ticket.created_at.slice(0, 10)
+  const filedAt = ticket.created_at
   let best = null
   for (const c of commits) {
-    // A commit cannot fix a report that did not exist yet. Without this, an
-    // August ticket about the lead setter matches a May commit that happens to
-    // share the words — which is how a live bug gets marked done.
-    if (c.date < filedOn) continue
+    // A commit cannot fix a report that did not exist yet, and the comparison
+    // must be on the INSTANT — same-day granularity credited a 10:08 commit
+    // with fixing a crash reported at 23:00.
+    if (c.iso < filedAt) continue
     const hits = t.filter(x => c.termSet.has(x))
     if (hits.length < LIKELY_MIN_TERMS) continue
     // The reporter being named in the commit is what lifts a coincidence of
