@@ -45,6 +45,7 @@ const FEATURE_AGENTS: Record<string, string> = {
   'arnie-suggest-addons': 'arnie',
   'zach-instant-quote': 'zach',
   'zach-yard-ai': 'zach',
+  'fleet-valuation': 'freddy',
 }
 
 export function agentFor(feature: string): string | null {
