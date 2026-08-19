@@ -23,7 +23,7 @@ const corsHeaders = {
 const TOOLS = [
   {
     name: 'query_invoices',
-    description: 'Query invoices with filtering and aggregation. Use when answering questions about specific invoices, overdue amounts, customer billing, or revenue breakdowns. Returns top 50 results.',
+    description: 'Query invoices with filtering and aggregation. Use when answering questions about specific invoices, overdue amounts, customer billing, or revenue breakdowns. `count` is the exact number of matching invoices; `sample` is a subset for detail. If a WARNING field comes back, the totals are partial — say so.',
     input_schema: {
       type: 'object',
       properties: {
@@ -115,6 +115,59 @@ const TOOLS = [
 ]
 
 // ============================================================
+// ROW FETCHING — exact counts, paged reads
+//
+// Every tool below used to pass a bare `limit` and then report
+// `data.length` as the answer. On a tenant with 7,121 jobs Arnie
+// confidently replied "500" — the cap, presented as a fact, by an agent
+// whose prompt forbids guessing numbers. Revenue was worse: it summed
+// only the first 5,000 payments and called it the total.
+//
+// fetchRows asks PostgREST for an exact count (Prefer: count=exact, read
+// back off Content-Range) and pages until it has the rows or hits a
+// ceiling. The count is therefore always true; only the row sample is
+// ever capped, and when it is, the caller says so out loud.
+// ============================================================
+const PAGE = 1000
+const MAX_ROWS = 10000
+
+async function fetchRows(
+  url: string,
+  params: URLSearchParams,
+  hdr: Record<string, string>,
+  max = MAX_ROWS,
+): Promise<{ rows: any[]; total: number; truncated: boolean } | { error: string }> {
+  const rows: any[] = []
+  let total = 0
+  // Offset paging over an unordered result set can repeat or skip rows between
+  // pages, so pin an order the caller has not already chosen.
+  if (!params.has('order')) params.set('order', 'id')
+  for (let from = 0; from < max; from += PAGE) {
+    const to = Math.min(from + PAGE, max) - 1
+    const res = await fetch(`${url}?${params}`, {
+      headers: {
+        ...hdr,
+        Range: `${from}-${to}`,
+        'Range-Unit': 'items',
+        // count=exact is a full scan; one on the first page is enough.
+        Prefer: from === 0 ? 'count=exact' : 'count=none',
+      },
+    })
+    if (!res.ok && res.status !== 206) return { error: `${res.status} ${await res.text()}` }
+    const page = await res.json()
+    rows.push(...page)
+    // Content-Range looks like "0-999/7121"; the tail is the exact count.
+    const cr = res.headers.get('content-range') || ''
+    const declared = Number(cr.split('/')[1])
+    if (Number.isFinite(declared)) total = declared
+    if (page.length < to - from + 1) break
+    if (rows.length >= total) break
+  }
+  if (!total) total = rows.length
+  return { rows, total, truncated: rows.length < total }
+}
+
+// ============================================================
 // TOOL EXECUTORS — server-side queries, always company_id scoped
 // ============================================================
 async function execTool(name: string, input: any, companyId: number, role: string) {
@@ -127,7 +180,7 @@ async function execTool(name: string, input: any, companyId: number, role: strin
 
   try {
     if (name === 'query_invoices') {
-      const params = new URLSearchParams({ company_id: `eq.${companyId}`, limit: '500' })
+      const params = new URLSearchParams({ company_id: `eq.${companyId}` })
       if (input.status && input.status !== 'all') {
         // Map common synonyms to actual values: Pending, Paid, Open, Partially Paid
         const statusMap: Record<string, string> = {
@@ -141,94 +194,105 @@ async function execTool(name: string, input: any, companyId: number, role: strin
       if (input.customer_name) params.append('customer_name', `ilike.*${input.customer_name}*`)
       if (input.start_date) params.append('created_at', `gte.${input.start_date}`)
       if (input.end_date) params.append('created_at', `lte.${input.end_date}`)
-      const r = await fetch(sb(`invoices?${params}`), { headers: hdr })
-      if (!r.ok) return { error: `invoices query failed: ${r.status} ${await r.text()}` }
-      const data = await r.json()
-      // Add customer_name lookup since invoices don't have it directly — fall back to customer_id
-      return aggregate(data, input.group_by, ['amount'])
+      const got = await fetchRows(sb('invoices'), params, hdr)
+      if ('error' in got) return { error: `invoices query failed: ${got.error}` }
+      return aggregate(got, input.group_by, ['amount'])
     }
 
     if (name === 'query_jobs') {
-      const params = new URLSearchParams({ company_id: `eq.${companyId}`, limit: '500' })
+      const params = new URLSearchParams({ company_id: `eq.${companyId}` })
       if (input.status) params.append('status', `eq.${input.status}`)
       if (input.assigned_to) params.append('salesperson_id', `eq.${input.assigned_to}`)
       if (input.customer_name) params.append('customer_name', `ilike.*${input.customer_name}*`)
       if (input.start_date) params.append('start_date', `gte.${input.start_date}`)
       if (input.end_date) params.append('start_date', `lte.${input.end_date}`)
-      const r = await fetch(sb(`jobs?${params}`), { headers: hdr })
-      if (!r.ok) return { error: `jobs query failed: ${r.status} ${await r.text()}` }
-      const data = await r.json()
-      return aggregate(data, input.group_by, ['job_total', 'expense_amount', 'profit_margin'])
+      const got = await fetchRows(sb('jobs'), params, hdr)
+      if ('error' in got) return { error: `jobs query failed: ${got.error}` }
+      return aggregate(got, input.group_by, ['job_total', 'expense_amount', 'profit_margin'])
     }
 
     if (name === 'query_revenue') {
       if (!isOwner) return { restricted: 'Owner access required for revenue data.' }
       const { startDate, endDate } = computePeriod(input.period, input.start_date, input.end_date)
-      const params = new URLSearchParams({ company_id: `eq.${companyId}`, limit: '5000' })
+      const params = new URLSearchParams({ company_id: `eq.${companyId}` })
       params.append('date', `gte.${startDate}`)
       params.append('date', `lte.${endDate}`)
-      const r = await fetch(sb(`payments?${params}`), { headers: hdr })
-      if (!r.ok) return { error: `payments query failed: ${r.status} ${await r.text()}` }
-      const data = await r.json()
+      // Revenue must never be computed from a partial read — a short sum
+      // reads as a real number and nothing about it looks wrong.
+      const got = await fetchRows(sb('payments'), params, hdr, 50000)
+      if ('error' in got) return { error: `payments query failed: ${got.error}` }
       return {
         period: input.period,
         startDate,
         endDate,
-        totalPayments: data.length,
-        totalRevenue: data.reduce((s: number, p: any) => s + (parseFloat(p.amount) || 0), 0).toFixed(2),
-        ...aggregate(data, input.group_by, ['amount']),
+        totalPayments: got.total,
+        totalRevenue: got.rows.reduce((s: number, p: any) => s + (parseFloat(p.amount) || 0), 0).toFixed(2),
+        ...(got.truncated
+          ? { WARNING: `Only ${got.rows.length} of ${got.total} payments could be read — totalRevenue is INCOMPLETE. Say so; do not present it as the figure.` }
+          : {}),
+        ...aggregate(got, input.group_by, ['amount']),
       }
     }
 
     if (name === 'query_leads') {
       if (!isAdmin) return { restricted: 'Admin access required for leads data.' }
-      const params = new URLSearchParams({ company_id: `eq.${companyId}`, limit: '500' })
+      const params = new URLSearchParams({ company_id: `eq.${companyId}` })
       if (input.status) params.append('status', `eq.${input.status}`)
       if (input.salesperson_id) params.append('salesperson_id', `eq.${input.salesperson_id}`)
       if (input.start_date) params.append('created_at', `gte.${input.start_date}`)
       if (input.end_date) params.append('created_at', `lte.${input.end_date}`)
-      const r = await fetch(sb(`leads?${params}`), { headers: hdr })
-      if (!r.ok) return { error: `leads query failed: ${r.status} ${await r.text()}` }
-      const data = await r.json()
-      return aggregate(data, input.group_by, [])
+      const got = await fetchRows(sb('leads'), params, hdr)
+      if ('error' in got) return { error: `leads query failed: ${got.error}` }
+      return aggregate(got, input.group_by, ['value', 'amount'])
     }
 
     if (name === 'query_customers') {
       const params = new URLSearchParams({
         company_id: `eq.${companyId}`,
-        limit: String(Math.min(input.limit || 20, 100)),
       })
       // PostgREST 'or' wants no surrounding parens in URLSearchParams form
       if (input.search) {
         const term = input.search.replace(/[*]/g, '')
         params.append('or', `(name.ilike.*${term}*,business_name.ilike.*${term}*,email.ilike.*${term}*)`)
       }
-      const r = await fetch(sb(`customers?${params}`), { headers: hdr })
-      if (!r.ok) return { error: `customers query failed: ${r.status} ${await r.text()}` }
-      const data = await r.json()
-      return { count: data.length, customers: data }
+      const got = await fetchRows(sb('customers'), params, hdr, Math.min(input.limit || 20, 100))
+      if ('error' in got) return { error: `customers query failed: ${got.error}` }
+      // count is the number of MATCHES, not the number shown — otherwise a
+      // search that hits 300 customers reports "20 customers".
+      return {
+        matches: got.total,
+        showing: got.rows.length,
+        customers: got.rows,
+        ...(got.truncated ? { note: `Showing ${got.rows.length} of ${got.total} matches.` } : {}),
+      }
     }
 
     if (name === 'query_employees') {
       const select = isOwner ? '*' : 'id,name,email,role,phone,user_role,created_at'
       const params = new URLSearchParams({ company_id: `eq.${companyId}`, select })
       if (input.role) params.append('role', `eq.${input.role}`)
-      const r = await fetch(sb(`employees?${params}`), { headers: hdr })
-      const data = await r.json()
-      return { count: data.length, employees: data }
+      const got = await fetchRows(sb('employees'), params, hdr, 2000)
+      if ('error' in got) return { error: `employees query failed: ${got.error}` }
+      return { count: got.total, employees: got.rows }
     }
 
     if (name === 'query_inventory') {
-      const params = new URLSearchParams({ company_id: `eq.${companyId}`, limit: '300' })
+      const params = new URLSearchParams({ company_id: `eq.${companyId}` })
       if (input.location) params.append('location', `eq.${input.location}`)
       if (input.search) params.append('name', `ilike.*${input.search}*`)
-      const r = await fetch(sb(`inventory?${params}`), { headers: hdr })
-      if (!r.ok) return { error: `inventory query failed: ${r.status} ${await r.text()}` }
-      const data = await r.json()
+      const got = await fetchRows(sb('inventory'), params, hdr)
+      if ('error' in got) return { error: `inventory query failed: ${got.error}` }
       const items = input.low_stock_only
-        ? data.filter((i: any) => (i.quantity || 0) <= (i.min_quantity || i.ordering_trigger || 5))
-        : data
-      return { count: items.length, items: items.slice(0, 50) }
+        ? got.rows.filter((i: any) => (i.quantity || 0) <= (i.min_quantity || i.ordering_trigger || 5))
+        : got.rows
+      // low_stock_only filters in memory, so its count is only exact while the
+      // underlying read was complete.
+      return {
+        count: items.length,
+        items: items.slice(0, 50),
+        ...(items.length > 50 ? { note: `Showing the first 50 of ${items.length}.` } : {}),
+        ...(got.truncated ? { WARNING: `Read ${got.rows.length} of ${got.total} inventory rows — this count is a floor, not a total.` } : {}),
+      }
     }
 
     return { error: `Unknown tool: ${name}` }
@@ -238,9 +302,21 @@ async function execTool(name: string, input: any, companyId: number, role: strin
   }
 }
 
-function aggregate(data: any[], groupBy: string | undefined, sumFields: string[] = []) {
+// Takes the fetchRows() result rather than a bare array, so `count` is the
+// exact number of matching rows and never the size of the page we happened to
+// read. When the sample is short of the total, the shortfall is stated in the
+// payload — the model cannot notice a silent truncation on its own.
+function aggregate(
+  got: { rows: any[]; total: number; truncated: boolean },
+  groupBy: string | undefined,
+  sumFields: string[] = [],
+) {
+  const { rows: data, total, truncated } = got
+  const partial = truncated
+    ? { WARNING: `Totals below cover only ${data.length} of ${total} matching rows. State that the figure is partial.` }
+    : {}
   if (!groupBy || groupBy === 'none') {
-    return { count: data.length, sample: data.slice(0, 30) }
+    return { count: total, sample: data.slice(0, 30), ...partial }
   }
   const groups: Record<string, any> = {}
   for (const row of data) {
@@ -271,10 +347,15 @@ function aggregate(data: any[], groupBy: string | undefined, sumFields: string[]
     })
   }
   // Sort by count desc, take top 30
-  const entries = Object.entries(groups)
-    .sort((a: any, b: any) => b[1].count - a[1].count)
-    .slice(0, 30)
-  return { groupBy, totalRecords: data.length, groups: Object.fromEntries(entries) }
+  const all = Object.entries(groups).sort((a: any, b: any) => b[1].count - a[1].count)
+  const entries = all.slice(0, 30)
+  return {
+    groupBy,
+    totalRecords: total,
+    groups: Object.fromEntries(entries),
+    ...(all.length > 30 ? { note: `Showing the 30 largest of ${all.length} groups.` } : {}),
+    ...partial,
+  }
 }
 
 function computePeriod(period: string, customStart?: string, customEnd?: string) {
