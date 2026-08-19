@@ -37,6 +37,10 @@
     {
       "path": "/api/cron/watchdog-sync",
       "schedule": "7,22,37,52 * * * *"
+    },
+    {
+      "path": "/api/cron/feedback-sweep",
+      "schedule": "0 3 * * *"
     }
   ],
   "functions": {
