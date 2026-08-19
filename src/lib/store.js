@@ -18,6 +18,7 @@ const AGENT_MODULE_TEMPLATES = {
   'victor-verify':    { module_name: 'victor-verify',  display_name: 'Victor - Verification AI',     icon: 'ShieldCheck', default_menu_section: 'OPERATIONS', route_path: '/agents/victor',         sort_order: 35, description: 'AI quality verification for completed work' },
   'arnie-og':         { module_name: 'arnie',          display_name: 'OG Arnie',                     icon: 'Bot',         default_menu_section: 'OPERATIONS', route_path: '/agents/arnie',          sort_order: 40, description: 'General-purpose AI assistant' },
   'frankie-finance':  { module_name: 'frankie-finance',display_name: 'Frankie - Finance AI',         icon: 'DollarSign',  default_menu_section: 'OPERATIONS', route_path: '/agents/frankie',        sort_order: 45, description: 'AI bookkeeper + finance assistant' },
+  'don-excavator':    { module_name: 'don-excavator', display_name: 'Don - Excavation AI',          icon: 'Shovel',      default_menu_section: 'SALES_FLOW', route_path: '/agents/don',            sort_order: 28, description: 'AI excavation estimator — sites, takeoffs, unit-price bids' },
 };
 
 export const useStore = create(

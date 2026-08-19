@@ -87,6 +87,12 @@ import ZachVisits from './pages/agents/zach/ZachVisits'
 import ZachTreatments from './pages/agents/zach/ZachTreatments'
 import ZachPricing from './pages/agents/zach/ZachPricing'
 import ZachSettings from './pages/agents/zach/ZachSettings'
+import DonWorkspace from './pages/agents/don/DonWorkspace'
+import DonSites from './pages/agents/don/DonSites'
+import DonTakeoffs from './pages/agents/don/DonTakeoffs'
+import DonTakeoffDetail from './pages/agents/don/DonTakeoffDetail'
+import DonPriceBook from './pages/agents/don/DonPriceBook'
+import DonSettings from './pages/agents/don/DonSettings'
 import ConradWorkspace from './pages/agents/conrad/ConradWorkspace'
 import ConradDashboard from './pages/agents/conrad/ConradDashboard'
 import ConradCampaigns from './pages/agents/conrad/ConradCampaigns'
@@ -487,6 +493,15 @@ function App() {
             <Route path="treatments" element={<ZachTreatments />} />
             <Route path="pricing" element={<ZachPricing />} />
             <Route path="settings" element={<ZachSettings />} />
+          </Route>
+
+          {/* Don Workspace (Excavation) */}
+          <Route path="/agents/don" element={<DonWorkspace />}>
+            <Route index element={<DonSites />} />
+            <Route path="takeoff" element={<DonTakeoffs />} />
+            <Route path="takeoff/:id" element={<DonTakeoffDetail />} />
+            <Route path="price-book" element={<DonPriceBook />} />
+            <Route path="settings" element={<DonSettings />} />
           </Route>
 
           {/* Conrad Workspace (Email Marketing) */}
