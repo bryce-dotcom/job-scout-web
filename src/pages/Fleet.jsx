@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
+import LifecycleBar from '../components/LifecycleBar'
+import { useFleetLifecycle } from '../hooks/useFleetLifecycle'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
@@ -95,6 +97,9 @@ export default function Fleet() {
 
     return true
   })
+
+  // One batched pass for the whole grid — 40 assets must not mean 160 queries.
+  const { byId: lifecycleById } = useFleetLifecycle(filteredFleet)
 
   // Calculate stats
   const availableCount = fleet.filter(a => a.status === 'Available').length
@@ -412,6 +417,7 @@ export default function Fleet() {
             const TypeIcon = typeIcons[asset.type] || Truck
             const statusStyle = statusColors[asset.status] || statusColors['Available']
             const overdue = isPMOverdue(asset)
+            const lc = lifecycleById.get(asset.id)
             const daysUntil = getDaysUntilPM(asset)
 
             return (
@@ -509,7 +515,15 @@ export default function Fleet() {
                       {asset.type === 'Vehicle' ? 'Mileage' : 'Hours'}
                     </div>
                     <div style={{ fontSize: '16px', fontWeight: '600', color: theme.text }}>
-                      {asset.mileage_hours?.toLocaleString() || 0}
+                      {/* Prefer the tracked meter over fleet.mileage_hours, which
+                          is hand-entered and goes stale the moment a tracker is
+                          fitted. Falling back keeps untracked assets working. */}
+                      {(() => {
+                        const m = lc?.meter
+                        const tracked = asset.type === 'Vehicle' ? m?.odometer_miles : m?.engine_hours
+                        const shown = tracked ?? asset.mileage_hours
+                        return shown === null || shown === undefined ? '—' : Math.round(Number(shown)).toLocaleString()
+                      })()}
                     </div>
                   </div>
 
@@ -536,6 +550,15 @@ export default function Fleet() {
                     </div>
                   </div>
                 </div>
+
+                {/* Lifecycle — the cost that never arrives as an invoice. */}
+                {lc && (
+                  <LifecycleBar
+                    lifecycle={lc.lifecycle}
+                    recommendation={lc.recommendation}
+                    theme={theme}
+                  />
+                )}
 
                 {/* Quick Actions */}
                 <div style={{
