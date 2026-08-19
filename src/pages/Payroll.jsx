@@ -695,7 +695,12 @@ export default function Payroll() {
         // recently.
         supabase
           .from('time_off_requests')
-          .select('*, employee:employees(name, email)')
+          // Name the foreign key. time_off_requests points at employees TWICE
+          // (employee_id and approved_by), so an ambiguous embed makes
+          // PostgREST refuse the whole query — and .data || [] turned that
+          // refusal into "0 pending requests" on the Payroll page while the
+          // dashboard, which does not join, kept saying there were some.
+          .select('*, employee:employees!time_off_requests_employee_id_fkey(name, email)')
           .eq('company_id', companyId)
           .or(`status.eq.pending,created_at.gte.${new Date(Date.now() - 30 * 86400000).toISOString()}`)
           .order('created_at', { ascending: false })
@@ -794,6 +799,9 @@ export default function Payroll() {
         paidByInvoice.set(p.invoice_id, (paidByInvoice.get(p.invoice_id) || 0) + (parseFloat(p.amount) || 0))
       })
       setAllPaymentsByInvoiceId(paidByInvoice)
+      // A failed read must not read as an empty list. This exact query broke
+      // for months and the page calmly reported 0 pending requests.
+      if (requestsRes.error) console.error('[Payroll] time-off request fetch failed:', requestsRes.error.message)
       setTimeOffRequests(requestsRes.data || [])
       setAdjustments(adjRes.data || [])
       setVerificationReports(verRes.data || [])
