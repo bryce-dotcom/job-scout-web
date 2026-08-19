@@ -11,8 +11,8 @@
 // feeds a recommendation to sell a five-figure asset; it should change when
 // someone means it to.
 
-import { useState } from 'react'
-import { Search, Check, AlertTriangle, Loader } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Search, Check, AlertTriangle, Loader, Camera } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { decodeVin } from '../lib/vinDecode'
 import { CLASS_CURVES } from '../lib/fleetLifecycle'
@@ -34,6 +34,8 @@ export default function LifecycleInputs({ asset, theme, onSaved }) {
   const [decoding, setDecoding] = useState(false)
   const [note, setNote] = useState(null)     // { kind: 'ok'|'warn'|'err', text }
   const [saving, setSaving] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const fileRef = useRef(null)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const basis = CLASS_CURVES[form.asset_class]?.basis || 'miles'
@@ -56,6 +58,59 @@ export default function LifecycleInputs({ asset, theme, onSaved }) {
     setNote(r.warning
       ? { kind: 'warn', text: r.warning }
       : { kind: 'ok', text: `${r.modelYear || ''} ${r.make} ${r.model}`.trim() })
+  }
+
+  // Off-road iron has no VIN and no registry to look it up in — the facts are
+  // stamped on a plate bolted to the machine. Photographing it is
+  // transcription rather than data entry, which is the only version of this
+  // anyone will actually do for a yard full of equipment.
+  const scanPlate = async (file) => {
+    if (!file) return
+    setScanning(true)
+    setNote(null)
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const fr = new FileReader()
+        // Strip the data: prefix — the API wants raw base64.
+        fr.onload = () => resolve(String(fr.result).split(',')[1])
+        fr.onerror = reject
+        fr.readAsDataURL(file)
+      })
+      const { data, error } = await supabase.functions.invoke('fleet-plate-scan', {
+        body: { image: { base64, mediaType: file.type || 'image/jpeg' } },
+      })
+      if (error) throw error
+      if (!data?.ok) { setNote({ kind: 'err', text: data?.error || 'Could not read that plate.' }); return }
+
+      setForm(f => ({
+        ...f,
+        make: data.make || f.make,
+        model: data.model || f.model,
+        model_year: data.modelYear ?? f.model_year,
+        // Never overwrite something a person chose: they know how the machine
+        // is actually used, and a plate does not.
+        serial_vin: f.serial_vin || data.serial || '',
+        asset_class: f.asset_class || data.assetClass || '',
+        hours_at_purchase: f.hours_at_purchase,
+      }))
+
+      // Say what could not be read rather than quietly leaving blanks. A
+      // serial the model refused is worth re-shooting; a serial it guessed
+      // would be a wrong machine recorded as a right one.
+      const missed = (data.unreadable || []).filter(Boolean)
+      const lowSerial = data.confidence?.serial != null && data.confidence.serial < 0.6
+      setNote(
+        missed.length || lowSerial || !data.serial
+          ? { kind: 'warn', text: `Read ${[data.make, data.model].filter(Boolean).join(' ') || 'the plate'}. ${data.serial ? '' : 'Serial was not legible — '}${data.notes || 'Check anything left blank.'}` }
+          : { kind: 'ok', text: `${[data.modelYear, data.make, data.model].filter(Boolean).join(' ')} · ${data.serial}` },
+      )
+    } catch (e) {
+      setNote({ kind: 'err', text: e.message || 'Could not read that plate.' })
+    } finally {
+      setScanning(false)
+      // Reset so the same photo can be retried after a bad read.
+      if (fileRef.current) fileRef.current.value = ''
+    }
   }
 
   const save = async () => {
@@ -82,7 +137,10 @@ export default function LifecycleInputs({ asset, theme, onSaved }) {
   const field = {
     width: '100%', minHeight: 44, padding: '0 10px',
     background: theme.bg, border: `1px solid ${theme.border}`,
-    borderRadius: 8, color: theme.text, fontSize: 14, boxSizing: 'border-box',
+    borderRadius: 8, color: theme.text, boxSizing: 'border-box',
+    // 16px: iOS zooms the page on focus for anything smaller, and the user
+    // then has to pinch back out to see the rest of the form.
+    fontSize: 16,
   }
   const label = { fontSize: 11, color: theme.textMuted, display: 'block', marginBottom: 4 }
 
@@ -119,6 +177,30 @@ export default function LifecycleInputs({ asset, theme, onSaved }) {
             }}
           >
             {decoding ? <Loader size={14} /> : <Search size={14} />} Decode
+          </button>
+          {/* capture=environment opens the rear camera straight into the
+              viewfinder on a phone rather than a file browser. */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={e => scanPlate(e.target.files?.[0])}
+            style={{ display: 'none' }}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={scanning}
+            title="Photograph the data plate — for equipment with no VIN"
+            style={{
+              minHeight: 44, padding: '0 14px', borderRadius: 8,
+              cursor: scanning ? 'wait' : 'pointer',
+              background: 'transparent', color: theme.textSecondary,
+              border: `1px solid ${theme.border}`, fontSize: 13, fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
+            }}
+          >
+            {scanning ? <Loader size={14} /> : <Camera size={14} />} Plate
           </button>
         </div>
         {note && (
