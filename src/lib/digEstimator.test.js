@@ -341,6 +341,47 @@ describe('quantifying a takeoff item', () => {
   })
 })
 
+describe('stated quantities beat derived ones', () => {
+  // Regression: a field note reading "40 ton base for drive" produced a
+  // road_base item with tons=40 and no geometry. The engine recomputed
+  // tonnage from a volume nobody had entered, got zero, and the line priced
+  // at $0 — a real quantity silently worth nothing.
+  const ctx = { default_soil: 'clay', default_truck: 'tri_axle' }
+  const book = [{ work_type: 'road_base', label: 'Road base', uom: 'TON', unit_price: 34, cost: 25, kind: 'materials' }]
+
+  it('keeps a tonnage that came off a delivery ticket', () => {
+    const q = quantifyItem({ work_type: 'road_base', tons: 40 }, ctx)
+    expect(q.tons).toBe(40)
+    expect(q.tons_stated).toBe(true)
+  })
+
+  it('prices that line instead of zeroing it', () => {
+    const p = priceItem(quantifyItem({ work_type: 'road_base', tons: 40 }, ctx), book)
+    expect(p.quantity).toBe(40)
+    expect(p.extension).toBe(1360)
+  })
+
+  it('keeps a load count somebody actually counted', () => {
+    const q = quantifyItem({ work_type: 'haul_off', loads: 14 }, ctx)
+    expect(q.loads).toBe(14)
+    expect(q.loads_stated).toBe(true)
+  })
+
+  it('still derives tons and loads when nothing was stated', () => {
+    const q = quantifyItem({ work_type: 'haul_off', volume_bcy: 1000, soil_class: 'clay' }, ctx)
+    expect(q.loads_stated).toBe(false)
+    expect(q.loads).toBeGreaterThan(90)
+    expect(q.tons).toBeGreaterThan(0)
+  })
+
+  it('lets a stated count win even when geometry could derive one', () => {
+    const derived = quantifyItem({ work_type: 'haul_off', volume_bcy: 1000, soil_class: 'clay' }, ctx)
+    const stated = quantifyItem({ work_type: 'haul_off', volume_bcy: 1000, soil_class: 'clay', loads: 60 }, ctx)
+    expect(derived.loads).not.toBe(60)
+    expect(stated.loads).toBe(60)
+  })
+})
+
 describe('verticals are toggles over one engine', () => {
   it('offers only the work types for the verticals a company turned on', () => {
     const trenchOnly = verticalsForWorkTypes({ trenching: true, sitework: false, foundation: false })
