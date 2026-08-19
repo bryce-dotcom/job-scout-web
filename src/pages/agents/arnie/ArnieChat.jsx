@@ -3,7 +3,7 @@ import { useTheme } from '../../../components/Layout'
 import { useStore } from '../../../lib/store'
 import { supabase } from '../../../lib/supabase'
 import { sendMessageStream, createSession, saveMessage, updateSessionTitle, loadSessionMessages } from './arnieEngine'
-import { getUserRole } from './arnieTools'
+import { getUserRole, isClockedIn } from './arnieTools'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X } from 'lucide-react'
@@ -32,6 +32,16 @@ const dark = {
   chipBorder: '#3d434b',
   inputBg: '#2a2f35',
 }
+
+// Shown instead of the role menu whenever someone is clocked into a job. The
+// role sets are all desk questions ("how does our pipeline look?") — nobody up
+// a ladder is asking that, and the four things they DO ask are always the same.
+const FIELD_ACTIONS = [
+  { label: "What's next?", icon: Briefcase, prompt: 'What should I do next on this job?' },
+  { label: 'Parts', icon: Package, prompt: 'What am I installing on this job? List the line items and quantities.' },
+  { label: 'Customer', icon: Users, prompt: 'Who is the customer on this job and what is the site address and phone number?' },
+  { label: 'My sections', icon: Check, prompt: 'Which sections are assigned to me, and which are still open?' },
+]
 
 const QUICK_ACTIONS = {
   user: [
@@ -119,8 +129,11 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     messagesRef.current = messages
   }, [messages])
 
-  const { role } = getUserRole()
-  const quickActions = QUICK_ACTIONS[role] || QUICK_ACTIONS.user
+  const { role, userId } = getUserRole()
+  // Being clocked into a job outranks the role menu — see detectMode() in
+  // arnieEngine, which shifts Arnie's answering style on the same signal.
+  const onJob = isClockedIn(userId)
+  const quickActions = onJob ? FIELD_ACTIONS : (QUICK_ACTIONS[role] || QUICK_ACTIONS.user)
 
   // ── Arnie config (Tier A): admins can ask for changes right here in chat ──
   // Arnie drafts the change himself via the propose_change tool; this side
