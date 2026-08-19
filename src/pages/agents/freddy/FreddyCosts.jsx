@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { useFleetLifecycle } from '../../../hooks/useFleetLifecycle'
+import LifecycleBar from '../../../components/LifecycleBar'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import {
@@ -39,6 +41,8 @@ export default function FreddyCosts() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
   const isMobile = useIsMobile()
+
+  const navigate = useNavigate()
 
   const companyId = useStore(s => s.companyId)
   const fleet = useStore(s => s.fleet)
@@ -479,44 +483,71 @@ export default function FreddyCosts() {
             </table>
           </div>
         ) : (
-          /* Mobile cards */
+          /* Phone: a card per machine, led by the number that matters.
+             The old version was eight label:value pairs at 12px — every
+             figure the same weight, so nothing was findable at arm's length
+             on a job site. Cost per mile is why anyone opens this screen, so
+             it is the only thing set large; the rest supports it. */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {sortedVehicleCosts.map(v => (
-              <div key={v.id} style={{
-                padding: '12px',
-                border: `1px solid ${theme.border}`,
-                borderRadius: '8px',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                  <Truck size={14} style={{ color: theme.accent }} />
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{v.name}</span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '12px' }}>
-                  <div>
-                    <span style={{ color: theme.textMuted }}>Miles: </span>
-                    <span style={{ color: theme.textSecondary }}>{v.totalMiles > 0 ? v.totalMiles.toLocaleString() : '--'}</span>
+            {sortedVehicleCosts.map(v => {
+              const lc = lifecycleById.get(v.id)
+              const basis = v.meter_basis === 'hours' ? 'hr' : 'mi'
+              return (
+                <div
+                  key={v.id}
+                  onClick={() => navigate(`/fleet/${v.id}`)}
+                  style={{
+                    padding: '14px',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '12px',
+                    background: theme.bg,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '15px', fontWeight: 700, color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {v.name}
+                      </div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: 2 }}>
+                        {v.totalMiles > 0 ? `${v.totalMiles.toLocaleString()} ${basis}` : 'no meter reading'}
+                        {v.asset_id ? ` · ${v.asset_id}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{
+                        fontSize: '22px', fontWeight: 700, lineHeight: 1.1,
+                        color: v.costPerMile > 0.5 ? '#c2410c' : theme.text,
+                      }}>
+                        {v.costPerMile > 0 ? `$${v.costPerMile.toFixed(2)}` : '—'}
+                      </div>
+                      <div style={{ fontSize: '10px', color: theme.textMuted }}>per {basis} to run</div>
+                    </div>
                   </div>
-                  <div>
-                    <span style={{ color: theme.textMuted }}>Fuel: </span>
-                    <span style={{ color: theme.textSecondary }}>{v.fuelCost > 0 ? formatCurrency(v.fuelCost) : '--'}</span>
-                  </div>
-                  <div>
-                    <span style={{ color: theme.textMuted }}>Maint: </span>
-                    <span style={{ color: theme.textSecondary }}>{v.maintCost > 0 ? formatCurrency(v.maintCost) : '--'}</span>
-                  </div>
-                  <div>
-                    <span style={{ color: theme.textMuted }}>$/mi: </span>
-                    <span style={{ color: v.costPerMile > 0.50 ? '#ef4444' : theme.textSecondary, fontWeight: '600' }}>
-                      {v.costPerMile > 0 ? `$${v.costPerMile.toFixed(2)}` : '--'}
+
+                  {/* Running costs, small and secondary — they explain the
+                      number above rather than competing with it. */}
+                  <div style={{ display: 'flex', gap: '14px', marginTop: '10px', fontSize: '12px', flexWrap: 'wrap' }}>
+                    <span style={{ color: theme.textMuted }}>
+                      Fuel <strong style={{ color: theme.textSecondary }}>{v.fuelCost > 0 ? formatCurrency(v.fuelCost) : '—'}</strong>
+                    </span>
+                    <span style={{ color: theme.textMuted }}>
+                      Maint <strong style={{ color: theme.textSecondary }}>{v.maintCost > 0 ? formatCurrency(v.maintCost) : '—'}</strong>
+                    </span>
+                    <span style={{ color: theme.textMuted }}>
+                      Owned <strong style={{ color: theme.textSecondary }}>{v.tco > 0 ? formatCurrency(v.tco) : '—'}</strong>
                     </span>
                   </div>
+
+                  {/* The lifecycle bar belongs here too. Cost per mile says
+                      what it costs to run; only this says whether owning it
+                      still makes sense, which is the larger number by far. */}
+                  {lc?.lifecycle && (
+                    <LifecycleBar lifecycle={lc.lifecycle} recommendation={lc.recommendation} theme={theme} compact />
+                  )}
                 </div>
-                <div style={{ marginTop: '6px', fontSize: '12px' }}>
-                  <span style={{ color: theme.textMuted }}>TCO: </span>
-                  <span style={{ color: theme.text, fontWeight: '600' }}>{v.tco > 0 ? formatCurrency(v.tco) : '--'}</span>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
@@ -620,7 +651,7 @@ export default function FreddyCosts() {
                     {formatCurrency(log.total_cost)}
                   </span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '12px', color: theme.textSecondary }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '4px', fontSize: '12px', color: theme.textSecondary }}>
                   <div>{new Date(log.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
                   <div>{parseFloat(log.gallons).toFixed(1)} gal @ {formatCurrency(log.cost_per_gallon)}</div>
                   {log.odometer && <div>Odo: {parseInt(log.odometer).toLocaleString()}</div>}
@@ -711,7 +742,7 @@ export default function FreddyCosts() {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '12px' }}>
                 <div>
                   <label style={labelStyle}>Gallons</label>
                   <input
