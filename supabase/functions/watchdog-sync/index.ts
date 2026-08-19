@@ -27,6 +27,7 @@ import {
   attachFleetIds, upsert, pg, partnerFetch, partnerConfigured,
   type ExtractorConfig, type Integration,
 } from '../_shared/watchdog.ts'
+import { computeMeters, tripsToIntervals, odometerFromTrips } from '../_shared/fleetMeters.ts'
 
 // When every tenant's trackers live in one JobScout-owned Watchdog company,
 // there is exactly one account to poll no matter how many customers there are.
@@ -146,6 +147,7 @@ async function platformGet(path: string): Promise<any[]> {
 
 async function syncPlatform(): Promise<Record<string, unknown>> {
   const startedAt = new Date().toISOString()
+  const finishedAtIso = startedAt
   const owners = await deviceOwnerMap()
 
   const config = await loadExtractorConfig()
@@ -154,7 +156,7 @@ async function syncPlatform(): Promise<Record<string, unknown>> {
 
   const touched = new Set<number>()
   let unattributed = 0
-  const counts = { devices: 0, positions: 0, trips: 0, alerts: 0 }
+  const counts = { devices: 0, positions: 0, trips: 0, alerts: 0, engineEvents: 0, meterReadings: 0 }
   let apiCalls = 2 // /devices + /alerts; per-device trip calls added below
   let error: string | null = null
 
@@ -227,6 +229,83 @@ async function syncPlatform(): Promise<Record<string, unknown>> {
     }
     apiCalls += 1 + linked.length
     counts.trips = await upsert('fleet_trips', trips, 'company_id,external_id')
+
+    // ---- engine events -> meters ----
+    //
+    // Ignition events are the only hour source Watchdog exposes, and it
+    // returns roughly the last 30. Whatever isn't captured before it rolls
+    // off is gone for good, so the raw events are persisted first and the
+    // hours are then recomputed from the STORED set — not from this poll's
+    // slice. That makes a bug in the pairing maths a recompute rather than a
+    // permanent hole in the machine's history.
+    const tripsByDevice = new Map<string, any[]>()
+    for (const t of trips) {
+      const list = tripsByDevice.get(t.device_id) || []
+      list.push(t.raw ?? t)
+      tripsByDevice.set(t.device_id, list)
+    }
+
+    const events: any[] = []
+    for (const device of linked) {
+      const deviceId = String(device.external_id)
+      const owner = owners.get(deviceId)!
+      let rows: any[] = []
+      try {
+        rows = await platformGet(`/devices/${deviceId}/engine_change_logs`)
+      } catch (err) {
+        console.error(`[watchdog-sync] engine logs for ${deviceId}:`, (err as Error).message)
+        continue
+      }
+      for (const e of rows) {
+        if (!e?.external_id) continue
+        events.push({
+          company_id: owner.companyId, fleet_id: owner.fleetId, device_id: deviceId,
+          external_id: String(e.external_id), engine_on: !!e.engine_on,
+          occurred_at: e.createdAt ?? e.occurred_at,
+          latitude: e.latitude ?? null, longitude: e.longitude ?? null,
+          address: e.last_address ?? null, raw: e,
+        })
+      }
+    }
+    apiCalls += linked.length
+    counts.engineEvents = await upsert('fleet_engine_events', events, 'company_id,external_id')
+
+    // Recompute from everything on record for each asset.
+    for (const device of linked) {
+      const deviceId = String(device.external_id)
+      const owner = owners.get(deviceId)!
+      const stored = await pg(
+        `fleet_engine_events?company_id=eq.${owner.companyId}&device_id=eq.${encodeURIComponent(deviceId)}` +
+        `&select=engine_on,occurred_at&order=occurred_at.asc&limit=10000`,
+      ).catch(() => [])
+      if (!stored?.length) continue
+
+      const deviceTrips = tripsByDevice.get(deviceId) || []
+      const m = computeMeters(stored, tripsToIntervals(deviceTrips))
+      const odometer = odometerFromTrips(deviceTrips)
+
+      // Skip a reading that would say nothing — an asset with no ignition
+      // history yet shouldn't get a row of zeroes that later reads as
+      // 'this machine has never run'.
+      if (m.engineHours <= 0 && odometer === null) continue
+
+      await upsert('fleet_meter_readings', [{
+        company_id: owner.companyId,
+        fleet_id: owner.fleetId,
+        recorded_at: finishedAtIso,
+        engine_hours: m.engineHours,
+        // Stored as a floor, never as total idle — see fleetMeters.ts.
+        idle_hours: m.idleFloorHours,
+        odometer_miles: odometer,
+        source: 'telematics',
+        // Observed window and unpaired count travel with the number so a
+        // reader can tell a confident figure from a patchy one.
+        notes: `observed ${m.observedFrom ?? '?'} .. ${m.observedTo ?? '?'}` +
+               (m.unpaired ? ` | ${m.unpaired} unpaired event(s)` : '') +
+               (m.openSince ? ` | running since ${m.openSince}` : ''),
+      }], 'company_id,fleet_id,recorded_at,source')
+      counts.meterReadings++
+    }
 
     // ---- alerts ----
     const alerts: any[] = []
