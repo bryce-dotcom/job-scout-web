@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
+import { useFleetLifecycle } from '../../../hooks/useFleetLifecycle'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import {
@@ -58,9 +59,12 @@ export default function FreddyCosts() {
     try {
       const { data, error } = await supabase
         .from('fleet_fuel_logs')
-        .select('*, asset:fleet!asset_id(id, name, asset_id)')
+        // fleet_id / log_date, not asset_id / date. The page has been using
+        // the latter since it was written, which is why no fuel has ever
+        // been saved and every fuel figure on this screen is zero.
+        .select('*, asset:fleet!fleet_id(id, name, asset_id)')
         .eq('company_id', companyId)
-        .order('date', { ascending: false })
+        .order('log_date', { ascending: false })
       if (!error) setFuelLogs(data || [])
     } catch (e) {
       console.error('Error fetching fuel logs:', e)
@@ -87,7 +91,7 @@ export default function FreddyCosts() {
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
 
   const recentFuelLogs = useMemo(() =>
-    fuelLogs.filter(f => new Date(f.date) >= thirtyDaysAgo),
+    fuelLogs.filter(f => new Date(f.log_date) >= thirtyDaysAgo),
     [fuelLogs]
   )
 
@@ -106,23 +110,53 @@ export default function FreddyCosts() {
     [recentMaintenance]
   )
 
-  const fleetValue = useMemo(() =>
-    fleet.reduce((sum, v) => sum + (parseFloat(v.current_value) || 0), 0),
-    [fleet]
-  )
+  // Every asset's modelled worth, from the same engine the lifecycle bar uses.
+  // This previously summed fleet.current_value — a column that has never
+  // existed — so the headline value of the entire fleet was reliably $0.
+  const { byId: lifecycleById } = useFleetLifecycle(fleet)
+
+  const { fleetValue, valuedCount } = useMemo(() => {
+    let total = 0
+    let counted = 0
+    for (const v of fleet) {
+      const value = lifecycleById.get(v.id)?.lifecycle?.value
+      if (typeof value === 'number') { total += value; counted++ }
+    }
+    return { fleetValue: total, valuedCount: counted }
+  }, [fleet, lifecycleById])
 
   // Per-vehicle cost breakdown
   const vehicleCosts = useMemo(() => {
     return fleet.map(vehicle => {
-      const vFuel = fuelLogs.filter(f => f.asset_id === vehicle.id)
+      const vFuel = fuelLogs.filter(f => f.fleet_id === vehicle.id)
       const vMaint = fleetMaintenance.filter(m => m.asset_id === vehicle.id)
 
       const fuelCost = vFuel.reduce((s, f) => s + (parseFloat(f.total_cost) || 0), 0)
       const maintCost = vMaint.reduce((s, m) => s + (parseFloat(m.cost) || 0), 0)
-      const totalMiles = parseFloat(vehicle.mileage_hours) || 0
+      // The tracked meter, not fleet.mileage_hours — that field is hand-typed
+      // and stops being true the moment a tracker is fitted, which is how this
+      // table showed '--' miles for a truck with 3,898 on the clock.
+      const lc = lifecycleById.get(vehicle.id)
+      const meter = lc?.meter
+      const basis = vehicle.meter_basis === 'hours' ? 'hours' : 'miles'
+      const tracked = basis === 'hours' ? meter?.engine_hours : meter?.odometer_miles
+      const totalMiles = parseFloat(tracked ?? vehicle.mileage_hours) || 0
+
+      // Running cost per unit. Deliberately NOT the lifecycle's figure, which
+      // includes depreciation: this column sits beside fuel and maintenance
+      // and must mean the same kind of thing they do. Depreciation has its own
+      // home on the lifecycle bar, where it can be explained.
       const costPerMile = totalMiles > 0 ? (fuelCost + maintCost) / totalMiles : 0
+
+      // True cost of ownership is what it has cost so far MINUS what it is
+      // still worth — not the purchase price plus running costs, which counts
+      // the whole purchase as spent while the machine is still sellable.
       const purchasePrice = parseFloat(vehicle.purchase_price) || 0
-      const tco = purchasePrice + fuelCost + maintCost
+      const residual = typeof lc?.lifecycle?.value === 'number' ? lc.lifecycle.value : null
+      const tco = purchasePrice
+        ? (residual === null ? purchasePrice + fuelCost + maintCost
+                             : (purchasePrice - residual) + fuelCost + maintCost)
+        : fuelCost + maintCost
 
       return {
         ...vehicle,
@@ -172,8 +206,8 @@ export default function FreddyCosts() {
     try {
       const payload = {
         company_id: companyId,
-        asset_id: parseInt(fuelForm.asset_id),
-        date: fuelForm.date,
+        fleet_id: parseInt(fuelForm.asset_id),
+        log_date: fuelForm.date,
         gallons: parseFloat(fuelForm.gallons) || 0,
         cost_per_gallon: parseFloat(fuelForm.cost_per_gallon) || 0,
         total_cost: parseFloat(fuelForm.total_cost) || 0,
@@ -189,6 +223,19 @@ export default function FreddyCosts() {
           .from('fleet')
           .update({ mileage_hours: parseInt(fuelForm.odometer) })
           .eq('id', parseInt(fuelForm.asset_id))
+
+        // Also record it as a meter reading. A human reading a pump receipt
+        // is exactly the anchor telematics cannot supply — a tracker only
+        // knows miles since it was fitted — and it is the difference between
+        // a lifecycle bar that can be drawn and one that cannot.
+        await supabase.from('fleet_meter_readings').insert({
+          company_id: companyId,
+          fleet_id: parseInt(fuelForm.asset_id),
+          recorded_at: new Date(`${fuelForm.date}T12:00:00`).toISOString(),
+          odometer_miles: parseFloat(fuelForm.odometer),
+          source: 'manual',
+          notes: 'Odometer captured with a fuel entry',
+        })
       }
 
       setShowFuelModal(false)
@@ -320,6 +367,12 @@ export default function FreddyCosts() {
             icon: DollarSign,
             label: 'Fleet Value',
             value: formatCurrency(fleetValue),
+            // Coverage matters more than the total. An asset with no purchase
+            // price contributes nothing, so a bare number reads as the whole
+            // fleet being worth less than it is rather than as partly unknown.
+            sub: fleet.length
+              ? (valuedCount === fleet.length ? 'all assets valued' : `${valuedCount} of ${fleet.length} valued`)
+              : null,
             color: '#22c55e',
           },
         ].map((stat, i) => {
@@ -342,6 +395,11 @@ export default function FreddyCosts() {
               <div style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: '700', color: theme.text, marginBottom: '2px' }}>
                 {stat.value}
               </div>
+                  {stat.sub && (
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                      {stat.sub}
+                    </div>
+                  )}
               <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
                 {stat.label}
               </div>
