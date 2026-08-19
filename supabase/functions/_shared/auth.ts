@@ -64,7 +64,8 @@ export type CallerRole =
 
 export interface Caller {
   email: string
-  companyId: number
+  /** null when the signed-in user maps to no active employee row. */
+  companyId: number | null
   employeeId: number | null
   role: CallerRole
   level: number
@@ -107,7 +108,14 @@ export async function resolveCaller(
     )
     if (!res.ok) return null
     const emp = (await res.json())?.[0]
-    if (!emp || emp.company_id == null) return null
+    // A real signed-in user who maps to no active employee row is NOT an
+    // attacker — it is a fresh invite, a deactivated account, or a support
+    // login. Returning null here would 401 them out of Arnie entirely, so we
+    // return an identified caller with no tenant instead: callers must then
+    // run tool-less, which is exactly the pre-fix behaviour for that case.
+    if (!emp || emp.company_id == null) {
+      return { email, companyId: null, employeeId: null, role: 'user', level: 0 }
+    }
     // is_admin is a separate legacy boolean some tenants still set on its own.
     const level = Math.max(accessLevel(emp), emp.is_admin === true ? 3 : 0)
     return {

@@ -319,7 +319,12 @@ Deno.serve(async (req) => {
     // at another tenant by editing two fields in devtools. Whatever the
     // client sends for these is now ignored outright.
     const caller = await resolveCaller(req, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    // No user token at all (anon key, or none) — refuse rather than burn
+    // model spend for an unauthenticated caller.
     if (!caller) return jsonError('Sign in to talk to Arnie.', 401)
+    // A signed-in user with no employee row keeps chatting, just without
+    // tools: companyId stays null, so includeTools below is false and no
+    // service-role query can run. Degrading beats locking them out.
     const companyId = caller.companyId
     const role = caller.role
 

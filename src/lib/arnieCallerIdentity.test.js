@@ -9,15 +9,13 @@ import { getAccessLevel, ACCESS_LEVELS } from './accessControl'
 // because a Deno function cannot import from the Vite bundle. Two copies of
 // one rule is this codebase's oldest bug shape, so the copies are pinned here.
 //
-// The edge copy is what decides which tenant's data Arnie may read, so drift
-// is not a style problem — it is a data-isolation problem.
+// The edge copy decides which tenant's data Arnie may read, so drift is not a
+// style problem — it is a data-isolation problem.
 
 const here = dirname(fileURLToPath(import.meta.url))
-
-const authTs = readFileSync(
-  resolve(here, '../../supabase/functions/_shared/auth.ts'),
-  'utf8',
-)
+const shared = (p) => readFileSync(resolve(here, '../../supabase/functions', p), 'utf8')
+const authTs = shared('_shared/auth.ts')
+const chatTs = shared('arnie-chat/index.ts')
 
 /** Pull `const ROLE_LEVEL: Record<string, number> = { ... }` out of the TS source. */
 function edgeRoleLevels() {
@@ -65,12 +63,7 @@ describe('the edge runtime grades roles the same way the browser does', () => {
   })
 })
 
-describe('arnie-chat takes identity from the token, not the caller', () => {
-  const chatTs = readFileSync(
-    resolve(here, '../../supabase/functions/arnie-chat/index.ts'),
-    'utf8',
-  )
-
+describe('arnie-chat takes identity from the token, not from the caller', () => {
   it('does not destructure companyId or role out of the request body', () => {
     // This is the regression that matters: the body is attacker-controlled and
     // execTool runs on the service-role key, so a body-supplied company_id is
@@ -80,10 +73,27 @@ describe('arnie-chat takes identity from the token, not the caller', () => {
     expect(destructure).not.toMatch(/\brole\b/)
   })
 
-  it('resolves the caller and refuses the request when it cannot', () => {
+  it('resolves the caller and refuses when there is no user token at all', () => {
     expect(chatTs).toMatch(/const caller = await resolveCaller\(req,/)
     expect(chatTs).toMatch(/if \(!caller\) return jsonError\([^)]*401\)/)
     expect(chatTs).toMatch(/const companyId = caller\.companyId/)
     expect(chatTs).toMatch(/const role = caller\.role/)
+  })
+
+  it('gates the service-role tools on a resolved tenant, not on merely being signed in', () => {
+    // Both the streaming and non-streaming paths carry their own copy of this
+    // gate. If either stops keying on companyId, an unscoped caller reaches
+    // execTool and its service-role key.
+    expect(chatTs.match(/const includeTools = !!companyId/g) || []).toHaveLength(2)
+  })
+})
+
+describe('a signed-in user with no employee row degrades instead of being locked out', () => {
+  it('resolves to a caller with a null company rather than to null', () => {
+    // A fresh invite, a deactivated account or a support login is not an
+    // attacker. Refusing them outright would be a worse bug than the one
+    // being fixed — they lose tools, not Arnie.
+    expect(authTs).toMatch(/companyId: number \| null/)
+    expect(authTs).toMatch(/return \{ email, companyId: null, employeeId: null, role: 'user', level: 0 \}/)
   })
 })
