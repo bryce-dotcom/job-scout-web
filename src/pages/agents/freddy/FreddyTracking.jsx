@@ -209,6 +209,10 @@ export default function FreddyTracking() {
         .addTo(map)
         .bindPopup(popupContent)
 
+      // Keyed by vehicle so tapping a row in the list below can open this
+      // exact marker. On a phone the list is how you drive the map — there
+      // is no room to hunt for a pin with a fingertip.
+      marker.__vehicleId = v.id
       markersRef.current.push(marker)
     })
 
@@ -234,6 +238,41 @@ export default function FreddyTracking() {
     moving: mergedVehicles.filter(v => v.status === 'moving').length,
     parked: mergedVehicles.filter(v => v.status === 'parked').length,
     offline: mergedVehicles.filter(v => v.status === 'offline').length,
+  }
+
+  // Centre the map on one vehicle and open its popup. The list is the primary
+  // way to navigate this screen on a phone: pins are smaller than a fingertip
+  // and overlap whenever two machines are parked at the same yard.
+  // Leaflet measures its container once and caches it. The map is sized in
+  // vh on a phone, and vh changes constantly there — rotating the device, and
+  // the browser's address bar collapsing on the first scroll. Both leave the
+  // map convinced it is a different size than it is, which renders as grey
+  // tiles across half the map with no error anywhere.
+  useEffect(() => {
+    const map = mapInstanceRef.current
+    if (!map) return
+    const refresh = () => map.invalidateSize()
+    window.addEventListener('resize', refresh)
+    window.addEventListener('orientationchange', refresh)
+    // Also once after mount: the container is frequently still settling when
+    // Leaflet first measures it.
+    const settle = setTimeout(refresh, 250)
+    return () => {
+      window.removeEventListener('resize', refresh)
+      window.removeEventListener('orientationchange', refresh)
+      clearTimeout(settle)
+    }
+  }, [isMobile])
+
+  const focusVehicle = (vehicle) => {
+    const map = mapInstanceRef.current
+    if (!map || vehicle?.lat == null || vehicle?.lng == null) return
+    map.setView([vehicle.lat, vehicle.lng], Math.max(map.getZoom(), 15), { animate: true })
+    const marker = markersRef.current.find(m => m.__vehicleId === vehicle.id)
+    if (marker) marker.openPopup()
+    // Scroll the map back into view — on a phone the tapped row is usually
+    // well below the fold, so re-centring alone would change nothing visible.
+    mapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   const sectionStyle = {
@@ -320,13 +359,26 @@ export default function FreddyTracking() {
       )}
 
       {/* Map */}
-      <div style={sectionStyle}>
+      <div style={isMobile
+        ? {
+            // Break the page's 16px padding so the map runs edge to edge, and
+            // give it real height. Boxed inside a padded card it was a
+            // 358x300 stamp on a 390px screen, which is not a map.
+            margin: '0 -16px 16px',
+            borderTop: `1px solid ${theme.border}`,
+            borderBottom: `1px solid ${theme.border}`,
+            background: theme.bgCard,
+          }
+        : sectionStyle}>
         <div
           ref={mapRef}
           style={{
             width: '100%',
-            height: isMobile ? '300px' : '400px',
-            borderRadius: '8px',
+            // Tall enough to show the spread of a working day's travel, and
+            // still leaves the first list rows visible so it is obvious there
+            // is more below.
+            height: isMobile ? '52vh' : '400px',
+            borderRadius: isMobile ? 0 : '8px',
             overflow: 'hidden',
             background: theme.bg,
           }}
@@ -378,17 +430,24 @@ export default function FreddyTracking() {
       {/* Fleet Status Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+        // minmax so a long address cannot widen the track past the phone; the
+        // app root hides overflowX, so it would clip rather than scroll.
+        gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))',
         gap: '12px'
       }}>
         {filteredVehicles.map(vehicle => {
           const statusColor = STATUS_COLORS[vehicle.status]
           return (
-            <div key={vehicle.id} style={{
-              ...sectionStyle,
-              marginBottom: 0,
-              transition: 'box-shadow 0.15s',
-            }}>
+            <div
+              key={vehicle.id}
+              onClick={() => focusVehicle(vehicle)}
+              style={{
+                ...sectionStyle,
+                marginBottom: 0,
+                transition: 'box-shadow 0.15s',
+                cursor: vehicle.lat != null ? 'pointer' : 'default',
+              }}
+            >
               {/* Vehicle header */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
