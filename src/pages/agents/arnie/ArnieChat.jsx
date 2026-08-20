@@ -684,6 +684,60 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                   </>
                 )}
               </div>
+              {msg.proposal && pv0(msg).kind === 'bulk' && (() => {
+                // Every affected row is listed, deliberately. "This changes 34
+                // products" is not something a person can meaningfully approve
+                // — the whole value of the card is seeing which 34.
+                const pv = msg.proposal.preview || {}
+                const st = msg.proposalStatus
+                const rows = pv.rows || []
+                return (
+                  <div style={{
+                    marginTop: 8, background: dark.bgChat,
+                    border: `1px solid ${st === 'applied' ? 'rgba(47,125,78,0.6)' : st === 'rejected' ? dark.border : 'rgba(201,129,47,0.7)'}`,
+                    borderRadius: 12, padding: 12,
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#d9963f', marginBottom: 6 }}>
+                      {rows.length} {rows.length === 1 ? 'product' : 'products'} — {pv.label}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: dark.textSecondary, marginBottom: 10 }}>
+                      Where {pv.filter} → <span style={{ color: '#7fdba0', fontWeight: 600 }}>{String(pv.after)}</span>
+                    </div>
+                    <div style={{ maxHeight: 220, overflowY: 'auto', border: `1px solid ${dark.border}`, borderRadius: 8, marginBottom: st ? 10 : 12 }}>
+                      {rows.map((r) => (
+                        <div key={r.id} style={{
+                          display: 'flex', justifyContent: 'space-between', gap: 8,
+                          padding: '6px 10px', fontSize: 12.5, borderBottom: `1px solid ${dark.border}`,
+                        }}>
+                          <span style={{ color: dark.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
+                          {/* Quoted, because the difference is often only whitespace */}
+                          <span style={{ color: '#e88', flex: 'none', fontFamily: 'ui-monospace, monospace' }}>"{r.before}"</span>
+                        </div>
+                      ))}
+                    </div>
+                    {msg.proposalError && (
+                      <div style={{ fontSize: 12.5, color: '#e88', marginBottom: 8 }}>{msg.proposalError}</div>
+                    )}
+                    {!st ? (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button disabled={msg.proposalBusy} onClick={() => decideProposal('apply', msg.proposal.proposal.id, msg.id)} style={{
+                          flex: 1, background: '#c9812f', color: '#fff', border: 0, borderRadius: 8,
+                          padding: '9px 12px', fontWeight: 650, fontSize: 13,
+                          cursor: msg.proposalBusy ? 'default' : 'pointer', opacity: msg.proposalBusy ? 0.6 : 1,
+                        }}>{msg.proposalBusy ? 'Working…' : `Approve all ${rows.length}`}</button>
+                        <button disabled={msg.proposalBusy} onClick={() => decideProposal('reject', msg.proposal.proposal.id, msg.id)} style={{
+                          background: 'transparent', color: dark.textSecondary, border: `1px solid ${dark.border}`,
+                          borderRadius: 8, padding: '9px 14px', fontSize: 13, cursor: 'pointer',
+                        }}>Discard</button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: st === 'applied' ? '#7fdba0' : dark.textSecondary }}>
+                        {st === 'applied' ? `Applied to ${rows.length} — you can roll this back from Settings.` : 'Discarded.'}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
               {msg.proposal && pv0(msg).kind === 'record' && (() => {
                 // A record change is one field on one row, so the chip diff
                 // used for taxonomy lists would say nothing useful. What
@@ -735,7 +789,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                   </div>
                 )
               })()}
-              {msg.proposal && pv0(msg).kind !== 'record' && (() => {
+              {msg.proposal && !['record','bulk'].includes(pv0(msg).kind) && (() => {
                 const pv = msg.proposal.preview || {}
                 const afterLc = (pv.after || []).map(x => String(x).toLowerCase())
                 const beforeSet = new Set((pv.before || []).map(x => String(x).toLowerCase()))
