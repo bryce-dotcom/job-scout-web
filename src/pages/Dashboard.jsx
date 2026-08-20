@@ -495,7 +495,7 @@ export default function Dashboard() {
     fleetPM: { items: fleet.filter(f => f.next_pm_due && new Date(f.next_pm_due) < today), nav: '/fleet' },
     overdueInvoices: { items: invoices.filter(i => { if (i.payment_status !== 'Pending') return false; return Math.floor((today - new Date(i.created_at)) / 86400000) > 30 }), nav: '/invoices' },
     staleEstimates: { items: staleEstimates, nav: '/estimates' },
-    pendingTimeOff: { items: pendingTimeOff, nav: '/payroll' },
+    pendingTimeOff: { items: pendingTimeOff, nav: '/payroll#time-off-requests' },
     todaysAppts: { items: appointments.filter(a => a.start_time?.startsWith(todayStr)), nav: '/appointments' },
   }
   const visibleAlerts = ALERT_DEFS.filter(a => prefs.alerts[a.id] && alertData[a.id].items.length > 0)

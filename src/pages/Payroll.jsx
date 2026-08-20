@@ -22,6 +22,7 @@ import {
 } from '../lib/bonusCalc'
 import { syncJobBonuses, bonusJobLabel } from '../lib/bonusLedger'
 import { toast } from '../lib/toast'
+import { splitPendingRequests, daysOverdue } from '../lib/timeOffRequests'
 import { previewTypedHourImpact } from '../lib/jobHours'
 import TypedHoursReview from '../components/TypedHoursReview'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
@@ -372,6 +373,19 @@ export default function Payroll() {
   const isAdmin = checkAdmin(user)
   const isManagerPlus = checkManager(user)
   const hasHR = canViewHR(user)
+
+  // Arriving from the dashboard alert lands at the TOP of a very long page,
+  // so the time-off section may as well not exist — "press the button on the
+  // dashboard and it takes you to the payroll page where the time off requests
+  // are supposed to be... they arent there". Honour the hash once the data is
+  // in, because the section does not exist to scroll to until then.
+  useEffect(() => {
+    if (loading) return
+    const id = window.location.hash.replace(/^#/, '')
+    if (!id) return
+    const el = document.getElementById(id)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [loading])
 
   // Payroll requires BOTH Admin+ access AND the HR permission for the
   // full roster view. Non-HR users get redirected to /my-pay where they
@@ -3905,7 +3919,12 @@ export default function Payroll() {
           the feature even when nothing is pending. Pending get approve/
           deny buttons; recent (30d) shown read-only below. */}
       {isAdmin && hasHR && (() => {
-        const pending = timeOffRequests.filter(r => r.status === 'pending')
+        // Split, not filtered. Eight of the nine pending requests here have
+        // dates that already went by — the oldest raised in April for a day in
+        // January. Hiding them would quietly decide whether those days were
+        // paid time off; separating them says the decision is late, not gone.
+        const { upcoming, past } = splitPendingRequests(timeOffRequests)
+        const pending = [...upcoming, ...past]
         const history = timeOffRequests.filter(r => r.status !== 'pending').slice(0, 10)
         return (
           <div id="time-off-requests" style={{
@@ -3922,7 +3941,12 @@ export default function Payroll() {
                 : <Calendar size={18} style={{ color: theme.textMuted }} />}
               <span style={{ fontWeight: '600', color: theme.text }}>
                 Time Off Requests
-                {pending.length > 0 && <span style={{ marginLeft: 8, color: '#eab308' }}>· {pending.length} pending</span>}
+                {upcoming.length > 0 && <span style={{ marginLeft: 8, color: '#eab308' }}>· {upcoming.length} to approve</span>}
+                {past.length > 0 && (
+                  <span style={{ marginLeft: 8, color: theme.error || '#ef4444' }}>
+                    · {past.length} past the date
+                  </span>
+                )}
               </span>
             </div>
 
@@ -3949,6 +3973,19 @@ export default function Payroll() {
                     }}>{request.request_type}</span>
                   </div>
                   {request.reason && <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>&ldquo;{request.reason}&rdquo;</div>}
+                  {/* Say it on the row, not just in the header. Approving a day
+                      that has already gone by is still a real decision — it is
+                      what makes that absence paid time off rather than a gap in
+                      someone's hours — but nobody should mistake it for a plan. */}
+                  {daysOverdue(request) > 0 && (
+                    <div style={{
+                      marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600,
+                      backgroundColor: 'rgba(239,68,68,0.10)', color: theme.error || '#b91c1c',
+                    }}>
+                      Date already passed · {daysOverdue(request)} day{daysOverdue(request) === 1 ? '' : 's'} ago
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button onClick={() => handleApproveRequest(request.id)} style={{
