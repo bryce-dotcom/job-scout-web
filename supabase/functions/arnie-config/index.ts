@@ -16,6 +16,7 @@ import { applyToList, proposeChange, readList, writeList } from "../_shared/arni
 import { resolveCaller, type Caller } from "../_shared/auth.ts";
 import { isRecordTarget } from "../_shared/arnieRecords.ts";
 import { applyRecordProposal, mayChange, rollbackRecordProposal } from "../_shared/arnieRecordPropose.ts";
+import { applyBulkProposal, BULK_TARGETS, isBulkTarget, rollbackBulkProposal } from "../_shared/arnieBulk.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -41,6 +42,12 @@ function json(body: unknown, status = 200) {
 // to the target's own rule, re-checked here at decision time rather than
 // trusted from whenever the draft was made.
 async function mayDecide(rest: { url: string; key: string }, caller: Caller, prop: any) {
+  if (isBulkTarget(prop.target)) {
+    const need = BULK_TARGETS[prop.target].minLevel;
+    return caller.level >= need
+      ? { ok: true as const }
+      : { ok: false as const, error: 'Only an admin can approve a catalogue-wide change.' };
+  }
   if (isRecordTarget(prop.target)) {
     return await mayChange(rest, caller, prop.target, prop.payload?.entity_id ?? null);
   }
@@ -92,6 +99,7 @@ serve(async (req) => {
     const permitted = await mayDecide(rest, caller, prop);
     if (!permitted.ok) return json({ error: permitted.error }, 403);
     const isRecord = isRecordTarget(prop.target);
+    const isBulk = isBulkTarget(prop.target);
 
     if (action === 'reject') {
       if (prop.status !== 'pending') return json({ error: `Can't reject a ${prop.status} change.` }, 400);
@@ -101,6 +109,25 @@ serve(async (req) => {
 
     if (action === 'apply') {
       if (prop.status !== 'pending') return json({ error: `This change is already ${prop.status}.` }, 400);
+      if (isBulk) {
+        const res = await applyBulkProposal(rest, companyId, prop);
+        if (!res.ok) {
+          if (res.stale) {
+            await sb.from('arnie_proposals').update({
+              status: 'failed', error: res.error, decided_by: caller.email, decided_at: new Date().toISOString(),
+            }).eq('id', proposalId);
+            return json({ error: res.error }, 409);
+          }
+          return json({ error: res.error }, 500);
+        }
+        await sb.from('arnie_proposals').update({
+          status: 'applied', decided_by: caller.email, decided_at: new Date().toISOString(),
+        }).eq('id', proposalId);
+        await audit(sb, companyId, caller.email, `arnie_bulk_apply:${prop.target}`, proposalId, {
+          summary: prop.summary, changed: res.changed, before: prop.before_value, after: prop.after_value,
+        });
+        return json({ ok: true, status: 'applied', target: prop.target, changed: res.changed });
+      }
       if (isRecord) {
         const res = await applyRecordProposal(rest, companyId, prop);
         if (!res.ok) {
@@ -135,6 +162,17 @@ serve(async (req) => {
 
     if (action === 'rollback') {
       if (prop.status !== 'applied') return json({ error: `Only an applied change can be rolled back (this one is ${prop.status}).` }, 400);
+      if (isBulk) {
+        const res = await rollbackBulkProposal(rest, companyId, prop);
+        if (!res.ok) return json({ error: res.error }, 500);
+        await sb.from('arnie_proposals').update({
+          status: 'rolled_back', decided_by: caller.email, decided_at: new Date().toISOString(),
+        }).eq('id', proposalId);
+        await audit(sb, companyId, caller.email, `arnie_bulk_rollback:${prop.target}`, proposalId, {
+          summary: prop.summary, restored: res.restored,
+        });
+        return json({ ok: true, status: 'rolled_back', target: prop.target, restored: res.restored });
+      }
       if (isRecord) {
         const res = await rollbackRecordProposal(rest, companyId, prop);
         if (!res.ok) return json({ error: res.error }, 500);
