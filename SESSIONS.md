@@ -25,6 +25,76 @@ between one commit and the next.
 **Never commit into a dirty checkout that is not yours.** One of these trees was
 sitting with 483 uncommitted files from another session.
 
+## Starting a new piece of work
+
+```bash
+npm run fresh -- <short-name>            # cuts work/<short-name> from current origin/main
+npm run fresh -- <short-name> --carry    # ...and brings uncommitted work along
+```
+
+**Start from current main every time.** This is the single highest-value habit
+in this repo, and skipping it cost a session most of 20 Aug.
+
+That session hit three failures and treated them as three bugs:
+
+| Symptom | Actual cause |
+|---|---|
+| `npm run ship` conflicts on cherry-pick | edits reference lines that have since moved |
+| `supabase db push` rejects the migration | main has migrations the branch never saw |
+| `vercel.json` collides on every edit | local copy predates other sessions' crons |
+
+All three were one fact: the branch was cut from a copy of main **53 commits
+old**. Being behind is not an anomaly here, it is the default. Five of eight
+worktrees were 28-319 commits behind on the day this was written. A long-lived
+branch drifts on its own; nothing pulls it forward.
+
+`ship` cherry-picks, so a branch whose work has fully landed still shows as
+"ahead" forever — the ahead-count says nothing about what is unlanded. Use
+`git cherry -v origin/main HEAD` for that, and note it compares patch-ids: a
+cherry-picked commit gets a new one, so "unlanded" there means *suspected*, not
+proven. Prove it by content instead:
+
+```bash
+git format-patch -1 --stdout <sha> | git apply --check -R -
+```
+
+Applying cleanly in reverse against main means main already contains it.
+
+**Do not rebase a long-lived branch to catch up.** Cut a new one. Rebasing 50+
+commits through a shared worktree is how branches get mangled; `fresh` sidesteps
+it and takes about a second.
+
+## The staleness guard
+
+`pre-commit` blocks a commit when a **shared-surface** file is staged from a
+base 10 or more commits behind main:
+
+```
+supabase/migrations/    vercel.json    package.json    package-lock.json
+```
+
+These are the files every session edits, and where a stale copy does not merely
+conflict — it silently reverts work another session already landed.
+
+It deliberately does **not** block ordinary commits, however stale. Blocking
+every stale commit would freeze most of these worktrees to prevent a problem
+most commits never hit; app-code commits cherry-pick onto main fine from almost
+any base. Those get a one-line note instead.
+
+Override, when you genuinely mean it:
+
+```bash
+JS_STALE_OK=1 git commit ...
+```
+
+Same convention as `pre-push`'s `JS_SHIP=1`.
+
+**Never reformat a shared-surface file.** Change the lines you mean to change
+and nothing else. A `JSON.parse` → `JSON.stringify` round-trip on `vercel.json`
+rewrote every line and cost four failed ship attempts in one afternoon. When
+scripting an edit to `package.json`, preserve key order and keep the trailing
+newline.
+
 ## Landing work on main
 
 ```bash

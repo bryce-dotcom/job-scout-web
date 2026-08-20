@@ -19,7 +19,8 @@
     "where": "node scripts/where.mjs",
     "ship": "node scripts/ship.mjs",
     "deployed": "node scripts/deployed.mjs",
-    "setup:sessions": "node scripts/setup-sessions.mjs"
+    "setup:sessions": "node scripts/setup-sessions.mjs",
+    "fresh": "node scripts/fresh.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.36.0",

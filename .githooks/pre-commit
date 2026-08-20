@@ -1,0 +1,89 @@
+#!/bin/sh
+# Warn on a stale base; block only when staleness will actually cause damage.
+#
+# Every push failure in this repo on 20 Aug traced to one fact nothing
+# surfaced until it was too late: the worktree was 53 commits behind
+# origin/main. From a stale base:
+#
+#   - `npm run ship` cherry-picks onto origin/main and CONFLICTS
+#   - `supabase db push` refuses: main has migrations the branch never saw
+#   - vercel.json collides, because the local copy predates other sessions' crons
+#
+# Those are one staleness bug in three costumes. pre-push cannot catch them —
+# by then the commit is already built on the wrong base. So the check moves to
+# the moment the base gets baked in.
+#
+# It does NOT block every stale commit. Eight worktrees share this repo and
+# five of them are routinely 30-300 commits behind; blocking them all would
+# freeze four working sessions to prevent a problem most commits never hit.
+# Ordinary app-code commits cherry-pick onto main fine no matter how stale.
+#
+# Damage only happens on SHARED-SURFACE files — the ones every session edits
+# and where a stale copy silently overwrites or diverges. Those are blocked.
+#
+# Escape hatch, matching pre-push:
+#   JS_STALE_OK=1 git commit ...
+
+[ -n "$JS_STALE_OK" ] && exit 0
+
+# Never interfere with a merge/rebase/cherry-pick resolving itself.
+git_dir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+for f in MERGE_HEAD REBASE_HEAD CHERRY_PICK_HEAD BISECT_LOG; do
+  [ -e "$git_dir/$f" ] && exit 0
+done
+
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || exit 0
+[ "$branch" = "main" ] && exit 0
+[ "$branch" = "HEAD" ] && exit 0
+
+# Offline / no remote: stay silent rather than blocking work.
+git fetch --quiet origin main 2>/dev/null || exit 0
+behind=$(git rev-list --count HEAD..origin/main 2>/dev/null) || exit 0
+[ -z "$behind" ] && exit 0
+[ "$behind" -eq 0 ] && exit 0
+
+staged=$(git diff --cached --name-only 2>/dev/null)
+
+# Shared surfaces: every session edits these, and a stale copy diverges or
+# silently reverts someone else's edit. Each one cost real time today.
+shared=$(printf '%s\n' "$staged" | grep -E '^(job-scout-web/)?(supabase/migrations/|vercel\.json$|package(-lock)?\.json$)' 2>/dev/null)
+
+if [ -n "$shared" ] && [ "$behind" -ge 10 ]; then
+  cat <<EOF
+
+  Blocked: shared-surface file staged from a base $behind commits behind main.
+
+$(printf '%s\n' "$shared" | sed 's/^/      /')
+
+  These are the files every session edits. From a stale base, committing them
+  either conflicts on the way to main or silently reverts work someone else
+  already landed. That is what happened today.
+
+  Refresh just those paths from current main, then re-stage:
+
+    git fetch origin
+    git checkout origin/main -- supabase/migrations/     # if migrations
+    git checkout origin/main -- vercel.json              # if vercel.json
+
+  CAREFUL: that pulls in every such file main has, including other sessions'.
+  Stage only your own — \`git add <your file>\`, never \`git add -A\`.
+
+  Cleanest option, if this branch has no history worth keeping:
+
+    git stash -u && git fetch origin
+    git switch -c work/<short-name> origin/main && git stash pop
+
+  Override if you know exactly what you are doing:
+    JS_STALE_OK=1 git commit ...
+
+EOF
+  exit 1
+fi
+
+# Everything else: inform, never block. Stale app-code commits are fine.
+if [ "$behind" -ge 25 ]; then
+  printf '\n  note: %s commits behind origin/main — `npm run ship` may conflict.\n        Re-cut from main before starting the next piece of work.\n\n' "$behind"
+elif [ "$behind" -ge 10 ]; then
+  printf '\n  note: %s commits behind origin/main.\n\n' "$behind"
+fi
+exit 0
