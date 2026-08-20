@@ -4,6 +4,7 @@ import { useStore } from '../lib/store'
 import LifecycleInputs from '../components/LifecycleInputs'
 import RepairsPanel from '../components/RepairsPanel'
 import RecurringCostsPanel from '../components/RecurringCostsPanel'
+import AssignedOperator from '../components/AssignedOperator'
 import LifecycleBar from '../components/LifecycleBar'
 import { useFleetLifecycle } from '../hooks/useFleetLifecycle'
 import { useTheme } from '../components/Layout'
@@ -786,6 +787,10 @@ export default function FleetDetail() {
           )}
         </div>
       )}
+
+      {/* Who runs it comes before what it costs: an assignment that would not
+          survive a roadside check matters more than a cost per mile. */}
+      {asset && <AssignedOperator asset={asset} theme={theme} onChanged={fetchFleet} />}
 
       {/* Ownership facts, and what they say about keeping this machine. */}
       {asset && (

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { credentialStatus, OPERATOR_ROLES, LICENSE_CLASSES } from '../lib/driverCredentials'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import {
@@ -62,6 +63,14 @@ const emptyEmployee = {
   active: true,
   headshot_url: '',
   tax_classification: 'W2', // W2 or 1099
+  // Driving and operating. A null role means neither, which is most of an office.
+  operator_role: null,
+  license_class: '',
+  license_state: '',
+  license_last4: '',
+  license_expires: '',
+  license_endorsements: '',
+  medical_card_expires: '',
   // Multi-select pay types
   is_hourly: false,
   is_salary: false,
@@ -1386,6 +1395,27 @@ export default function Employees() {
                     }}>
                       {employee.active ? 'Active' : 'Inactive'}
                     </span>
+                    {/* On the card, not buried in the detail modal: an expired
+                        licence needs noticing without going looking for it. */}
+                    {employee.operator_role && (() => {
+                      const cred = credentialStatus(employee)
+                      const tone = cred.severity === 'error'
+                        ? { bg: 'rgba(239,68,68,0.12)', fg: '#dc2626' }
+                        : cred.severity === 'warn'
+                          ? { bg: 'rgba(234,179,8,0.15)', fg: '#8a6d08' }
+                          : { bg: 'rgba(90,99,73,0.12)', fg: '#5a6349' }
+                      const roleLabel = OPERATOR_ROLES.find(r => r.value === employee.operator_role)?.label
+                      return (
+                        <span title={cred.message} style={{
+                          fontSize: '11px', padding: '3px 10px', borderRadius: '20px',
+                          backgroundColor: tone.bg, color: tone.fg, fontWeight: 600,
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                        }}>
+                          {cred.severity === 'error' && <AlertTriangle size={10} />}
+                          {roleLabel}{employee.license_class ? " · " + employee.license_class : ""}
+                        </span>
+                      )
+                    })()}
                     {hasHR && employee.tax_classification && (
                       <span style={{
                         fontSize: '11px',
@@ -1745,7 +1775,97 @@ export default function Employees() {
                         disabled={!isEditing}
                         style={isEditing ? inputStyle : inputStyleDisabled}
                       />
+                    </div>                    {/* Driving and operating.
+                        A licence NUMBER is deliberately not collected — see the
+                        migration that added these columns. Class and expiry are
+                        what decide whether an assignment is legal; the number is
+                        only needed for DOT filings, where the physical licence is
+                        already in hand. */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={labelStyle}>Driving &amp; operating</label>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                        {[{ value: null, label: 'Neither' }, ...OPERATOR_ROLES].map(r => {
+                          const on = (formData.operator_role || null) === r.value
+                          return (
+                            <button
+                              key={r.value || 'none'}
+                              type="button"
+                              title={r.hint}
+                              onClick={() => isEditing && setFormData(prev => ({ ...prev, operator_role: r.value }))}
+                              disabled={!isEditing}
+                              style={{
+                                minHeight: '44px', padding: '0 14px', borderRadius: '8px',
+                                backgroundColor: on ? theme.accentBg : theme.bg,
+                                border: `2px solid ${on ? theme.accent : theme.border}`,
+                                color: on ? theme.accent : theme.textMuted,
+                                fontSize: '14px', fontWeight: on ? '600' : '400',
+                                cursor: isEditing ? 'pointer' : 'not-allowed', opacity: isEditing ? 1 : 0.7,
+                              }}
+                            >
+                              {r.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {/* Licence detail only matters for someone who drives. An
+                          equipment operator needs training records, not a DMV
+                          class, and asking for one produces warnings nobody can
+                          act on. */}
+                      {(formData.operator_role === 'driver' || formData.operator_role === 'both') && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 150px))', gap: '10px' }}>
+                          <div>
+                            <label style={labelStyle}>Class</label>
+                            <select
+                              value={formData.license_class || ''}
+                              disabled={!isEditing}
+                              onChange={e => setFormData(prev => ({ ...prev, license_class: e.target.value }))}
+                              style={isEditing ? inputStyle : inputStyleDisabled}
+                            >
+                              <option value="">—</option>
+                              {LICENSE_CLASSES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Expires</label>
+                            <input type="date" disabled={!isEditing}
+                              value={formData.license_expires || ''}
+                              onChange={e => setFormData(prev => ({ ...prev, license_expires: e.target.value }))}
+                              style={isEditing ? inputStyle : inputStyleDisabled} />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>State</label>
+                            <input maxLength={2} disabled={!isEditing} placeholder="UT"
+                              value={formData.license_state || ''}
+                              onChange={e => setFormData(prev => ({ ...prev, license_state: e.target.value.toUpperCase() }))}
+                              style={isEditing ? inputStyle : inputStyleDisabled} />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Last 4</label>
+                            <input maxLength={4} disabled={!isEditing} placeholder="1234"
+                              value={formData.license_last4 || ''}
+                              onChange={e => setFormData(prev => ({ ...prev, license_last4: e.target.value }))}
+                              style={isEditing ? inputStyle : inputStyleDisabled} />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Endorsements</label>
+                            <input disabled={!isEditing} placeholder="H N T"
+                              value={formData.license_endorsements || ''}
+                              onChange={e => setFormData(prev => ({ ...prev, license_endorsements: e.target.value.toUpperCase() }))}
+                              style={isEditing ? inputStyle : inputStyleDisabled} />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Medical card expires</label>
+                            <input type="date" disabled={!isEditing}
+                              value={formData.medical_card_expires || ''}
+                              onChange={e => setFormData(prev => ({ ...prev, medical_card_expires: e.target.value }))}
+                              style={isEditing ? inputStyle : inputStyleDisabled} />
+                          </div>
+                        </div>
+                      )}
                     </div>
+
+
 
                     {/* W2 / 1099 Toggle — HR-sensitive, hidden from non-HR Admins */}
                     {canViewSensitiveInfo(viewingEmployee) && (
