@@ -19,7 +19,7 @@ import FollowUpStrip from '../components/FollowUpStrip'
 import { buildLeadIndex, primaryOwnerId, leadForJob } from '../lib/jobOwnership'
 import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipelineScroll, takePipelineScroll } from '../lib/pipelinePrefs'
 import { soldTotal, periodBounds } from '../lib/soldTotals'
-import { countDueFromRows } from '../lib/followUpDue'
+import { countDueFromRows, dueKeysFromRows } from '../lib/followUpDue'
 import { pushStatus, enablePush, disablePush, PUSH_GRANTED, PUSH_UNSUPPORTED, PUSH_UNCONFIGURED, PUSH_DENIED } from '../lib/pushNotifications'
 
 const defaultTheme = {
@@ -46,6 +46,10 @@ const STATUS_MAP = {
 import { shouldShowLeadFallback, leadRendersSomewhere } from '../lib/pipelineVisibility'
 
 const LEGACY_STATUSES = ['Assigned', 'Callback', 'Converted', 'Not Qualified']
+
+// Not a stage — a saved view over the stages. Kept out of the stage lists on
+// purpose so nothing can ever drag a deal "into" it.
+const FOLLOW_UP_TAB = '__followup'
 
 // Default pipeline stages based on lead status
 const defaultStages = [
@@ -257,7 +261,7 @@ export default function SalesPipeline() {
     // now filters open stages too, so it is the filter most likely to be
     // hiding what someone is looking for.
     if (dateRange && dateRange !== 'all') out.push(DATE_RANGE_LABELS[dateRange] || dateRange)
-    if (mobileFilter && mobileFilter !== 'All') out.push(`Stage: ${mobileFilter}`)
+    if (mobileFilter && mobileFilter !== 'All') out.push(mobileFilter === FOLLOW_UP_TAB ? 'Follow-ups due' : `Stage: ${mobileFilter}`)
     return out
   }, [ownerFilter, buFilter, searchTerm, dateRange, mobileFilter, employees])
 
@@ -1619,6 +1623,12 @@ export default function SalesPipeline() {
   // so the two can never disagree. Counts scheduled callbacks that have come
   // round, not deals that have merely gone quiet.
   const dueFollowUps = useMemo(() => countDueFromRows(followUpRows), [followUpRows])
+  // WHICH ones, for the Follow-up tab. Same function the count comes from, so
+  // the tab and the badge cannot disagree.
+  const dueFollowUpKeys = useMemo(() => dueKeysFromRows(followUpRows), [followUpRows])
+  const isFollowUpDue = (lead) =>
+    dueFollowUpKeys.has(`l${lead?.id}`) ||
+    (lead?.job_id != null && dueFollowUpKeys.has(`j${lead.job_id}`))
 
   // Push opt-in. Hidden entirely when the browser cannot do it or the
   // workspace has no VAPID key — offering a button that cannot work is worse
@@ -2049,7 +2059,12 @@ export default function SalesPipeline() {
         // not on the phone" report.
         const mobileLeads = mobileFilter === 'All'
           ? salesStages.flatMap(s => getLeadsForStage(s.id))
-          : getLeadsForStage(mobileFilter)
+          : mobileFilter === FOLLOW_UP_TAB
+            // The worklist: every open deal whose callback date has arrived,
+            // wherever it sits. Deals keep their real stage — this is a view,
+            // not a column.
+            ? salesStages.flatMap(s => getLeadsForStage(s.id)).filter(isFollowUpDue)
+            : getLeadsForStage(mobileFilter)
 
         const deliveryLeadsList = filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && (s.isDelivery || s.isClosed) })
 
@@ -2057,6 +2072,11 @@ export default function SalesPipeline() {
         // worklist while every deal stays in whatever stage it is really in.
         const filterTabs = [
           { id: 'All', label: 'All', color: '#71717a' },
+          // Cole: "can i get a tab on pipe line for follow up today". The board
+          // already knew the number and showed it in a banner, then told him to
+          // "tap a red card to call" — i.e. find them yourself across every
+          // stage. This is that banner made clickable.
+          { id: FOLLOW_UP_TAB, label: dueFollowUps > 0 ? `Follow-up (${dueFollowUps})` : 'Follow-up', color: '#ef4444' },
           ...salesStages.map(s => ({ id: s.id, label: s.name, color: getStatusColor(s.id) }))
         ]
 
@@ -2156,7 +2176,7 @@ export default function SalesPipeline() {
                   that counts everything stale is too big to act on. */}
               {dueFollowUps > 0 && (
                 <div
-                  onClick={() => setMobileFilter('All')}
+                  onClick={() => setMobileFilter(FOLLOW_UP_TAB)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px',
                     padding: '10px 12px', borderRadius: '10px', cursor: 'pointer',
@@ -2167,7 +2187,7 @@ export default function SalesPipeline() {
                   <span style={{ fontSize: '13px', fontWeight: 600, color: '#991b1b' }}>
                     {dueFollowUps} follow-up{dueFollowUps === 1 ? '' : 's'} due
                   </span>
-                  <span style={{ fontSize: '11px', color: '#991b1b', opacity: 0.8 }}>tap a red card to call</span>
+                  <span style={{ fontSize: '11px', color: '#991b1b', opacity: 0.8 }}>tap to see them</span>
                 </div>
               )}
 
@@ -2396,8 +2416,14 @@ export default function SalesPipeline() {
                           </>
                         ) : (
                           <>
-                            <div style={{ fontSize: '16px', color: m.text, marginBottom: '4px' }}>No {mobileFilter === 'All' ? '' : mobileFilter + ' '}leads</div>
-                            <div style={{ fontSize: '13px', color: m.textMuted }}>Leads will appear here as they progress</div>
+                            <div style={{ fontSize: '16px', color: m.text, marginBottom: '4px' }}>
+                              {mobileFilter === FOLLOW_UP_TAB ? 'Nothing due' : `No ${mobileFilter === 'All' ? '' : mobileFilter + ' '}leads`}
+                            </div>
+                            <div style={{ fontSize: '13px', color: m.textMuted }}>
+                              {mobileFilter === FOLLOW_UP_TAB
+                                ? 'Callbacks show up here on the day you promised them.'
+                                : 'Leads will appear here as they progress'}
+                            </div>
                           </>
                         )}
                       </div>
