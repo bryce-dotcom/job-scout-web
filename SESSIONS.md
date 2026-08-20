@@ -32,6 +32,13 @@ npm run fresh -- <short-name>            # cuts work/<short-name> from current o
 npm run fresh -- <short-name> --carry    # ...and brings uncommitted work along
 ```
 
+On a branch that predates this script, use the synced copy, which works from
+any worktree on any branch:
+
+```bash
+node /c/JobScout/.jstools/fresh.mjs <short-name>
+```
+
 **Start from current main every time.** This is the single highest-value habit
 in this repo, and skipping it cost a session most of 20 Aug.
 
@@ -123,6 +130,7 @@ worktree. Use the synced copy, which works from any worktree on any branch:
 ```bash
 node /c/JobScout/.jstools/ship.mjs
 node /c/JobScout/.jstools/where.mjs
+node /c/JobScout/.jstools/fresh.mjs <short-name>
 ```
 
 `npm run setup:sessions` refreshes those from the repo, which stays the source

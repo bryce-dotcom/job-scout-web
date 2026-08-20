@@ -43,7 +43,7 @@ console.log(`hooks installed -> ${HOOKS_DST}`)
 // it, refreshed every time setup runs.
 const TOOLS_DST = join(PARENT, '.jstools')
 mkdirSync(TOOLS_DST, { recursive: true })
-for (const f of ['ship.mjs', 'where.mjs', 'deployed.mjs']) {
+for (const f of ['ship.mjs', 'where.mjs', 'deployed.mjs', 'fresh.mjs']) {
   copyFileSync(join(ROOT, 'scripts', f), join(TOOLS_DST, f))
 }
 console.log(`tools installed -> ${TOOLS_DST}  (usable from any worktree, any branch)`)
