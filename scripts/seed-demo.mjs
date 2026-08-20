@@ -35,7 +35,7 @@ const authCreate = async () => {
   const b = await r.json(); if (!r.ok) throw new Error(`auth: ${r.status} ${JSON.stringify(b)}`); return b;
 };
 
-const today = new Date('2026-08-20T12:00:00Z');
+const today = new Date();
 const dayMs = 86400000;
 const dstr = (offsetDays) => new Date(today.getTime() + offsetDays * dayMs).toISOString().split('T')[0];
 const tstr = (offsetDays) => new Date(today.getTime() + offsetDays * dayMs).toISOString();

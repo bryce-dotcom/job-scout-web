@@ -18,6 +18,8 @@ export default function DataConsoleSystem() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [resetResult, setResetResult] = useState(null)
 
   // Group settings by category
   const [categories, setCategories] = useState([])
@@ -94,6 +96,21 @@ export default function DataConsoleSystem() {
       await fetchSettings()
     } catch (err) {
       alert('Error: ' + err.message)
+    }
+  }
+
+  const handleResetDemo = async () => {
+    if (!confirm('Wipe and rebuild the Summit Field Co demo company with a fresh book of data? This deletes the current demo account and all of its data.')) return
+    setResetting(true); setResetResult(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('reset-demo', { body: {} })
+      if (error) throw error
+      if (data?.error) throw new Error(data.error)
+      setResetResult({ ok: true, text: data?.message || 'Demo reset complete.' })
+    } catch (err) {
+      setResetResult({ ok: false, text: err.message || 'Reset failed.' })
+    } finally {
+      setResetting(false)
     }
   }
 
@@ -201,6 +218,30 @@ export default function DataConsoleSystem() {
             <Plus size={16} /> Add Setting
           </button>
         </div>
+      </div>
+
+      {/* Demo environment — dev-only reset of the sales-demo company. */}
+      <div style={{ backgroundColor: adminTheme.bgCard, border: `1px solid ${adminTheme.border}`, borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: '220px' }}>
+            <div style={{ color: adminTheme.text, fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>Demo environment</div>
+            <div style={{ color: adminTheme.textMuted, fontSize: '13px', lineHeight: 1.5 }}>
+              Wipe and rebuild the <b>Summit Field Co</b> demo (demo@jobscout.app) with a fresh book of realistic data, dated to today. Run it before a demo if the account has drifted.
+            </div>
+          </div>
+          <button
+            onClick={handleResetDemo}
+            disabled={resetting}
+            style={{ padding: '10px 18px', backgroundColor: resetting ? adminTheme.bgHover : '#f26a12', border: 'none', borderRadius: '8px', color: resetting ? adminTheme.textMuted : '#fff', fontSize: '14px', fontWeight: '600', cursor: resetting ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
+          >
+            <RefreshCw size={16} /> {resetting ? 'Resetting…' : 'Reset demo data'}
+          </button>
+        </div>
+        {resetResult && (
+          <div style={{ marginTop: '14px', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', backgroundColor: resetResult.ok ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', border: `1px solid ${resetResult.ok ? adminTheme.success : adminTheme.error}`, color: resetResult.ok ? adminTheme.success : adminTheme.error }}>
+            {resetResult.text}
+          </div>
+        )}
       </div>
 
       {loading ? (
