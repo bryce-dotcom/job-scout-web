@@ -27,12 +27,35 @@ const HOOKS_DST = join(PARENT, '.githooks')
 const git = (args, cwd = ROOT) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 
 // ── 1. hooks at a stable path ────────────────────────────────────────────
+// Everything deployed below is read from origin/main, NOT from this worktree.
+// Setup gets run from whichever checkout a session happens to be sitting in,
+// and those run 28-319 commits behind. Deploying that tree's copy quietly
+// downgrades the shared hooks and tools for all eight worktrees — the same
+// staleness bug this tooling exists to prevent, pointed at itself. Reading
+// from the remote ref makes the installer independent of its caller's branch.
+try { git(['fetch', 'origin', 'main']) } catch { console.log('(offline — deploying from the local tree)') }
+
+const fromMain = (p) => {
+  try { return execFileSync('git', ['show', `origin/main:${p}`], { cwd: ROOT, encoding: 'utf8' }) }
+  catch { return null }
+}
+const listMain = (dir) => {
+  try {
+    return execFileSync('git', ['ls-tree', '--name-only', `origin/main:${dir}`], { cwd: ROOT, encoding: 'utf8' })
+      .split(/\r?\n/).map((x) => x.trim()).filter(Boolean)
+  } catch { return [] }
+}
+
 mkdirSync(HOOKS_DST, { recursive: true })
-for (const f of readdirSync(HOOKS_SRC)) {
-  copyFileSync(join(HOOKS_SRC, f), join(HOOKS_DST, f))
+const hookNames = listMain('.githooks')
+const hooks = hookNames.length ? hookNames : readdirSync(HOOKS_SRC)
+for (const f of hooks) {
+  const body = hookNames.length ? fromMain(`.githooks/${f}`) : null
+  if (body !== null) writeFileSync(join(HOOKS_DST, f), body)
+  else copyFileSync(join(HOOKS_SRC, f), join(HOOKS_DST, f))
   try { chmodSync(join(HOOKS_DST, f), 0o755) } catch { /* windows */ }
 }
-console.log(`hooks installed -> ${HOOKS_DST}`)
+console.log(`hooks installed -> ${HOOKS_DST}  [${hooks.join(', ')}] from ${hookNames.length ? 'origin/main' : 'local tree'}`)
 
 // ── 1b. the tools, at the same stable path ───────────────────────────────
 // A worktree sitting on a branch that predates these scripts gets blocked from
@@ -43,8 +66,13 @@ console.log(`hooks installed -> ${HOOKS_DST}`)
 // it, refreshed every time setup runs.
 const TOOLS_DST = join(PARENT, '.jstools')
 mkdirSync(TOOLS_DST, { recursive: true })
-for (const f of ['ship.mjs', 'where.mjs', 'deployed.mjs', 'fresh.mjs']) {
-  copyFileSync(join(ROOT, 'scripts', f), join(TOOLS_DST, f))
+// setup-sessions.mjs deploys itself too. Without that, a stale worktree runs
+// its own stale installer and re-deploys stale tools — the bootstrap hole.
+// The synced copy re-reads from origin/main on every run, so it cannot rot.
+for (const f of ['ship.mjs', 'where.mjs', 'deployed.mjs', 'fresh.mjs', 'setup-sessions.mjs']) {
+  const body = fromMain(`scripts/${f}`)
+  if (body !== null) writeFileSync(join(TOOLS_DST, f), body)
+  else if (existsSync(join(ROOT, 'scripts', f))) copyFileSync(join(ROOT, 'scripts', f), join(TOOLS_DST, f))
 }
 console.log(`tools installed -> ${TOOLS_DST}  (usable from any worktree, any branch)`)
 

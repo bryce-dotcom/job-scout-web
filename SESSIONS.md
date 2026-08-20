@@ -195,8 +195,19 @@ genuinely fixing some — never to make a failure go away.
 ## Re-running setup
 
 ```bash
-npm run setup:sessions
+node /c/JobScout/.jstools/setup-sessions.mjs
 ```
 
-Re-installs the shared hooks and re-assigns ports. Safe to re-run; run it after
-adding or removing a worktree.
+Re-installs the shared hooks, refreshes the synced tools, and re-assigns ports.
+Safe to re-run; run it after adding or removing a worktree.
+
+**Use the synced copy, not `npm run setup:sessions`.** Everything it deploys is
+read from `origin/main` rather than from the worktree it was invoked in — a
+detail that matters because setup gets run from whichever checkout a session is
+sitting in, and those run tens to hundreds of commits behind. Before this,
+running setup from a stale worktree quietly downgraded the shared hooks and
+tools for all eight worktrees: the staleness bug this tooling exists to prevent,
+aimed at itself. The synced installer deploys itself too, so it cannot rot.
+
+`npm run setup:sessions` still works and is equivalent when your worktree is
+current. It is only the stale case that differs.
