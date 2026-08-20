@@ -229,6 +229,22 @@ export default function SalesPipeline() {
   // deals — and the old empty state said "leads will appear here as they
   // progress", which reads as "you have none".
   const DATE_RANGE_LABELS = { mtd: 'This month', ytd: 'This year', last30: 'Last 30 days', last90: 'Last 90 days', custom: 'Custom dates' }
+  // The subset of activeFilterLabels worth interrupting someone over. The date
+  // range is deliberately NOT here: it is always set to something, so a banner
+  // that counted it would be permanently on screen and would stop being read.
+  // These three are the ones a rep can leave on by accident and not see —
+  // above all the search box, which on a phone is a collapsed icon.
+  const narrowingFilterLabels = useMemo(() => {
+    const out = []
+    if (searchTerm?.trim()) out.push(`Search: "${searchTerm.trim()}"`)
+    if (ownerFilter && ownerFilter !== 'all') {
+      const who = employees?.find(emp => String(emp.id) === String(ownerFilter))
+      out.push(`Rep: ${who?.name || ownerFilter}`)
+    }
+    if (buFilter && buFilter !== 'all') out.push(`Unit: ${buFilter}`)
+    return out
+  }, [searchTerm, ownerFilter, buFilter, employees])
+
   const activeFilterLabels = useMemo(() => {
     const out = []
     if (ownerFilter && ownerFilter !== 'all') {
@@ -2315,6 +2331,37 @@ export default function SalesPipeline() {
                     {mobileLeads.length}
                   </span>
                 </div>
+
+                {/* A filtered board that still has cards on it looks like an
+                    unfiltered board with fewer deals. The empty state already
+                    explained itself; a stage left holding one survivor did not,
+                    which is how Cole read "only 1 job in qualified" as the
+                    truth about his pipeline instead of the truth about his
+                    search box. Say it wherever it is true. */}
+                {mobileSalesExpanded && mobileLeads.length > 0 && narrowingFilterLabels.length > 0 && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
+                    padding: '8px 12px', margin: '0 12px 8px',
+                    backgroundColor: 'rgba(234,179,8,0.10)',
+                    border: '1px solid rgba(234,179,8,0.35)', borderRadius: '8px',
+                  }}>
+                    <Search size={13} color="#a16207" style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: '12px', color: '#a16207', minWidth: 0, flex: 1 }}>
+                      Filtered — {narrowingFilterLabels.join(' · ')}
+                    </span>
+                    <button
+                      onClick={clearPipelineFilters}
+                      style={{
+                        minHeight: '32px', padding: '0 12px', borderRadius: '6px',
+                        border: '1px solid rgba(234,179,8,0.5)', backgroundColor: 'transparent',
+                        color: '#a16207', fontSize: '12px', fontWeight: '600',
+                        cursor: 'pointer', flexShrink: 0,
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
 
                 {mobileSalesExpanded && (
                   <>

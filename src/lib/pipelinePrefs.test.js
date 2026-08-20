@@ -142,3 +142,53 @@ describe('private browsing (storage throws) must not break the page', () => {
     expect(takePipelineScroll(3)).toBeNull()
   })
 })
+
+// ── The search box is session-scoped ─────────────────────────────────────
+//
+// Cole, 20 Aug: "my pipe line on my mobile device is not pulling up any thing
+// in negotiations and only 1 job in qualified." He had 6 Negotiation quotes and
+// 19 Qualified leads at the time, all visible on his desktop. The difference
+// was a search term saved on the phone weeks earlier — localStorage is
+// per-device, and the board only ever named its filters when a stage hit zero.
+describe('a search does not outlive the session', () => {
+  it('comes back within the session, so a trip into a job keeps it', () => {
+    savePipelineFilters(3, { searchTerm: 'evergreen', ownerFilter: '16' })
+    expect(loadPipelineFilters(3).searchTerm).toBe('evergreen')
+  })
+
+  it('is gone in a new session, even though the filters remain', () => {
+    savePipelineFilters(3, { searchTerm: 'evergreen', ownerFilter: '16', buFilter: 'Energy Scout' })
+    vi.stubGlobal('sessionStorage', store())        // new tab / app relaunch
+    const got = loadPipelineFilters(3)
+    expect(got.searchTerm).toBeUndefined()
+    expect(got.ownerFilter).toBe('16')              // real preferences still survive
+    expect(got.buFilter).toBe('Energy Scout')
+  })
+
+  it('never writes the search to localStorage', () => {
+    savePipelineFilters(3, { searchTerm: 'evergreen', ownerFilter: '16' })
+    expect(JSON.stringify(localStorage._raw())).not.toContain('evergreen')
+  })
+
+  // The exact shape of Cole's phone: an old build had already written a search
+  // into localStorage. Reading it back would reproduce the bug on upgrade.
+  it('ignores a search left in localStorage by an older build', () => {
+    localStorage.setItem('pipeline_filters_3',
+      JSON.stringify({ v: 2, searchTerm: 'evergreen', ownerFilter: '16' }))
+    const got = loadPipelineFilters(3)
+    expect(got.searchTerm).toBeUndefined()
+    expect(got.ownerFilter).toBe('16')
+  })
+
+  it('restores this session\'s search even with nothing in localStorage', () => {
+    sessionStorage.setItem('pipeline_search_3', JSON.stringify({ searchTerm: 'zaxis' }))
+    expect(loadPipelineFilters(3).searchTerm).toBe('zaxis')
+  })
+
+  it('survives private mode, where storage throws', () => {
+    vi.stubGlobal('sessionStorage', { getItem: () => { throw new Error('denied') },
+                                      setItem: () => { throw new Error('denied') } })
+    expect(() => savePipelineFilters(3, { searchTerm: 'x' })).not.toThrow()
+    expect(loadPipelineFilters(3)).toEqual({})
+  })
+})
