@@ -16,7 +16,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, copyFileSync, readdirSync, chmodSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
-import { join, dirname, resolve } from 'node:path'
+import { join, dirname, resolve, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // This script runs from two places and must resolve the same paths from both:
@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url'
 // the parent folder itself and PARENT as its parent — which put .githooks and
 // .jstools at C:\ and pointed nothing at them. Detect which copy is running.
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
-const SYNCED = SCRIPT_DIR.split(/[\/]/).pop() === '.jstools'
+const SYNCED = basename(SCRIPT_DIR) === '.jstools'
 const PARENT = SYNCED ? resolve(SCRIPT_DIR, '..') : resolve(SCRIPT_DIR, '..', '..')
 
 // Git commands need a real checkout to run in. The synced copy has none of its
