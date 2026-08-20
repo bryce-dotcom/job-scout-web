@@ -228,8 +228,11 @@ export default function Layout() {
   // Menu sections for agent placement settings
   const menuSectionOptions = [
     { value: 'SALES_FLOW', label: 'Sales Flow' },
+    // Value stays OPERATIONS — it is what ai_modules rows already store. Only
+    // the label an admin reads changes.
+    { value: 'OPERATIONS', label: 'Work' },
     { value: 'CUSTOMERS', label: 'Customers' },
-    { value: 'OPERATIONS', label: 'Operations' },
+    { value: 'SUPPLY', label: 'Supply' },
     { value: 'FINANCIAL', label: 'Financial' },
     { value: 'TEAM', label: 'Team' }
   ]
@@ -241,20 +244,28 @@ export default function Layout() {
       { value: 'Leads', label: 'Under Leads' },
       { value: 'Lead Setter', label: 'Under Lead Setter' },
       { value: 'Pipeline', label: 'Under Pipeline' },
-      { value: 'Estimates', label: 'Under Estimates' },
-      { value: 'Jobs', label: 'Under Jobs' }
+      { value: 'Estimates', label: 'Under Estimates' }
     ],
     CUSTOMERS: [
       { value: '', label: '(Section level)' },
       { value: 'Customers', label: 'Under Customers' },
       { value: 'Appointments', label: 'Under Appointments' }
     ],
+    // Jobs moved here from Sales Flow, and Field Scout stays — Victor is
+    // parented under it for company 3, so dropping it would strand a live agent.
     OPERATIONS: [
       { value: '', label: '(Section level)' },
-      { value: 'Field Scout', label: 'Under Field Scout' },
+      { value: 'Jobs', label: 'Under Jobs' },
       { value: 'Job Board', label: 'Under Job Board' },
+      { value: 'Recurring Jobs', label: 'Under Recurring Jobs' },
+      { value: 'Service Visits', label: 'Under Service Visits' },
+      { value: 'Field Scout', label: 'Under Field Scout' }
+    ],
+    SUPPLY: [
+      { value: '', label: '(Section level)' },
       { value: 'Products & Services', label: 'Under Products & Services' },
-      { value: 'Inventory', label: 'Under Inventory' }
+      { value: 'Inventory', label: 'Under Inventory' },
+      { value: 'Vendors', label: 'Under Vendors' }
     ],
     FINANCIAL: [
       { value: '', label: '(Section level)' },
@@ -292,6 +303,10 @@ export default function Layout() {
   }, [companyId])
 
   // Dashboard link (always visible at top)
+  // The green 5 that used to sit on the Jobs row now sits on the WORK group.
+  // 1-4 win the work; 5 delivers it. Same colour as before so the badge people
+  // already recognise did not change meaning, only scope.
+  const WORK_STEP = { number: 5, color: '#22c55e' }
   const dashboardItem = { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
 
   // Sales Flow - Numbered steps with tooltips (per design standards)
@@ -299,12 +314,41 @@ export default function Layout() {
     { to: '/leads', icon: UserPlus, label: 'Leads', step: 1, hint: 'All potential customers start here', color: '#6b7280' },
     { to: '/lead-setter', icon: Headphones, label: 'Lead Setter', step: 2, hint: 'Call leads and schedule appointments', color: '#8b5cf6' },
     { to: '/pipeline', icon: GitBranch, label: 'Pipeline', step: 3, hint: 'Track leads through sales process', color: '#f59e0b', badgeCount: dueFollowUps },
-    { to: '/estimates', icon: FileText, label: 'Estimates', step: 4, hint: 'Create and send estimates', color: '#3b82f6' },
-    { to: '/jobs', icon: Briefcase, label: 'Jobs', step: 5, hint: 'Won estimates become jobs', color: '#22c55e' }
+    { to: '/estimates', icon: FileText, label: 'Estimates', step: 4, hint: 'Create and send estimates', color: '#3b82f6' }
+    // Jobs used to be step 5 here. It is the first step of DELIVERY, not the
+    // last step of sales, and the three other screens that mean the same thing
+    // (Job Board, Recurring Jobs, Service Visits) sat four items away in
+    // another section. The number was promising a path it did not describe.
+    // Step 5 is now the WORK group below — see WORK_STEP.
   ]
 
   // Base navigation sections (without dynamically placed agents)
   const baseNavSections = [
+    {
+      // KEY DELIBERATELY LEFT AS 'OPERATIONS'.
+      //
+      // This is not a label — it is stored data. ai_modules rows carry
+      // default_menu_section/user_menu_section, and Victor is parented under
+      // 'Field Scout' inside OPERATIONS for company 3. Renaming the key would
+      // orphan every agent placed here, across every tenant, and the field-tech
+      // filter in this file keys off it too. Retitle freely; do not rename.
+      key: 'OPERATIONS',
+      title: 'WORK',
+      step: WORK_STEP,
+      description: 'Deliver the work you sold',
+      sectionIcon: Briefcase,
+      baseItems: [
+        { to: '/jobs', icon: Briefcase, label: 'Jobs', hint: 'Won estimates become jobs' },
+        { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'Active & scheduled work — schedule and dispatch your crews across the kanban' },
+        { to: '/recurring', icon: Repeat, label: 'Recurring Jobs', hint: 'Repeat rhythms & membership plans — set a job to repeat weekly, monthly, quarterly or yearly and it spawns the next one automatically' },
+        // Renamed from "Services", which sat directly above "Products &
+        // Services" meaning something entirely different. Two controls calling
+        // themselves the same thing is why people look straight at a menu and
+        // do not find what they want.
+        { to: '/services/upcoming', icon: Wrench, label: 'Service Visits', hint: 'Upcoming visits due (warranty, annual, tune-ups) — schedule them and remind the customer' },
+        { to: '/field-scout', icon: Compass, label: 'Field Scout (Clock)', hint: 'Daily dashboard + clock in/out for field techs' }
+      ]
+    },
     {
       key: 'CUSTOMERS',
       title: 'CUSTOMERS',
@@ -316,15 +360,13 @@ export default function Layout() {
       ]
     },
     {
-      key: 'OPERATIONS',
-      title: 'OPERATIONS',
-      description: 'Scheduling, field work & inventory',
-      sectionIcon: Wrench,
+      // New key, so nothing stored anywhere points at it yet — which is why the
+      // items moved OUT of Operations are the ones with no agent children.
+      key: 'SUPPLY',
+      title: 'SUPPLY',
+      description: 'What you sell, and what you buy',
+      sectionIcon: Package,
       baseItems: [
-        { to: '/field-scout', icon: Compass, label: 'Field Scout (Clock)', hint: 'Daily dashboard + clock in/out for field techs' },
-        { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'Active & scheduled work — schedule and dispatch your crews across the kanban' },
-        { to: '/recurring', icon: Repeat, label: 'Recurring Jobs', hint: 'Repeat rhythms & membership plans — set a job to repeat weekly, monthly, quarterly or yearly and it spawns the next one automatically' },
-        { to: '/services/upcoming', icon: Wrench, label: 'Services', hint: 'Upcoming visits due (warranty, annual, tune-ups) — schedule them and remind the customer' },
         { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
         { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' },
         { to: '/vendors', icon: Building2, label: 'Vendors', hint: 'Suppliers you order parts and materials from' },
@@ -445,6 +487,8 @@ export default function Layout() {
       return {
         title: section.title,
         sectionIcon: section.sectionIcon,
+        step: section.step,
+        description: section.description,
         items
       }
     })
@@ -654,7 +698,18 @@ export default function Layout() {
             alignItems: 'center',
             gap: '6px'
           }}>
-            {SectionIcon && <SectionIcon size={12} />}
+            {/* A numbered group continues the 1-4 sales flow above it, so the
+                badge replaces the section icon rather than sitting beside it —
+                two glyphs competing at the same size read as clutter. */}
+            {section.step ? (
+              <span style={{
+                width: '18px', height: '18px', borderRadius: '5px',
+                backgroundColor: section.step.color + '20',
+                color: section.step.color,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '11px', fontWeight: '700', flexShrink: 0,
+              }}>{section.step.number}</span>
+            ) : (SectionIcon && <SectionIcon size={12} />)}
             {section.title}
           </div>
           {section.description && (
@@ -894,7 +949,7 @@ export default function Layout() {
                   fontWeight: '400',
                   lineHeight: 1.3
                 }}>
-                  Lead to estimate to job
+                  Lead to signed estimate
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
@@ -1390,7 +1445,7 @@ export default function Layout() {
                       fontWeight: '400',
                       lineHeight: 1.3
                     }}>
-                      Lead to estimate to job
+                      Lead to signed estimate
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>

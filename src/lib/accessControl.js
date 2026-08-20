@@ -129,8 +129,14 @@ export function getAllowedNavSections(user) {
   if (!ft) sections.push('SALES_FLOW')
   if (!ft) sections.push('CUSTOMERS')
 
-  // Operations: everyone, but Field Techs get filtered items inside
+  // Work (key still OPERATIONS — ai_modules rows store that string): everyone,
+  // but Field Techs get filtered items inside.
   sections.push('OPERATIONS')
+
+  // Supply — catalogue, stock and purchasing. Not a field tech's job, and they
+  // never had these items anyway (Operations was filtered to Field Scout and
+  // Job Board for them), so withholding it takes nothing away.
+  if (!ft) sections.push('SUPPLY')
 
   // Financial: Admin+
   if (level >= ACCESS_LEVELS.ADMIN) sections.push('FINANCIAL')
