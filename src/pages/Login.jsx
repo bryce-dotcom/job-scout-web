@@ -300,7 +300,7 @@ export default function Login() {
           JobScout
         </div>
         <h2 style={{ fontSize: 34, fontWeight: 850, letterSpacing: '-0.03em', lineHeight: 1.05, margin: '48px 0 0', maxWidth: '14ch', textWrap: 'balance' }}>
-          F**k the status quo.
+          Burn the status quo.
         </h2>
         <p style={{ color: '#cfcbba', fontSize: 15.5, margin: '16px 0 0', maxWidth: '34ch', lineHeight: 1.5 }}>
           The business operating system — your whole back office in one login, plus a crew of AI robots doing the busywork while you do the work.

@@ -1,6 +1,6 @@
 // ALWAYS READ JOBSCOUT_PROJECT_RULES.md BEFORE MAKING CHANGES
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate, useLocation } from 'react-router-dom'
 import { getWalkthrough } from './components/walkthroughs'
 import { supabase } from './lib/supabase'
 import { useStore } from './lib/store'
@@ -144,6 +144,7 @@ function ProtectedRoute({ children }) {
   const companyId = useStore((state) => state.companyId)
   const company = useStore((state) => state.company)
   const isLoading = useStore((state) => state.isLoading)
+  const location = useLocation()
 
   if (isLoading) {
     return (
@@ -159,9 +160,11 @@ function ProtectedRoute({ children }) {
     )
   }
 
-  // Must have companyId to access protected routes
+  // Must have companyId to access protected routes. A logged-out visitor to the
+  // home page lands on the public storefront, not a sign-in wall — deep app
+  // links still go to /login so returning users end up where they meant to.
   if (!companyId) {
-    return <Navigate to="/login" replace />
+    return <Navigate to={location.pathname === '/' ? '/pricing' : '/login'} replace />
   }
 
   // Redirect to onboarding if setup not complete
