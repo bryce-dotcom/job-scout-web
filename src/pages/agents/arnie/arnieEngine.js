@@ -522,7 +522,16 @@ export async function saveMessage(sessionId, role, content) {
     .eq('session_id', sessionId)
 }
 
-export async function updateSessionTitle(sessionId, title) {
+/**
+ * Merge keys into a session's context_json.
+ *
+ * Everything we keep about a conversation beyond its messages — the title,
+ * whether it's pinned, when it was renamed — lives in this one JSON column.
+ * Read-modify-write rather than overwrite, so adding a pin never drops the
+ * title, and so this needs no migration (which matters: other sessions have
+ * unpushed migrations sitting in front of `db push`).
+ */
+async function patchSessionContext(sessionId, patch) {
   if (!sessionId) return
   const existing = await supabase
     .from('ai_sessions')
@@ -531,13 +540,43 @@ export async function updateSessionTitle(sessionId, title) {
     .single()
 
   let ctx = {}
-  try { ctx = JSON.parse(existing.data?.context_json || '{}') } catch {}
-  ctx.title = title
+  try { ctx = JSON.parse(existing.data?.context_json || '{}') } catch { /* corrupt context reads as empty */ }
 
   await supabase
     .from('ai_sessions')
-    .update({ context_json: JSON.stringify(ctx) })
+    .update({ context_json: JSON.stringify({ ...ctx, ...patch }) })
     .eq('session_id', sessionId)
+}
+
+/** Auto-title from the opening message — never over a name someone chose. */
+export async function updateSessionTitle(sessionId, title) {
+  if (!sessionId) return
+  const { data } = await supabase
+    .from('ai_sessions')
+    .select('context_json')
+    .eq('session_id', sessionId)
+    .single()
+  try {
+    if (JSON.parse(data?.context_json || '{}').renamed === true) return
+  } catch { /* corrupt context is not a rename */ }
+  return patchSessionContext(sessionId, { title })
+}
+
+/**
+ * Rename a conversation by hand.
+ *
+ * Kept separate from updateSessionTitle because that one is called
+ * automatically from the first message of every chat. Without the flag, the
+ * auto-titler would quietly overwrite a name someone chose.
+ */
+export async function renameSession(sessionId, title) {
+  const clean = String(title || '').trim().slice(0, 120)
+  if (!clean) return
+  return patchSessionContext(sessionId, { title: clean, renamed: true })
+}
+
+export async function setSessionPinned(sessionId, pinned) {
+  return patchSessionContext(sessionId, { pinned: !!pinned })
 }
 
 export async function loadSessions() {
@@ -556,12 +595,69 @@ export async function loadSessions() {
     return []
   }
 
-  // Parse title from context_json for display
-  return (data || []).map(s => {
-    let title = 'Untitled conversation'
-    try { title = JSON.parse(s.context_json || '{}').title || title } catch {}
-    return { ...s, title }
-  })
+  // Unpack what we keep about each conversation, then float the pinned ones.
+  // A pinned conversation is one someone deliberately kept; burying it under
+  // whatever they happened to ask this morning defeats the point of pinning.
+  return (data || [])
+    .map(s => {
+      let ctx = {}
+      try { ctx = JSON.parse(s.context_json || '{}') } catch { /* corrupt context reads as empty */ }
+      return {
+        ...s,
+        title: ctx.title || 'Untitled conversation',
+        pinned: ctx.pinned === true,
+        renamed: ctx.renamed === true,
+      }
+    })
+    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
+}
+
+/**
+ * Find conversations by name OR by something said inside them.
+ *
+ * Searching titles alone is close to useless here: titles are auto-generated
+ * from the first message, so the thing you remember saying is usually in the
+ * middle of a chat called something else entirely.
+ *
+ * Content matching is restricted to the session ids already loaded for this
+ * user, so it can never surface a colleague's conversation.
+ */
+export async function searchSessions(term, sessions) {
+  const q = String(term || '').trim()
+  if (!q) return sessions
+
+  const lower = q.toLowerCase()
+  const hits = new Map()
+  for (const s of sessions) {
+    if ((s.title || '').toLowerCase().includes(lower)) hits.set(s.session_id, 'title')
+  }
+
+  const ids = sessions.map(s => s.session_id).filter(Boolean)
+  if (ids.length) {
+    const { data, error } = await supabase
+      .from('ai_messages')
+      .select('session_id, content')
+      .in('session_id', ids)
+      .ilike('content', `%${q}%`)
+      .limit(400)
+    if (error) console.error('[Arnie] message search failed:', error)
+    for (const m of data || []) {
+      if (!hits.has(m.session_id)) hits.set(m.session_id, 'message')
+      // Keep a short excerpt so the result explains why it matched.
+      if (!hits.get(`${m.session_id}:snippet`)) {
+        const i = (m.content || '').toLowerCase().indexOf(lower)
+        if (i >= 0) {
+          const from = Math.max(0, i - 40)
+          hits.set(`${m.session_id}:snippet`,
+            (from > 0 ? '…' : '') + m.content.slice(from, i + q.length + 60).replace(/\s+/g, ' ').trim() + '…')
+        }
+      }
+    }
+  }
+
+  return sessions
+    .filter(s => hits.has(s.session_id))
+    .map(s => ({ ...s, matchedOn: hits.get(s.session_id), snippet: hits.get(`${s.session_id}:snippet`) || null }))
 }
 
 export async function loadSessionMessages(sessionId) {
