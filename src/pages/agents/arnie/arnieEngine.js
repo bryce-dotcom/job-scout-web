@@ -241,7 +241,7 @@ export function detectIntent(message) {
 }
 
 // Call Claude via Supabase edge function — streams responses via SSE
-async function callClaude(conversationHistory, systemPrompt, dataContext, onChunk, companyId, role) {
+async function callClaude(conversationHistory, systemPrompt, dataContext, onChunk) {
   const contextMessage = dataContext
     ? `\n\n## Current Data Context (REAL DATA — use ONLY these facts)\nBelow is the ACTUAL company data pulled from the database. Use ONLY these numbers and facts when answering data questions. If something is not listed here AND no tool can fetch it, you do NOT have it.\n\n${dataContext}`
     : '\n\n## Current Data Context\nNo preloaded data — call a query_* tool to fetch what you need.'
@@ -262,11 +262,12 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
       'Authorization': `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
       'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
     },
+    // companyId and role are deliberately NOT sent. The edge function
+    // resolves both from the caller's JWT — a client-supplied tenant id is
+    // exactly the hole that let one company read another's data.
     body: JSON.stringify({
       messages,
       systemPrompt: fullSystemPrompt,
-      companyId,
-      role,
       stream: true,
     }),
   })
@@ -382,8 +383,7 @@ export async function sendMessageStream(message, history = [], onChunk, attachme
 
   const conversationHistory = withCurrentTurn(history, message, attachments)
 
-  const { companyId } = useStore.getState()
-  const response = await callClaude(conversationHistory, systemPrompt, dataContext, onChunk, companyId, role)
+  const response = await callClaude(conversationHistory, systemPrompt, dataContext, onChunk)
   return response
 }
 
