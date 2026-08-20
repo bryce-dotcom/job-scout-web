@@ -690,6 +690,19 @@ export function getCurrentPageContext(userId) {
 }
 
 // Get active job(s) the tech is clocked into right now
+/**
+ * Is this person on a job right now?
+ *
+ * getActiveJobContext() answers the same question, but only after assembling
+ * every line item, section, customer and product for each open job — far too
+ * much work for a boolean, and it runs on every render of the chat panel.
+ */
+export function isClockedIn(userId) {
+  if (!userId) return false
+  const { timeLogs } = useStore.getState()
+  return (timeLogs || []).some(t => t.employee_id === userId && t.is_clocked_in)
+}
+
 export function getActiveJobContext(userId) {
   const state = useStore.getState()
   const { jobs, jobLines, timeLogs, customers, products } = state

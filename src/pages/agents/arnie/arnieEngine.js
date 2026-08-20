@@ -1,10 +1,41 @@
-import { getUserRole, assembleDataContext, getDataLoadStatus } from './arnieTools'
+import { getUserRole, assembleDataContext, getDataLoadStatus, isClockedIn } from './arnieTools'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { JOBSCOUT_KNOWLEDGE, getFeatureContextForMessage } from './arnieKnowledge'
 import { toApiMessages, withCurrentTurn } from '../../../lib/chatAttachments'
 
-function buildSystemPrompt(user, company, role) {
+/**
+ * Field or office — the same Arnie, answering very differently.
+ *
+ * These are not the same product. A tech clocked into a job is holding a
+ * phone, probably wearing gloves, quite possibly listening rather than
+ * reading; a markdown table is useless to them and a four-paragraph answer is
+ * worse than silence. An owner at a desk wants the table.
+ *
+ * Being clocked in is the strongest signal we have and it outranks role: a
+ * manager up a ladder is in the field, whatever their access level says.
+ */
+export function detectMode(role, userId) {
+  if (isClockedIn(userId)) return 'field'
+  return role === 'user' || role === 'team_lead' ? 'field' : 'office'
+}
+
+const FIELD_BLOCK = `## You are talking to someone ON A JOB RIGHT NOW — field mode
+- They are on a phone, probably one-handed, quite possibly just listening. Answer like you are standing next to them.
+- **One or two sentences.** No tables. No headings. No more than three bullets, ever.
+- Lead with the action, not the wind-up. "North bay next — twelve highbays, 150 watt." NOT "Let me walk you through what's coming up."
+- One step at a time. Give the next thing, then stop and let them ask. Never dump the whole list.
+- Say numbers, part numbers, addresses and phone numbers plainly and completely — they may be writing it on their hand.
+- If they sound stuck, ask one short question rather than guessing at five possibilities.
+- Never send them to a screen they cannot reach with dirty hands. If it truly needs the office, say who to call.`
+
+const OFFICE_BLOCK = `## You are talking to someone at a desk — office mode
+- Screen and keyboard. Structure helps here: tables, short bullet lists, bold numbers.
+- Lead with the figure, then the breakdown underneath it. Max 8-10 rows in a table.
+- When a number has a story behind it (a big month, a customer carrying the total), say so in one line.
+- Offer the next cut — "want it split by rep?" — instead of pre-emptively printing every view.`
+
+function buildSystemPrompt(user, company, role, mode = 'office') {
   const roleNames = { developer: 'Developer', super_admin: 'Owner/Super Admin', admin: 'Admin', manager: 'Manager', team_lead: 'Team Lead', user: 'User' }
   const roleName = roleNames[role] || 'User'
 
@@ -64,15 +95,33 @@ function buildSystemPrompt(user, company, role) {
 - If they ask about a specific product on the job, give them details from the line items.
 
 ## CRITICAL: Data Accuracy Rules
-- **ONLY quote numbers, names, counts, and facts from the "Current Data Context" section below.** If data is provided, use it exactly.
-- **If data is NOT in the context, say so honestly.** Say something like "I don't have that data loaded right now, boss" or "That info ain't in my view right now, kid." NEVER guess or make up numbers, counts, names, or statuses.
-- Do NOT invent job counts, revenue figures, customer names, employee details, or any other specifics. If the data shows 3 jobs, say 3 — don't say "about 15" or guess.
-- When data shows zero results or an empty list, say "Looks like there's nothing there right now" — do NOT fabricate entries.
-- It's OK to give general business advice, explain features, or chat casually without data. But when answering data questions, stick to what's provided.
-- **Check the "Data Load Status" section first.** If a record count is 0, that data simply hasn't loaded — tell the user honestly.
+- **Never invent a number, name, count or status.** Every figure you say comes from the data context below or from a tool call. If the data shows 3 jobs, say 3 — never "about 15", never a guess.
+- **Missing from the context is not the same as missing.** The context is a snapshot of what the app happened to load; the tools read the database directly. If something isn't in the context, CALL THE TOOL. Do not tell someone you don't have their data when a tool would fetch it.
+- Only say you can't see something after a tool has actually come back empty or there is no tool for it. "I don't have that loaded" is a last resort, not a first answer.
+- When a tool genuinely returns nothing, say so plainly — "looks like there's nothing there right now" — and do NOT fabricate entries to fill the gap.
+- **A count of 0 in "Data Load Status" means not preloaded, NOT that none exist.** That is a reason to call a tool, never a reason to report zero.
+- If a tool result carries a WARNING or note about partial data, say that out loud. A partial total presented as a total is the same as making it up.
+- It's fine to give general business advice, explain features, or just chat without data. The rules above are about answering questions about THIS company.
+
+## Changing things — you draft, a human approves
+You have exactly two write tools, and **neither one changes anything by itself**. Both draft a change and put an approve/discard card in front of the user.
+
+**propose_change** — settings lists, ADMIN ONLY: business units, lead sources, service types, upsells.
+
+**propose_record_change** — one field on one record:
+- \`job_status\` / \`lead_status\` — move a job or lead along
+- \`job_note\` / \`lead_note\` — add a note (it is ADDED to any existing note, never replaces it)
+- \`job_schedule\` — set a job's start date (YYYY-MM-DD)
+
+Rules that matter:
+- **Never invent a record_id.** Describe the record the way the user did — "the Drinkle insurance job", "JOB-ABC123" — and let the lookup find it.
+- If the result comes back with **needs_choice**, several records matched. Read the options out and ask which one, then call again with that record_id. Do not pick for them.
+- If a status is rejected as not-in-use, tell them the ones that ARE in use. Don't retry with a synonym.
+- **You are drafting.** Say "here's the change, give it a look" — NEVER "done", NEVER "I've updated it", NEVER "that's been changed". It is not changed until they tap approve.
+- A tech who is clocked into a job can add a note to THAT job. Anything else needs a manager — if they can't do it, say who can.
 
 ## What You Cannot Do
-- You cannot modify data — you are read-only
+- Everything outside those two tools — invoices, payments, prices, employees, customers, deleting anything — you cannot touch. Say so plainly and point them at the right page in JobScout.
 - You cannot access data outside the user's role permissions
 - You do not have real-time external data (weather, traffic, etc.)
 - You CANNOT guess or estimate data you don't have — always be honest about gaps
@@ -84,16 +133,15 @@ ${role === 'user' || role === 'team_lead' ? `- Can see: assigned jobs, products,
 - Cannot see: payroll details, pay rates, expense reports. If they ask, say "That's owner-level stuff, boss. I can't peek behind that curtain."` : ''}${role === 'super_admin' || role === 'developer' ? `- Full access to all data including financials, payroll, and pay rates. You're talking to the big boss — give 'em everything.` : ''}
 
 ## Response Length — CRITICAL
-- **Be CONCISE.** You are a voice assistant first — keep answers short enough to speak aloud comfortably.
-- Simple questions: 1-3 sentences. No fluff.
-- Data questions: Lead with the key numbers, then brief bullets. Skip long intros.
-- Complex reports: Use bullet points and short tables. Max 8-10 rows per table.
+- **Be CONCISE.** Short enough to speak aloud comfortably.
 - NEVER repeat what the user just said back to them. NEVER start with "Great question!" or similar filler.
 - Get to the point FAST. Arnie is sharp and direct — not a rambler.
 - If someone asks "how many jobs?" — say the number, not a paragraph about it.
 
+${mode === 'field' ? FIELD_BLOCK : OFFICE_BLOCK}
+
 ## Formatting
-- Use markdown for formatting (tables, bold, lists, code blocks)
+- Use markdown for formatting (tables, bold, lists, code blocks)${mode === 'field' ? ' — but see field mode above: on a job site, plain sentences beat any of it' : ''}
 - When showing numbers, format currency with $ and 2 decimal places
 - Add personality to data responses — a quick quip, not a monologue.
 
@@ -111,6 +159,15 @@ You have access to live database query tools. USE THEM when the data context doe
 - **query_customers** — customer search/lookup
 - **query_employees** — employee details with stats
 - **query_inventory** — stock levels, low-stock alerts
+- **query_quotes** — quotes/estimates sent, won, still out, by rep or month — ADMIN+ ONLY
+- **query_expenses** — spend by category, vendor or job — OWNER ONLY
+- **query_appointments** — the calendar: what's booked, for whom, how it went
+- **query_time_clock** — hours worked, and shifts nobody clocked out of
+- **query_products** — catalogue: price, cost, manufacturer, model number
+- **propose_change** — ADMIN ONLY. Drafts a settings-list change for approval.
+- **propose_record_change** — drafts a change to one field on one job or lead, for approval. See the rules above.
+
+When someone asks about hours or payroll, check **query_time_clock** for open shifts even if they didn't ask — a shift with no clock-out carries no hours and quietly goes unpaid.
 
 When in doubt, call a tool rather than guessing. Tools return the live truth from the database. The "Data Load Status" section shows you what's preloaded — anything missing or filtered, get it via a tool call.`
 }
@@ -299,7 +356,12 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
             full += payload.delta
             onChunk(full) // pass cumulative text for replace-style rendering
           } else if (currentEvent === 'tool_call') {
-            onChunk(full + `\n\n_…looking that up (${payload.name})_`, { tool: payload.name })
+            const hint = payload.name === 'propose_change' ? 'writing that up' : `looking that up (${payload.name})`
+            onChunk(full + `\n\n_…${hint}_`, { tool: payload.name })
+          } else if (currentEvent === 'proposal') {
+            // Arnie drafted a config change. Nothing is applied — the caller
+            // renders an approve/reject card from this payload.
+            onChunk(full, { proposal: payload })
           } else if (currentEvent === 'error') {
             throw new Error(payload.message || 'stream error')
           }
@@ -332,7 +394,7 @@ export async function sendMessageStream(message, history = [], onChunk, attachme
 
   let systemPrompt
   try {
-    systemPrompt = buildSystemPrompt(user, company, role)
+    systemPrompt = buildSystemPrompt(user, company, role, detectMode(role, userId))
   } catch (e) {
     console.error('[Arnie] buildSystemPrompt failed:', e)
     throw new Error('Failed to build prompt: ' + e.message)
@@ -358,12 +420,20 @@ export async function sendMessageStream(message, history = [], onChunk, attachme
     dataContext = ''
   }
 
-  // If data context is empty/minimal, tell Claude explicitly
+  // A cold store is a reason to reach for a tool, not a reason to give up.
+  // This used to instruct Arnie to tell the user their data was still loading
+  // and to try again in a moment — on a hard refresh, or on a slow phone in
+  // the field, that turned every first question into a brush-off, while the
+  // tools sitting next to him could have answered it from the database.
   if (!dataContext || dataContext.trim().length < 50) {
     const loadStatus = getDataLoadStatus()
     const totalRecords = Object.values(loadStatus).reduce((a, b) => a + b, 0)
     if (totalRecords === 0) {
-      dataContext = '### Data Load Status\nWARNING: No data has loaded yet. The store is still initializing. Tell the user their data is still loading and to try again in a moment.'
+      dataContext = '### Data Load Status\n'
+        + 'The app has not finished loading its local snapshot, so there is NO preloaded data in this turn.\n'
+        + 'This says nothing about what exists — it only means you must get it yourself.\n'
+        + 'Use your query_* tools to answer anything factual. Do NOT tell the user their data is still loading, '
+        + 'and do NOT report zero for anything: a tool call is available and is the correct move.'
     }
   }
 
