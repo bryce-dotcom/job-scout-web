@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -120,6 +120,34 @@ export default function Login() {
       setLoading(false)
     }
   }
+
+  // One-click demo — sign into the shared, read-to-explore demo company. Reached
+  // from the storefront's "Try the live demo" button (/login?demo=1) or the link
+  // on this page. DEMO is a throwaway public account by design.
+  const DEMO = { email: 'demo@jobscout.app', password: 'Demo1234!' }
+  const handleDemoLogin = async () => {
+    setLoading(true); setError(null); setMessage(null)
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword(DEMO)
+      if (authError) throw authError
+      const result = await lookupEmployeeAndCompany(data.user.email)
+      if (!result.success) throw new Error(result.error)
+      setUser(result.employee)
+      setCompany(result.company)
+      checkDeveloperStatus().catch(() => {})
+      navigate('/')
+    } catch (err) {
+      console.error('[Login] Demo login error:', err)
+      setError('The live demo is temporarily unavailable — please try again in a moment.')
+      setLoading(false)
+    }
+  }
+
+  // Auto-launch the demo when arriving from /login?demo=1 (storefront button).
+  useEffect(() => {
+    if (params.get('demo') === '1') handleDemoLogin()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleBetaSignup = async (e) => {
     e.preventDefault()
@@ -405,6 +433,10 @@ export default function Login() {
 
                 <button onClick={handleGoogleOAuth} style={{ width: '100%', padding: 14, backgroundColor: '#fff', color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 11, fontSize: 15, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxSizing: 'border-box' }}>
                   <GoogleIcon /> Sign in with Google
+                </button>
+
+                <button type="button" onClick={handleDemoLogin} disabled={loading} style={{ width: '100%', marginTop: 12, padding: 14, backgroundColor: theme.accentBg, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: 11, fontSize: 15, fontWeight: 700, cursor: loading ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxSizing: 'border-box', opacity: loading ? 0.6 : 1 }}>
+                  Explore the live demo <ArrowRight size={16} />
                 </button>
 
                 <div style={{ marginTop: 22, textAlign: 'center', fontSize: 14, color: theme.textMuted }}>

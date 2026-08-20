@@ -431,8 +431,9 @@ export default function Pricing() {
                 <p className="lede">One system for the entire operation — sales, jobs, invoicing, books, payroll — running on AI with enough compute to handle your whole back office while you’re out doing the work. Not a CRM. Not another app to babysit. A business operating system so far ahead it makes whatever you’re running now look like a museum piece — and it’s going to blow your freaking mind.</p>
                 <div className="cta-row">
                   <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
-                  <a className="btn btn-ghost on-dark" href="#pr-compare">See how it compares</a>
+                  <button className="btn btn-ghost on-dark" onClick={() => navigate('/login?demo=1')}>Try the live demo <Icon id="i-arrow" /></button>
                 </div>
+                <a href="#pr-compare" style={{ display: 'inline-block', marginTop: 14, fontSize: 14, color: '#bcc0ad', textDecoration: 'underline', textUnderlineOffset: 3 }}>or see how it compares →</a>
                 <div className="trust">
                   <span><Icon id="i-check" /> Live in an afternoon</span>
                   <span><Icon id="i-check" /> No consultants, no six-month rollout</span>
@@ -672,7 +673,7 @@ export default function Pricing() {
               <p>Set it up this afternoon, import your customers in one click, and let the robots take the busywork. Cancel anytime — though something tells me you won’t miss the data entry.</p>
               <div className="cta-row">
                 <button className="btn btn-viz" onClick={toPlans}>Start your free trial <Icon id="i-arrow" /></button>
-                <a className="btn btn-ghost on-dark" href="#pr-compare">Compare the platforms</a>
+                <button className="btn btn-ghost on-dark" onClick={() => navigate('/login?demo=1')}>Try the live demo <Icon id="i-arrow" /></button>
               </div>
             </div>
           </div>
