@@ -30,7 +30,9 @@ import PlanMeasure from '../../../components/don/PlanMeasure'
 import {
   T, Screen, Card, Btn, Chip, Field, TextInput, NumInput, Select, Sheet,
   Empty, Badge, SectionLabel, Note, StatBar, SourceBadge, fmtNum, fmtMoney,
+  STATBAR_HEIGHT,
 } from '../../../components/don/DonUI'
+import { MOBILE_TABBAR_HEIGHT } from '../../../components/AgentHeader'
 
 const SOIL_OPTIONS = Object.entries(SOIL_PROFILES).map(([value, s]) => ({ value, label: s.label }))
 const EQUIP_OPTIONS = Object.entries(EQUIPMENT).map(([value, e]) => ({ value, label: e.label }))
@@ -340,7 +342,15 @@ export default function DonTakeoffDetail() {
   }
 
   const geometry = WORK_TYPES[draft.work_type]?.geometry
-  const barHeight = isMobile ? 84 : 0
+  // The phone stacks up to three fixed bars along the bottom: the agent tab
+  // bar, Don's running total above it, and push-to-quote above that when it's
+  // showing. The page has to clear whichever are present — 9px short and the
+  // last line of the exclusions sits behind a button.
+  const PUSH_BAR = 64
+  const showsPushBar = isMobile && rows.length > 0 && !takeoff?.quote_id
+  const barHeight = isMobile
+    ? STATBAR_HEIGHT + MOBILE_TABBAR_HEIGHT + (showsPushBar ? PUSH_BAR : 0) + 16
+    : 0
 
   return (
     <div style={{ background: T.bg, minHeight: '100%' }}>
@@ -550,7 +560,11 @@ export default function DonTakeoffDetail() {
 
       {/* Phone-only push bar sits above the stat bar as a full-width action */}
       {isMobile && rows.length > 0 && !takeoff.quote_id && (
-        <div style={{ position: 'fixed', bottom: barHeight, left: 0, right: 0, padding: '0 14px 8px', zIndex: 899 }}>
+        <div style={{
+          position: 'fixed',
+          bottom: `calc(${MOBILE_TABBAR_HEIGHT}px + ${STATBAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
+          left: 0, right: 0, padding: '0 14px 8px', zIndex: 54,
+        }}>
           <Btn onClick={pushToQuote} disabled={!result.ready_to_send || pushing} full variant="clay">
             <Send size={18} /> {pushing ? 'Pushing…' : result.ready_to_send ? 'Push to quote' : 'Not ready to send'}
           </Btn>

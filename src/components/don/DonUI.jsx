@@ -12,6 +12,7 @@
 
 import { useEffect } from 'react'
 import { X } from 'lucide-react'
+import { MOBILE_TABBAR_HEIGHT } from '../AgentHeader'
 
 export const T = {
   bg: '#f7f5ef', bgCard: '#ffffff', bgSunk: '#f2efe6', border: '#d6cdb8',
@@ -336,6 +337,16 @@ export function Sheet({ open, onClose, title, children, footer, isMobile }) {
   )
 }
 
+// Height of Don's own bottom bar, so callers can pad the page for both it
+// and the agent tab bar beneath it.
+export const STATBAR_HEIGHT = 69
+
+// On a phone the agent workspace now owns the very bottom of the screen with a
+// fixed tab bar. Don's running total sits directly above it rather than on top
+// of it — two fixed bars fighting for bottom:0 means one of them wins and the
+// other may as well not exist.
+export const MOBILE_BOTTOM_OFFSET = `calc(${MOBILE_TABBAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))`
+
 // ── The running total bar ────────────────────────────────────────────────
 // Pinned to the bottom on a phone. An excavator adding items wants to watch
 // the yardage and the dollar figure move as they go — that's the whole feel
@@ -345,13 +356,17 @@ export function StatBar({ stats, action, isMobile }) {
   return (
     <div style={{
       position: isMobile ? 'fixed' : 'sticky',
-      bottom: 0, left: 0, right: 0,
+      // The agent workspace owns bottom:0 on a phone now. Two fixed bars
+      // claiming the same edge means one wins and the other may as well not
+      // exist, so this one sits directly above the tab bar.
+      bottom: isMobile ? MOBILE_BOTTOM_OFFSET : 0,
+      left: 0, right: 0,
       background: T.bgCard,
       borderTop: `1px solid ${T.border}`,
       boxShadow: '0 -2px 12px rgba(44,53,48,0.10)',
-      zIndex: 900,
+      // Under the tab bar (62) and its More sheet (60), over page content.
+      zIndex: isMobile ? 55 : 900,
       padding: '10px 14px',
-      paddingBottom: `calc(10px + env(safe-area-inset-bottom, 0px))`,
       display: 'flex', alignItems: 'center', gap: 12,
       minWidth: 0,
     }}>
