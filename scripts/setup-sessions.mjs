@@ -19,8 +19,30 @@ import { mkdirSync, copyFileSync, readdirSync, chmodSync, writeFileSync, readFil
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), '..'))
-const PARENT = resolve(ROOT, '..')
+// This script runs from two places and must resolve the same paths from both:
+// scripts/ inside a worktree, and the synced deployment in <parent>/.jstools.
+// Assuming the first (ROOT = script/..) makes the synced copy compute ROOT as
+// the parent folder itself and PARENT as its parent — which put .githooks and
+// .jstools at C:\ and pointed nothing at them. Detect which copy is running.
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
+const SYNCED = SCRIPT_DIR.split(/[\/]/).pop() === '.jstools'
+const PARENT = SYNCED ? resolve(SCRIPT_DIR, '..') : resolve(SCRIPT_DIR, '..', '..')
+
+// Git commands need a real checkout to run in. The synced copy has none of its
+// own, so borrow the first worktree under PARENT; it is only ever used to reach
+// origin/main, so any of them will do.
+const findCheckout = () => {
+  for (const d of readdirSync(PARENT)) {
+    const cand = join(PARENT, d)
+    try { if (existsSync(join(cand, '.git'))) return cand } catch { /* not readable */ }
+  }
+  return null
+}
+const ROOT = SYNCED ? findCheckout() : resolve(SCRIPT_DIR, '..')
+if (!ROOT) {
+  console.error(`no git checkout found under ${PARENT} — cannot resolve origin/main`)
+  process.exit(1)
+}
 const HOOKS_SRC = join(ROOT, '.githooks')
 const HOOKS_DST = join(PARENT, '.githooks')
 
