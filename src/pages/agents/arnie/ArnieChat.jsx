@@ -789,7 +789,12 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                   </div>
                 )
               })()}
-              {msg.proposal && !['record','bulk'].includes(pv0(msg).kind) && (() => {
+              {/* Matched on what this card IS, not on what it is not. The
+                  previous "anything that isn't a record" test meant a preview
+                  shape this build had never seen fell in here and crashed on
+                  the .map below. An unknown kind now renders nothing at all,
+                  which is the correct thing to do with a card you cannot draw. */}
+              {msg.proposal && Array.isArray(pv0(msg).after) && (() => {
                 const pv = msg.proposal.preview || {}
                 const afterLc = (pv.after || []).map(x => String(x).toLowerCase())
                 const beforeSet = new Set((pv.before || []).map(x => String(x).toLowerCase()))
