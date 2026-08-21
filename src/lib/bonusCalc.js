@@ -2,7 +2,11 @@
 // Used by both Payroll.jsx (admin view) and FieldScout.jsx (tech view)
 // so every surface computes bonuses identically.
 
-import { verificationRequiredFor } from './verificationPolicy'
+// Explicit .js: Vite resolves extensionless imports at build time, but this
+// module is dynamic-imported by api/cron/resync-bonuses.js and runs under
+// Node's ESM loader on Vercel, which does not. Without it the cron dies with
+// 'Cannot find module' on every run while the frontend works fine.
+import { verificationRequiredFor } from './verificationPolicy.js'
 
 // Default bi-weekly anchor: a known Friday payday in 2024. Companies on
 // bi-weekly should set their own pay_anchor_date in payroll_config; this

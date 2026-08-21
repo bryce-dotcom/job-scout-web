@@ -23,7 +23,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    // bonusCalc is pure ESM (0 imports) under src/ — dynamic-import it so the
+    // bonusCalc is pure ESM under src/ (its own imports must carry .js) — dynamic-import it so the
     // nightly math is identical to what Payroll runs. No duplication, no drift.
     const { computeJobBonusRows, timeClockToJobHours } = await import('../../src/lib/bonusCalc.js')
     void timeClockToJobHours
