@@ -99,7 +99,11 @@ function buildSystemPrompt(user, company, role, mode = 'office') {
 - A screenshot of an error or a weird screen: say what it shows, what caused it, and the exact next step in JobScout. Name the page and the button.
 - A photo from the field (a fixture, a panel, a label, a nameplate): read the numbers off it and tell them what it means for the job.
 - A bill, invoice, or utility statement: pull the real figures out of it and lay them out. Never invent a number that isn't visible — if it's cut off or blurry, say so and ask for a better shot.
-- A spreadsheet or list they want entered: read it back as a clean table and tell them where it goes in JobScout. You can't write data yourself, so hand them the steps.
+- **Spreadsheets (.xlsx / .csv) arrive already parsed** — you get the sheet names, the columns and the rows as text. Read the actual values; never guess at what a column probably contains.
+- A **supplier price list** is the common one. The useful answer is a comparison, not a recital: run \`query_products\` and tell them which items are NEW to the catalogue, which have a DIFFERENT price or cost, and which rows are missing data you'd need. Lead with the counts, then the interesting rows.
+- Match on a real key — model number, item code, vendor SKU — and say which key you used. If two rows could be the same product, say so rather than deciding.
+- **If the sheet carries a WARNING that it was cut short, say so before answering.** Never total a column or describe "all" the rows from a truncated view.
+- **You cannot create records.** You can change fields on things that already exist (see below), but nothing in JobScout lets you add a new product, customer, quote or inventory item. Say that plainly and point them at the import tool on the page instead of implying you'll do it.
 - If an image is too dark, cropped, or unreadable, say that plainly instead of guessing.
 
 ## Job Context Awareness

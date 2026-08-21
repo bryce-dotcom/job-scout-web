@@ -567,8 +567,16 @@ async function execTool(name: string, input: any, caller: Caller) {
 
     if (name === 'query_products') {
       const grouping = input.group_by && input.group_by !== 'none'
+      // Never `*`. products_services carries ~50 columns including
+      // datasheet_json and a handful of URLs, none of which help answer a
+      // question about the catalogue. Selecting everything for 200 products
+      // produced a 232 KB tool result — roughly 64,000 tokens — and the next
+      // request to the model failed outright, which surfaced as "AI analysis
+      // failed" with no clue that size was the cause. Ask for the columns the
+      // answer needs.
       const select = isAdmin
-        ? '*'
+        ? 'id,item_id,name,description,type,unit_price,cost,markup_percent,product_category,'
+          + 'manufacturer,model_number,active,vendor_sku,default_vendor_id,lead_time_days'
         : 'id,item_id,name,description,type,unit_price,product_category,manufacturer,model_number,active'
       const params = new URLSearchParams({ company_id: `eq.${companyId}`, select })
       if (input.active_only !== false) params.append('active', 'eq.true')

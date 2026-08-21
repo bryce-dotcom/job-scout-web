@@ -1,3 +1,6 @@
+import * as XLSX from 'xlsx'
+import { workbookToText } from './sheetText'
+
 // Attachments for AI chat (Arnie).
 //
 // ONE definition of what an attachment is: what we accept, how big it may be,
@@ -19,7 +22,19 @@ export const MAX_PDF_BYTES = 10 * 1024 * 1024     // no downscale possible, goes
 // gif/webp are accepted by the API but we keep the picker to what people
 // actually paste: screenshots and photos.
 export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
-export const ACCEPT_ATTR = 'image/png,image/jpeg,image/gif,image/webp,application/pdf'
+
+// Spreadsheets are parsed here rather than uploaded. A model cannot read an
+// .xlsx — it is a zip of XML — so the grid is turned into text in the browser
+// and sent as text. Supplier price lists are the reason this exists.
+export const SHEET_TYPES = [
+  'text/csv',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+]
+export const MAX_SHEET_BYTES = 15 * 1024 * 1024
+
+export const ACCEPT_ATTR =
+  'image/png,image/jpeg,image/gif,image/webp,application/pdf,.csv,.xls,.xlsx'
 
 // How many recent user turns keep their images attached. Images are ~1600
 // tokens each; carrying every one forever makes a long conversation cost more
@@ -32,11 +47,15 @@ export function attachmentKind(file) {
   const type = (file?.type || '').toLowerCase()
   if (type === 'application/pdf') return 'pdf'
   if (IMAGE_TYPES.includes(type)) return 'image'
+  if (SHEET_TYPES.includes(type)) return 'sheet'
   // Some browsers hand over an empty type for files picked from cloud
   // storage — fall back to the extension rather than rejecting outright.
   const name = (file?.name || '').toLowerCase()
   if (name.endsWith('.pdf')) return 'pdf'
   if (/\.(png|jpe?g|gif|webp)$/.test(name)) return 'image'
+  // Windows and several cloud pickers hand over a blank or wrong MIME type for
+  // spreadsheets, so the extension is the reliable signal, not the fallback.
+  if (/\.(csv|xlsx?|xlsm)$/.test(name)) return 'sheet'
   return null
 }
 
@@ -45,6 +64,7 @@ function mediaTypeFor(file, kind) {
   if (type) return type
   if (kind === 'pdf') return 'application/pdf'
   const name = (file?.name || '').toLowerCase()
+  if (kind === 'sheet') return name.endsWith('.csv') ? 'text/csv' : SHEET_TYPES[2]
   if (name.endsWith('.png')) return 'image/png'
   if (name.endsWith('.gif')) return 'image/gif'
   if (name.endsWith('.webp')) return 'image/webp'
@@ -60,10 +80,11 @@ export function formatBytes(bytes) {
 // Human message, not a code. This is shown to a tech standing in a warehouse.
 export function rejectReason(file) {
   const kind = attachmentKind(file)
-  if (!kind) return `${file?.name || 'That file'} isn't something I can read — send a photo, a screenshot, or a PDF.`
-  const limit = kind === 'pdf' ? MAX_PDF_BYTES : MAX_IMAGE_BYTES
+  if (!kind) return `${file?.name || 'That file'} isn't something I can read — send a photo, a screenshot, a PDF or a spreadsheet.`
+  const limit = kind === 'pdf' ? MAX_PDF_BYTES : kind === 'sheet' ? MAX_SHEET_BYTES : MAX_IMAGE_BYTES
   if ((file?.size || 0) > limit) {
-    return `${file.name} is ${formatBytes(file.size)} — too big. Keep ${kind === 'pdf' ? 'PDFs' : 'images'} under ${formatBytes(limit)}.`
+    const what = kind === 'pdf' ? 'PDFs' : kind === 'sheet' ? 'spreadsheets' : 'images'
+    return `${file.name} is ${formatBytes(file.size)} — too big. Keep ${what} under ${formatBytes(limit)}.`
   }
   return null
 }
@@ -124,6 +145,23 @@ export async function readAttachment(file) {
   const kind = attachmentKind(file)
   const mediaType = mediaTypeFor(file, kind)
 
+  if (kind === 'sheet') {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true })
+    const sheets = wb.SheetNames.map(name => ({
+      name,
+      // raw:false gives the value as DISPLAYED — a date reads as a date and a
+      // price keeps its formatting, instead of arriving as a serial number
+      // nobody can interpret.
+      rows: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: '' }),
+    }))
+    const { text, truncated, dataRows } = workbookToText(file.name, sheets)
+    return {
+      id: `att_${Date.now()}_${seq++}`,
+      name: file.name, kind, mediaType, text, truncated, dataRows,
+      bytes: file.size, previewUrl: null,
+    }
+  }
+
   if (kind === 'pdf') {
     const data = await blobToBase64(file)
     return { id: `att_${Date.now()}_${seq++}`, name: file.name, kind, mediaType, data, bytes: file.size, previewUrl: null }
@@ -141,6 +179,8 @@ export async function readAttachment(file) {
 }
 
 export function attachmentBlock(att) {
+  // Already text by the time it gets here — the parsing happened on the way in.
+  if (att.kind === 'sheet') return { type: 'text', text: att.text || '' }
   if (att.kind === 'pdf') {
     return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: att.data } }
   }
