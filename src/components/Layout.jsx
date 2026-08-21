@@ -230,7 +230,7 @@ export default function Layout() {
     { value: 'SALES_FLOW', label: 'Sales Flow' },
     // Value stays OPERATIONS — it is what ai_modules rows already store. Only
     // the label an admin reads changes.
-    { value: 'OPERATIONS', label: 'Work' },
+    { value: 'OPERATIONS', label: 'Work / Operations' },
     { value: 'CUSTOMERS', label: 'Customers' },
     { value: 'SUPPLY', label: 'Supply' },
     { value: 'FINANCIAL', label: 'Financial' },
@@ -333,7 +333,7 @@ export default function Layout() {
       // orphan every agent placed here, across every tenant, and the field-tech
       // filter in this file keys off it too. Retitle freely; do not rename.
       key: 'OPERATIONS',
-      title: 'WORK',
+      title: 'WORK / OPERATIONS',
       step: WORK_STEP,
       description: 'Deliver the work you sold',
       sectionIcon: Briefcase,
