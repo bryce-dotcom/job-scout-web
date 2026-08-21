@@ -316,15 +316,49 @@ const PROPOSE_BULK_TOOL = {
   },
 }
 
-// Everyone can see the record tool, because a clocked-in tech is allowed to
-// note their own job; the executor decides per target and per row. The config
-// tool stays hidden from non-admins, so the model never offers a settings
-// change to someone who could not make one.
-function toolsFor(role: string) {
+// Some tool results are only useful if the caller can DRAW them. A proposal
+// comes back as an approval card, and a client that has never heard of that
+// card type cannot render it — in the worst case it crashes trying.
+//
+// This is not hypothetical. propose_bulk_change was deployed here before the
+// UI that draws its card had shipped; the then-current client routed anything
+// that was not a 'record' preview into the settings-list card, which calls
+// .map() on `after`. A bulk preview's `after` is a string, so the message list
+// threw mid-render.
+//
+// So the client declares what it can draw and the server only advertises tools
+// whose output fits. A stale tab simply is not offered the tool and Arnie says
+// he cannot do it — honest and harmless. This also means server and client
+// halves of a feature can deploy in either order, which is the general fix:
+// nobody has to remember to sequence them.
+const CARD_TOOLS: Record<string, string> = {
+  propose_change: 'config',
+  propose_record_change: 'record',
+  propose_bulk_change: 'bulk',
+}
+
+function toolsFor(role: string, cards: string[]) {
   const isAdmin = ['developer', 'super_admin', 'admin'].includes(role)
-  return isAdmin
+  const offered = isAdmin
     ? [...TOOLS, PROPOSE_TOOL, PROPOSE_RECORD_TOOL, PROPOSE_BULK_TOOL]
     : [...TOOLS, PROPOSE_RECORD_TOOL]
+  return offered.filter((t: any) => {
+    const needs = CARD_TOOLS[t.name]
+    return !needs || cards.includes(needs)
+  })
+}
+
+/**
+ * What can this client draw?
+ *
+ * Absent field = a client from before the handshake existed. Those shipped
+ * with the config and record cards, so they are credited with exactly those
+ * and nothing newer. Anything added later has to ask for itself.
+ */
+function cardsFor(body: Record<string, unknown>): string[] {
+  const declared = (body as { supports?: unknown }).supports
+  if (!Array.isArray(declared)) return ['config', 'record']
+  return declared.filter((x): x is string => typeof x === 'string')
 }
 
 // ============================================================
@@ -717,7 +751,9 @@ Deno.serve(async (req) => {
       return jsonError('ANTHROPIC_API_KEY not configured', 500)
     }
 
-    const { messages, systemPrompt, stream } = await req.json()
+    const body = await req.json()
+    const { messages, systemPrompt, stream } = body
+    const cards = cardsFor(body)
 
     // Identity comes from the JWT — NEVER from the body. `companyId` and
     // `role` used to be read off the request and handed straight to the
@@ -758,11 +794,11 @@ Deno.serve(async (req) => {
 
     // === STREAMING + TOOL USE LOOP ===
     if (stream) {
-      return streamWithTools(cleaned, systemPrompt, caller)
+      return streamWithTools(cleaned, systemPrompt, caller, cards)
     }
 
     // === NON-STREAMING (with tool support) ===
-    const reply = await callWithTools(cleaned, systemPrompt, caller)
+    const reply = await callWithTools(cleaned, systemPrompt, caller, cards)
     return new Response(JSON.stringify({ reply }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
@@ -784,7 +820,7 @@ function jsonError(msg: string, status: number, extra?: Record<string, unknown>)
 }
 
 // Run a non-streaming completion with tool use support (multi-turn)
-async function callWithTools(messages: any[], systemPrompt: string, caller: Caller): Promise<string> {
+async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[]): Promise<string> {
   const { companyId, role } = caller
   let convo = [...messages]
   // Only advertise tools if we have a companyId to scope queries safely
@@ -796,7 +832,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 4096,
         system: systemPrompt || '',
-        ...(includeTools ? { tools: toolsFor(role) } : {}),
+        ...(includeTools ? { tools: toolsFor(role, cards) } : {}),
         messages: convo,
       },
     )
@@ -824,7 +860,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
 }
 
 // Streaming version with tool support — emits SSE
-async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller) {
+async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[]) {
   const { companyId, role } = caller
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -848,7 +884,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               model: 'claude-sonnet-4-5-20250929',
               max_tokens: 4096,
               system: systemPrompt || '',
-              ...(includeTools ? { tools: toolsFor(role) } : {}),
+              ...(includeTools ? { tools: toolsFor(role, cards) } : {}),
               messages: convo,
               stream: true,
             }),

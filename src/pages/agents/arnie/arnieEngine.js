@@ -5,6 +5,22 @@ import { JOBSCOUT_KNOWLEDGE, getFeatureContextForMessage } from './arnieKnowledg
 import { toApiMessages, withCurrentTurn } from '../../../lib/chatAttachments'
 
 /**
+ * The approval-card types this build can render, declared to the server on
+ * every request. It only offers tools whose output we can draw.
+ *
+ * The reason this exists: propose_bulk_change was deployed to the edge
+ * function before the card that renders it had shipped. The client of the day
+ * routed every non-'record' preview into the settings-list card, which calls
+ * .map() on `after` — and a bulk preview's `after` is a string, so the whole
+ * message list threw mid-render. Nothing was written and nothing could be
+ * approved, but the panel broke.
+ *
+ * Keep this list honest: a card type belongs here in the same commit that
+ * teaches ArnieChat to draw it, never earlier.
+ */
+export const RENDERABLE_CARDS = ['config', 'record', 'bulk']
+
+/**
  * Field or office — the same Arnie, answering very differently.
  *
  * These are not the same product. A tech clocked into a job is holding a
@@ -332,6 +348,11 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
       messages,
       systemPrompt: fullSystemPrompt,
       stream: true,
+      // Approval cards this build knows how to draw. The server withholds any
+      // tool whose result we could not render, so the two halves of a feature
+      // can deploy in either order. Add to this list in the SAME commit that
+      // adds the card — never ahead of it.
+      supports: RENDERABLE_CARDS,
     }),
   })
 
