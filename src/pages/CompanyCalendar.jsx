@@ -11,6 +11,7 @@ import {
   groupEventsByDay,
   monthGrid,
   KINDS,
+  calendarSourcesSentence,
 } from '../lib/companyCalendar'
 
 const defaultTheme = {
@@ -110,8 +111,17 @@ export default function CompanyCalendar() {
         <CalendarDays size={22} color={theme.accent} />
         <h1 style={{ margin: 0, fontSize: isMobile ? 20 : 24, fontWeight: 800, color: theme.text }}>Company Calendar</h1>
       </div>
-      <p style={{ margin: '0 0 16px', color: theme.textMuted, fontSize: 13.5 }}>
+      {/* Say what reaches this calendar, and from where. Three things write to
+          it; a service visit due next week, a route and a fleet booking do not.
+          Nobody could tell that by looking, so someone who books one and
+          doesn't see it here has no way to know whether it failed or was never
+          going to show. The sentence is derived from KINDS, so it cannot drift
+          from what actually gets built. */}
+      <p style={{ margin: '0 0 6px', color: theme.textMuted, fontSize: 13.5 }}>
         Everything on the books in one place — sales appointments, scheduled work, and who&apos;s off.
+      </p>
+      <p style={{ margin: '0 0 16px', color: theme.textMuted, fontSize: 12 }}>
+        Shows {calendarSourcesSentence()}. Anything else — service visits, routes, fleet bookings — has its own calendar.
       </p>
 
       {/* Month nav */}

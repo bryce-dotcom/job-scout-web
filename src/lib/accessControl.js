@@ -127,7 +127,8 @@ export function getAllowedNavSections(user) {
   const sections = ['DASHBOARD']
 
   if (!ft) sections.push('SALES_FLOW')
-  if (!ft) sections.push('CUSTOMERS')
+  // CUSTOMERS section retired — Appointments nests under Lead Setter and
+  // Customers is a top-level lookup now.
 
   // Work (key still OPERATIONS — ai_modules rows store that string): everyone,
   // but Field Techs get filtered items inside.

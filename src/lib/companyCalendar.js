@@ -15,10 +15,51 @@ import { localDateStr } from './localDate'
 
 import { zonedDayKey, DEFAULT_TZ } from './dateTz'
 
+/**
+ * What writes to the Company Calendar.
+ *
+ * Bryce: "Time off writes to the company calendar, Job Board writes to the
+ * calendar and Lead Setter writes to the calendar... it should be specified
+ * how to write to the company calendar."
+ *
+ * It is specified here, and this is the whole list. Three things reach this
+ * calendar and nothing else does — a Service Visit due next Tuesday, a
+ * recurring job's next spawn, a fleet service booking and a route are all
+ * invisible on it today. That is not an oversight to fix silently; it is a
+ * decision about what "the company calendar" means, and the answer belongs in
+ * one readable place rather than spread across three loops.
+ *
+ * `writes` is what a person needs to know: which screen creates this, and what
+ * has to be true before it appears. The calendar page shows these, so nobody
+ * has to guess why their thing is or isn't on it.
+ */
 export const KINDS = {
-  sales: { id: 'sales', label: 'Sales', color: '#3b82f6' },
-  delivery: { id: 'delivery', label: 'Delivery', color: '#5a6349' },
-  timeoff: { id: 'timeoff', label: 'Time Off', color: '#a855f7' },
+  sales: {
+    id: 'sales',
+    label: 'Sales',
+    color: '#3b82f6',
+    writes: { source: 'Appointments', bookedIn: 'Lead Setter', appearsWhen: 'an appointment is booked' },
+  },
+  delivery: {
+    id: 'delivery',
+    label: 'Delivery',
+    color: '#5a6349',
+    writes: { source: 'Jobs', bookedIn: 'Job Board', appearsWhen: 'a job has a scheduled date' },
+  },
+  timeoff: {
+    id: 'timeoff',
+    label: 'Time Off',
+    color: '#a855f7',
+    writes: { source: 'Time Off Requests', bookedIn: 'Team', appearsWhen: 'a request is approved' },
+  },
+}
+
+// One sentence naming every writer, for the calendar page to print. Derived
+// from KINDS so it cannot drift from what actually gets built.
+export function calendarSourcesSentence() {
+  const parts = Object.values(KINDS).map(k => `${k.writes.source.toLowerCase()} (${k.writes.appearsWhen})`)
+  if (parts.length < 2) return parts[0] || ''
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
 }
 
 const dayKeyOfDate = (d) => String(d || '').slice(0, 10)

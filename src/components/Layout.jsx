@@ -212,9 +212,17 @@ export default function Layout() {
   const getAgentParent = (agent) => agent.user_menu_parent !== undefined ? agent.user_menu_parent : agent.default_menu_parent
 
   // Get agents for a specific section (optionally filtered by parent)
+  // A section that no longer exists must not swallow an agent. CUSTOMERS was
+  // removed when Appointments moved under Lead Setter and Customers moved to
+  // the top; no tenant currently has an agent stored there, but the placement
+  // dropdown used to offer it, and an agent pointing at a section that renders
+  // nowhere just disappears with no error. Land it somewhere visible instead.
+  const RETIRED_SECTIONS = { CUSTOMERS: 'SALES_FLOW' }
+  const liveSection = (s) => RETIRED_SECTIONS[s] || s
+
   const getAgentsForSection = (sectionName, parentLabel = null) => {
     return aiModules.filter(agent => {
-      const effectiveSection = getAgentSection(agent)
+      const effectiveSection = liveSection(getAgentSection(agent))
       const effectiveParent = getAgentParent(agent)
       if (effectiveSection !== sectionName) return false
       if (parentLabel === null) {
@@ -231,7 +239,8 @@ export default function Layout() {
     // Value stays OPERATIONS — it is what ai_modules rows already store. Only
     // the label an admin reads changes.
     { value: 'OPERATIONS', label: 'Work / Operations' },
-    { value: 'CUSTOMERS', label: 'Customers' },
+    // CUSTOMERS retired. Anything still stored against it is remapped to
+    // Sales Flow by RETIRED_SECTIONS rather than vanishing.
     { value: 'SUPPLY', label: 'Supply' },
     { value: 'FINANCIAL', label: 'Financial' },
     { value: 'TEAM', label: 'Team' }
@@ -244,11 +253,7 @@ export default function Layout() {
       { value: 'Leads', label: 'Under Leads' },
       { value: 'Lead Setter', label: 'Under Lead Setter' },
       { value: 'Pipeline', label: 'Under Pipeline' },
-      { value: 'Estimates', label: 'Under Estimates' }
-    ],
-    CUSTOMERS: [
-      { value: '', label: '(Section level)' },
-      { value: 'Customers', label: 'Under Customers' },
+      { value: 'Estimates', label: 'Under Estimates' },
       { value: 'Appointments', label: 'Under Appointments' }
     ],
     // Jobs moved here from Sales Flow, and Field Scout stays — Victor is
@@ -312,7 +317,19 @@ export default function Layout() {
   // Sales Flow - Numbered steps with tooltips (per design standards)
   const salesFlowItems = [
     { to: '/leads', icon: UserPlus, label: 'Leads', step: 1, hint: 'All potential customers start here', color: '#6b7280' },
-    { to: '/lead-setter', icon: Headphones, label: 'Lead Setter', step: 2, hint: 'Call leads and schedule appointments', color: '#8b5cf6' },
+    {
+      to: '/lead-setter', icon: Headphones, label: 'Lead Setter', step: 2,
+      hint: 'Call leads and schedule appointments', color: '#8b5cf6',
+      // Appointments nests here because Lead Setter PRODUCES them — its own
+      // description is "call leads and schedule appointments". It used to sit
+      // in a two-item CUSTOMERS section, so the flow said 1-2-3-4 while the
+      // thing step 2 creates lived somewhere else entirely. Rendered with the
+      // same indent the AI agents already use under Estimates, so the nesting
+      // reads as "part of this step" rather than as a new idea.
+      children: [
+        { to: '/appointments', icon: CalendarCheck, label: 'Appointments', hint: 'Book and reschedule sales visits — everything booked here also shows on the Company Calendar' },
+      ],
+    },
     { to: '/pipeline', icon: GitBranch, label: 'Pipeline', step: 3, hint: 'Track leads through sales process', color: '#f59e0b', badgeCount: dueFollowUps },
     { to: '/estimates', icon: FileText, label: 'Estimates', step: 4, hint: 'Create and send estimates', color: '#3b82f6' }
     // Jobs used to be step 5 here. It is the first step of DELIVERY, not the
@@ -349,16 +366,12 @@ export default function Layout() {
         { to: '/field-scout', icon: Compass, label: 'Field Scout (Clock)', hint: 'Daily dashboard + clock in/out for field techs' }
       ]
     },
-    {
-      key: 'CUSTOMERS',
-      title: 'CUSTOMERS',
-      description: 'People & businesses you serve',
-      sectionIcon: Users,
-      baseItems: [
-        { to: '/customers', icon: Users, label: 'Customers', hint: 'View and manage all your customers' },
-        { to: '/appointments', icon: CalendarCheck, label: 'Appointments', hint: 'All scheduled meetings and site visits' }
-      ]
-    },
+    // The CUSTOMERS section is gone. Neither of its two items was really a
+    // section's worth of anything: Appointments is what Lead Setter produces
+    // and now nests under it, and Customers is a LOOKUP you jump to from
+    // anywhere mid-task — not a stage in a flow. It sits at the top now with
+    // Dashboard, Company Calendar and Company Map, which are the other things
+    // you open from wherever you happen to be.
     {
       // New key, so nothing stored anywhere points at it yet — which is why the
       // items moved OUT of Operations are the ones with no agent children.
@@ -923,6 +936,24 @@ export default function Layout() {
                 <MapIcon size={20} />
                 Company Map
               </NavLink>
+              {/* A lookup, not a stage. You jump to a customer mid-task from
+                  wherever you happen to be — which is what everything else up
+                  here has in common. Field techs never had it. */}
+              {!userIsFieldTech && <NavLink
+                to="/customers"
+                title="View and manage all your customers"
+                style={({ isActive }) => ({
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '10px 12px', borderRadius: '8px',
+                  color: isActive ? theme.accent : theme.textMuted,
+                  backgroundColor: isActive ? theme.accentBg : 'transparent',
+                  textDecoration: 'none', fontSize: '14px', fontWeight: '600',
+                  transition: 'all 0.15s ease'
+                })}
+              >
+                <Users size={20} />
+                Customers
+              </NavLink>}
             </div>
 
             {/* Sales Flow - Numbered Steps (hidden for Field Techs) */}
@@ -991,6 +1022,32 @@ export default function Layout() {
                       <span style={{ flex: 1 }}>{item.label}</span>
                       <item.icon size={16} style={{ opacity: 0.6 }} />
                     </NavLink>
+                    {/* Sub-steps of this stage (Appointments under Lead
+                        Setter). Same 34px indent as the agent children below
+                        so one nesting convention covers both. */}
+                    {item.children?.length > 0 && (
+                      <div style={{ marginLeft: '34px', marginTop: '2px', marginBottom: '4px' }}>
+                        {item.children.map(child => (
+                          <NavLink
+                            key={child.to}
+                            to={child.to}
+                            title={child.hint}
+                            style={({ isActive }) => ({
+                              display: 'flex', alignItems: 'center', gap: '6px',
+                              padding: '5px 10px', borderRadius: '4px',
+                              color: isActive ? theme.accent : theme.textMuted,
+                              backgroundColor: isActive ? theme.accentBg : 'transparent',
+                              textDecoration: 'none', fontSize: '11px',
+                              fontWeight: isActive ? '500' : '400',
+                              transition: 'all 0.15s ease'
+                            })}
+                          >
+                            <child.icon size={12} style={{ opacity: 0.7 }} />
+                            {child.label}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
                     {/* Dynamic AI Agents - Child list under each Sales Flow item */}
                     {getSalesFlowChildAgents(item.label).length > 0 && (
                       <div style={{ marginLeft: '34px', marginTop: '2px', marginBottom: '4px' }}>
@@ -1419,6 +1476,22 @@ export default function Layout() {
                     <MapIcon size={20} />
                     Company Map
                   </NavLink>
+                  {/* See the desktop copy — a lookup, not a stage. */}
+                  {!userIsFieldTech && <NavLink
+                    to="/customers"
+                    onClick={() => setMobileMenuOpen(false)}
+                    style={({ isActive }) => ({
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '10px 12px', borderRadius: '8px',
+                      color: isActive ? theme.accent : theme.textMuted,
+                      backgroundColor: isActive ? theme.accentBg : 'transparent',
+                      textDecoration: 'none', fontSize: '14px', fontWeight: '600',
+                      transition: 'all 0.15s ease', minHeight: '44px'
+                    })}
+                  >
+                    <Users size={20} />
+                    Customers
+                  </NavLink>}
                 </div>
 
                 {/* Sales Flow - Mobile (Numbered Steps, hidden for Field Techs) */}
@@ -1491,6 +1564,29 @@ export default function Layout() {
                             </div>
                           </div>
                         </NavLink>
+                        {/* Sub-steps of this stage — see the desktop copy. */}
+                        {item.children?.length > 0 && (
+                          <div style={{ marginLeft: '36px', marginTop: '2px', marginBottom: '4px' }}>
+                            {item.children.map(child => (
+                              <NavLink
+                                key={child.to}
+                                to={child.to}
+                                onClick={() => setMobileMenuOpen(false)}
+                                style={({ isActive }) => ({
+                                  display: 'flex', alignItems: 'center', gap: '8px',
+                                  padding: '8px 12px', borderRadius: '6px', minHeight: '40px',
+                                  color: isActive ? theme.accent : theme.textMuted,
+                                  backgroundColor: isActive ? theme.accentBg : 'transparent',
+                                  textDecoration: 'none', fontSize: '13px',
+                                  fontWeight: isActive ? '500' : '400',
+                                })}
+                              >
+                                <child.icon size={14} style={{ opacity: 0.7 }} />
+                                {child.label}
+                              </NavLink>
+                            ))}
+                          </div>
+                        )}
                         {/* Dynamic AI Agents - Child list under each Sales Flow item - Mobile */}
                         {getSalesFlowChildAgents(item.label).length > 0 && (
                           <div style={{ marginLeft: '36px', marginTop: '2px', marginBottom: '4px' }}>
