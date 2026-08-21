@@ -115,13 +115,39 @@ const files = SCAN_DIRS.flatMap(d => walk(join(ROOT, d)))
 // .from('table') ... .select('cols')  — allow whitespace/newlines between.
 const RE = /\.from\(\s*['"]([a-z_][a-z0-9_]*)['"]\s*\)[\s\S]{0,200}?\.select\(\s*['"]([^'"]+)['"]/g
 
+// The edge functions do not use the supabase client. They build PostgREST URLs
+// by hand, so none of their selects were covered by the rule above — which is
+// how `unit_of_measure` (a quote_lines column, not a products_services one)
+// reached production in arnie-chat. PostgREST 400s the whole query on a bad
+// column, and the tool reported "AI analysis failed" with nothing pointing at
+// the real cause.
+//
+// Two hand-rolled shapes are matched:
+//   sb('table')            with a `select` in the URLSearchParams nearby
+//   `${url}/rest/v1/table?select=a,b&...`
+const REST_PARAMS = /\bsb\(\s*['"]([a-z_][a-z0-9_]*)['"]\s*\)[\s\S]{0,400}?\bselect\b['"\s:,]{1,6}([a-z_][a-z0-9_,\s]*)['"]/g
+const REST_URL = /rest\/v1\/([a-z_][a-z0-9_]*)\?[^`'"]*?select=([a-z_][a-z0-9_,]*)/g
+
+// A select built by concatenating string pieces cannot be read statically, and
+// silently skipping it would make this check quietly weaker than it looks.
+const SPLIT_SELECT = /\bconst select\s*=[\s\S]{0,400}?\+\s*$/m
+
 const refs = []
+const unreadable = []
 for (const file of files) {
   const src = readFileSync(file, 'utf8')
-  let m
-  while ((m = RE.exec(src)) !== null) {
-    const line = src.slice(0, m.index).split('\n').length
-    refs.push({ file: relative(ROOT, file), line, table: m[1], select: m[2] })
+  for (const [re, kind] of [[RE, 'client'], [REST_PARAMS, 'rest'], [REST_URL, 'rest-url']]) {
+    re.lastIndex = 0
+    let m
+    while ((m = re.exec(src)) !== null) {
+      const select = m[2].replace(/\s+/g, '')
+      if (!select || select === '*') continue
+      const line = src.slice(0, m.index).split('\n').length
+      refs.push({ file: relative(ROOT, file), line, table: m[1], select, kind })
+    }
+  }
+  if (SPLIT_SELECT.test(src)) {
+    unreadable.push(relative(ROOT, file))
   }
 }
 
