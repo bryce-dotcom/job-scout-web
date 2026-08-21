@@ -198,7 +198,7 @@ export default function EstimateModal({ property, onClose, onSaved }) {
             <div style={{ marginTop: 14, padding: 10, background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', borderRadius: 8, color: '#15803d', fontSize: 13 }}>
               Estimate saved (#{savedId}).
               {savedQuoteId && (
-                <span> Bid pushed to the sales pipeline as <a href={`/quotes/${savedQuoteId}`} style={{ color: '#15803d', fontWeight: 600 }}>Quote #{savedQuoteId}</a> with line items{property.lead_id ? ' and lead status set to Estimate Sent' : ''}.</span>
+                <span> Bid pushed to the sales pipeline as <a href={`/estimates/${savedQuoteId}`} style={{ color: '#15803d', fontWeight: 600 }}>Quote #{savedQuoteId}</a> with line items{property.lead_id ? ' and lead status set to Estimate Sent' : ''}.</span>
               )}
             </div>
           )}

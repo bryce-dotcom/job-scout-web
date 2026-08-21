@@ -447,10 +447,17 @@ function drawTable(doc, lineItems, settings, startY, m, cw, pw, ph) {
       rx += cols[1].w
     }
 
-    // Qty
+    // Qty. Carry the unit when the line has one: on a trade that bills by
+    // measure rather than by the each, a bare "340" does not say whether that
+    // is 340 feet, 340 yards or 340 tons — and the customer is being asked to
+    // sign for it. Lines with no unit_of_measure print exactly as before.
     const qtyColIdx = showDesc ? 2 : 1
     doc.setTextColor(...C.text)
-    doc.text(String(line.quantity || 0), rx + cols[qtyColIdx].w - 3, y + 4, { align: 'right' })
+    const uom = (line.unit_of_measure || '').trim()
+    const qtyText = uom && !/^(each|ea)$/i.test(uom)
+      ? `${line.quantity || 0} ${uom}`
+      : String(line.quantity || 0)
+    doc.text(qtyText, rx + cols[qtyColIdx].w - 3, y + 4, { align: 'right' })
     rx += cols[qtyColIdx].w
 
     // Price

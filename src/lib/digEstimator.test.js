@@ -5,7 +5,7 @@ import {
   prismVolume, trenchVolume, footingVolume, basinVolume, netSpoil,
   effectiveTruckCapacity, haulLoads, haulCycle, looseDensityTonPerLcy,
   machineHours, computeCalibrationFactor, MIN_CALIBRATION_SAMPLES,
-  quantifyItem, priceItem, estimateDig, toQuoteLines, verticalsForWorkTypes,
+  quantifyItem, priceItem, estimateDig, toQuoteLines, quoteTotalFromLines, verticalsForWorkTypes,
   WORK_TYPES, EQUIPMENT,
 } from './digEstimator'
 
@@ -599,3 +599,86 @@ describe('quote_lines handoff', () => {
 function round2ish(n) {
   return Math.round(n * 100) / 100
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// The markup has to survive the handoff
+// ═══════════════════════════════════════════════════════════════════════
+
+describe('overhead and profit ride inside the unit prices', () => {
+  // Regression: the estimate page totals a quote by summing its lines. Sending
+  // bare cost lines made a $140,076 bid arrive as a $115,765 customer
+  // document — the markup evaporated silently between the two screens.
+  const marked = estimateDig({
+    items: [
+      { work_type: 'mass_ex', area_sf: 27000, depth_ft: 1, soil_class: 'common_earth' },
+      { work_type: 'trench', length_ft: 240, width_ft: 3, depth_ft: 8, soil_class: 'clay' },
+    ],
+    priceBook: PRICE_BOOK,
+    settings: { overhead_percent: 0.1, profit_percent: 0.12, mobilization: 2400 },
+  })
+  const lines = toQuoteLines(marked, { companyId: 3, quoteId: 1 })
+  const sum = round2ish(lines.reduce((s, l) => s + l.line_total, 0))
+
+  it('makes the lines add up to the bid exactly when mobilization can absorb the rounding', () => {
+    expect(sum).toBe(round2ish(marked.rollup.total - marked.rollup.tax))
+  })
+
+  it('never breaks the one thing a customer can check: qty x price = line total', () => {
+    lines.forEach((l) => expect(l.line_total).toBe(round2ish(l.quantity * l.price)))
+  })
+
+  it('prices each line above its bare cost extension', () => {
+    expect(lines[0].price).toBeGreaterThan(marked.bidItems[0].unit_price)
+  })
+
+  it('turns mobilization into a line of its own, like a real bid form', () => {
+    const mob = lines.find((l) => l.item_name === 'Mobilization')
+    expect(mob).toBeTruthy()
+    expect(mob.quantity).toBe(1)
+    expect(mob.line_total).toBeGreaterThan(0)
+  })
+
+  it('never shows the customer an overhead or profit line', () => {
+    const names = lines.map((l) => l.item_name.toLowerCase()).join(' ')
+    expect(names).not.toMatch(/overhead|profit|markup/)
+  })
+
+  it('keeps the description honest — the quoted price, not the bare one', () => {
+    expect(lines[0].description).toContain(`@ $${lines[0].price}/`)
+  })
+
+  it('reports the total from the lines, so header and body cannot disagree', () => {
+    expect(quoteTotalFromLines(lines)).toBe(sum)
+  })
+
+  it('reconciles even when the split leaves rounding crumbs', () => {
+    const odd = estimateDig({
+      items: [
+        { work_type: 'mass_ex', area_sf: 9137, depth_ft: 1.3, soil_class: 'clay' },
+        { work_type: 'haul_off', volume_bcy: 733, soil_class: 'clay' },
+      ],
+      priceBook: PRICE_BOOK,
+      settings: { overhead_percent: 0.115, profit_percent: 0.075, mobilization: 1375 },
+    })
+    const l = toQuoteLines(odd, { companyId: 3, quoteId: 2 })
+    const s = round2ish(l.reduce((a, x) => a + x.line_total, 0))
+    expect(s).toBe(round2ish(odd.rollup.total - odd.rollup.tax))
+    l.forEach((x) => expect(x.line_total).toBe(round2ish(x.quantity * x.price)))
+  })
+
+  it('with no mobilization line, stays within a rounding step and still reads true', () => {
+    const noMob = estimateDig({
+      items: [{ work_type: 'import_fill', tons: 620, soil_class: 'gravel' }],
+      priceBook: PRICE_BOOK,
+      settings: { overhead_percent: 0.1, profit_percent: 0.1, mobilization: 0 },
+    })
+    const l = toQuoteLines(noMob, { companyId: 3, quoteId: 4 })
+    l.forEach((x) => expect(x.line_total).toBe(round2ish(x.quantity * x.price)))
+    // within one cent of unit price times the quantity
+    expect(Math.abs(quoteTotalFromLines(l) - (noMob.rollup.total - noMob.rollup.tax))).toBeLessThanOrEqual(0.01 * 620)
+  })
+
+  it('returns nothing for an empty bid rather than a lone mobilization line', () => {
+    expect(toQuoteLines(estimateDig({ items: [], priceBook: PRICE_BOOK, settings: { mobilization: 500 } }), { companyId: 3, quoteId: 3 })).toHaveLength(0)
+  })
+})

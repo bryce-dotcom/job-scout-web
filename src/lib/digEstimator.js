@@ -606,23 +606,98 @@ export function estimateDig({ items = [], priceBook = [], settings = {}, ctx = {
 // invents a second money path — the existing invoice machinery takes over
 // from quote_lines onward.
 
+// Overhead and profit have to ride INSIDE the unit prices, not sit beside
+// them. Two reasons, and both are load-bearing:
+//
+//   1. The estimate page totals a quote by summing its lines. Send bare cost
+//      lines and the customer document reads $115,765 for a bid Don computed
+//      at $140,076 — the markup silently evaporates between the takeoff and
+//      the thing you hand over.
+//   2. No contractor shows a customer "your overhead: $11,577". A bid is
+//      $12.35 a yard. The breakdown is Don's business, and it stays on the
+//      takeoff screen where it belongs.
+//
+// Mobilization becomes its own line, because it is one on a real bid form.
+// The last line absorbs the rounding crumbs so the lines sum to the bid
+// exactly rather than nearly.
 export function toQuoteLines(result, { companyId, quoteId }) {
-  return (result?.bidItems || []).map((b, i) => ({
-    company_id: companyId,
-    quote_id: quoteId,
-    item_name: b.label,
-    description: [
-      `${b.quantity} ${b.uom} @ $${b.unit_price}/${b.uom}`,
-      b.volume_bcy ? `${b.volume_bcy} BCY / ${b.volume_lcy} LCY${b.loads ? ` · ${b.loads} loads` : ''}` : null,
-      b.soil_label,
-      b.geometry?.slope_ratio > 0 ? `sloped ${b.geometry.slope_ratio}:1` : null,
-    ].filter(Boolean).join(' · '),
-    quantity: b.quantity,
-    price: b.unit_price,
-    line_total: b.extension,
-    unit_of_measure: b.uom,
-    kind: b.kind,
-    in_utility_scope: false,
-    sort_order: i,
-  }))
+  const items = result?.bidItems || []
+  if (!items.length) return []
+
+  const r = result.rollup || {}
+  const subtotal = num(r.subtotal)
+  const mobilization = num(r.mobilization)
+  const preMarkup = subtotal + mobilization
+  // What the lines must add up to: everything except tax, which the estimate
+  // page applies itself.
+  const target = round2(num(r.total) - num(r.tax))
+  const markup = preMarkup > 0 ? target / preMarkup : 1
+
+  const rows = items.map((b, i) => {
+    const price = round2(num(b.unit_price) * markup)
+    const qty = num(b.quantity)
+    return {
+      company_id: companyId,
+      quote_id: quoteId,
+      item_name: b.label,
+      description: [
+        `${qty} ${b.uom} @ $${price}/${b.uom}`,
+        b.volume_bcy ? `${b.volume_bcy} BCY / ${b.volume_lcy} LCY${b.loads ? ` · ${b.loads} loads` : ''}` : null,
+        b.soil_label,
+        b.geometry?.slope_ratio > 0 ? `sloped ${b.geometry.slope_ratio}:1` : null,
+      ].filter(Boolean).join(' · '),
+      quantity: qty,
+      price,
+      line_total: round2(qty * price),
+      unit_of_measure: b.uom,
+      kind: b.kind,
+      in_utility_scope: false,
+      sort_order: i,
+    }
+  })
+
+  if (mobilization > 0) {
+    const price = round2(mobilization * markup)
+    rows.push({
+      company_id: companyId,
+      quote_id: quoteId,
+      item_name: 'Mobilization',
+      description: 'Equipment delivery and return, one move',
+      quantity: 1,
+      price,
+      line_total: price,
+      unit_of_measure: 'EA',
+      kind: 'labor',
+      in_utility_scope: false,
+      sort_order: rows.length,
+    })
+  }
+
+  // The invariant a customer can check with a calculator: quantity times unit
+  // price equals the line total, on every line. That is never fudged.
+  //
+  // Which means exact reconciliation to the internal total is not always
+  // reachable — a 2-decimal unit price against 620 tons moves in $6.20 steps.
+  // Real bid forms live with that. Where there IS a mobilization line it takes
+  // the difference, because its quantity is 1 and the arithmetic stays honest;
+  // otherwise the quote is worth what its lines say, and the caller reads the
+  // total back off them rather than assuming.
+  const mob = mobilization > 0 ? rows[rows.length - 1] : null
+  if (mob) {
+    const others = round2(rows.slice(0, -1).reduce((s, x) => s + x.line_total, 0))
+    const owed = round2(target - others)
+    if (owed > 0) {
+      mob.price = owed
+      mob.line_total = owed
+    }
+  }
+
+  return rows
+}
+
+// What the quote is actually worth: the sum of the lines a customer will read,
+// not the internal figure they were derived from. Push this to
+// quotes.quote_amount so the header and the line items cannot disagree.
+export function quoteTotalFromLines(lines) {
+  return round2((lines || []).reduce((s, l) => s + num(l.line_total), 0))
 }
