@@ -102,6 +102,17 @@ const CMP_ROWS = [
 ]
 const mk = (v) => (v === 1 ? 'y' : v === 0.5 ? 'p' : 'n')
 
+// The stack a growing shop typically rents — canceled by one JobScout bill.
+// Costs are typical small-business monthly pricing (approx).
+const STACK = [
+  { name: 'ServiceTitan dispatch', cost: 200 }, { name: 'QuickBooks', cost: 90 }, { name: 'Gusto / ADP payroll', cost: 120 },
+  { name: 'Apollo / ZoomInfo', cost: 99 }, { name: 'HubSpot CRM', cost: 50 }, { name: 'Fleetio / Samsara', cost: 80 },
+  { name: 'Mailchimp', cost: 50 }, { name: 'DocuSign', cost: 25 }, { name: 'CompanyCam', cost: 30 },
+  { name: 'Expensify', cost: 20 }, { name: 'When I Work', cost: 40 }, { name: 'Ninety.io', cost: 20 },
+]
+const STACK_TOTAL = STACK.reduce((s, t) => s + t.cost, 0)
+const STACK_SAVE = (STACK_TOTAL - 99) * 12
+
 const CSS = `
   .pr{--paper:#f4efe3;--paper2:#ece3d1;--card:#fffdf7;--ink:#191d15;--sub:#4f5a4a;--muted:#848a79;--line:#d9cfb6;--line2:#cabf9f;
     --grn:#54613a;--grnDk:#3a4526;--grnBg:rgba(84,97,58,0.10);--viz:#f26a12;--vizDk:#c9530a;--vizBg:rgba(242,106,18,0.12);
@@ -248,6 +259,33 @@ const CSS = `
   .pr .jobrow .bye b{color:var(--grnDk)}
   .pr .savings{margin-top:16px;text-align:center;font-size:14.5px;color:var(--sub)}
   .pr .savings b{color:var(--vizDk)}
+  .pr .hd-share{display:inline-flex;align-items:center;gap:6px;font-family:inherit;font-size:13.5px;font-weight:700;color:var(--sub);background:transparent;border:1px solid var(--line2);border-radius:10px;padding:8px 12px;min-height:40px;cursor:pointer;transition:border-color .15s,color .15s}
+  .pr .hd-share:hover{border-color:var(--grn);color:var(--grn)}
+  .pr .hd-share.done{color:var(--grn);border-color:var(--grn)}
+  .pr .hd-share .ic{font-size:15px}
+  .pr .fshare{margin-top:18px;background:none;border:0;font-family:inherit;font-size:14px;font-weight:650;color:#bcc0ad;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+  .pr .fshare:hover{color:#fff}
+  .pr .stack{margin-top:20px;background:var(--night);color:#e9e5d6;border-radius:22px;padding:26px 22px;position:relative;overflow:hidden}
+  .pr .stack::after{content:"";position:absolute;inset:0;opacity:.4;pointer-events:none;background:radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:18px 18px}
+  .pr .stack .kicker{position:relative;color:#9aa08c}
+  .pr .stack-h{font-size:clamp(21px,5vw,28px);font-weight:840;color:#fff;margin-top:8px;position:relative}
+  .pr .stack-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px;position:relative}
+  .pr .stk{display:flex;justify-content:space-between;align-items:center;gap:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:9px 11px}
+  .pr .stk-n{font-size:12px;color:#a8ac9c;text-decoration:line-through;text-decoration-color:rgba(242,106,18,.55);line-height:1.25}
+  .pr .stk-c{font-family:var(--mono);font-size:11px;color:#767b69;white-space:nowrap}
+  .pr .stack-total{margin-top:20px;text-align:center;position:relative}
+  .pr .stack-total .tot{font-size:15px;color:#cfcbba}
+  .pr .stack-total .tot b{color:#fff;font-size:18px;font-variant-numeric:tabular-nums}
+  .pr .stack-arrow{color:var(--viz);margin:4px 0;display:flex;justify-content:center}
+  .pr .stack-js{font-size:clamp(18px,4.6vw,25px);font-weight:850;color:#fff;letter-spacing:-.02em}
+  .pr .stack-js b{color:#ffb27a}
+  .pr .stack-save{margin-top:10px;display:inline-block;font-family:var(--mono);font-size:13px;font-weight:700;color:#8fbf6a;background:rgba(143,191,106,.12);border:1px solid rgba(143,191,106,.3);border-radius:8px;padding:6px 12px}
+  .pr .stack-note{font-size:11px;color:#767b69;text-align:center;margin-top:14px;position:relative}
+  .pr .onlyus{display:grid;grid-template-columns:1fr;gap:12px;margin-top:18px}
+  .pr .ou{background:var(--card);border:1.5px solid var(--grn);border-radius:16px;padding:20px;box-shadow:0 12px 34px -20px rgba(84,97,58,.55)}
+  .pr .ou h3{font-size:19px;font-weight:850;margin-top:10px}
+  .pr .ou p{color:var(--sub);font-size:14px;margin:8px 0 0;line-height:1.45}
+  .pr .ou-tag{display:inline-block;margin-top:12px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:var(--grn);padding:4px 9px;border-radius:6px}
   .pr .leg{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
   .pr .leg span{font-size:12px;color:var(--sub);background:var(--paper2);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
   .pr .leg b{color:var(--ink)}
@@ -327,6 +365,8 @@ const CSS = `
     .pr .crewstrip{display:none}
   }
   @media(min-width:820px){ .pr .agstage{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:stretch} }
+  @media(min-width:620px){ .pr .stack-grid{grid-template-columns:repeat(3,1fr)} .pr .onlyus{grid-template-columns:1fr 1fr} }
+  @media(max-width:560px){ .pr .hd-share .shl{display:none} .pr .hd-share{padding:8px 10px} }
   @media(min-width:980px){ .pr .hero .wrap{padding:64px 20px 54px} .pr .flow{grid-template-columns:repeat(4,1fr)} }
   @media(prefers-reduced-motion:reduce){ .pr .rv,.pr .chip,.pr .hp-dot,.pr .hp-row,.pr .agstage,.pr .hero h1 .hl::after,.pr .term .q .cur{transition:none;animation:none;opacity:1;transform:none}.pr .hero h1 .hl::after{--draw:1} }
 `
@@ -346,9 +386,17 @@ export default function Pricing() {
   const [feed, setFeed] = useState(() => ACTIVITY.slice(0, 5).map((a, i) => ({ ...a, _k: i })))
   const [ag, setAg] = useState(0)
   const [agLock, setAgLock] = useState(false)
+  const [shared, setShared] = useState(false)
 
   const goSignup = (planId) => navigate(`/login?signup=1&plan=${planId}`)
   const toPlans = () => document.getElementById('pr-plans')?.scrollIntoView({ behavior: 'smooth' })
+  const shareNow = async () => {
+    const url = (typeof window !== 'undefined' ? window.location.origin : 'https://jobscout.appsannex.com') + '/pricing'
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) { await navigator.share({ title: 'JobScout — the business operating system', text: 'One system for the whole operation, running on AI. Take a look:', url }); return }
+    } catch { /* user cancelled the share sheet — fall through to copy */ }
+    try { await navigator.clipboard.writeText(url); setShared(true); setTimeout(() => setShared(false), 2000) } catch { /* clipboard blocked */ }
+  }
 
   // Reveal-on-scroll + hero underline draw + mobile sticky CTA.
   useEffect(() => {
@@ -407,6 +455,7 @@ export default function Pricing() {
         <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5M3 17l9 5 9-5" /></symbol>
         <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17.8 6.6 20l1-6.1L3.2 9.5l6.1-.9z" /></symbol>
         <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></symbol>
+        <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></symbol>
       </defs></svg>
 
       <header>
@@ -416,6 +465,9 @@ export default function Pricing() {
             {company
               ? <span className="hd-link" onClick={() => navigate('/')}>Back to app</span>
               : <span className="hd-link" onClick={() => navigate('/login')}>Sign in</span>}
+            <button className={`hd-share${shared ? ' done' : ''}`} onClick={shareNow} aria-label="Share this page">
+              <Icon id={shared ? 'i-check' : 'i-share'} /><span className="shl">{shared ? 'Copied!' : 'Share'}</span>
+            </button>
             <button className="btn btn-viz hd-cta" onClick={toPlans}>Start free</button>
           </div>
         </div>
@@ -582,7 +634,22 @@ export default function Pricing() {
               <div className="jobrow"><Icon id="i-truck" /><div><h3>Fleet &amp; assets</h3><p>Real-time vehicle tracking (WatchDog GPS), fuel logs, and maintenance — one place.</p><div className="bye">replaces <b>Fleetio, Samsara</b></div></div></div>
               <div className="jobrow"><Icon id="i-layers" /><div><h3>Run the company</h3><p>Owner dashboards and reporting, plus a built-in operating rhythm — quarterly priorities, a weekly scorecard, and structured leadership meetings (the EOS / “Traction” system, no extra app).</p><div className="bye">replaces <b>Ninety.io, Tableau</b></div></div></div>
             </div>
-            <p className="savings rv"><b>134 features across 14 systems</b> — the stack it stands in for runs past <b>30 subscriptions</b>.</p>
+            <div className="stack rv">
+              <span className="kicker">Do the math</span>
+              <h3 className="stack-h">The stack you’re renting — canceled.</h3>
+              <div className="stack-grid">
+                {STACK.map((t) => (
+                  <div key={t.name} className="stk"><span className="stk-n">{t.name}</span><span className="stk-c">~${t.cost}/mo</span></div>
+                ))}
+              </div>
+              <div className="stack-total">
+                <div className="tot">≈ <b>${STACK_TOTAL}/mo</b> across {STACK.length} tools &amp; {STACK.length} logins</div>
+                <div className="stack-arrow"><Icon id="i-arrow" style={{ transform: 'rotate(90deg)', fontSize: 22 }} /></div>
+                <div className="stack-js">JobScout — <b>one login, one bill</b>, from $99/mo</div>
+                <div className="stack-save">≈ ${STACK_SAVE.toLocaleString()} saved a year</div>
+              </div>
+              <p className="stack-note">Typical small-business pricing — your stack is probably longer. Names are trademarks of their owners.</p>
+            </div>
           </div>
         </section>
 
@@ -592,6 +659,20 @@ export default function Pricing() {
               <span className="kicker">The honest comparison</span>
               <h2>Where JobScout fits.</h2>
               <p>Field-service apps schedule and invoice — then you bolt on accounting, payroll, a CRM, fleet, and marketing. Enterprise suites <b>match the breadth</b>, but at enterprise prices and a months-long rollout with a consultant on the payroll. JobScout hands you the whole operation — plus an AI workforce and AI prospecting the others don’t have — live in an afternoon, priced for a company that’s still growing.</p>
+            </div>
+            <div className="onlyus rv">
+              <div className="ou">
+                <Icon id="i-bolt" style={{ fontSize: 26, color: 'var(--viz)' }} />
+                <h3>An AI workforce</h3>
+                <p>Eight specialists doing real work — prospecting, quoting, verifying, collecting. The part no field app or enterprise suite hands you.</p>
+                <span className="ou-tag">Only in JobScout</span>
+              </div>
+              <div className="ou">
+                <Icon id="i-layers" style={{ fontSize: 26, color: 'var(--viz)' }} />
+                <h3>One login · one bill</h3>
+                <p>The whole operation in one system — not a dozen tools duct-taped together with integrations you babysit.</p>
+                <span className="ou-tag">Only in JobScout</span>
+              </div>
             </div>
             <div className="leg rv">
               <span><b>Field-service apps</b> · Jobber, HousecallPro</span>
@@ -675,6 +756,7 @@ export default function Pricing() {
                 <button className="btn btn-viz" onClick={toPlans}>Start your free trial <Icon id="i-arrow" /></button>
                 <button className="btn btn-ghost on-dark" onClick={() => navigate('/login?demo=1')}>Try the live demo <Icon id="i-arrow" /></button>
               </div>
+              <button className="fshare" onClick={shareNow}>{shared ? '✓ Link copied to your clipboard' : 'Know someone buried in software? Send them this →'}</button>
             </div>
           </div>
         </section>
