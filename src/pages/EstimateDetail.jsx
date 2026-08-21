@@ -15,7 +15,7 @@ import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
 import LoadingSpinner from '../components/LoadingSpinner'
-import { ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image, Upload } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image, Upload } from 'lucide-react'
 import FlowIndicator from '../components/FlowIndicator'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
@@ -3606,7 +3606,7 @@ function EstimateDetailInner() {
               gap: '10px',
               marginBottom: '16px',
             }}>
-              <div style={{ fontSize: '20px', lineHeight: 1 }} aria-hidden>⚠️</div>
+              <AlertTriangle size={20} style={{ color: '#b45309', flexShrink: 0 }} aria-hidden />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: '#b45309', marginBottom: '4px' }}>
                   This estimate has a total of {formatCurrency(parseFloat(estimate.quote_amount) || parseFloat(estimate.job_total) || 0)} but no line items.
