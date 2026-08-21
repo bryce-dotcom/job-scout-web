@@ -52,7 +52,22 @@ export const KINDS = {
     color: '#a855f7',
     writes: { source: 'Time Off Requests', bookedIn: 'Team', appearsWhen: 'a request is approved' },
   },
+  // A visit that is OWED but not yet booked. It is on the books in exactly the
+  // sense this calendar promises — the customer is expecting it — and it was
+  // the one thing missing that people were already tracking elsewhere.
+  service: {
+    id: 'service',
+    label: 'Service Due',
+    color: '#d97706',
+    writes: { source: 'Service Visits', bookedIn: 'Work / Operations', appearsWhen: 'a visit is due and not yet scheduled' },
+  },
 }
+
+// A visit that has been scheduled already appears as Delivery on the day it
+// will actually happen, so showing the due date as well would put the same
+// visit on the calendar twice on two different days. Once it is booked, the
+// booked date is the one that matters.
+const SERVICE_DONE = ['Completed', 'Verified Complete', 'Paid', 'Closed', 'Archived']
 
 // One sentence naming every writer, for the calendar page to print. Derived
 // from KINDS so it cannot drift from what actually gets built.
@@ -132,6 +147,29 @@ export function buildCalendarEvents({ appointments = [], jobs = [], timeOff = []
     })
   }
 
+  // Service visits come from the SAME jobs rows, keyed on service_due_date
+  // rather than start_date — a visit that is owed rather than booked.
+  //
+  // service_due_date is a plain DATE column, so it is used as-is. Running a
+  // bare date through a timezone conversion is what makes days drift, which is
+  // the same reason time off is handled this way.
+  for (const j of jobs || []) {
+    if (!j || !j.service_due_date) continue
+    if (j.start_date) continue                      // booked — Delivery already shows it
+    if (SERVICE_DONE.includes(j.status)) continue   // already done
+    events.push({
+      id: `svc-${j.id}`,
+      kind: 'service',
+      dayKeys: [dayKeyOfDate(j.service_due_date)],
+      title: j.job_title || j.job_id || 'Service visit',
+      subtitle: [labelForServiceKind(j.service_kind), j.customer?.name || j.customer_name].filter(Boolean).join(' · '),
+      businessUnit: j.business_unit || null,
+      status: j.status || null,
+      link: `/jobs/${j.id}`,
+      time: null,
+    })
+  }
+
   for (const t of timeOff || []) {
     if (!t || !t.start_date) continue
     const who = empName.get(String(t.employee_id)) || 'Employee'
@@ -150,6 +188,15 @@ export function buildCalendarEvents({ appointments = [], jobs = [], timeOff = []
   }
 
   return events
+}
+
+// warranty / callback / repair / annual — shown beside the customer so a glance
+// tells you whether this is work you owe them or work they will pay for.
+export function labelForServiceKind(kind) {
+  const k = String(kind || '').toLowerCase()
+  if (!k) return 'Service'
+  if (k === 'pm') return 'Maintenance'
+  return k.charAt(0).toUpperCase() + k.slice(1)
 }
 
 export function labelForTimeOff(type) {

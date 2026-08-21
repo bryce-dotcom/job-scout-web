@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildCalendarEvents,
+  calendarSourcesSentence,
   filterCalendarEvents,
   groupEventsByDay,
   expandDateRange,
@@ -154,5 +155,54 @@ describe('labelForTimeOff', () => {
     expect(labelForTimeOff('sick')).toBe('Sick')
     expect(labelForTimeOff('')).toBe('Time off')
     expect(labelForTimeOff('bereavement')).toBe('Bereavement')
+  })
+})
+
+// ── Service visits ────────────────────────────────────────────────────
+// A visit that is OWED but not booked. Same jobs rows as delivery, keyed on
+// service_due_date instead of start_date.
+describe('service visits', () => {
+  const svc = (over = {}) => ({
+    id: 7, job_title: 'Lights flickering', service_kind: 'warranty',
+    service_due_date: '2026-09-01', status: 'Chillin', customer_name: 'Acme', ...over,
+  })
+
+  it('appears on the day it is due', () => {
+    const [ev] = buildCalendarEvents({ jobs: [svc()] })
+    expect(ev.kind).toBe('service')
+    expect(ev.dayKeys).toEqual(['2026-09-01'])
+    expect(ev.subtitle).toContain('Warranty')
+  })
+
+  it('uses the bare date as-is, with no timezone conversion', () => {
+    // service_due_date is a plain DATE column. Running it through a zone
+    // conversion is what slides a visit onto the previous day.
+    const [ev] = buildCalendarEvents({ jobs: [svc({ service_due_date: '2026-01-01' })] })
+    expect(ev.dayKeys).toEqual(['2026-01-01'])
+  })
+
+  it('drops out once the visit is scheduled', () => {
+    // Delivery already shows it on the booked day; listing the due date too
+    // puts one visit on the calendar twice, on two different days.
+    const events = buildCalendarEvents({ jobs: [svc({ start_date: '2026-09-05T15:00:00Z' })] })
+    expect(events.filter(e => e.kind === 'service')).toHaveLength(0)
+    expect(events.filter(e => e.kind === 'delivery')).toHaveLength(1)
+  })
+
+  it('drops out once the visit is done', () => {
+    for (const status of ['Completed', 'Verified Complete', 'Paid', 'Closed', 'Archived']) {
+      expect(buildCalendarEvents({ jobs: [svc({ status })] })).toHaveLength(0)
+    }
+  })
+
+  it('ignores ordinary jobs that have no due date', () => {
+    const events = buildCalendarEvents({ jobs: [{ id: 1, start_date: '2026-09-05T15:00:00Z' }] })
+    expect(events.filter(e => e.kind === 'service')).toHaveLength(0)
+  })
+
+  it('is named in the sources sentence the page prints', () => {
+    // The promise on screen is derived from KINDS, so adding a writer without
+    // telling anyone is not possible.
+    expect(calendarSourcesSentence()).toContain('service visits')
   })
 })

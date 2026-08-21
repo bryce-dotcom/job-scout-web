@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
-import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella, Wrench } from 'lucide-react'
 import {
   buildCalendarEvents,
   filterCalendarEvents,
@@ -22,7 +22,7 @@ const defaultTheme = {
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-const KIND_ICON = { sales: Users, delivery: Briefcase, timeoff: Umbrella }
+const KIND_ICON = { sales: Users, delivery: Briefcase, timeoff: Umbrella, service: Wrench }
 
 export default function CompanyCalendar() {
   const navigate = useNavigate()
@@ -38,7 +38,7 @@ export default function CompanyCalendar() {
 
   const [cursor, setCursor] = useState(() => new Date())
   const [timeOff, setTimeOff] = useState([])
-  const [kinds, setKinds] = useState({ sales: true, delivery: true, timeoff: true })
+  const [kinds, setKinds] = useState({ sales: true, delivery: true, timeoff: true, service: true })
   const [units, setUnits] = useState({})
 
   // Time off is a small table and isn't in the store — fetch it directly.
@@ -121,7 +121,7 @@ export default function CompanyCalendar() {
         Everything on the books in one place — sales appointments, scheduled work, and who&apos;s off.
       </p>
       <p style={{ margin: '0 0 16px', color: theme.textMuted, fontSize: 12 }}>
-        Shows {calendarSourcesSentence()}. Anything else — service visits, routes, fleet bookings — has its own calendar.
+        Shows {calendarSourcesSentence()}. Routes and fleet bookings still have their own calendars.
       </p>
 
       {/* Month nav */}
