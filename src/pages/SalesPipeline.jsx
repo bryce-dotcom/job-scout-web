@@ -951,13 +951,26 @@ export default function SalesPipeline() {
         // For Delivered: job.last_status_change_at IS the right timestamp
         // (it records when the job moved to a completed status).
         const isWonOrLost = !!(stage?.isWon || stage?.isLost)
+        // q.updated_at is NOT a close date — it is the last time somebody
+        // edited the estimate. Treating it as one dated deals by their
+        // paperwork: four of Cole's six Lost deals were dated by a 2025 quote
+        // edit, and 9 of the company's 40 Lost deals were invisible in a 2026
+        // view for that reason alone. Only real close stamps count here.
         const candidates = [
           lead.last_updated,
           lead.converted_at,
-          ...(lead._quotes || []).flatMap(q => [q.approved_date, q.rejected_date, q.updated_at]),
+          ...(lead._quotes || []).flatMap(q => [q.approved_date, q.rejected_date]),
           // Only include job timestamps for delivery-stage leads, not Won/Lost
           ...(isWonOrLost ? [] : (lead.jobs || []).flatMap(j => [j.last_status_change_at, j.updated_at])),
         ].filter(Boolean)
+        // Nothing recorded when this closed. Deals lost before the stamp above
+        // existed are in exactly this state, and guessing a date for them would
+        // put invented losses into someone's month. Show them instead: not
+        // knowing when something closed is not a reason to make it disappear.
+        // Measured before changing it — Won is unaffected (every Won deal
+        // carries a real converted_at or approved_date); this adds back 9 Lost
+        // and 8 Closed across the whole company.
+        if (candidates.length === 0) return true
         const inRange = candidates.some(d => {
           if (d < cutoffStr) return false
           if (cutoffEndStr && d > cutoffEndStr) return false
@@ -1479,13 +1492,21 @@ export default function SalesPipeline() {
           q.id === selectedLead._quoteId ? true : q.status === 'Rejected'
         )
         if (allRejected) {
-          await updateLead(leadId, { status: 'Lost' })
+          await updateLead(leadId, { status: 'Lost', last_updated: new Date().toISOString() })
         }
       }
     } else {
       // Lead card dragged to Lost
       await updateLead(selectedLead.id, {
         status: 'Lost',
+        // When it was lost. Winning stamps converted_at on both paths; losing
+        // stamped nothing, so the date filter fell back to whatever timestamp
+        // it could find — in practice a quote's updated_at, i.e. the last time
+        // anyone EDITED the estimate. A deal lost today whose estimate was last
+        // touched in 2025 was dated 2025 and vanished out of the window the
+        // moment it was lost. Cole: "if i move a job to lost it disaperes some
+        // times. i need to be abel to see thoes jobs still."
+        last_updated: new Date().toISOString(),
         notes: selectedLead.notes
           ? `${selectedLead.notes}\n\nLOST: ${lostReason}`
           : `LOST: ${lostReason}`
