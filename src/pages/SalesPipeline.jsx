@@ -2278,12 +2278,40 @@ export default function SalesPipeline() {
                     <option key={emp.id} value={emp.id}>{emp.id === user?.id ? `${emp.name} (Me)` : emp.name}</option>
                   ))}
                 </select>
-                {canViewAll && ownerFilter !== 'all' && (
+                {/* One tap to my own deals, and one tap back.
+                    The board opens on All Owners for everyone who is not a
+                    field tech, which is right for a manager and surprising for
+                    a rep: "my pipeline" opens holding the whole company's work.
+                    Cole, 5 Aug: "i have jobs there are not mine in my pipe line
+                    and cant get them out."
+                    The dropdown could already do this — his name is in it
+                    marked (Me) — but on a phone that means opening a native
+                    picker and finding yourself among 28 people. The default is
+                    deliberately unchanged: managers and office staff open this
+                    board to see everything, and flipping that for them to fix
+                    a rep's first tap would be the wrong trade. */}
+                {canViewAll && user?.id && (
+                  <button
+                    type="button"
+                    onClick={() => setOwnerFilter(String(ownerFilter) === String(user.id) ? 'all' : String(user.id))}
+                    style={{
+                      minHeight: '44px', padding: '10px 14px', borderRadius: '8px',
+                      backgroundColor: String(ownerFilter) === String(user.id) ? m.accent : 'transparent',
+                      color: String(ownerFilter) === String(user.id) ? '#fff' : m.accent,
+                      border: `1px solid ${m.accent}`, cursor: 'pointer',
+                      fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap',
+                    }}
+                    title={String(ownerFilter) === String(user.id) ? 'Show everyone again' : 'Show only my deals'}
+                  >
+                    {String(ownerFilter) === String(user.id) ? 'Everyone' : 'Just mine'}
+                  </button>
+                )}
+                {canViewAll && ownerFilter !== 'all' && String(ownerFilter) !== String(user?.id) && (
                   <button
                     type="button"
                     onClick={() => setOwnerFilter('all')}
                     style={{
-                      padding: '10px 12px', borderRadius: '8px',
+                      minHeight: '44px', padding: '10px 12px', borderRadius: '8px',
                       backgroundColor: 'transparent', color: m.accent,
                       border: `1px solid ${m.accent}`, cursor: 'pointer',
                       fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap',
