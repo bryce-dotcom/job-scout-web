@@ -872,23 +872,12 @@ export default function Jobs() {
       await supabase.from('leads').update({ status: 'Job Scheduled', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
     }
 
-    // Create appointment so job shows on Appointments calendar too
-    const startTime = job.start_date || updateData.start_date
-    const endTime = job.end_date || updateData.end_date
-    const jobTitle = job.job_title || 'Scheduled Job'
-    await supabase.from('appointments').insert({
-      company_id: companyId,
-      title: jobTitle,
-      start_time: startTime,
-      end_time: endTime,
-      appointment_type: 'Job',
-      status: 'Scheduled',
-      notes: `Job: ${jobTitle} (#${job.job_id || job.id})`,
-      employee_id: job.job_lead_id || null,
-      customer_id: job.customer?.id || job.customer_id || null,
-      location: job.job_address || '',
-      created_at: new Date().toISOString()
-    })
+    // The second place the mirror appointment was minted — the Schedule action
+    // on a job card, not the Add Job dialog. Removed for the same reason: the
+    // job is already a calendar event, and a copy that nothing keeps in step
+    // with it ends up on the wrong day. Missing this one first time meant the
+    // duplicate kept appearing for anyone scheduling from the board rather than
+    // the dialog, which is the more common route.
 
     await fetchJobs()
   }
