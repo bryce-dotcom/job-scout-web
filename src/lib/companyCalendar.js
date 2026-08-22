@@ -119,6 +119,13 @@ export function buildCalendarEvents({ appointments = [], jobs = [], timeOff = []
   for (const a of appointments || []) {
     if (!a || !a.start_time) continue
     if (a.appointment_type === 'Block') continue // blocked time isn't a company event
+    // A 'Job' appointment is a mirror of a scheduled job, written by the job
+    // dialog until this was removed. The job renders as its own delivery event,
+    // so drawing this too is the second box — and because the mirror was never
+    // kept in step with the job, it is usually the WRONG box: stale date, or a
+    // job that no longer exists. Skipping them here retires the 233 already in
+    // the table without deleting anyone's data.
+    if (a.appointment_type === 'Job') continue
     events.push({
       id: `appt-${a.id}`,
       kind: 'sales',

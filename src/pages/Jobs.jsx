@@ -826,27 +826,18 @@ export default function Jobs() {
 
     // Auto-create appointment when job is scheduled with a date — so it shows on calendar
     const savedJob = editingJob || result.data?.[0]
-    if (savedJob && payload.status === 'Scheduled' && payload.start_date) {
-      const startTime = new Date(payload.start_date)
-      const endTime = payload.end_date ? new Date(payload.end_date) : new Date(startTime.getTime() + 4 * 60 * 60 * 1000)
-
-      const assigneeId = payload.job_lead_id || (user?.employee_id ? parseInt(user.employee_id) : null)
-      const jobTitle = payload.job_title || savedJob.job_title || 'Scheduled Job'
-      const customer = payload.customer_id ? customers.find(c => c.id === parseInt(payload.customer_id)) : null
-      await supabase.from('appointments').insert({
-        company_id: companyId,
-        title: jobTitle,
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        appointment_type: 'Job',
-        status: 'Scheduled',
-        notes: `Job: ${jobTitle} (#${savedJob.job_id || savedJob.id})`,
-        employee_id: assigneeId,
-        customer_id: customer?.id || null,
-        location: payload.job_address || '',
-        created_at: new Date().toISOString()
-      })
-    }
+    // A scheduled job used to ALSO insert a mirror row into appointments, so
+    // the company calendar drew it twice: once as delivery work and once as a
+    // sales appointment. Christopher: "I think two boxes are created every time
+    // you create a job. Having only one box would be wonderful."
+    //
+    // Worse than duplication, the mirror was inserted and then never maintained
+    // — never updated, never deleted. Move the job and the copy stayed on the
+    // old date, which is the light blue box he found left behind on the
+    // Tuesday. In this workspace 25 of them sat on a different day from their
+    // job and 113 no longer matched any job at all.
+    //
+    // The job itself is already a calendar event. The mirror was never needed.
 
     await fetchJobs()
     const createdJobId = !editingJob ? result.data?.[0]?.id : null

@@ -206,3 +206,60 @@ describe('service visits', () => {
     expect(calendarSourcesSentence()).toContain('service visits')
   })
 })
+
+// ── One box per job ─────────────────────────────────────────────────────────
+//
+// Christopher: "Dayre and Heidi were initially scheduled for Tuesday both got
+// moved to Monday. After being moved this light blue box remains on the
+// original date. I think two boxes are created every time you create a job.
+// Having only one box would be wonderful."
+//
+// Saving a scheduled job used to insert a mirror row into appointments as well.
+// The calendar drew the job as delivery work AND the mirror as a sales
+// appointment — two boxes. The mirror was never updated or deleted afterwards,
+// so moving the job left the copy behind: 25 of them on a different day from
+// their job, and 113 matching no job at all.
+describe('a scheduled job draws one box, not two', () => {
+  const job = {
+    id: 900, job_id: 'JOB-TEST', job_title: 'Heidi Head', status: 'Scheduled',
+    start_date: '2026-08-24T08:00:00Z',
+  }
+  const mirror = {
+    id: 5000, title: 'Heidi Head', appointment_type: 'Job',
+    start_time: '2026-08-25T08:00:00Z',           // left behind on the old day
+    notes: 'Job: Heidi Head (#JOB-TEST)',
+  }
+
+  it('ignores the mirror appointment a job used to create', () => {
+    const events = buildCalendarEvents({ appointments: [mirror], jobs: [job] })
+    expect(events.filter((e) => e.kind === 'sales')).toHaveLength(0)
+    expect(events.filter((e) => e.kind === 'delivery').length).toBeGreaterThan(0)
+  })
+
+  it('draws the job once, on the day the JOB says — not the stale mirror day', () => {
+    const events = buildCalendarEvents({ appointments: [mirror], jobs: [job] })
+    const titled = events.filter((e) => (e.title || '').includes('Heidi Head'))
+    expect(titled).toHaveLength(1)
+    expect(titled[0].dayKeys.some((k) => k.startsWith('2026-08-24'))).toBe(true)
+    expect(titled[0].dayKeys.some((k) => k.startsWith('2026-08-25'))).toBe(false)
+  })
+
+  // The sales lane is the point of the appointments table — a real booked
+  // meeting must still show.
+  it('still shows a genuine sales appointment', () => {
+    const real = {
+      id: 5001, title: 'Estimate — Fat Cats', appointment_type: 'Estimate',
+      start_time: '2026-08-25T14:00:00Z',
+    }
+    const events = buildCalendarEvents({ appointments: [real, mirror], jobs: [] })
+    const sales = events.filter((e) => e.kind === 'sales')
+    expect(sales).toHaveLength(1)
+    expect(sales[0].title).toBe('Estimate — Fat Cats')
+  })
+
+  it('an appointment with no type at all is still treated as sales', () => {
+    const untyped = { id: 5002, title: 'Walk-in', start_time: '2026-08-25T14:00:00Z' }
+    const events = buildCalendarEvents({ appointments: [untyped], jobs: [] })
+    expect(events.filter((e) => e.kind === 'sales')).toHaveLength(1)
+  })
+})
