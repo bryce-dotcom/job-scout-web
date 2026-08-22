@@ -18,6 +18,7 @@ import RecurrencePicker from '../components/RecurrencePicker'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { jobsFields, jobLinesFields, jobSectionsFields } from '../lib/importExportFields'
 import { draftToJobLine, draftHasContent } from '../lib/jobLineDraft'
+import { splitDateTimeInput, joinDateTimeInput } from '../lib/dateTimeParts'
 import { jobStatusColors as statusColors, invoiceStatusColors } from '../lib/statusColors'
 import { matchesJobSearch, jobSearchRank } from '../lib/jobSearch'
 import PageHeader from '../components/PageHeader'
@@ -665,6 +666,17 @@ export default function Jobs() {
 
       return next
     })
+  }
+
+  // Date and time are two inputs over one stored value. Writing back through
+  // handleChange (rather than setFormData) keeps the status <-> start_date
+  // auto-sync that puts a scheduled job on the calendar.
+  const setDatePart = (name, part, value) => {
+    const cur = splitDateTimeInput(formData[name])
+    const next = part === 'date'
+      ? joinDateTimeInput(value, cur.time)
+      : joinDateTimeInput(cur.date, value)
+    handleChange({ target: { name, value: next, type: 'text' } })
   }
 
   const handleSubmit = async (e) => {
@@ -1811,17 +1823,30 @@ export default function Jobs() {
                     <label style={{ ...labelStyle, color: formData.status === 'Scheduled' && !formData.start_date ? '#ef4444' : labelStyle.color }}>
                       Start Date/Time {formData.status === 'Scheduled' ? '*' : ''}
                     </label>
-                    <input
-                      type="datetime-local"
-                      name="start_date"
-                      value={formData.start_date}
-                      onChange={handleChange}
-                      required={formData.status === 'Scheduled'}
-                      style={{
-                        ...inputStyle,
-                        ...(formData.status === 'Scheduled' && !formData.start_date ? { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,0.15)' } : {})
-                      }}
-                    />
+                    {/* Two inputs, one value. A type="date" picker closes the
+                        moment a day is clicked; datetime-local's does not,
+                        because it still wants a time, and there is no API to
+                        dismiss a native picker. */}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="date"
+                        name="start_date_date"
+                        value={splitDateTimeInput(formData.start_date).date}
+                        onChange={(e) => setDatePart('start_date', 'date', e.target.value)}
+                        required={formData.status === 'Scheduled'}
+                        style={{
+                          ...inputStyle, flex: 2, minWidth: 0,
+                          ...(formData.status === 'Scheduled' && !formData.start_date ? { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,0.15)' } : {})
+                        }}
+                      />
+                      <input
+                        type="time"
+                        name="start_date_time"
+                        value={splitDateTimeInput(formData.start_date).time}
+                        onChange={(e) => setDatePart('start_date', 'time', e.target.value)}
+                        style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+                      />
+                    </div>
                     {formData.status === 'Scheduled' && !formData.start_date && (
                       <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '4px' }}>
                         Required for calendar display
@@ -1830,7 +1855,22 @@ export default function Jobs() {
                   </div>
                   <div>
                     <label style={labelStyle}>End Date/Time</label>
-                    <input type="datetime-local" name="end_date" value={formData.end_date} onChange={handleChange} style={inputStyle} />
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="date"
+                        name="end_date_date"
+                        value={splitDateTimeInput(formData.end_date).date}
+                        onChange={(e) => setDatePart('end_date', 'date', e.target.value)}
+                        style={{ ...inputStyle, flex: 2, minWidth: 0 }}
+                      />
+                      <input
+                        type="time"
+                        name="end_date_time"
+                        value={splitDateTimeInput(formData.end_date).time}
+                        onChange={(e) => setDatePart('end_date', 'time', e.target.value)}
+                        style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+                      />
+                    </div>
                   </div>
                 </div>
 
