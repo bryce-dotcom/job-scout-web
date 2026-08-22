@@ -100,6 +100,8 @@ export const useStore = create(
       // contractor runs 12/60 etc.
       defaultLaborWarrantyMonths: 12,
       defaultPartsWarrantyMonths: 12,
+      lightingDemandChargePerKw: 0,
+      lightingDemandCoincidence: 0.8,
 
       // Labor Rates
       laborRates: [],
@@ -214,6 +216,8 @@ export const useStore = create(
           settings: [],
           defaultLaborWarrantyMonths: 12,
           defaultPartsWarrantyMonths: 12,
+          lightingDemandChargePerKw: 0,
+          lightingDemandCoincidence: 0.8,
           serviceTypes: [],
           businessUnits: [],
           leadSources: [],
@@ -1161,6 +1165,11 @@ export const useStore = create(
             pipelineStages: parseSettingList(cached, 'pipeline_stages'),
             defaultLaborWarrantyMonths: parseSettingNumber(cached, 'default_labor_warranty_months', 12),
             defaultPartsWarrantyMonths: parseSettingNumber(cached, 'default_parts_warranty_months', 12),
+            // Lighting savings: the demand half of a commercial bill. 0 means this
+            // tenant is not on a demand tariff, or has not set one — which leaves
+            // every savings figure exactly as it was before this existed.
+            lightingDemandChargePerKw: parseSettingNumber(cached, 'lighting_demand_charge_per_kw', 0),
+            lightingDemandCoincidence: parseSettingNumber(cached, 'lighting_demand_coincidence', 0.8),
           });
         }
 
@@ -1188,6 +1197,11 @@ export const useStore = create(
               pipelineStages: parseSettingList(data, 'pipeline_stages'),
               defaultLaborWarrantyMonths: parseSettingNumber(data, 'default_labor_warranty_months', 12),
               defaultPartsWarrantyMonths: parseSettingNumber(data, 'default_parts_warranty_months', 12),
+              // Lighting savings: the demand half of a commercial bill. 0 means this
+              // tenant is not on a demand tariff, or has not set one — which leaves
+              // every savings figure exactly as it was before this existed.
+              lightingDemandChargePerKw: parseSettingNumber(data, 'lighting_demand_charge_per_kw', 0),
+              lightingDemandCoincidence: parseSettingNumber(data, 'lighting_demand_coincidence', 0.8),
             });
           }
         } catch (e) {

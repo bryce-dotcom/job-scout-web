@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { toast } from '../lib/toast'
+import { savingsForStorage, computeLightingSavings } from '../lib/lightingSavings'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, LED_REPLACEMENT_MAP, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
@@ -32,6 +33,8 @@ export default function LightingAuditDetail() {
   const navigate = useNavigate()
   const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
+  const lightingDemandChargePerKw = useStore((state) => state.lightingDemandChargePerKw)
+  const lightingDemandCoincidence = useStore((state) => state.lightingDemandCoincidence)
   const lightingAudits = useStore((state) => state.lightingAudits)
   const auditAreas = useStore((state) => state.auditAreas)
   const products = useStore((state) => state.products)
@@ -117,6 +120,16 @@ export default function LightingAuditDetail() {
   }, [products, areaForm.fixture_category])
 
   const audit = lightingAudits.find(a => String(a.id) === String(id))
+  // Recomputed for display from the same rule that wrote the row, so the
+  // split shown can never disagree with the total stored.
+  const savingsBreakdown = useMemo(() => computeLightingSavings({
+    wattsReduced: audit?.watts_reduced,
+    operatingHours: audit?.operating_hours,
+    operatingDays: audit?.operating_days,
+    electricRate: audit?.electric_rate,
+    demandChargePerKw: lightingDemandChargePerKw,
+    demandCoincidence: lightingDemandCoincidence,
+  }), [audit, lightingDemandChargePerKw, lightingDemandCoincidence])
   const areas = auditAreas.filter(a => String(a.audit_id) === String(id))
 
   if (!audit) {
@@ -238,17 +251,24 @@ export default function LightingAuditDetail() {
     const total_existing_watts = areas.reduce((sum, a) => sum + (a.total_existing_watts || 0), 0)
     const total_proposed_watts = areas.reduce((sum, a) => sum + (a.total_led_watts || 0), 0)
     const watts_reduced = total_existing_watts - total_proposed_watts
-    const annual_hours = operating_hours * operating_days
-    const annual_savings_kwh = (watts_reduced * annual_hours) / 1000
-    const annual_savings_dollars = annual_savings_kwh * electric_rate
+
+    // Energy AND demand. A commercial bill charges for both, and the audit
+    // only ever counted the first — see lib/lightingSavings.
+    const saved = savingsForStorage({
+      wattsReduced: watts_reduced,
+      operatingHours: operating_hours,
+      operatingDays: operating_days,
+      electricRate: electric_rate,
+      demandChargePerKw: lightingDemandChargePerKw,
+      demandCoincidence: lightingDemandCoincidence,
+    })
 
     await updateLightingAudit(id, {
       total_fixtures: Math.round(total_fixtures) || 0,
       total_existing_watts: Math.round(total_existing_watts) || 0,
       total_proposed_watts: Math.round(total_proposed_watts) || 0,
       watts_reduced: Math.round(watts_reduced) || 0,
-      annual_savings_kwh: Math.round(annual_savings_kwh) || 0,
-      annual_savings_dollars: Math.round(annual_savings_dollars * 100) / 100 || 0
+      ...saved,
     })
   }
 
@@ -882,6 +902,21 @@ export default function LightingAuditDetail() {
           <div style={{ fontSize: '24px', fontWeight: '700', color: '#c28b38' }}>
             {formatCurrency(audit.annual_savings_dollars)}
           </div>
+          {/* Where the number comes from. A rep has to defend this in front of
+              a customer, and "is that energy or the whole bill" is the first
+              question asked — a bare total invites the assumption that it is
+              energy only, which is exactly what it used to be. */}
+          {savingsBreakdown.demandDollars > 0 && (
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '6px', lineHeight: 1.5 }}>
+              {formatCurrency(savingsBreakdown.energyDollars)} energy
+              {' + '}
+              {formatCurrency(savingsBreakdown.demandDollars)} demand
+              <div style={{ opacity: 0.8 }}>
+                {savingsBreakdown.kwReduced.toFixed(1)} kW off peak @ {formatCurrency(lightingDemandChargePerKw)}/kW/mo
+                {lightingDemandCoincidence < 1 ? ` × ${Math.round(lightingDemandCoincidence * 100)}%` : ''}
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{

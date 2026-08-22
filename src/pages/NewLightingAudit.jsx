@@ -6,6 +6,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, LED_REPLACEMENT_MAP, AI_CATEGORY_MAP, AI_LAMP_TYPE_MAP, PRODUCT_CATEGORY_KEYWORDS } from '../lib/lightingConstants'
 import { photoQueue } from '../lib/photoQueue'
+import { savingsForStorage } from '../lib/lightingSavings'
 import { ArrowLeft, ArrowRight, Check, Plus, Minus, Trash2, Zap, Info, Building, Building2, Factory, Warehouse, Sparkles, Search, UserPlus, X, Copy } from 'lucide-react'
 
 const buildingSizes = [
@@ -109,6 +110,8 @@ export default function NewLightingAudit() {
   const [searchParams] = useSearchParams()
   const urlLeadId = searchParams.get('lead_id')
   const companyId = useStore((state) => state.companyId)
+  const lightingDemandChargePerKw = useStore((state) => state.lightingDemandChargePerKw)
+  const lightingDemandCoincidence = useStore((state) => state.lightingDemandCoincidence)
   const user = useStore((state) => state.user)
   const customers = useStore((state) => state.customers)
   const leads = useStore((state) => state.leads)
@@ -445,9 +448,16 @@ export default function NewLightingAudit() {
     const total_proposed_watts = areas.reduce((sum, a) => sum + ((a.fixture_count || 0) * (a.led_wattage || 0)), 0)
     const watts_reduced = total_existing_watts - total_proposed_watts
 
-    const annual_hours = basicInfo.operating_hours * basicInfo.operating_days
-    const annual_savings_kwh = (watts_reduced * annual_hours) / 1000
-    const annual_savings_dollars = annual_savings_kwh * basicInfo.electric_rate
+    // Same rule as the recalculation on the audit page — lib/lightingSavings
+    // is the only place either number is worked out, energy AND demand.
+    const { annual_savings_kwh, annual_savings_dollars } = savingsForStorage({
+      wattsReduced: watts_reduced,
+      operatingHours: basicInfo.operating_hours,
+      operatingDays: basicInfo.operating_days,
+      electricRate: basicInfo.electric_rate,
+      demandChargePerKw: lightingDemandChargePerKw,
+      demandCoincidence: lightingDemandCoincidence,
+    })
 
     // Calculate rebate — try PDF-verified prescriptive_measures first, fall back to incentive_measures
     let estimated_rebate = 0
