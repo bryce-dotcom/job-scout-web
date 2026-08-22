@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveQuoteEmailLinks, renderQuoteEmailLinks } from "../_shared/quoteEmailLinks.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -91,6 +92,23 @@ serve(async (req) => {
     }
 
     // Resolve branding
+    // Extra links for the footer — the Energy Scout site, the utility's
+    // approved-vendor page, whatever this workspace has configured. Scoped
+    // per business unit so a lighting link does not ride along on a window
+    // cleaning quote. Unset means no setting row, no links, and an email
+    // byte-identical to what went out before.
+    let extraLinksHtml = '';
+    try {
+      const { data: linkSetting } = await supabase
+        .from('settings').select('value')
+        .eq('company_id', _company_id).eq('key', 'quote_email_links').maybeSingle();
+      extraLinksHtml = renderQuoteEmailLinks(
+        resolveQuoteEmailLinks(linkSetting?.value, business_unit_name)
+      );
+    } catch (_e) {
+      // A footer link is never a reason not to send the estimate.
+    }
+
     const displayName = business_unit_name || company_name || 'Our Company';
     const contactPhone = business_unit_phone || '';
     const contactEmail = business_unit_email || '';
@@ -214,6 +232,7 @@ serve(async (req) => {
         ${isFormal ? `<p style="color:#7d8a7f;font-size:12px;margin:10px 0 0;">Secure signature and online payment. Link expires in 30 days.</p>` : ''}
       </div>
       ` : ''}
+      ${extraLinksHtml}
 
       <!-- Footer -->
       <div style="background-color:#f9f8f4;padding:20px 32px;border-top:1px solid #e8e4db;">
