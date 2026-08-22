@@ -111,6 +111,14 @@ export function computeRepRows({ employees = [], jobs = [], leads = [], invoices
 // so the ledger keeps up with new payments without a cron or per-callsite hook.
 export async function syncRepCommissions(supabase, companyId, data, onlyEmployeeId = null) {
   try {
+    // Invoices but not one payment in the whole company is not a real state —
+    // it means the caller's data is still loading. Writing from it mints
+    // synthetic rows worth the full invoice amount, and any that get paid
+    // before the next sync are frozen wrong forever. Refuse rather than freeze.
+    if ((data?.invoices?.length || 0) > 0 && (data?.payments?.length || 0) === 0) {
+      console.warn('[syncRepCommissions] invoices loaded but no payments — refusing to write from partial data')
+      return { inserted: 0, deleted: 0, skipped: 'partial-data' }
+    }
     const expected = computeRepRows(data, onlyEmployeeId).map(r => ({ ...r, company_id: companyId }))
     // RECONCILE (freeze-on-PAY, like the bonus ledger): an UNPAID row follows
     // current reality — insert what's newly earned, delete what's no longer

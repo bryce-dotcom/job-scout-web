@@ -1411,7 +1411,15 @@ export default function Payroll() {
   // Insert-only; never rewrites an earned amount. Mirrors the bonus sync so
   // Payroll and My Pay read identical, non-drifting invoice-commission numbers.
   useEffect(() => {
-    if (loading || !companyId || !jobs.length) return
+    // jobs, invoices and payments are three separate paginated fetches. This
+    // used to wait only on jobs, so the sync could run in the window where
+    // jobs had arrived and payments had not — and a company with no payments
+    // loaded makes every Paid invoice look payment-less, which is exactly the
+    // case the synthetic fallback exists for. It then froze a row worth the
+    // WHOLE invoice instead of what was received, and a payroll run that
+    // marked it paid froze it for good: Damien $604.67 against $151.17 earned,
+    // Noah $1,033.23 against $666.71. Wait for the data the sum is made of.
+    if (loading || !companyId || !jobs.length || !invoices.length || !payments.length) return
     let cancelled = false
     ;(async () => {
       await syncRepCommissions(supabase, companyId, { employees, jobs, leads, invoices, payments, utilityInvoices: utilityInvoicesState, payrollConfig })

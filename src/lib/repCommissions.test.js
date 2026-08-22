@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeRepRows, earnedRepInPeriod, liveInvoiceAvailable } from './repCommissions'
+import { computeRepRows, earnedRepInPeriod, liveInvoiceAvailable, syncRepCommissions } from './repCommissions'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Sales commission. Untested until now, and the source comments call the
@@ -182,4 +182,76 @@ describe('never produces junk pay rows', () => {
   // (Payroll.jsx:656-660), which is what keeps a failed Supabase query
   // (data === null) from reaching here. Don't remove those `|| []` guards
   // on the assumption this lib is null-safe; it isn't.
+})
+
+// ── The partial-data freeze ─────────────────────────────────────────────────
+//
+// Alayda (6988348a): "Damien Hargett's my pay nor is his comissions coming
+// through, we need this fixed asap."
+//
+// His commissions WERE coming through by the time I looked — the frozen ledger
+// did not exist when she reported. What the investigation turned up instead was
+// worse: four rows in the ledger worth $5,744.96 more than they should be.
+//
+// Payroll syncs the ledger from jobs + invoices + payments, three separate
+// paginated fetches, and the effect waited only on `jobs`. In the window where
+// jobs had arrived and payments had not, every Paid invoice looked
+// payment-less — the exact case the synthetic fallback is for — so it froze a
+// row worth the WHOLE invoice rather than the amount received. On an Energy
+// Scout invoice the difference is the utility incentive, which is separately
+// commissioned as a `utility` row, so the rep was paid on it twice. The overage
+// matched the utility row to the cent on three of the four.
+describe('the ledger must not be written from half-loaded data', () => {
+  const paidInvoice = { id: 1, job_id: 10, amount: 7113.77, payment_status: 'Paid', discount_applied: 5335.33 }
+  const rep = { id: 72, company_id: 3, is_commission: true, commission_services_rate: 8.5, commission_services_type: 'percent' }
+  const job = { id: 10, salesperson_id: 72 }
+
+  it('a Paid invoice with genuinely no payment still earns — that case is real', () => {
+    const rows = computeRepRows({
+      employees: [rep], jobs: [job], leads: [], invoices: [paidInvoice], payments: [],
+    })
+    const synth = rows.filter((r) => r.source === 'live_synthetic')
+    expect(synth).toHaveLength(1)
+    expect(synth[0].basis_amount).toBe(7113.77)
+  })
+
+  // ...which is why the guard cannot live in computeRepRows: an empty payments
+  // array is legitimate there. It has to stop at the write.
+  it('refuses to write when there are invoices but not one payment anywhere', async () => {
+    const calls = []
+    const fakeSupabase = {
+      from(table) { calls.push(table); return this },
+      select() { return this }, eq() { return this }, in() { return this },
+      insert() { calls.push('INSERT'); return Promise.resolve({ error: null }) },
+      delete() { calls.push('DELETE'); return this },
+      then(res) { return Promise.resolve({ data: [], error: null }).then(res) },
+    }
+    const out = await syncRepCommissions(fakeSupabase, 3, {
+      employees: [rep], jobs: [job], leads: [], invoices: [paidInvoice], payments: [],
+    })
+    expect(out.skipped).toBe('partial-data')
+    expect(out.inserted).toBe(0)
+    expect(calls).not.toContain('INSERT')
+  })
+
+  it('writes normally once the payments have arrived', async () => {
+    let inserted = null
+    const fakeSupabase = {
+      from() { return this },
+      select() { return this }, eq() { return this }, in() { return this },
+      insert(rows) { inserted = rows; return Promise.resolve({ error: null }) },
+      delete() { return this },
+      then(res) { return Promise.resolve({ data: [], error: null }).then(res) },
+    }
+    const out = await syncRepCommissions(fakeSupabase, 3, {
+      employees: [rep], jobs: [job], leads: [], invoices: [paidInvoice],
+      payments: [{ id: 5, invoice_id: 1, amount: 1778.44, date: '2026-07-13' }],
+    })
+    expect(out.skipped).toBeUndefined()
+    expect(inserted).toHaveLength(1)
+    // The amount received, not the invoice total — $151.17, not $604.67.
+    expect(inserted[0].basis_amount).toBe(1778.44)
+    expect(inserted[0].amount).toBe(151.17)
+    expect(inserted[0].source).toBe('live')
+  })
 })
