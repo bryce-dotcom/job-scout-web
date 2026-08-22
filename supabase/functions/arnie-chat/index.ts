@@ -4,6 +4,7 @@ import { resolveCaller, type Caller } from '../_shared/auth.ts'
 import { proposeChange, targetsSentence } from '../_shared/arnieConfig.ts'
 import { recordTargetsSentence } from '../_shared/arnieRecords.ts'
 import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
+import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arnieBulk.ts'
 
 // Still read directly here: the SSE streaming path keeps its own fetch
 // (the shared wrapper buffers responses, which would break streaming).
@@ -175,15 +176,19 @@ const TOOLS = [
   },
   {
     name: 'query_products',
-    description: 'Search the product and service catalogue — price, cost, manufacturer, model number, category. Use for "what do we charge for X", "do we carry Y", "what is our cost on Z". Cost and margin are shown to ADMIN+ only.',
+    description: 'Search the product and service catalogue — price, cost, manufacturer, model number, category. Also AUDITS it: set group_by=manufacturer to see every distinct value with its count, which is how you spot inconsistent data (the same manufacturer spelled two ways, or with a trailing space, reads as two separate values). Use exclude_manufacturer to answer "which products are NOT made by X". Cost and margin are shown to ADMIN+ only.',
     input_schema: {
       type: 'object',
       properties: {
         search: { type: 'string', description: 'Match name, model number or manufacturer' },
+        manufacturer: { type: 'string', description: 'Exact manufacturer match. Values can differ only by trailing whitespace — group_by=manufacturer shows you the real ones.' },
+        exclude_manufacturer: { type: 'string', description: 'Only products whose manufacturer is NOT this. Use for "which ones are not MES".' },
+        missing_manufacturer: { type: 'boolean', description: 'Only products with no manufacturer set at all' },
         product_category: { type: 'string' },
         type: { type: 'string', description: 'e.g. Product or Service' },
-        active_only: { type: 'boolean', description: 'Default true' },
-        limit: { type: 'integer', description: 'Max results (default 25, max 100)' },
+        active_only: { type: 'boolean', description: 'Default true. Set false to include inactive products.' },
+        group_by: { type: 'string', enum: ['manufacturer', 'product_category', 'type', 'active', 'none'], description: 'Aggregate instead of listing. Reads the WHOLE matching set, not a page of it — always use this before making any claim about "all" or "every" product.' },
+        limit: { type: 'integer', description: 'Max products listed (default 25, max 200). Ignored when group_by is set.' },
       },
     },
   },
@@ -288,13 +293,72 @@ const PROPOSE_RECORD_TOOL = {
   },
 }
 
-// Everyone can see the record tool, because a clocked-in tech is allowed to
-// note their own job; the executor decides per target and per row. The config
-// tool stays hidden from non-admins, so the model never offers a settings
-// change to someone who could not make one.
-function toolsFor(role: string) {
+// The plural of propose_record_change. The model gives a FILTER, never a list
+// of rows — the server resolves it, so no invented id can become a write, and
+// the card lists every affected product rather than a count.
+const PROPOSE_BULK_TOOL = {
+  name: 'propose_bulk_change',
+  description:
+    'Draft the SAME change to one field across many products at once, for an admin to approve. Targets: ' +
+    bulkTargetsSentence() +
+    '. Use this for catalogue clean-up — normalising a manufacturer spelt two ways, retyping a category, or deactivating a batch. You give a filter (filter_field + filter_value, matched EXACTLY, including whitespace) and the new value; the server finds the rows. Run query_products with group_by=manufacturer FIRST so you are filtering on a value that really exists. Refuses above ' +
+    BULK_MAX +
+    ' rows. Nothing is written until the admin approves, and every affected product is listed on the card. Deactivating is how you "remove" a product — never claim you deleted one.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      target: { type: 'string', description: 'product_manufacturer, product_category or product_active' },
+      filter_field: { type: 'string', description: 'Column to match on: manufacturer, product_category, type or name' },
+      filter_value: { type: 'string', description: 'Exact value to match, whitespace included. Pass "" to match rows where it is empty.' },
+      value: { type: 'string', description: 'The new value. For product_active use true or false.' },
+    },
+    required: ['target', 'filter_field', 'filter_value', 'value'],
+  },
+}
+
+// Some tool results are only useful if the caller can DRAW them. A proposal
+// comes back as an approval card, and a client that has never heard of that
+// card type cannot render it — in the worst case it crashes trying.
+//
+// This is not hypothetical. propose_bulk_change was deployed here before the
+// UI that draws its card had shipped; the then-current client routed anything
+// that was not a 'record' preview into the settings-list card, which calls
+// .map() on `after`. A bulk preview's `after` is a string, so the message list
+// threw mid-render.
+//
+// So the client declares what it can draw and the server only advertises tools
+// whose output fits. A stale tab simply is not offered the tool and Arnie says
+// he cannot do it — honest and harmless. This also means server and client
+// halves of a feature can deploy in either order, which is the general fix:
+// nobody has to remember to sequence them.
+const CARD_TOOLS: Record<string, string> = {
+  propose_change: 'config',
+  propose_record_change: 'record',
+  propose_bulk_change: 'bulk',
+}
+
+function toolsFor(role: string, cards: string[]) {
   const isAdmin = ['developer', 'super_admin', 'admin'].includes(role)
-  return isAdmin ? [...TOOLS, PROPOSE_TOOL, PROPOSE_RECORD_TOOL] : [...TOOLS, PROPOSE_RECORD_TOOL]
+  const offered = isAdmin
+    ? [...TOOLS, PROPOSE_TOOL, PROPOSE_RECORD_TOOL, PROPOSE_BULK_TOOL]
+    : [...TOOLS, PROPOSE_RECORD_TOOL]
+  return offered.filter((t: any) => {
+    const needs = CARD_TOOLS[t.name]
+    return !needs || cards.includes(needs)
+  })
+}
+
+/**
+ * What can this client draw?
+ *
+ * Absent field = a client from before the handshake existed. Those shipped
+ * with the config and record cards, so they are credited with exactly those
+ * and nothing newer. Anything added later has to ask for itself.
+ */
+function cardsFor(body: Record<string, unknown>): string[] {
+  const declared = (body as { supports?: unknown }).supports
+  if (!Array.isArray(declared)) return ['config', 'record']
+  return declared.filter((x): x is string => typeof x === 'string')
 }
 
 // ============================================================
@@ -502,25 +566,79 @@ async function execTool(name: string, input: any, caller: Caller) {
     }
 
     if (name === 'query_products') {
+      const grouping = input.group_by && input.group_by !== 'none'
+      // Never `*`. products_services carries ~50 columns including
+      // datasheet_json and a handful of URLs, none of which help answer a
+      // question about the catalogue. Selecting everything for 200 products
+      // produced a 232 KB tool result — roughly 64,000 tokens — and the next
+      // request to the model failed outright, which surfaced as "AI analysis
+      // failed" with no clue that size was the cause. Ask for the columns the
+      // answer needs.
       const select = isAdmin
-        ? '*'
+        ? 'id,item_id,name,description,type,unit_price,cost,markup_percent,product_category,'
+          + 'manufacturer,model_number,active,vendor_sku,default_vendor_id,lead_time_days'
         : 'id,item_id,name,description,type,unit_price,product_category,manufacturer,model_number,active'
       const params = new URLSearchParams({ company_id: `eq.${companyId}`, select })
       if (input.active_only !== false) params.append('active', 'eq.true')
       if (input.product_category) params.append('product_category', `eq.${input.product_category}`)
       if (input.type) params.append('type', `eq.${input.type}`)
+      if (input.manufacturer) params.append('manufacturer', `eq.${input.manufacturer}`)
+      if (input.exclude_manufacturer) params.append('manufacturer', `neq.${input.exclude_manufacturer}`)
+      if (input.missing_manufacturer) params.append('manufacturer', 'is.null')
       if (input.search) {
         const term = String(input.search).replace(/[*,()]/g, '')
         params.append('or', `(name.ilike.*${term}*,model_number.ilike.*${term}*,manufacturer.ilike.*${term}*)`)
       }
-      const got = await fetchRows(sb('products_services'), params, hdr, Math.min(input.limit || 25, 100))
+      // Grouping has to read the WHOLE matching set. Answering "is every
+      // product made by MES?" off the first page is how a catalogue audit
+      // becomes a confident wrong answer.
+      const cap = grouping ? MAX_ROWS : Math.min(input.limit || 25, 200)
+      const got = await fetchRows(sb('products_services'), params, hdr, cap)
       if ('error' in got) return { error: `products query failed: ${got.error}` }
+
+      if (grouping) {
+        const agg: any = aggregate(got, input.group_by, ['unit_price', 'cost'])
+        // Values differing only by surrounding whitespace are a data problem,
+        // not a grouping artefact — and they are invisible when rendered.
+        if (input.group_by === 'manufacturer') {
+          const keys = Object.keys(agg.groups || {})
+          const collisions: Record<string, string[]> = {}
+          for (const k of keys) {
+            const norm = k.trim().toLowerCase()
+            ;(collisions[norm] ||= []).push(k)
+          }
+          const dupes = Object.values(collisions).filter((v) => v.length > 1)
+          if (dupes.length) {
+            agg.INCONSISTENT_VALUES = dupes.map((v) => v.map((x) => JSON.stringify(x)))
+            agg.INCONSISTENT_NOTE =
+              'These spell the same manufacturer more than one way (usually stray whitespace), so they filter and report as separate manufacturers. Show the user the quoted forms so the difference is visible, and offer to normalise them.'
+          }
+        }
+        return agg
+      }
+
       return {
         matches: got.total,
         showing: got.rows.length,
         products: got.rows,
-        ...(got.truncated ? { note: `Showing ${got.rows.length} of ${got.total} matches.` } : {}),
+        ...(got.truncated
+          ? { WARNING: `Listing ${got.rows.length} of ${got.total} matches. Do NOT draw a conclusion about all of them from this page — re-run with group_by to cover the whole set.` }
+          : {}),
       }
+    }
+
+    if (name === 'propose_bulk_change') {
+      if (!isAdmin) return { restricted: 'Only an admin can make catalogue-wide changes.' }
+      return await proposeBulkChange(
+        { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY },
+        caller,
+        {
+          target: String(input?.target || ''),
+          filter_field: String(input?.filter_field || ''),
+          filter_value: String(input?.filter_value ?? ''),
+          value: String(input?.value ?? ''),
+        },
+      )
     }
 
     if (name === 'propose_record_change') {
@@ -641,7 +759,9 @@ Deno.serve(async (req) => {
       return jsonError('ANTHROPIC_API_KEY not configured', 500)
     }
 
-    const { messages, systemPrompt, stream } = await req.json()
+    const body = await req.json()
+    const { messages, systemPrompt, stream } = body
+    const cards = cardsFor(body)
 
     // Identity comes from the JWT — NEVER from the body. `companyId` and
     // `role` used to be read off the request and handed straight to the
@@ -682,11 +802,11 @@ Deno.serve(async (req) => {
 
     // === STREAMING + TOOL USE LOOP ===
     if (stream) {
-      return streamWithTools(cleaned, systemPrompt, caller)
+      return streamWithTools(cleaned, systemPrompt, caller, cards)
     }
 
     // === NON-STREAMING (with tool support) ===
-    const reply = await callWithTools(cleaned, systemPrompt, caller)
+    const reply = await callWithTools(cleaned, systemPrompt, caller, cards)
     return new Response(JSON.stringify({ reply }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
@@ -708,7 +828,7 @@ function jsonError(msg: string, status: number, extra?: Record<string, unknown>)
 }
 
 // Run a non-streaming completion with tool use support (multi-turn)
-async function callWithTools(messages: any[], systemPrompt: string, caller: Caller): Promise<string> {
+async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[]): Promise<string> {
   const { companyId, role } = caller
   let convo = [...messages]
   // Only advertise tools if we have a companyId to scope queries safely
@@ -720,7 +840,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 4096,
         system: systemPrompt || '',
-        ...(includeTools ? { tools: toolsFor(role) } : {}),
+        ...(includeTools ? { tools: toolsFor(role, cards) } : {}),
         messages: convo,
       },
     )
@@ -748,7 +868,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
 }
 
 // Streaming version with tool support — emits SSE
-async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller) {
+async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[]) {
   const { companyId, role } = caller
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -772,7 +892,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               model: 'claude-sonnet-4-5-20250929',
               max_tokens: 4096,
               system: systemPrompt || '',
-              ...(includeTools ? { tools: toolsFor(role) } : {}),
+              ...(includeTools ? { tools: toolsFor(role, cards) } : {}),
               messages: convo,
               stream: true,
             }),
@@ -853,7 +973,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             // A drafted change has to reach the UI as a card, not as prose —
             // the model describing a diff is not the same as the admin seeing
             // one and clicking approve.
-            if ((tu.name === 'propose_change' || tu.name === 'propose_record_change')
+            if (['propose_change', 'propose_record_change', 'propose_bulk_change'].includes(tu.name)
                 && result?.proposal && result?.preview) {
               send('proposal', { proposal: result.proposal, preview: result.preview })
             }
