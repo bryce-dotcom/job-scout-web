@@ -17,6 +17,7 @@ import EntityCard from '../components/EntityCard'
 import RecurrencePicker from '../components/RecurrencePicker'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
 import { jobsFields, jobLinesFields, jobSectionsFields } from '../lib/importExportFields'
+import { draftToJobLine, draftHasContent } from '../lib/jobLineDraft'
 import { jobStatusColors as statusColors, invoiceStatusColors } from '../lib/statusColors'
 import { matchesJobSearch, jobSearchRank } from '../lib/jobSearch'
 import PageHeader from '../components/PageHeader'
@@ -668,6 +669,16 @@ export default function Jobs() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+
+    // The draft row is folded into the save below, so pressing the small Add
+    // button is optional. The one case that cannot be folded in is a draft with
+    // something typed that is not a usable line — a quantity of 0. Saying so is
+    // the whole point: dropping it quietly is the bug Christopher reported.
+    if (draftHasContent(newLineDraft) && !draftToJobLine(newLineDraft, products)) {
+      setError('That last line item needs a quantity of at least 1, or clear it before saving.')
+      return
+    }
+
     setLoading(true)
     setError(null)
 
@@ -730,9 +741,16 @@ export default function Jobs() {
 
     // Bulk-insert any line items the user added in the create modal so they
     // don't have to re-open the job afterwards just to add lines.
-    if (!editingJob && result.data?.[0] && newJobLines.length > 0) {
+    // Christopher: "I have been hitting the add job button thinking all of the
+    // info is saved." A line typed into the draft row but never handed to the
+    // small Add button used to be discarded here in silence, and the job was
+    // created without the work on it. Fold it in — pressing Add is now a
+    // convenience for entering several lines, not a toll on saving one.
+    const pendingLine = draftToJobLine(newLineDraft, products)
+    const linesToSave = pendingLine ? [...newJobLines, pendingLine] : newJobLines
+    if (!editingJob && result.data?.[0] && linesToSave.length > 0) {
       const newJobId = result.data[0].id
-      const linesPayload = newJobLines
+      const linesPayload = linesToSave
         .filter(l => (l.item_id || (l.description && String(l.description).trim())) && Number(l.quantity) > 0)
         .map(l => {
           const product = products.find(p => String(p.id) === String(l.item_id))
@@ -1961,20 +1979,11 @@ export default function Jobs() {
                             <button
                               type="button"
                               onClick={() => {
-                                const desc = (newLineDraft.description || '').trim()
-                                if (!newLineDraft.item_id && !desc) return
-                                const qty = Number(newLineDraft.quantity || 1)
-                                if (qty <= 0) return
-                                const prod = (products || []).find(p => String(p.id) === String(newLineDraft.item_id))
-                                const price = (newLineDraft.price !== '' && newLineDraft.price != null && !isNaN(Number(newLineDraft.price)))
-                                  ? Number(newLineDraft.price)
-                                  : Number(prod?.unit_price || 0)
-                                setNewJobLines(prev => [...prev, {
-                                  item_id: newLineDraft.item_id || null,
-                                  description: desc || prod?.name || '',
-                                  price,
-                                  quantity: qty,
-                                }])
+                                // Same rule submit uses, so the two can never
+                                // disagree about what a draft is worth.
+                                const line = draftToJobLine(newLineDraft, products)
+                                if (!line) return
+                                setNewJobLines(prev => [...prev, line])
                                 setNewLineDraft({ item_id: '', description: '', price: '', quantity: 1 })
                               }}
                               disabled={!canAdd}
