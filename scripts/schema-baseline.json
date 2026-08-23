@@ -1,10 +1,6 @@
 {
   "note": "Known column drift, recorded so schema:check can fail on NEW drift only. Fix an entry then delete it from this list — do not add to it without a reason.",
   "generated_from": "https://tzrhfhisdeahrrmeksif.supabase.co",
-  "known": [
-    "supabase/functions/zach-instant-quote/index.ts|companies|name"
-  ],
-  "reasons": {
-    "supabase/functions/zach-instant-quote/index.ts|companies|name": "REAL BUG, tracked separately. companies has company_name, not name, so PostgREST 400s and the public instant-quote page answers \"Unknown company slug\" for every request. Recorded here only so this check can fail on NEW drift; the endpoint is also 401ing because verify_jwt was never pinned in config.toml, so both must be fixed together. Delete this entry when fixed."
-  }
+  "known": [],
+  "reasons": {}
 }
