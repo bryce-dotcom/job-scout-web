@@ -154,7 +154,7 @@ serve(async (req) => {
     const sbHeaders = { 'Authorization': `Bearer ${SERVICE_KEY}`, 'apikey': SERVICE_KEY, 'Content-Type': 'application/json' };
 
     // Resolve company by slug
-    const compRes = await fetch(`${SUPABASE_URL}/rest/v1/companies?public_quote_slug=eq.${encodeURIComponent(company_slug)}&select=id,name`, { headers: sbHeaders });
+    const compRes = await fetch(`${SUPABASE_URL}/rest/v1/companies?public_quote_slug=eq.${encodeURIComponent(company_slug)}&select=id,company_name`, { headers: sbHeaders });
     const comps = await compRes.json();
     if (!comps?.length) return json({ error: 'Unknown company slug' }, 404);
     const company = comps[0];
@@ -341,7 +341,7 @@ serve(async (req) => {
       quote_id: inserted?.id,
       pipeline_quote_id: pipelineQuoteId,
       lead_id: leadId,
-      company_name: company.name,
+      company_name: company.company_name,
       address,
       ai: {
         sqft: turfSqft,

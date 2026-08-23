@@ -381,6 +381,16 @@ verify_jwt = false
 [functions.customer-subscription-webhook]
 verify_jwt = false
 
+# The public Zach instant-quote page (/quote/:slug) posts here with NO
+# Authorization header — it is an unauthenticated storefront for prospects who
+# have no Supabase session. Same trap as resend-webhook and stripe-webhook: a
+# plain `functions deploy` (no --no-verify-jwt) resets this to true and the
+# gateway 401s every caller before the function runs, which is exactly what took
+# the page dark for both public quote slugs. The function is safe to expose: it
+# resolves the company by public_quote_slug only, and rate-limits per IP hash.
+[functions.zach-instant-quote]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
