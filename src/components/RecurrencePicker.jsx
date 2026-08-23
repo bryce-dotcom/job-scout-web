@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { addInterval } from '../lib/recurrenceDates'
 import { Repeat, Calendar, Wrench, Check } from 'lucide-react'
 
 // RecurrencePicker — a self-contained "make this job repeat" panel.
@@ -31,28 +32,8 @@ const FREQS = [
   { v: 'Annually', label: 'Yearly' },
 ]
 
-function addMonths(d, n) {
-  const x = new Date(d.getTime())
-  const day = x.getDate()
-  x.setMonth(x.getMonth() + n)
-  if (x.getDate() < day) x.setDate(0) // clamp e.g. Jan 31 -> Feb 28
-  return x
-}
-function addInterval(d, freq) {
-  const x = new Date(d.getTime())
-  switch (freq) {
-    case 'Daily': x.setDate(x.getDate() + 1); return x
-    case 'Weekly': x.setDate(x.getDate() + 7); return x
-    case 'Bi-Weekly': x.setDate(x.getDate() + 14); return x
-    case 'Every 6 Weeks': x.setDate(x.getDate() + 42); return x
-    case 'Monthly': return addMonths(d, 1)
-    case 'Bi-Monthly': return addMonths(d, 2)
-    case 'Quarterly': return addMonths(d, 3)
-    case 'Bi-Annually': return addMonths(d, 6)
-    case 'Annually': return addMonths(d, 12)
-    default: x.setDate(x.getDate() + 7); return x
-  }
-}
+// The interval arithmetic moved to lib/recurrenceDates so the calendar can
+// project the same dates this preview promises. One rule, two surfaces.
 function toISODate(d) {
   // local YYYY-MM-DD (avoid UTC shift from toISOString)
   const m = String(d.getMonth() + 1).padStart(2, '0')

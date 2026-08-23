@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
-import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella, Wrench } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella, Wrench, Repeat } from 'lucide-react'
 import {
   buildCalendarEvents,
   filterCalendarEvents,
@@ -22,7 +22,7 @@ const defaultTheme = {
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-const KIND_ICON = { sales: Users, delivery: Briefcase, timeoff: Umbrella, service: Wrench }
+const KIND_ICON = { sales: Users, delivery: Briefcase, timeoff: Umbrella, service: Wrench, projected: Repeat }
 
 export default function CompanyCalendar() {
   const navigate = useNavigate()
@@ -38,7 +38,7 @@ export default function CompanyCalendar() {
 
   const [cursor, setCursor] = useState(() => new Date())
   const [timeOff, setTimeOff] = useState([])
-  const [kinds, setKinds] = useState({ sales: true, delivery: true, timeoff: true, service: true })
+  const [kinds, setKinds] = useState({ sales: true, delivery: true, timeoff: true, service: true, projected: true })
   const [units, setUnits] = useState({})
 
   // Time off is a small table and isn't in the store — fetch it directly.
@@ -61,9 +61,18 @@ export default function CompanyCalendar() {
     [businessUnits],
   )
 
+  // Project repeats through the end of the month being looked at, so paging
+  // forward answers "when does this come round again" instead of showing an
+  // empty grid. Bryce: "When a reacurring job is put on the schedule I can't
+  // see it the next month."
+  const projectThrough = useMemo(
+    () => new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59),
+    [cursor],
+  )
+
   const events = useMemo(
-    () => buildCalendarEvents({ appointments, jobs, timeOff, employees }),
-    [appointments, jobs, timeOff, employees],
+    () => buildCalendarEvents({ appointments, jobs, timeOff, employees }, { projectRecurringThrough: projectThrough }),
+    [appointments, jobs, timeOff, employees, projectThrough],
   )
 
   const visible = useMemo(() => filterCalendarEvents(events, { kinds, units }), [events, kinds, units])

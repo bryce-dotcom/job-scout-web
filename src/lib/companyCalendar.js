@@ -1,4 +1,5 @@
 import { localDateStr } from './localDate'
+import { futureOccurrences, REPEATS } from './recurrenceDates'
 // Company Calendar — one month view combining what the business actually has
 // on the books: Sales (appointments), Delivery (scheduled jobs), and Employee
 // time off. Alayda: "seeing events on the calendar would be super helpful —
@@ -34,6 +35,14 @@ import { zonedDayKey, DEFAULT_TZ } from './dateTz'
  * has to guess why their thing is or isn't on it.
  */
 export const KINDS = {
+  // Not on the books — a repeat that is due but has no job row yet, because
+  // the next occurrence is only created when the current one is completed.
+  projected: {
+    id: 'projected',
+    label: 'Expected',
+    color: '#a855f7',
+    writes: { source: 'Jobs', bookedIn: 'the Repeat panel', appearsWhen: 'a repeating job is due again — no job exists yet' },
+  },
   sales: {
     id: 'sales',
     label: 'Sales',
@@ -112,7 +121,7 @@ export function expandDateRange(start, end) {
  * Normalize the three sources into one event list.
  * Each event: { id, kind, dayKeys[], title, subtitle, businessUnit, link, status }
  */
-export function buildCalendarEvents({ appointments = [], jobs = [], timeOff = [], employees = [] } = {}, { tz = DEFAULT_TZ } = {}) {
+export function buildCalendarEvents({ appointments = [], jobs = [], timeOff = [], employees = [] } = {}, { tz = DEFAULT_TZ, projectRecurringThrough = null } = {}) {
   const empName = new Map((employees || []).map((e) => [String(e.id), e.name]))
   const events = []
 
@@ -152,6 +161,36 @@ export function buildCalendarEvents({ appointments = [], jobs = [], timeOff = []
       link: `/jobs/${j.id}`,
       time: j.start_date,
     })
+
+    // Bryce: "When a reacurring job is put on the schedule I can't see it the
+    // next month. At least show tentative appointment for the next month or
+    // recurring."
+    //
+    // The next occurrence genuinely does not exist yet — the DB trigger creates
+    // it when the current one is Completed, on purpose, because an earlier
+    // engine spawned eagerly and made two of everything. So this DRAWS the
+    // future without creating it: no row, no id, nothing to dispatch or bill.
+    // Only the occurrences after the live one, so the real job is not doubled.
+    if (projectRecurringThrough && REPEATS(j.recurrence)) {
+      const ghosts = futureOccurrences(j.start_date, j.recurrence, {
+        through: projectRecurringThrough,
+        endDate: j.recurrence_end_date || null,
+      })
+      for (const g of ghosts) {
+        events.push({
+          id: `job-${j.id}-projected-${zonedDayKey(g, tz)}`,
+          kind: 'projected',
+          dayKeys: [zonedDayKey(g, tz)],
+          title: j.job_title || j.job_id || 'Job',
+          subtitle: j.recurrence,
+          businessUnit: j.business_unit || null,
+          status: 'Expected',
+          link: `/jobs/${j.id}`,
+          time: g.toISOString(),
+          projected: true,
+        })
+      }
+    }
   }
 
   // Service visits come from the SAME jobs rows, keyed on service_due_date

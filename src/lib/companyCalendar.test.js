@@ -263,3 +263,62 @@ describe('a scheduled job draws one box, not two', () => {
     expect(events.filter((e) => e.kind === 'sales')).toHaveLength(1)
   })
 })
+
+// ── Seeing next month ───────────────────────────────────────────────────────
+//
+// Bryce (c8a96621): "When a reacurring job is put on the schedule I can't see
+// it the next month. At least show tentative appointment for the next month or
+// recurring"
+//
+// The next occurrence is not missing — it does not exist. The DB trigger writes
+// it when the current one is Completed, deliberately, because an earlier engine
+// spawned eagerly and produced duplicates. These are drawn, not created.
+describe('recurring jobs show what is coming', () => {
+  const monthly = {
+    id: 41, job_id: 'JOB-REC', job_title: 'Revere Health ob/gyn', status: 'Scheduled',
+    start_date: '2026-08-24T08:00:00', recurrence: 'Monthly',
+  }
+
+  it('draws nothing extra unless a window is asked for', () => {
+    const events = buildCalendarEvents({ jobs: [monthly] })
+    expect(events.filter((e) => e.kind === 'projected')).toHaveLength(0)
+    expect(events.filter((e) => e.kind === 'delivery')).toHaveLength(1)
+  })
+
+  it('projects the months ahead when one is', () => {
+    const events = buildCalendarEvents({ jobs: [monthly] }, { projectRecurringThrough: new Date('2026-11-30T00:00:00') })
+    const ghosts = events.filter((e) => e.kind === 'projected')
+    expect(ghosts.map((g) => g.dayKeys[0].slice(0, 10))).toEqual(['2026-09-24', '2026-10-24', '2026-11-24'])
+  })
+
+  // The bug we just fixed on this calendar was the same job drawn twice.
+  it('never doubles the occurrence that is a real job', () => {
+    const events = buildCalendarEvents({ jobs: [monthly] }, { projectRecurringThrough: new Date('2026-11-30T00:00:00') })
+    const onStartDay = events.filter((e) => e.dayKeys[0].startsWith('2026-08-24'))
+    expect(onStartDay).toHaveLength(1)
+    expect(onStartDay[0].kind).toBe('delivery')
+  })
+
+  it('marks them as expected rather than dispatchable', () => {
+    const events = buildCalendarEvents({ jobs: [monthly] }, { projectRecurringThrough: new Date('2026-10-31T00:00:00') })
+    const g = events.find((e) => e.kind === 'projected')
+    expect(g.projected).toBe(true)
+    expect(g.status).toBe('Expected')
+    expect(g.subtitle).toBe('Monthly')
+  })
+
+  it('stops at the end of the series', () => {
+    const ending = { ...monthly, recurrence_end_date: '2026-09-30' }
+    const events = buildCalendarEvents({ jobs: [ending] }, { projectRecurringThrough: new Date('2027-06-30T00:00:00') })
+    expect(events.filter((e) => e.kind === 'projected')).toHaveLength(1)
+  })
+
+  it('ignores a job that does not repeat, and one with no start date', () => {
+    const jobs = [
+      { id: 42, job_title: 'One off', status: 'Scheduled', start_date: '2026-08-24T08:00:00', recurrence: 'None' },
+      { id: 43, job_title: 'No date', status: 'Scheduled', start_date: null, recurrence: 'Monthly' },
+    ]
+    const events = buildCalendarEvents({ jobs }, { projectRecurringThrough: new Date('2026-12-31T00:00:00') })
+    expect(events.filter((e) => e.kind === 'projected')).toHaveLength(0)
+  })
+})
