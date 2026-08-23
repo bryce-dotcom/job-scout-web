@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef, Component } from 'react'
+import { useState, useEffect, useRef, Component, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { mergeJobHourSources } from '../lib/jobHours'
 import { validateTimeEntry } from '../lib/timeEntry'
 import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
+import { jobEstimateDrift } from '../lib/jobEstimateDrift'
 import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
 import { RecordHistoryButton } from '../components/RecordHistory'
 import { useTheme } from '../components/Layout'
@@ -25,8 +26,7 @@ import {
   Edit2, Save, AlertCircle, GripVertical, CheckCircle2, Paperclip, Download, Upload,
   Package, Loader, Check, Info, Eye, Zap, Camera, ChevronDown, ChevronRight, Image, Copy,
   Shield, Star, Receipt, Link2, TrendingUp, Search, PackageCheck, UserPlus, Send, Mail,
-  Archive, RotateCcw
-} from 'lucide-react'
+  Archive, RotateCcw, AlertTriangle } from 'lucide-react'
 import { buildDataContext, generateAndUploadTemplate } from '../lib/documentGenerator'
 import JobCostingModal from '../components/JobCostingModal'
 import { companyNotify } from '../lib/companyNotify'
@@ -223,6 +223,9 @@ function JobDetailInner() {
   const [showAddTime, setShowAddTime] = useState(false)
   const [newLine, setNewLine] = useState({ item_id: '', quantity: 1 })
   const [productGroups, setProductGroups] = useState([])
+  // The linked estimate's lines, for the drift check below. An estimate can be
+  // revised long after its job exists and nothing tells anybody.
+  const [estimateLines, setEstimateLines] = useState([])
   const [selectedServiceType, setSelectedServiceType] = useState(null)
   const [selectedGroupId, setSelectedGroupId] = useState(null)
   const [productSearch, setProductSearch] = useState('')
@@ -1180,6 +1183,31 @@ function JobDetailInner() {
     await fetchTimeLogs()
     toast.success('Deleted')
   }
+
+  // Doug (dab8643d): "Four Pines estimate has 8' strips. When is was
+  // transferred to a Job it changed the 8' strips to 4' strips. 4' strips were
+  // ordered." The transfer was innocent — the job copied what the estimate said
+  // on 28 Jul, and the estimate was changed to the 8ft product on 11 Aug. What
+  // was missing is anything that says the two no longer agree, and the JOB is
+  // what gets ordered from.
+  useEffect(() => {
+    let cancelled = false
+    if (!job?.quote_id) { setEstimateLines([]); return }
+    ;(async () => {
+      const { data } = await supabase
+        .from('quote_lines').select('item_id, quantity').eq('quote_id', job.quote_id)
+      if (!cancelled) setEstimateLines(data || [])
+    })()
+    return () => { cancelled = true }
+  }, [job?.quote_id])
+
+  // Reported, never reconciled: a job legitimately picks up out-of-scope work
+  // that was never quoted, and 27 of the 71 estimate-linked jobs already differ.
+  // Syncing automatically would delete exactly that work.
+  const estimateDrift = useMemo(
+    () => jobEstimateDrift(lineItems, estimateLines, products),
+    [lineItems, estimateLines, products],
+  )
 
   const copyFromQuote = async () => {
     if (!job.quote_id) return
@@ -4436,6 +4464,42 @@ function JobDetailInner() {
                 </button>
               </div>
             </div>
+            {/* The job and its estimate no longer say the same thing. Shown,
+                not silently reconciled — a job often carries out-of-scope work
+                the estimate never had, and syncing would delete it. */}
+            {estimateDrift.hasDrift && (
+              <div style={{
+                padding: '12px 20px', borderBottom: `1px solid ${theme.border}`,
+                backgroundColor: 'rgba(234,179,8,0.08)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <AlertTriangle size={14} color="#a16207" />
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#a16207' }}>
+                    This job no longer matches its estimate
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: 1.6 }}>
+                  {estimateDrift.onlyOnEstimate.map((x) => (
+                    <div key={`e-${x.item_id}`}>
+                      <strong>On the estimate only:</strong> {x.name} × {x.quantity}
+                    </div>
+                  ))}
+                  {estimateDrift.onlyOnJob.map((x) => (
+                    <div key={`j-${x.item_id}`}>
+                      <strong>On this job only:</strong> {x.name} × {x.quantity}
+                    </div>
+                  ))}
+                  {estimateDrift.quantityDiffers.map((x) => (
+                    <div key={`q-${x.item_id}`}>
+                      <strong>Different quantity:</strong> {x.name} — estimate {x.estimate}, job {x.job}
+                    </div>
+                  ))}
+                  <div style={{ marginTop: '6px', opacity: 0.85 }}>
+                    Ordering and invoicing both read this job, not the estimate.
+                  </div>
+                </div>
+              </div>
+            )}
 
             {lineItems.length === 0 ? (
               <div style={{ padding: '40px 20px', textAlign: 'center', color: theme.textMuted }}>
