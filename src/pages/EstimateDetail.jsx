@@ -7,7 +7,7 @@ import { publicSheet } from '../lib/specScrub'
 import { buildSpecSheetPdf, imageToDataUrl, specCoverage } from '../lib/specSheetPdf'
 import { proposalMode, sendButtonLabel, proposalModeOptions } from '../lib/proposalModes'
 import PresentationOptions from '../components/estimate/PresentationOptions'
-import { findMatchingCustomer } from '../lib/customerMatch'
+import { findMatchingCustomer, contactGapPatch } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { RecordHistoryButton } from '../components/RecordHistory'
 import { deriveBusinessUnit } from '../lib/businessUnitForWork'
@@ -1590,6 +1590,17 @@ function EstimateDetailInner() {
 
         if (matchedId) {
           customerId = matchedId
+          // Same gap as the lead conversion: matching an existing customer left
+          // the phone and email we had just been given stranded, so the job read
+          // a customer with no way to contact anyone. Fill blanks only.
+          const { data: matched } = await supabase
+            .from('customers').select('phone, email, address').eq('id', matchedId).maybeSingle()
+          const patch = contactGapPatch(matched, {
+            phone: customerInfo?.phone || leadInfo?.phone,
+            email: customerInfo?.email || leadInfo?.email,
+            address: customerInfo?.address || leadInfo?.address,
+          })
+          if (patch) await supabase.from('customers').update(patch).eq('id', matchedId)
         } else {
           const { data: newCust, error: custErr } = await supabase
             .from('customers')

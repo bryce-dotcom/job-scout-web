@@ -62,3 +62,34 @@ export async function findMatchingCustomer(supabase, companyId, { name, email, p
 
   return null
 }
+
+/**
+ * Contact details the matched customer is missing and the lead already has.
+ *
+ * Doug (ad33b5fe): "Damion can see the contact info in the Job. I cannot, i did
+ * refresh my system."
+ *
+ * Nothing was hidden from him. Halverson Mechanical already existed as a
+ * customer — name and address, no phone, no email — so when the lead was
+ * converted, findMatchingCustomer matched it and the caller used it as-is. The
+ * lead's phone (8014304041) and email (dave@halversonmechanical.com) stayed on
+ * the lead. Damien could see them because he works the lead; the job reads the
+ * CUSTOMER, which had neither.
+ *
+ * Only fills blanks. An existing value is never overwritten — a customer record
+ * that someone has corrected by hand outranks whatever was typed on a lead
+ * months ago, and silently replacing it would be a worse bug than the one this
+ * fixes.
+ *
+ * Returns null when there is nothing to fill, so a caller can skip the write.
+ */
+export function contactGapPatch(customer, source) {
+  if (!customer || !source) return null
+  const patch = {}
+  for (const field of ['phone', 'email', 'address']) {
+    const have = String(customer[field] ?? '').trim()
+    const incoming = String(source[field] ?? '').trim()
+    if (!have && incoming) patch[field] = incoming
+  }
+  return Object.keys(patch).length ? patch : null
+}

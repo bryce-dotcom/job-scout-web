@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { findMatchingCustomer } from '../lib/customerMatch'
+import { findMatchingCustomer, contactGapPatch } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { RecordHistoryButton } from '../components/RecordHistory'
 import { useTheme } from '../components/Layout'
@@ -748,7 +748,16 @@ export default function LeadDetail() {
       })
 
       if (customerId) {
-        // matched an existing customer — use it as-is
+        // Matched an existing customer. "Use it as-is" left the lead's phone and
+        // email stranded on the lead: Halverson Mechanical was already a
+        // customer with a name and an address, so the job — which reads the
+        // CUSTOMER — showed no way to contact anybody. Doug: "Damion can see the
+        // contact info in the Job. I cannot."
+        // Fill only what the customer is missing; never overwrite.
+        const { data: matched } = await supabase
+          .from('customers').select('phone, email, address').eq('id', customerId).maybeSingle()
+        const patch = contactGapPatch(matched, lead)
+        if (patch) await supabase.from('customers').update(patch).eq('id', customerId)
       } else {
         const { data: newCustomer, error: custError } = await supabase
           .from('customers')
