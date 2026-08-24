@@ -17,10 +17,10 @@ import { PLANS as BILLING_PLANS } from '../lib/billingPlans'
 
 const CREW = [
   { ab: 'AR', name: 'OG Arnie', free: true, role: 'Your right hand',
-    hook: 'Ask anything about your business in plain English — then have him fix the setting, not just answer it.',
-    hi: ['Knows all 32 of your systems', 'Answers with your real numbers', 'Proposes config changes for your OK', 'Logs every change he makes'],
-    rep: ['a business analyst', 'hours of admin busywork'],
-    out: { kicker: 'answered in chat', head: '“Who hasn’t paid me in 60 days?”', rows: ['3 customers · $14,200 outstanding', 'Oldest: Ridgeline HOA · 74 days'], done: 'Want me to send all 3 reminders?' } },
+    hook: 'Ask anything about your business in plain English. Arnie answers from your live numbers — then makes the change himself, the second you say go.',
+    hi: ['Answers from live data — money, jobs, hours, customers', 'Takes action on your OK: move a job, add a note, reschedule, fix a setting', 'Reads the photos, bills & screenshots you send him', 'Rides shotgun in the field — talks a tech through the job, hands-free'],
+    rep: ['a business analyst', 'an office manager', 'hours of admin busywork'],
+    out: { kicker: 'answered + drafted', head: '“When’s the Drinkle job — can we push it to Friday?”', rows: ['JOB-2214 · Drinkle Insurance · Thu 8:00 AM', 'Found from your schedule — no ID, no digging'], done: 'Drafted: move it to Friday — nothing changes till you approve' } },
   { ab: 'ZA', name: 'Zach', role: 'Landscaping',
     hook: 'A prospect drops their address; Zach measures the yard from the sky and emails a price — before you roll a truck.',
     hi: ['AI turf detection from aerial imagery', 'Per-sq-ft pricing tiers', 'Auto-creates the lead in your pipeline', 'Public quote link — no login'],
@@ -67,7 +67,7 @@ const ACTIVITY = [
   { ab: 'VI', name: 'Victor', msg: 'verified Job #4471 before invoice', meta: '✓' },
   { ab: 'CO', name: 'Conrad', msg: 'queued a win-back to 38 quiet customers', meta: '2m' },
   { ab: 'LE', name: 'Lenard', msg: 'counted 214 fixtures → rebate priced', meta: '3m' },
-  { ab: 'AR', name: 'OG Arnie', free: true, msg: 'proposed a pricebook cleanup', meta: 'needs OK' },
+  { ab: 'AR', name: 'OG Arnie', free: true, msg: 'drafted a reschedule on the Drinkle job', meta: 'needs OK' },
   { ab: 'FD', name: 'Freddy', msg: 'logged PM due on Truck #3', meta: '5m' },
   { ab: 'FR', name: 'Frankie', msg: 'matched 6 bank deposits to invoices', meta: '6m' },
   { ab: 'ZA', name: 'Zach', msg: 'priced a spring cleanup bundle', meta: '8m' },
