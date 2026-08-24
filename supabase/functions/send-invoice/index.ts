@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { parseEmailList } from "../_shared/emailList.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -27,6 +28,7 @@ serve(async (req) => {
       company_id,
       invoice_id,
       recipient_email,
+      cc_emails,
       pdf_storage_path,
       company_name,
       invoice_number,
@@ -295,9 +297,20 @@ serve(async (req) => {
 </html>`;
 
     // Send via Resend API
+    // Tracy (9d5a7267): "a way to CC someone on an invoice email so a couple of
+    // people can see the same invoice at the same time... instead of sending an
+    // invoice one at a time."
+    //
+    // Validated here as well as on the screen — this function is callable
+    // directly, and Resend rejects the whole send if one address is malformed,
+    // so one bad entry must not stop the invoice reaching anybody. Anyone who is
+    // already the recipient is dropped rather than sent two copies.
+    const { valid: ccClean } = parseEmailList(cc_emails, { exclude: cleanedRecipient });
+
     const emailPayload: Record<string, unknown> = {
       from: `${displayName} <invoices@appsannex.com>`,
       to: [cleanedRecipient],
+      ...(ccClean.length ? { cc: ccClean } : {}),
       subject: custom_subject || `Invoice ${invNum}${amountStr ? ` — ${amountStr}` : ''} from ${displayName}`,
       html: htmlBody,
     };

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { parseEmailList } from '../../supabase/functions/_shared/emailList.ts'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -126,6 +127,9 @@ export default function InvoiceDetail() {
   // Send modal state
   const [showSendModal, setShowSendModal] = useState(false)
   const [sendEmail, setSendEmail] = useState('')
+  // Tracy (9d5a7267): "a way to CC someone on an invoice email so a couple of
+  // people can see the same invoice at the same time."
+  const [sendCc, setSendCc] = useState('')
   const [sendSubject, setSendSubject] = useState('')
   const [sendAttachments, setSendAttachments] = useState([]) // [{ file, name, base64 }]
   const [sendingEmail, setSendingEmail] = useState(false)
@@ -1827,6 +1831,7 @@ Add it anyway?`,
           company_id: companyId,
           invoice_id: invoice.id,
           recipient_email: sendEmail,
+          cc_emails: sendCc,
           pdf_storage_path: freshInvoice?.pdf_url || invoice.pdf_url,
           company_name: company?.company_name || '',
           invoice_number: invoice.invoice_id || `INV-${invoice.id}`,
@@ -4138,6 +4143,30 @@ Add it anyway?`,
                   placeholder="customer@email.com"
                   style={inputStyle}
                 />
+              </div>
+              <div>
+                <label style={labelStyle}>
+                  CC <span style={{ color: theme.textMuted, fontWeight: '400' }}>(optional — separate with commas)</span>
+                </label>
+                <input
+                  type="text"
+                  value={sendCc}
+                  onChange={(e) => setSendCc(e.target.value)}
+                  placeholder="accounts@company.com, manager@company.com"
+                  style={inputStyle}
+                />
+                {(() => {
+                  // Say which one is wrong rather than refusing the whole send:
+                  // Resend rejects the lot if any address is malformed, and the
+                  // other three people still need the invoice.
+                  const { invalid } = parseEmailList(sendCc, { exclude: sendEmail })
+                  if (!invalid.length) return null
+                  return (
+                    <div style={{ fontSize: '12px', color: '#b45309', marginTop: '4px' }}>
+                      Not a valid address, so it will be skipped: {invalid.join(', ')}
+                    </div>
+                  )
+                })()}
               </div>
               <div>
                 <label style={labelStyle}>Subject Line <span style={{ color: theme.textMuted, fontWeight: '400' }}>(optional)</span></label>
