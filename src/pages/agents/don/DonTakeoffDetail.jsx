@@ -20,10 +20,11 @@ import { useStore } from '../../../lib/store'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { supabase } from '../../../lib/supabase'
 import {
-  estimateDig, quantifyItem, priceItem, toQuoteLines, quoteTotalFromLines,
+  estimateDig, quantifyItem, priceItem, toIntakeLines,
   SOIL_PROFILES, WORK_TYPES, verticalsForWorkTypes, TRUCK_TYPES, EQUIPMENT,
   DEFAULT_BID_SETTINGS,
 } from '../../../lib/digEstimator'
+import { createEstimateFromIntake } from '../../../lib/estimateIntake'
 import { DEFAULT_VERTICALS } from '../../../lib/donPriceBook'
 import ReadSheet from '../../../components/don/ReadSheet'
 import PlanMeasure from '../../../components/don/PlanMeasure'
@@ -289,67 +290,48 @@ export default function DonTakeoffDetail() {
   }
 
   // ── push to the sales pipeline ─────────────────────────────────────────
-  // Mirrors Zach's EstimateModal exactly: write quotes + quote_lines, link the
-  // lead, back-link the takeoff. Don does not invent a second money path.
+  // One shared intake writes the quote and its lines (lib/estimateIntake), so
+  // Don invents neither a second money path nor a second quote_lines shape.
+  // It also owns the rollback: if the lines fail or come back short, the
+  // header is undone rather than left looking finished.
   const pushToQuote = async () => {
     if (!result.ready_to_send) return
     setPushing(true)
     const siteLabel = site?.site_name || site?.address || `Site #${site?.id}`
-    // Build the lines first: the header total is whatever they add up to, so a
-    // customer reading the body can never find a different number at the top.
-    const draftLines = toQuoteLines(result, { companyId, quoteId: null })
-    const headerTotal = quoteTotalFromLines(draftLines)
-    const { data: quote, error: qErr } = await supabase.from('quotes').insert({
-      company_id: companyId,
-      lead_id: site?.lead_id || null,
-      customer_id: site?.customer_id || null,
-      salesperson_id: currentEmployeeId,
-      // NOT takeoff.id — EstimateDetail reads audit_id as a lighting_audits row
-      // without checking audit_type, so a takeoff id here surfaces on the
-      // estimate as "Lighting Audit linked (#8)". Zach passes null for the same
-      // reason; the link to the takeoff lives on dig_takeoffs.quote_id.
-      audit_id: null,
-      audit_type: 'excavation',
-      service_type: 'Excavation',
-      estimate_name: `Excavation — ${siteLabel}`,
-      summary: `${fmtNum(result.volumes.bcy)} BCY · ${fmtNum(result.loads)} loads · ${fmtNum(result.machine_hours, 1)} machine hrs`,
-      quote_amount: headerTotal,
-      status: 'Draft',
-      notes: result.assumptions.join('\n'),
-    }).select().single()
+    try {
+      const { quote, lineCount } = await createEstimateFromIntake(supabase, {
+        source: 'don',
+        company_id: companyId,
+        lead_id: site?.lead_id || null,
+        customer_id: site?.customer_id || null,
+        salesperson_id: currentEmployeeId,
+        // Deliberately null, not takeoff.id — see the audit_id note on
+        // EstimateIntake. The link to the takeoff lives on dig_takeoffs.quote_id.
+        audit_id: null,
+        audit_type: 'excavation',
+        service_type: 'Excavation',
+        estimate_name: `Excavation — ${siteLabel}`,
+        summary: `${fmtNum(result.volumes.bcy)} BCY · ${fmtNum(result.loads)} loads · ${fmtNum(result.machine_hours, 1)} machine hrs`,
+        notes: result.assumptions.join(String.fromCharCode(10)),
+        // No quote_amount on purpose: the header is whatever the lines add up
+        // to, so a customer reading the body cannot find a different number
+        // at the top.
+        lines: toIntakeLines(result),
+      })
 
-    if (qErr) { setPushing(false); alert('Quote failed: ' + qErr.message); return }
+      await supabase.from('dig_takeoffs')
+        .update({ quote_id: quote.id, status: 'sent', updated_at: new Date().toISOString() })
+        .eq('id', takeoff.id)
+      if (site?.lead_id) fetchLeads?.()
 
-    const lines = draftLines.map((l) => ({ ...l, quote_id: quote.id }))
-    const { data: written, error: lErr } = await supabase.from('quote_lines').insert(lines).select('id')
-
-    // A quote carrying a headline total with nothing itemised under it is the
-    // worst possible shape for a document you hand a customer — worse than no
-    // quote, because it looks finished. This used to console.warn and then
-    // report "pushed with 5 line items" off the array length, so a failed
-    // insert read as success. Undo the quote instead and say what happened.
-    if (lErr || (written?.length ?? 0) !== lines.length) {
-      await supabase.from('quotes').delete().eq('id', quote.id)
+      // Count what the database confirmed, never what we hoped to send.
+      setFlash(`Pushed to the pipeline as Quote #${quote.id} with ${lineCount} line items.`)
+      load()
+    } catch (e) {
+      setFlash(e.message)
+    } finally {
       setPushing(false)
-      setFlash(
-        `Could not write the line items, so the quote was not created: ${lErr?.message || 'only ' + (written?.length ?? 0) + ' of ' + lines.length + ' lines were written'}. Nothing was left half-made.`
-      )
-      return
     }
-
-    await supabase.from('dig_takeoffs')
-      .update({ quote_id: quote.id, status: 'sent', updated_at: new Date().toISOString() })
-      .eq('id', takeoff.id)
-
-    if (site?.lead_id) {
-      await supabase.from('leads').update({ quote_id: quote.id, status: 'Estimate Sent' }).eq('id', site.lead_id)
-      fetchLeads?.()
-    }
-
-    setPushing(false)
-    // Count what the database confirmed, never what we hoped to send.
-    setFlash(`Pushed to the pipeline as Quote #${quote.id} with ${written.length} line items.`)
-    load()
   }
 
   if (loading) {

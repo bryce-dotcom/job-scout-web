@@ -3,6 +3,7 @@ import { X, Calculator, Save, AlertTriangle, TrendingUp, FileText } from 'lucide
 import { estimateProgram } from '../../lib/lawnEstimator'
 import { useStore } from '../../lib/store'
 import { supabase } from '../../lib/supabase'
+import { createEstimateFromIntake } from '../../lib/estimateIntake'
 
 export default function EstimateModal({ property, onClose, onSaved }) {
   const companyId = useStore(s => s.companyId)
@@ -50,70 +51,53 @@ export default function EstimateModal({ property, onClose, onSaved }) {
     if (error) { setSaving(false); alert('Save failed: ' + error.message); return }
     setSavedId(estimate.id)
 
-    // Mirror Lenard: also write to the unified quotes + quote_lines tables so
-    // this bid shows up in the sales pipeline alongside everything else.
+    // Mirror Lenard: this bid also becomes a unified quote + quote_lines so it
+    // shows up in the sales pipeline. One shared intake builds both and rolls
+    // the header back if the lines fail — the old code warned to the console
+    // and left a quote with no lines behind, which nobody ever saw.
     let quoteId = null
     try {
       const propertyLabel = property.property_name || property.address || `Property #${property.id}`
-      const { data: quote, error: qErr } = await supabase.from('quotes').insert({
+      const { quote } = await createEstimateFromIntake(supabase, {
+        source: 'zach',
         company_id: companyId,
         lead_id: property.lead_id || null,
         customer_id: property.customer_id || null,
-        salesperson_id: currentEmployeeId,  // attribute to creator so it shows in their pipeline
-        audit_id: null,
+        salesperson_id: currentEmployeeId,
         audit_type: 'lawn_care',
         service_type: 'Lawn Care',
         estimate_name: `Lawn care — ${propertyLabel}`,
         summary: `${(property.turf_size_sqft || 0).toLocaleString()} sqft turf · ${property.mow_frequency || 'Weekly'} · ${result.mows_per_season} mows/season`,
-        quote_amount: annual,
-        status: 'Draft',
         notes: [
           `Address: ${[property.address, property.city, property.state, property.zip].filter(Boolean).join(', ') || '—'}`,
           `Per visit: $${result.per_visit.grand_total} · Treatments: $${result.treatments_total} · Annual: $${annual}`,
-        ].join('\n'),
-      }).select().single()
-
-      if (qErr) {
-        console.warn('[EstimateModal] quote insert failed:', qErr.message)
-      } else {
-        quoteId = quote.id
-        setSavedQuoteId(quoteId)
-
-        // One quote_line for the mow program, one per treatment round.
-        const lines = [
+        ].join(String.fromCharCode(10)),
+        quote_amount: annual,
+        lines: [
           {
-            company_id: companyId,
-            quote_id: quoteId,
             item_name: `Mowing — ${result.mows_per_season} visits`,
             description: `${property.mow_frequency || 'Weekly'} mowing on ${(property.turf_size_sqft || 0).toLocaleString()} sqft turf · ~${result.per_visit.predicted_minutes} min/visit`,
             quantity: result.mows_per_season,
             price: result.per_visit.grand_total,
             line_total: result.mows_total,
-            sort_order: 0,
           },
-          ...result.treatments.map((t, i) => ({
-            company_id: companyId,
-            quote_id: quoteId,
+          ...result.treatments.map(t => ({
             item_name: `Treatment Round ${t.round} — ${t.label}`,
             description: t.detail || null,
             quantity: 1,
             price: t.total,
             line_total: t.total,
-            sort_order: i + 1,
           })),
-        ]
-        const { error: linesErr } = await supabase.from('quote_lines').insert(lines)
-        if (linesErr) console.warn('[EstimateModal] quote_lines insert failed:', linesErr.message)
-
-        // Backlink: quote → estimate, lead → quote (so the pipeline shows it)
-        await supabase.from('lawn_estimates').update({ quote_id: quoteId, status: 'sent' }).eq('id', estimate.id)
-        if (property.lead_id) {
-          await supabase.from('leads').update({ quote_id: quoteId, status: 'Estimate Sent' }).eq('id', property.lead_id)
-          fetchLeads?.()
-        }
-      }
+        ],
+      })
+      quoteId = quote.id
+      setSavedQuoteId(quoteId)
+      await supabase.from('lawn_estimates').update({ quote_id: quoteId, status: 'sent' }).eq('id', estimate.id)
+      if (property.lead_id) fetchLeads?.()
     } catch (e) {
-      console.warn('[EstimateModal] quote sync threw:', e.message)
+      // The lawn estimate itself is saved; say plainly that the pipeline copy
+      // is not, rather than logging it where no one looks.
+      alert('Estimate saved, but it did not reach the sales pipeline: ' + e.message)
     }
 
     setSaving(false)

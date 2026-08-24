@@ -19,6 +19,8 @@
 // footing over-dig and a building pad are the same prism math with different
 // defaults. Verticals are toggles over this engine, not forks of it.
 
+import { intakeLineRows } from './estimateIntake'
+
 const CF_PER_CY = 27
 
 export const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
@@ -620,7 +622,7 @@ export function estimateDig({ items = [], priceBook = [], settings = {}, ctx = {
 // Mobilization becomes its own line, because it is one on a real bid form.
 // The last line absorbs the rounding crumbs so the lines sum to the bid
 // exactly rather than nearly.
-export function toQuoteLines(result, { companyId, quoteId }) {
+export function toIntakeLines(result) {
   const items = result?.bidItems || []
   if (!items.length) return []
 
@@ -633,12 +635,10 @@ export function toQuoteLines(result, { companyId, quoteId }) {
   const target = round2(num(r.total) - num(r.tax))
   const markup = preMarkup > 0 ? target / preMarkup : 1
 
-  const rows = items.map((b, i) => {
+  const rows = items.map((b) => {
     const price = round2(num(b.unit_price) * markup)
     const qty = num(b.quantity)
     return {
-      company_id: companyId,
-      quote_id: quoteId,
       item_name: b.label,
       description: [
         `${qty} ${b.uom} @ $${price}/${b.uom}`,
@@ -652,15 +652,12 @@ export function toQuoteLines(result, { companyId, quoteId }) {
       unit_of_measure: b.uom,
       kind: b.kind,
       in_utility_scope: false,
-      sort_order: i,
     }
   })
 
   if (mobilization > 0) {
     const price = round2(mobilization * markup)
     rows.push({
-      company_id: companyId,
-      quote_id: quoteId,
       item_name: 'Mobilization',
       description: 'Equipment delivery and return, one move',
       quantity: 1,
@@ -669,7 +666,6 @@ export function toQuoteLines(result, { companyId, quoteId }) {
       unit_of_measure: 'EA',
       kind: 'labor',
       in_utility_scope: false,
-      sort_order: rows.length,
     })
   }
 
@@ -693,6 +689,13 @@ export function toQuoteLines(result, { companyId, quoteId }) {
   }
 
   return rows
+}
+
+// Kept so existing callers and tests keep working. The row shape and its
+// invariants now live in _shared/estimateIntake.ts, shared with Lenard, Zach
+// and the edge functions, so there is one definition of a quote line.
+export function toQuoteLines(result, { companyId, quoteId }) {
+  return intakeLineRows({ company_id: companyId, lines: toIntakeLines(result) }, quoteId)
 }
 
 // What the quote is actually worth: the sum of the lines a customer will read,
