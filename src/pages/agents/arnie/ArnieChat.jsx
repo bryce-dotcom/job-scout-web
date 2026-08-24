@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../components/Layout'
 import { useStore } from '../../../lib/store'
 import { supabase } from '../../../lib/supabase'
-import { sendMessageStream, createSession, saveMessage, updateSessionTitle, loadSessionMessages } from './arnieEngine'
+import { sendMessageStream, createSession, saveMessage, updateSessionTitle, loadSessionMessages, rememberLastSession } from './arnieEngine'
 import { getUserRole, isClockedIn } from './arnieTools'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -186,6 +186,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   useEffect(() => {
     if (externalSessionId) {
       setSessionId(externalSessionId)
+      rememberLastSession(externalSessionId)
       loadSessionMessages(externalSessionId).then(msgs => {
         setMessages(msgs.map(m => ({ id: m.id, role: m.role, content: m.content })))
       })
@@ -431,6 +432,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         sid = session?.session_id
         setSessionId(sid)
       }
+      rememberLastSession(sid)
 
       await saveMessage(sid, 'user', savedText)
 

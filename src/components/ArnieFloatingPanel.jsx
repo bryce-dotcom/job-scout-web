@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import ArnieChat from '../pages/agents/arnie/ArnieChat'
-import { X } from 'lucide-react'
+import { X, Clock, SquarePen, ChevronRight } from 'lucide-react'
 import { stopSpeaking } from '../pages/agents/arnie/arnieVoice'
+import { loadSessions, getLastSessionId } from '../pages/agents/arnie/arnieEngine'
 
 const dark = {
   bg: '#1a1d21',
@@ -18,19 +20,73 @@ export default function ArnieFloatingPanel() {
   const hasAgent = useStore(s => s.hasAgent)
   const user = useStore(s => s.user)
   const company = useStore(s => s.company)
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
 
-  // Let anything on the page pop the corner guy open — e.g. the onboarding
-  // banner's "Chat with Arnie" button dispatches window event 'arnie:open'.
+  // `undefined` means "not worked out yet". The chat is held back until it
+  // resolves, because rendering with null first would start a new conversation
+  // and then swap it out from under whatever had already been typed.
+  const [sessionId, setSessionId] = useState(undefined)
+  const [recent, setRecent] = useState([])
+  const [showRecent, setShowRecent] = useState(false)
+
+  // Remounts the chat. Switching conversations means loading a different
+  // history, and a fresh component is a cleaner way to get there than reaching
+  // into the existing one to reset half its state.
+  const [convKey, setConvKey] = useState(0)
+
+  // Reopening lands back in the conversation you were in. People close this
+  // panel to see the screen behind it, not to change the subject — losing the
+  // thread every time is what made it feel disposable.
+  const resolveSession = useCallback(async () => {
+    let sessions = []
+    try { sessions = await loadSessions() } catch { /* offline — just start fresh */ }
+    setRecent(sessions.slice(0, 6))
+    const last = getLastSessionId()
+    // Only resume something that still exists. A conversation deleted from the
+    // History tab would otherwise resume as a blank chat writing messages into
+    // a session nothing points at.
+    setSessionId(last && sessions.some(s => s.session_id === last) ? last : null)
+  }, [])
+
+  // Opening is an action, so the lookup happens here rather than in an effect
+  // watching `open` — same result, and it keeps the async work on the event
+  // that caused it instead of a render that reacted to it.
+  const openPanel = useCallback(() => {
+    setOpen(true)
+    resolveSession()
+  }, [resolveSession])
+
   useEffect(() => {
-    const openPanel = () => setOpen(true)
+    // Let anything on the page pop the corner guy open — e.g. the onboarding
+    // banner's "Chat with Arnie" button dispatches window event 'arnie:open'.
     window.addEventListener('arnie:open', openPanel)
     return () => window.removeEventListener('arnie:open', openPanel)
-  }, [])
+  }, [openPanel])
 
   const handleClose = () => {
     stopSpeaking()
+    setShowRecent(false)
     setOpen(false)
+  }
+
+  const startNew = () => {
+    stopSpeaking()
+    setShowRecent(false)
+    setSessionId(null)
+    setConvKey(k => k + 1)
+  }
+
+  const openConversation = (id) => {
+    stopSpeaking()
+    setShowRecent(false)
+    setSessionId(id)
+    setConvKey(k => k + 1)
+  }
+
+  const seeAllHistory = () => {
+    handleClose()
+    navigate('/agents/arnie/history')
   }
 
   if (!user || !hasAgent('arnie-og')) return null
@@ -40,7 +96,7 @@ export default function ArnieFloatingPanel() {
       {/* Floating trigger — avatar with orange ring + "Ask Arnie" label */}
       {!open && (
         <div
-          onClick={() => setOpen(true)}
+          onClick={openPanel}
           style={{
             position: 'fixed',
             bottom: 92,
@@ -154,27 +210,99 @@ export default function ArnieFloatingPanel() {
                   </div>
                 </div>
               </div>
-              <button
-                onClick={handleClose}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 8,
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <X size={20} color={dark.textMuted} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <button
+                  onClick={startNew}
+                  title="New conversation"
+                  style={{
+                    width: 36, height: 36, borderRadius: 8, border: 'none',
+                    backgroundColor: 'transparent', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <SquarePen size={18} color={dark.textMuted} />
+                </button>
+                <button
+                  onClick={() => setShowRecent(v => !v)}
+                  title="Recent conversations"
+                  style={{
+                    width: 36, height: 36, borderRadius: 8, border: 'none',
+                    backgroundColor: showRecent ? 'rgba(249,115,22,0.15)' : 'transparent',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Clock size={18} color={showRecent ? dark.orange : dark.textMuted} />
+                </button>
+                <button
+                  onClick={handleClose}
+                  title="Close"
+                  style={{
+                    width: 36, height: 36, borderRadius: 8, border: 'none',
+                    backgroundColor: 'transparent', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <X size={20} color={dark.textMuted} />
+                </button>
+              </div>
             </div>
 
-            {/* Chat */}
+            {/* Recent conversations — the panel is on every page, so this is
+                where people actually reach for a past chat. Full pin/rename/
+                search lives on the History tab. */}
+            {showRecent && (
+              <div style={{
+                borderBottom: `1px solid ${dark.border}`,
+                backgroundColor: dark.bgHeader,
+                maxHeight: 260,
+                overflowY: 'auto',
+              }}>
+                {recent.length === 0 ? (
+                  <div style={{ padding: '14px 16px', color: dark.textMuted, fontSize: 13 }}>
+                    No past conversations yet.
+                  </div>
+                ) : recent.map(s => (
+                  <button
+                    key={s.session_id}
+                    onClick={() => openConversation(s.session_id)}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left',
+                      padding: '9px 16px', border: 'none', cursor: 'pointer',
+                      backgroundColor: s.session_id === sessionId ? 'rgba(249,115,22,0.10)' : 'transparent',
+                      color: dark.text, fontSize: 13,
+                      borderLeft: `2px solid ${s.session_id === sessionId ? dark.orange : 'transparent'}`,
+                    }}
+                  >
+                    <span style={{
+                      display: 'block', overflow: 'hidden',
+                      textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {s.pinned ? '📌 ' : ''}{s.title}
+                    </span>
+                  </button>
+                ))}
+                <button
+                  onClick={seeAllHistory}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4, width: '100%',
+                    padding: '10px 16px', border: 'none', background: 'transparent',
+                    color: dark.orange, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                    borderTop: `1px solid ${dark.border}`,
+                  }}
+                >
+                  All conversations <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+
+            {/* Chat — held back until we know which conversation to open, so a
+                new one is never created and then discarded. */}
             <div style={{ flex: 1, overflow: 'hidden' }}>
-              <ArnieChat isPanel onClose={handleClose} />
+              {sessionId === undefined ? (
+                <div style={{ padding: 24, color: dark.textMuted, fontSize: 13 }}>Loading…</div>
+              ) : (
+                <ArnieChat key={convKey} isPanel onClose={handleClose} sessionId={sessionId} />
+              )}
             </div>
           </div>
 

@@ -604,6 +604,44 @@ export async function setSessionPinned(sessionId, pinned) {
   return patchSessionContext(sessionId, { pinned: !!pinned })
 }
 
+// ── Which conversation was I last in? ────────────────────────────────
+//
+// The corner panel used to start a brand-new conversation every time it was
+// opened, and closing it lost the thread. Mid-task that is the wrong default:
+// people shut the panel to look at the screen behind it, not to change subject.
+//
+// Keyed per user because these are shared devices — a tablet in a truck gets
+// passed around, and resuming the last person's conversation would show one
+// employee another's chat.
+const LAST_SESSION_KEY = 'arnie:lastSession'
+
+const lastSessionStore = () => {
+  try { return window.localStorage } catch { return null }  // Safari private mode
+}
+
+export function rememberLastSession(sessionId) {
+  const store = lastSessionStore()
+  const email = useStore.getState().user?.email
+  if (!store || !email || !sessionId) return
+  try {
+    store.setItem(LAST_SESSION_KEY, JSON.stringify({ email, sessionId }))
+  } catch { /* quota or disabled storage — resuming is a convenience, not a promise */ }
+}
+
+export function getLastSessionId() {
+  const store = lastSessionStore()
+  const email = useStore.getState().user?.email
+  if (!store || !email) return null
+  try {
+    const saved = JSON.parse(store.getItem(LAST_SESSION_KEY) || 'null')
+    return saved?.email === email ? saved.sessionId || null : null
+  } catch { return null }
+}
+
+export function forgetLastSession() {
+  try { lastSessionStore()?.removeItem(LAST_SESSION_KEY) } catch { /* nothing to clean up */ }
+}
+
 export async function loadSessions() {
   const { companyId, user } = useStore.getState()
   const { data, error } = await supabase
