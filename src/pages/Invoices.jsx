@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { loadListPrefs, saveListPrefs } from '../lib/listPrefs'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { writeInvoiceLines } from '../lib/invoiceLines'
@@ -132,13 +133,26 @@ export default function Invoices() {
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  // Tracy (ecf999b4): sorting the list, opening an invoice and coming back
+  // used to drop everything and make her set it up again. Filters and sort
+  // persist; the search box lives for the session only — see lib/listPrefs.
+  const LIST_FIELDS = { persistent: ['statusFilter', 'dueFilter', 'sortOrder', 'typeFilter'], session: ['searchTerm'] }
+  const savedList = useMemo(() => loadListPrefs('invoices', companyId, LIST_FIELDS), [companyId])
+
+  const [searchTerm, setSearchTerm] = useState(() => savedList.searchTerm || '')
+  const [statusFilter, setStatusFilter] = useState(() => savedList.statusFilter || 'all')
   // Quick-view filters for Tracy's "invoices coming due" + "card on file" workflow
-  const [dueFilter, setDueFilter] = useState('all') // all | overdue | due_soon | due_30 | has_card | active_plan
+  const [dueFilter, setDueFilter] = useState(() => savedList.dueFilter || 'all') // all | overdue | due_soon | due_30 | has_card | active_plan
   // Sort order — Tracy: "Can I have the feature sorting invoices by dates?"
-  const [sortOrder, setSortOrder] = useState('newest')  // newest | oldest | due_soon | due_late | amount_high | amount_low
+  const [sortOrder, setSortOrder] = useState(() => savedList.sortOrder || 'newest')  // newest | oldest | due_soon | due_late | amount_high | amount_low
   const [customersWithCard, setCustomersWithCard] = useState(new Set())
+
+  // Written after every filter it reads is declared — the dependency array is
+  // evaluated during render, so hoisting this above them is a temporal dead
+  // zone and a blank page, not a stale value.
+  useEffect(() => {
+    saveListPrefs('invoices', companyId, { statusFilter, dueFilter, sortOrder, typeFilter, searchTerm }, LIST_FIELDS)
+  }, [companyId, statusFilter, dueFilter, sortOrder, typeFilter, searchTerm])
   const [activePlanInvoiceIds, setActivePlanInvoiceIds] = useState(new Set())
   const [showImportExport, setShowImportExport] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
