@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { emailListIsClean } from '../../supabase/functions/_shared/emailList.ts'
 import { parseEmailList } from '../../supabase/functions/_shared/emailList.ts'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
@@ -130,6 +131,39 @@ export default function InvoiceDetail() {
   // Tracy (9d5a7267): "a way to CC someone on an invoice email so a couple of
   // people can see the same invoice at the same time."
   const [sendCc, setSendCc] = useState('')
+  // Who the receipt will go to when this invoice gets paid.
+  //
+  // The receipt follows the invoice's contact — the same convention Stripe,
+  // Xero and QuickBooks use, and the reason CC'd people do not get one: being
+  // shown a bill is not the same as being the person who settles it.
+  //
+  // The gap was that the contact could only be changed by sending the invoice
+  // again. Send it to the wrong address once and the receipt chased it there
+  // with no way to correct course. It is a property of the invoice, so it is
+  // editable like one — local state, saved on blur, the pattern this codebase
+  // uses everywhere else.
+  const [receiptTo, setReceiptTo] = useState('')
+  const [receiptToSaving, setReceiptToSaving] = useState(false)
+  const saveReceiptTo = async () => {
+    const next = String(receiptTo || '').trim().toLowerCase()
+    const current = String(invoice?.sent_to_email || '').trim().toLowerCase()
+    if (next === current) return
+    if (next && !emailListIsClean(next)) {
+      toast.error('That does not look like an email address.')
+      setReceiptTo(invoice?.sent_to_email || '')
+      return
+    }
+    setReceiptToSaving(true)
+    const { error } = await supabase.from('invoices').update({ sent_to_email: next || null }).eq('id', invoice.id)
+    setReceiptToSaving(false)
+    if (error) {
+      toast.error('Could not save: ' + error.message)
+      setReceiptTo(invoice?.sent_to_email || '')
+      return
+    }
+    setInvoice(prev => (prev ? { ...prev, sent_to_email: next || null } : prev))
+    toast.success('Receipts for this invoice will go to ' + (next || 'the customer on file'))
+  }
   const [sendSubject, setSendSubject] = useState('')
   const [sendAttachments, setSendAttachments] = useState([]) // [{ file, name, base64 }]
   const [sendingEmail, setSendingEmail] = useState(false)
@@ -203,6 +237,7 @@ export default function InvoiceDetail() {
     if (invoiceData) {
       setInvoice(invoiceData)
       setSendEmail(invoiceData.sent_to_email || invoiceData.customer?.email || '')
+      setReceiptTo(invoiceData.sent_to_email || '')
 
       // Detect Stripe configuration up-front so the Send Payment Link
       // button can render the right action (or a setup CTA when the
@@ -2289,9 +2324,23 @@ Add it anyway?`,
                         {cfg.label}
                         {ts ? ` — ${ts}` : ''}
                       </p>
-                      {invoice.sent_to_email && (
-                        <p style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>To: {invoice.sent_to_email}</p>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                        <span style={{ fontSize: '12px', color: theme.textSecondary }}>To:</span>
+                        <input
+                          type="email"
+                          value={receiptTo}
+                          onChange={(e) => setReceiptTo(e.target.value)}
+                          onBlur={saveReceiptTo}
+                          disabled={receiptToSaving}
+                          placeholder={invoice.customer?.email || 'customer@email.com'}
+                          title="Where this invoice — and its receipt when it is paid — are sent"
+                          style={{
+                            flex: 1, minWidth: 0, fontSize: '12px', color: theme.textSecondary,
+                            background: 'transparent', border: 'none', borderBottom: `1px dashed ${theme.border}`,
+                            padding: '2px 0', outline: 'none',
+                          }}
+                        />
+                      </div>
                       {invoice.email_bounce_reason && (
                         <p style={{ fontSize: '12px', color: theme.error, marginTop: '4px' }}>{invoice.email_bounce_reason}</p>
                       )}
