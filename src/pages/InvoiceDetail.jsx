@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { serviceAddressToShow } from '../lib/serviceAddress'
 import { emailListIsClean } from '../../supabase/functions/_shared/emailList.ts'
 import { parseEmailList } from '../../supabase/functions/_shared/emailList.ts'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -1231,8 +1232,10 @@ Add it anyway?`,
     // Service address (job site). An account can have many locations; without
     // this the customer can't tell which site the invoice is for (Tracy's
     // pushback). Only show it when it differs from the billing address.
-    const jobSite = invoice.job?.job_address
-    if (jobSite && jobSite.trim().toLowerCase() !== (invoice.customer?.address || '').trim().toLowerCase()) {
+    // lib/serviceAddress owns this rule now, so the PDF and the customer
+    // portal answer "which site was this for" the same way.
+    const jobSite = serviceAddressToShow(invoice.job?.job_address, invoice.customer?.address)
+    if (jobSite) {
       y += 3
       doc.setFont('helvetica', 'bold'); doc.text('Service Address:', margin, y); y += 5
       doc.setFont('helvetica', 'normal')

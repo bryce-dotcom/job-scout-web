@@ -1,4 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
+import { serviceAddressToShow } from '../lib/serviceAddress'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
@@ -484,6 +485,25 @@ export default function CustomerPortal() {
               {customer.address && <p style={{ color: theme.textSecondary, margin: '0 0 4px', fontSize: '14px' }}>{customer.address}</p>}
               {customer.email && <p style={{ color: theme.textSecondary, margin: '0 0 2px', fontSize: '14px' }}>{customer.email}</p>}
               {customer.phone && <p style={{ color: theme.textSecondary, margin: 0, fontSize: '14px' }}>{customer.phone}</p>}
+
+              {/* Which site this was for. An account can have many locations,
+                  and a bill addressed to the management company does not say
+                  which building it covers. Same rule as the PDF, in
+                  lib/serviceAddress: only shown when it differs from where the
+                  bill is addressed, so a single-site customer is not told their
+                  own address twice. */}
+              {(() => {
+                const site = serviceAddressToShow(doc?.job?.job_address, customer.address)
+                if (!site) return null
+                return (
+                  <div style={{ marginTop: '12px' }}>
+                    <h3 style={{ fontSize: '13px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+                      Service Address
+                    </h3>
+                    <p style={{ color: theme.textSecondary, margin: 0, fontSize: '14px' }}>{site}</p>
+                  </div>
+                )
+              })()}
             </div>
           </div>
         )}

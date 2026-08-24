@@ -207,7 +207,7 @@ serve(async (req) => {
     } else if (tokenRow.document_type === 'invoice') {
       const { data: inv } = await supabase
         .from('invoices')
-        .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title, service_kind, parts_coverage, labor_coverage, coverage_notes, parent_job_id)')
+        .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title, job_address, service_kind, parts_coverage, labor_coverage, coverage_notes, parent_job_id)')
         .eq('id', tokenRow.document_id)
         .single();
       document = inv;
