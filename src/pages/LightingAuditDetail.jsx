@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { areaAnnotations } from '../lib/auditAreaCarry'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -221,8 +222,7 @@ export default function LightingAuditDetail() {
           quantity: qty,
           price: Math.round(unitPrice * 100) / 100,
           line_total: Math.round(qty * unitPrice * 100) / 100,
-          notes: area.override_notes || null,
-          photos: area.photos || []
+          ...areaAnnotations(area)
         })
       }
     }

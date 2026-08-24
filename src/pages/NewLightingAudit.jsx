@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { areaAnnotations } from '../lib/auditAreaCarry'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
@@ -186,7 +187,11 @@ export default function NewLightingAudit() {
     led_replacement_id: '',
     led_wattage: '',
     confirmed: false,
-    override_notes: ''
+    override_notes: '',
+    // The field photo. It used to exist only as input to the AI and was thrown
+    // away afterwards — 334 areas in this workspace hold notes and not one
+    // holds a picture. See handlePhotoCapture.
+    photos: []
   })
 
   // Theme with fallback
@@ -583,7 +588,9 @@ export default function NewLightingAudit() {
       led_replacement_id: '',
       led_wattage: '',
       confirmed: false,
-      override_notes: ''
+      override_notes: '',
+      // Clear the photo too, or the next area inherits the last one's picture.
+      photos: []
     })
     clearPhotoState()
   }
@@ -655,7 +662,10 @@ export default function NewLightingAudit() {
             total_led_watts: parseInt(area.total_led_watts) || 0,
             area_watts_reduced: parseInt(area.area_watts_reduced) || 0,
             confirmed: area.confirmed || false,
-            override_notes: area.override_notes || null
+            override_notes: area.override_notes || null,
+            // What the tech actually saw. Without this the column stays empty
+            // and the estimator is working from a wattage and a sentence.
+            photos: Array.isArray(area.photos) ? area.photos : []
           })
         }
       }
@@ -699,7 +709,11 @@ export default function NewLightingAudit() {
             item_id: area.led_replacement_id ? parseInt(area.led_replacement_id) : null,
             quantity: qty,
             price: Math.round(unitPrice * 100) / 100,
-            line_total: Math.round(qty * unitPrice * 100) / 100
+            line_total: Math.round(qty * unitPrice * 100) / 100,
+            // What the tech wrote and photographed. This path used to create the
+            // line without either, which is why 89 of 100 audit-derived
+            // estimates arrived with no field notes on them.
+            ...areaAnnotations(area)
           })
         }
 
@@ -738,6 +752,34 @@ export default function NewLightingAudit() {
     // Convert to base64 for API
     setAnalyzing(true)
     setAiResult(null)
+
+    // Keep the photo FIRST, analyse second.
+    //
+    // This picture was previously handed to analyze-fixture to identify the
+    // fixture and then dropped on the floor. Nothing wrote audit_areas.photos,
+    // photos_url or photo_path, and the newest folder in audit-photos/audits/
+    // was five months old — so every photo a tech took in the field since was
+    // gone the moment Lenard had read it.
+    //
+    // Uploading before the analysis matters: the AI call is the flaky part, and
+    // a fixture Lenard cannot recognise is exactly the one an estimator most
+    // needs to look at. Failure here is swallowed — a lost upload must never
+    // cost somebody the analysis as well.
+    try {
+      const ext = (file.name?.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+      const path = `areas/${companyId}/${Date.now()}_${Math.round(Math.random() * 1e6)}.${ext}`
+      const { error: upErr } = await supabase.storage.from('audit-photos').upload(path, file, {
+        cacheControl: '3600', upsert: false, contentType: file.type || 'image/jpeg',
+      })
+      if (upErr) {
+        console.warn('[audit photo] upload failed:', upErr.message)
+      } else {
+        const { data: pub } = supabase.storage.from('audit-photos').getPublicUrl(path)
+        if (pub?.publicUrl) setAreaForm(prev => ({ ...prev, photos: [...(prev.photos || []), pub.publicUrl] }))
+      }
+    } catch (err) {
+      console.warn('[audit photo] upload threw:', err?.message || err)
+    }
 
     const base64Reader = new FileReader()
     base64Reader.onload = async (ev) => {
@@ -2559,7 +2601,9 @@ export default function NewLightingAudit() {
                     led_replacement_id: '',
                     led_wattage: '',
                     confirmed: false,
-                    override_notes: ''
+                    override_notes: '',
+                    // Clear the photo too, or the next area inherits the last one's picture.
+                    photos: []
                   })
                   clearPhotoState()
                 }}
