@@ -491,28 +491,42 @@ serve(async (req) => {
         });
         quoteDbId = newQuote.id;
 
-        // Create quote lines from audit line items using each fixture's
-        // catalog productPrice. The previous formula derived unitPrice
-        // from (existW - newW) * costPerWatt, which goes NEGATIVE when
-        // the audit has existW=0 (new installs / unknown existing watts).
-        // That made every Lenard estimate render with negative line
-        // totals — Doug confirmed "all reps and projects" affected.
-        // productPrice is already on each line and (qty * productPrice)
-        // sums to est_project_cost for a correctly-built audit, so this
-        // is the right field to use.
+        // Build quote lines from the economics the client carried.
+        //
+        // The previous formula rebuilt each line from the catalogue and then
+        // multiplied every line by (headline total / catalogue sum) so the
+        // arithmetic would close. That scale factor silently absorbed four
+        // unrelated things: rep price overrides, per-line discounts, the lamp
+        // multiplier, and the give-me/upsell adders that were never sent as
+        // lines at all. A discount on one area changed the unit price of every
+        // other area, and out-of-scope dollars were smeared into in-scope
+        // fixture lines -- defeating the split the utility cap math needs.
+        //
+        // Newer clients send unitPrice/productQty/lineTotal per line plus an
+        // `extras` array, so the lines reconcile by construction. The scale
+        // path stays for field devices still running a cached bundle.
+        const carried = lines.some((l: any) =>
+          Number(l.unitPrice) > 0 || Number(l.lineTotal) > 0);
         const sumByPrice = lines.reduce((s: number, l: any) =>
           s + ((l.qty || 1) * (Number(l.productPrice) || 0)), 0);
-        // Scale only if there's a noticeable mismatch between productPrice
-        // sum and the headline quoteAmount (e.g., rep typed an override).
-        const scale = (sumByPrice > 0 && Math.abs(sumByPrice - quoteAmount) > 1)
+        const scale = (!carried && sumByPrice > 0 && Math.abs(sumByPrice - quoteAmount) > 1)
           ? (quoteAmount / sumByPrice) : 1;
+
+        const round2 = (n: number) => Math.round(n * 100) / 100;
+        let lineSum = 0;
+        let sortOrder = 0;
 
         for (let i = 0; i < lines.length; i++) {
           const l = lines[i];
-          const qty = l.qty || 1;
-          const basePrice = Number(l.productPrice) || 0;
-          const unitPrice = basePrice * scale;
+          const qty = carried ? (Number(l.productQty) || l.qty || 1) : (l.qty || 1);
+          const unitPrice = carried
+            ? (Number(l.unitPrice) || 0)
+            : (Number(l.productPrice) || 0) * scale;
+          // unitPrice already has any override and discount applied, so the
+          // discount column stays empty -- writing both would apply it twice.
+          const total = carried && Number(l.lineTotal) ? Number(l.lineTotal) : qty * unitPrice;
           const areaLabel = l.name || `Area ${i + 1}`;
+          lineSum = round2(lineSum + round2(total));
           await supabasePost(`${SUPABASE_URL}/rest/v1/quote_lines`, key, {
             company_id: cid,
             quote_id: newQuote.id,
@@ -523,8 +537,45 @@ serve(async (req) => {
             description: describeAuditLine(l) || null,
             item_id: l.productId ? parseInt(l.productId) : null,
             quantity: qty,
-            price: Math.round(unitPrice * 100) / 100,
-            line_total: Math.round(qty * unitPrice * 100) / 100,
+            price: round2(unitPrice),
+            line_total: round2(total),
+            sort_order: sortOrder++,
+          });
+        }
+
+        // Give-me / upsell adders become their own lines. They are real money
+        // the customer is quoted, and in_utility_scope has to travel with them:
+        // an out-of-scope dollar must never reach the utility's cap calc.
+        const extras = Array.isArray(pd.extras) ? pd.extras : [];
+        for (const e of extras) {
+          const amount = Number(e?.amount) || 0;
+          if (!amount) continue;
+          lineSum = round2(lineSum + round2(amount));
+          await supabasePost(`${SUPABASE_URL}/rest/v1/quote_lines`, key, {
+            company_id: cid,
+            quote_id: newQuote.id,
+            item_name: e.label || 'Additional item',
+            quantity: 1,
+            price: round2(amount),
+            line_total: round2(amount),
+            in_utility_scope: e.in_utility_scope !== false,
+            sort_order: sortOrder++,
+          });
+        }
+
+        // The signed proposal's number stays authoritative, so any residual is
+        // surfaced as its own line rather than hidden inside a fixture price.
+        // With carried economics this is 0.00 and nothing is written.
+        const residual = round2(quoteAmount - lineSum);
+        if (Math.abs(residual) >= 0.5) {
+          await supabasePost(`${SUPABASE_URL}/rest/v1/quote_lines`, key, {
+            company_id: cid,
+            quote_id: newQuote.id,
+            item_name: 'Project adjustment',
+            quantity: 1,
+            price: residual,
+            line_total: residual,
+            sort_order: sortOrder++,
           });
         }
 

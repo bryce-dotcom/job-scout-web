@@ -8,6 +8,7 @@ import { fillPdfForm } from '../../lib/pdfFormFiller';
 import { resolveAllMappings } from '../../lib/dataPathResolver';
 import { resolveRmpRate, mapLenardControlsToRmp, SBE_BUSINESS_TYPES, clearRmpRateCache } from '../../lib/rmpMeasureLookup';
 import { orderQty, lampCount, productPricedPerLamp } from '../../lib/lampQuantity';
+import { effectiveUnitPrice, linesSubtotal, linePricingPayload, extrasPayload } from '../../lib/retrofitPricing';
 
 // ============================================================
 // LENARD UT RMP â€" Rocky Mountain Power Lighting Rebate Calculator
@@ -121,9 +122,8 @@ const DEFAULT_HEIGHTS = { interior: 9, exterior: 25 };
 
 // Effective unit price: override > product price, minus discount %
 function getEffectivePrice(line) {
-  const base = line.priceOverride != null ? line.priceOverride : (line.productPrice || 0);
-  const disc = line.discount || 0;
-  return disc > 0 ? base * (1 - disc / 100) : base;
+  // One definition of a line's unit price -- see lib/retrofitPricing.
+  return effectiveUnitPrice(line);
 }
 
 // Product order quantity: lamp retrofit = fixtures × lamps per fixture, fixture = just fixtures
@@ -870,7 +870,7 @@ export default function LenardUTRMP() {
 
   const rawIncentive = totals.totalIncentive;
   const capPct = program === 'smbe' ? SMBE.cap : program === 'express' ? EXPRESS.cap : LARGE.cap;
-  const linesCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * getProductQty(l)), 0);
+  const linesCost = linesSubtotal(lines);
   // Split give-me upsells into in-utility-scope (LED upgrades, tier
   // bumps, premium fixtures — count toward incentive base) vs
   // out-of-utility-scope (warranties, processing fees, travel, M&V —
@@ -1187,8 +1187,8 @@ export default function LenardUTRMP() {
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
       const projectData = {
-        lines: lines.map(l => ({ name: l.name, qty: l.qty, existW: l.existW, newW: l.newW, height: l.height, location: l.location, controlsType: l.controlsType, controlsOnly: l.controlsOnly, controlsOnlyType: l.controlsOnlyType, productId: l.productId, productName: l.productName, productPrice: l.productPrice, fixtureCategory: l.fixtureCategory, lightingType: l.lightingType, confirmed: l.confirmed, overrideNotes: l.overrideNotes })),
-        totals, financials, totalIncentive: estimatedRebate, projectCost: effectiveProjectCost,
+        lines: lines.map(l => ({ name: l.name, qty: l.qty, existW: l.existW, newW: l.newW, height: l.height, location: l.location, controlsType: l.controlsType, controlsOnly: l.controlsOnly, controlsOnlyType: l.controlsOnlyType, productId: l.productId, productName: l.productName, productPrice: l.productPrice, fixtureCategory: l.fixtureCategory, lightingType: l.lightingType, confirmed: l.confirmed, overrideNotes: l.overrideNotes, ...linePricingPayload(l) })),
+        totals, financials, totalIncentive: estimatedRebate, projectCost: effectiveProjectCost, extras: extrasPayload(giveMeQuoteItems),
         operatingHours, daysPerYear, energyRate, city: saveCity, state: saveState, zip: saveZip, photos: capturedPhotos,
         ...(isRep ? { giveMe: { baseline: giveMe.baseline, commission: giveMe.commission, realGiveMe: giveMe.realGiveMe, additionalIncentive: giveMe.additionalIncentive, leftOnTable: giveMe.leftOnTable, costForFullCapture: giveMe.costForFullCapture, additionalOOP: repAdditionalOOP, quoteItems: giveMeQuoteItems, frozenBaseline: giveMeFrozenBaseline, frozenIncentive: giveMeFrozenIncentive, currentDown: repCurrentDown, targetDown: repTargetDown, locked: projectLocked } } : {}),
       };

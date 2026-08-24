@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import SignaturePad from 'signature_pad';
 import { supabase } from '../../lib/supabase';
 import { orderQty, productPricedPerLamp } from '../../lib/lampQuantity';
+import { effectiveUnitPrice, linesSubtotal, linePricingPayload, extrasPayload } from '../../lib/retrofitPricing';
 
 // ============================================================
 // LENARD AZ SRP — SRP Lighting Rebate Calculator
@@ -122,9 +123,8 @@ const DEFAULT_HEIGHTS = { panel: 9, strip: 10, highbay: 20, exterior: 25 };
 
 // Effective unit price: override > product price, minus discount %
 function getEffectivePrice(line) {
-  const base = line.priceOverride != null ? line.priceOverride : (line.productPrice || 0);
-  const disc = line.discount || 0;
-  return disc > 0 ? base * (1 - disc / 100) : base;
+  // One definition of a line's unit price -- see lib/retrofitPricing.
+  return effectiveUnitPrice(line);
 }
 
 // Product order quantity: lamp retrofit = fixtures × lamps per fixture, fixture = just fixtures
@@ -923,7 +923,7 @@ export default function LenardAZSRP() {
     const annualEnergySavings = annualKwhSaved * energyRate;
     const existAnnualCost = existKwh * energyRate;
     const proposedAnnualCost = proposedKwh * energyRate;
-    const baselineProjectCost = lines.reduce((s, l) => s + (getEffectivePrice(l) * getProductQty(l)), 0);
+    const baselineProjectCost = linesSubtotal(lines);
     // Utility-eligible total — what shows on the SRP submittal. Out-of-
     // scope upsells (warranties, fees) are explicitly excluded.
     const utilityScopeCost = baselineProjectCost + upsellInScopeTotal;
@@ -996,10 +996,12 @@ export default function LenardAZSRP() {
           category: l.category, subtype: l.subtype, fixtureType: l.fixtureType,
           fixtureCategory: l.fixtureCategory, lightingType: l.lightingType,
           confirmed: l.confirmed, overrideNotes: l.overrideNotes,
+          ...linePricingPayload(l),
         })),
         totals, financials,
         totalIncentive: totals.totalIncentive,
         projectCost: financials.projectCost,
+        extras: extrasPayload(upsellItems),
         operatingHours, daysPerYear, energyRate,
         city: saveCity, state: saveState, zip: saveZip,
         photos: capturedPhotos,
