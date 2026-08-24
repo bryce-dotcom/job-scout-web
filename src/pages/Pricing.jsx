@@ -456,6 +456,8 @@ export default function Pricing() {
         <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17.8 6.6 20l1-6.1L3.2 9.5l6.1-.9z" /></symbol>
         <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></symbol>
         <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></symbol>
+        <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 23l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></symbol>
+        <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><path d="M3.3 7L12 12l8.7-5" /><path d="M12 22V12" /></symbol>
       </defs></svg>
 
       <header>
@@ -628,9 +630,11 @@ export default function Pricing() {
             </div>
             <div className="oneapp rv">
               <div className="jobrow"><Icon id="i-search" /><div><h3>Source &amp; win the work</h3><p>AI prospecting, leads, pipeline, instant quotes, e-signatures, a customer portal.</p><div className="bye">replaces <b>Apollo, ZoomInfo, HubSpot, DocuSign</b></div></div></div>
+              <div className="jobrow"><Icon id="i-repeat" /><div><h3>Recurring revenue on autopilot</h3><p>Sell service plans &amp; memberships — members get priority scheduling and member pricing, the visits schedule themselves, and the card bills monthly, quarterly, or yearly. The recurring revenue that makes a business worth buying.</p><div className="bye">replaces <b>ServiceTitan memberships, Jobber recurring</b></div></div></div>
               <div className="jobrow"><Icon id="i-cal" /><div><h3>Run the operation</h3><p>Scheduling, dispatch board, route optimization, GPS time clock.</p><div className="bye">replaces <b>ServiceTitan dispatch, When I Work</b></div></div></div>
               <div className="jobrow"><Icon id="i-dollar" /><div><h3>Bill, collect &amp; keep the books</h3><p>Invoices with pay links, card + ACH, bank sync, expenses, a real P&amp;L and job costing.</p><div className="bye">replaces <b>QuickBooks, Expensify</b></div></div></div>
-              <div className="jobrow"><Icon id="i-book" /><div><h3>Payroll, HR &amp; compliance</h3><p>Calculates every paycheck and tax to the penny (IRS Pub 15-T), fills your 941s, W-2s and 1099s, and flags every deposit deadline — plus onboarding and I-9s.</p><div className="bye">replaces <b>Gusto, ADP, BambooHR</b></div></div></div>
+              <div className="jobrow"><Icon id="i-box" /><div><h3>Order materials &amp; pay vendors</h3><p>Turn a job’s parts list into purchase orders, send them to your suppliers, receive against them, and track the vendor bills — the whole accounts-payable side, not just the money coming in.</p><div className="bye">replaces <b>QuickBooks A/P, ServiceTitan procurement</b></div></div></div>
+              <div className="jobrow"><Icon id="i-book" /><div><h3>Real payroll — not a hand-off</h3><p>The field-service apps stop at invoicing and pass payroll to Gusto. JobScout runs it: every paycheck &amp; tax to the penny (IRS Pub 15-T), your 941s, W-2s and 1099s filed, direct deposit, plus mobile onboarding with W-4s and I-9s.</p><div className="bye">replaces <b>Gusto, ADP, BambooHR</b></div></div></div>
               <div className="jobrow"><Icon id="i-truck" /><div><h3>Fleet &amp; assets</h3><p>Real-time vehicle tracking (WatchDog GPS), fuel logs, and maintenance — one place.</p><div className="bye">replaces <b>Fleetio, Samsara</b></div></div></div>
               <div className="jobrow"><Icon id="i-layers" /><div><h3>Run the company</h3><p>Owner dashboards and reporting, plus a built-in operating rhythm — quarterly priorities, a weekly scorecard, and structured leadership meetings (the EOS / “Traction” system, no extra app).</p><div className="bye">replaces <b>Ninety.io, Tableau</b></div></div></div>
             </div>
