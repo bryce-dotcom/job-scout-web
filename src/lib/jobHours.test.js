@@ -175,3 +175,73 @@ describe('the Payroll flag: what would change, before it changes', () => {
     expect(previewTypedHourImpact()).toEqual([])
   })
 })
+
+// ── The banner that would not go away ───────────────────────────────────────
+//
+// Alayda (e7baee3b): "There are notifcations that the job vs the hours is wrong
+// & there is a button to click to clear the errors, I click it & they keep
+// coming back, they also aren't changing."
+//
+// The list was every job where typed hours differ from punches — a permanent
+// fact about the data, not a task. Pressing the button recalculates the bonus
+// LEDGER and does not touch time_log, so the same 31 jobs came back with the
+// same numbers on every load. It now lists only what applying would change.
+describe('the typed-hours review only lists work that is still outstanding', () => {
+  const job = { id: 7, job_title: 'Exterior Windows', allotted_time_hours: 40 }
+  const punch = { id: 9, job_id: 7, employee_id: 1, total_hours: 8.65, date: '2026-08-01' }
+  const typed = { id: 1, job_id: 7, employee_id: 1, hours: 7.24, date: '2026-08-02' }
+
+  it('lists a job whose bonus has not yet counted the typed hours', () => {
+    const rows = previewTypedHourImpact({
+      jobs: [job], timeClock: [punch], timeLog: [typed],
+      bonuses: [{ job_id: 7, amount: 844.8, status: 'accrued', actual_hours: 8.65 }],
+    })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].typedHours).toBeCloseTo(7.24, 2)
+  })
+
+  // This is what makes it clear after she presses the button.
+  it('drops the job once the ledger counts those hours', () => {
+    const rows = previewTypedHourImpact({
+      jobs: [job], timeClock: [punch], timeLog: [typed],
+      bonuses: [{ job_id: 7, amount: 200, status: 'accrued', actual_hours: 15.89 }],
+    })
+    expect(rows).toHaveLength(0)
+  })
+
+  // 13 of the 31 were this: nothing to shrink, so nothing to do.
+  it('ignores a job with no bonus at all, since more hours can only shrink one', () => {
+    const rows = previewTypedHourImpact({
+      jobs: [job], timeClock: [punch], timeLog: [typed], bonuses: [],
+    })
+    expect(rows).toHaveLength(0)
+  })
+
+  it('still lists a paid bonus, flagged frozen, because the screen explains it', () => {
+    const rows = previewTypedHourImpact({
+      jobs: [job], timeClock: [punch], timeLog: [typed],
+      bonuses: [{ job_id: 7, amount: 844.8, status: 'paid', actual_hours: 8.65 }],
+    })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].frozen).toBe(true)
+  })
+
+  it('still lists it when only part of the crew has been settled', () => {
+    const rows = previewTypedHourImpact({
+      jobs: [job], timeClock: [punch], timeLog: [typed],
+      bonuses: [
+        { job_id: 7, amount: 400, status: 'accrued', actual_hours: 15.89 },
+        { job_id: 7, amount: 400, status: 'accrued', actual_hours: 8.65 },
+      ],
+    })
+    expect(rows).toHaveLength(1)
+  })
+
+  it('comes back when somebody types new hours after it settled', () => {
+    const settled = { jobs: [job], timeClock: [punch], timeLog: [typed],
+      bonuses: [{ job_id: 7, amount: 200, status: 'accrued', actual_hours: 15.89 }] }
+    expect(previewTypedHourImpact(settled)).toHaveLength(0)
+    const more = { ...settled, timeLog: [typed, { job_id: 7, employee_id: 2, hours: 5, date: '2026-08-03' }] }
+    expect(previewTypedHourImpact(more)).toHaveLength(1)
+  })
+})

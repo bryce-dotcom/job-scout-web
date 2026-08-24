@@ -180,6 +180,33 @@ export function previewTypedHourImpact({ jobs = [], timeClock = [], timeLog = []
     const job = jobById.get(jobKey)
     const allotted = Number(job?.allotted_time_hours) || 0
     const jobBonuses = (bonuses || []).filter(b => String(b.job_id) === jobKey)
+
+    // ── Only list what pressing the button would actually change ──────────
+    //
+    // Alayda (e7baee3b): "There are notifcations that the job vs the hours is
+    // wrong & there is a button to click to clear the errors, I click it & they
+    // keep coming back, they also aren't changing."
+    //
+    // She was right twice over. This used to list every job where typed hours
+    // differ from punches — which is a permanent fact about the data, not a
+    // task. Applying recalculates the BONUS LEDGER; it does not touch time_log,
+    // so the comparison came back identical on the next load. 31 jobs, the same
+    // 31, for ever.
+    //
+    // Counting more hours can only ever shrink a bonus. So:
+    const addsHours = added > 0
+    //   * No bonus row means there is nothing to shrink. Applying changes
+    //     nothing anyone can see, and 13 of the 31 were in this state.
+    if (addsHours && jobBonuses.length === 0) continue
+    //   * A paid row stays listed on purpose — the screen uses `frozen` to say
+    //     out loud that it cannot move, which is more use than hiding it.
+    //   * The ledger already counts these hours: done, however long the typed
+    //     rows sit there. This is what makes the banner clear after she presses
+    //     the button and stay clear until somebody types new hours.
+    const settled = jobBonuses.length > 0 && jobBonuses.every(x =>
+      Math.abs((Number(x.actual_hours) || 0) - after) < 0.01)
+    if (settled) continue
+
     out.push({
       job_id: job?.id ?? jobKey,
       label: job?.job_title || job?.job_id || `Job ${jobKey}`,
