@@ -11,6 +11,7 @@ import {
   PERIODS_PER_YEAR,
 } from '../lib/bonusCalc'
 import { fetchUserBonuses, bonusStatusLabel, bonusJobLabel } from '../lib/bonusLedger'
+import { payRowHeading, payRowSource } from '../lib/payRowLabel'
 import { groupHoursByDay } from '../lib/dailyHours'
 import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
@@ -769,9 +770,9 @@ export default function MyPay() {
             {pendingList.map((d, i) => (
               <div key={i} style={{ padding: '12px', backgroundColor: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.jobTitle}</div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{payRowHeading(d, jobs)}</div>
                   <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                    Invoice {d.invoiceId} · Total ${d.invoiceAmount.toFixed(2)}
+                    {payRowSource(d)}{payRowSource(d) ? ' · ' : ''}Total ${d.invoiceAmount.toFixed(2)}
                     {d.remaining != null && ` · $${d.remaining.toFixed(2)} still owed`}
                   </div>
                   <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
@@ -803,9 +804,9 @@ export default function MyPay() {
             {earned.map((d, i) => (
               <div key={i} style={{ padding: '12px', backgroundColor: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.jobTitle}</div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{payRowHeading(d, jobs)}</div>
                   <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                    Invoice {d.invoiceId} · ${(d.paidAmount || d.invoiceAmount).toFixed(2)} paid
+                    {payRowSource(d)}{payRowSource(d) ? ' · ' : ''}${(d.paidAmount || d.invoiceAmount).toFixed(2)} paid
                     {d.paidDate && ` on ${new Date(d.paidDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
                     {d.rateType === 'percent' && ` · ${d.rate}%`}
                   </div>
