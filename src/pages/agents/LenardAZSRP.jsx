@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { jsPDF } from "jspdf";
 import SignaturePad from 'signature_pad';
 import { supabase } from '../../lib/supabase';
+import { orderQty, productPricedPerLamp } from '../../lib/lampQuantity';
 
 // ============================================================
 // LENARD AZ SRP — SRP Lighting Rebate Calculator
@@ -128,9 +129,10 @@ function getEffectivePrice(line) {
 
 // Product order quantity: lamp retrofit = fixtures × lamps per fixture, fixture = just fixtures
 function getProductQty(line) {
-  const qty = line.qty || 0;
-  if (line.retrofitType === 'lamp' && (line.lampsPerFixture || 0) > 1) return qty * line.lampsPerFixture;
-  return qty;
+  // Units of the REPLACEMENT product to price and order. Multiplies by
+  // lamps only when the chosen product is itself sold per lamp — the
+  // existing fixture's lamp count never sets the price. See lib/lampQuantity.
+  return orderQty(line);
 }
 
 // Parse lamp count from fixture name (e.g., "4-Lamp T8" → 4, "2 Lamp T12" → 2)
@@ -568,12 +570,14 @@ export default function LenardAZSRP() {
     let autoProductName = preset?.productName || '';
     let autoProductPrice = preset?.productPrice || 0;
     let autoNewW = targetNewW;
+    let autoPerLamp = productPricedPerLamp({ name: autoProductName });
     if (!autoProductId && sbeProducts.length > 0) {
       const best = findBestProduct(sbeProducts, fixtureCat, targetNewW);
       if (best) {
         autoProductId = best.id;
         autoProductName = best.name;
         autoProductPrice = best.unit_price || 0;
+        autoPerLamp = productPricedPerLamp(best);
         // Extract wattage from product if line doesn't have one
         if (!autoNewW) {
           const wm = (best.description || best.name || '').match(/(\d+)\s*[wW]/);
@@ -582,8 +586,10 @@ export default function LenardAZSRP() {
       }
     }
 
-    const lampCount = parseLampCount(preset?.name || '');
-    const isLampRetrofit = preset?.retrofitType === 'lamp' || (lampCount > 1 && ['T12', 'T8', 'T5'].includes(inferLampType(preset?.name || '')));
+    // Lamps in the fixture being REMOVED. Drives the maintenance baseline
+    // and the UI stepper; it does not decide how the replacement is priced.
+    const existingLampCount = parseLampCount(preset?.name || '');
+    const isLampRetrofit = preset?.retrofitType === 'lamp' || (existingLampCount > 1 && ['T12', 'T8', 'T5'].includes(inferLampType(preset?.name || '')));
     const base = {
       id,
       qty: preset?.qty || 1,
@@ -599,7 +605,11 @@ export default function LenardAZSRP() {
       fixtureCategory: fixtureCat,
       lightingType: preset?.lightingType || inferLampType(preset?.name || ''),
       retrofitType: isLampRetrofit ? 'lamp' : 'fixture',
-      lampsPerFixture: preset?.lampsPerFixture || lampCount,
+      lampsPerFixture: preset?.lampsPerFixture || existingLampCount,
+      // Pricing basis comes from the product we are SELLING, never from the
+      // fixture being removed. Absent evidence this stays false and the
+      // line prices per fixture.
+      pricedPerLamp: autoPerLamp,
       confirmed: false,
       overrideNotes: '',
       photoIndex: preset?.photoIndex ?? null,
@@ -659,7 +669,7 @@ export default function LenardAZSRP() {
   const selectProduct = useCallback((lineId, product) => {
     setLines(prev => prev.map(l => {
       if (l.id !== lineId) return l;
-      const updates = { productId: product.id, productName: product.name, productPrice: product.unit_price || 0 };
+      const updates = { productId: product.id, productName: product.name, productPrice: product.unit_price || 0, pricedPerLamp: productPricedPerLamp(product) };
       // Try to extract wattage from product name/description
       const wattMatch = (product.description || product.name || '').match(/(\d+)\s*[wW]/);
       if (wattMatch) updates.newW = parseInt(wattMatch[1]);
@@ -2079,7 +2089,9 @@ export default function LenardAZSRP() {
                           <button type="button" onClick={() => { playClick(); updateLine(r.id, 'lampsPerFixture', Math.min(12, (r.lampsPerFixture || 1) + 1)); }} style={{ width: '44px', height: '40px', borderRadius: '0 8px 8px 0', border: `2px solid ${T.blue}`, borderLeft: 'none', background: T.blue, color: '#fff', fontSize: '20px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none', padding: 0 }}>{'\uFF0B'}</button>
                         </div>
                         <div style={{ fontSize: '11px', color: T.blue, marginTop: '6px', fontWeight: '500' }}>
-                          Product qty: {r.qty || 0} fixtures {'\u00D7'} {r.lampsPerFixture || 1} lamps = {getProductQty(r)} units to order
+                          {r.pricedPerLamp
+                            ? <>Product qty: {r.qty || 0} fixtures {'×'} {r.lampsPerFixture || 1} lamps = {getProductQty(r)} lamps to order</>
+                            : <>Product qty: {getProductQty(r)} fixtures to order {'—'} priced per fixture, so the {r.lampsPerFixture || 1} lamps it replaces count toward energy and maintenance only</>}
                         </div>
                       </div>
                     )}
@@ -2223,7 +2235,7 @@ export default function LenardAZSRP() {
                         <div style={{ fontSize: '11px', marginTop: '4px', color: T.textSec }}>
                           {r.discount > 0 && <span style={{ color: T.green }}>{r.discount}% off: </span>}
                           <span style={{ color: T.accent, fontWeight: '600' }}>${eff.toFixed(2)}/unit</span>
-                          <span> {'\u00D7'} {pQty}{r.retrofitType === 'lamp' && (r.lampsPerFixture || 0) > 1 ? ` (${r.qty}{'\u00D7'}${r.lampsPerFixture})` : ''} = </span>
+                          <span> {'×'} {pQty}{r.pricedPerLamp && (r.lampsPerFixture || 0) > 1 ? ` (${r.qty} fixtures, ${r.lampsPerFixture} lamps each)` : ''} = </span>
                           <span style={{ fontWeight: '700', color: T.accent }}>${lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           {r.priceOverride != null && r.productPrice > 0 && <span style={{ color: T.textMuted }}> (catalog: ${r.productPrice})</span>}
                         </div>
