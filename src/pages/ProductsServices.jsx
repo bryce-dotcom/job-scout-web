@@ -695,6 +695,10 @@ export default function ProductsServices() {
 
   // Sections (stored in settings as product_sections JSON)
   const [sections, setSections] = useState([]) // [{name, image_url}]
+  // Which of these sections Lenard sells from. Stored per tenant so the
+  // Lenard sold inside JobScout works for a company whose lighting section
+  // is named anything at all — the public UT/AZ agents read the same key.
+  const [lenardSections, setLenardSections] = useState([])
   const [showSectionModal, setShowSectionModal] = useState(false)
   const [editingSectionIndex, setEditingSectionIndex] = useState(null)
   const [sectionForm, setSectionForm] = useState({ name: '', image_url: '' })
@@ -823,6 +827,7 @@ export default function ProductsServices() {
     if (companyId) {
       fetchProductGroups()
       fetchSections()
+      fetchLenardSections()
       fetchProducts()
       fetchProductComponents()
       fetchLaborRates()
@@ -847,33 +852,94 @@ export default function ProductsServices() {
   }
 
   // ============ SECTION CRUD (stored in settings table) ============
-  const fetchSections = async () => {
+  //
+  // Both of these read with order+limit(1) rather than maybeSingle(), and that
+  // is not cosmetic. maybeSingle() ERRORS when more than one row matches, and
+  // an error here returned data=null, which read as "no sections yet" and sent
+  // fetchSections into its bootstrap branch — which inserted another row. Every
+  // visit to this page added one. Company 3 reached 156 rows between March and
+  // August, and the tenant's real edit (the one that added the "Electrical
+  // Services (Bundles)" section) was buried under 154 bootstrap copies, so the
+  // page could never show the sections anyone had actually configured.
+  //
+  // Reading the newest row makes a duplicate harmless instead of fatal, and
+  // writing by id means we stop creating them.
+  const readSectionsRow = async () => {
     const { data } = await supabase
       .from('settings')
-      .select('value')
+      .select('id, value')
       .eq('company_id', companyId)
       .eq('key', 'product_sections')
-      .maybeSingle()
-    if (data?.value) {
-      try { setSections(JSON.parse(data.value)) } catch { setSections([]) }
+      .order('id', { ascending: false })
+      .limit(1)
+    return data?.[0] || null
+  }
+
+  const LENARD_SECTIONS_KEY = 'lenard_product_sections'
+
+  const readLenardRow = async () => {
+    const { data } = await supabase
+      .from('settings')
+      .select('id, value')
+      .eq('company_id', companyId)
+      .eq('key', LENARD_SECTIONS_KEY)
+      .order('id', { ascending: false })
+      .limit(1)
+    return data?.[0] || null
+  }
+
+  const fetchLenardSections = async () => {
+    const row = await readLenardRow()
+    if (!row?.value) { setLenardSections([]); return }
+    try {
+      const parsed = JSON.parse(row.value)
+      setLenardSections(Array.isArray(parsed) ? parsed.filter(Boolean).map(String) : [])
+    } catch { setLenardSections([]) }
+  }
+
+  // Lenard reads this list to build its product picker. Turning a section on
+  // here is the whole configuration — no separate agent settings screen.
+  const toggleLenardSection = async (name) => {
+    const next = lenardSections.includes(name)
+      ? lenardSections.filter(n => n !== name)
+      : [...lenardSections, name]
+    setLenardSections(next)
+    const row = await readLenardRow()
+    if (row) {
+      await supabase.from('settings')
+        .update({ value: JSON.stringify(next), updated_at: new Date().toISOString() })
+        .eq('id', row.id)
     } else {
-      // Bootstrap from existing service_types + group service_types
-      const initial = []
-      const seen = new Set()
-      serviceTypes.forEach(t => { if (!seen.has(t)) { initial.push({ name: t, image_url: '' }); seen.add(t) } })
-      productGroups.forEach(g => { if (g.service_type && !seen.has(g.service_type)) { initial.push({ name: g.service_type, image_url: '' }); seen.add(g.service_type) } })
-      if (initial.length > 0) {
-        await supabase.from('settings').insert({ company_id: companyId, key: 'product_sections', value: JSON.stringify(initial) })
-        setSections(initial)
-      }
+      await supabase.from('settings')
+        .insert({ company_id: companyId, key: LENARD_SECTIONS_KEY, value: JSON.stringify(next) })
+    }
+  }
+
+  const fetchSections = async () => {
+    const row = await readSectionsRow()
+    if (row?.value) {
+      try { setSections(JSON.parse(row.value)) } catch { setSections([]) }
+      return
+    }
+    // Bootstrap from existing service_types + group service_types. Only ever
+    // runs when there is genuinely no row — never again off a read failure.
+    const initial = []
+    const seen = new Set()
+    serviceTypes.forEach(t => { if (!seen.has(t)) { initial.push({ name: t, image_url: '' }); seen.add(t) } })
+    productGroups.forEach(g => { if (g.service_type && !seen.has(g.service_type)) { initial.push({ name: g.service_type, image_url: '' }); seen.add(g.service_type) } })
+    if (initial.length > 0) {
+      await supabase.from('settings').insert({ company_id: companyId, key: 'product_sections', value: JSON.stringify(initial) })
+      setSections(initial)
     }
   }
 
   const saveSections = async (newSections) => {
     setSections(newSections)
-    const { data: existing } = await supabase.from('settings').select('id').eq('company_id', companyId).eq('key', 'product_sections').maybeSingle()
-    if (existing) {
-      await supabase.from('settings').update({ value: JSON.stringify(newSections), updated_at: new Date().toISOString() }).eq('id', existing.id)
+    const row = await readSectionsRow()
+    if (row) {
+      await supabase.from('settings')
+        .update({ value: JSON.stringify(newSections), updated_at: new Date().toISOString() })
+        .eq('id', row.id)
     } else {
       await supabase.from('settings').insert({ company_id: companyId, key: 'product_sections', value: JSON.stringify(newSections) })
     }
@@ -1833,6 +1899,25 @@ Click OK only if you're sure this is a label correction and not a different prod
                         position: 'absolute', top: '8px', right: '8px',
                         display: 'flex', gap: '4px'
                       }}>
+                        {/* Which sections Lenard sells from. Lenard used to be
+                            wired to a product-name convention, so it could not
+                            see half this catalogue and offered things that were
+                            not in it. This is the switch. */}
+                        <button
+                          title={lenardSections.includes(section)
+                            ? `Lenard sells from "${section}" — click to stop`
+                            : `Use "${section}" as Lenard's product catalogue`}
+                          onClick={(e) => { e.stopPropagation(); toggleLenardSection(section) }}
+                          style={{
+                            width: '32px', height: '32px', borderRadius: '8px',
+                            backgroundColor: lenardSections.includes(section) ? '#eab308' : 'rgba(255,255,255,0.9)',
+                            border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center',
+                            justifyContent: 'center',
+                            color: lenardSections.includes(section) ? '#fff' : theme.textMuted,
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                          }}>
+                          <Lightbulb size={14} />
+                        </button>
                         <button onClick={(e) => { e.stopPropagation(); openSectionForm(storedIndex !== -1 ? storedIndex : section) }} style={{
                           width: '32px', height: '32px', borderRadius: '8px',
                           backgroundColor: 'rgba(255,255,255,0.9)', border: 'none',

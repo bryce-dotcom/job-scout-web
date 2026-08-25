@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import SignaturePad from 'signature_pad';
 import { supabase } from '../../lib/supabase';
 import { orderQty, productPricedPerLamp } from '../../lib/lampQuantity';
+import { getMatchedProducts, findBestProduct, groupNameMap } from '../../lib/lenardProductMatch';
 import { effectiveUnitPrice, linesSubtotal, linePricingPayload, extrasPayload } from '../../lib/retrofitPricing';
 
 // ============================================================
@@ -170,55 +171,12 @@ const CATEGORY_TO_FIXTURE_CAT = {
 
 // Map fixture categories / product types to matching keywords for SMBE product matching
 // Product `type` or `name` is matched against these keywords per fixture category
-const PRODUCT_CATEGORY_KEYWORDS = {
-  'Recessed':    ['troffer', 'panel', 'recessed', '2x4', '2x2', '1x4', 'flat panel', 'lay-in'],
-  'Linear':      ['strip', 'linear', 'wrap', 'shop light', 'vapor', 'channel'],
-  'High Bay':    ['high bay', 'highbay', 'high-bay', 'ufo', 'warehouse'],
-  'Outdoor':     ['flood', 'wall pack', 'exterior', 'outdoor', 'area light', 'pole', 'parking', 'canopy', 'shoe box', 'shoebox'],
-  'Surface Mount': ['surface', 'flush', 'ceiling mount', 'drum', 'round'],
-};
 
 // Score how well a product matches a fixture category (higher = better match)
-function scoreProductMatch(product, fixtureCategory, targetWatts) {
-  const pName = (product.name || '').toLowerCase();
-  const pType = (product.type || '').toLowerCase();
-  const pDesc = (product.description || '').toLowerCase();
-  const searchText = `${pName} ${pType} ${pDesc}`;
-  let score = 0;
-
-  // Category keyword match
-  const keywords = PRODUCT_CATEGORY_KEYWORDS[fixtureCategory] || [];
-  for (const kw of keywords) {
-    if (searchText.includes(kw)) { score += 100; break; }
-  }
-
-  // Wattage proximity bonus (closer wattage = better match)
-  if (targetWatts > 0) {
-    const wattMatch = pName.match(/(\d+)\s*[wW]/);
-    if (wattMatch) {
-      const productWatts = parseInt(wattMatch[1]);
-      const diff = Math.abs(productWatts - targetWatts);
-      score += Math.max(0, 50 - diff); // up to 50 points for wattage closeness
-    }
-  }
-
-  return score;
-}
 
 // Get products sorted by relevance for a given fixture category and wattage
-function getMatchedProducts(allProducts, fixtureCategory, targetWatts) {
-  if (!allProducts.length) return [];
-  return [...allProducts]
-    .map(p => ({ ...p, _score: scoreProductMatch(p, fixtureCategory, targetWatts) }))
-    .sort((a, b) => b._score - a._score);
-}
 
 // Find the single best SMBE product match for a fixture
-function findBestProduct(allProducts, fixtureCategory, targetWatts) {
-  const ranked = getMatchedProducts(allProducts, fixtureCategory, targetWatts);
-  // Only auto-select if there's a decent category match (score >= 100)
-  return ranked.length > 0 && ranked[0]._score >= 100 ? ranked[0] : null;
-}
 
 // Infer lamp type from fixture name for the lighting audit
 function inferLampType(name) {
@@ -352,6 +310,10 @@ export default function LenardAZSRP() {
 
   // SMBE Products
   const [sbeProducts, setSbeProducts] = useState([]);
+  // The tenant's own product groups, from the price book. They are what an
+  // existing fixture is matched against — see lib/lenardProductMatch.
+  const [sbeGroups, setSbeGroups] = useState([]);
+  const groupNames = useMemo(() => groupNameMap(sbeGroups), [sbeGroups]);
   const [productSearch, setProductSearch] = useState('');
 
   // Financial settings
@@ -440,6 +402,7 @@ export default function LenardAZSRP() {
       ]);
       const [prodData, empData] = await Promise.all([prodResp.json(), empResp.json()]);
       if (prodData.products) setSbeProducts(prodData.products);
+      if (prodData.groups) setSbeGroups(prodData.groups);
       if (empData.employees) setEmployees(empData.employees);
       if (leadOwnerId) {
         const projResp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ leadOwnerId, leadSource: 'Lenard AZ SRP' }) });
@@ -469,6 +432,7 @@ export default function LenardAZSRP() {
         });
         const data = await resp.json();
         if (data.products) setSbeProducts(data.products);
+        if (data.groups) setSbeGroups(data.groups);
       } catch (_) { /* SMBE products optional */ }
     };
     fetchProducts();
@@ -572,7 +536,7 @@ export default function LenardAZSRP() {
     let autoNewW = targetNewW;
     let autoPerLamp = productPricedPerLamp({ name: autoProductName });
     if (!autoProductId && sbeProducts.length > 0) {
-      const best = findBestProduct(sbeProducts, fixtureCat, targetNewW);
+      const best = findBestProduct(sbeProducts, fixtureCat, targetNewW, groupNames);
       if (best) {
         autoProductId = best.id;
         autoProductName = best.name;
@@ -622,7 +586,7 @@ export default function LenardAZSRP() {
     setNewlyAdded(prev => new Set(prev).add(id));
     setTimeout(() => setNewlyAdded(prev => { const next = new Set(prev); next.delete(id); return next; }), 2000);
     setIsDirty(true);
-  }, [program, sbeProducts]);
+  }, [program, sbeProducts, groupNames]);
 
   const markDirty = useCallback(() => setIsDirty(true), []);
 
@@ -2160,7 +2124,7 @@ export default function LenardAZSRP() {
                           <div style={{ maxHeight: '400px', overflow: 'auto', border: `1px solid ${T.border}`, borderRadius: '0 0 8px 8px', marginTop: '-1px' }}>
                             {(() => {
                               const q = productSearch.toLowerCase();
-                              const ranked = getMatchedProducts(sbeProducts, r.fixtureCategory, r.newW || r.existW);
+                              const ranked = getMatchedProducts(sbeProducts, r.fixtureCategory, r.newW || r.existW, groupNames);
                               const filtered = q ? ranked.filter(p => (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)) : ranked;
                               const matched = filtered.filter(p => p._score >= 100);
                               const other = filtered.filter(p => p._score < 100);

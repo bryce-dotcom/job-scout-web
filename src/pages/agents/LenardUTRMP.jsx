@@ -8,6 +8,7 @@ import { fillPdfForm } from '../../lib/pdfFormFiller';
 import { resolveAllMappings } from '../../lib/dataPathResolver';
 import { resolveRmpRate, mapLenardControlsToRmp, SBE_BUSINESS_TYPES, clearRmpRateCache } from '../../lib/rmpMeasureLookup';
 import { orderQty, lampCount, productPricedPerLamp } from '../../lib/lampQuantity';
+import { getMatchedProducts, findBestProduct, groupNameMap } from '../../lib/lenardProductMatch';
 import { effectiveUnitPrice, linesSubtotal, linePricingPayload, extrasPayload } from '../../lib/retrofitPricing';
 
 // ============================================================
@@ -186,13 +187,6 @@ const LED_REPLACEMENT_MAP = {
 };
 
 // Product matching
-const PRODUCT_CATEGORY_KEYWORDS = {
-  'Recessed': ['troffer', 'panel', 'recessed', '2x4', '2x2', '1x4', 'flat panel', 'lay-in'],
-  'Linear': ['strip', 'linear', 'wrap', 'shop light', 'vapor', 'channel'],
-  'High Bay': ['high bay', 'highbay', 'high-bay', 'ufo', 'warehouse'],
-  'Outdoor': ['flood', 'wall pack', 'exterior', 'outdoor', 'area light', 'pole', 'parking', 'canopy', 'shoe box', 'shoebox'],
-  'Surface Mount': ['surface', 'flush', 'ceiling mount', 'drum', 'round'],
-};
 
 // ==================== PRODUCT TIER HELPERS ====================
 
@@ -215,27 +209,8 @@ function getProductFamily(product, allProducts) {
     .sort((a, b) => tierOrder[getProductTierInfo(a.name).tier] - tierOrder[getProductTierInfo(b.name).tier]);
 }
 
-function scoreProductMatch(product, fixtureCategory, targetWatts) {
-  const searchText = `${(product.name || '')} ${(product.type || '')} ${(product.description || '')}`.toLowerCase();
-  let score = 0;
-  const keywords = PRODUCT_CATEGORY_KEYWORDS[fixtureCategory] || [];
-  for (const kw of keywords) { if (searchText.includes(kw)) { score += 100; break; } }
-  if (targetWatts > 0) {
-    const wm = (product.name || '').match(/(\d+)\s*[wW]/);
-    if (wm) score += Math.max(0, 50 - Math.abs(parseInt(wm[1]) - targetWatts));
-  }
-  return score;
-}
 
-function getMatchedProducts(allProducts, fixtureCategory, targetWatts) {
-  if (!allProducts.length) return [];
-  return [...allProducts].map(p => ({ ...p, _score: scoreProductMatch(p, fixtureCategory, targetWatts) })).sort((a, b) => b._score - a._score);
-}
 
-function findBestProduct(allProducts, fixtureCategory, targetWatts) {
-  const ranked = getMatchedProducts(allProducts, fixtureCategory, targetWatts);
-  return ranked.length > 0 && ranked[0]._score >= 100 ? ranked[0] : null;
-}
 
 // ==================== INCENTIVE CALCULATION ENGINES ====================
 
@@ -339,6 +314,10 @@ export default function LenardUTRMP() {
   const [leadOwnerName, setLeadOwnerName] = useState(() => { try { return localStorage.getItem('lenard_lead_owner_name') || ''; } catch { return ''; } });
 
   const [sbeProducts, setSbeProducts] = useState([]);
+  // The tenant's own product groups, from the price book. They are what an
+  // existing fixture is matched against — see lib/lenardProductMatch.
+  const [sbeGroups, setSbeGroups] = useState([]);
+  const groupNames = useMemo(() => groupNameMap(sbeGroups), [sbeGroups]);
   const [productSearch, setProductSearch] = useState('');
   // Add-on services catalog (out-of-utility-scope items: utility processing
   // fee, facility audit, M&V report, travel fee, warranties, etc.). These
@@ -485,6 +464,7 @@ export default function LenardUTRMP() {
       ]);
       const [prodData, empData] = await Promise.all([prodResp.json(), empResp.json()]);
       if (prodData.products) setSbeProducts(prodData.products);
+      if (prodData.groups) setSbeGroups(prodData.groups);
       if (empData.employees) setEmployees(empData.employees);
       if (leadOwnerId) {
         const projResp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-projects`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: JSON.stringify({ leadOwnerId, leadSource: 'Lenard UT RMP' }) });
@@ -532,6 +512,7 @@ export default function LenardUTRMP() {
         const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-products`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` }, body: '{}' });
         const data = await resp.json();
         if (data.products) setSbeProducts(data.products);
+        if (data.groups) setSbeGroups(data.groups);
       } catch (_) {}
     })();
   }, []);
@@ -601,7 +582,7 @@ export default function LenardUTRMP() {
     let autoProductId = null, autoProductName = '', autoProductPrice = 0, autoNewW = targetNewW;
     let autoPerLamp = false;
     if (sbeProducts.length > 0) {
-      const best = findBestProduct(sbeProducts, fixCat, targetNewW);
+      const best = findBestProduct(sbeProducts, fixCat, targetNewW, groupNames);
       if (best) { autoProductId = best.id; autoProductName = best.name; autoProductPrice = best.unit_price || 0; autoPerLamp = productPricedPerLamp(best); if (!autoNewW) { const wm = (best.description || best.name || '').match(/(\d+)\s*[wW]/); if (wm) autoNewW = parseInt(wm[1]); } }
     }
     // Lamps in the fixture being REMOVED. Drives the maintenance baseline
@@ -629,7 +610,7 @@ export default function LenardUTRMP() {
     setNewlyAdded(prev => new Set(prev).add(id));
     setTimeout(() => setNewlyAdded(prev => { const next = new Set(prev); next.delete(id); return next; }), 2000);
     setIsDirty(true);
-  }, [sbeProducts]);
+  }, [sbeProducts, groupNames]);
 
   const markDirty = useCallback(() => setIsDirty(true), []);
 
@@ -3140,7 +3121,7 @@ export default function LenardUTRMP() {
                             {(() => {
                               const q = productSearch.toLowerCase();
                               const needsLift = (r.height || 0) > 16;
-                              const ranked = getMatchedProducts(sbeProducts, r.fixtureCategory, r.newW || r.existW);
+                              const ranked = getMatchedProducts(sbeProducts, r.fixtureCategory, r.newW || r.existW, groupNames);
                               const heightFiltered = needsLift ? ranked.filter(p => getProductTierInfo(p.name).tier !== 'installed') : ranked;
                               const filtered = q ? heightFiltered.filter(p => (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)) : heightFiltered;
                               const matched = filtered.filter(p => p._score >= 100);
