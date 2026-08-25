@@ -113,6 +113,9 @@ const STACK = [
 const STACK_TOTAL = STACK.reduce((s, t) => s + t.cost, 0)
 const STACK_SAVE = (STACK_TOTAL - 99) * 12
 
+// Illustrative MRR climb for the recurring-revenue spotlight (bar heights, scaleY 0..1).
+const MRR_BARS = [0.16, 0.26, 0.34, 0.46, 0.56, 0.68, 0.8, 0.9, 1]
+
 const CSS = `
   .pr{--paper:#f4efe3;--paper2:#ece3d1;--card:#fffdf7;--ink:#191d15;--sub:#4f5a4a;--muted:#848a79;--line:#d9cfb6;--line2:#cabf9f;
     --grn:#54613a;--grnDk:#3a4526;--grnBg:rgba(84,97,58,0.10);--viz:#f26a12;--vizDk:#c9530a;--vizBg:rgba(242,106,18,0.12);
@@ -202,6 +205,35 @@ const CSS = `
   .pr .term .row .cited{color:#7fae5c;font-size:10.5px;display:inline-flex;align-items:center;gap:4px}
   .pr .prospect .repl{font-family:var(--mono);font-size:11.5px;color:#9aa08c;margin-top:14px;position:relative}
   .pr .prospect .repl b{color:#ffb27a}
+  .pr .recur{margin-top:24px;background:var(--nightGrn);color:#eae6d7;border-radius:22px;padding:26px 22px;position:relative;overflow:hidden}
+  .pr .recur::after{content:"";position:absolute;inset:0;opacity:.4;pointer-events:none;background:radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:18px 18px}
+  .pr .recur .eb{color:#cbb8ff;background:rgba(139,92,246,.18)}
+  .pr .recur h3{font-size:clamp(22px,5.4vw,30px);font-weight:840;line-height:1.08;color:#fff;position:relative;margin-top:14px}
+  .pr .recur .say{color:#cfcbba;font-size:15px;margin:12px 0 0;max-width:47ch;position:relative;line-height:1.5}
+  .pr .recur-grid{display:grid;grid-template-columns:1fr;gap:14px;margin-top:20px;position:relative}
+  .pr .planc{background:#12160d;border:1px solid rgba(139,92,246,.35);border-radius:16px;padding:18px;display:flex;flex-direction:column}
+  .pr .planc-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(255,255,255,.1);padding-bottom:13px}
+  .pr .planc-top .nm{font-size:17px;font-weight:800;color:#fff}
+  .pr .planc-top .mo{font-family:var(--mono);font-size:12.5px;color:#cbb8ff;white-space:nowrap}
+  .pr .planc-top .mo b{font-size:23px;color:#fff;font-weight:850}
+  .pr .planc ul{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:10px}
+  .pr .planc li{display:flex;gap:9px;font-size:13.5px;color:#d6d2c2;align-items:center}
+  .pr .planc li .ic{font-size:15px;color:#a78bfa;flex:none}
+  .pr .planc .memb{margin-top:15px;padding-top:13px;border-top:1px solid rgba(255,255,255,.1);font-family:var(--mono);font-size:11.5px;color:#9aa08c;display:flex;align-items:center;gap:7px}
+  .pr .planc .memb .ic{font-size:13px;color:#a78bfa}
+  .pr .planc .memb b{color:#cbb8ff}
+  .pr .mrr{background:#0f130c;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:18px;display:flex;flex-direction:column}
+  .pr .mrr .mlbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:#9aa08c}
+  .pr .mrr .mval{font-size:31px;font-weight:850;color:#fff;letter-spacing:-.02em;margin-top:5px;font-variant-numeric:tabular-nums;line-height:1}
+  .pr .mrr .mval .u{font-size:14px;color:#a78bfa;font-weight:750}
+  .pr .mrr-bars{display:flex;align-items:flex-end;gap:6px;height:94px;margin-top:16px}
+  .pr .mrr-bar{flex:1;min-width:0;background:linear-gradient(180deg,#a78bfa,#7c3aed);border-radius:4px 4px 2px 2px;transform-origin:bottom;transform:scaleY(var(--h,1));animation:mgrow .7s cubic-bezier(.2,.7,.2,1) both}
+  @keyframes mgrow{from{transform:scaleY(0)}}
+  .pr .mrr .mcap{font-family:var(--mono);font-size:11px;color:#7fae5c;margin-top:13px;display:flex;align-items:center;gap:7px}
+  .pr .mrr .mcap .ic{font-size:12px;flex:none}
+  .pr .recur .repl{font-family:var(--mono);font-size:11.5px;color:#9aa08c;margin-top:16px;position:relative}
+  .pr .recur .repl b{color:#cbb8ff}
+  @media(min-width:640px){ .pr .recur-grid{grid-template-columns:1fr 1fr} }
   .pr .crewgrid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:24px}
   .pr .agent{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;gap:14px;align-items:flex-start}
   .pr .agent .av{width:50px;height:50px;flex:none;border-radius:14px;display:grid;place-items:center;font-family:var(--mono);font-weight:750;font-size:16px;background:var(--grn);color:#fff}
@@ -368,7 +400,7 @@ const CSS = `
   @media(min-width:620px){ .pr .stack-grid{grid-template-columns:repeat(3,1fr)} .pr .onlyus{grid-template-columns:1fr 1fr} }
   @media(max-width:560px){ .pr .hd-share .shl{display:none} .pr .hd-share{padding:8px 10px} }
   @media(min-width:980px){ .pr .hero .wrap{padding:64px 20px 54px} .pr .flow{grid-template-columns:repeat(4,1fr)} }
-  @media(prefers-reduced-motion:reduce){ .pr .rv,.pr .chip,.pr .hp-dot,.pr .hp-row,.pr .agstage,.pr .hero h1 .hl::after,.pr .term .q .cur{transition:none;animation:none;opacity:1;transform:none}.pr .hero h1 .hl::after{--draw:1} }
+  @media(prefers-reduced-motion:reduce){ .pr .rv,.pr .chip,.pr .hp-dot,.pr .hp-row,.pr .agstage,.pr .hero h1 .hl::after,.pr .term .q .cur{transition:none;animation:none;opacity:1;transform:none}.pr .hero h1 .hl::after{--draw:1}.pr .mrr-bar{animation:none} }
 `
 
 function Icon({ id, style }) {
@@ -617,6 +649,37 @@ export default function Pricing() {
             <div className="coming rv">
               <span className="lbl">12 more trade specialists rolling out</span>
               <div className="pills">{COMING.map((c) => <span key={c}>{c}</span>)}</div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div className="wrap">
+            <div className="recur rv">
+              <span className="eb"><Icon id="i-repeat" style={{ fontSize: 13 }} /> Recurring revenue, built in</span>
+              <h3>Sell it once. Get paid every month.</h3>
+              <p className="say">Build membership plans, enroll your customers, and JobScout auto-schedules the visits and bills the card on repeat — monthly, quarterly, or yearly. Predictable income you never re-sell, and the number that makes your business worth more the day you decide to sell it.</p>
+              <div className="recur-grid">
+                <div className="planc">
+                  <div className="planc-top"><span className="nm">Comfort Club</span><span className="mo"><b>$39</b>/mo</span></div>
+                  <ul>
+                    <li><Icon id="i-check" /> Two seasonal tune-ups</li>
+                    <li><Icon id="i-check" /> Priority scheduling</li>
+                    <li><Icon id="i-check" /> 15% off every repair</li>
+                    <li><Icon id="i-check" /> Waived trip fee</li>
+                  </ul>
+                  <div className="memb"><Icon id="i-users" /> <b>72 members</b> enrolled · auto-renews</div>
+                </div>
+                <div className="mrr">
+                  <div className="mlbl">Monthly recurring revenue</div>
+                  <div className="mval">$3,100<span className="u"> /mo</span></div>
+                  <div className="mrr-bars" aria-hidden="true">
+                    {MRR_BARS.map((h, i) => <span key={i} className="mrr-bar" style={{ '--h': h, animationDelay: `${i * 70}ms` }} />)}
+                  </div>
+                  <div className="mcap"><Icon id="i-check" /> bills again next month — on its own</div>
+                </div>
+              </div>
+              <div className="repl">replaces <b>ServiceTitan memberships, Jobber recurring</b> — and the feast-or-famine month.</div>
             </div>
           </div>
         </section>
