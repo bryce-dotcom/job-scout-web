@@ -615,7 +615,7 @@ export default function FieldScout() {
           .maybeSingle()
         const { data: lineRows } = await supabase
           .from('job_lines')
-          .select('id, quantity, price, total, notes, item:products_services(id, name, description, allotted_time_hours, material_or_labor)')
+          .select('id, quantity, price, total, notes, photos, item:products_services(id, name, description, allotted_time_hours, material_or_labor)')
           .eq('job_id', jobId)
           .order('id')
         if (cancelled) return
@@ -2240,6 +2240,27 @@ export default function FieldScout() {
                                       {aiNotes}
                                     </div>
                                   )}
+                                  {/* The area as the surveyor found it. This
+                                      query already asked for photos; nothing
+                                      ever drew them. */}
+                                  {Array.isArray(a.photos) && a.photos.length > 0 && (
+                                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
+                                      {a.photos.filter(Boolean).map((src, pi) => (
+                                        <img
+                                          key={pi}
+                                          src={src}
+                                          alt={`${a.area_name || 'Area'} photo ${pi + 1}`}
+                                          loading="lazy"
+                                          onClick={(e) => { e.stopPropagation(); window.open(src, '_blank', 'noopener') }}
+                                          style={{
+                                            width: '48px', height: '48px', objectFit: 'cover',
+                                            borderRadius: '6px', cursor: 'pointer',
+                                            border: '1px solid rgba(255,255,255,0.35)',
+                                          }}
+                                        />
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -2296,6 +2317,33 @@ export default function FieldScout() {
                                   {l.notes && (
                                     <div style={{ fontSize: '10px', opacity: 0.9, marginTop: '2px', fontStyle: 'italic', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                                       {l.notes}
+                                    </div>
+                                  )}
+                                  {/* What the surveyor photographed, on the line
+                                      the installer is standing in front of.
+                                      These travel Lenard -> estimate -> job in
+                                      job_lines.photos, but this screen only ever
+                                      selected the installer's own before/after
+                                      shots from file_attachments, so the survey
+                                      photo was carried the whole way and then
+                                      never shown to the one person who needed
+                                      it. Tap opens it full size. */}
+                                  {Array.isArray(l.photos) && l.photos.length > 0 && (
+                                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
+                                      {l.photos.filter(Boolean).map((src, pi) => (
+                                        <img
+                                          key={pi}
+                                          src={src}
+                                          alt={`Survey photo ${pi + 1}`}
+                                          loading="lazy"
+                                          onClick={(e) => { e.stopPropagation(); window.open(src, '_blank', 'noopener') }}
+                                          style={{
+                                            width: '48px', height: '48px', objectFit: 'cover',
+                                            borderRadius: '6px', cursor: 'pointer',
+                                            border: '1px solid rgba(255,255,255,0.35)',
+                                          }}
+                                        />
+                                      ))}
                                     </div>
                                   )}
                                 </div>

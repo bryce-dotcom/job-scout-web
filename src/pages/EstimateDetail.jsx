@@ -1913,6 +1913,22 @@ function EstimateDetailInner() {
         }
       }
 
+      // 4a2. Point the lighting audit at the job it became.
+      //
+      // FieldScout's job briefing looks up the audit by lighting_audits.job_id
+      // to show the crew the per-area breakdown — locations, fixture counts,
+      // mounting heights and the surveyor's notes and photos. Nothing ever set
+      // that column: it was null on all 125 audits, so that whole panel was
+      // dead code and the installer arrived with none of the survey detail.
+      if (estimate.audit_id) {
+        const { error: auditLinkErr } = await supabase
+          .from('lighting_audits')
+          .update({ job_id: newJob.id })
+          .eq('id', estimate.audit_id)
+          .eq('company_id', companyId)
+        if (auditLinkErr) console.warn('[convertToJob] audit -> job link failed:', auditLinkErr.message)
+      }
+
       // 4b. Carry the signed formal proposal to the new job
       if (estimate.signed_proposal_attachment_id) {
         await supabase

@@ -99,6 +99,7 @@ function describeAuditLine(l: any): string {
 // before, rather than silently under-billing the customer. That path
 // disappears the next time the device loads the app.
 function intakeLinesFromPayload(lines: any[], quoteAmount: number, auditDbId: number | null) {
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
   const carried = lines.some((l: any) => Number(l.unitPrice) > 0 || Number(l.lineTotal) > 0);
   const sumByPrice = lines.reduce((s: number, l: any) =>
     s + ((l.qty || 1) * (Number(l.productPrice) || 0)), 0);
@@ -113,8 +114,14 @@ function intakeLinesFromPayload(lines: any[], quoteAmount: number, auditDbId: nu
     // The field tech's photo, on the line the customer reads. This is the
     // thing crews kept losing: a photo saved against the audit that no
     // estimate surface ever looked at.
-    const photoPath = (auditDbId && l.photoIndex != null && l.photoIndex >= 0)
-      ? [`audits/${auditDbId}/photo_${l.photoIndex}.jpg`]
+    //
+    // Stored as a full public URL, because that is what every other row in
+    // quote_lines.photos holds and what the render surfaces use directly as an
+    // <img src>. A bare storage path here would save silently and then show a
+    // broken image — the same shape of bug as saving a photo where no viewer
+    // reads it. audit-photos is public-read.
+    const photos = (auditDbId && l.photoIndex != null && l.photoIndex >= 0)
+      ? [`${SUPABASE_URL}/storage/v1/object/public/audit-photos/audits/${auditDbId}/photo_${l.photoIndex}.jpg`]
       : null;
     return {
       // Name the line by the LED product (the fixture being sold) so the
@@ -126,7 +133,7 @@ function intakeLinesFromPayload(lines: any[], quoteAmount: number, auditDbId: nu
       price: round2(price),
       line_total: round2(lineTotal),
       notes: l.overrideNotes || null,
-      photos: photoPath,
+      photos: photos,
     };
   });
 }
