@@ -227,7 +227,7 @@ const CSS = `
   .pr .mrr .mval{font-size:31px;font-weight:850;color:#fff;letter-spacing:-.02em;margin-top:5px;font-variant-numeric:tabular-nums;line-height:1}
   .pr .mrr .mval .u{font-size:14px;color:#a78bfa;font-weight:750}
   .pr .mrr-bars{display:flex;align-items:flex-end;gap:6px;height:94px;margin-top:16px}
-  .pr .mrr-bar{flex:1;min-width:0;background:linear-gradient(180deg,#a78bfa,#7c3aed);border-radius:4px 4px 2px 2px;transform-origin:bottom;transform:scaleY(var(--h,1));animation:mgrow .7s cubic-bezier(.2,.7,.2,1) both}
+  .pr .mrr-bar{flex:1;min-width:0;height:100%;background:linear-gradient(180deg,#a78bfa,#7c3aed);border-radius:4px 4px 2px 2px;transform-origin:bottom;transform:scaleY(var(--h,1));animation:mgrow .7s cubic-bezier(.2,.7,.2,1) both}
   @keyframes mgrow{from{transform:scaleY(0)}}
   .pr .mrr .mcap{font-family:var(--mono);font-size:11px;color:#7fae5c;margin-top:13px;display:flex;align-items:center;gap:7px}
   .pr .mrr .mcap .ic{font-size:12px;flex:none}
