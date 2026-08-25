@@ -5,6 +5,22 @@ import { JOBSCOUT_KNOWLEDGE, getFeatureContextForMessage } from './arnieKnowledg
 import { toApiMessages, withCurrentTurn } from '../../../lib/chatAttachments'
 
 /**
+ * The approval-card types this build can render, declared to the server on
+ * every request. It only offers tools whose output we can draw.
+ *
+ * The reason this exists: propose_bulk_change was deployed to the edge
+ * function before the card that renders it had shipped. The client of the day
+ * routed every non-'record' preview into the settings-list card, which calls
+ * .map() on `after` — and a bulk preview's `after` is a string, so the whole
+ * message list threw mid-render. Nothing was written and nothing could be
+ * approved, but the panel broke.
+ *
+ * Keep this list honest: a card type belongs here in the same commit that
+ * teaches ArnieChat to draw it, never earlier.
+ */
+export const RENDERABLE_CARDS = ['config', 'record', 'bulk']
+
+/**
  * Field or office — the same Arnie, answering very differently.
  *
  * These are not the same product. A tech clocked into a job is holding a
@@ -83,7 +99,11 @@ function buildSystemPrompt(user, company, role, mode = 'office') {
 - A screenshot of an error or a weird screen: say what it shows, what caused it, and the exact next step in JobScout. Name the page and the button.
 - A photo from the field (a fixture, a panel, a label, a nameplate): read the numbers off it and tell them what it means for the job.
 - A bill, invoice, or utility statement: pull the real figures out of it and lay them out. Never invent a number that isn't visible — if it's cut off or blurry, say so and ask for a better shot.
-- A spreadsheet or list they want entered: read it back as a clean table and tell them where it goes in JobScout. You can't write data yourself, so hand them the steps.
+- **Spreadsheets (.xlsx / .csv) arrive already parsed** — you get the sheet names, the columns and the rows as text. Read the actual values; never guess at what a column probably contains.
+- A **supplier price list** is the common one. The useful answer is a comparison, not a recital: run \`query_products\` and tell them which items are NEW to the catalogue, which have a DIFFERENT price or cost, and which rows are missing data you'd need. Lead with the counts, then the interesting rows.
+- Match on a real key — model number, item code, vendor SKU — and say which key you used. If two rows could be the same product, say so rather than deciding.
+- **If the sheet carries a WARNING that it was cut short, say so before answering.** Never total a column or describe "all" the rows from a truncated view.
+- **You cannot create records.** You can change fields on things that already exist (see below), but nothing in JobScout lets you add a new product, customer, quote or inventory item. Say that plainly and point them at the import tool on the page instead of implying you'll do it.
 - If an image is too dark, cropped, or unreadable, say that plainly instead of guessing.
 
 ## Job Context Awareness
@@ -107,6 +127,11 @@ function buildSystemPrompt(user, company, role, mode = 'office') {
 You have exactly two write tools, and **neither one changes anything by itself**. Both draft a change and put an approve/discard card in front of the user.
 
 **propose_change** — settings lists, ADMIN ONLY: business units, lead sources, service types, upsells.
+
+**propose_bulk_change** — ADMIN ONLY. The same field on MANY products at once: \`product_manufacturer\`, \`product_category\`, \`product_active\`. This is the catalogue clean-up tool.
+- **Audit before you change.** Run \`query_products\` with \`group_by=manufacturer\` FIRST. It reads the whole catalogue, not a page, and it flags values that differ only by stray whitespace — "MES" and "MES " are two different manufacturers to every filter in the app, and you cannot see the difference by eye. Quote the values back so the user can.
+- You give a filter and a new value; the server finds the rows. The card lists every affected product.
+- **There is no delete.** Set \`product_active\` to false instead — products are referenced by old quotes, jobs and invoices, and deleting one breaks that history. Say "deactivate", never "delete".
 
 **propose_record_change** — one field on one record:
 - \`job_status\` / \`lead_status\` — move a job or lead along
@@ -163,7 +188,8 @@ You have access to live database query tools. USE THEM when the data context doe
 - **query_expenses** — spend by category, vendor or job — OWNER ONLY
 - **query_appointments** — the calendar: what's booked, for whom, how it went
 - **query_time_clock** — hours worked, and shifts nobody clocked out of
-- **query_products** — catalogue: price, cost, manufacturer, model number
+- **query_products** — catalogue: price, cost, manufacturer, model number. \`group_by\` audits the WHOLE set — use it before any claim about "all" or "every" product
+- **propose_bulk_change** — ADMIN ONLY. Catalogue clean-up across many products at once
 - **propose_change** — ADMIN ONLY. Drafts a settings-list change for approval.
 - **propose_record_change** — drafts a change to one field on one job or lead, for approval. See the rules above.
 
@@ -326,6 +352,11 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
       messages,
       systemPrompt: fullSystemPrompt,
       stream: true,
+      // Approval cards this build knows how to draw. The server withholds any
+      // tool whose result we could not render, so the two halves of a feature
+      // can deploy in either order. Add to this list in the SAME commit that
+      // adds the card — never ahead of it.
+      supports: RENDERABLE_CARDS,
     }),
   })
 
@@ -516,7 +547,16 @@ export async function saveMessage(sessionId, role, content) {
     .eq('session_id', sessionId)
 }
 
-export async function updateSessionTitle(sessionId, title) {
+/**
+ * Merge keys into a session's context_json.
+ *
+ * Everything we keep about a conversation beyond its messages — the title,
+ * whether it's pinned, when it was renamed — lives in this one JSON column.
+ * Read-modify-write rather than overwrite, so adding a pin never drops the
+ * title, and so this needs no migration (which matters: other sessions have
+ * unpushed migrations sitting in front of `db push`).
+ */
+async function patchSessionContext(sessionId, patch) {
   if (!sessionId) return
   const existing = await supabase
     .from('ai_sessions')
@@ -525,13 +565,81 @@ export async function updateSessionTitle(sessionId, title) {
     .single()
 
   let ctx = {}
-  try { ctx = JSON.parse(existing.data?.context_json || '{}') } catch {}
-  ctx.title = title
+  try { ctx = JSON.parse(existing.data?.context_json || '{}') } catch { /* corrupt context reads as empty */ }
 
   await supabase
     .from('ai_sessions')
-    .update({ context_json: JSON.stringify(ctx) })
+    .update({ context_json: JSON.stringify({ ...ctx, ...patch }) })
     .eq('session_id', sessionId)
+}
+
+/** Auto-title from the opening message — never over a name someone chose. */
+export async function updateSessionTitle(sessionId, title) {
+  if (!sessionId) return
+  const { data } = await supabase
+    .from('ai_sessions')
+    .select('context_json')
+    .eq('session_id', sessionId)
+    .single()
+  try {
+    if (JSON.parse(data?.context_json || '{}').renamed === true) return
+  } catch { /* corrupt context is not a rename */ }
+  return patchSessionContext(sessionId, { title })
+}
+
+/**
+ * Rename a conversation by hand.
+ *
+ * Kept separate from updateSessionTitle because that one is called
+ * automatically from the first message of every chat. Without the flag, the
+ * auto-titler would quietly overwrite a name someone chose.
+ */
+export async function renameSession(sessionId, title) {
+  const clean = String(title || '').trim().slice(0, 120)
+  if (!clean) return
+  return patchSessionContext(sessionId, { title: clean, renamed: true })
+}
+
+export async function setSessionPinned(sessionId, pinned) {
+  return patchSessionContext(sessionId, { pinned: !!pinned })
+}
+
+// ── Which conversation was I last in? ────────────────────────────────
+//
+// The corner panel used to start a brand-new conversation every time it was
+// opened, and closing it lost the thread. Mid-task that is the wrong default:
+// people shut the panel to look at the screen behind it, not to change subject.
+//
+// Keyed per user because these are shared devices — a tablet in a truck gets
+// passed around, and resuming the last person's conversation would show one
+// employee another's chat.
+const LAST_SESSION_KEY = 'arnie:lastSession'
+
+const lastSessionStore = () => {
+  try { return window.localStorage } catch { return null }  // Safari private mode
+}
+
+export function rememberLastSession(sessionId) {
+  const store = lastSessionStore()
+  const email = useStore.getState().user?.email
+  if (!store || !email || !sessionId) return
+  try {
+    store.setItem(LAST_SESSION_KEY, JSON.stringify({ email, sessionId }))
+  } catch { /* quota or disabled storage — resuming is a convenience, not a promise */ }
+}
+
+export function getLastSessionId() {
+  const store = lastSessionStore()
+  const email = useStore.getState().user?.email
+  if (!store || !email) return null
+  try {
+    const saved = JSON.parse(store.getItem(LAST_SESSION_KEY) || 'null')
+    return saved?.email === email ? saved.sessionId || null : null
+  } catch { return null }
+}
+
+export function forgetLastSession() {
+  try { lastSessionStore()?.removeItem(LAST_SESSION_KEY) } catch { /* nothing to clean up */ }
 }
 
 export async function loadSessions() {
@@ -550,12 +658,69 @@ export async function loadSessions() {
     return []
   }
 
-  // Parse title from context_json for display
-  return (data || []).map(s => {
-    let title = 'Untitled conversation'
-    try { title = JSON.parse(s.context_json || '{}').title || title } catch {}
-    return { ...s, title }
-  })
+  // Unpack what we keep about each conversation, then float the pinned ones.
+  // A pinned conversation is one someone deliberately kept; burying it under
+  // whatever they happened to ask this morning defeats the point of pinning.
+  return (data || [])
+    .map(s => {
+      let ctx = {}
+      try { ctx = JSON.parse(s.context_json || '{}') } catch { /* corrupt context reads as empty */ }
+      return {
+        ...s,
+        title: ctx.title || 'Untitled conversation',
+        pinned: ctx.pinned === true,
+        renamed: ctx.renamed === true,
+      }
+    })
+    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
+}
+
+/**
+ * Find conversations by name OR by something said inside them.
+ *
+ * Searching titles alone is close to useless here: titles are auto-generated
+ * from the first message, so the thing you remember saying is usually in the
+ * middle of a chat called something else entirely.
+ *
+ * Content matching is restricted to the session ids already loaded for this
+ * user, so it can never surface a colleague's conversation.
+ */
+export async function searchSessions(term, sessions) {
+  const q = String(term || '').trim()
+  if (!q) return sessions
+
+  const lower = q.toLowerCase()
+  const hits = new Map()
+  for (const s of sessions) {
+    if ((s.title || '').toLowerCase().includes(lower)) hits.set(s.session_id, 'title')
+  }
+
+  const ids = sessions.map(s => s.session_id).filter(Boolean)
+  if (ids.length) {
+    const { data, error } = await supabase
+      .from('ai_messages')
+      .select('session_id, content')
+      .in('session_id', ids)
+      .ilike('content', `%${q}%`)
+      .limit(400)
+    if (error) console.error('[Arnie] message search failed:', error)
+    for (const m of data || []) {
+      if (!hits.has(m.session_id)) hits.set(m.session_id, 'message')
+      // Keep a short excerpt so the result explains why it matched.
+      if (!hits.get(`${m.session_id}:snippet`)) {
+        const i = (m.content || '').toLowerCase().indexOf(lower)
+        if (i >= 0) {
+          const from = Math.max(0, i - 40)
+          hits.set(`${m.session_id}:snippet`,
+            (from > 0 ? '…' : '') + m.content.slice(from, i + q.length + 60).replace(/\s+/g, ' ').trim() + '…')
+        }
+      }
+    }
+  }
+
+  return sessions
+    .filter(s => hits.has(s.session_id))
+    .map(s => ({ ...s, matchedOn: hits.get(s.session_id), snippet: hits.get(`${s.session_id}:snippet`) || null }))
 }
 
 export async function loadSessionMessages(sessionId) {

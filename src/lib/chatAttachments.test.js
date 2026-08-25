@@ -15,16 +15,31 @@ describe('what we accept', () => {
     expect(attachmentKind({ type: 'application/pdf', name: 'a.pdf' })).toBe('pdf')
   })
 
+  it('takes spreadsheets, which are parsed rather than uploaded', () => {
+    // A model cannot read an .xlsx — it is a zip of XML. These are turned into
+    // text in the browser, which is why they are accepted at all.
+    expect(attachmentKind({ type: 'text/csv', name: 'prices.csv' })).toBe('sheet')
+    expect(attachmentKind({
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      name: 'supplier.xlsx',
+    })).toBe('sheet')
+  })
+
   it('falls back to the extension when the browser reports no type', () => {
     // Files picked from Google Drive / OneDrive on Android arrive with type ''.
     // Rejecting those would look like the button is broken.
     expect(attachmentKind({ type: '', name: 'invoice.PDF' })).toBe('pdf')
     expect(attachmentKind({ type: '', name: 'photo.JPEG' })).toBe('image')
+    // Windows reports several wrong MIME types for spreadsheets, so for these
+    // the extension is the reliable signal rather than the fallback.
+    expect(attachmentKind({ type: '', name: 'Supplier List.XLSX' })).toBe('sheet')
+    expect(attachmentKind({ type: 'application/octet-stream', name: 'q3.csv' })).toBe('sheet')
   })
 
   it('turns down what the model cannot read', () => {
     expect(attachmentKind({ type: 'application/zip', name: 'a.zip' })).toBe(null)
-    expect(rejectReason({ type: 'application/zip', name: 'a.zip' })).toMatch(/photo, a screenshot, or a PDF/)
+    expect(rejectReason({ type: 'application/zip', name: 'a.zip' }))
+      .toMatch(/photo, a screenshot, a PDF or a spreadsheet/)
   })
 
   it('explains a too-big file in plain words with its size', () => {
