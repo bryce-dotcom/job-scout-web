@@ -108,6 +108,40 @@ serve(async (req) => {
     const now = new Date();
     const results: { estimate_id: number; followup: number; status: string }[] = [];
 
+    // ── Guard rails ─────────────────────────────────────────────────────
+    //
+    // This function stopped running on 2026-06-12 and nobody noticed for two
+    // months: the pg_cron job POSTs with no Authorization header, and a
+    // `supabase functions deploy` without --no-verify-jwt reset verify_jwt to
+    // true, so every call 401'd. By the time it was found, 835 open estimates
+    // worth $6.39M were overdue for a first follow-up.
+    //
+    // Which means restarting it naively sends 835 emails in one burst, to
+    // people who were quoted months ago. That is a spam-complaint and
+    // domain-reputation event, not a feature launch. Three rails stop it:
+    //
+    //   1. A per-company cutoff. Only estimates sent ON OR AFTER
+    //      settings.estimate_followup_since are eligible. NO SETTING = NO MAIL:
+    //      it fails closed, so a fresh tenant or a lost setting can never
+    //      accidentally mail its whole history.
+    //   2. A hard cap per run, so even a mistake in rule 1 is survivable.
+    //   3. dry_run, so the answer to "what would this send?" never requires
+    //      sending it.
+    const body = await req.json().catch(() => ({}));
+    const dryRun = body?.dry_run === true;
+    const maxPerRun = Number.isFinite(body?.max) ? Math.max(0, Math.min(500, body.max)) : 25;
+
+    const { data: cutoffRows } = await supabase
+      .from('settings')
+      .select('company_id, value')
+      .eq('key', 'estimate_followup_since');
+    const cutoffs = new Map<number, number>();
+    for (const row of cutoffRows || []) {
+      const t = Date.parse(String(row.value || '').replace(/^"|"$/g, ''));
+      if (Number.isFinite(t)) cutoffs.set(row.company_id, t);
+    }
+    const skipped = { no_cutoff: 0, before_cutoff: 0, over_cap: 0 };
+
     // Find all "Sent" estimates that have a sent_date and haven't completed 3 follow-ups
     const { data: estimates, error: fetchErr } = await supabase
       .from('quotes')
@@ -135,6 +169,25 @@ serve(async (req) => {
       const requiredDays = FOLLOWUP_DAYS[nextFollowup];
 
       if (daysSinceSent < requiredDays) continue;
+
+      // Rail 1 — the backlog stays quiet. An estimate sent before this
+      // company's cutoff is never auto-chased; a rep can still resend by hand.
+      const cutoff = cutoffs.get(est.company_id);
+      if (cutoff === undefined) { skipped.no_cutoff++; continue; }
+      const sentAt = Date.parse(est.last_sent_at || est.sent_date);
+      if (!Number.isFinite(sentAt) || sentAt < cutoff) { skipped.before_cutoff++; continue; }
+
+      // Rail 2 — a cap that holds even if rail 1 is wrong.
+      if (results.filter(r => r.status === 'sent' || r.status === 'would_send').length >= maxPerRun) {
+        skipped.over_cap++;
+        continue;
+      }
+
+      // Rail 3 — answer "what would this send?" without sending it.
+      if (dryRun) {
+        results.push({ estimate_id: est.id, followup: nextFollowup + 1, status: 'would_send' });
+        continue;
+      }
 
       // Fetch company info for branding
       const { data: company } = await supabase
@@ -266,6 +319,10 @@ serve(async (req) => {
         body: JSON.stringify({
           from: `${displayName} <estimates@appsannex.com>`,
           to: [est.sent_to_email],
+          // Same reason as send-estimate: a chase email is the one most likely
+          // to get a reply, and without this that reply goes to a shared
+          // sending address nobody reads.
+          ...(contactEmail ? { reply_to: contactEmail } : {}),
           subject,
           html: htmlBody,
         }),
@@ -294,8 +351,15 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       success: true,
+      dry_run: dryRun,
+      considered: estimates.length,
       sent: results.filter(r => r.status === 'sent').length,
+      would_send: results.filter(r => r.status === 'would_send').length,
       failed: results.filter(r => r.status === 'failed').length,
+      // Reported, not swallowed. "0 sent" has three very different causes and
+      // the cron log has to say which one it was.
+      skipped,
+      cap: maxPerRun,
       results,
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 

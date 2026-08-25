@@ -41,6 +41,10 @@
     {
       "path": "/api/cron/feedback-sweep",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/estimate-followup",
+      "schedule": "10 16 * * *"
     }
   ],
   "functions": {
@@ -57,6 +61,9 @@
       "maxDuration": 60
     },
     "api/cron/plaid-sync.js": {
+      "maxDuration": 300
+    },
+    "api/cron/estimate-followup.js": {
       "maxDuration": 300
     }
   }

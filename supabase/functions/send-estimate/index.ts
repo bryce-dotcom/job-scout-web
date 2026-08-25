@@ -264,6 +264,21 @@ serve(async (req) => {
       html: htmlBody,
     };
 
+    // Send replies somewhere a person reads.
+    //
+    // Without this, a customer who hits Reply on their estimate is writing to
+    // estimates@appsannex.com — a shared sending address, not a mailbox anyone
+    // watches — and the reply is simply lost. The footer of this very email
+    // already tells them to email contactEmail, so replies landing there is
+    // what the message promises.
+    //
+    // This is not reply TRACKING. Nothing in JobScout can yet show "the
+    // customer replied", because no inbound mail is captured anywhere. It only
+    // stops replies disappearing while that is true.
+    if (contactEmail) {
+      emailPayload.reply_to = contactEmail;
+    }
+
     // Build attachments list
     const attachmentsList: Array<{filename: string; content: string}> = [];
     if (pdfBase64) {

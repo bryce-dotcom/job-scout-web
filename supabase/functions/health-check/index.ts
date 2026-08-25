@@ -93,6 +93,21 @@ const CHECKS: Check[] = [
     lastSuccess: (sb, c) => newest(sb, 'invoices', 'last_sent_at', c),
     fix: 'Send a test invoice. If email_status never updates, the Resend webhook has gone dark again.',
   },
+  {
+    // The check that would have caught this two months earlier. Estimate
+    // follow-ups stopped on 2026-06-12 and nothing noticed: the pg_cron job
+    // POSTed with no auth header, a deploy flipped verify_jwt back to true, and
+    // every call 401'd into a log nobody reads. 835 open estimates worth $6.39M
+    // went unchased.
+    //
+    // 14 days, not 4: follow-ups only fire when something is actually due, so a
+    // genuinely quiet fortnight is possible and a tighter window would cry wolf.
+    id: 'estimate_followups',
+    label: 'Estimate follow-ups going out',
+    maxAgeHours: 24 * 14,
+    lastSuccess: (sb, c) => newest(sb, 'quotes', 'follow_up_1', c),
+    fix: 'Hit /api/cron/estimate-followup?dry_run=1 — it reports what it WOULD send and why it is skipping the rest. "0 sent, skipped.no_cutoff > 0" means the estimate_followup_since setting is missing for that company, which is the fail-closed guard doing its job.',
+  },
 ];
 
 // ── Conditions ────────────────────────────────────────────────────────────
