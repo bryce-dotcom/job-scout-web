@@ -363,6 +363,22 @@ allow_dynamic_registration = false
 [functions.resend-webhook]
 verify_jwt = false
 
+# Inbound customer replies to estimates. Whatever forwards the mail — Resend
+# Inbound, Cloudflare Email Routing, SendGrid Inbound Parse, a mailbox rule — it
+# is a third party that cannot send a Supabase JWT, so this must stay open.
+#
+# Pinned deliberately and immediately: estimate-followup was NOT in this list,
+# a routine deploy flipped its verify_jwt back to true, and every call 401'd
+# silently from 2026-06-12 until it was found two months later with 835
+# estimates unchased. This function has the same shape and would fail the same
+# way, except the losses would be customer replies.
+#
+# Safe to expose: it never trusts the caller. A reply is only attached to an
+# estimate whose sent_to_email already matches the sender, and anything it
+# cannot place is raised as a notification rather than written anywhere.
+[functions.inbound-email]
+verify_jwt = false
+
 # Stripe calls these with only a `stripe-signature` header (no Supabase JWT or
 # anon key), so the gateway must not require a JWT. Same trap as resend-webhook:
 # a plain `functions deploy` (no --no-verify-jwt) resets this to true, Stripe

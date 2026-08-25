@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { leadCommsBadge } from '../lib/estimateComms'
 import { useStore } from '../lib/store'
 import { effectiveQuoteAmount } from '../lib/quoteTotal'
 import { useTheme } from '../components/Layout'
@@ -117,6 +118,8 @@ export default function SalesPipeline() {
 
   // Pipeline state
   const [pipelineLeads, setPipelineLeads] = useState([])
+  // { [quote_id]: count } — unread customer replies, for the card badge.
+  const [unreadReplies, setUnreadReplies] = useState({})
   const [stages, setStages] = useState(defaultStages)
   const [visibleStats, setVisibleStats] = useState(defaultVisibleStats)
   const [loading, setLoading] = useState(true)
@@ -626,10 +629,39 @@ export default function SalesPipeline() {
           const batch = allLeadIds.slice(i, i + batchSize)
           const { data: quotesData } = await supabase
             .from('quotes')
-            .select('id, lead_id, quote_amount, discount, utility_incentive, status, estimate_name, quote_id, approved_date, rejected_date, created_at, updated_at, salesperson_id')
+            // last_sent_at/sent_date/email_status/followup_count feed the
+            // conversation badge on the card. Cheap to carry — they are columns
+            // on a row already being fetched.
+            .select('id, lead_id, quote_amount, discount, utility_incentive, status, estimate_name, quote_id, approved_date, rejected_date, created_at, updated_at, salesperson_id, last_sent_at, sent_date, email_status, followup_count')
             .in('lead_id', batch)
           if (quotesData) allQuotes.push(...quotesData)
         }
+
+        // Unread customer replies, so a card can say a human is waiting.
+        //
+        // Only unread ones, and only from the customer: a rep's own outbound
+        // messages are not news, and a reply someone has already read is not
+        // either. Filtered server-side so this stays a handful of rows however
+        // big the board gets.
+        const unreadReplies = {}
+        try {
+          const qIds = allQuotes.map(q => q.id).filter(Boolean)
+          for (let i = 0; i < qIds.length; i += batchSize) {
+            const { data: msgs } = await supabase
+              .from('estimate_messages')
+              .select('quote_id')
+              .eq('from_role', 'customer')
+              .is('read_at', null)
+              .in('quote_id', qIds.slice(i, i + batchSize))
+            for (const m of msgs || []) {
+              unreadReplies[m.quote_id] = (unreadReplies[m.quote_id] || 0) + 1
+            }
+          }
+        } catch {
+          // A board that loses its badges is still a working board. Never let
+          // this stop the pipeline rendering.
+        }
+        setUnreadReplies(unreadReplies)
         // Sum each quote's LINE ITEMS. quotes.quote_amount is a cached copy of
         // these and it drifts — EST-MOUH4ST4 stored $732,220.44 against
         // $111,405.64 of lines, and 803 other quotes disagree with their own
@@ -2936,6 +2968,29 @@ export default function SalesPipeline() {
                                 {lead._isJob && (
                                   <span style={{ fontSize: '9px', padding: '1px 5px', borderRadius: '4px', backgroundColor: '#f97316' + '20', color: '#f97316', fontWeight: '600', flexShrink: 0 }}>Job</span>
                                 )}
+                                {/* The estimate conversation, in one chip.
+                                    Ordered by how much it demands of the rep —
+                                    a reply outranks a bounce outranks a chase —
+                                    because a row of chips each meaning
+                                    something slightly different is how a board
+                                    turns into wallpaper. Rule + tests live in
+                                    lib/estimateComms.js. */}
+                                {(() => {
+                                  const badge = leadCommsBadge(lead._quotes, unreadReplies)
+                                  if (!badge) return null
+                                  return (
+                                    <span
+                                      title={badge.title}
+                                      style={{
+                                        fontSize: '9px', padding: '1px 5px', borderRadius: '4px',
+                                        backgroundColor: badge.color + '20', color: badge.color,
+                                        fontWeight: '700', flexShrink: 0, whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      {badge.label}{badge.count > 1 ? ` ${badge.count}` : ''}
+                                    </span>
+                                  )
+                                })()}
                               </div>
                               {job ? (
                                 <div style={{ fontSize: '10px', color: theme.textSecondary, display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '3px' }}>
