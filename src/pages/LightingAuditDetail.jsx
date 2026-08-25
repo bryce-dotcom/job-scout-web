@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { areaAnnotations } from '../lib/auditAreaCarry'
+import { auditAreasToIntakeLines } from '../lib/auditAreaLine'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -203,27 +203,16 @@ export default function LightingAuditDetail() {
 
     // Use areas from store instead of fetching from supabase
     if (areas.length > 0) {
-      // Use actual cost-per-watt from audit instead of hardcoded $5
-      const totalWattsReduced = areas.reduce((sum, a) =>
-        sum + ((a.fixture_count || 1) * ((a.existing_wattage || 0) - (a.led_wattage || 0))), 0)
-      const costPerWatt = totalWattsReduced > 0
-        ? (quoteAmount / totalWattsReduced) : 5
-
-      for (const area of areas) {
-        const qty = area.fixture_count || 1
-        const unitPrice = area.led_product?.price || (((area.existing_wattage || 0) - (area.led_wattage || 0)) * costPerWatt)
-        await createQuoteLine({
-          quote_id: quoteTempId,
-          // Name by the LED product (the fixture sold); fall back to the area.
-          item_name: area.led_product?.name || `${area.area_name} - LED Retrofit`,
-          // Carry area, mounting height and the existing → LED fixture swap.
-          description: describeArea(area) || null,
-          item_id: area.led_replacement_id || null,
-          quantity: qty,
-          price: Math.round(unitPrice * 100) / 100,
-          line_total: Math.round(qty * unitPrice * 100) / 100,
-          ...areaAnnotations(area)
-        })
+      // One rule for what an area is worth — lib/auditAreaLine. It prefers the
+      // price the area recorded selling for, then the catalogue price, and only
+      // back-derives from cost-per-watt for legacy areas saved before those
+      // columns existed. That guess is clamped at zero, which the four
+      // hand-written copies of this loop were not: a zero existing wattage
+      // produced negative line totals. The tech's notes and photos travel with
+      // the line on every path.
+      const lines = auditAreasToIntakeLines(areas, { quoteAmount, describe: describeArea })
+      for (let i = 0; i < lines.length; i++) {
+        await createQuoteLine({ quote_id: quoteTempId, ...lines[i], sort_order: i })
       }
     }
 

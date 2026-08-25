@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { areaAnnotations } from '../lib/auditAreaCarry'
+import { auditAreasToIntakeLines } from '../lib/auditAreaLine'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
@@ -695,26 +695,15 @@ export default function NewLightingAudit() {
           status: 'Draft'
         })
 
-        // Create quote lines from audit areas using actual cost-per-watt
-        const totalWR = areas.reduce((sum, a) =>
-          sum + ((parseInt(a.fixture_count) || 1) * ((parseInt(a.existing_wattage) || 0) - (parseInt(a.led_wattage) || 0))), 0)
-        const cpw = totalWR > 0 ? quoteAmount / totalWR : 5
-
-        for (const area of areas) {
-          const qty = parseInt(area.fixture_count) || 1
-          const unitPrice = ((parseInt(area.existing_wattage) || 0) - (parseInt(area.led_wattage) || 0)) * cpw
-          await createQuoteLine({
-            quote_id: quoteTempId,
-            item_name: `${area.area_name} - LED Retrofit`,
-            item_id: area.led_replacement_id ? parseInt(area.led_replacement_id) : null,
-            quantity: qty,
-            price: Math.round(unitPrice * 100) / 100,
-            line_total: Math.round(qty * unitPrice * 100) / 100,
-            // What the tech wrote and photographed. This path used to create the
-            // line without either, which is why 89 of 100 audit-derived
-            // estimates arrived with no field notes on them.
-            ...areaAnnotations(area)
-          })
+        // One rule for what an area is worth — lib/auditAreaLine. This path
+        // used to price purely from cost-per-watt, ignoring the catalogue
+        // entirely and going negative whenever the existing wattage was zero.
+        // It also used to create the line without the tech's notes or photos,
+        // which is why 89 of 100 audit-derived estimates arrived with no field
+        // notes on them; those now travel with the line on every path.
+        const lines = auditAreasToIntakeLines(areas, { quoteAmount })
+        for (let i = 0; i < lines.length; i++) {
+          await createQuoteLine({ quote_id: quoteTempId, ...lines[i], sort_order: i })
         }
 
         // Update lead with quote_id and quote_amount so pipeline shows the value

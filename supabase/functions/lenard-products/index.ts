@@ -27,10 +27,28 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    // Fetch only SMBE products (active, name contains SMBE)
+    // Scope to the tenant this public agent belongs to, the same way
+    // lenard-save, lenard-employees and lenard-projects all do. Without it
+    // this returned every SMBE row in the database regardless of owner —
+    // today that happens to be only company 3's, because the other tenant's
+    // 131 SMBE rows are all inactive. That is luck, not isolation: the moment
+    // they activate one it appears in someone else's product picker.
+    const companyId = Deno.env.get('LENARD_COMPANY_ID');
+    if (!companyId) {
+      // Refuse rather than fall back to an unscoped query, which is exactly
+      // the leak this filter exists to close.
+      return new Response(JSON.stringify({ error: 'Server configuration missing' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const cid = parseInt(companyId);
+
+    // Active SMBE products only. A deactivated product must never reach the
+    // field: it is off the price book, and quoting from it produces a number
+    // nobody can honour.
     const products = await querySupabase(
       'products_services',
-      'active=eq.true&name=ilike.*SMBE*&select=id,name,type,unit_price,cost,description&order=type,name'
+      `company_id=eq.${cid}&active=eq.true&name=ilike.*SMBE*` +
+      '&select=id,name,type,unit_price,cost,description&order=type,name&limit=2000'
     );
 
     return new Response(JSON.stringify({ success: true, products }),

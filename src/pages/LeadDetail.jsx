@@ -23,6 +23,7 @@ import EmptyState from '../components/EmptyState'
 import ProductPickerModal from '../components/ProductPickerModal'
 import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
+import { auditAreasToIntakeLines } from '../lib/auditAreaLine'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -327,24 +328,13 @@ export default function LeadDetail() {
     const areas = storeAuditAreas.filter(a => String(a.audit_id) === String(audit.id))
 
     if (areas.length > 0) {
-      // Use actual cost-per-watt from audit instead of hardcoded $5
-      const totalWattsReduced = areas.reduce((sum, a) =>
-        sum + ((a.fixture_count || 1) * ((a.existing_wattage || 0) - (a.led_wattage || 0))), 0)
-      const costPerWatt = totalWattsReduced > 0
-        ? (audit.est_project_cost || 0) / totalWattsReduced : 5
-
-      for (const area of areas) {
-        const qty = area.fixture_count || 1
-        const unitPrice = ((area.existing_wattage || 0) - (area.led_wattage || 0)) * costPerWatt
-        await createQuoteLine({
-          quote_id: quoteTempId,
-          item_name: `${area.area_name} - LED Retrofit`,
-          item_id: area.led_replacement_id || null,
-          quantity: qty,
-          price: Math.round(unitPrice * 100) / 100,
-          line_total: Math.round(qty * unitPrice * 100) / 100,
-          photos: area.photos || []
-        })
+      // One rule for what an area is worth — lib/auditAreaLine. This path
+      // priced purely from cost-per-watt (negative whenever the existing
+      // wattage was zero), ignored the catalogue, and carried the area's photos
+      // but not the tech's notes. All three are fixed by using the shared rule.
+      const lines = auditAreasToIntakeLines(areas, { quoteAmount: audit.est_project_cost || 0 })
+      for (let i = 0; i < lines.length; i++) {
+        await createQuoteLine({ quote_id: quoteTempId, ...lines[i], sort_order: i })
       }
     }
 

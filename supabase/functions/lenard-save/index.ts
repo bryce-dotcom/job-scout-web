@@ -1,4 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  round2,
+  validateIntake,
+  intakeQuoteRow,
+  intakeLineRows,
+} from "../_shared/estimateIntake.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -79,6 +85,50 @@ function describeAuditLine(l: any): string {
     parts.push(`${ctrl} controls`);
   }
   return parts.join(' · ');
+}
+
+// Turn the client payload's lines into estimate-intake lines.
+//
+// Newer clients carry real per-line economics (unitPrice / productQty /
+// lineTotal), so the estimate reconciles by construction and every line reads
+// at the price actually quoted.
+//
+// Field devices on a cached bundle send only productPrice and qty, and their
+// headline total may include a rep override, a per-line discount or a give-me
+// adder that never arrived as a line. For those we still scale, exactly as
+// before, rather than silently under-billing the customer. That path
+// disappears the next time the device loads the app.
+function intakeLinesFromPayload(lines: any[], quoteAmount: number, auditDbId: number | null) {
+  const carried = lines.some((l: any) => Number(l.unitPrice) > 0 || Number(l.lineTotal) > 0);
+  const sumByPrice = lines.reduce((s: number, l: any) =>
+    s + ((l.qty || 1) * (Number(l.productPrice) || 0)), 0);
+  const scale = (!carried && sumByPrice > 0 && Math.abs(sumByPrice - quoteAmount) > 1)
+    ? (quoteAmount / sumByPrice) : 1;
+
+  return lines.map((l: any, i: number) => {
+    const areaLabel = l.name || `Area ${i + 1}`;
+    const quantity = carried ? (Number(l.productQty) || l.qty || 1) : (l.qty || 1);
+    const price = carried ? (Number(l.unitPrice) || 0) : (Number(l.productPrice) || 0) * scale;
+    const lineTotal = carried && Number(l.lineTotal) ? Number(l.lineTotal) : quantity * price;
+    // The field tech's photo, on the line the customer reads. This is the
+    // thing crews kept losing: a photo saved against the audit that no
+    // estimate surface ever looked at.
+    const photoPath = (auditDbId && l.photoIndex != null && l.photoIndex >= 0)
+      ? [`audits/${auditDbId}/photo_${l.photoIndex}.jpg`]
+      : null;
+    return {
+      // Name the line by the LED product (the fixture being sold) so the
+      // product detail is front-and-centre; fall back to the area.
+      item_name: l.productName || `${areaLabel} - LED Retrofit`,
+      description: describeAuditLine(l) || null,
+      item_id: l.productId ? parseInt(l.productId) : null,
+      quantity,
+      price: round2(price),
+      line_total: round2(lineTotal),
+      notes: l.overrideNotes || null,
+      photos: photoPath,
+    };
+  });
 }
 
 async function supabasePost(url: string, key: string, body: any): Promise<any> {
@@ -345,6 +395,19 @@ serve(async (req) => {
         confirmed: l.confirmed || false,
         override_notes: notesWithEstimate,
         photo_path: photoPath,
+        // What this area SOLD, not just what was surveyed. Without these the
+        // money died here and every conversion re-invented it — which is how
+        // estimate lines ended up at 3.27x the price book. Null for payloads
+        // from a cached bundle that predates them; the quote still reconciles
+        // because those clients also send no per-line economics.
+        unit_price: l.unitPrice == null ? null : round2(l.unitPrice),
+        product_qty: l.productQty == null ? null : Number(l.productQty),
+        line_total: l.lineTotal == null ? null : round2(l.lineTotal),
+        retrofit_type: l.retrofitType || null,
+        lamps_per_fixture: l.lampsPerFixture == null ? null : Number(l.lampsPerFixture),
+        // Only true when the product is itself sold per lamp. Defaults false:
+        // absent evidence, never multiply.
+        priced_per_lamp: l.pricedPerLamp === true,
       });
     }
 
@@ -480,107 +543,61 @@ serve(async (req) => {
 
       if (existingQuotes.length === 0) {
         const quoteAmount = Math.round(projectCost * 100) / 100;
-        const [newQuote] = await supabasePost(`${SUPABASE_URL}/rest/v1/quotes`, key, {
+        // Build the estimate through the shared intake contract, the same one
+        // Zach and Don use. Lenard wrote this first and the other two copied
+        // it; the copies then drifted, which is why business_unit,
+        // salesperson_id, service_type, estimate_name and summary were set by
+        // some producers and not others. One shape now, in
+        // _shared/estimateIntake.ts.
+        const intake = {
+          source: 'lenard',
           company_id: cid,
           lead_id: leadId,
+          customer_id: customerId,
+          salesperson_id: leadOwnerId ? parseInt(String(leadOwnerId)) : null,
           audit_id: auditDbId,
           audit_type: 'lighting',
+          service_type: 'Lighting',
+          business_unit: 'Energy Scout',
+          estimate_name: `Lighting — ${customerName || 'Project'}`,
+          summary: `${lines.length} area(s) · ${Math.round(wattsReduced)}W reduced · ${Math.round(annualKwhSavings)} kWh/yr`,
+          // The customer signed a document showing this number, so it stays
+          // authoritative even if rounding leaves the lines a cent adrift.
           quote_amount: quoteAmount,
-          utility_incentive: Math.round(incentive * 100) / 100,
+          utility_incentive: incentive,
           status: 'Draft',
-        });
+          lines: intakeLinesFromPayload(lines, quoteAmount, auditDbId),
+          extras: Array.isArray(pd.extras) ? pd.extras : [],
+        };
+
+        const problems = validateIntake(intake as any);
+        if (problems.length) {
+          return new Response(JSON.stringify({ error: `Estimate intake rejected: ${problems.join('; ')}` }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const [newQuote] = await supabasePost(`${SUPABASE_URL}/rest/v1/quotes`, key,
+          intakeQuoteRow(intake as any));
         quoteDbId = newQuote.id;
 
-        // Build quote lines from the economics the client carried.
-        //
-        // The previous formula rebuilt each line from the catalogue and then
-        // multiplied every line by (headline total / catalogue sum) so the
-        // arithmetic would close. That scale factor silently absorbed four
-        // unrelated things: rep price overrides, per-line discounts, the lamp
-        // multiplier, and the give-me/upsell adders that were never sent as
-        // lines at all. A discount on one area changed the unit price of every
-        // other area, and out-of-scope dollars were smeared into in-scope
-        // fixture lines -- defeating the split the utility cap math needs.
-        //
-        // Newer clients send unitPrice/productQty/lineTotal per line plus an
-        // `extras` array, so the lines reconcile by construction. The scale
-        // path stays for field devices still running a cached bundle.
-        const carried = lines.some((l: any) =>
-          Number(l.unitPrice) > 0 || Number(l.lineTotal) > 0);
-        const sumByPrice = lines.reduce((s: number, l: any) =>
-          s + ((l.qty || 1) * (Number(l.productPrice) || 0)), 0);
-        const scale = (!carried && sumByPrice > 0 && Math.abs(sumByPrice - quoteAmount) > 1)
-          ? (quoteAmount / sumByPrice) : 1;
+        const rows = intakeLineRows(intake as any, newQuote.id);
+        const written = await supabasePost(`${SUPABASE_URL}/rest/v1/quote_lines`, key, rows);
 
-        const round2 = (n: number) => Math.round(n * 100) / 100;
-        let lineSum = 0;
-        let sortOrder = 0;
-
-        for (let i = 0; i < lines.length; i++) {
-          const l = lines[i];
-          const qty = carried ? (Number(l.productQty) || l.qty || 1) : (l.qty || 1);
-          const unitPrice = carried
-            ? (Number(l.unitPrice) || 0)
-            : (Number(l.productPrice) || 0) * scale;
-          // unitPrice already has any override and discount applied, so the
-          // discount column stays empty -- writing both would apply it twice.
-          const total = carried && Number(l.lineTotal) ? Number(l.lineTotal) : qty * unitPrice;
-          const areaLabel = l.name || `Area ${i + 1}`;
-          lineSum = round2(lineSum + round2(total));
-          await supabasePost(`${SUPABASE_URL}/rest/v1/quote_lines`, key, {
-            company_id: cid,
-            quote_id: newQuote.id,
-            // Name the line by the LED product (the fixture being sold) so the
-            // "product detail" is front-and-center; fall back to the area.
-            item_name: l.productName || `${areaLabel} - LED Retrofit`,
-            // Carry area, mounting height, existing fixture and controls.
-            description: describeAuditLine(l) || null,
-            item_id: l.productId ? parseInt(l.productId) : null,
-            quantity: qty,
-            price: round2(unitPrice),
-            line_total: round2(total),
-            sort_order: sortOrder++,
-          });
+        // A quote carrying a headline total with nothing itemised under it is
+        // the worst possible shape for a document you hand a customer, because
+        // it looks finished. Count what the database confirmed, and undo the
+        // header rather than leave half a bid behind.
+        if (!Array.isArray(written) || written.length !== rows.length) {
+          await supabaseDelete(SUPABASE_URL!, 'quotes', key, `id=eq.${newQuote.id}`);
+          return new Response(JSON.stringify({
+            error: `Estimate lines failed, header rolled back: only ${Array.isArray(written) ? written.length : 0} of ${rows.length} lines were written. Nothing was left half-made.`,
+          }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
-        // Give-me / upsell adders become their own lines. They are real money
-        // the customer is quoted, and in_utility_scope has to travel with them:
-        // an out-of-scope dollar must never reach the utility's cap calc.
-        const extras = Array.isArray(pd.extras) ? pd.extras : [];
-        for (const e of extras) {
-          const amount = Number(e?.amount) || 0;
-          if (!amount) continue;
-          lineSum = round2(lineSum + round2(amount));
-          await supabasePost(`${SUPABASE_URL}/rest/v1/quote_lines`, key, {
-            company_id: cid,
-            quote_id: newQuote.id,
-            item_name: e.label || 'Additional item',
-            quantity: 1,
-            price: round2(amount),
-            line_total: round2(amount),
-            in_utility_scope: e.in_utility_scope !== false,
-            sort_order: sortOrder++,
-          });
-        }
-
-        // The signed proposal's number stays authoritative, so any residual is
-        // surfaced as its own line rather than hidden inside a fixture price.
-        // With carried economics this is 0.00 and nothing is written.
-        const residual = round2(quoteAmount - lineSum);
-        if (Math.abs(residual) >= 0.5) {
-          await supabasePost(`${SUPABASE_URL}/rest/v1/quote_lines`, key, {
-            company_id: cid,
-            quote_id: newQuote.id,
-            item_name: 'Project adjustment',
-            quantity: 1,
-            price: residual,
-            line_total: residual,
-            sort_order: sortOrder++,
-          });
-        }
-
-        // Update lead with quote_id so pipeline shows the value
-        // (quote_amount lives on the quotes table, not leads)
+        // Link the quote to the lead, but deliberately do NOT advance the lead
+        // to "Estimate Sent" the way Zach and Don do. Those push a finished bid
+        // to the pipeline on purpose; Lenard auto-creates a Draft the moment
+        // the audit is saved, and nothing has been sent to anyone yet.
         await supabasePatch(SUPABASE_URL!, 'leads', key, leadId, {
           quote_id: newQuote.id,
         });

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { auditAreasToIntakeLines } from "../_shared/auditAreaLine.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -88,23 +89,26 @@ serve(async (req) => {
           continue;
         }
 
-        // Create quote lines from audit areas
-        for (const area of areas) {
-          const qty = area.fixture_count || 1;
-          const unitPrice = ((area.existing_wattage || 0) - (area.led_wattage || 0)) * 5;
-          await supabase
-            .from('quote_lines')
-            .insert({
-              company_id: company_id,
-              quote_id: newQuote.id,
-              item_name: `${area.area_name} - LED Retrofit`,
-              item_id: area.led_replacement_id || null,
-              quantity: qty,
-              price: Math.round(unitPrice * 100) / 100,
-              line_total: Math.round(qty * unitPrice * 100) / 100,
-            });
-          results.quote_lines_created++;
-        }
+        // One rule for what an area is worth — _shared/auditAreaLine. This
+        // priced every line at a hardcoded $5 per watt: a number with no basis
+        // in the audit, the catalogue or the headline total, and negative
+        // whenever the existing wattage was zero. It also created lines with
+        // none of the tech's notes or photos.
+        const intakeLines = auditAreasToIntakeLines(areas, {
+          quoteAmount: audit.est_project_cost || 0,
+        });
+        const lineRows = intakeLines.map((l: any, i: number) => ({
+          company_id: company_id,
+          quote_id: newQuote.id,
+          ...l,
+          sort_order: i,
+        }));
+        const { data: writtenLines } = await supabase
+          .from('quote_lines')
+          .insert(lineRows)
+          .select('id');
+        // Count what the database confirmed, not what we hoped to send.
+        results.quote_lines_created += writtenLines?.length ?? 0;
 
         // Link the quote to the lead. (No quote_amount on leads — the amount
         // lives on the quote created above.)

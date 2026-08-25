@@ -18,6 +18,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callAnthropic } from "../_shared/anthropic.ts";
+import { validateIntake, intakeQuoteRow, intakeLineRows } from "../_shared/estimateIntake.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -270,7 +271,11 @@ serve(async (req) => {
     if (leadId && quote.annual_program_total > 0) {
       try {
         const shortAddr = String(address).split(',')[0].trim();
-        const qPayload = {
+        // One shared intake builds the header and its lines
+        // (_shared/estimateIntake.ts), so this public quote has the same shape
+        // as Lenard's, Don's and the in-app Zach modal's.
+        const intake = {
+          source: 'zach-instant-quote',
           company_id: company.id,
           lead_id: leadId,
           audit_id: null,
@@ -278,59 +283,67 @@ serve(async (req) => {
           service_type: 'Lawn Care',
           estimate_name: `Lawn care — ${shortAddr || address}`,
           summary: `${turfSqft.toLocaleString()} sqft turf · ${quote.mows_per_season} mows/season · public quote`,
+          notes: `Address: ${address}\nPer visit: $${quote.per_visit} · Treatments: $${quote.treatments_total} · Annual: $${quote.annual_program_total}\n\nAI: ${aiResult.reasoning || ''}`,
           quote_amount: quote.annual_program_total,
           status: 'Draft',
-          notes: `Address: ${address}\nPer visit: $${quote.per_visit} · Treatments: $${quote.treatments_total} · Annual: $${quote.annual_program_total}\n\nAI: ${aiResult.reasoning || ''}`,
-        };
-        const qRes = await fetch(`${SUPABASE_URL}/rest/v1/quotes`, {
-          method: 'POST',
-          headers: { ...sbHeaders, 'Prefer': 'return=representation' },
-          body: JSON.stringify(qPayload),
-        });
-        const qJson = await qRes.json();
-        const newQuote = Array.isArray(qJson) ? qJson[0] : null;
-        if (newQuote?.id) {
-          pipelineQuoteId = newQuote.id;
-
-          const lines = [
+          lines: [
             {
-              company_id: company.id,
-              quote_id: newQuote.id,
               item_name: `Mowing — ${quote.mows_per_season} visits`,
               description: `Mowing on ${turfSqft.toLocaleString()} sqft turf · ~${quote.predicted_minutes} min/visit`,
               quantity: quote.mows_per_season,
               price: quote.per_visit,
               line_total: quote.mows_total,
-              sort_order: 0,
             },
-            ...quote.treatments.map((t: any, i: number) => ({
-              company_id: company.id,
-              quote_id: newQuote.id,
+            ...quote.treatments.map((t: any) => ({
               item_name: `Treatment Round ${t.round} — ${t.label}`,
               quantity: 1,
               price: t.total,
               line_total: t.total,
-              sort_order: i + 1,
             })),
-          ];
-          const lrRes = await fetch(`${SUPABASE_URL}/rest/v1/quote_lines`, {
-            method: 'POST',
-            headers: sbHeaders,
-            body: JSON.stringify(lines),
-          });
-          if (!lrRes.ok) {
-            const lrTxt = await lrRes.text();
-            console.warn('[zach-instant-quote] quote_lines insert failed:', lrTxt);
-          }
+          ],
+        };
 
-          // Link the lead to the new quote so the pipeline shows the value.
-          await fetch(`${SUPABASE_URL}/rest/v1/leads?id=eq.${leadId}`, {
-            method: 'PATCH',
-            headers: sbHeaders,
-            body: JSON.stringify({ quote_id: newQuote.id, status: 'Estimate Sent' }),
+        const problems = validateIntake(intake as any);
+        if (problems.length) {
+          console.warn('[zach-instant-quote] intake rejected:', problems.join('; '));
+        } else {
+          const qRes = await fetch(`${SUPABASE_URL}/rest/v1/quotes`, {
+            method: 'POST',
+            headers: { ...sbHeaders, 'Prefer': 'return=representation' },
+            body: JSON.stringify(intakeQuoteRow(intake as any)),
           });
-        } else if (!qRes.ok) {
-          console.warn('[zach-instant-quote] quote insert failed:', qJson);
+          const qJson = await qRes.json();
+          const newQuote = Array.isArray(qJson) ? qJson[0] : null;
+          if (newQuote?.id) {
+            const rows = intakeLineRows(intake as any, newQuote.id);
+            const lrRes = await fetch(`${SUPABASE_URL}/rest/v1/quote_lines`, {
+              method: 'POST',
+              headers: { ...sbHeaders, 'Prefer': 'return=representation' },
+              body: JSON.stringify(rows),
+            });
+            const written = lrRes.ok ? await lrRes.json() : null;
+
+            // A quote with a headline total and nothing itemised under it looks
+            // finished, which is worse than no quote. This used to warn to the
+            // console and leave one behind. Undo the header instead.
+            if (!Array.isArray(written) || written.length !== rows.length) {
+              await fetch(`${SUPABASE_URL}/rest/v1/quotes?id=eq.${newQuote.id}`, {
+                method: 'DELETE',
+                headers: sbHeaders,
+              });
+              console.warn('[zach-instant-quote] quote_lines insert failed; header rolled back');
+            } else {
+              pipelineQuoteId = newQuote.id;
+              // Link the lead to the new quote so the pipeline shows the value.
+              await fetch(`${SUPABASE_URL}/rest/v1/leads?id=eq.${leadId}`, {
+                method: 'PATCH',
+                headers: sbHeaders,
+                body: JSON.stringify({ quote_id: newQuote.id, status: 'Estimate Sent' }),
+              });
+            }
+          } else if (!qRes.ok) {
+            console.warn('[zach-instant-quote] quote insert failed:', qJson);
+          }
         }
       } catch (e) {
         console.warn('[zach-instant-quote] quote sync threw:', (e as Error).message);
