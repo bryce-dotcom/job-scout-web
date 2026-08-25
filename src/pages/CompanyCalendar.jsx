@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
-import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella, Wrench, Repeat } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella, Wrench, Repeat, Route, Truck } from 'lucide-react'
 import {
   buildCalendarEvents,
   filterCalendarEvents,
@@ -22,7 +22,7 @@ const defaultTheme = {
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-const KIND_ICON = { sales: Users, delivery: Briefcase, timeoff: Umbrella, service: Wrench, projected: Repeat }
+const KIND_ICON = { sales: Users, delivery: Briefcase, timeoff: Umbrella, service: Wrench, projected: Repeat, route: Route, fleet: Truck }
 
 export default function CompanyCalendar() {
   const navigate = useNavigate()
@@ -35,10 +35,16 @@ export default function CompanyCalendar() {
   const appointments = useStore((s) => s.appointments)
   const employees = useStore((s) => s.employees)
   const businessUnits = useStore((s) => s.businessUnits)
+  // All three are already loaded app-wide by fetchAllData, so this is another
+  // read of what is in the store — not another fetch, and not a new dependency
+  // on those pages having been visited.
+  const routes = useStore((s) => s.routes)
+  const fleet = useStore((s) => s.fleet)
+  const fleetRentals = useStore((s) => s.fleetRentals)
 
   const [cursor, setCursor] = useState(() => new Date())
   const [timeOff, setTimeOff] = useState([])
-  const [kinds, setKinds] = useState({ sales: true, delivery: true, timeoff: true, service: true, projected: true })
+  const [kinds, setKinds] = useState({ sales: true, delivery: true, timeoff: true, service: true, projected: true, route: true, fleet: true })
   const [units, setUnits] = useState({})
 
   // Time off is a small table and isn't in the store — fetch it directly.
@@ -71,8 +77,11 @@ export default function CompanyCalendar() {
   )
 
   const events = useMemo(
-    () => buildCalendarEvents({ appointments, jobs, timeOff, employees }, { projectRecurringThrough: projectThrough }),
-    [appointments, jobs, timeOff, employees, projectThrough],
+    () => buildCalendarEvents(
+      { appointments, jobs, timeOff, employees, routes, fleet, fleetRentals },
+      { projectRecurringThrough: projectThrough },
+    ),
+    [appointments, jobs, timeOff, employees, routes, fleet, fleetRentals, projectThrough],
   )
 
   const visible = useMemo(() => filterCalendarEvents(events, { kinds, units }), [events, kinds, units])
@@ -120,17 +129,16 @@ export default function CompanyCalendar() {
         <CalendarDays size={22} color={theme.accent} />
         <h1 style={{ margin: 0, fontSize: isMobile ? 20 : 24, fontWeight: 800, color: theme.text }}>Company Calendar</h1>
       </div>
-      {/* Say what reaches this calendar, and from where. Three things write to
-          it; a service visit due next week, a route and a fleet booking do not.
-          Nobody could tell that by looking, so someone who books one and
-          doesn't see it here has no way to know whether it failed or was never
-          going to show. The sentence is derived from KINDS, so it cannot drift
-          from what actually gets built. */}
+      {/* Say what reaches this calendar, and from where. Someone who books
+          something and doesn't see it here otherwise has no way to tell whether
+          it failed or was never going to appear. The sentence is derived from
+          KINDS, so adding a writer without telling anyone is not possible — it
+          updated itself when routes and fleet joined. */}
       <p style={{ margin: '0 0 6px', color: theme.textMuted, fontSize: 13.5 }}>
-        Everything on the books in one place — sales appointments, scheduled work, and who&apos;s off.
+        Everything on the books in one place — sales, scheduled work, service due, routes, fleet and who&apos;s off.
       </p>
       <p style={{ margin: '0 0 16px', color: theme.textMuted, fontSize: 12 }}>
-        Shows {calendarSourcesSentence()}. Routes and fleet bookings still have their own calendars.
+        Shows {calendarSourcesSentence()}. Routes and Fleet still have their own screens for working in — this is the one view of everything.
       </p>
 
       {/* Month nav */}
@@ -157,7 +165,15 @@ export default function CompanyCalendar() {
           const Icon = KIND_ICON[k.id]
           const active = kinds[k.id] !== false
           return (
-            <button key={k.id} onClick={() => setKinds((p) => ({ ...p, [k.id]: !active }))} style={chip(active, k.color)}>
+            <button
+              key={k.id}
+              onClick={() => setKinds((p) => ({ ...p, [k.id]: !active }))}
+              style={chip(active, k.color)}
+              // The rule for this kind, one hover from the chip it belongs to.
+              // It used to be spelled out in the sentence above, which at seven
+              // kinds ran to a paragraph.
+              title={`From ${k.writes.source} — appears when ${k.writes.appearsWhen}.`}
+            >
               <Icon size={13} /> {k.label}
             </button>
           )

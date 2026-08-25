@@ -322,3 +322,56 @@ describe('recurring jobs show what is coming', () => {
     expect(events.filter((e) => e.kind === 'projected')).toHaveLength(0)
   })
 })
+
+// ── Routes and fleet ──────────────────────────────────────────────────
+// The last two calendars that read their own tables with their own date
+// rules. Those screens are untouched; this only lets the company calendar see
+// what they already show.
+describe('routes and fleet', () => {
+  it('puts a route on its date without a timezone shift', () => {
+    // routes.date is a timestamp at midnight UTC that MEANS a date, and
+    // RoutesCalendar matches it with a plain string prefix. A zone conversion
+    // here would slide the route to the previous day for anyone west of UTC.
+    const [ev] = buildCalendarEvents({ routes: [{ id: 1, date: '2026-01-27T00:00:00+00:00', team: 'HHH Team A', job_ids: '["J001","J003"]' }] })
+    expect(ev.kind).toBe('route')
+    expect(ev.dayKeys).toEqual(['2026-01-27'])
+    expect(ev.title).toBe('HHH Team A')
+    expect(ev.subtitle).toBe('2 stops')
+  })
+
+  it('survives job_ids being unparseable rather than throwing', () => {
+    const [ev] = buildCalendarEvents({ routes: [{ id: 1, date: '2026-01-27T00:00:00+00:00', job_ids: 'not json' }] })
+    expect(ev.subtitle).toBe('')
+  })
+
+  it('shows maintenance on the day it is due', () => {
+    const [ev] = buildCalendarEvents({ fleet: [{ id: 2, name: 'Solar Tester', next_pm_due: '2025-08-15' }] })
+    expect(ev.kind).toBe('fleet')
+    expect(ev.dayKeys).toEqual(['2025-08-15'])
+    expect(ev.subtitle).toBe('Maintenance due')
+  })
+
+  it('ignores an asset with no maintenance date', () => {
+    expect(buildCalendarEvents({ fleet: [{ id: 3, name: 'Bboss RHO', next_pm_due: null }] })).toHaveLength(0)
+  })
+
+  it('spans a rental across every day it is out', () => {
+    const [ev] = buildCalendarEvents({ fleetRentals: [{ id: 1, rental_customer: 'Customer A', start_date: '2026-01-27T00:00:00+00:00', end_date: '2026-01-31T00:00:00+00:00' }] })
+    expect(ev.kind).toBe('fleet')
+    expect(ev.dayKeys).toEqual(['2026-01-27', '2026-01-28', '2026-01-29', '2026-01-30', '2026-01-31'])
+    expect(ev.subtitle).toContain('5 days')
+  })
+
+  it('names both in the sentence the page prints', () => {
+    const s = calendarSourcesSentence()
+    expect(s).toContain('routes')
+    expect(s).toContain('fleet')
+  })
+
+  it('changes nothing when no routes or fleet are passed', () => {
+    // The three original writers must behave exactly as before.
+    const before = buildCalendarEvents({ jobs: [{ id: 1, start_date: '2026-09-05T15:00:00Z', job_title: 'X' }] })
+    const after = buildCalendarEvents({ jobs: [{ id: 1, start_date: '2026-09-05T15:00:00Z', job_title: 'X' }], routes: [], fleet: [], fleetRentals: [] })
+    expect(after).toEqual(before)
+  })
+})

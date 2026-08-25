@@ -70,6 +70,23 @@ export const KINDS = {
     color: '#d97706',
     writes: { source: 'Service Visits', bookedIn: 'Work / Operations', appearsWhen: 'a visit is due and not yet scheduled' },
   },
+  // The last two islands. Routes and fleet each had their own calendar screen
+  // reading their own tables with their own date rules, so a crew's route and a
+  // truck being off the road for maintenance were invisible next to the work
+  // they affect. Those screens are untouched — this only means the company
+  // calendar can finally see them too.
+  route: {
+    id: 'route',
+    label: 'Routes',
+    color: '#0891b2',
+    writes: { source: 'Routes', bookedIn: 'Routes', appearsWhen: 'a route is built for a day' },
+  },
+  fleet: {
+    id: 'fleet',
+    label: 'Fleet',
+    color: '#64748b',
+    writes: { source: 'Fleet', bookedIn: 'Fleet', appearsWhen: 'maintenance is due or an asset is out on rental' },
+  },
 }
 
 // A visit that has been scheduled already appears as Delivery on the day it
@@ -81,7 +98,22 @@ const SERVICE_DONE = ['Completed', 'Verified Complete', 'Paid', 'Closed', 'Archi
 // One sentence naming every writer, for the calendar page to print. Derived
 // from KINDS so it cannot drift from what actually gets built.
 export function calendarSourcesSentence() {
-  const parts = Object.values(KINDS).map(k => `${k.writes.source.toLowerCase()} (${k.writes.appearsWhen})`)
+  // Sources, de-duplicated and without the per-kind rule.
+  //
+  // Two things changed the shape of this: jobs feed THREE kinds (scheduled
+  // delivery, a service visit that is due, and a projected repeat), so naming
+  // the source per kind printed "jobs … jobs … jobs"; and at seven kinds the
+  // full "(what has to be true)" for each ran to a paragraph nobody would read.
+  // The per-kind rule moved to the filter chips, where it is one hover away
+  // from the thing it describes.
+  const seen = new Set()
+  const parts = []
+  for (const k of Object.values(KINDS)) {
+    const s = k.writes.source.toLowerCase()
+    if (seen.has(s)) continue
+    seen.add(s)
+    parts.push(s)
+  }
   if (parts.length < 2) return parts[0] || ''
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
 }
@@ -121,7 +153,7 @@ export function expandDateRange(start, end) {
  * Normalize the three sources into one event list.
  * Each event: { id, kind, dayKeys[], title, subtitle, businessUnit, link, status }
  */
-export function buildCalendarEvents({ appointments = [], jobs = [], timeOff = [], employees = [] } = {}, { tz = DEFAULT_TZ, projectRecurringThrough = null } = {}) {
+export function buildCalendarEvents({ appointments = [], jobs = [], timeOff = [], employees = [], routes = [], fleet = [], fleetRentals = [] } = {}, { tz = DEFAULT_TZ, projectRecurringThrough = null } = {}) {
   const empName = new Map((employees || []).map((e) => [String(e.id), e.name]))
   const events = []
 
@@ -212,6 +244,66 @@ export function buildCalendarEvents({ appointments = [], jobs = [], timeOff = []
       businessUnit: j.business_unit || null,
       status: j.status || null,
       link: `/jobs/${j.id}`,
+      time: null,
+    })
+  }
+
+  // Routes. routes.date is a timestamp at midnight UTC that MEANS a date —
+  // RoutesCalendar matches it with `r.date.startsWith(dateStr)`, a plain string
+  // prefix. Putting it through a zone conversion instead would slide a route
+  // onto the previous day for anyone west of UTC, so the date part is taken
+  // as-is to match the screen that owns this data.
+  for (const r of routes || []) {
+    if (!r || !r.date) continue
+    const jobCount = (() => {
+      try { return Array.isArray(r.job_ids) ? r.job_ids.length : JSON.parse(r.job_ids || '[]').length }
+      catch { return 0 }
+    })()
+    events.push({
+      id: `route-${r.id}`,
+      kind: 'route',
+      dayKeys: [dayKeyOfDate(r.date)],
+      title: r.team || r.route_id || 'Route',
+      subtitle: jobCount ? `${jobCount} ${jobCount === 1 ? 'stop' : 'stops'}` : '',
+      businessUnit: r.business_unit || null,
+      status: null,
+      link: '/routes',
+      time: null,
+    })
+  }
+
+  // Fleet maintenance. next_pm_due is a plain DATE column — used as-is for the
+  // same reason time off is.
+  for (const a of fleet || []) {
+    if (!a || !a.next_pm_due) continue
+    events.push({
+      id: `pm-${a.id}`,
+      kind: 'fleet',
+      dayKeys: [dayKeyOfDate(a.next_pm_due)],
+      title: a.name || 'Asset',
+      subtitle: 'Maintenance due',
+      businessUnit: a.business_unit || null,
+      status: a.status || null,
+      link: '/fleet',
+      time: null,
+    })
+  }
+
+  // Rentals span days, like time off — an asset is off the yard for the whole
+  // period, not just the day it left.
+  for (const r of fleetRentals || []) {
+    if (!r || !r.start_date) continue
+    const days = expandDateRange(dayKeyOfDate(r.start_date), dayKeyOfDate(r.end_date))
+    if (!days.length) continue
+    events.push({
+      id: `rental-${r.id}`,
+      kind: 'fleet',
+      dayKeys: days,
+      title: r.rental_customer || r.rental_id || 'Rental',
+      subtitle: days.length > 1 ? `On rental · ${days.length} days` : 'On rental',
+      businessUnit: null,
+      status: r.status || null,
+      link: '/fleet',
       time: null,
     })
   }
