@@ -402,6 +402,12 @@ serve(async (req) => {
         confirmed: l.confirmed || false,
         override_notes: notesWithEstimate,
         photo_path: photoPath,
+        // Same photo, as a full public URL in the array every viewer reads.
+        // photo_path alone is a bare storage path that only this function's
+        // own conventions understand: FieldScout's area briefing and
+        // areaAnnotations() both look at `photos`, so writing only photo_path
+        // stored the picture where nothing would ever draw it.
+        photos: photoPath ? [`${SUPABASE_URL}/storage/v1/object/public/audit-photos/${photoPath}`] : null,
         // What this area SOLD, not just what was surveyed. Without these the
         // money died here and every conversion re-invented it — which is how
         // estimate lines ended up at 3.27x the price book. Null for payloads

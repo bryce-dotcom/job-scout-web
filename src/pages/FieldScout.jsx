@@ -615,7 +615,7 @@ export default function FieldScout() {
           .maybeSingle()
         const { data: lineRows } = await supabase
           .from('job_lines')
-          .select('id, quantity, price, total, notes, photos, item:products_services(id, name, description, allotted_time_hours, material_or_labor)')
+          .select('id, quantity, price, total, notes, photos, description, item:products_services(id, name, description, allotted_time_hours, material_or_labor)')
           .eq('job_id', jobId)
           .order('id')
         if (cancelled) return
@@ -2278,7 +2278,9 @@ export default function FieldScout() {
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {activeBriefing.lines.map((l, idx) => {
-                          const name = l.item?.name || l.notes || `Item ${idx + 1}`
+                          // description before notes: an add-on line (disposal fee, warranty) has
+                          // no catalogue product, so without it the installer saw "Item 3".
+                          const name = l.item?.name || l.description || l.notes || `Item ${idx + 1}`
                           const qty = parseFloat(l.quantity) || 0
                           const counts = briefingLinePhotoCounts[l.id] || { before: 0, after: 0 }
                           const totalPhotos = counts.before + counts.after
