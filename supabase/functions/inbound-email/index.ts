@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   matchInboundToEstimate, normalizeEmail, stripQuotedReply, type QuoteCandidate,
 } from "../_shared/inboundMatch.ts";
+import { parseReplyToken, tokenFromAddresses } from "../_shared/replyToken.ts";
 
 // Catch customer replies to estimates and put them on the estimate.
 //
@@ -43,7 +44,11 @@ function readEmail(payload: Record<string, any>) {
   const to =
     d.to?.[0]?.address ?? d.to?.[0]?.email ?? (typeof d.to === 'string' ? d.to : null) ??
     d.recipient ?? payload?.to ?? null;
-  return { from: normalizeEmail(from), subject: String(subject || ''), body: String(body || ''), to: normalizeEmail(to) };
+  const allRecipients = [
+    ...(Array.isArray(d.to) ? d.to : []),
+    ...(Array.isArray(d.cc) ? d.cc : []),
+  ].map((x: any) => normalizeEmail(x?.address ?? x?.email ?? x));
+  return { from: normalizeEmail(from), subject: String(subject || ''), body: String(body || ''), to: normalizeEmail(to), allRecipients };
 }
 
 serve(async (req) => {
@@ -76,6 +81,49 @@ serve(async (req) => {
     return json({ ok: true, matched: false, reason: 'no_from_address' });
   }
 
+  // A signed token in the reply-to address beats every heuristic — it names the
+  // estimate outright, so a reply still lands correctly when it comes from a
+  // colleague's address, from a phone, or with the subject line rewritten.
+  //
+  // The heuristic below stays as the fallback, because it is what handles mail
+  // that arrives without a token: anything sent before reply-to was switched
+  // over, and anyone who mails the inbound domain directly.
+  // The signing secret must be its OWN secret, never the service role key.
+  //
+  // It was the service role key for about an hour, and that hour taught the
+  // lesson: Supabase rotated SUPABASE_SERVICE_ROLE_KEY on 2026-08-25, so a
+  // token signed before the rotation no longer verified after it. Every
+  // outstanding reply address would have quietly stopped matching, and the
+  // symptom — replies falling back to sender-guessing, or landing nowhere —
+  // looks nothing like "a key changed".
+  //
+  // With no dedicated secret, token matching is SKIPPED rather than attempted
+  // against the wrong key. Verifying with a secret that might be wrong is worse
+  // than not verifying: it turns a deterministic match into a silent miss.
+  const REPLY_SECRET = Deno.env.get('REPLY_TOKEN_SECRET') || '';
+  let quote: QuoteCandidate | null = null;
+  let reason = 'none';
+
+  const token = tokenFromAddresses([mail.to, ...(mail.allRecipients || [])]);
+  if (token && !REPLY_SECRET) {
+    console.warn('[inbound-email] a reply token arrived but REPLY_TOKEN_SECRET is not set — falling back to sender matching');
+  }
+  if (token && REPLY_SECRET) {
+    const tokenQuoteId = await parseReplyToken(token, REPLY_SECRET);
+    if (tokenQuoteId) {
+      const { data: byToken } = await supabase
+        .from('quotes')
+        .select('id, company_id, quote_id, sent_to_email, status, last_sent_at, sent_date, salesperson_id')
+        .eq('id', tokenQuoteId)
+        .maybeSingle();
+      if (byToken) { quote = byToken as QuoteCandidate; reason = 'token'; }
+    } else {
+      // A token that does not verify is worth a line in the log: it is either a
+      // probe or a sign the signing secret changed under us.
+      console.warn('[inbound-email] reply token failed verification');
+    }
+  }
+
   // Candidates are estimates we actually mailed to this address.
   const { data: quotes } = await supabase
     .from('quotes')
@@ -83,7 +131,11 @@ serve(async (req) => {
     .ilike('sent_to_email', mail.from)
     .limit(50);
 
-  const { quote, reason } = matchInboundToEstimate(mail.from, mail.subject, (quotes || []) as QuoteCandidate[]);
+  if (!quote) {
+    const m = matchInboundToEstimate(mail.from, mail.subject, (quotes || []) as QuoteCandidate[]);
+    quote = m.quote;
+    reason = m.reason;
+  }
 
   if (!quote) {
     // Raised, not binned. Nobody was mailed an estimate at this address, so
