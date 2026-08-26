@@ -18,7 +18,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callAnthropic } from "../_shared/anthropic.ts";
-import { validateIntake, intakeQuoteRow, intakeLineRows } from "../_shared/estimateIntake.ts";
+import { createEstimateFromIntakeRest } from "../_shared/estimateIntakeRest.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -268,6 +268,7 @@ serve(async (req) => {
     // Mirror Lenard: push this bid into the unified quotes + quote_lines tables
     // so it shows up in the sales pipeline alongside every other quote.
     let pipelineQuoteId: number | null = null;
+    let pipelineError: string | null = null;
     if (leadId && quote.annual_program_total > 0) {
       try {
         const shortAddr = String(address).split(',')[0].trim();
@@ -303,56 +304,30 @@ serve(async (req) => {
           ],
         };
 
-        const problems = validateIntake(intake as any);
-        if (problems.length) {
-          console.warn('[zach-instant-quote] intake rejected:', problems.join('; '));
-        } else {
-          const qRes = await fetch(`${SUPABASE_URL}/rest/v1/quotes`, {
-            method: 'POST',
-            headers: { ...sbHeaders, 'Prefer': 'return=representation' },
-            body: JSON.stringify(intakeQuoteRow(intake as any)),
-          });
-          const qJson = await qRes.json();
-          const newQuote = Array.isArray(qJson) ? qJson[0] : null;
-          if (newQuote?.id) {
-            const rows = intakeLineRows(intake as any, newQuote.id);
-            const lrRes = await fetch(`${SUPABASE_URL}/rest/v1/quote_lines`, {
-              method: 'POST',
-              headers: { ...sbHeaders, 'Prefer': 'return=representation' },
-              body: JSON.stringify(rows),
-            });
-            const written = lrRes.ok ? await lrRes.json() : null;
-
-            // A quote with a headline total and nothing itemised under it looks
-            // finished, which is worse than no quote. This used to warn to the
-            // console and leave one behind. Undo the header instead.
-            if (!Array.isArray(written) || written.length !== rows.length) {
-              await fetch(`${SUPABASE_URL}/rest/v1/quotes?id=eq.${newQuote.id}`, {
-                method: 'DELETE',
-                headers: sbHeaders,
-              });
-              console.warn('[zach-instant-quote] quote_lines insert failed; header rolled back');
-            } else {
-              pipelineQuoteId = newQuote.id;
-              // Link the lead to the new quote so the pipeline shows the value.
-              await fetch(`${SUPABASE_URL}/rest/v1/leads?id=eq.${leadId}`, {
-                method: 'PATCH',
-                headers: sbHeaders,
-                body: JSON.stringify({ quote_id: newQuote.id, status: 'Estimate Sent' }),
-              });
-            }
-          } else if (!qRes.ok) {
-            console.warn('[zach-instant-quote] quote insert failed:', qJson);
-          }
-        }
+        // One shared writer creates the header and its lines and rolls the
+        // header back if the lines do not land (_shared/estimateIntakeRest.ts),
+        // the same one lenard-save uses and the same contract the in-app Zach
+        // modal and Don get from src/lib/estimateIntake.js.
+        const written = await createEstimateFromIntakeRest(
+          { baseUrl: SUPABASE_URL, headers: sbHeaders },
+          intake as any,
+        );
+        pipelineQuoteId = written.quoteId;
       } catch (e) {
-        console.warn('[zach-instant-quote] quote sync threw:', (e as Error).message);
+        // The customer still gets their price: lawn_quote_requests and the
+        // lead are already saved, and this endpoint answers a storefront
+        // form. But the pipeline entry is missing, and that is exactly the
+        // loss that went unnoticed before — so carry the real reason out in
+        // the response instead of burying it in a console nobody reads.
+        pipelineError = (e as Error).message;
+        console.error('[zach-instant-quote] pipeline quote not created:', pipelineError);
       }
     }
 
     return json({
       quote_id: inserted?.id,
       pipeline_quote_id: pipelineQuoteId,
+      pipeline_error: pipelineError,
       lead_id: leadId,
       company_name: company.company_name,
       address,

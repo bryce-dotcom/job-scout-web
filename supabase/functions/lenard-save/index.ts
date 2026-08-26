@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import {
-  round2,
-  validateIntake,
-  intakeQuoteRow,
-  intakeLineRows,
-} from "../_shared/estimateIntake.ts";
+import { round2 } from "../_shared/estimateIntake.ts";
+import { createEstimateFromIntakeRest, type IntakeWriteError } from "../_shared/estimateIntakeRest.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -136,6 +132,11 @@ function intakeLinesFromPayload(lines: any[], quoteAmount: number, auditDbId: nu
       photos: photos,
     };
   });
+}
+
+/** The headers every REST call here uses, for helpers that take them whole. */
+function restHeaders(key: string): Record<string, string> {
+  return { 'Authorization': `Bearer ${key}`, 'apikey': key, 'Content-Type': 'application/json' };
 }
 
 async function supabasePost(url: string, key: string, body: any): Promise<any> {
@@ -583,37 +584,36 @@ serve(async (req) => {
           extras: Array.isArray(pd.extras) ? pd.extras : [],
         };
 
-        const problems = validateIntake(intake as any);
-        if (problems.length) {
-          return new Response(JSON.stringify({ error: `Estimate intake rejected: ${problems.join('; ')}` }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        // One shared writer creates the header and its lines, verifies what
+        // the database confirmed, and rolls the header back if the lines do
+        // not land (_shared/estimateIntakeRest.ts).
+        //
+        // This used to be three hand-rolled calls, and the rollback beneath
+        // them was unreachable: supabasePost throws on a non-2xx response, so
+        // a rejected quote_lines batch — the failure that actually happens —
+        // jumped past the rollback into the outer catch and left the header
+        // behind with a headline total and nothing under it. The only branch
+        // that could reach the rollback was a 2xx short write, which a single
+        // batch POST cannot produce.
+        //
+        // Lenard deliberately does NOT advance the lead to "Estimate Sent"
+        // the way Zach and Don do. Those push a finished bid to the pipeline
+        // on purpose; Lenard auto-creates a Draft the moment the audit is
+        // saved, and nothing has been sent to anyone yet.
+        try {
+          const written = await createEstimateFromIntakeRest(
+            { baseUrl: SUPABASE_URL!, headers: restHeaders(key) },
+            intake as any,
+            { advanceLeadTo: null },
+          );
+          quoteDbId = written.quoteId;
+        } catch (e) {
+          // A rejected intake is the client's payload, not our write, and it
+          // kept its 400 when this was inline. Everything else is ours.
+          const status = (e as IntakeWriteError)?.kind === 'invalid' ? 400 : 500;
+          return new Response(JSON.stringify({ error: (e as Error).message }),
+            { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
-
-        const [newQuote] = await supabasePost(`${SUPABASE_URL}/rest/v1/quotes`, key,
-          intakeQuoteRow(intake as any));
-        quoteDbId = newQuote.id;
-
-        const rows = intakeLineRows(intake as any, newQuote.id);
-        const written = await supabasePost(`${SUPABASE_URL}/rest/v1/quote_lines`, key, rows);
-
-        // A quote carrying a headline total with nothing itemised under it is
-        // the worst possible shape for a document you hand a customer, because
-        // it looks finished. Count what the database confirmed, and undo the
-        // header rather than leave half a bid behind.
-        if (!Array.isArray(written) || written.length !== rows.length) {
-          await supabaseDelete(SUPABASE_URL!, 'quotes', key, `id=eq.${newQuote.id}`);
-          return new Response(JSON.stringify({
-            error: `Estimate lines failed, header rolled back: only ${Array.isArray(written) ? written.length : 0} of ${rows.length} lines were written. Nothing was left half-made.`,
-          }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-
-        // Link the quote to the lead, but deliberately do NOT advance the lead
-        // to "Estimate Sent" the way Zach and Don do. Those push a finished bid
-        // to the pipeline on purpose; Lenard auto-creates a Draft the moment
-        // the audit is saved, and nothing has been sent to anyone yet.
-        await supabasePatch(SUPABASE_URL!, 'leads', key, leadId, {
-          quote_id: newQuote.id,
-        });
       }
     }
 
@@ -621,7 +621,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }),
+    return new Response(JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
