@@ -117,8 +117,9 @@ ${catalogText}
 Pick the 3 add-ons most likely to apply to THIS specific project. Reason about the scope and size:
 - Small / one-line jobs (< $1k): only add-ons that always make sense (e.g. travel for distant sites). Skip enterprise compliance items.
 - Mid jobs ($1k–$10k): basic compliance + service add-ons that match the work type.
-- Large jobs (>$10k) or utility-rebate work: documentation, M&V, ROI, project management, compliance packages.
-- Don't recommend warranty for cleaning-type one-offs; do for installs.
+- Large jobs (>$10k) or utility-rebate work: documentation, M&V, ROI, project management, compliance packages, and extended coverage on the equipment being installed.
+- Equipment installs are a strong candidate for extended product coverage at any size — it is about what is being installed, not what the job costs. Don't recommend it for cleaning-type one-offs, where nothing is left behind to cover.
+- Skip anything already on the estimate. If the customer has bought coverage, documentation or project management, that slot is spent.
 - If the project doesn't fit a category cleanly, recommend fewer items rather than padding.
 
 Respond with ONLY a JSON object, no prose:
