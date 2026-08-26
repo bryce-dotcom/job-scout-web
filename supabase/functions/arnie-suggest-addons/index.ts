@@ -16,6 +16,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { callAnthropic } from "../_shared/anthropic.ts";
+import { UPSELL_CATEGORY } from "../_shared/upsells.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -79,7 +80,18 @@ Deno.serve(async (req) => {
     const [quoteRows, lineRows, catalogRows] = await Promise.all([
       sb(`quotes?id=eq.${estimate_id}&company_id=eq.${company_id}&select=id,quote_amount,calculated_quote_amount,job_total,arnie_addon_recommendations,arnie_addon_recs_hash`),
       sb(`quote_lines?quote_id=eq.${estimate_id}&select=id,item_id,item_name,line_total,quantity,price,description`),
-      sb(`products_services?company_id=eq.${company_id}&suggest_in_lenard=eq.true&active=eq.true&select=id,name,description,unit_price,in_utility_scope`),
+      // The same rule the interactive proposal uses: an upsell is an ACTIVE
+      // product the tenant labelled as an add-on. See _shared/upsells.ts.
+      //
+      // This used to gate on suggest_in_lenard instead, which is a different
+      // question — that flag is about what shows in LENARD's field picker,
+      // and Arnie suggests on estimates in the office. The two sets happen to
+      // be identical today (19 products either way), so nothing moves now;
+      // the point is that they cannot drift apart later and leave two surfaces
+      // offering customers different things.
+      sb(`products_services?company_id=eq.${company_id}&active=eq.true` +
+         `&product_category=eq.${encodeURIComponent(UPSELL_CATEGORY)}` +
+         `&select=id,name,description,unit_price,in_utility_scope`),
     ]);
 
     const quote = quoteRows[0];
