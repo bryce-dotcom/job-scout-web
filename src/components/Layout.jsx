@@ -4,6 +4,8 @@ import { useStore } from '../lib/store'
 import { fetchDueFollowUpCount } from '../lib/followUpDue'
 import FeedbackButton from './FeedbackButton'
 import ArnieFloatingPanel from './ArnieFloatingPanel'
+import NavCustomizer from './NavCustomizer'
+import { applyNavPrefs, loadNavPrefs, resetNavPrefs, saveNavPrefs } from '../lib/navPrefs'
 import ArnieOnboardingBanner from './ArnieOnboardingBanner'
 import GlobalSearch from './GlobalSearch'
 import TrialBanner from './TrialBanner'
@@ -63,8 +65,7 @@ import {
   Eye,
   Inbox,
   PlayCircle as Play,
-  Target
-} from 'lucide-react'
+  Target, SlidersHorizontal } from 'lucide-react'
 
 // Theme context
 const ThemeContext = createContext(null)
@@ -498,6 +499,9 @@ export default function Layout() {
       })
 
       return {
+        // Carried through because per-section ordering is saved against it.
+        // Without the key every section would share one order list.
+        key: section.key,
         title: section.title,
         sectionIcon: section.sectionIcon,
         step: section.step,
@@ -506,6 +510,36 @@ export default function Layout() {
       }
     })
   }, [aiModules, filteredNavSections])
+
+  // ── Personal menu ──────────────────────────────────────────────────
+  // Applied to navSections and NEVER to the raw definitions: preferences run
+  // on the output of the role filter above, so hiding can only remove what
+  // this person could already see, and un-hiding can never surface something
+  // their access level forbids. See lib/navPrefs.
+  // Preferences are DERIVED from the signed-in identity rather than copied
+  // into state and kept in sync. The store hydrates asynchronously, so the
+  // first render has no companyId yet; syncing that with an effect meant a
+  // saved customisation was ignored on every hard refresh, and fixing it that
+  // way traded one bug for cascading renders. Edits are held separately and
+  // only count while the identity they were made under still matches — which
+  // is also what swaps menus when somebody else signs in on a shared device.
+  const navIdentity = `${companyId || ''}:${(user?.email || '').toLowerCase()}`
+  const storedNavPrefs = useMemo(() => loadNavPrefs(companyId, user?.email), [companyId, user?.email])
+  const [navEdit, setNavEdit] = useState(null)
+  const navPrefs = navEdit && navEdit.identity === navIdentity ? navEdit.prefs : storedNavPrefs
+
+  const [showNavCustomizer, setShowNavCustomizer] = useState(false)
+  const visibleNavSections = useMemo(() => applyNavPrefs(navSections, navPrefs), [navSections, navPrefs])
+
+  const saveNav = (next) => {
+    setNavEdit({ identity: navIdentity, prefs: next })
+    saveNavPrefs(companyId, user?.email, next)
+  }
+  const resetNav = () => {
+    const next = resetNavPrefs(companyId, user?.email)
+    setNavEdit({ identity: navIdentity, prefs: next })
+    return next
+  }
 
   // Agent icon mapping
   const agentIcons = {
@@ -1081,7 +1115,7 @@ export default function Layout() {
               </div>
             </div>}
 
-            {navSections.map((section, idx) => (
+            {visibleNavSections.map((section, idx) => (
               <NavSection key={section.title} section={section} sectionIndex={idx} />
             ))}
 
@@ -1175,6 +1209,24 @@ export default function Layout() {
             {adminSection && <NavSection section={adminSection} sectionIndex={10} />}
             {devSection && <NavSection section={devSection} sectionIndex={11} />}
             <NavSection section={helpSection} sectionIndex={12} />
+
+            {/* Deliberately outside the customisable sections and shown to
+                every role: this is the only way back for somebody who has
+                just hidden something and wants it again. */}
+            <button
+              onClick={() => setShowNavCustomizer(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px',
+                width: '100%', margin: '6px 0 2px', padding: '8px 12px',
+                background: 'transparent', border: 'none', borderRadius: '6px',
+                color: theme.textMuted, fontSize: '12.5px', cursor: 'pointer',
+                textAlign: 'left', minHeight: '36px',
+              }}
+              title="Choose which menu items you see"
+            >
+              <SlidersHorizontal size={16} />
+              Customise menu
+            </button>
           </nav>
 
           {/* User/Logout */}
@@ -1622,7 +1674,7 @@ export default function Layout() {
                   </div>
                 </div>}
 
-                {navSections.map((section, idx) => (
+                {visibleNavSections.map((section, idx) => (
                   <NavSection key={section.title} section={section} mobile sectionIndex={idx} />
                 ))}
 
@@ -1715,6 +1767,22 @@ export default function Layout() {
                 {adminSection && <NavSection section={adminSection} mobile sectionIndex={10} />}
                 {devSection && <NavSection section={devSection} mobile sectionIndex={11} />}
                 <NavSection section={helpSection} mobile sectionIndex={12} />
+
+                {/* Same reasoning as the desktop copy: outside the
+                    customisable sections, shown to every role. */}
+                <button
+                  onClick={() => { setMobileMenuOpen(false); setShowNavCustomizer(true) }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    width: '100%', margin: '6px 0 2px', padding: '10px 12px',
+                    background: 'transparent', border: 'none', borderRadius: '6px',
+                    color: theme.textMuted, fontSize: '13px', cursor: 'pointer',
+                    textAlign: 'left', minHeight: '44px',
+                  }}
+                >
+                  <SlidersHorizontal size={18} />
+                  Customise menu
+                </button>
               </nav>
               <div style={{
                 padding: '16px',
@@ -2069,6 +2137,17 @@ export default function Layout() {
       {/* Arnie + Feedback float bottom-right — hide on detail/edit pages so
           they don't cover the page's own action button on mobile. */}
       {!isDetailRoute && <ArnieFloatingPanel />}
+
+      {showNavCustomizer && (
+        <NavCustomizer
+          sections={navSections}
+          prefs={navPrefs}
+          onChange={saveNav}
+          onReset={resetNav}
+          onClose={() => setShowNavCustomizer(false)}
+          theme={theme}
+        />
+      )}
       {!isDetailRoute && <FeedbackButton />}
 
       {/* Responsive CSS */}
