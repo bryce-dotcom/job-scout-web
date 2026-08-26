@@ -18,6 +18,14 @@
 // Stored as the `upsells` setting so Arnie can manage them by conversation,
 // alongside business_units / lead_sources / service_types.
 
+// The price-book rule for what may be sold as an upsell lives in
+// _shared/upsells.ts so the edge functions and the app share one copy.
+export {
+  UPSELL_CATEGORY,
+  isUpsellProduct,
+  upsellsFromProducts,
+} from '../../supabase/functions/_shared/upsells.ts'
+
 export const UPSELL_TIERS = ['better', 'best']
 
 // How an upsell is priced. A warranty at 5% of a $200k job is not the same
@@ -26,16 +34,13 @@ export const UPSELL_TIERS = ['better', 'best']
 // somebody re-types per estimate and eventually gets wrong.
 export const PRICE_TYPES = ['flat', 'percent']
 
-/** What shipped hardcoded, so nothing is lost when the setting is first seeded. */
-export const DEFAULT_UPSELLS = [
-  { name: '2-Year Extended Warranty', tier: 'better', price: 0, description: 'Parts and labour covered for a second year.' },
-  { name: 'Old Fixture Recycling & Disposal', tier: 'better', price: 0, description: 'We haul away and recycle what we replace.' },
-  { name: 'Priority Scheduling', tier: 'better', price: 0, description: 'Your job goes to the front of the queue.' },
-  { name: '3-Year Extended Warranty', tier: 'best', price: 0, description: 'Parts and labour covered for three years.' },
-  { name: 'Remote Monitoring', tier: 'best', price: 0, description: 'We watch the system and catch faults before you do.' },
-  { name: 'Annual Maintenance Check', tier: 'best', price: 0, description: 'A yearly visit to keep everything performing.' },
-  { name: 'Emergency Priority Service', tier: 'best', price: 0, description: 'Front of the queue when something goes wrong.' },
-]
+// There used to be a DEFAULT_UPSELLS list here, and resolveUpsells() fell back
+// to it whenever a tenant had configured nothing. It promised Remote
+// Monitoring, Emergency Priority Service and an Annual Maintenance Check —
+// none of which HHH sells — plus a 2-year and a 3-year warranty at $0. So an
+// unconfigured company put seven invented services in front of a customer at
+// prices nobody had set. It is gone: nothing configured now means no packages,
+// and the catalogue comes from the price book. See upsellsFromProducts().
 
 const num = (v) => {
   const n = parseFloat(v)
@@ -71,8 +76,9 @@ export function normalizeUpsells(raw) {
 
 /** The catalogue in use — the tenant's list, or what used to be hardcoded. */
 export function resolveUpsells(settings) {
-  const configured = normalizeUpsells(settings?.upsells)
-  return configured.length > 0 ? configured : normalizeUpsells(DEFAULT_UPSELLS)
+  // No invented fallback. A tenant who has configured nothing gets nothing,
+  // rather than three package cards describing work they do not do.
+  return normalizeUpsells(settings?.upsells)
 }
 
 /**

@@ -54,6 +54,11 @@ serve(async (req) => {
     // over the model's output after it returns.
     const catalogue = normalizeUpsells(upsells);
     const computedTiers = buildTiers(totalNum, incentiveNum, catalogue);
+    // Packages are only offered when the tenant actually has upsells to offer.
+    // include_tiers alone produced three cards at the same price with feature
+    // lists the model wrote itself — services the company does not sell, on the
+    // document the customer chooses from.
+    const showTiers = include_tiers && catalogue.length > 0;
     const betterFeatures = computedTiers[1].features;
     const bestFeatures = computedTiers[2].features;
     const hasExisting = existing_layout && existing_layout.sections;
@@ -256,7 +261,7 @@ Return ONLY valid JSON (no markdown fences):
     { "type": "roi_summary", "content": "a line that frames the ROI as obvious", "metrics": { "annual_savings": ${canonicalAnnualSavings}, "payback_months": <calculated number>, "roi_percent": <calculated number> } },` : '/* no savings_timeline and no roi_summary — there is no measured savings figure for this estimate, so none may be stated */'}
     ${proposal_notes ? '{ "type": "warranty", "content": "write this based on the company notes above — make it feel like extra protection, not fine print" },' : ''}
     ${incentiveNum > 0 ? '{ "type": "utility_incentive", "content": "This is free money — explain why they need to claim it now" },' : ''}
-    ${include_tiers ? `{ "type": "pricing_tiers", "heading": "Choose Your Package", "content": "compelling subheading about options", "recommended": "better", "tiers": [
+    ${showTiers ? `{ "type": "pricing_tiers", "heading": "Choose Your Package", "content": "compelling subheading about options", "recommended": "better", "tiers": [
       { "id": "good", "name": "descriptive name", "price": ${totalNum.toFixed(2)}, "net_price": ${(totalNum - incentiveNum).toFixed(2)}, "description": "the base scope — everything in the estimate", "features": ["feature 1", "feature 2", "feature 3"]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} },
       { "id": "better", "name": "descriptive name", "price": ${computedTiers[1].price.toFixed(2)}, "net_price": ${computedTiers[1].net_price.toFixed(2)}, "description": "base scope plus: ${betterFeatures.join(', ')}", "features": ["everything in Good"${betterFeatures.length ? ', ' + betterFeatures.map(f => JSON.stringify(f)).join(', ') : ''}]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} },
       { "id": "best", "name": "descriptive name", "price": ${computedTiers[2].price.toFixed(2)}, "net_price": ${computedTiers[2].net_price.toFixed(2)}, "description": "everything in Better plus: ${bestFeatures.join(', ')}", "features": ["everything in Better"${bestFeatures.length ? ', ' + bestFeatures.map(f => JSON.stringify(f)).join(', ') : ''}]${hasRealSavings ? `, "annual_savings": ${canonicalAnnualSavings}, "payback_months": <number>` : ''} }

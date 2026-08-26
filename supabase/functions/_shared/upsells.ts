@@ -72,3 +72,57 @@ export function buildTiers(basePrice: number, incentive: number, upsells: Upsell
     { id: 'best', price: bestPrice, net_price: net(bestPrice), features: best.map((u) => u.name) },
   ]
 }
+
+// ---------------------------------------------------------------------------
+// Where an upsell is allowed to come from.
+//
+// The Good/Better/Best packages were built from settings.upsells — a
+// hand-typed JSON blob that drifted away from the price book and then stayed
+// there. For company 3 it listed eight items, every one priced $0, including
+// "Commissioning", which does not exist in the catalogue at all, and an
+// "Extended Warranty" whose real products had been archived months earlier.
+// Cole reported the result as the packages being "fucked up" and offering work
+// the company does not provide.
+//
+// So the catalogue is the price book, and only the part of it the tenant has
+// labelled as an add-on. A product nobody marked sellable as an upsell cannot
+// appear on a proposal, and a price nobody set cannot either.
+export const UPSELL_CATEGORY = 'Add-On Service'
+
+/** Is this products_services row sellable as an upsell? */
+export function isUpsellProduct(p: any): boolean {
+  if (!p || p.active === false) return false
+  return String(p.product_category || '').trim() === UPSELL_CATEGORY
+}
+
+/**
+ * The tenant's upsell catalogue, split into Better and Best by the packages
+ * they configured in Settings > Good/Better/Best.
+ *
+ * Returns [] when nothing is configured. That is deliberate: an unconfigured
+ * tenant gets no tiers rather than three cards of invented copy.
+ */
+export function upsellsFromProducts(products: any[], packages: any[]): Upsell[] {
+  const byId = new Map<string, any>()
+  for (const p of products || []) {
+    if (isUpsellProduct(p)) byId.set(String(p.id), p)
+  }
+  const out: Upsell[] = []
+  for (const pkg of packages || []) {
+    const tier = pkg?.id === 'best' ? 'best' : pkg?.id === 'better' ? 'better' : null
+    if (!tier) continue // 'good' is the estimate as quoted; it adds nothing
+    for (const id of pkg.addonIds || []) {
+      const p = byId.get(String(id))
+      if (!p) continue // archived, deleted, or no longer labelled an upsell
+      out.push({
+        name: String(p.name || '').trim(),
+        tier,
+        price: num(p.unit_price),
+        price_type: 'flat',
+        description: String(p.description || '').slice(0, 200),
+        active: true,
+      })
+    }
+  }
+  return out.filter((u) => u.name)
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeUpsells, resolveUpsells, buildTiers, DEFAULT_UPSELLS } from './upsells'
+import { normalizeUpsells, resolveUpsells, buildTiers, isUpsellProduct, upsellsFromProducts } from './upsells'
 
 describe('reading the catalogue', () => {
   it('accepts plain strings, because Arnie stores simple lists that way', () => {
@@ -21,9 +21,44 @@ describe('reading the catalogue', () => {
     expect(normalizeUpsells(null)).toEqual([])
   })
 
-  it('falls back to what used to be hardcoded when nothing is configured', () => {
-    expect(resolveUpsells({}).length).toBe(DEFAULT_UPSELLS.length)
-    expect(resolveUpsells({ upsells: [] }).length).toBe(DEFAULT_UPSELLS.length)
+  it('offers NOTHING when the tenant has configured nothing', () => {
+    // It used to fall back to seven invented services, including Remote
+    // Monitoring and Emergency Priority Service, which HHH does not sell.
+    expect(resolveUpsells({})).toEqual([])
+    expect(resolveUpsells({ upsells: [] })).toEqual([])
+  })
+
+  it('only a labelled, active Add-On Service counts as an upsell', () => {
+    expect(isUpsellProduct({ active: true, product_category: 'Add-On Service' })).toBe(true)
+    expect(isUpsellProduct({ active: false, product_category: 'Add-On Service' })).toBe(false)
+    // Extended Service Coverage Tier A/B carry no category, so they stay out.
+    expect(isUpsellProduct({ active: true, product_category: null })).toBe(false)
+    expect(isUpsellProduct(null)).toBe(false)
+  })
+
+  it('builds the catalogue from the price book and the configured packages', () => {
+    const products = [
+      { id: 1, name: 'Facility Lighting Audit', unit_price: 750, active: true, product_category: 'Add-On Service' },
+      { id: 2, name: 'Extended Warranty — 3 Year (Product Only)', unit_price: 250, active: true, product_category: 'Add-On Service' },
+      { id: 3, name: 'Extended Service Coverage — Tier B', unit_price: 1500, active: true, product_category: null },
+      { id: 4, name: 'Archived thing', unit_price: 99, active: false, product_category: 'Add-On Service' },
+    ]
+    const packages = [
+      { id: 'good', addonIds: [] },
+      { id: 'better', addonIds: [2] },
+      { id: 'best', addonIds: [1, 3, 4] },
+    ]
+    const out = upsellsFromProducts(products, packages)
+    expect(out.map(u => u.name)).toEqual(['Extended Warranty — 3 Year (Product Only)', 'Facility Lighting Audit'])
+    expect(out[0].tier).toBe('better')
+    expect(out[0].price).toBe(250)
+    expect(out[1].tier).toBe('best')
+  })
+
+  it('returns nothing when no packages are configured', () => {
+    const products = [{ id: 1, name: 'X', unit_price: 10, active: true, product_category: 'Add-On Service' }]
+    expect(upsellsFromProducts(products, [])).toEqual([])
+    expect(upsellsFromProducts(products, null)).toEqual([])
   })
 
   it('an unknown tier lands in better rather than vanishing', () => {

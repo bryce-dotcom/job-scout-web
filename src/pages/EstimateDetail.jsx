@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense, Component } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { upsellsFromProducts } from '../lib/upsells'
 import { supabase } from '../lib/supabase'
 import { quoteWriteDecision, WRITE, quoteSummary } from '../lib/quoteTotal'
 import { withAssets } from '../lib/productAssets'
@@ -229,7 +230,7 @@ function EstimateDetailInner() {
             .maybeSingle(),
           supabase
             .from('products_services')
-            .select('id, name, description, unit_price, in_utility_scope')
+            .select('id, name, description, unit_price, in_utility_scope, product_category, active')
             .eq('company_id', companyId)
             .eq('active', true),
         ])
@@ -2729,13 +2730,20 @@ function EstimateDetailInner() {
           // Noah: show owners what the project does beyond the power bill.
           // On unless a rep turns it off.
           include_value_section: base?.include_value_section !== false,
-          // The company's real upsell catalogue. Without it the function falls
-          // back to nothing and the packages carry no add-ons at all — the
-          // prices are computed from this, never invented by the model.
-          upsells: (() => {
-            try { return JSON.parse((settings || []).find(r => r.key === 'upsells')?.value || '[]') }
-            catch { return [] }
-          })(),
+          // The upsell catalogue, built from the PRICE BOOK — the products the
+          // tenant labelled "Add-On Service" — and split into Better/Best by
+          // the packages they configured in Settings.
+          //
+          // This used to read settings.upsells, a hand-typed JSON blob that had
+          // drifted away from the catalogue and stayed there: eight items, every
+          // one priced $0, including "Commissioning" (not a product at all) and
+          // an "Extended Warranty" whose real products had been archived months
+          // before. Cole reported the packages as offering work we do not do.
+          //
+          // Empty when nothing is configured, and the function then emits no
+          // tiers at all — an unconfigured tenant gets no packages rather than
+          // three cards of invented copy.
+          upsells: upsellsFromProducts(allProducts, packages),
           manual_annual_savings: estimate?.manual_annual_savings || 0,
           audit_data: auditData,
           audit_areas_data: auditAreasData,

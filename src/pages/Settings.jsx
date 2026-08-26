@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePlaidLink } from 'react-plaid-link'
+import { isUpsellProduct } from '../lib/upsells'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -4135,10 +4136,15 @@ function OnboardingDocsTab({ theme, companyId, settings, saveSetting }) {
 // across the field and the office.
 function EstimatePackagesTab({ theme, companyId, settings, saveSetting }) {
   const stored = settings.find(s => s.key === 'estimate_packages')?.value
+  // Descriptions start EMPTY. They used to ship pre-written — "Adds extended
+  // warranty + facility audit", "Smart controls, M&V, 5-yr warranty, priority
+  // SLA" — with addonIds: [], so an unconfigured company sent a customer three
+  // package cards promising work it does not do and had not priced. Whatever a
+  // tier claims has to be something the tenant typed or an add-on they ticked.
   const initial = (stored && Array.isArray(stored) && stored.length === 3) ? stored : [
-    { id: 'good',   name: 'Good',   description: 'The essentials. Covers the work + utility processing.', addonIds: [] },
-    { id: 'better', name: 'Better', description: 'Most popular. Adds extended warranty + facility audit.', addonIds: [] },
-    { id: 'best',   name: 'Best',   description: 'White-glove. Smart controls, M&V, 5-yr warranty, priority SLA.', addonIds: [] },
+    { id: 'good',   name: 'Good',   description: '', addonIds: [] },
+    { id: 'better', name: 'Better', description: '', addonIds: [] },
+    { id: 'best',   name: 'Best',   description: '', addonIds: [] },
   ]
   const [packages, setPackages] = useState(initial)
   const [products, setProducts] = useState([])
@@ -4180,9 +4186,14 @@ function EstimatePackagesTab({ theme, companyId, settings, saveSetting }) {
     fontSize: 14, color: theme.text, backgroundColor: theme.bgCard, boxSizing: 'border-box', outline: 'none',
   }
 
+  // Only what the price book labels an add-on may be packaged. This listed
+  // every active product — 650 of them for HHH — so a package could be built
+  // out of fixtures, tubes or a lift, none of which is an upsell. The label is
+  // the tenant's own: Products & Services > product category "Add-On Service".
+  const upsellable = products.filter(isUpsellProduct)
   // Suggest-in-lenard items first; everything else after, both alphabetized.
-  const suggested = products.filter(p => p.suggest_in_lenard)
-  const other     = products.filter(p => !p.suggest_in_lenard)
+  const suggested = upsellable.filter(p => p.suggest_in_lenard)
+  const other     = upsellable.filter(p => !p.suggest_in_lenard)
 
   return (
     <div>
