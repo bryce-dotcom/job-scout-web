@@ -234,6 +234,14 @@ const CSS = `
   .pr .recur .repl{font-family:var(--mono);font-size:11.5px;color:#9aa08c;margin-top:16px;position:relative}
   .pr .recur .repl b{color:#cbb8ff}
   @media(min-width:640px){ .pr .recur-grid{grid-template-columns:1fr 1fr} }
+  .pr .more-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:20px}
+  .pr .morecard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 17px}
+  .pr .more-h{display:flex;align-items:center;gap:10px;font-weight:750;font-size:15px;color:var(--ink);line-height:1.2}
+  .pr .more-ic{width:31px;height:31px;flex:none;border-radius:9px;background:var(--grnBg);color:var(--grn);display:grid;place-items:center}
+  .pr .more-ic .ic{font-size:16px}
+  .pr .morecard p{color:var(--sub);font-size:13px;margin:10px 0 0;line-height:1.5}
+  @media(min-width:600px){ .pr .more-grid{grid-template-columns:1fr 1fr} }
+  @media(min-width:920px){ .pr .more-grid{grid-template-columns:1fr 1fr 1fr} }
   .pr .crewgrid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:24px}
   .pr .agent{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;gap:14px;align-items:flex-start}
   .pr .agent .av{width:50px;height:50px;flex:none;border-radius:14px;display:grid;place-items:center;font-family:var(--mono);font-weight:750;font-size:16px;background:var(--grn);color:#fff}
@@ -716,6 +724,24 @@ export default function Pricing() {
                 <div className="stack-save">≈ ${STACK_SAVE.toLocaleString()} saved a year</div>
               </div>
               <p className="stack-note">Typical small-business pricing — your stack is probably longer. Names are trademarks of their owners.</p>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div className="wrap">
+            <div className="sechead rv">
+              <span className="kicker">The little things add up</span>
+              <h2>A few more that come standard.</h2>
+              <p>You won’t find all 134 features on one page — here’s a handful of the quiet ones that save the day.</p>
+            </div>
+            <div className="more-grid">
+              <div className="morecard rv"><div className="more-h"><span className="more-ic"><Icon id="i-cal" /></span> Self-serve bookings</div><p>Booking pages that read your team’s real availability — every request drops into the pipeline as a lead.</p></div>
+              <div className="morecard rv"><div className="more-h"><span className="more-ic"><Icon id="i-quote" /></span> One comms timeline</div><p>Every email, text, and signature event on one thread, tied to the customer and the job.</p></div>
+              <div className="morecard rv"><div className="more-h"><span className="more-ic"><Icon id="i-search" /></span> Command search</div><p>One bar jumps you to any customer, lead, job, or invoice in a keystroke.</p></div>
+              <div className="morecard rv"><div className="more-h"><span className="more-ic"><Icon id="i-layers" /></span> Multi-part assemblies</div><p>A kit or retrofit auto-explodes into its parts for accurate costing and inventory pull.</p></div>
+              <div className="morecard rv"><div className="more-h"><span className="more-ic"><Icon id="i-book" /></span> Smart document packages</div><p>The right forms auto-attach by service type and pre-fill themselves — utility forms, ICAs, packets.</p></div>
+              <div className="morecard rv"><div className="more-h"><span className="more-ic"><Icon id="i-star" /></span> Win alerts</div><p>The whole crew sees the moment a quote gets signed or a payment lands — with a little celebration.</p></div>
             </div>
           </div>
         </section>
