@@ -13,7 +13,7 @@ import { ShoppingCart, Building2, ChevronDown, ChevronRight, RefreshCw, Briefcas
 import { useIsMobile } from '../hooks/useIsMobile'
 import PageHeader from '../components/PageHeader'
 import { aggregateNeedsOrder } from '../lib/partsAggregator'
-import { generatePoNumber, formatCurrency, expandProductForPO } from '../lib/poUtils'
+import { generatePoNumber, formatCurrency, expandProductForPO, partitionByVendor, describeBlockedVendors } from '../lib/poUtils'
 import { recomputeJobPartsStatus } from '../lib/poReceive'
 
 const defaultTheme = {
@@ -156,13 +156,28 @@ export default function Procurement() {
       }
 
       // Group expanded items by effective vendor (component vendor takes
-      // priority over the parent product's resolved vendor)
-      const byVendor = new Map()
-      for (const entry of allOrderItems) {
-        const vId = entry.oi.vendorId || entry.resolvedVendorId
-        if (!byVendor.has(vId)) byVendor.set(vId, [])
-        byVendor.get(vId).push(entry)
+      // priority over the parent product's resolved vendor).
+      //
+      // The FULL vendor list, inactive included. `vendors` in state is filtered
+      // to active because it feeds the pickers — and that is precisely how a
+      // product pointing at a deactivated vendor stayed invisible: it could not
+      // be seen or chosen anywhere, yet POs kept being raised in its name.
+      // The missing-vendor case is already caught above; this catches the
+      // deactivated one.
+      const { data: allVendors } = await supabase
+        .from('vendors').select('id, name, active').eq('company_id', companyId)
+      const guardItems = allOrderItems.map(entry => ({
+        ...entry.oi,
+        vendorId: entry.oi.vendorId || entry.resolvedVendorId,
+        _entry: entry,
+      }))
+      const { groups: resolvedGroups, blocked } = partitionByVendor(guardItems, allVendors)
+      if (blocked.length) {
+        toast.error(`No POs were created.\n${describeBlockedVendors(blocked)}\n\nFix the vendor on those products in Products & Services, then try again.`)
+        setCreating(false); return
       }
+      const byVendor = new Map()
+      for (const [vId, items] of resolvedGroups) byVendor.set(vId, items.map(i => i._entry))
 
       const createdPos = []
       const touchedJobs = new Set()

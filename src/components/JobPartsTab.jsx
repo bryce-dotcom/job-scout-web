@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabase'
 import { toast } from '../lib/toast'
 import { Package, Truck, CheckCircle, AlertCircle, Plus, ShoppingCart } from 'lucide-react'
 import { recomputeJobPartsStatus } from '../lib/poReceive'
-import { generatePoNumber, expandProductForPO } from '../lib/poUtils'
+import { generatePoNumber, expandProductForPO, partitionByVendor, describeBlockedVendors } from '../lib/poUtils'
 
 const PARTS_STATUS_LABELS = {
   not_needed:        { label: 'No Parts',          color: '#7d8a7f', bg: 'rgba(125,138,127,0.12)' },
@@ -122,8 +122,9 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
   }
 
   // Generate a draft PO for any line items that don't have enough stock + aren't already on a PO.
-  // Groups by default_vendor_id; for products with no vendor mapping, falls back to a single PO
-  // using the first available vendor with a note (user can re-vendor in PO detail).
+  // Groups by default_vendor_id. Anything whose vendor is missing or deactivated
+  // is refused with the product names, rather than being quietly attached to
+  // whichever vendor sorts first — see partitionByVendor in lib/poUtils.
   const generatePoForJob = async () => {
     setWorking(true)
     try {
@@ -144,13 +145,16 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
         setWorking(false); return
       }
 
+      // The FULL vendor list, inactive included. Every picker in the app filters
+      // active=true, which is exactly why a product pointing at a deactivated
+      // vendor was invisible: nobody could see the assignment or choose that
+      // vendor, and POs kept being raised in its name anyway.
       const { data: vendors } = await supabase
-        .from('vendors').select('id, name').eq('company_id', companyId).eq('active', true).order('name')
-      if (!vendors || vendors.length === 0) {
+        .from('vendors').select('id, name, active').eq('company_id', companyId).order('name')
+      if (!vendors?.some(v => v.active)) {
         toast.error('No active vendors yet — create one in /vendors first.')
         setWorking(false); return
       }
-      const placeholderVendorId = vendors[0].id
 
       // Expand ALL missing lines into their per-component order items first,
       // then group by each component's own vendor. This ensures bundle
@@ -165,12 +169,15 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
         }
       }
 
-      // Group by effective vendor — fall back to placeholder for unassigned items
-      const groups = new Map()
-      for (const item of allItems) {
-        const vId = item.vendorId || placeholderVendorId
-        if (!groups.has(vId)) groups.set(vId, [])
-        groups.get(vId).push(item)
+      // Group by effective vendor. Anything that cannot be addressed — no
+      // vendor, or a deactivated one — is held back rather than guessed at.
+      // This used to fall back to vendors[0], the alphabetically first active
+      // vendor, so an unassigned product silently became a real order to
+      // whoever happened to sort first.
+      const { groups, blocked } = partitionByVendor(allItems, vendors)
+      if (blocked.length) {
+        toast.error(`Nothing was ordered.\n${describeBlockedVendors(blocked)}\n\nSet the vendor on those products in Products & Services, then try again.`)
+        setWorking(false); return
       }
 
       // Track which job_lines have been tagged (only set po_line_id once per job_line)

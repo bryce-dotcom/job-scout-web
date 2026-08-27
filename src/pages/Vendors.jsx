@@ -103,6 +103,48 @@ export default function Vendors() {
       active: formData.active !== false,
       updated_at: new Date().toISOString(),
     }
+    // Archiving a vendor has to deal with the products still ordering from it.
+    //
+    // It did not, and that is the whole of Alayda's "Maverick Lighting" report.
+    // Maverick was deactivated, so it vanished from every picker in the app —
+    // but 31 products kept `default_vendor_id` pointing at it. Nobody could see
+    // the assignment or choose that vendor, and POs went on being raised in its
+    // name, including one for $23,556. The vendor was archived; the products
+    // were not.
+    //
+    // So the products come with it. Clearing their vendor puts them in the
+    // "needs a vendor" bucket, where Procurement already makes someone pick one
+    // and the PO builder refuses to guess. The vendor row itself is untouched,
+    // so its history, POs and bills stay exactly where they are.
+    const deactivating = editingVendor && editingVendor.active !== false && payload.active === false
+    if (deactivating) {
+      const { count } = await supabase
+        .from('products_services')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyId)
+        .eq('default_vendor_id', editingVendor.id)
+      if (count > 0) {
+        const ok = confirm(
+          `${count} product${count === 1 ? '' : 's'} still order from ${editingVendor.name}.\n\n` +
+          `Archiving the vendor on its own would leave them pointing at a vendor nobody can see or pick, ` +
+          `and purchase orders would keep going out in its name.\n\n` +
+          `Clear the vendor on those ${count} product${count === 1 ? '' : 's'} and archive? ` +
+          `They will need a vendor set before they can be ordered again. ` +
+          `${editingVendor.name}'s own history stays.`
+        )
+        if (!ok) { setSaving(false); return }
+        const { error: clearErr } = await supabase
+          .from('products_services')
+          .update({ default_vendor_id: null, updated_at: new Date().toISOString() })
+          .eq('company_id', companyId)
+          .eq('default_vendor_id', editingVendor.id)
+        if (clearErr) {
+          toast.error(`Could not clear the vendor on those products: ${clearErr.message}`)
+          setSaving(false); return
+        }
+      }
+    }
+
     const op = editingVendor
       ? supabase.from('vendors').update(payload).eq('id', editingVendor.id)
       : supabase.from('vendors').insert(payload)

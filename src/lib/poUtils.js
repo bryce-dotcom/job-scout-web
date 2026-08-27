@@ -145,3 +145,87 @@ export async function expandProductForPO(productId, bundleQty, companyId) {
     bundleParentName: null,
   }]
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Who a purchase order is actually addressed to.
+//
+// Alayda, 9/10 urgency: POs going out to "Maverick Lighting", a vendor with no
+// products behind it. The PO builder was doing exactly what it was told —
+// grouping on products_services.default_vendor_id — and 31 products genuinely
+// point at that vendor. What made it invisible is that the vendor is
+// active=false, so it appears in NO picker anywhere in the app. Nobody could
+// see the assignment, nobody could pick that vendor, and POs kept arriving
+// under its name.
+//
+// (A manufacturer is not a vendor. Those products are made by MES and bought
+// through a distributor; MES-made stock here is spread across three different
+// vendors. Diagnosing this from the manufacturer column leads nowhere.)
+//
+// The sibling trap: unassigned items were falling back to `vendors[0]` — the
+// alphabetically first ACTIVE vendor — so a product with no vendor silently
+// became an order to whoever sorts first. Also a PO nobody chose.
+//
+// So both are refused rather than guessed. An order addressed to a vendor
+// nobody picked is worse than no order: it is a real document, sent to a real
+// company, for real money.
+
+export const VENDOR_PROBLEM = {
+  NONE: 'no_vendor',
+  INACTIVE: 'inactive_vendor',
+  UNKNOWN: 'unknown_vendor',
+}
+
+/** Can this item be ordered, and from whom? */
+export function resolveOrderVendor(vendorId, vendorsById) {
+  if (!vendorId) return { vendorId: null, problem: VENDOR_PROBLEM.NONE, vendorName: null }
+  const v = vendorsById?.[vendorId]
+  if (!v) return { vendorId: null, problem: VENDOR_PROBLEM.UNKNOWN, vendorName: null }
+  if (v.active === false) return { vendorId: null, problem: VENDOR_PROBLEM.INACTIVE, vendorName: v.name }
+  return { vendorId, problem: null, vendorName: v.name }
+}
+
+/**
+ * Split order items into per-vendor groups, holding back anything that cannot
+ * be addressed. `vendors` is the tenant's FULL vendor list including inactive
+ * ones — the guard needs to see a deactivated vendor to name it, and every
+ * picker in the app filters those out.
+ *
+ * Returns { groups: Map<vendorId, item[]>, blocked: [{ item, problem, vendorName }] }
+ */
+export function partitionByVendor(items, vendors) {
+  const byId = {}
+  for (const v of vendors || []) if (v && v.id != null) byId[v.id] = v
+
+  const groups = new Map()
+  const blocked = []
+  for (const item of items || []) {
+    const r = resolveOrderVendor(item?.vendorId, byId)
+    if (r.problem) { blocked.push({ item, problem: r.problem, vendorName: r.vendorName }); continue }
+    if (!groups.has(r.vendorId)) groups.set(r.vendorId, [])
+    groups.get(r.vendorId).push(item)
+  }
+  return { groups, blocked }
+}
+
+/** One line a human can act on, naming the products and what is wrong. */
+export function describeBlockedVendors(blocked) {
+  if (!blocked?.length) return ''
+  const byReason = new Map()
+  for (const b of blocked) {
+    const key = b.problem === VENDOR_PROBLEM.INACTIVE
+      ? `their vendor "${b.vendorName}" is deactivated`
+      : b.problem === VENDOR_PROBLEM.UNKNOWN
+        ? 'their vendor no longer exists'
+        : 'they have no vendor set'
+    if (!byReason.has(key)) byReason.set(key, new Set())
+    byReason.get(key).add(b.item?.name || b.item?.description || `product ${b.item?.productId}`)
+  }
+  return [...byReason.entries()]
+    .map(([reason, names]) => {
+      const list = [...names]
+      const shown = list.slice(0, 4).join(', ')
+      const more = list.length > 4 ? ` and ${list.length - 4} more` : ''
+      return `${list.length} item(s) cannot be ordered because ${reason}: ${shown}${more}`
+    })
+    .join('\n')
+}
