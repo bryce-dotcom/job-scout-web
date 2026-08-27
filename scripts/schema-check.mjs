@@ -132,10 +132,72 @@ const REST_URL = /rest\/v1\/([a-z_][a-z0-9_]*)\?[^`'"]*?select=([a-z_][a-z0-9_,]
 // silently skipping it would make this check quietly weaker than it looks.
 const SPLIT_SELECT = /\bconst select\s*=[\s\S]{0,400}?\+\s*$/m
 
+// Columns used as FILTERS, not just in select lists. This is the gap that let
+// arnie-chat filter invoices on customer_name — a column invoices does not
+// have. PostgREST 400s the whole query, so asking for one customer's invoices
+// returned an error, and the model filled the hole with an invented customer
+// and a real-looking total. A select-only check could never have caught it.
+//
+//   params.append('customer_name', ...)   <- edge functions build URLs by hand
+//   .eq('customer_name', ...)             <- the supabase client
+// In the edge functions the table name appears AFTER the filters:
+//
+//     const params = new URLSearchParams({ ... })
+//     params.append('status', `eq.${x}`)
+//     const got = await fetchRows(sb('jobs'), params, hdr)
+//
+// so each append belongs to the NEXT sb() below it, not the one above.
+// Matching forwards from the table blamed every filter on the previous
+// query and produced five false positives on the first run.
+const APPEND_AT = /params\.append\(\s*['"]([a-z_][a-z0-9_]*)['"]/g
+// Only a table that is handed the SAME `params` object owns those filters.
+// `fetchRows(sb('customers'), new URLSearchParams({...}), ...)` builds its own,
+// so it must not absorb filters meant for the query further down.
+const TABLE_AT = /\bsb\(\s*['"]([a-z_][a-z0-9_]*)['"]\s*\)\s*,\s*params\b/g
+const FILTER_CLIENT = /\.from\(\s*['"]([a-z_][a-z0-9_]*)['"]\s*\)(?:(?!\.from\()[\s\S]){0,300}?\.(?:eq|neq|gt|gte|lt|lte|like|ilike)\(\s*['"]([a-z_][a-z0-9_]*)['"]/g
+
+/** Pair each params.append() with the first sb('table') that follows it. */
+function edgeFilterRefs(src) {
+  const tables = []
+  TABLE_AT.lastIndex = 0
+  for (let m; (m = TABLE_AT.exec(src)) !== null;) tables.push({ at: m.index, table: m[1] })
+  const out = []
+  APPEND_AT.lastIndex = 0
+  for (let m; (m = APPEND_AT.exec(src)) !== null;) {
+    const owner = tables.find(t => t.at > m.index)
+    if (!owner) continue
+    // A second `new URLSearchParams(` between the filter and the table means
+    // another query was built in between, so which one this filter belongs to
+    // cannot be read statically. Skipping beats reporting the wrong table —
+    // a checker that cries wolf gets ignored, and then it protects nothing.
+    if (/new URLSearchParams\(/.test(src.slice(m.index, owner.at))) continue
+    out.push({ index: m.index, table: owner.table, col: m[1] })
+  }
+  return out
+}
+
+/** PostgREST reserved words that appear in the same position but are not columns. */
+const NOT_COLUMNS = new Set(['select', 'order', 'limit', 'offset', 'and', 'or', 'not'])
+
 const refs = []
 const unreadable = []
 for (const file of files) {
   const src = readFileSync(file, 'utf8')
+  for (const f of edgeFilterRefs(src)) {
+    if (NOT_COLUMNS.has(f.col)) continue
+    refs.push({
+      file: relative(ROOT, file), line: src.slice(0, f.index).split('\n').length,
+      table: f.table, select: f.col, kind: 'filter',
+    })
+  }
+  FILTER_CLIENT.lastIndex = 0
+  for (let m; (m = FILTER_CLIENT.exec(src)) !== null;) {
+    if (NOT_COLUMNS.has(m[2])) continue
+    refs.push({
+      file: relative(ROOT, file), line: src.slice(0, m.index).split('\n').length,
+      table: m[1], select: m[2], kind: 'filter',
+    })
+  }
   for (const [re, kind] of [[RE, 'client'], [REST_PARAMS, 'rest'], [REST_URL, 'rest-url']]) {
     re.lastIndex = 0
     let m

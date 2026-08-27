@@ -387,7 +387,24 @@ async function execTool(name: string, input: any, caller: Caller) {
         const status = statusMap[input.status.toLowerCase()] || input.status
         params.append('payment_status', `eq.${status}`)
       }
-      if (input.customer_name) params.append('customer_name', `ilike.*${input.customer_name}*`)
+      // invoices has no customer_name — it carries customer_id. Filtering on
+      // the name 400'd the whole request, so asking for one customer's
+      // invoices returned an error and the model answered from nothing.
+      // Resolve the name to ids first, then filter on the column that exists.
+      if (input.customer_name) {
+        const term = String(input.customer_name).replace(/[*]/g, '')
+        const custParams = new URLSearchParams({
+          company_id: `eq.${companyId}`,
+          select: 'id',
+          or: `(name.ilike.*${term}*,business_name.ilike.*${term}*)`,
+        })
+        const matches = await fetchRows(sb('customers'), custParams, hdr, 200)
+        if ('error' in matches) return { error: `invoices query failed resolving customer: ${matches.error}` }
+        // No customer by that name means no invoices — say so, rather than
+        // dropping the filter and returning the whole company's invoices.
+        if (!matches.rows.length) return { matches: 0, invoices: [], note: `No customer matching "${input.customer_name}".` }
+        params.append('customer_id', `in.(${matches.rows.map(c => c.id).join(',')})`)
+      }
       if (input.start_date) params.append('created_at', `gte.${input.start_date}`)
       if (input.end_date) params.append('created_at', `lte.${input.end_date}`)
       const got = await fetchRows(sb('invoices'), params, hdr)
