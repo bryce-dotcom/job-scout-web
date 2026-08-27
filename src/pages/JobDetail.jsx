@@ -666,12 +666,15 @@ function JobDetailInner() {
       .order('created_at', { ascending: false })
     setVerificationReports(verReports || [])
 
-    // Fetch verification photos for this job
+    // Fetch verification photos for this job. verification_photos has no
+    // job_id — it hangs off the report (verification_id -> verification_reports.id),
+    // and the report is what carries job_id. Filtering on job_id here 400'd the
+    // whole query, and `data || []` turned that into "this job has no photos".
     if (verReports?.length) {
       const { data: vPhotos } = await supabase
         .from('verification_photos')
         .select('id, verification_id, file_path, storage_bucket, photo_type, ai_score')
-        .eq('job_id', id)
+        .in('verification_id', verReports.map(r => r.id))
         .eq('company_id', companyId)
       if (vPhotos?.length) {
         const grouped = {}
@@ -1388,7 +1391,14 @@ function JobDetailInner() {
         const apptUpdate = { updated_at: new Date().toISOString() }
         if (formData.start_date) apptUpdate.start_time = new Date(formData.start_date).toISOString()
         if (formData.end_date) apptUpdate.end_time = new Date(formData.end_date).toISOString()
-        await supabase.from('appointments').update(apptUpdate).eq('job_id', id)
+        // Only the one-off 'Job' appointments follow the job's date. A
+        // recurring job's occurrences are spread across months and belong to
+        // the recurrence engine — moving the job start date must not stack the
+        // whole series onto a single day.
+        await supabase.from('appointments').update(apptUpdate)
+          .eq('company_id', companyId)
+          .eq('job_id', id)
+          .eq('appointment_type', 'Job')
       } catch (apptErr) {
         console.warn('[JobDetail.handleSave] appointment sync failed:', apptErr)
       }
@@ -2622,7 +2632,7 @@ function JobDetailInner() {
     await Promise.all([
       supabase.from('invoices').delete().eq('job_id', id),          // safe — only unpaid reach here
       supabase.from('utility_invoices').delete().eq('job_id', id),
-      supabase.from('appointments').delete().eq('job_id', id),       // calendar cleanup (Christopher)
+      supabase.from('appointments').delete().eq('company_id', companyId).eq('job_id', id), // calendar cleanup (Christopher)
       supabase.from('job_sections').delete().eq('job_id', id),
       supabase.from('verification_reports').delete().eq('job_id', id),
       // Clean up orphan job_lines that would otherwise sit in the DB

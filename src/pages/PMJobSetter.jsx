@@ -1289,7 +1289,9 @@ export default function PMJobSetter() {
       // new schedule onto the job too. Without this the calendar moves
       // but the job's start_date stays stuck on the old date — Doug's
       // "reschedule on calendar doesn't change the job" complaint.
-      if (draggedAppointment.job_id) {
+      // Recurring occurrences are excluded: dragging one visit of a repeating
+      // job reschedules that visit, not the job itself.
+      if (draggedAppointment.job_id && !isRecurringAppointment(draggedAppointment)) {
         await supabase.from('jobs').update({
           start_date: newStart.toISOString(),
           end_date: newEnd.toISOString(),
@@ -1458,7 +1460,9 @@ export default function PMJobSetter() {
     // schedule + assignment changes onto the job too. Without this the
     // calendar updates but the job stays on the old date — Doug's
     // "calendar and job get out of sync" complaint.
-    if (editingAppointment.job_id) {
+    // Same rule as the drag path: editing one occurrence of a recurring job
+    // must not drag the parent job's dates onto that occurrence.
+    if (editingAppointment.job_id && !isRecurringAppointment(editingAppointment)) {
       const jobUpdate = {
         start_date: startTime.toISOString(),
         end_date: endTime.toISOString(),
@@ -1499,6 +1503,9 @@ export default function PMJobSetter() {
             status: 'Scheduled',
             employee_id: parseInt(empId),
             customer_id: editingAppointment.customer_id || null,
+            // Carry the job link onto every generated occurrence, not just the
+            // one being edited — otherwise future dates detach from the job.
+            job_id: editingAppointment.job_id || null,
             appointment_type: 'Recurring Job',
             notes: `Recurring: ${appointmentForm.recurrence}`,
             created_at: new Date().toISOString()
@@ -1798,6 +1805,10 @@ export default function PMJobSetter() {
           status: 'Scheduled',
           employee_id: parseInt(empId),
           customer_id: scheduleJob.customer?.id || null,
+          // The link everything downstream reads: the job's calendar sync, the
+          // drag-to-reschedule sync, and the unschedule/delete cleanup. Before
+          // this column existed they all matched on nothing and did nothing.
+          job_id: scheduleJob.id,
           appointment_type: (scheduleForm.recurrence && scheduleForm.recurrence !== 'None') ? 'Recurring Job' : 'Job',
           notes: `${scheduleForm.recurrence && scheduleForm.recurrence !== 'None' ? `Recurring: ${scheduleForm.recurrence}\n` : ''}${scheduleForm.notes || ''}${scheduleForm.notes ? '\n' : ''}Job: ${scheduleJob.job_title || scheduleJob.job_id || scheduleJob.id}${emp ? ` | Assigned: ${emp.name}` : ''}`,
           created_at: new Date().toISOString()
