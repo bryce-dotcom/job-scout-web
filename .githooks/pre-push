@@ -1,5 +1,6 @@
 #!/bin/sh
-# Only `npm run ship` may push to main.
+# Only `npm run ship` may push to main, and no push may leave behind a query
+# naming a column that does not exist.
 #
 # Two failures this closes, both of which happened:
 #
@@ -15,12 +16,17 @@
 #     landed. git push exiting 0 is not evidence; `ship` re-fetches and checks
 #     merge-base before it claims success.
 #
-# Escape hatch, when you know exactly what you are doing:
-#   JS_SHIP=1 git push origin HEAD:main
+# Escape hatches, when you know exactly what you are doing:
+#   JS_SHIP=1 git push origin HEAD:main      skip the main-branch block
+#   JS_SCHEMA_OK=1 git push ...              skip the column check
+
+# stdin carries the ref list and can only be read once; both checks need it.
+refs=$(cat)
 
 blocked=0
 
 while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "$local_ref" ] && continue
   case "$remote_ref" in
     refs/heads/main|refs/heads/master) ;;
     *) continue ;;
@@ -42,6 +48,96 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   echo "  (branch predates that script?  node /c/JobScout/.jstools/ship.mjs)" >&2
   echo "" >&2
   blocked=1
-done
+done <<REFS
+$refs
+REFS
 
-exit $blocked
+# Already refusing this push — do not spend 25s proving something else too.
+[ "$blocked" -eq 1 ] && exit 1
+
+# ── every column asked for must exist ────────────────────────────────────
+# A column that is not there 400s the ENTIRE query, and the house pattern
+# `const { data } = await ...; data || []` turns that into an empty array. The
+# screen shows zero and nobody is told. That is how every Payroll commission
+# silently became $0, how Job Detail's calendar sync ran for months doing
+# nothing, and how arnie-chat answered "what does this customer owe" from an
+# empty result with an invented total.
+#
+# Scope note: schema-check reads the WORKING TREE, not the commits being
+# pushed. The ref list below only decides whether it is worth running at all.
+# At push time those are normally the same thing, and checking the tree you
+# actually have beats checking nothing.
+#
+# This check FAILS OPEN. It blocks only on a definite FAILED verdict. No .env,
+# offline, a timeout, a crash — all let the push through with a note. Eight
+# worktrees share this repo and the check needs both network and a
+# service-role key; one that failed closed on a blip would freeze four working
+# sessions to catch a bug the next run would find anyway.
+
+[ -n "$JS_SCHEMA_OK" ] && exit 0
+
+# Branches that predate the script push exactly as they did before.
+[ -f scripts/schema-check.mjs ] || exit 0
+command -v node >/dev/null 2>&1 || exit 0
+
+# Needs the service-role key. `npm run ship` pushes from a throwaway worktree
+# cut from origin/main, and .env is gitignored — so this skips there rather
+# than failing every ship. Feature-branch pushes from a real worktree are
+# where it does its work.
+grep -q '^SUPABASE_SERVICE_ROLE_KEY=' .env 2>/dev/null || exit 0
+
+# Only pay the 25s when the push actually carries query code.
+touched=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "$local_sha" ] && continue
+  # A deletion sends an all-zero local sha; there is nothing to inspect.
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac
+
+  case "$remote_sha" in
+    *[!0]*) base="$remote_sha" ;;          # updating an existing remote branch
+    *)      base="" ;;                     # brand new branch on the remote
+  esac
+  # The remote sha can be a commit this worktree has never fetched. Falling
+  # back to origin/main is a wider net, never a narrower one.
+  if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+    base=$(git rev-parse --verify --quiet origin/main 2>/dev/null)
+  fi
+  [ -n "$base" ] || continue
+
+  touched="$touched
+$(git diff --name-only "$base" "$local_sha" 2>/dev/null)"
+done <<REFS
+$refs
+REFS
+
+printf '%s\n' "$touched" | grep -qE '^(src/|supabase/functions/)' || exit 0
+
+printf '\n  schema:check — confirming every column exists (~25s, JS_SCHEMA_OK=1 skips)\n' >&2
+out=$(timeout 120 node scripts/schema-check.mjs 2>&1)
+code=$?
+
+case "$out" in
+  *"schema:check: FAILED"*)
+    printf '%s\n' "$out" >&2
+    cat >&2 <<'EOF'
+  Blocked: a query in this worktree names a column the database does not have.
+
+  Fix the query. If it is pre-existing and tracked elsewhere, record it in
+  scripts/schema-baseline.json with a reason and it stops counting as new.
+
+  Override:  JS_SCHEMA_OK=1 git push ...
+
+EOF
+    exit 1
+    ;;
+esac
+
+if [ "$code" -ne 0 ]; then
+  # Exit 2 is "no credentials"; anything else here is offline, a timeout, or a
+  # crash. None of those are evidence of a bad column, so none of them block.
+  printf '  note: schema:check could not complete (exit %s) — pushing anyway.\n\n' "$code" >&2
+else
+  printf '  schema:check ok\n\n' >&2
+fi
+
+exit 0
