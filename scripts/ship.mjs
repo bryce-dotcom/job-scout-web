@@ -122,3 +122,21 @@ if (!confirmed) die(`push reported success but ${landed.slice(0, 8)} is NOT an a
 say(`\nCONFIRMED on origin/main: ${landed.slice(0, 8)}`)
 say(`verify the deploy with a string unique to THIS commit, not one that already existed:`)
 say(`  node scripts/deployed.mjs "<some new string from your diff>"`)
+
+// ── then get off this branch ─────────────────────────────────────────────
+// Ship CHERRY-PICKS, so this branch was never merged and never will be. It is
+// now permanently "ahead" of a main that already has the change, and it can
+// only drift further. Every ship conflict, every `supabase db push` demanding
+// --include-all, every vercel.json collision traces back to a branch that
+// outlived the task it was cut for.
+//
+// The cure is one command, and the moment to run it is now — not when the next
+// task starts, by which point the drift is already baked in.
+const behindNow = (() => {
+  const n = parseInt(git(['rev-list', '--count', 'HEAD..origin/main']), 10)
+  return Number.isFinite(n) ? n : 0
+})()
+say(`\nthis branch has served its purpose — it can only drift from here${behindNow ? ` (already ${behindNow} behind)` : ''}.`)
+say(`when the deploy checks out, re-cut before starting anything else:`)
+say(`  npm run fresh -- <next-short-name>`)
+say(`\nand to see where every other worktree stands:  npm run fleet`)
