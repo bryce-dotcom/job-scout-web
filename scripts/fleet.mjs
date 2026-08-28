@@ -41,6 +41,21 @@
 // reason someone deletes real work.
 
 import { execFileSync } from 'node:child_process'
+import { readFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
+
+// Who is standing in each directory. Written by `npm run claim`; a claim goes
+// stale after 90 minutes so an agent that dies cannot wedge a worktree.
+const STALE_MINUTES = 90
+const readClaim = (dir) => {
+  const f = join(dir, '.worktree-claim.json')
+  if (!existsSync(f)) return null
+  try {
+    const c = JSON.parse(readFileSync(f, 'utf8'))
+    const ageMin = (Date.now() - new Date(c.at).getTime()) / 60000
+    return { who: c.who, ageMin, stale: ageMin > STALE_MINUTES }
+  } catch { return null }
+}
 
 const ROOT = (() => {
   try { return execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim() }
@@ -97,7 +112,7 @@ const rows = worktrees.map((w) => {
       .map((l) => { const [full, sha, subj] = l.split('\x1f'); return { full, sha, subj: subj || '' } })
       .filter((c) => !upstreamById.has(c.full) && !mainSubjects.has(c.subj.trim().toLowerCase()))
   }
-  return { name, branch: w.branch || '(detached)', behind, dirty, newFiles, unmatched, path: w.path }
+  return { name, branch: w.branch || '(detached)', behind, dirty, newFiles, unmatched, path: w.path, claim: readClaim(w.path) }
 })
 
 const pad = (s, n) => String(s).length > n ? String(s).slice(0, n - 1) + '…' : String(s).padEnd(n)
@@ -109,11 +124,12 @@ const rank = (r) => (r.newFiles.length ? 3 : 0) + (r.dirty ? 2 : 0) + (r.unmatch
 const sorted = [...rows].sort((a, b) => rank(b) - rank(a) || (b.behind ?? 0) - (a.behind ?? 0))
 
 console.log(`origin/main @ ${mainShort}\n`)
-console.log(`  ${pad('WORKTREE', W)}  ${pad('BRANCH', B)}  ${'BEHIND'.padStart(6)}  ${'DIRTY'.padStart(5)}  NEW FILES`)
-console.log(`  ${'-'.repeat(W)}  ${'-'.repeat(B)}  ${'-'.repeat(6)}  ${'-'.repeat(5)}  ${'-'.repeat(9)}`)
+console.log(`  ${pad('WORKTREE', W)}  ${pad('BRANCH', B)}  ${'BEHIND'.padStart(6)}  ${'DIRTY'.padStart(5)}  ${'NEW'.padStart(4)}  HELD BY`)
+console.log(`  ${'-'.repeat(W)}  ${'-'.repeat(B)}  ${'-'.repeat(6)}  ${'-'.repeat(5)}  ${'-'.repeat(4)}  ${'-'.repeat(20)}`)
 for (const r of sorted) {
   const here = r.path === HERE ? '  <- you' : ''
-  console.log(`  ${pad(r.name, W)}  ${pad(r.branch, B)}  ${String(r.behind ?? '?').padStart(6)}  ${String(r.dirty).padStart(5)}  ${String(r.newFiles.length || '-').padStart(9)}${here}`)
+  const held = r.claim ? `${r.claim.who}${r.claim.stale ? ' (stale)' : ''}` : (r.dirty ? 'nobody - but DIRTY' : '-')
+  console.log(`  ${pad(r.name, W)}  ${pad(r.branch, B)}  ${String(r.behind ?? '?').padStart(6)}  ${String(r.dirty).padStart(5)}  ${String(r.newFiles.length || '-').padStart(4)}  ${pad(held, 20)}${here}`)
 }
 
 const stranded = sorted.filter((r) => r.newFiles.length || r.dirty)

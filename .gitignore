@@ -32,3 +32,6 @@ dist-ssr
 *.sw?
 
 .vercel
+
+# Per-worktree ownership marker (npm run claim) — local only
+.worktree-claim.json
