@@ -47,6 +47,7 @@ const FEATURE_AGENTS: Record<string, string> = {
   'zach-yard-ai': 'zach',
   'fleet-valuation': 'freddy',
   'fleet-plate-scan': 'freddy',
+  'fleet-pm-suggest': 'freddy',
 }
 
 export function agentFor(feature: string): string | null {

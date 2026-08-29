@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import LifecycleBar from '../components/LifecycleBar'
 import { useFleetLifecycle } from '../hooks/useFleetLifecycle'
+import { useFleetAttention } from '../hooks/useFleetAttention'
+import FleetAttentionBar from '../components/FleetAttentionBar'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
@@ -48,6 +50,10 @@ export default function Fleet() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
+  // Which attention pill is held down, if any. Kept separate from the type and
+  // status filters so tapping "3 overdue" narrows what you were already
+  // looking at rather than resetting it.
+  const [filterAttention, setFilterAttention] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [formData, setFormData] = useState({
     asset_id: '',
@@ -74,6 +80,8 @@ export default function Fleet() {
     fetchFleet()
   }, [companyId, navigate, fetchFleet])
 
+  const attention = useFleetAttention()
+
   // Filter fleet
   const filteredFleet = fleet.filter(asset => {
     // Search filter
@@ -93,6 +101,14 @@ export default function Fleet() {
     // Status filter
     if (filterStatus !== 'all' && asset.status !== filterStatus) {
       return false
+    }
+
+    // Attention filter — the pills at the top of the page.
+    if (filterAttention) {
+      const a = attention.byAsset.get(asset.id)
+      if (!a || !a[filterAttention]) {
+        return false
+      }
     }
 
     return true
@@ -393,6 +409,13 @@ export default function Fleet() {
           <option value="Out of Service">Out of Service</option>
         </select>
       </div>
+
+      <FleetAttentionBar
+        attention={attention}
+        active={filterAttention}
+        onPick={setFilterAttention}
+        isMobile={isMobile}
+      />
 
       {/* Fleet Grid */}
       <div style={{

@@ -5,6 +5,7 @@ import LifecycleInputs from '../components/LifecycleInputs'
 import RepairsPanel from '../components/RepairsPanel'
 import RecurringCostsPanel from '../components/RecurringCostsPanel'
 import AssignedOperator from '../components/AssignedOperator'
+import MaintenancePanel from '../components/MaintenancePanel'
 import LifecycleBar from '../components/LifecycleBar'
 import { useFleetLifecycle } from '../hooks/useFleetLifecycle'
 import { useTheme } from '../components/Layout'
@@ -791,6 +792,19 @@ export default function FleetDetail() {
       {/* Who runs it comes before what it costs: an assignment that would not
           survive a roadside check matters more than a cost per mile. */}
       {asset && <AssignedOperator asset={asset} theme={theme} onChanged={fetchFleet} />}
+
+      {/* What is due and what somebody reported, directly under who runs it.
+          This sits above the cost panels on purpose: an operator opening their
+          own truck came to say something is wrong, and asking them to scroll
+          past a depreciation curve to do it is how the report never happens. */}
+      {asset && (
+        <MaintenancePanel
+          asset={asset}
+          theme={theme}
+          currentMeter={(asset.meter_basis === 'hours' ? lc?.meter?.engine_hours : lc?.meter?.odometer_miles) ?? null}
+          onChanged={fetchFleet}
+        />
+      )}
 
       {/* Ownership facts, and what they say about keeping this machine. */}
       {asset && (
