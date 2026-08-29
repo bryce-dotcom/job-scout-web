@@ -6,7 +6,7 @@ import { sendMessageStream, createSession, saveMessage, updateSessionTitle, load
 import { getUserRole, isClockedIn } from './arnieTools'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X } from 'lucide-react'
+import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X, Wrench } from 'lucide-react'
 import { readAttachment, attachmentNote, describeAttachments, ACCEPT_ATTR, MAX_ATTACHMENTS } from '../../../lib/chatAttachments'
 import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, ARNIE_VOICES, unlockAudio } from './arnieVoice'
 import { useIsMobile } from '../../../hooks/useIsMobile'
@@ -38,6 +38,7 @@ const dark = {
 // a ladder is asking that, and the four things they DO ask are always the same.
 const FIELD_ACTIONS = [
   { label: "What's next?", icon: Briefcase, prompt: 'What should I do next on this job?' },
+  { label: 'Fix something', icon: Wrench, prompt: 'Something here is not working right and I need help working out why. Ask me what it is doing.' },
   { label: 'Parts', icon: Package, prompt: 'What am I installing on this job? List the line items and quantities.' },
   { label: 'Customer', icon: Users, prompt: 'Who is the customer on this job and what is the site address and phone number?' },
   { label: 'My sections', icon: Check, prompt: 'Which sections are assigned to me, and which are still open?' },
@@ -48,6 +49,7 @@ const QUICK_ACTIONS = {
     { label: 'My Schedule', icon: Calendar, prompt: 'What jobs do I have scheduled today?' },
     { label: 'My Jobs', icon: Briefcase, prompt: 'Show me a summary of my assigned jobs' },
     { label: 'Products', icon: Package, prompt: 'What products and services do we offer?' },
+    { label: 'Fix something', icon: Wrench, prompt: 'I need help troubleshooting something. Ask me what it is doing.' },
     { label: 'Team', icon: Users, prompt: 'Who is on the team?' },
   ],
   admin: [
