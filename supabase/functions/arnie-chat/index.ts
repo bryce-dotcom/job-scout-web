@@ -27,15 +27,16 @@ const corsHeaders = {
 const TOOLS = [
   {
     name: 'query_invoices',
-    description: 'Query invoices with filtering and aggregation. Use when answering questions about specific invoices, overdue amounts, customer billing, or revenue breakdowns. `count` is the exact number of matching invoices; `sample` is a subset for detail. If a WARNING field comes back, the totals are partial — say so.',
+    description: 'Query invoices. `count` is the exact number matching; `invoice_numbers` lists real invoice ids so anything you claim can be checked. ALWAYS read the `scope` field back to the user — it says what was filtered out. An invoice record holds customer_id, NOT a customer name: if you need a name, look it up with query_customers. NEVER name a customer that the tool did not return.',
     input_schema: {
       type: 'object',
       properties: {
-        status: { type: 'string', enum: ['paid', 'sent', 'overdue', 'draft', 'all'], description: 'Filter by invoice status' },
-        customer_name: { type: 'string', description: 'Filter by customer name (partial match)' },
-        start_date: { type: 'string', description: 'ISO date — only invoices on/after this date' },
-        end_date: { type: 'string', description: 'ISO date — only invoices on/before this date' },
-        group_by: { type: 'string', enum: ['customer', 'month', 'status', 'none'], description: 'Aggregate results by this field' },
+        status: { type: 'string', enum: ['paid', 'sent', 'overdue', 'draft', 'all'], description: 'overdue = unpaid AND past its due date' },
+        customer_name: { type: 'string', description: 'Resolved through the customers table. If no customer matches, the result says so — report that, do not substitute a name.' },
+        exclude_zero: { type: 'boolean', description: 'Default true. Most zero-amount invoices are migration artefacts; set false to include them.' },
+        start_date: { type: 'string' },
+        end_date: { type: 'string' },
+        group_by: { type: 'string', enum: ['customer', 'month', 'status', 'none'] },
       },
     },
   },
@@ -377,39 +378,62 @@ async function execTool(name: string, input: any, caller: Caller) {
   try {
     if (name === 'query_invoices') {
       const params = new URLSearchParams({ company_id: `eq.${companyId}` })
+      const notes: string[] = []
+
       if (input.status && input.status !== 'all') {
-        // Map common synonyms to actual values: Pending, Paid, Open, Partially Paid
         const statusMap: Record<string, string> = {
-          paid: 'Paid', pending: 'Pending', open: 'Open',
-          overdue: 'Pending', // Treated as pending past-due in app
-          draft: 'Open',
+          paid: 'Paid', pending: 'Pending', open: 'Open', draft: 'Open', overdue: 'Pending',
         }
         const status = statusMap[input.status.toLowerCase()] || input.status
         params.append('payment_status', `eq.${status}`)
+        // "Overdue" used to mean nothing more than payment_status = Pending,
+        // which on this tenant is 292 invoices of which 233 are zero-dollar
+        // rows carried over from the old system. Reporting that as "294
+        // overdue" is a number with no meaning. Overdue now also means past
+        // its due date.
+        if (input.status.toLowerCase() === 'overdue') {
+          params.append('due_date', `lt.${new Date().toISOString().slice(0, 10)}`)
+          notes.push('Overdue = unpaid AND past due_date.')
+        }
       }
-      // invoices has no customer_name — it carries customer_id. Filtering on
-      // the name 400'd the whole request, so asking for one customer's
-      // invoices returned an error and the model answered from nothing.
-      // Resolve the name to ids first, then filter on the column that exists.
+
+      // invoices has NO customer_name column — only customer_id. Filtering on
+      // it 400d the whole query, which is why asking for one customer's
+      // invoices produced an error and then an invented answer. Resolve names
+      // through the customers table instead.
       if (input.customer_name) {
-        const term = String(input.customer_name).replace(/[*]/g, '')
-        const custParams = new URLSearchParams({
-          company_id: `eq.${companyId}`,
-          select: 'id',
-          or: `(name.ilike.*${term}*,business_name.ilike.*${term}*)`,
-        })
-        const matches = await fetchRows(sb('customers'), custParams, hdr, 200)
-        if ('error' in matches) return { error: `invoices query failed resolving customer: ${matches.error}` }
-        // No customer by that name means no invoices — say so, rather than
-        // dropping the filter and returning the whole company's invoices.
-        if (!matches.rows.length) return { matches: 0, invoices: [], note: `No customer matching "${input.customer_name}".` }
-        params.append('customer_id', `in.(${matches.rows.map(c => c.id).join(',')})`)
+        const term = String(input.customer_name).replace(/[*,()]/g, '')
+        const matches = await fetchRows(
+          sb('customers'),
+          new URLSearchParams({
+            select: 'id',
+            company_id: `eq.${companyId}`,
+            or: `(name.ilike.*${term}*,business_name.ilike.*${term}*)`,
+          }), hdr, 200)
+        if ('error' in matches) return { error: `customer lookup failed: ${matches.error}` }
+        if (!matches.rows.length) {
+          return { count: 0, customers_matched: 0, note: `No customer matches "${input.customer_name}", so there are no invoices to show. Say that plainly — do not name a customer that was not found.` }
+        }
+        params.append('customer_id', `in.(${matches.rows.map((c: any) => c.id).join(',')})`)
+        notes.push(`Matched ${matches.rows.length} customer(s) named like "${input.customer_name}".`)
+      }
+
+      if (input.exclude_zero !== false) {
+        params.append('amount', 'gt.0')
+        notes.push('Zero-amount invoices excluded (most are migration artefacts); pass exclude_zero=false to include them.')
       }
       if (input.start_date) params.append('created_at', `gte.${input.start_date}`)
       if (input.end_date) params.append('created_at', `lte.${input.end_date}`)
+
       const got = await fetchRows(sb('invoices'), params, hdr)
       if ('error' in got) return { error: `invoices query failed: ${got.error}` }
-      return aggregate(got, input.group_by, ['amount'])
+
+      const agg: any = aggregate(got, input.group_by, ['amount'])
+      // Every claim about a specific invoice must be checkable by the user,
+      // so hand back the invoice numbers rather than only totals.
+      agg.invoice_numbers = got.rows.slice(0, 40).map((r: any) => r.invoice_id).filter(Boolean)
+      if (notes.length) agg.scope = notes.join(' ')
+      return agg
     }
 
     if (name === 'query_jobs') {
@@ -628,16 +652,33 @@ async function execTool(name: string, input: any, caller: Caller) {
           if (dupes.length) {
             agg.INCONSISTENT_VALUES = dupes.map((v) => v.map((x) => JSON.stringify(x)))
             agg.INCONSISTENT_NOTE =
-              'These spell the same manufacturer more than one way (usually stray whitespace), so they filter and report as separate manufacturers. Show the user the quoted forms so the difference is visible, and offer to normalise them.'
+              'These spell the same manufacturer more than one way (usually stray whitespace), so they filter and report as separate manufacturers. Show the user the quoted forms so the difference is visible, and then OFFER TO FIX IT IN THE SAME MESSAGE using propose_bulk_change — name the number of products and ask if they want it done. Do not simply report the problem and stop: fixing it by hand is exactly what this tool exists to save them.'
           }
         }
         return agg
+      }
+
+      // Say what was left out. Reporting "there are no products with
+      // manufacturer X" when two exist but are inactive is how a false
+      // premise became a confidently-filed bug report.
+      let inactiveNote: Record<string, unknown> = {}
+      if (input.active_only !== false) {
+        const inactiveParams = new URLSearchParams(params)
+        inactiveParams.set('active', 'eq.false')
+        const inact = await fetchRows(sb('products_services'), inactiveParams, hdr, 1)
+        const n = 'error' in inact ? 0 : inact.total
+        inactiveNote = n > 0
+          ? { inactive_matches: n, scope: `Active products only. ${n} INACTIVE product(s) also match — say so rather than "there are none".` }
+          : { scope: 'Active products only; no inactive ones match either.' }
+      } else {
+        inactiveNote = { scope: 'Active and inactive products.' }
       }
 
       return {
         matches: got.total,
         showing: got.rows.length,
         products: got.rows,
+        ...inactiveNote,
         ...(got.truncated
           ? { WARNING: `Listing ${got.rows.length} of ${got.total} matches. Do NOT draw a conclusion about all of them from this page — re-run with group_by to cover the whole set.` }
           : {}),
@@ -705,7 +746,10 @@ function aggregate(
       const d = row.created_at || row.date || row.start_date || row.start_time || row.clock_in
       if (d) key = String(d).slice(0, 7) // YYYY-MM
     } else if (groupBy === 'customer') {
-      key = row.customer_name || (row.customer_id ? `Customer #${row.customer_id}` : 'Unknown')
+      // invoices carry customer_id only. Never guess a name from elsewhere in
+      // the conversation — an invented customer with a real-looking total is
+      // exactly what happened here.
+      key = row.customer_name || (row.customer_id ? `customer_id ${row.customer_id} (name not on this record)` : 'Unknown')
     } else if (groupBy === 'status') {
       key = row.status || row.payment_status || 'unknown'
     } else if (groupBy === 'employee' || groupBy === 'salesperson') {
