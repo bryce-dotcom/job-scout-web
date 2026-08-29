@@ -335,7 +335,15 @@ serve(async (req) => {
     if (paymentType === 'invoice_payment' && documentType === 'invoice') {
       const { data: invoice } = await supabase
         .from('invoices')
-        .select('id, amount, customer_id, job_id')
+        // discount_applied is NOT optional here. The balance maths below reads
+        // it, and a column that is not selected comes back undefined, which
+        // `?? 0` then turns into "no discount at all" — so a fully paid invoice
+        // is compared against its GROSS and recorded as Partially Paid. Tracy
+        // reported it on INV-MT4SPB8G: $595 gross, $54.59 discount, $550.68
+        // collected, stuck on Partially Paid because the webhook thought $595
+        // was owed. Two Energy Scout invoices were stuck the same way, where
+        // the "discount" is the utility incentive and the gap is thousands.
+        .select('id, amount, discount_applied, customer_id, job_id')
         .eq('id', documentId)
         .single();
 
@@ -388,7 +396,13 @@ serve(async (req) => {
         // gross would treat full payments as partial — invoice $217k with
         // $197k of credits has a real customer balance of $19k, not $217k.
         const gross = parseFloat(String(invoice.amount)) || 0;
-        const discount = parseFloat(String((invoice as { discount_applied?: number | string }).discount_applied ?? 0)) || 0;
+        // Read as a plain field. This used to be cast —
+        // `(invoice as { discount_applied?: number | string })` — which told
+        // the compiler the column might be absent and so made it legal to read
+        // something the query above never asked for. The cast is what hid the
+        // bug: the maths, the comment and the shared helper were all correct,
+        // and the value was simply never fetched.
+        const discount = parseFloat(String(invoice.discount_applied ?? 0)) || 0;
         // Legacy-shape invoices (discount stored > amount) already have
         // amount = net customer portion; don't subtract again. Shared predicate
         // — this had its own `>=` copy, which computed a fully-covered
