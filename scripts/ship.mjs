@@ -21,7 +21,7 @@
 //   npm run ship -- --count 3    land the last 3 commits, oldest first
 
 import { execFileSync } from 'node:child_process'
-import { rmSync, existsSync } from 'node:fs'
+import { rmSync, existsSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -80,6 +80,56 @@ shas = shas.filter(s => !already.includes(s))
 say('\nwill land:')
 for (const s of shas) say(`  ${git(['log', '-1', '--format=%h %s', s])}`)
 if (DRY) { say('\n--dry: stopping here'); process.exit(0) }
+
+// ── every column these commits ask for must exist ────────────────────────
+// The pre-push hook runs this too, but it cannot run it HERE: ship pushes
+// from a throwaway worktree cut from origin/main, and .env is gitignored, so
+// the staging tree has no service-role key and the hook skips. Ship is the
+// only sanctioned path to main, which made it the one path the check missed.
+//
+// A column that is not there 400s the ENTIRE query, and `const { data } =
+// await ...; data || []` turns that into an empty array — the screen shows
+// zero and nobody is told. That is how every Payroll commission silently
+// became $0 and how arnie-chat answered from an empty result.
+//
+// FAILS OPEN, exactly as the hook does: only a definite FAILED verdict
+// stops a ship. Offline, no credentials, a timeout or a crash all let it
+// through with a note. A checker that fails closed on a network blip would
+// block the one route to production, which is far worse than a missed column.
+schemaCheck()
+function schemaCheck() {
+  if (process.env.JS_SCHEMA_OK) return
+  if (!existsSync(join(ROOT, 'scripts', 'schema-check.mjs'))) return
+  // Needs the service-role key; .env is gitignored and not everywhere.
+  let env = ''
+  try { env = readFileSync(join(ROOT, '.env'), 'utf8') } catch { return }
+  if (!/^SUPABASE_SERVICE_ROLE_KEY=/m.test(env)) return
+
+  // ~25s, so only when the commits actually carry query code.
+  const files = shas.flatMap(s =>
+    tryGit(['show', '--name-only', '--format=', s]).out.split('\n')).filter(Boolean)
+  if (!files.some(f => /^(src\/|supabase\/functions\/)/.test(f))) return
+
+  // Reads the WORKING TREE, not these commits — but ship already refused to
+  // run with a dirty tree, so the tree is a committed state, and it is the
+  // state that was tested.
+  say('\nschema:check — confirming every column exists (~25s, JS_SCHEMA_OK=1 skips)')
+  let out = '', code = 0
+  try {
+    out = execFileSync(process.execPath, ['scripts/schema-check.mjs'],
+      { cwd: ROOT, encoding: 'utf8', stdio: 'pipe', timeout: 120000 })
+  } catch (e) {
+    out = (e.stdout || '') + (e.stderr || '')
+    code = e.status ?? 1
+  }
+  if (out.includes('schema:check: FAILED')) {
+    console.error(out)
+    die('a query names a column the database does not have — see above.\n' +
+        'Fix it, or record it in scripts/schema-baseline.json with a reason.\n' +
+        'Override: JS_SCHEMA_OK=1 npm run ship')
+  }
+  say(code === 0 ? '  schema:check ok' : `  note: schema:check could not complete (exit ${code}) — shipping anyway.`)
+}
 
 // ── land via a throwaway worktree ────────────────────────────────────────
 // Cut from origin/main so it is unaffected by whichever branch this checkout
