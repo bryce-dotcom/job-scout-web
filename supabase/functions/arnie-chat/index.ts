@@ -107,7 +107,7 @@ const TOOLS = [
   },
   {
     name: 'query_inventory',
-    description: 'Query inventory items, low stock, or items by location.',
+    description: 'Query inventory items, low stock, or items by location. `search` ignores spaces, case and punctuation, so "highbay" finds "LED High Bay 150W" — pass the term the user actually said rather than guessing at spellings.',
     input_schema: {
       type: 'object',
       properties: {
@@ -365,6 +365,14 @@ function cardsFor(body: Record<string, unknown>): string[] {
 // ============================================================
 // TOOL EXECUTORS — server-side queries, always company_id scoped
 // ============================================================
+// Trade language does not match database spelling. A tech says "highbay";
+// the row reads "LED High Bay 150W". One ilike on the raw term misses it,
+// and the honest "nothing matched that" we print next reads to the user as
+// "you have none" — which is worse than a wrong number, because it sounds
+// definitive. Same for wallpack/wall pack, T8/T-8, 2x4/2X4.
+// Compare on a squashed form instead: lowercase, letters and digits only.
+const squash = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
 async function execTool(name: string, input: any, caller: Caller) {
   const { companyId, role, email, employeeId } = caller
   const sb = (path: string) => `${SUPABASE_URL}/rest/v1/${path}`
@@ -549,9 +557,28 @@ async function execTool(name: string, input: any, caller: Caller) {
     if (name === 'query_inventory') {
       const params = new URLSearchParams({ company_id: `eq.${companyId}` })
       if (input.location) params.append('location', `eq.${input.location}`)
-      if (input.search) params.append('name', `ilike.*${input.search}*`)
-      const got = await fetchRows(sb('inventory'), params, hdr)
+      const term = input.search ? String(input.search).replace(/[*,()]/g, '') : ''
+      // Fast path first: the exact substring the user typed. Only when that
+      // finds nothing do we pay for a wider read and match on the squashed
+      // form, so the common case costs exactly what it did before.
+      if (term) params.append('name', `ilike.*${term}*`)
+      let got = await fetchRows(sb('inventory'), params, hdr)
       if ('error' in got) return { error: `inventory query failed: ${got.error}` }
+
+      let matchedLoosely = false
+      if (term && got.rows.length === 0) {
+        params.delete('name')
+        const wide = await fetchRows(sb('inventory'), params, hdr)
+        if ('error' in wide) return { error: `inventory query failed: ${wide.error}` }
+        const want = squash(term)
+        const hits = wide.rows.filter((i: any) => squash(i.name).includes(want))
+        if (hits.length) {
+          got = { rows: hits, total: hits.length, truncated: wide.truncated }
+          matchedLoosely = true
+        }
+        if (exactOr) params.set('or', exactOr)
+      }
+
       const items = input.low_stock_only
         ? got.rows.filter((i: any) => (i.quantity || 0) <= (i.min_quantity || i.ordering_trigger || 5))
         : got.rows
@@ -560,6 +587,9 @@ async function execTool(name: string, input: any, caller: Caller) {
       return {
         count: items.length,
         items: items.slice(0, 50),
+        ...(matchedLoosely
+          ? { scope: `No item is spelt "${term}" exactly; these matched ignoring spaces, case and punctuation. Use the name as it is stored when you quote it back.` }
+          : {}),
         ...(items.length > 50 ? { note: `Showing the first 50 of ${items.length}.` } : {}),
         ...(got.truncated ? { WARNING: `Read ${got.rows.length} of ${got.total} inventory rows — this count is a floor, not a total.` } : {}),
       }
@@ -659,16 +689,36 @@ async function execTool(name: string, input: any, caller: Caller) {
       if (input.manufacturer) params.append('manufacturer', `eq.${input.manufacturer}`)
       if (input.exclude_manufacturer) params.append('manufacturer', `neq.${input.exclude_manufacturer}`)
       if (input.missing_manufacturer) params.append('manufacturer', 'is.null')
-      if (input.search) {
-        const term = String(input.search).replace(/[*,()]/g, '')
+      const term = input.search ? String(input.search).replace(/[*,()]/g, '') : ''
+      if (term) {
         params.append('or', `(name.ilike.*${term}*,model_number.ilike.*${term}*,manufacturer.ilike.*${term}*)`)
       }
       // Grouping has to read the WHOLE matching set. Answering "is every
       // product made by MES?" off the first page is how a catalogue audit
       // becomes a confident wrong answer.
       const cap = grouping ? MAX_ROWS : Math.min(input.limit || 25, 200)
-      const got = await fetchRows(sb('products_services'), params, hdr, cap)
+      let got = await fetchRows(sb('products_services'), params, hdr, cap)
       if ('error' in got) return { error: `products query failed: ${got.error}` }
+
+      // Same fallback as inventory, and for the same reason — the catalogue is
+      // where "highbay" vs "High Bay" bites hardest. Only on a miss, and only
+      // for an ungrouped search, so a grouped audit still reads the true set.
+      let matchedLoosely = false
+      if (term && !grouping && got.rows.length === 0) {
+        // The inactive probe further down reuses these params, so put the
+        // exact filter back once the wide read is done.
+        const exactOr = params.get('or') || ''
+        params.delete('or')
+        const wide = await fetchRows(sb('products_services'), params, hdr, 2000)
+        if ('error' in wide) return { error: `products query failed: ${wide.error}` }
+        const want = squash(term)
+        const hits = wide.rows.filter((p: any) =>
+          squash(p.name).includes(want) || squash(p.model_number).includes(want) || squash(p.manufacturer).includes(want))
+        if (hits.length) {
+          got = { rows: hits.slice(0, cap), total: hits.length, truncated: wide.truncated }
+          matchedLoosely = true
+        }
+      }
 
       if (grouping) {
         const agg: any = aggregate(got, input.group_by, ['unit_price', 'cost'])
@@ -705,6 +755,12 @@ async function execTool(name: string, input: any, caller: Caller) {
           : { scope: 'Active products only; no inactive ones match either.' }
       } else {
         inactiveNote = { scope: 'Active and inactive products.' }
+      }
+
+      if (matchedLoosely) {
+        inactiveNote.scope =
+          `No product is spelt "${term}" exactly; these matched ignoring spaces, case and punctuation. Quote the name as it is stored. ` +
+          String(inactiveNote.scope || '')
       }
 
       return {
