@@ -20,6 +20,8 @@ import { jobsFields, jobLinesFields, jobSectionsFields } from '../lib/importExpo
 import { draftToJobLine, draftHasContent } from '../lib/jobLineDraft'
 import { splitDateTimeInput, joinDateTimeInput } from '../lib/dateTimeParts'
 import { jobStatusColors as statusColors, invoiceStatusColors } from '../lib/statusColors'
+import { fetchUtilityInvoicedJobIds, isUtilityInvoiced } from '../lib/utilityInvoiced'
+import UtilityInvoicedBadge from '../components/UtilityInvoicedBadge'
 import { matchesJobSearch, jobSearchRank } from '../lib/jobSearch'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
@@ -309,6 +311,10 @@ export default function Jobs() {
   // Recently Archived — fetched separately because the store filters them out
   const [archivedJobs, setArchivedJobs] = useState([])
   const [archivedJobsLoading, setArchivedJobsLoading] = useState(false)
+  // Jobs with a utility rebate invoice out. Kept as its own lookup rather than
+  // a column on the job, because it is independent of the job's stage — see
+  // lib/utilityInvoiced.js.
+  const [utilityInvoicedIds, setUtilityInvoicedIds] = useState(() => new Set())
 
   // Build dynamic board columns from DB-driven job statuses
   const boardColumns = (() => {
@@ -399,6 +405,17 @@ export default function Jobs() {
     if (fetchProducts) fetchProducts()
     fetchArchivedJobs()
   }, [companyId, navigate, fetchJobs, fetchCustomers, fetchProducts, fetchArchivedJobs])
+
+  // Which jobs have a utility rebate invoice out. Its own lookup, and its own
+  // effect, so a slow or failed read here can never delay or break the job list.
+  useEffect(() => {
+    if (!companyId) return
+    let live = true
+    fetchUtilityInvoicedJobIds(supabase, companyId).then((ids) => {
+      if (live) setUtilityInvoicedIds(ids)
+    })
+    return () => { live = false }
+  }, [companyId])
 
   // Auto-open create modal when navigating from CustomerDetail with customer pre-filled
   useEffect(() => {
@@ -1352,6 +1369,7 @@ export default function Jobs() {
                             {job.invoice_status}
                           </span>
                         )}
+                        {isUtilityInvoiced(utilityInvoicedIds, job) && <UtilityInvoicedBadge />}
                         {job.job_total > 0 && (
                           <span style={{ fontSize: '13px', fontWeight: '600', color: theme.accent }}>
                             {formatCurrency(job.job_total)}

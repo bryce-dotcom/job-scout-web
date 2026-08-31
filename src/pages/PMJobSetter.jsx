@@ -18,6 +18,9 @@ import RecurrencePicker from '../components/RecurrencePicker'
 import JobsMap from '../components/JobsMap'
 import { companyNotify } from '../lib/companyNotify'
 import { matchAllTokens, buildBlob } from '../lib/searchUtils'
+import { resolveJobStatuses } from '../lib/jobStatusVocabulary'
+import { fetchUtilityInvoicedJobIds, isUtilityInvoiced } from '../lib/utilityInvoiced'
+import UtilityInvoicedBadge from '../components/UtilityInvoicedBadge'
 
 // Default calendar colors for visual distinction
 const calendarColors = [
@@ -49,8 +52,15 @@ const FALLBACK_JOB_STATUSES = [
   { id: 'Scheduled', name: 'Scheduled', color: '#3b82f6' },
   { id: 'In Progress', name: 'In Progress', color: '#f59e0b' },
   { id: 'On Hold', name: 'On Hold', color: '#6b7280' },
-  { id: 'Complete', name: 'Complete', color: '#22c55e' }
+  { id: 'Complete', name: 'Complete', color: '#22c55e' },
+  // The app SETS this itself: InvoiceDetail moves a job to 'Invoiced' when its
+  // invoice is sent. It was in no tenant's configured list and not here either,
+  // so every job vanished from this board the moment it was invoiced — 126 of
+  // them for HHH. A status the code can write must exist in the vocabulary.
+  { id: 'Invoiced', name: 'Invoiced', color: '#5a6349' },
 ]
+
+
 
 // Status icons
 const statusIcons = {
@@ -211,12 +221,24 @@ export default function PMJobSetter() {
 
   // Use normalized versions — fall back to defaults if settings not configured
   const normalizedJobStatuses = normalizeStatuses(storeJobStatuses, defaultStatusColors)
-  const jobStatuses = normalizedJobStatuses.length > 0 ? normalizedJobStatuses : FALLBACK_JOB_STATUSES
+  const configuredJobStatuses = normalizedJobStatuses.length > 0 ? normalizedJobStatuses : FALLBACK_JOB_STATUSES
   const sectionStatuses = normalizeStatuses(storeJobSectionStatuses, defaultStatusColors)
   const jobCalendarsFromStore = storeJobCalendars || []
 
   // Data
   const [jobs, setJobs] = useState([])
+  // Jobs with a utility rebate invoice out — independent of the job's stage,
+  // so it is a badge on the card, not a column. See lib/utilityInvoiced.js.
+  const [utilityInvoicedIds, setUtilityInvoicedIds] = useState(() => new Set())
+
+  // The columns this board shows: what the tenant configured, plus any status
+  // actually present in the data. See lib/jobStatusVocabulary.js for why it
+  // fails open. Declared here, AFTER `jobs` — reading that state from the
+  // earlier declaration would be a temporal-dead-zone crash on first render.
+  const jobStatuses = useMemo(
+    () => resolveJobStatuses(configuredJobStatuses, jobs, { colors: defaultStatusColors }),
+    [configuredJobStatuses, jobs]
+  )
   const [jobSections, setJobSections] = useState([])
   const [appointments, setAppointments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -379,6 +401,17 @@ export default function PMJobSetter() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
+  // Which jobs have a utility rebate invoice out. Its own effect so a slow or
+  // failed read here can never delay or break the board.
+  useEffect(() => {
+    if (!companyId) return
+    let live = true
+    fetchUtilityInvoicedJobIds(supabase, companyId).then((ids) => {
+      if (live) setUtilityInvoicedIds(ids)
+    })
+    return () => { live = false }
+  }, [companyId])
+
   // Non-admins: lock PM filter to their own ID; admins: clear any stale saved filter
   useEffect(() => {
     if (!isAdmin && user?.id && !pmFilterLocked) {
@@ -493,7 +526,10 @@ export default function PMJobSetter() {
   // Initialize settings forms when modal opens
   const openSettingsModal = () => {
     // Initialize job statuses form
-    setStatusForm(jobStatuses.map(s => ({ ...s })))
+    // Only the CONFIGURED list is editable. A discovered status (present in the
+    // data but never configured) shows on the board, but must not be written
+    // into settings just because someone opened this panel.
+    setStatusForm(jobStatuses.filter(s => !s.discovered).map(s => ({ ...s })))
     setSectionStatusForm(sectionStatuses.map(s => ({ ...s })))
     setCalendarsForm(jobCalendars.map(c => ({ ...c })))
     setShowSettingsModal(true)
@@ -664,13 +700,19 @@ export default function PMJobSetter() {
   const getFilteredJobs = () => {
     let filtered = jobs
 
-    // Filter to jobs with recognized statuses (jobStatuses always has values
-    // via fallback). 'Archived', 'Cancelled', and 'Closed' aren't typically
-    // shown as kanban columns but jobs with those statuses should still be
-    // visible if the user explicitly opted in via a date filter — otherwise
-    // they vanish entirely from the page (Christopher: "I spent 10 minutes
-    // trying to find a job that I just finished"). Treat them as visible
-    // when the date filter is applied; ignore them when "all time" is on.
+    // Only jobs whose status has a column can be shown, because the columns
+    // below are what renders them. That used to silently swallow jobs: the
+    // list came from settings alone, so any status the app wrote but nobody
+    // had configured — 'Invoiced', written by InvoiceDetail on send — left 126
+    // jobs with nowhere to land. The comment that used to sit here claimed
+    // terminal statuses stayed reachable "when a date filter is applied"; the
+    // code never did that, which is how Christopher spent "10 minutes trying
+    // to find a job that I just finished".
+    //
+    // jobStatuses now also contains any status actually present in the data,
+    // so this filter can no longer hide a job for lack of configuration. It
+    // still excludes HIDDEN_JOB_STATUSES (Archived/Cancelled), which is
+    // deliberate and is also what the fetch above already excludes.
     const validStatuses = jobStatuses.map(s => s.id)
     filtered = filtered.filter(j => validStatuses.includes(j.status))
 
@@ -3130,6 +3172,7 @@ export default function PMJobSetter() {
                                         <RefreshCw size={9} /> {job.membership_id ? 'Club' : 'Recurring'}
                                       </span>
                                     )}
+                                    {isUtilityInvoiced(utilityInvoicedIds, job) && <UtilityInvoicedBadge compact />}
                                   </div>
                                 </div>
                               </div>

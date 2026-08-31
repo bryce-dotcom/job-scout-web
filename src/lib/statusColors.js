@@ -24,6 +24,9 @@ export const jobStatusColors = {
   'Completed': { bg: 'rgba(74,124,89,0.12)', text: '#4a7c59' },
   'On Hold': { bg: 'rgba(125,138,127,0.12)', text: '#7d8a7f' },
   'Cancelled': { bg: 'rgba(139,90,90,0.12)', text: '#8b5a5a' },
+  // Jobs.jsx falls back to the 'Scheduled' colour for anything missing here, so
+  // an invoiced job used to render in the same green as a scheduled one.
+  'Invoiced': { bg: 'rgba(90,99,73,0.12)', text: '#5a6349' },
 }
 
 export const invoiceStatusColors = {
