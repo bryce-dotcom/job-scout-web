@@ -177,7 +177,7 @@ const TOOLS = [
   },
   {
     name: 'query_products',
-    description: 'Search the product and service catalogue — price, cost, manufacturer, model number, category. Also AUDITS it: set group_by=manufacturer to see every distinct value with its count, which is how you spot inconsistent data (the same manufacturer spelled two ways, or with a trailing space, reads as two separate values). Use exclude_manufacturer to answer "which products are NOT made by X". Cost and margin are shown to ADMIN+ only.',
+    description: 'Search the product and service catalogue — price, cost, manufacturer, model number, category. Also AUDITS it: set group_by=manufacturer to see every distinct value with its count, which is how you spot inconsistent data (the same manufacturer spelled two ways, or with a trailing space, reads as two separate values). Use exclude_manufacturer to answer "which products are NOT made by X". Cost and margin are shown to ADMIN+ only. This is the PRICE BOOK, not stock on hand: it has no quantities. Asked how many of something there are, or what is in stock, call query_inventory — and call it even when the catalogue answered, because a product can be in the catalogue and still be sitting in a warehouse row under a slightly different name. Never say a quantity is not tracked without having looked there.',
     input_schema: {
       type: 'object',
       properties: {
