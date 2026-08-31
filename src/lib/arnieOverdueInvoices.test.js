@@ -4,7 +4,14 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
+// Normalised to LF on read. Git checks this repo out with CRLF on Windows,
+// and the assertions below match on the shape of the source — one of them
+// anchors on a newline followed by the description key, which a carriage
+// return silently defeats. The test then fails for a line ending rather than
+// for anything to do with invoices, which is a false alarm that costs more
+// than it catches.
 const chatTs = readFileSync(resolve(here, '../../supabase/functions/arnie-chat/index.ts'), 'utf8')
+  .replace(/\r\n/g, '\n')
 
 // Asked "how many overdue invoices do we have right now, and what is the
 // total?", Arnie called query_invoices WITHOUT status='overdue', got the five
