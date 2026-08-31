@@ -1095,9 +1095,11 @@ Add it anyway?`,
       await supabase.from('file_attachments').delete().in('file_path', paths)
     }
 
-    // Capture the linked job before deletion so we can clear the cached
-    // invoice_status — otherwise the JobDetail "Generate Invoice" button
-    // stays hidden and the user has no path to create a new one.
+    // Captured before deletion so we can navigate back to the job below.
+    // Clearing the job's cached invoice_status used to happen here too; the
+    // database does it now (see the sync_job_invoice_status trigger), and it
+    // sets 'Not Invoiced' rather than the null this wrote — null had no entry
+    // in invoiceStatusColors, so the pill silently disappeared.
     const linkedJobId = invoice?.job_id
 
     const { error } = await supabase.from('invoices').delete().eq('id', id)
@@ -1106,11 +1108,6 @@ Add it anyway?`,
       toast.error('Failed to delete invoice: ' + error.message)
       setSaving(false)
     } else {
-      if (linkedJobId) {
-        await supabase.from('jobs')
-          .update({ invoice_status: null, updated_at: new Date().toISOString() })
-          .eq('id', linkedJobId)
-      }
       toast.success('Invoice deleted')
       await fetchInvoices()
       // Send the user back to the job so they can immediately re-invoice

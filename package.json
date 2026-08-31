@@ -22,7 +22,8 @@
     "setup:sessions": "node scripts/setup-sessions.mjs",
     "fresh": "node scripts/fresh.mjs",
     "fleet": "node scripts/fleet.mjs",
-    "claim": "node scripts/claim.mjs"
+    "claim": "node scripts/claim.mjs",
+    "check:invoice-status": "node scripts/check-invoice-status.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.36.0",

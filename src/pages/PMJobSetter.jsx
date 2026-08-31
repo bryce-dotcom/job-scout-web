@@ -1738,8 +1738,8 @@ export default function PMJobSetter() {
           // auto-invoice landed with no line items — which is why the
           // in-scope / out-of-scope split had nothing to render on them.
           await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: newInvoice.id })
-          // Update job's invoice_status
-          await supabase.from('jobs').update({ invoice_status: 'Invoiced' }).eq('id', jobForInvoice.id)
+          // The job's invoice_status follows from the insert above — the
+          // sync_job_invoice_status trigger derives it from the invoices table.
         }
       }
 

@@ -1529,10 +1529,10 @@ function JobDetailInner() {
       // product-name fallback without anyone noticing.
       await writeInvoiceLines(supabase, lineItems, { companyId, invoiceId: invoice.id })
 
-      await supabase.from('jobs').update({
-        invoice_status: 'Invoiced',
-        updated_at: new Date().toISOString()
-      }).eq('id', id)
+      // The job's invoice_status is no longer set here. It is derived from the
+      // invoices table by the sync_job_invoice_status trigger, because writing
+      // it by hand only covered the routes that remembered to: 484 of the 723
+      // invoiced jobs were still claiming they had no invoice.
 
       // Tracy reported on JOB-MP2ZU0VY: cards jumped from Completed
       // straight to Invoiced on the pipeline the moment the invoice was
@@ -1867,10 +1867,8 @@ function JobDetailInner() {
         // "customer add-ons" without re-querying anything.
         await writeInvoiceLines(supabase, lineItems, { companyId, invoiceId: invoice.id })
 
-        await supabase.from('jobs').update({
-          invoice_status: 'Invoiced',
-          updated_at: new Date().toISOString()
-        }).eq('id', id)
+        // invoice_status is derived by the sync_job_invoice_status trigger —
+        // see the note in createCustomerInvoice above.
 
         // Don't auto-bump the lead to Invoiced — InvoiceDetail's Send
         // flow does that when the email actually goes out. See comment
@@ -9019,7 +9017,10 @@ function AddServiceVisitModal({ parentJob, companyId, theme, onClose, onCreated 
         // configured. "Chillin" exists for HHH; other tenants fall back
         // through trigger logic when status doesn't match.
         status: 'Chillin',
-        invoice_status: 'Not Invoiced',
+        // invoice_status omitted on purpose — the column defaults to
+        // 'Not Invoiced' and the sync_job_invoice_status trigger owns it
+        // from there. Setting it here was the only insert site that
+        // remembered to, which is why 16 jobs had it NULL.
       }
       const { data: inserted, error } = await supabase
         .from('jobs')
