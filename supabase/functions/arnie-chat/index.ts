@@ -27,11 +27,11 @@ const corsHeaders = {
 const TOOLS = [
   {
     name: 'query_invoices',
-    description: 'Query invoices. `count` is the exact number matching; `invoice_numbers` lists real invoice ids so anything you claim can be checked. ALWAYS read the `scope` field back to the user — it says what was filtered out. An invoice record holds customer_id, NOT a customer name: if you need a name, look it up with query_customers. NEVER name a customer that the tool did not return.',
+    description: 'Query invoices. `count` is the exact number matching; `invoice_numbers` lists real invoice ids so anything you claim can be checked. ALWAYS read the `scope` field back to the user — it says what was filtered out. Unpaid is NOT the same as overdue: every returned row carries its own `overdue` boolean, and the result carries `as_of`, `overdue_count` and `overdue_total_amount`. Call an invoice overdue only when its own `overdue` flag is true, and take overdue totals from `overdue_total_amount` — never from `count` or a sum of every unpaid row. An invoice record holds customer_id, NOT a customer name: if you need a name, look it up with query_customers. NEVER name a customer that the tool did not return.',
     input_schema: {
       type: 'object',
       properties: {
-        status: { type: 'string', enum: ['paid', 'sent', 'overdue', 'draft', 'all'], description: 'overdue = unpaid AND past its due date' },
+        status: { type: 'string', enum: ['paid', 'sent', 'overdue', 'draft', 'all'], description: 'overdue = unpaid AND past its due date. Pass this whenever the question is about overdue invoices — without it the result is every invoice of that status, past due or not.' },
         customer_name: { type: 'string', description: 'Resolved through the customers table. If no customer matches, the result says so — report that, do not substitute a name.' },
         exclude_zero: { type: 'boolean', description: 'Default true. Most zero-amount invoices are migration artefacts; set false to include them.' },
         start_date: { type: 'string' },
@@ -379,6 +379,16 @@ async function execTool(name: string, input: any, caller: Caller) {
     if (name === 'query_invoices') {
       const params = new URLSearchParams({ company_id: `eq.${companyId}` })
       const notes: string[] = []
+      // due_date is named here on purpose. A row that comes back without it
+      // cannot say whether it is overdue, and the model fills that gap by
+      // assuming — which is the bug this branch is built around. The rest is
+      // what the aggregate and the answer are made of; the columns left out
+      // (conversation_log, pdf_url, portal_token …) only crowd the context.
+      params.set('select', 'id,invoice_id,invoice_date,created_at,due_date,customer_id,job_id,'
+        + 'amount,discount_applied,down_payment_applied,payment_status,payment_method,'
+        + 'business_unit,invoice_type,job_description')
+      const asOf = new Date().toISOString().slice(0, 10)
+      const askedOverdue = String(input.status || '').toLowerCase() === 'overdue'
 
       if (input.status && input.status !== 'all') {
         const statusMap: Record<string, string> = {
@@ -391,9 +401,9 @@ async function execTool(name: string, input: any, caller: Caller) {
         // rows carried over from the old system. Reporting that as "294
         // overdue" is a number with no meaning. Overdue now also means past
         // its due date.
-        if (input.status.toLowerCase() === 'overdue') {
-          params.append('due_date', `lt.${new Date().toISOString().slice(0, 10)}`)
-          notes.push('Overdue = unpaid AND past due_date.')
+        if (askedOverdue) {
+          params.append('due_date', `lt.${asOf}`)
+          notes.push(`Overdue = unpaid AND past due_date, as of ${asOf}. This filter covers payment_status '${status}' only, so a part-paid invoice that is past due is not in here.`)
         }
       }
 
@@ -428,10 +438,33 @@ async function execTool(name: string, input: any, caller: Caller) {
       const got = await fetchRows(sb('invoices'), params, hdr)
       if ('error' in got) return { error: `invoices query failed: ${got.error}` }
 
+      // Unpaid is not overdue, and nothing in a row that only says "Pending"
+      // draws the line. Asked how many invoices were overdue on 2026-08-29,
+      // Arnie fetched the unpaid ones without the overdue filter and called
+      // all five of them overdue — real invoices, real amounts, wrong label.
+      // Passing the filter is still the right move; carrying the verdict on
+      // the row is what makes the label impossible to get wrong when it is
+      // not passed.
+      for (const r of got.rows) {
+        r.overdue = String(r.payment_status || '').toLowerCase() !== 'paid'
+          && !!r.due_date && String(r.due_date).slice(0, 10) < asOf
+      }
+      const overdue = got.rows.filter((r: any) => r.overdue)
+
       const agg: any = aggregate(got, input.group_by, ['amount'])
+      agg.as_of = asOf
+      agg.overdue_count = overdue.length
+      agg.overdue_total_amount = overdue
+        .reduce((sum: number, r: any) => sum + (parseFloat(r.amount) || 0), 0).toFixed(2)
       // Every claim about a specific invoice must be checkable by the user,
       // so hand back the invoice numbers rather than only totals.
       agg.invoice_numbers = got.rows.slice(0, 40).map((r: any) => r.invoice_id).filter(Boolean)
+      if (got.truncated) {
+        notes.push(`overdue_count and overdue_total_amount cover only the ${got.rows.length} of ${got.total} matching rows that could be read.`)
+      }
+      if (!askedOverdue) {
+        notes.push(`This result is NOT filtered to overdue: ${got.total} invoice(s) match, of which ${overdue.length} are past due as of ${asOf} (overdue_total_amount ${agg.overdue_total_amount}). Do not call the whole result overdue — only the rows whose own \`overdue\` flag is true.`)
+      }
       if (notes.length) agg.scope = notes.join(' ')
       return agg
     }
