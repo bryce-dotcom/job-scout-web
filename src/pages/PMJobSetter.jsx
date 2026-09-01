@@ -18,7 +18,7 @@ import RecurrencePicker from '../components/RecurrencePicker'
 import JobsMap from '../components/JobsMap'
 import { companyNotify } from '../lib/companyNotify'
 import { matchAllTokens, buildBlob } from '../lib/searchUtils'
-import { resolveJobStatuses } from '../lib/jobStatusVocabulary'
+import { resolveJobStatuses, normalizeStatuses, statusCategory, statusesToSave } from '../lib/jobStatusVocabulary'
 import { fetchUtilityInvoicedJobIds, isUtilityInvoiced } from '../lib/utilityInvoiced'
 import UtilityInvoicedBadge from '../components/UtilityInvoicedBadge'
 
@@ -208,21 +208,15 @@ export default function PMJobSetter() {
   const storeJobSectionStatuses = useStore((state) => state.jobSectionStatuses)
   const storeJobCalendars = useStore((state) => state.jobCalendars)
 
-  // Normalize statuses to objects with id, name, color
-  const normalizeStatuses = (statuses, defaultColors = defaultStatusColors) => {
-    if (!statuses || statuses.length === 0) return []
-    return statuses.map((s, idx) => {
-      if (typeof s === 'string') {
-        return { id: s, name: s, color: defaultColors[s] || calendarColors[idx % calendarColors.length] }
-      }
-      return { id: s.id || s.name, name: s.name, color: s.color || defaultColors[s.name] || calendarColors[idx % calendarColors.length] }
-    })
-  }
+  // Normalize statuses to objects with id, name, color, category.
+  // normalizeStatuses/statusesToSave are a PAIR — see lib/jobStatusVocabulary.js
+  // for why they must not be re-implemented here.
+  const statusColorOpts = { colors: defaultStatusColors, palette: calendarColors }
 
   // Use normalized versions — fall back to defaults if settings not configured
-  const normalizedJobStatuses = normalizeStatuses(storeJobStatuses, defaultStatusColors)
+  const normalizedJobStatuses = normalizeStatuses(storeJobStatuses, statusColorOpts)
   const configuredJobStatuses = normalizedJobStatuses.length > 0 ? normalizedJobStatuses : FALLBACK_JOB_STATUSES
-  const sectionStatuses = normalizeStatuses(storeJobSectionStatuses, defaultStatusColors)
+  const sectionStatuses = normalizeStatuses(storeJobSectionStatuses, statusColorOpts)
   const jobCalendarsFromStore = storeJobCalendars || []
 
   // Data
@@ -560,21 +554,12 @@ export default function PMJobSetter() {
   const saveAllSettings = async () => {
     setIsSaving(true)
     try {
-      // Save job statuses
-      const jobStatusesToSave = statusForm.filter(s => s.name?.trim()).map(s => ({
-        id: s.name.trim(),
-        name: s.name.trim(),
-        color: s.color
-      }))
-      await saveSetting('job_statuses', jobStatusesToSave)
+      // Save job statuses. `category` rides along — it is what the dashboard
+      // and the EOS scorecard read to decide what counts as delivered work.
+      await saveSetting('job_statuses', statusesToSave(statusForm))
 
       // Save section statuses
-      const sectionStatusesToSave = sectionStatusForm.filter(s => s.name?.trim()).map(s => ({
-        id: s.name.trim(),
-        name: s.name.trim(),
-        color: s.color
-      }))
-      await saveSetting('job_section_statuses', sectionStatusesToSave)
+      await saveSetting('job_section_statuses', statusesToSave(sectionStatusForm))
 
       // Save calendars
       await saveSetting('job_calendars', calendarsForm)
@@ -2254,7 +2239,7 @@ export default function PMJobSetter() {
                 "Jobs Delivered" on the dashboard / EOS / pipeline. Open =
                 still in progress; Delivered = work is done. */}
             <select
-              value={status.category || 'open'}
+              value={statusCategory(status)}
               onChange={(e) => updateStatus(setForm, form, index, 'category', e.target.value)}
               title="Open = work in progress · Delivered = work is done (counts toward Jobs Delivered metric)"
               style={{
