@@ -5,6 +5,7 @@ import { proposeChange, targetsSentence } from '../_shared/arnieConfig.ts'
 import { recordTargetsSentence } from '../_shared/arnieRecords.ts'
 import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
 import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arnieBulk.ts'
+import { invoiceOutstanding, isInvoiceOverdue, SETTLED_STATUSES } from '../_shared/money.ts'
 
 // Still read directly here: the SSE streaming path keeps its own fetch
 // (the shared wrapper buffers responses, which would break streaming).
@@ -27,11 +28,11 @@ const corsHeaders = {
 const TOOLS = [
   {
     name: 'query_invoices',
-    description: 'Query invoices. `count` is the exact number matching; `invoice_numbers` lists real invoice ids so anything you claim can be checked. ALWAYS read the `scope` field back to the user — it says what was filtered out. Unpaid is NOT the same as overdue: every returned row carries its own `overdue` boolean, and the result carries `as_of`, `overdue_count` and `overdue_total_amount`. Call an invoice overdue only when its own `overdue` flag is true, and take overdue totals from `overdue_total_amount` — never from `count` or a sum of every unpaid row. An invoice record holds customer_id, NOT a customer name: if you need a name, look it up with query_customers. NEVER name a customer that the tool did not return.',
+    description: 'Query invoices. `count` is the exact number matching; `invoice_numbers` lists real invoice ids so anything you claim can be checked. ALWAYS read the `scope` field back to the user — it says what was filtered out. Unpaid is NOT the same as overdue: every returned row carries its own `overdue` boolean, and the result carries `as_of`, `overdue_count` and `overdue_total_owed`. Call an invoice overdue only when its own `overdue` flag is true, and take overdue totals from `overdue_total_owed` — never from `count`, from `total_amount`, or from a sum of every unpaid row. An overdue row also carries `balance`, what is STILL OWED on it: on a part-paid invoice that is less than its `amount`, so quote the balance. An invoice record holds customer_id, NOT a customer name: if you need a name, look it up with query_customers. NEVER name a customer that the tool did not return.',
     input_schema: {
       type: 'object',
       properties: {
-        status: { type: 'string', enum: ['paid', 'sent', 'overdue', 'draft', 'all'], description: 'overdue = unpaid AND past its due date. Pass this whenever the question is about overdue invoices — without it the result is every invoice of that status, past due or not.' },
+        status: { type: 'string', enum: ['paid', 'sent', 'overdue', 'draft', 'all'], description: 'overdue = not settled (anything but Paid/Void/Cancelled, so a part-paid invoice counts) AND past its due date. Pass this whenever the question is about overdue invoices — without it the result is every invoice of that status, past due or not.' },
         customer_name: { type: 'string', description: 'Resolved through the customers table. If no customer matches, the result says so — report that, do not substitute a name.' },
         exclude_zero: { type: 'boolean', description: 'Default true. Most zero-amount invoices are migration artefacts; set false to include them.' },
         start_date: { type: 'string' },
@@ -211,6 +212,11 @@ const TOOLS = [
 // ============================================================
 const PAGE = 1000
 const MAX_ROWS = 10000
+// How many overdue rows we will read payments for, to turn what they were
+// invoiced for into what is still owed. One request per 200, so five at the
+// ceiling. Past it the balance is reported as an upper bound and the scope
+// note says so — a bounded answer that admits its bound beats a slow one.
+const OVERDUE_BALANCE_MAX = 1000
 
 async function fetchRows(
   url: string,
@@ -399,19 +405,24 @@ async function execTool(name: string, input: any, caller: Caller) {
       const askedOverdue = String(input.status || '').toLowerCase() === 'overdue'
 
       if (input.status && input.status !== 'all') {
-        const statusMap: Record<string, string> = {
-          paid: 'Paid', pending: 'Pending', open: 'Open', draft: 'Open', overdue: 'Pending',
-        }
-        const status = statusMap[input.status.toLowerCase()] || input.status
-        params.append('payment_status', `eq.${status}`)
-        // "Overdue" used to mean nothing more than payment_status = Pending,
-        // which on this tenant is 292 invoices of which 233 are zero-dollar
-        // rows carried over from the old system. Reporting that as "294
-        // overdue" is a number with no meaning. Overdue now also means past
-        // its due date.
         if (askedOverdue) {
+          // Overdue is not a payment_status. It used to mean nothing more
+          // than Pending, which on one tenant is 292 invoices of which 233
+          // are zero-dollar rows carried over from the old system — "294
+          // overdue" is a number with no meaning. Then it meant Pending AND
+          // past due, which is a real number but the wrong set: an invoice
+          // that is PART paid and past its due date is money owed, past the
+          // date, and it was not in the answer at all. Anything not settled
+          // counts, from the same list collections-autopilot duns on.
+          params.append('payment_status', `not.in.(${SETTLED_STATUSES.map(s => `"${s}"`).join(',')})`)
           params.append('due_date', `lt.${asOf}`)
-          notes.push(`Overdue = unpaid AND past due_date, as of ${asOf}. This filter covers payment_status '${status}' only, so a part-paid invoice that is past due is not in here.`)
+          notes.push(`Overdue = not settled (any payment_status but ${SETTLED_STATUSES.join('/')}) AND past due_date, as of ${asOf}. Part-paid invoices past their due date ARE included; each carries a \`balance\` — what is still owed on it, which is less than its \`amount\`.`)
+        } else {
+          const statusMap: Record<string, string> = {
+            paid: 'Paid', pending: 'Pending', open: 'Open', draft: 'Open',
+          }
+          const status = statusMap[input.status.toLowerCase()] || input.status
+          params.append('payment_status', `eq.${status}`)
         }
       }
 
@@ -453,25 +464,55 @@ async function execTool(name: string, input: any, caller: Caller) {
       // Passing the filter is still the right move; carrying the verdict on
       // the row is what makes the label impossible to get wrong when it is
       // not passed.
-      for (const r of got.rows) {
-        r.overdue = String(r.payment_status || '').toLowerCase() !== 'paid'
-          && !!r.due_date && String(r.due_date).slice(0, 10) < asOf
-      }
+      for (const r of got.rows) r.overdue = isInvoiceOverdue(r, asOf)
       const overdue = got.rows.filter((r: any) => r.overdue)
+
+      // What is OWED on the overdue rows, not what they were invoiced for.
+      // Admitting part-paid invoices to the overdue set is the point of the
+      // filter above, and summing their `amount` would hand back money
+      // already collected as if it were still outstanding — on the demo
+      // tenant, $37,100 for $26,575 of real debt.
+      let balancesApplied = true
+      const paidByInvoice = new Map<number, number>()
+      if (overdue.length > OVERDUE_BALANCE_MAX) {
+        balancesApplied = false
+      } else {
+        for (let i = 0; i < overdue.length; i += 200) {
+          const ids = overdue.slice(i, i + 200).map((r: any) => r.id).filter(Boolean)
+          if (!ids.length) continue
+          const pays = await fetchRows(sb('payments'), new URLSearchParams({
+            select: 'invoice_id,amount',
+            company_id: `eq.${companyId}`,
+            invoice_id: `in.(${ids.join(',')})`,
+          }), hdr, 20000)
+          if ('error' in pays) { balancesApplied = false; break }
+          for (const p of pays.rows) {
+            if (!p.invoice_id) continue
+            paidByInvoice.set(p.invoice_id, (paidByInvoice.get(p.invoice_id) || 0) + (parseFloat(p.amount) || 0))
+          }
+        }
+      }
+      for (const r of overdue) {
+        r.balance = invoiceOutstanding(r.amount, r.discount_applied,
+          balancesApplied ? paidByInvoice.get(r.id) || 0 : 0).toFixed(2)
+      }
+      if (overdue.length && !balancesApplied) {
+        notes.push('Payments could not be applied, so `balance` and overdue_total_owed are an UPPER BOUND — money already collected on these invoices is still counted in them. Say so rather than quoting the figure flat.')
+      }
 
       const agg: any = aggregate(got, input.group_by, ['amount'])
       agg.as_of = asOf
       agg.overdue_count = overdue.length
-      agg.overdue_total_amount = overdue
-        .reduce((sum: number, r: any) => sum + (parseFloat(r.amount) || 0), 0).toFixed(2)
+      agg.overdue_total_owed = overdue
+        .reduce((sum: number, r: any) => sum + (parseFloat(r.balance) || 0), 0).toFixed(2)
       // Every claim about a specific invoice must be checkable by the user,
       // so hand back the invoice numbers rather than only totals.
       agg.invoice_numbers = got.rows.slice(0, 40).map((r: any) => r.invoice_id).filter(Boolean)
       if (got.truncated) {
-        notes.push(`overdue_count and overdue_total_amount cover only the ${got.rows.length} of ${got.total} matching rows that could be read.`)
+        notes.push(`overdue_count and overdue_total_owed cover only the ${got.rows.length} of ${got.total} matching rows that could be read.`)
       }
       if (!askedOverdue) {
-        notes.push(`This result is NOT filtered to overdue: ${got.total} invoice(s) match, of which ${overdue.length} are past due as of ${asOf} (overdue_total_amount ${agg.overdue_total_amount}). Do not call the whole result overdue — only the rows whose own \`overdue\` flag is true.`)
+        notes.push(`This result is NOT filtered to overdue: ${got.total} invoice(s) match, of which ${overdue.length} are past due as of ${asOf} (overdue_total_owed ${agg.overdue_total_owed}). Do not call the whole result overdue — only the rows whose own \`overdue\` flag is true.`)
       }
       if (notes.length) agg.scope = notes.join(' ')
       return agg
