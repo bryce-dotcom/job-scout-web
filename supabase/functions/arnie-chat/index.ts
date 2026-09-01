@@ -617,7 +617,6 @@ async function execTool(name: string, input: any, caller: Caller) {
           got = { rows: hits, total: hits.length, truncated: wide.truncated }
           matchedLoosely = true
         }
-        if (exactOr) params.set('or', exactOr)
       }
 
       const items = input.low_stock_only
@@ -759,6 +758,9 @@ async function execTool(name: string, input: any, caller: Caller) {
           got = { rows: hits.slice(0, cap), total: hits.length, truncated: wide.truncated }
           matchedLoosely = true
         }
+        // The inactive probe below reuses these params, so put the exact
+        // filter back before anything else reads them.
+        if (exactOr) params.set('or', exactOr)
       }
 
       if (grouping) {
