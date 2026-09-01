@@ -32,10 +32,10 @@ const CREW = [
     rep: ['Snugg Pro', 'Rifeline', 'energy consultants'],
     out: { kicker: 'audited a building', head: '60,000 sq ft warehouse', rows: ['214 fixtures · metal-halide → LED', '$18,000 rebate · 1.4-yr payback'], done: 'turnkey proposal generated ✓' } },
   { ab: 'FR', name: 'Frankie', role: 'The AI CFO',
-    hook: 'Ask “why is cash tight this month?” and get the answer — receipts attached, collection reminders already drafted.',
-    hi: ['Plain-English finance Q&A', 'AR/AP aging + auto-collections', 'Per-job profitability', 'Expense anomaly detection'],
+    hook: 'Ask “why is cash tight this month?” and get a straight answer from your real numbers — the slow-paying accounts pulled up, the reminders ready to send.',
+    hi: ['Plain-English finance Q&A', 'Per-job & per-crew profitability', 'AR/AP aging + auto-reminders', 'Tells you why cash is tight'],
     rep: ['Pilot.com', 'Bench', 'a fractional CFO'],
-    out: { kicker: 'answered the owner', head: '“Why is cash tight this month?”', rows: ['3 customers 60+ days late · $9,100', 'Materials spend up 18% vs last month'], done: '3 reminders drafted — send them?' } },
+    out: { kicker: 'answered the owner', head: '“Why is cash tight this month?”', rows: ['3 customers 60+ days late · $9,100', 'Materials spend up 18% vs last month'], done: 'Queue reminders to all 3?' } },
   { ab: 'FD', name: 'Freddy', role: 'Fleet & equipment',
     hook: 'The whole fleet, watched by an AI that catches a fuel-card thief and a missed service before they cost you.',
     hi: ['Fuel-theft & leak detection', 'Predictive service reminders', 'Auto fuel-card reconciliation', 'Insurance-ready driver history'],
@@ -242,6 +242,29 @@ const CSS = `
   .pr .morecard p{color:var(--sub);font-size:13px;margin:10px 0 0;line-height:1.5}
   @media(min-width:600px){ .pr .more-grid{grid-template-columns:1fr 1fr} }
   @media(min-width:920px){ .pr .more-grid{grid-template-columns:1fr 1fr 1fr} }
+  .pr .iqwrap{margin:24px auto 0;max-width:760px}
+  .pr .iqcard{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 18px 44px -26px rgba(0,0,0,.35)}
+  .pr .iq-head{display:flex;align-items:center;gap:9px;padding:14px 18px;border-bottom:1px solid var(--line);font-size:13.5px;font-weight:700;color:var(--ink)}
+  .pr .iq-dot{width:9px;height:9px;border-radius:50%;background:var(--viz);flex:none}
+  .pr .iq-badge{margin-left:auto;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--vizDk);background:var(--vizBg);padding:4px 8px;border-radius:6px}
+  .pr .iq-body{padding:18px}
+  .pr .iq-proposal{display:grid}
+  .pr .iq-before,.pr .iq-after{grid-area:1/1;margin:0;font-size:14.5px;line-height:1.55;transition:opacity .5s ease}
+  .pr .iq-before{color:var(--sub)}
+  .pr .iq-after{opacity:0;color:var(--ink);font-weight:500}
+  .pr .iq-after b{color:var(--vizDk)}
+  .pr .iqcard.on .iq-before{opacity:0}
+  .pr .iqcard.on .iq-after{opacity:1}
+  .pr .iq-picks{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);opacity:0;transform:translateY(8px);transition:opacity .5s .15s ease,transform .5s .15s ease}
+  .pr .iqcard.on .iq-picks{opacity:1;transform:none}
+  .pr .iq-picks-lbl{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--grnDk);margin-bottom:10px;display:flex;align-items:center;gap:7px}
+  .pr .iq-pick{display:inline-block;font-family:inherit;font-size:13px;font-weight:650;color:var(--ink);background:var(--grnBg);border:1px solid var(--line);border-radius:9px;padding:8px 12px;margin:0 8px 8px 0}
+  .pr .iq-bar{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--night);border-top:1px solid var(--line)}
+  .pr .iq-input{flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;color:#e9e5d6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pr .iq-cur{display:inline-block;width:7px;height:14px;background:var(--viz);vertical-align:-2px;margin-left:3px;animation:prblink 1.1s steps(1) infinite}
+  .pr .iq-refine{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:750;color:#fff;background:var(--viz);border-radius:8px;padding:8px 13px}
+  .pr .iqnote{margin:16px auto 0;text-align:center;font-size:14px;color:var(--sub);max-width:54ch}
+  .pr .iqnote b{color:var(--vizDk)}
   .pr .crewgrid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:24px}
   .pr .agent{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;gap:14px;align-items:flex-start}
   .pr .agent .av{width:50px;height:50px;flex:none;border-radius:14px;display:grid;place-items:center;font-family:var(--mono);font-weight:750;font-size:16px;background:var(--grn);color:#fff}
@@ -427,6 +450,7 @@ export default function Pricing() {
   const [ag, setAg] = useState(0)
   const [agLock, setAgLock] = useState(false)
   const [shared, setShared] = useState(false)
+  const [iq, setIq] = useState(0)
 
   const goSignup = (planId) => navigate(`/login?signup=1&plan=${planId}`)
   const toPlans = () => document.getElementById('pr-plans')?.scrollIntoView({ behavior: 'smooth' })
@@ -477,6 +501,13 @@ export default function Pricing() {
     return () => clearInterval(t)
   }, [agLock])
 
+  // Interactive-quote demo — the proposal rewrites itself on a loop.
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion:reduce)').matches) { setIq(1); return }
+    const t = setInterval(() => setIq((p) => (p ? 0 : 1)), 2800)
+    return () => clearInterval(t)
+  }, [])
+
   return (
     <div className="pr" ref={rootRef}>
       <style>{CSS}</style>
@@ -521,8 +552,8 @@ export default function Pricing() {
             <div className="hero-grid">
               <div className="hero-left">
                 <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> The business operating system, built by the people who do the work</span>
-                <h1>Burn the status quo. Welcome to <span className="hl">the AI age</span>.</h1>
-                <p className="lede">One system for the entire operation — sales, jobs, invoicing, books, payroll — running on AI with enough compute to handle your whole back office while you’re out doing the work. Not a CRM. Not another app to babysit. A business operating system so far ahead it makes whatever you’re running now look like a museum piece — and it’s going to blow your freaking mind.</p>
+                <h1>Stop going to AI. It’s already in <span className="hl">your quote</span>.</h1>
+                <p className="lede">Everyone else hands you a chatbot to go visit. JobScout builds the AI into the quote, the job, and the books — the proposal rewrites itself, the add-ons surface themselves, the bank feed sorts itself, the reschedule’s already drafted. You just approve. Burn the status quo — the work’s done by the time you look.</p>
                 <div className="cta-row">
                   <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
                   <button className="btn btn-ghost on-dark" onClick={() => navigate('/login?demo=1')}>Try the live demo <Icon id="i-arrow" /></button>
@@ -535,7 +566,7 @@ export default function Pricing() {
                 </div>
               </div>
               <aside className="hero-panel" aria-hidden="true">
-                <div className="hp-head"><span className="hp-dot" /> Live · your crew on the clock</div>
+                <div className="hp-head"><span className="hp-dot" /> Live · work getting done</div>
                 <div className="hp-feed">
                   {feed.map((a) => (
                     <div key={a._k} className="hp-row">
@@ -548,9 +579,40 @@ export default function Pricing() {
               </aside>
             </div>
             <div className="crewstrip">
-              <span className="lbl">Your AI workforce, on the clock →</span>
+              <span className="lbl">The AI behind every step →</span>
               {CREW.map((a, i) => <span key={a.ab} className="chip" style={{ animationDelay: `${120 + i * 90}ms` }}>{a.ab}</span>)}
             </div>
+          </div>
+        </section>
+
+        <section id="pr-quote">
+          <div className="wrap">
+            <div className="sechead rv">
+              <span className="kicker">The AI is in the object, not in a window</span>
+              <h2>Talk to the quote. Watch it rewrite itself.</h2>
+              <p>No chatbot, no new tab. This is the estimate your rep is already in — type what you want, and the proposal rewrites, prices the Good/Better/Best tiers, and surfaces the add-ons this job was missing.</p>
+            </div>
+            <div className="iqwrap rv">
+              <div className={`iqcard${iq ? ' on' : ''}`}>
+                <div className="iq-head"><span className="iq-dot" /> Estimate · Ridgeline HOA — LED Retrofit <span className="iq-badge">AI</span></div>
+                <div className="iq-body">
+                  <div className="iq-proposal">
+                    <p className="iq-before">We are pleased to submit the following proposal for the replacement of existing lighting fixtures with LED equivalents throughout the facility, in accordance with the scope of work outlined above.</p>
+                    <p className="iq-after">Start cutting the power bill month one. We’ll swap all <b>214 fixtures</b> for high-efficiency LEDs, capture <b>$18,000</b> in utility rebates, and pay it all back in <b>1.4 years</b>. After that, it’s pure savings — every single month.</p>
+                  </div>
+                  <div className="iq-picks">
+                    <div className="iq-picks-lbl"><Icon id="i-bolt" style={{ fontSize: 12 }} /> Arnie’s picks for this estimate</div>
+                    <span className="iq-pick">+ Surge protection · $340</span>
+                    <span className="iq-pick">+ Photocell controls · $180</span>
+                  </div>
+                </div>
+                <div className="iq-bar">
+                  <span className="iq-input">make it punchier — push the energy savings<span className="iq-cur" /></span>
+                  <span className="iq-refine"><Icon id="i-bolt" style={{ fontSize: 12 }} /> Refine with AI</span>
+                </div>
+              </div>
+            </div>
+            <div className="iqnote rv">You don’t go to the AI — <b>it’s already in the work</b>, waiting for your OK.</div>
           </div>
         </section>
 
@@ -608,9 +670,9 @@ export default function Pricing() {
         <section id="pr-crew">
           <div className="wrap">
             <div className="sechead rv">
-              <span className="kicker">The part the others don’t have</span>
-              <h2>An AI workforce, not another dashboard.</h2>
-              <p>Eight specialists, each owning a real job — included in your plan, not billed by the seat. Tap one and watch it work.</p>
+              <span className="kicker">Not a chatbot on the side</span>
+              <h2>The AI is in the work, not in a window.</h2>
+              <p>Everywhere the job happens — the quote, the truck, the books — the AI’s already there, doing the thing and waiting for your OK. Included in your plan, not billed by the seat. Tap any one and watch it work.</p>
             </div>
             <div className="agshow rv">
               <div className="agrail" role="tablist" aria-label="AI specialists">
@@ -756,8 +818,8 @@ export default function Pricing() {
             <div className="onlyus rv">
               <div className="ou">
                 <Icon id="i-bolt" style={{ fontSize: 26, color: 'var(--viz)' }} />
-                <h3>An AI workforce</h3>
-                <p>Eight specialists doing real work — prospecting, quoting, verifying, collecting. The part no field app or enterprise suite hands you.</p>
+                <h3>AI in the work, not a chatbot</h3>
+                <p>The proposal rewrites itself, the books sort themselves, the reschedule’s already drafted — intelligence in the object, doing the job. The part no field app or enterprise suite hands you.</p>
                 <span className="ou-tag">Only in JobScout</span>
               </div>
               <div className="ou">
