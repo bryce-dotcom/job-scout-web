@@ -1,0 +1,139 @@
+-- =====================================================================
+-- Remove maybe_close_paid_job — a trigger that has never once fired.
+--
+-- It was meant to advance a job to its 'Paid' stage once every invoice on
+-- that job was paid. It reads the target stage out of the tenant's
+-- job_statuses setting, looking for an entry flagged isPaid (falling back to
+-- isClosed), and returns early when it finds neither.
+--
+-- It always finds neither. isPaid and isClosed are flags on PIPELINE_STAGES —
+-- the lead pipeline, SalesPipeline.jsx:71-72 — not on job_statuses. The
+-- trigger reads the wrong setting. And it cannot be repaired by
+-- configuration: the job-status settings editor saves {id, name, color} and
+-- strips every other key, so a hand-added isPaid would be wiped the next time
+-- any PM saved their statuses.
+--
+-- The data confirms it never ran: 444 company-3 jobs have invoices that are
+-- all paid, and 12 of them sit at status 'Paid'.
+--
+-- Deleted rather than repaired, for three reasons.
+--
+--   The fact it was meant to surface is already surfaced. As of the migration
+--   before this one, jobs.invoice_status is derived from the invoices table
+--   and reads 'Paid' on all 444 of them. Nothing is lost by removing this.
+--
+--   Auto-advancing a job's stage on a billing event is the behaviour this
+--   product deliberately moved away from. Cards used to jump to Invoiced the
+--   moment an invoice was created, which cost the person doing AR their
+--   "still needs sending" view; JobDetail and SalesPipeline both carry
+--   comments about undoing exactly that.
+--
+--   It is a live hazard. Any script that adds isPaid to a job_statuses entry
+--   — an easy thing to do while editing that setting for other reasons —
+--   would move hundreds of jobs to a new status in a single statement, with
+--   no prompt and no undo.
+--
+-- The original body is preserved verbatim below so this is recoverable
+-- without digging through database history.
+-- =====================================================================
+
+drop trigger if exists trg_maybe_close_paid_job on public.invoices;
+drop trigger if exists trg_maybe_close_paid_job_insert on public.invoices;
+drop function if exists public.maybe_close_paid_job();
+
+
+-- ---------------------------------------------------------------------
+-- ORIGINAL, for the record. Do not uncomment without re-reading the note
+-- above: restoring it as-is restores a no-op, and making it work means
+-- moving ~444 existing jobs to a new status the first time it runs.
+-- ---------------------------------------------------------------------
+-- CREATE OR REPLACE FUNCTION public.maybe_close_paid_job()
+--  RETURNS trigger
+--  LANGUAGE plpgsql
+--  SECURITY DEFINER
+--  SET search_path TO 'public'
+-- AS $function$
+-- DECLARE
+--   v_job_id        bigint;
+--   v_company_id    bigint;
+--   v_current_status text;
+--   v_unpaid_count  integer;
+--   v_target_name   text;
+--   v_statuses      jsonb;
+-- BEGIN
+--   IF NEW.payment_status IS NULL
+--      OR NEW.payment_status <> 'Paid'
+--      OR (TG_OP = 'UPDATE' AND OLD.payment_status = 'Paid') THEN
+--     RETURN NEW;
+--   END IF;
+-- 
+--   v_job_id := NEW.job_id;
+--   IF v_job_id IS NULL THEN
+--     RETURN NEW;
+--   END IF;
+-- 
+--   SELECT COUNT(*) INTO v_unpaid_count
+--   FROM invoices
+--   WHERE job_id = v_job_id
+--     AND id <> NEW.id
+--     AND COALESCE(payment_status, '') <> 'Paid';
+-- 
+--   IF v_unpaid_count > 0 THEN
+--     RETURN NEW;
+--   END IF;
+-- 
+--   SELECT company_id, status INTO v_company_id, v_current_status
+--   FROM jobs
+--   WHERE id = v_job_id;
+-- 
+--   IF v_company_id IS NULL THEN
+--     RETURN NEW;
+--   END IF;
+-- 
+--   SELECT value INTO v_statuses
+--   FROM settings
+--   WHERE company_id = v_company_id
+--     AND key = 'job_statuses'
+--   LIMIT 1;
+-- 
+--   IF v_statuses IS NULL OR jsonb_typeof(v_statuses) <> 'array' THEN
+--     RETURN NEW;
+--   END IF;
+-- 
+--   -- Prefer the isPaid stage; fall back to isClosed for tenants that
+--   -- haven't configured a Paid column yet.
+--   SELECT (s ->> 'name') INTO v_target_name
+--   FROM jsonb_array_elements(v_statuses) AS s
+--   WHERE (s ->> 'isPaid')::boolean IS TRUE
+--   LIMIT 1;
+-- 
+--   IF v_target_name IS NULL THEN
+--     SELECT (s ->> 'name') INTO v_target_name
+--     FROM jsonb_array_elements(v_statuses) AS s
+--     WHERE (s ->> 'isClosed')::boolean IS TRUE
+--     LIMIT 1;
+--   END IF;
+-- 
+--   IF v_target_name IS NULL THEN
+--     RETURN NEW;
+--   END IF;
+-- 
+--   IF v_current_status = v_target_name THEN
+--     RETURN NEW;
+--   END IF;
+-- 
+--   UPDATE jobs
+--   SET status = v_target_name,
+--       updated_at = NOW()
+--   WHERE id = v_job_id;
+-- 
+--   RETURN NEW;
+-- END;
+-- $function$
+--
+-- CREATE TRIGGER trg_maybe_close_paid_job AFTER UPDATE ON public.invoices
+--   FOR EACH ROW WHEN ((new.payment_status = 'Paid'::text) AND (new.job_id IS NOT NULL))
+--   EXECUTE FUNCTION maybe_close_paid_job();
+-- CREATE TRIGGER trg_maybe_close_paid_job_insert AFTER INSERT ON public.invoices
+--   FOR EACH ROW WHEN ((new.payment_status = 'Paid'::text) AND (new.job_id IS NOT NULL))
+--   EXECUTE FUNCTION maybe_close_paid_job();
