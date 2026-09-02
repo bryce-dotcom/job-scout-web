@@ -10,6 +10,7 @@ import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
 import { computeRevenue, cashExpenses } from '../lib/revenueBasis'
+import { inLocalRange } from '../lib/localDate'
 import { toast } from '../lib/toast'
 import {
   UserPlus,
@@ -326,7 +327,11 @@ export default function Dashboard() {
   const utilityAR = totalUtilityAR(utilityInvoices)
   const accountsReceivable = customerAR + utilityAR
 
-  const isThisMonth = (dateStr) => dateStr && new Date(dateStr) >= firstOfMonth
+  // inLocalRange, not `new Date(x) >= firstOfMonth`: a bare 'YYYY-MM-DD' parses
+  // as UTC midnight — the evening BEFORE, in Mountain Time — so the 1st of
+  // every month landed in the previous month. On 2 Sep 2026 that showed MTD
+  // Revenue as $0 while $38,974 sat in eleven payments dated '2026-09-01'.
+  const isThisMonth = (dateStr) => inLocalRange(dateStr, firstOfMonth, null)
   // Revenue — CASH BASIS (money actually collected). Uses the payments table
   // (each row is a real, dated, invoice-linked payment) instead of the old
   // "paid-invoice gross + bank deposits" formula, which double-counted — a
@@ -384,9 +389,37 @@ export default function Dashboard() {
   const decidedLeads = leads.filter(l => l.status === 'Won' || l.status === 'Lost').length
   const conversionRate = decidedLeads > 0 ? Math.round((wonLeads / decidedLeads) * 100) : 0
 
+  // ── Last month ──
+  // The month just ended, for comparison against the month in progress. MTD is
+  // always a partial month, so "down on last month" on the 3rd means nothing —
+  // the full previous month is the number people actually judge against.
+  //
+  // Every figure below is the SAME definition as its MTD counterpart, called
+  // with a different window: computeRevenue / cashExpenses take the date test,
+  // and wonJobsInRange / deliveredJobsInRange take the range. Nothing about
+  // what counts as revenue, an expense, won or delivered is restated here — if
+  // it were, this card would eventually disagree with the one above it.
+  //
+  // The window is half-open, [firstOfLastMonth, firstOfMonth), matching
+  // jobMetrics' range functions, so nothing is counted in both months. Month
+  // -1 on a Date rolls the year over on its own, so January reads December.
+  const firstOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+  const isLastMonth = (dateStr) => inLocalRange(dateStr, firstOfLastMonth, firstOfMonth)
+  const lastMonthLabel = firstOfLastMonth.toLocaleDateString('en-US', { month: 'short' })
+
+  const lastMonthRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isLastMonth)
+  const lastMonthExpenses = cashExpenses({ expenses, plaidTransactions }, isLastMonth)
+  const lastMonthNetIncome = lastMonthRevenue - lastMonthExpenses
+  const lastMonthDeposits = (leadPayments || []).filter(d => isLastMonth(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
+  const lastMonthWonJobs = wonJobsInRange(jobs, firstOfLastMonth, firstOfMonth)
+  const lastMonthSalesWon = sumJobTotal(lastMonthWonJobs, quoteAmountById)
+  const lastMonthDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, firstOfLastMonth, firstOfMonth)
+  const lastMonthDelivered = sumJobTotal(lastMonthDeliveredJobs, quoteAmountById)
+  const completedJobsLastMonth = lastMonthDeliveredJobs.length
+
   // ── YTD calculations ──
   const firstOfYear = new Date(today.getFullYear(), 0, 1)
-  const isThisYear = (dateStr) => dateStr && new Date(dateStr) >= firstOfYear
+  const isThisYear = (dateStr) => inLocalRange(dateStr, firstOfYear, null)
 
   const paymentsYTD = (payments || []).filter(p => isCollected(p) && isThisYear(p.date || p.created_at)).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const depositsYTD = (leadPayments || []).filter(d => isThisYear(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
@@ -421,8 +454,8 @@ export default function Dashboard() {
 
   // Metric values map — subtitles explain exactly where each number comes from
   const metricValues = {
-    mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdWonJobs.length} job${mtdWonJobs.length !== 1 ? 's' : ''} won this month`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Sales Won' },
-    mtdDelivered: { value: formatCurrency(mtdDelivered), subtitle: `${mtdDeliveredJobs.length} job${mtdDeliveredJobs.length !== 1 ? 's' : ''} delivered this month`, ytdValue: formatCurrency(ytdDelivered), ytdLabel: 'YTD Delivered' },
+    mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdWonJobs.length} job${mtdWonJobs.length !== 1 ? 's' : ''} won this month`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Sales Won', lastValue: formatCurrency(lastMonthSalesWon), lastLabel: lastMonthLabel },
+    mtdDelivered: { value: formatCurrency(mtdDelivered), subtitle: `${mtdDeliveredJobs.length} job${mtdDeliveredJobs.length !== 1 ? 's' : ''} delivered this month`, ytdValue: formatCurrency(ytdDelivered), ytdLabel: 'YTD Delivered', lastValue: formatCurrency(lastMonthDelivered), lastLabel: lastMonthLabel },
     activeLeads: { value: activeLeads, subtitle: 'Leads in pipeline (not Won/Lost)' },
     openJobs: { value: openJobs, subtitle: 'Scheduled + In Progress + Chillin' },
     pendingInvoices: {
@@ -431,12 +464,12 @@ export default function Dashboard() {
         ? `${formatCurrency(customerAR)} customers + ${formatCurrency(utilityAR)} utilities = ${formatCurrency(accountsReceivable)} owed`
         : `${formatCurrency(accountsReceivable)} owed`,
     },
-    mtdRevenue: { value: formatCurrency(thisMonthRevenue), subtitle: revenueSubtitle || 'Paid invoices + deposits + bank', ytdValue: formatCurrency(ytdRevenue), ytdLabel: 'YTD Revenue' },
-    mtdDeposits: { value: formatCurrency(thisMonthDeposits), subtitle: 'From Lead Payments page', ytdValue: formatCurrency(ytdDeposits), ytdLabel: 'YTD Deposits' },
-    mtdExpenses: { value: formatCurrency(thisMonthExpenses), subtitle: expenseSubtitle || 'Manual expenses + bank outflows', ytdValue: formatCurrency(ytdExpenses), ytdLabel: 'YTD Expenses' },
-    completedJobs: { value: completedJobsMTD, subtitle: 'Delivery completed (from Job Board)', ytdValue: completedJobsYTD, ytdLabel: 'YTD Completed' },
+    mtdRevenue: { value: formatCurrency(thisMonthRevenue), subtitle: revenueSubtitle || 'Paid invoices + deposits + bank', ytdValue: formatCurrency(ytdRevenue), ytdLabel: 'YTD Revenue', lastValue: formatCurrency(lastMonthRevenue), lastLabel: lastMonthLabel },
+    mtdDeposits: { value: formatCurrency(thisMonthDeposits), subtitle: 'From Lead Payments page', ytdValue: formatCurrency(ytdDeposits), ytdLabel: 'YTD Deposits', lastValue: formatCurrency(lastMonthDeposits), lastLabel: lastMonthLabel },
+    mtdExpenses: { value: formatCurrency(thisMonthExpenses), subtitle: expenseSubtitle || 'Manual expenses + bank outflows', ytdValue: formatCurrency(ytdExpenses), ytdLabel: 'YTD Expenses', lastValue: formatCurrency(lastMonthExpenses), lastLabel: lastMonthLabel },
+    completedJobs: { value: completedJobsMTD, subtitle: 'Delivery completed (from Job Board)', ytdValue: completedJobsYTD, ytdLabel: 'YTD Completed', lastValue: completedJobsLastMonth, lastLabel: lastMonthLabel },
     totalLeads: { value: totalLeadsCount, subtitle: 'All leads in pipeline' },
-    netIncome: { value: formatCurrency(netIncome), subtitle: 'Revenue - Expenses (cash basis)', ytdValue: formatCurrency(ytdNetIncome), ytdLabel: 'YTD Net Income' },
+    netIncome: { value: formatCurrency(netIncome), subtitle: 'Revenue - Expenses (cash basis)', ytdValue: formatCurrency(ytdNetIncome), ytdLabel: 'YTD Net Income', lastValue: formatCurrency(lastMonthNetIncome), lastLabel: lastMonthLabel },
     avgJobValue: { value: formatCurrency(avgJobValue), subtitle: `Across ${allDeliveredJobs.length} delivered jobs` },
     conversionRate: { value: `${conversionRate}%`, subtitle: `${wonLeads} won / ${decidedLeads} decided` },
     // ── PO module tiles (numbers from poStats lazy-fetch above) ─────
@@ -580,7 +613,7 @@ export default function Dashboard() {
   }
 
   // ── Reusable components ──
-  const MetricCard = ({ icon: Icon, label, value, color, onClick, subtitle, ytdLabel, ytdValue, hint }) => (
+  const MetricCard = ({ icon: Icon, label, value, color, onClick, subtitle, ytdLabel, ytdValue, lastLabel, lastValue, hint }) => (
     <div
       onClick={onClick}
       title={hint || ''}
@@ -610,9 +643,25 @@ export default function Dashboard() {
         <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px', lineHeight: '1.4' }}>{subtitle}</div>
       )}
       {ytdValue !== undefined && (
-        <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${theme.border}` }}>
-          <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{ytdLabel || 'YTD'}</div>
-          <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text }}>{ytdValue}</div>
+        // Last month sits beside YTD rather than under it: the big number above
+        // is a PARTIAL month, so the full month just gone is what it wants
+        // comparing against. minmax(0,1fr) — plain 1fr lets a long currency
+        // string push the card wider than its grid track, and the page clips it
+        // without a scrollbar at 375px.
+        <div style={{
+          marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${theme.border}`,
+          display: 'grid', gridTemplateColumns: lastValue !== undefined ? 'minmax(0,1fr) minmax(0,1fr)' : 'minmax(0,1fr)', gap: '10px',
+        }}>
+          {lastValue !== undefined && (
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{lastLabel || 'Last Month'}</div>
+              <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.textSecondary, overflowWrap: 'anywhere' }}>{lastValue}</div>
+            </div>
+          )}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{ytdLabel || 'YTD'}</div>
+            <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text, overflowWrap: 'anywhere' }}>{ytdValue}</div>
+          </div>
         </div>
       )}
     </div>
@@ -856,6 +905,8 @@ export default function Dashboard() {
                 subtitle={mv.subtitle}
                 ytdValue={mv.ytdValue}
                 ytdLabel={mv.ytdLabel}
+                lastValue={mv.lastValue}
+                lastLabel={mv.lastLabel}
                 hint={def.hint}
               />
             )
