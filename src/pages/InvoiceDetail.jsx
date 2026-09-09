@@ -16,7 +16,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
 import { resolveMatLabSplit, splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
-import { buildInvoiceSections, incentiveLineLabel, invoiceDiscountBreakout } from '../lib/invoiceSections'
+import { buildInvoiceSections, buildInvoicePages, incentiveLineLabel, invoiceDiscountBreakout } from '../lib/invoiceSections'
 import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
 import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -1348,6 +1348,24 @@ Add it anyway?`,
       y += 6
     }
 
+    // Break to the add-ons page and carry the project total onto it.
+    //
+    // Alayda sends page one to the utility by itself, so page two has to say
+    // where its opening number came from — otherwise the grand total looks
+    // like it appeared from nowhere on a page with only add-ons on it.
+    const startAddOnsPage = () => {
+      doc.addPage()
+      y = 20
+      doc.setFontSize(9)
+      doc.setFont('helvetica', 'italic')
+      doc.setTextColor(120)
+      doc.text(`${invoice.invoice_id || 'Invoice'} — continued`, margin, y)
+      doc.setTextColor(0)
+      y += 8
+      drawTotalLine('Project Total (brought forward):', formatCurrency(pages.pageTwo.broughtForward))
+      y += 4
+    }
+
     // ── Line items table ──
     // Branch: summary_format renders Parts/Labor totals instead of
     // the per-line breakdown. Same total either way — just collapsed.
@@ -1370,7 +1388,22 @@ Add it anyway?`,
         partsTotal = parseFloat(invoice.parts_total_override) || 0
         laborTotal = parseFloat(invoice.labor_total_override) || 0
       } else {
-        for (const line of invoiceLines) {
+        // On an invoice that HAS add-ons, Material + Labor describes the
+        // PROJECT, not the whole bill — because the subtotal printed directly
+        // underneath these two rows is the project subtotal.
+        //
+        // Summing every line made the page contradict itself: the demo
+        // invoice showed Material $17,000 + Labor $7,800 (= $24,800) above a
+        // Project Subtotal of $22,800, because the $2,000 of add-ons had been
+        // folded into Material. Anyone checking the arithmetic sees it
+        // immediately, and checking the arithmetic is exactly what Alayda does.
+        //
+        // This matches what a human already does by hand: on INV-MRKYXVGY the
+        // manual override is $37,953.80 + $16,265.92 = $54,219.72, which is
+        // the in-scope line sum to the penny, with the $1,000 of add-ons left
+        // out. The computed path now means the same thing the typed one does.
+        const splitLines = useSectionLayout ? sections.inScope : invoiceLines
+        for (const line of splitLines) {
           const { parts, labor } = splitLinePartsLabor(line, componentMaps.productMap, componentMaps.componentsByParent)
           partsTotal += parts
           laborTotal += labor
@@ -1410,9 +1443,29 @@ Add it anyway?`,
       // itemize them so they see exactly what they're paying full price for.
       // Their subtotal + the incentive are reconciled in the totals below.
       if (useSectionLayout && sections.outScope.length > 0) {
-        y += 2
+        if (useTwoPagePdf) {
+          // Summary mode normally defers the whole section breakdown to the
+          // totals block at the bottom. That cannot happen here: the project
+          // figures have to finish on page one, above the break, or the page
+          // Alayda sends the utility ends on Material/Labor with no total.
+          drawTotalLine('Project Subtotal:', formatCurrency(pages.pageOne.subtotal))
+          if (pages.pageOne.incentive > 0) {
+            drawTotalLine('Utility Incentive:', `-${formatCurrency(pages.pageOne.incentive)}`, { color: [200, 0, 0] })
+          }
+          if (pages.pageOne.projectDiscount > 0) {
+            drawTotalLine('Project Discount:', `-${formatCurrency(pages.pageOne.projectDiscount)}`, { color: [200, 0, 0] })
+          }
+          drawTotalLine('Project Total:', formatCurrency(pages.pageOne.total), { bold: true })
+          startAddOnsPage()
+        } else {
+          y += 2
+        }
         drawSectionTitle('Additional Services', 'Customer add-ons — not covered by utility')
         drawItemRows(sections.outScope)
+        if (useTwoPagePdf) {
+          drawTotalLine('Add-ons Subtotal:', formatCurrency(pages.pageTwo.addOnsSubtotal), { bold: true })
+          y += 4
+        }
       }
     } else if (invoiceLines && invoiceLines.length > 0) {
       checkPage(30)
@@ -1429,14 +1482,25 @@ Add it anyway?`,
         if (sections.incentive > 0) {
           drawTotalLine('Utility Incentive:', `-${formatCurrency(sections.incentive)}`, { color: [200, 0, 0] })
         }
-        if (sections.downPayment > 0) {
+        // Single-page invoices must come out exactly as they do today, down
+        // to the order of the deduction lines, so the down payment stays
+        // ahead of the project discount here. Two-page holds it back for
+        // page two instead — it is a payment, not part of the price.
+        if (!useTwoPagePdf && sections.downPayment > 0) {
           drawTotalLine('Down Payment:', `-${formatCurrency(sections.downPayment)}`, { color: [200, 0, 0] })
         }
         if (sections.projectDiscount > 0) {
           drawTotalLine('Project Discount:', `-${formatCurrency(sections.projectDiscount)}`, { color: [200, 0, 0] })
         }
-        drawTotalLine('Net Project:', formatCurrency(sections.netInScope), { bold: true })
-        y += 6
+        if (useTwoPagePdf) {
+          // Page one ends here, on a clean project figure the utility can be
+          // sent on its own.
+          drawTotalLine('Project Total:', formatCurrency(pages.pageOne.total), { bold: true })
+          startAddOnsPage()
+        } else {
+          drawTotalLine('Net Project:', formatCurrency(sections.netInScope), { bold: true })
+          y += 6
+        }
 
         // Out-of-scope add-ons: billed at full price, no incentive.
         drawSectionTitle('Additional Services', 'Customer add-ons — not covered by utility')
@@ -1507,6 +1571,20 @@ Add it anyway?`,
       // Itemized two-section layout already printed the project subtotal,
       // utility incentive, and add-on subtotal inline above. Only whole-
       // invoice credits remain: deposit paid, CC fee, prior payments.
+      //
+      // In two-page mode the down payment was deliberately held back from
+      // page one — it is a payment, not part of the project price — so it
+      // joins the other credits here.
+      // The number the second page exists to show. Without it the page ran
+      // Add-ons Subtotal -> Paid -> Balance Due, and the total of the two
+      // pages was never stated anywhere — the reader had to add the carried
+      // project figure to the add-ons themselves.
+      if (useTwoPagePdf) {
+        drawTotalLine('Invoice Total:', formatCurrency(pages.pageTwo.subtotal), { bold: true })
+      }
+      if (useTwoPagePdf && sections.downPayment > 0) {
+        drawTotalLine('Down Payment:', `-${formatCurrency(sections.downPayment)}`, { color: [200, 0, 0] })
+      }
       if (hasDepositBreakout) {
         const depositLabel = depositPaidDate
           ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
@@ -1520,18 +1598,31 @@ Add it anyway?`,
       // can't be shown inline. Render the section breakdown here in the
       // totals — otherwise the utility incentive vanishes and the numbers
       // don't add up (Parts+Labor jumping straight to Balance Due).
-      drawTotalLine('Project Subtotal:', formatCurrency(sections.inScopeSubtotal))
-      if (sections.incentive > 0) {
-        drawTotalLine('Utility Incentive:', `-${formatCurrency(sections.incentive)}`, { color: [200, 0, 0] })
+      //
+      // In two-page mode all of that already printed: the project figures
+      // closed page one and the add-ons subtotal is on page two. Repeating
+      // them here would show the customer each number twice.
+      if (!useTwoPagePdf) {
+        drawTotalLine('Project Subtotal:', formatCurrency(sections.inScopeSubtotal))
+        if (sections.incentive > 0) {
+          drawTotalLine('Utility Incentive:', `-${formatCurrency(sections.incentive)}`, { color: [200, 0, 0] })
+        }
+        if (sections.projectDiscount > 0) {
+          drawTotalLine('Project Discount:', `-${formatCurrency(sections.projectDiscount)}`, { color: [200, 0, 0] })
+        }
+      }
+      // Same as the itemized branch: the two pages have to add up to a stated
+      // number, and it belongs above the payments.
+      if (useTwoPagePdf) {
+        drawTotalLine('Invoice Total:', formatCurrency(pages.pageTwo.subtotal), { bold: true })
       }
       if (sections.downPayment > 0) {
         drawTotalLine('Down Payment:', `-${formatCurrency(sections.downPayment)}`, { color: [200, 0, 0] })
       }
-      if (sections.projectDiscount > 0) {
-        drawTotalLine('Project Discount:', `-${formatCurrency(sections.projectDiscount)}`, { color: [200, 0, 0] })
+      if (!useTwoPagePdf) {
+        drawTotalLine('Net Project:', formatCurrency(sections.netInScope), { bold: true })
+        drawTotalLine('Add-ons Subtotal:', formatCurrency(sections.outScopeSubtotal), { bold: true })
       }
-      drawTotalLine('Net Project:', formatCurrency(sections.netInScope), { bold: true })
-      drawTotalLine('Add-ons Subtotal:', formatCurrency(sections.outScopeSubtotal), { bold: true })
       if (hasDepositBreakout) {
         const depositLabel = depositPaidDate
           ? `Deposit Applied (paid ${new Date(depositPaidDate).toLocaleDateString()}):`
@@ -2078,6 +2169,16 @@ Add it anyway?`,
     utilityIncentive: linkedUtilityInvoice ? (parseFloat(linkedUtilityInvoice.amount) || 0) : null,
   })
   const useSectionLayout = sections.applicable && sections.hasOutScope
+  // Two-page composition for the PDF: the utility project on page one so it
+  // can be sent to the utility on its own, add-ons and the grand total on
+  // page two. Pagination only — see buildInvoicePages.
+  //
+  // `reconciles` is the safety catch. If the two pages ever failed to add
+  // back to invoiceCustomerTotal we render the existing single-flow layout
+  // instead, so the worst case of this feature is "unchanged", never "wrong
+  // number on a customer invoice".
+  const pages = buildInvoicePages(sections)
+  const useTwoPagePdf = useSectionLayout && pages.twoPage && pages.reconciles
   const incentiveLabel = linkedUtilityInvoice
     ? incentiveLineLabel(linkedUtilityInvoice.utility_name)
     : 'Discount'

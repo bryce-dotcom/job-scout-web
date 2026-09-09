@@ -202,3 +202,69 @@ export function incentiveLineLabel(utilityName) {
   const name = (utilityName || '').trim()
   return name ? `Utility incentive (paid by ${name})` : 'Utility incentive'
 }
+
+// ── Two-page composition ────────────────────────────────────────────────
+//
+// Alayda sends a submittal package to the utility. She needs the project on
+// a page of its own — in-scope work, the incentive, and a total — so she can
+// send that page alone without the customer's add-ons on it.
+//
+// This is PAGINATION, not arithmetic. Every figure below already exists on
+// the sections object; the only thing that moves is WHICH PAGE a line prints
+// on. `grandTotal` is taken straight from `sections.customerTotal` rather
+// than re-derived, so the number at the bottom cannot drift from
+// arHelpers.invoiceCustomerTotal no matter what happens to the layout.
+//
+// The one line that changes side is the down payment. It is a payment the
+// customer made, not part of the project's price, so it sits with the other
+// credits on page two and page one stays a clean project figure.
+//
+//   page 1:  inScopeSubtotal − incentive − projectDiscount = projectTotal
+//   page 2:  projectTotal + addOns − downPayment − depositCredit = grandTotal
+//
+// Those two compose back to exactly the old single-page total:
+//   (inScopeSubtotal − incentive − projectDiscount) + outScope
+//     − downPayment − depositCredit
+//   = netInScope + downPayment + outScope − downPayment − depositCredit
+//   = netInScope + outScope − depositCredit
+//   = customerTotal                                    (buildInvoiceSections)
+export function buildInvoicePages(sections) {
+  const s = sections || {}
+  const inScopeSubtotal = Number(s.inScopeSubtotal) || 0
+  const incentive = Number(s.incentive) || 0
+  const projectDiscount = Number(s.projectDiscount) || 0
+  const downPayment = Number(s.downPayment) || 0
+  const depositCredit = Number(s.depositCredit) || 0
+  const addOnsSubtotal = Number(s.outScopeSubtotal) || 0
+  const grandTotal = Number(s.customerTotal) || 0
+
+  // The project as the utility sees it.
+  const projectTotal = round2(inScopeSubtotal - incentive - projectDiscount)
+  const carriedSubtotal = round2(projectTotal + addOnsSubtotal)
+
+  // A second page only earns its place when there is something to put on it.
+  const twoPage = !!(s.applicable && s.hasOutScope)
+
+  return {
+    twoPage,
+    pageOne: {
+      lines: s.inScope || [],
+      subtotal: inScopeSubtotal,
+      incentive,
+      projectDiscount,
+      total: projectTotal,
+    },
+    pageTwo: {
+      broughtForward: projectTotal,
+      lines: s.outScope || [],
+      addOnsSubtotal,
+      subtotal: carriedSubtotal,
+      downPayment,
+      depositCredit,
+      grandTotal,
+    },
+    // True when the two pages compose back to the authoritative total. The
+    // PDF should never print a layout this says is broken.
+    reconciles: Math.abs(round2(carriedSubtotal - downPayment - depositCredit) - grandTotal) < 0.01,
+  }
+}

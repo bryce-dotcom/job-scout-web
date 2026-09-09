@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  lineAmount, lineInScope, invoiceDiscountBreakout, buildInvoiceSections, incentiveLineLabel,
-} from './invoiceSections'
+import {lineAmount, lineInScope, invoiceDiscountBreakout, buildInvoiceSections, incentiveLineLabel, buildInvoicePages } from './invoiceSections'
 
 // ─────────────────────────────────────────────────────────────────────────
 // CHARACTERIZATION TESTS — the two-section Energy Scout invoice.
@@ -195,5 +193,106 @@ describe('the invoice adds up on the page', () => {
     expect(s.projectDiscount).toBeCloseTo(0, 2)
     expect(s.netInScope).toBeCloseTo(2600.95, 2)
     expect(s.reconciles).toBe(true)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// Two-page composition. Alayda sends page one to the utility on its own, so
+// the project has to stand alone — but the two pages must still add back to
+// exactly the same grand total the single page produced. This suite exists
+// because this invoice has been broken more than once by presentation work.
+// ─────────────────────────────────────────────────────────────────────────
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
+
+describe('buildInvoicePages', () => {
+  const lines = (inScope, outScope) => [
+    ...inScope.map((amt, i) => ({ id: 100 + i, line_total: amt, in_utility_scope: true })),
+    ...outScope.map((amt, i) => ({ id: 200 + i, line_total: amt, in_utility_scope: false })),
+  ]
+  const pagesFor = (invoice, rows, opts) =>
+    buildInvoicePages(buildInvoiceSections(invoice, rows, opts))
+
+  // THE invariant. If this ever fails, the customer is billed a different
+  // number than before, which is the failure mode we are guarding against.
+  const composesBack = (invoice, rows, opts) => {
+    const s = buildInvoiceSections(invoice, rows, opts)
+    const p = buildInvoicePages(s)
+    expect(p.reconciles).toBe(true)
+    expect(
+      round2(p.pageOne.total + p.pageTwo.addOnsSubtotal - p.pageTwo.downPayment - p.pageTwo.depositCredit),
+    ).toBeCloseTo(s.customerTotal, 2)
+    return p
+  }
+
+  it('page one plus page two equals the single-page grand total', () => {
+    composesBack({ amount: 10000, discount_applied: 3000 }, lines([8000], [2000]))
+  })
+
+  it('holds when there is an incentive, a down payment and a discount at once', () => {
+    composesBack(
+      { amount: 29963, discount_applied: 12000, project_discount: 500, down_payment_applied: 1500 },
+      lines([20000, 8000], [1963]),
+    )
+  })
+
+  it('holds with no add-ons at all', () => {
+    const p = composesBack({ amount: 5000, discount_applied: 1000 }, lines([5000], []))
+    expect(p.twoPage).toBe(false)
+  })
+
+  it('holds when the incentive exceeds the add-ons', () => {
+    composesBack({ amount: 50000, discount_applied: 40000 }, lines([49000], [1000]))
+  })
+
+  it('holds when the billed amount sits below the sum of the lines', () => {
+    // The delicate shape from invoices 32598/32612/32423 — a negotiated cut
+    // living in the gap between `amount` and the itemized lines.
+    composesBack({ amount: 9000, discount_applied: 2000 }, lines([9500, 500], [1000]))
+  })
+
+  it('holds with a deposit credit from a parent invoice', () => {
+    composesBack(
+      { amount: 12000, discount_applied: 4000 },
+      lines([10000], [2000]),
+      { parentInvoice: { amount: 1000, payment_status: 'Paid' } },
+    )
+  })
+
+  it('page one carries the project only — no deposit, no payments', () => {
+    const p = pagesFor(
+      { amount: 12000, discount_applied: 3000, down_payment_applied: 1000 },
+      lines([10000], [2000]),
+    )
+    expect(p.pageOne).not.toHaveProperty('downPayment')
+    expect(p.pageOne).not.toHaveProperty('depositCredit')
+    expect(p.pageOne.total).toBeCloseTo(
+      round2(p.pageOne.subtotal - p.pageOne.incentive - p.pageOne.projectDiscount), 2,
+    )
+  })
+
+  it('page two opens with page one total and adds the add-ons to it', () => {
+    const p = pagesFor({ amount: 10000, discount_applied: 2000 }, lines([8000], [2000]))
+    expect(p.pageTwo.broughtForward).toBeCloseTo(p.pageOne.total, 2)
+    expect(p.pageTwo.subtotal).toBeCloseTo(round2(p.pageOne.total + p.pageTwo.addOnsSubtotal), 2)
+  })
+
+  it('puts every in-scope line on page one and every add-on on page two', () => {
+    const p = pagesFor({ amount: 10000, discount_applied: 0 }, lines([5000, 3000], [2000]))
+    expect(p.pageOne.lines).toHaveLength(2)
+    expect(p.pageTwo.lines).toHaveLength(1)
+    expect(p.pageOne.lines.every(l => l.in_utility_scope)).toBe(true)
+  })
+
+  it('does not paginate a legacy-net invoice', () => {
+    // Legacy shapes keep their flat display; their math is not to be touched.
+    // legacy-net = discount strictly greater than gross (arHelpers.isLegacyNetShape)
+    const p = pagesFor({ amount: 5000, discount_applied: 6000 }, lines([5000], [1000]))
+    expect(p.twoPage).toBe(false)
+  })
+
+  it('survives an empty invoice without throwing', () => {
+    const p = buildInvoicePages(buildInvoiceSections({ amount: 0 }, []))
+    expect(p.twoPage).toBe(false)
+    expect(p.pageTwo.grandTotal).toBe(0)
   })
 })
