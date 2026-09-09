@@ -133,13 +133,17 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
     try {
       // Build the missing list
       const missing = []
-      let laborSkipped = 0
+      // Names, not a count. A line that does not get ordered has to be named
+      // on screen — see the report below.
+      const skippedLabor = []
       for (const line of lines) {
         if (line.po_line_id) continue  // already on a PO
-        // Labor is not bought from anyone. It has no vendor and never will,
-        // so letting it reach partitionByVendor below only produced an error
-        // nobody could act on. See isOrderableProduct.
-        if (!isOrderableProduct(line.item)) { laborSkipped++; continue }
+        // Labor is not bought from anyone, so it never reaches the vendor
+        // grouping below. See isOrderableProduct.
+        if (!isOrderableProduct(line.item)) {
+          skippedLabor.push(line.item?.name?.trim() || line.description || `product ${line.item_id}`)
+          continue
+        }
         const need = (parseFloat(line.quantity) || 0) - (parseFloat(line.allocated_qty) || 0)
         if (need <= 0) continue
         const inv = stockMap[line.item_id]
@@ -152,8 +156,8 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
         // Say which of the two it is. A job whose lines are all labor has no
         // parts to allocate at all, and telling that user their parts are
         // "already allocated, on order, or in stock" is its own small lie.
-        toast.info(laborSkipped > 0 && lines.every(l => !isOrderableProduct(l.item))
-          ? 'Nothing to order — every line on this job is labor.'
+        toast.info(skippedLabor.length > 0 && lines.every(l => !isOrderableProduct(l.item))
+          ? `Nothing to order — every line on this job is marked Labor: ${skippedLabor.join(', ')}`
           : 'All parts already allocated, on order, or in stock.')
         setWorking(false); return
       }
@@ -271,6 +275,22 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
         toast.error(
           `${describeBlockedVendors(blocked)}\n\nEverything else was ordered. ` +
           `Set the vendor on those products in Products & Services, then run this again to order the rest.`,
+          { duration: 20000 },
+        )
+      }
+      // A line that did not get ordered is NEVER passed over in silence.
+      //
+      // This is the correction to a real incident. On Northwest Standard Corp
+      // the job had two fixtures; one of them — "SMBE 50/60/70/90/110W Highbay
+      // - 2ft Lift/Controls" — is tagged Labor in the catalogue by mistake. It
+      // was skipped, one PO came out with one product on it, and nothing said
+      // why. Skipping labor is right; skipping it quietly is not, because the
+      // tag is exactly the thing that might be wrong.
+      if (skippedLabor.length > 0) {
+        toast.error(
+          `${skippedLabor.length} line(s) were NOT ordered because they are marked Labor: ` +
+          `${skippedLabor.join(', ')}.\n\nIf any of those is a product you actually buy, ` +
+          `change it to Material in Products & Services and run this again.`,
           { duration: 20000 },
         )
       }
