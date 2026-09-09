@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabase'
 import { toast } from '../lib/toast'
 import { Package, Truck, CheckCircle, AlertCircle, Plus, ShoppingCart } from 'lucide-react'
 import { recomputeJobPartsStatus } from '../lib/poReceive'
-import { generatePoNumber, expandProductForPO, partitionByVendor, describeBlockedVendors } from '../lib/poUtils'
+import { generatePoNumber, expandProductForPO, partitionByVendor, describeBlockedVendors, isOrderableProduct } from '../lib/poUtils'
 
 const PARTS_STATUS_LABELS = {
   not_needed:        { label: 'No Parts',          color: '#7d8a7f', bg: 'rgba(125,138,127,0.12)' },
@@ -44,7 +44,10 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
     // 1) job_lines for this job (with current allocated/consumed/po_line_id)
     const { data: jl } = await supabase
       .from('job_lines')
-      .select('id, item_id, item_name, description, quantity, allocated_qty, consumed_qty, po_line_id, item:products_services(id, name, default_vendor_id)')
+      // material_or_labor is selected because the PO flow filters on it. A
+      // column left out of the select reads as undefined, not as its stored
+      // value, so omitting it here would silently switch that filter off.
+      .select('id, item_id, item_name, description, quantity, allocated_qty, consumed_qty, po_line_id, item:products_services(id, name, default_vendor_id, material_or_labor)')
       .eq('job_id', job.id)
       .order('id')
     const safeLines = (jl || []).filter(l => l.item_id) // only parts-bearing lines
@@ -130,8 +133,13 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
     try {
       // Build the missing list
       const missing = []
+      let laborSkipped = 0
       for (const line of lines) {
         if (line.po_line_id) continue  // already on a PO
+        // Labor is not bought from anyone. It has no vendor and never will,
+        // so letting it reach partitionByVendor below only produced an error
+        // nobody could act on. See isOrderableProduct.
+        if (!isOrderableProduct(line.item)) { laborSkipped++; continue }
         const need = (parseFloat(line.quantity) || 0) - (parseFloat(line.allocated_qty) || 0)
         if (need <= 0) continue
         const inv = stockMap[line.item_id]
@@ -141,7 +149,12 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
         missing.push({ line, toOrder })
       }
       if (missing.length === 0) {
-        toast.info('All parts already allocated, on order, or in stock.')
+        // Say which of the two it is. A job whose lines are all labor has no
+        // parts to allocate at all, and telling that user their parts are
+        // "already allocated, on order, or in stock" is its own small lie.
+        toast.info(laborSkipped > 0 && lines.every(l => !isOrderableProduct(l.item))
+          ? 'Nothing to order — every line on this job is labor.'
+          : 'All parts already allocated, on order, or in stock.')
         setWorking(false); return
       }
 
@@ -175,7 +188,15 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
       // vendor, so an unassigned product silently became a real order to
       // whoever happened to sort first.
       const { groups, blocked } = partitionByVendor(allItems, vendors)
-      if (blocked.length) {
+      // Order everything that CAN be ordered, and say what could not.
+      //
+      // This used to discard `groups` entirely the moment one item was
+      // blocked, so a single product with no vendor stopped every other line
+      // on the job — and 387 of HHH's active products have no vendor set, so
+      // it was not a rare shape. Refusing to guess a vendor is right (guessing
+      // is what once raised real POs against whoever sorted first); refusing
+      // to order the lines that ARE addressable is not.
+      if (groups.size === 0) {
         toast.error(`Nothing was ordered.\n${describeBlockedVendors(blocked)}\n\nSet the vendor on those products in Products & Services, then try again.`)
         setWorking(false); return
       }
@@ -243,6 +264,16 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
 
       await recomputeJobPartsStatus(job.id)
       await fetchAll(); onChange?.()
+      // Held-back items are reported AFTER the POs are made, and for long
+      // enough to read, so the partial result is never mistaken for a whole
+      // one. The success toast below still fires — some of it did work.
+      if (blocked.length) {
+        toast.error(
+          `${describeBlockedVendors(blocked)}\n\nEverything else was ordered. ` +
+          `Set the vendor on those products in Products & Services, then run this again to order the rest.`,
+          { duration: 20000 },
+        )
+      }
       if (createdPos.length === 1) {
         toast.success(`PO ${createdPos[0].po_number} created`)
         navigate(`/purchase-orders/${createdPos[0].id}`)

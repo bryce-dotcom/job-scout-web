@@ -229,3 +229,25 @@ export function describeBlockedVendors(blocked) {
     })
     .join('\n')
 }
+
+// ── What a purchase order can actually contain ──────────────────────────────
+//
+// A purchase order buys things from a vendor. Labor is work the company
+// performs; there is no vendor to raise it against and there never will be.
+//
+// The parts tab had no notion of this — it treated every job line as stock to
+// order — so a labor line went looking for a vendor, found none, and stopped
+// the whole order. Alayda hit it on "ES LIFT", a lift charge:
+//
+//   "Nothing was ordered. 1 item(s) cannot be ordered because they have no
+//    vendor set: ES LIFT. Set the vendor on those products in Products &
+//    Services, then try again."
+//
+// She could not have followed that advice. A lift charge has no vendor to set.
+//
+// Only an explicit 'labor' is excluded. Plenty of real materials have
+// material_or_labor unset, and treating a blank as labor would silently stop
+// ordering things that order fine today.
+export function isOrderableProduct(product) {
+  return String(product?.material_or_labor ?? '').trim().toLowerCase() !== 'labor'
+}

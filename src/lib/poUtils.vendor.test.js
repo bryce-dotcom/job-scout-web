@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  VENDOR_PROBLEM, resolveOrderVendor, partitionByVendor, describeBlockedVendors,
-} from './poUtils'
+import {VENDOR_PROBLEM, resolveOrderVendor, partitionByVendor, describeBlockedVendors, isOrderableProduct } from './poUtils'
 
 // The real vendor list for company 3 on the day this was reported.
 const vendors = [
@@ -104,5 +102,75 @@ describe('describeBlockedVendors', () => {
   it('says nothing when nothing is blocked', () => {
     expect(describeBlockedVendors([])).toBe('')
     expect(describeBlockedVendors(null)).toBe('')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// Labor is not orderable. Alayda, 8 Sep 2026: "Nothing was ordered. 1 item(s)
+// cannot be ordered because they have no vendor set: ES LIFT" — ES LIFT is a
+// lift CHARGE, material_or_labor='labor'. No vendor exists to set, so the
+// error was unfixable and the advice it gave was wrong.
+// ─────────────────────────────────────────────────────────────────────────
+describe('isOrderableProduct', () => {
+  it('refuses labor — there is no vendor to buy it from', () => {
+    expect(isOrderableProduct({ name: 'ES LIFT ', material_or_labor: 'labor' })).toBe(false)
+  })
+
+  it('is not fooled by casing or stray whitespace', () => {
+    for (const v of ['Labor', 'LABOR', ' labor ', 'Labor ']) {
+      expect(isOrderableProduct({ material_or_labor: v })).toBe(false)
+    }
+  })
+
+  it('orders material', () => {
+    expect(isOrderableProduct({ name: 'SMBE Wallpack', material_or_labor: 'material' })).toBe(true)
+  })
+
+  // Most real products leave this blank. Treating blank as labor would stop
+  // ordering things that order fine today — a far worse regression.
+  it('treats an unset value as orderable', () => {
+    expect(isOrderableProduct({ name: 'Some part' })).toBe(true)
+    expect(isOrderableProduct({ material_or_labor: null })).toBe(true)
+    expect(isOrderableProduct({ material_or_labor: '' })).toBe(true)
+  })
+
+  it('does not throw on a missing product', () => {
+    expect(isOrderableProduct(undefined)).toBe(true)
+    expect(isOrderableProduct(null)).toBe(true)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// One un-vendored item must not cancel the whole order. 387 of HHH's active
+// products have no default_vendor_id, so the all-or-nothing block meant a
+// single bad product stopped every other line on the job.
+// ─────────────────────────────────────────────────────────────────────────
+describe('partitionByVendor — partial ordering', () => {
+  const vendors = [{ id: 1, name: 'MES', active: true }, { id: 2, name: 'LEDOne', active: true }]
+
+  it('still groups the orderable items when one is blocked', () => {
+    const items = [
+      { productId: 10, name: 'Tube', vendorId: 1 },
+      { productId: 11, name: 'Wallpack', vendorId: 2 },
+      { productId: 12, name: 'Mystery', vendorId: null },
+    ]
+    const { groups, blocked } = partitionByVendor(items, vendors)
+    // The caller decides what to do; the point is it is given something to do.
+    expect(groups.size).toBe(2)
+    expect(blocked).toHaveLength(1)
+    expect(blocked[0].item.name).toBe('Mystery')
+  })
+
+  it('leaves nothing to order when every item is blocked', () => {
+    const { groups, blocked } = partitionByVendor(
+      [{ productId: 12, name: 'Mystery', vendorId: null }], vendors,
+    )
+    expect(groups.size).toBe(0)
+    expect(blocked).toHaveLength(1)
+  })
+
+  it('names the blocked product so a human can go fix it', () => {
+    const { blocked } = partitionByVendor([{ productId: 12, name: 'ES LIFT ', vendorId: null }], vendors)
+    expect(describeBlockedVendors(blocked)).toContain('ES LIFT')
   })
 })
