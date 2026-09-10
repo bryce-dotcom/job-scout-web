@@ -187,6 +187,27 @@ describe('utility AR reads the invoice, and the utility row only until it is lin
     const ok = q.startsWith('*') || (/\butility_owes\b/.test(q) && /\butility_paid_at\b/.test(q))
     expect(ok).toBe(true)
   })
+
+  // JobDetail fetches its own rows with explicit column lists and feeds them
+  // to jobARSnapshot, which filters by job_id and reads the payer columns.
+  // The first time the widget was routed through the helper, neither query
+  // selected job_id: every row was filtered out and the widget silently
+  // vanished. Only opening the page in a browser caught it. This reads the
+  // page source so the omission fails here instead.
+  it('JobDetail selects every column jobARSnapshot reads', () => {
+    const src = readFileSync(new URL('../pages/JobDetail.jsx', import.meta.url), 'utf8')
+    const selects = [...src.matchAll(/\.select\('([^']+)'\)/g)].map((m) => m[1])
+    const invoiceSelect = selects.find((s) => /\bpdf_url\b/.test(s) && /\bdiscount_applied\b/.test(s))
+    const utilitySelect = selects.find((s) => /\bincentive_amount\b/.test(s) && /\bnet_cost\b/.test(s) && /\butility_name\b/.test(s))
+    expect(invoiceSelect, 'the job invoices query').toBeTruthy()
+    expect(utilitySelect, 'the job utility invoices query').toBeTruthy()
+    for (const col of ['job_id', 'amount', 'discount_applied', 'payment_status', 'utility_owes', 'utility_paid_at']) {
+      expect(new RegExp(`\\b${col}\\b`).test(invoiceSelect), `invoices select is missing ${col}`).toBe(true)
+    }
+    for (const col of ['job_id', 'invoice_id', 'amount', 'incentive_amount', 'payment_status']) {
+      expect(new RegExp(`\\b${col}\\b`).test(utilitySelect), `utility_invoices select is missing ${col}`).toBe(true)
+    }
+  })
 })
 
 describe('adding the payer split does not move receivables', () => {

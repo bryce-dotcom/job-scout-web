@@ -15,7 +15,7 @@ import DealBreadcrumb from '../components/DealBreadcrumb'
 import SignedProposalCard from '../components/SignedProposalCard'
 import { jobStatusColors as statusColors } from '../lib/statusColors'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
-import { isLegacyNetShape } from '../lib/arHelpers'
+import { isLegacyNetShape, jobARSnapshot } from '../lib/arHelpers'
 import { reconcileInvoicePair } from '../lib/invoiceReconcile'
 import {
   downPaymentEffect, customerOutOfPocket, FUNDED_BY_CUSTOMER, FUNDED_BY_JOBSCOUT,
@@ -35,6 +35,7 @@ import { computeAllottedHours } from '../lib/allottedHours'
 import { fetchJobBonuses, bonusStatusLabel } from '../lib/bonusLedger'
 import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
+import { selectPdfPages, pageIndicesFor, PAGES_FIRST, PAGES_ALL } from '../lib/pdfPages'
 
 const CATEGORY_COLORS = {
   CONTRACT: { bg: '#dcfce7', text: '#166534' },
@@ -330,6 +331,11 @@ function JobDetailInner() {
   const [submittalMessage, setSubmittalMessage] = useState('')
   const [submittalSending, setSubmittalSending] = useState(false)
   const [submittalHistory, setSubmittalHistory] = useState([])
+  // Per customer invoice: send page one (the utility's project) or every page.
+  // Page one is the default — the utility does not allow add-ons or discounts
+  // in what it audits, and page two is exactly those. Keyed by invoice id;
+  // an invoice with no entry sends page one.
+  const [submittalInvoicePages, setSubmittalInvoicePages] = useState({})
 
   // Bonus hours state
   const [bonusConfig, setBonusConfig] = useState(null) // payroll_config from settings
@@ -536,7 +542,7 @@ function JobDetailInner() {
         // made discount_applied undefined, so the balance silently equalled
         // the gross and Combined AR counted the utility incentive twice —
         // $18,203.80 + $13,110 on a job worth $18,203.80.
-        .select('id, invoice_id, amount, discount_applied, project_discount, payment_status, created_at, pdf_url, invoice_type, last_sent_at')
+        .select('id, job_id, invoice_id, amount, discount_applied, project_discount, payment_status, created_at, pdf_url, invoice_type, last_sent_at, utility_owes, utility_paid_at')
         .eq('job_id', id)
         .order('created_at', { ascending: false })
       setJobInvoices(invoicesData || [])
@@ -553,7 +559,7 @@ function JobDetailInner() {
       // Fetch utility invoices linked to this job
       const { data: utilInvoicesData } = await supabase
         .from('utility_invoices')
-        .select('id, amount, payment_status, utility_name, created_at, project_cost, incentive_amount, net_cost, customer_name, notes')
+        .select('id, job_id, invoice_id, amount, payment_status, utility_name, created_at, project_cost, incentive_amount, net_cost, customer_name, notes')
         .eq('job_id', id)
         .order('created_at', { ascending: false })
       setJobUtilityInvoices(utilInvoicesData || [])
@@ -3079,7 +3085,7 @@ function JobDetailInner() {
         const invId = parseInt(rest[0])
         const inv = jobInvoices.find(i => i.id === invId)
         if (inv?.pdf_url) {
-          items.push({ type: 'signed_path', bucket: 'project-documents', path: inv.pdf_url, folder: DOCS, filename: `Invoice_${inv.invoice_id || invId}.pdf` })
+          items.push({ type: 'signed_path', bucket: 'project-documents', path: inv.pdf_url, folder: DOCS, filename: `Invoice_${inv.invoice_id || invId}.pdf`, pages: submittalInvoicePages[inv.id] || PAGES_FIRST })
         }
       } else if (type === 'utilinvoice') {
         const invId = parseInt(rest[0])
@@ -3179,6 +3185,9 @@ function JobDetailInner() {
             if (signedData?.signedUrl) {
               const resp = await fetch(signedData.signedUrl)
               if (resp.ok) data = await resp.blob()
+            }
+            if (data && item.pages) {
+              data = new Blob([await selectPdfPages(await data.arrayBuffer(), item.pages)], { type: 'application/pdf' })
             }
           } else if (item.type === 'doc') {
             // Documents may be in public or private buckets
@@ -3290,7 +3299,8 @@ function JobDetailInner() {
 
           if (bytes) {
             const src = await PDFDocument.load(bytes, { ignoreEncryption: true })
-            const pages = await merged.copyPages(src, src.getPageIndices())
+            const keep = item.pages ? pageIndicesFor(item.pages, src.getPageCount()) : src.getPageIndices()
+            const pages = await merged.copyPages(src, keep)
             pages.forEach(p => merged.addPage(p))
             pdfsMerged++
           }
@@ -3390,6 +3400,7 @@ function JobDetailInner() {
               const resp = await fetch(sd.signedUrl)
               if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || '' }
             }
+            if (bytes && item.pages) bytes = await selectPdfPages(bytes, item.pages)
           } else if (item.type === 'doc' && item.att.storage_bucket) {
             const { data: sd } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
             if (sd?.signedUrl) {
@@ -6069,21 +6080,17 @@ function JobDetailInner() {
                 Invoices ({jobInvoices.length + jobUtilityInvoices.length})
               </h3>
 
-              {/* "Who pays what" AR breakdown — same numbers shown
-                  elsewhere in the app, surfaced here so users don't have
-                  to mentally subtract incentive + deposit to figure out
-                  what each side still owes on this job. */}
+              {/* "Who pays what" AR breakdown — the same numbers the Dashboard
+                  and Books show, through the same helper. This widget used to
+                  carry its own copy of the rules (customer balance, utility
+                  balance from the utility rows) — identical to arHelpers by
+                  coincidence, and the next thing to drift once the utility's
+                  debt reads from the invoice and utility payments become
+                  ledger rows. jobARSnapshot is the one place now. */}
               {(() => {
-                const customerOpen = jobInvoices.filter(i => i.payment_status !== 'Paid' && i.payment_status !== 'Void' && i.payment_status !== 'Cancelled')
-                const customerBal = customerOpen.reduce((s, i) => {
-                  const gross = Number(i.amount) || 0
-                  const disc = Number(i.discount_applied) || 0
-                  const customer = isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
-                  const paid = (payments || []).filter(p => p.invoice_id === i.id).reduce((ps, p) => ps + (Number(p.amount) || 0), 0)
-                  return s + Math.max(0, customer - paid)
-                }, 0)
-                const utilOpen = jobUtilityInvoices.filter(u => u.payment_status !== 'Paid' && u.payment_status !== 'Void')
-                const utilBal = utilOpen.reduce((s, u) => s + (Number(u.amount || u.incentive_amount) || 0), 0)
+                const snap = jobARSnapshot(Number(id), jobInvoices, jobUtilityInvoices, payments || [])
+                const customerBal = snap.customerBalance
+                const utilBal = snap.utilityBalance
                 if (customerBal === 0 && utilBal === 0) return null
                 return (
                   <div style={{
@@ -7761,6 +7768,38 @@ function JobDetailInner() {
                               </div>
                             </div>
                             {!hasPdf && <span style={{ fontSize: '10px', color: theme.textMuted }}>No PDF</span>}
+                            {hasPdf && (() => {
+                              // Which pages of this invoice go in the package.
+                              // Page one is the utility's project and the
+                              // default; page two is the customer's add-ons,
+                              // which the utility does not accept.
+                              const choice = submittalInvoicePages[inv.id] || PAGES_FIRST
+                              const opt = (value, label) => (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setSubmittalInvoicePages(p => ({ ...p, [inv.id]: value })) }}
+                                  title={value === PAGES_FIRST ? 'Page one only — the utility project, what the utility audits' : 'Every page — includes customer add-ons and the invoice total'}
+                                  style={{
+                                    padding: '4px 8px', fontSize: '10px', fontWeight: '600', minHeight: '28px',
+                                    backgroundColor: choice === value ? theme.accent : 'transparent',
+                                    color: choice === value ? '#fff' : theme.textMuted,
+                                    border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {label}
+                                </button>
+                              )
+                              return (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{ display: 'flex', border: `1px solid ${theme.border}`, borderRadius: '6px', overflow: 'hidden', flexShrink: 0 }}
+                                >
+                                  {opt(PAGES_FIRST, 'Page 1 · utility')}
+                                  {opt(PAGES_ALL, 'All pages')}
+                                </div>
+                              )
+                            })()}
                           </div>
                         )
                       })}

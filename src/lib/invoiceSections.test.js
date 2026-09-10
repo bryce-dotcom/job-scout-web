@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {lineAmount, lineInScope, invoiceDiscountBreakout, buildInvoiceSections, incentiveLineLabel, buildInvoicePages } from './invoiceSections'
+import {lineAmount, lineInScope, invoiceDiscountBreakout, buildInvoiceSections, incentiveLineLabel, buildInvoicePages, whoPaysWhat, invoiceUtilityName } from './invoiceSections'
 
 // ─────────────────────────────────────────────────────────────────────────
 // CHARACTERIZATION TESTS — the two-section Energy Scout invoice.
@@ -294,5 +294,61 @@ describe('buildInvoicePages', () => {
     const p = buildInvoicePages(buildInvoiceSections({ amount: 0 }, []))
     expect(p.twoPage).toBe(false)
     expect(p.pageTwo.grandTotal).toBe(0)
+  })
+})
+
+describe('whoPaysWhat — page one names both parties', () => {
+  const pageOne = { subtotal: 20000, incentive: 14560, projectDiscount: 0, total: 5440 }
+
+  it('names the utility and the customer with the figures printed above them', () => {
+    const w = whoPaysWhat({ utilityName: 'Rocky Mountain Power', pageOne, twoPage: true })
+    expect(w.utility.name).toBe('Rocky Mountain Power')
+    expect(w.utility.amount).toBe(14560)
+    expect(w.customer.amount).toBe(5440)
+    expect(w.customer.note).toMatch(/page 2/)
+  })
+
+  it('says "your portion" when the invoice is one page', () => {
+    const w = whoPaysWhat({ utilityName: 'Rocky Mountain Power', pageOne, twoPage: false })
+    expect(w.customer.note).not.toMatch(/page 2/)
+  })
+
+  // Every non-rebate invoice must print exactly as it does today.
+  it('returns null when there is no incentive to split', () => {
+    expect(whoPaysWhat({ utilityName: 'X', pageOne: { ...pageOne, incentive: 0 }, twoPage: true })).toBeNull()
+    expect(whoPaysWhat({ utilityName: 'X', pageOne: {}, twoPage: false })).toBeNull()
+    expect(whoPaysWhat({})).toBeNull()
+  })
+
+  it('falls back to "Utility" rather than printing a blank name', () => {
+    expect(whoPaysWhat({ utilityName: '  ', pageOne, twoPage: true }).utility.name).toBe('Utility')
+  })
+
+  it('uses the page figure, never a recomputation', () => {
+    // If the page says the incentive is 14560, the block says 14560 — even if
+    // some other record disagrees. Agreement with the lines above is the point.
+    const w = whoPaysWhat({ utilityName: 'RMP', pageOne: { ...pageOne, incentive: 14560.004 }, twoPage: true })
+    expect(w.utility.amount).toBe(14560)
+  })
+})
+
+describe('invoiceUtilityName — the invoice is the record', () => {
+  const providers = [{ id: 116, provider_name: 'Rocky Mountain Power' }, { id: 7, provider_name: 'SRP' }]
+
+  it('resolves the invoice\'s own provider link first', () => {
+    expect(invoiceUtilityName({ utility_provider_id: 116 }, providers, { utility_name: 'Something Else' })).toBe('Rocky Mountain Power')
+  })
+
+  it('falls back to the linked utility row when the invoice has no link', () => {
+    expect(invoiceUtilityName({ utility_provider_id: null }, providers, { utility_name: 'SRP' })).toBe('SRP')
+  })
+
+  it('tolerates a string id from the store', () => {
+    expect(invoiceUtilityName({ utility_provider_id: '116' }, providers, null)).toBe('Rocky Mountain Power')
+  })
+
+  it('returns null when nothing names the utility', () => {
+    expect(invoiceUtilityName({}, [], null)).toBeNull()
+    expect(invoiceUtilityName({ utility_provider_id: 999 }, providers, null)).toBeNull()
   })
 })

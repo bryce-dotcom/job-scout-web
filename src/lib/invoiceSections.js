@@ -268,3 +268,47 @@ export function buildInvoicePages(sections) {
     reconciles: Math.abs(round2(carriedSubtotal - downPayment - depositCredit) - grandTotal) < 0.01,
   }
 }
+
+// Who pays what, for the foot of page one.
+//
+// Page one is the page that goes to the utility on its own, so it has to
+// say — in words, not just as a red line in the totals — that two parties
+// owe money on this project and how much each. The figures come from the
+// page itself (buildInvoicePages), never recomputed here: this block must
+// agree with the lines printed above it or it is worse than nothing.
+//
+// The utility's name comes from the invoice's own provider link where it
+// has one (utility_provider_id → utility_providers), falling back to the
+// linked utility row's utility_name. Both name the same utility — the
+// mirror trigger set the id from the name — but the invoice is the record.
+//
+// Returns null when there is no incentive: an invoice with one payer has
+// nothing to split, and every non-rebate invoice must print exactly as it
+// does today.
+export function whoPaysWhat({ utilityName, pageOne, twoPage }) {
+  const incentive = Number(pageOne?.incentive) || 0
+  if (!(incentive > 0)) return null
+  return {
+    utility: {
+      name: (utilityName || '').trim() || 'Utility',
+      amount: round2(incentive),
+      note: 'incentive — billed to the utility',
+    },
+    customer: {
+      name: 'Customer',
+      amount: round2(pageOne?.total),
+      note: twoPage ? 'project portion — add-ons and invoice total on page 2' : 'your portion',
+    },
+  }
+}
+
+// The utility's name as the invoice records it. Prefers the invoice's own
+// provider link; falls back to the linked utility row.
+export function invoiceUtilityName(invoice, utilityProviders = [], linkedUtilityInvoice = null) {
+  const id = invoice?.utility_provider_id
+  if (id != null) {
+    const p = (utilityProviders || []).find((x) => Number(x?.id) === Number(id))
+    if (p?.provider_name) return String(p.provider_name).trim()
+  }
+  return String(linkedUtilityInvoice?.utility_name || '').trim() || null
+}

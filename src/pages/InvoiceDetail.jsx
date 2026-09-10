@@ -16,7 +16,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
 import { resolveMatLabSplit, splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
-import { buildInvoiceSections, buildInvoicePages, incentiveLineLabel, invoiceDiscountBreakout } from '../lib/invoiceSections'
+import { buildInvoiceSections, buildInvoicePages, incentiveLineLabel, invoiceDiscountBreakout, whoPaysWhat, invoiceUtilityName } from '../lib/invoiceSections'
 import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
 import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -55,6 +55,7 @@ export default function InvoiceDetail() {
   const settings = useStore((state) => state.settings)
   const getSettingValue = useStore((state) => state.getSettingValue)
   const fetchSettings = useStore((state) => state.fetchSettings)
+  const utilityProviders = useStore((state) => state.utilityProviders)
 
   const [invoice, setInvoice] = useState(null)
   const [parentInvoice, setParentInvoice] = useState(null)
@@ -1366,6 +1367,48 @@ Add it anyway?`,
       y += 4
     }
 
+    // Who pays what — the foot of page one on a two-page invoice.
+    //
+    // Page one goes to the utility by itself, so it has to say in words that
+    // two parties owe on this project and how much each, not leave the
+    // reader to infer it from a red line in the totals. Figures come from
+    // the page itself (whoPaysWhat reads buildInvoicePages), so the block
+    // cannot disagree with the lines printed above it.
+    const drawWhoPaysWhat = () => {
+      const split = whoPaysWhat({
+        utilityName: invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice),
+        pageOne: pages.pageOne,
+        twoPage: true,
+      })
+      if (!split) return
+      checkPage(30)
+      y += 4
+      const boxTop = y - 4
+      doc.setFillColor(238, 242, 235)
+      doc.setDrawColor(214, 205, 184)
+      doc.roundedRect(margin, boxTop, contentWidth, 26, 2, 2, 'FD')
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(90, 99, 73)
+      doc.text('WHO PAYS WHAT', margin + 5, y + 1)
+      y += 7
+      for (const party of [split.utility, split.customer]) {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(0)
+        doc.text(party.name, margin + 5, y)
+        doc.text(formatCurrency(party.amount), rightEdge - 5, y, { align: 'right' })
+        y += 4
+        doc.setFontSize(8)
+        doc.setFont('helvetica', 'italic')
+        doc.setTextColor(120)
+        doc.text(party.note, margin + 5, y)
+        doc.setTextColor(0)
+        y += 5
+      }
+      y += 2
+    }
+
     // ── Line items table ──
     // Branch: summary_format renders Parts/Labor totals instead of
     // the per-line breakdown. Same total either way — just collapsed.
@@ -1456,6 +1499,7 @@ Add it anyway?`,
             drawTotalLine('Project Discount:', `-${formatCurrency(pages.pageOne.projectDiscount)}`, { color: [200, 0, 0] })
           }
           drawTotalLine('Project Total:', formatCurrency(pages.pageOne.total), { bold: true })
+          drawWhoPaysWhat()
           startAddOnsPage()
         } else {
           y += 2
@@ -1496,6 +1540,7 @@ Add it anyway?`,
           // Page one ends here, on a clean project figure the utility can be
           // sent on its own.
           drawTotalLine('Project Total:', formatCurrency(pages.pageOne.total), { bold: true })
+          drawWhoPaysWhat()
           startAddOnsPage()
         } else {
           drawTotalLine('Net Project:', formatCurrency(sections.netInScope), { bold: true })
