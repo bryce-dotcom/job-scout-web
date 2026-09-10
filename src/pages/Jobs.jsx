@@ -23,6 +23,7 @@ import { jobStatusColors as statusColors, invoiceStatusColors } from '../lib/sta
 import { fetchUtilityInvoicedJobIds, isUtilityInvoiced } from '../lib/utilityInvoiced'
 import UtilityInvoicedBadge from '../components/UtilityInvoicedBadge'
 import { matchesJobSearch, jobSearchRank } from '../lib/jobSearch'
+import { jobYear, availableJobYears } from '../lib/jobYear'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
 
@@ -477,15 +478,11 @@ export default function Jobs() {
   // Get unique teams for filter
   const teams = [...new Set(jobs.map(j => j.assigned_team).filter(Boolean))]
 
-  // Years present in the job dataset — drives history pills in list view
-  const availableYears = [...new Set(
-    jobs.flatMap(j =>
-      [j.start_date, j.completed_at, j.created_at]
-        .filter(Boolean)
-        .map(d => new Date(d).getFullYear())
-        .filter(y => y >= 2020 && y <= new Date().getFullYear())
-    )
-  )].sort((a, b) => b - a)
+  // Years present in the job dataset — drives history pills in list view.
+  // Built from the SAME rule the row filter below uses, so every job that can
+  // be matched has a button. See lib/jobYear.js for what went wrong when
+  // these two disagreed.
+  const availableYears = availableJobYears(jobs)
 
   // Recent wins: completed jobs from last 30 days, sorted most recent first
   const thirtyDaysAgo = new Date()
@@ -542,11 +539,14 @@ export default function Jobs() {
     // January belongs to different years under each — but they are now the
     // same order of magnitude and the difference is explainable.
     if (historyYear !== null) {
-      const effective = job.start_date || job.completed_at || job.created_at
-      if (!effective) return false
-      const date = new Date(effective)
-      if (date.getFullYear() !== historyYear) return false
-      if (historyMonth !== null && date.getMonth() + 1 !== historyMonth) return false
+      // jobYear is the one definition of which year this job belongs to, and
+      // availableYears above is built from it — so the year buttons and this
+      // filter can never disagree about a job again.
+      if (jobYear(job) !== historyYear) return false
+      if (historyMonth !== null) {
+        const effective = job.start_date || job.completed_at || job.created_at
+        if (new Date(effective).getMonth() + 1 !== historyMonth) return false
+      }
       return true
     }
 
