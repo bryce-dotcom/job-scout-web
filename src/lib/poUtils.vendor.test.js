@@ -174,3 +174,68 @@ describe('partitionByVendor — partial ordering', () => {
     expect(describeBlockedVendors(blocked)).toContain('ES LIFT')
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────
+// The correction. Reading material_or_labor alone skipped 82 real fixtures.
+// Alayda, 10 Sep: "Trying to order for NORTHWEST — 1 line(s) were NOT ordered
+// because they are marked Labor: SMBE 50/60/70/90/110W Highbay - 2ft
+// Lift/Controls." That highbay has vendor_sku 09240-03 and a manufacturer
+// part number. It is a fixture. The order code is the discriminator, not the
+// tag — and not `type` either, which is identical on both.
+// ─────────────────────────────────────────────────────────────────────────
+describe('isOrderableProduct — labor tag vs order code', () => {
+  // Both rows exactly as they are in the live catalogue.
+  const HIGHBAY = {
+    id: 1374,
+    name: 'SMBE 50/60/70/90/110W Highbay - 2ft Lift/Controls',
+    type: 'Electrical Services (Bundles)',
+    material_or_labor: 'labor',
+    vendor_sku: '09240-03',
+    model_number: 'MES-PHB-SSRP-110WB1ML1A1-abW50',
+  }
+  const ES_LIFT = {
+    id: 1505,
+    name: 'ES LIFT ',
+    type: 'Electrical Services (Bundles)',
+    material_or_labor: 'labor',
+    vendor_sku: null,
+    model_number: null,
+  }
+
+  it('orders a labor-tagged fixture that has an order code', () => {
+    expect(isOrderableProduct(HIGHBAY)).toBe(true)
+  })
+
+  it('still refuses a labor charge with no order code', () => {
+    expect(isOrderableProduct(ES_LIFT)).toBe(false)
+  })
+
+  it('cannot tell them apart by type — that is why the code is the test', () => {
+    expect(HIGHBAY.type).toBe(ES_LIFT.type)
+    expect(HIGHBAY.material_or_labor).toBe(ES_LIFT.material_or_labor)
+    expect(isOrderableProduct(HIGHBAY)).not.toBe(isOrderableProduct(ES_LIFT))
+  })
+
+  it('accepts either a vendor sku or a model number on its own', () => {
+    expect(isOrderableProduct({ material_or_labor: 'labor', vendor_sku: '02472' })).toBe(true)
+    expect(isOrderableProduct({ material_or_labor: 'labor', model_number: 'LOC-4FTFLHB-MW' })).toBe(true)
+  })
+
+  it('does not accept a placeholder as an order code', () => {
+    for (const v of ['-', '--', 'N/A', 'none', 'TBD', '  ', '?']) {
+      expect(isOrderableProduct({ material_or_labor: 'labor', vendor_sku: v })).toBe(false)
+    }
+  })
+
+  it('leaves everything not tagged labor orderable, code or not', () => {
+    expect(isOrderableProduct({ material_or_labor: 'material' })).toBe(true)
+    expect(isOrderableProduct({ material_or_labor: null })).toBe(true)
+    expect(isOrderableProduct({})).toBe(true)
+  })
+
+  it('real window-cleaning services stay out', () => {
+    for (const name of ['Window Well Cleaning', 'Roof cleaning per Sq/Ft', 'Shower Glass Restoration']) {
+      expect(isOrderableProduct({ name, material_or_labor: 'labor', vendor_sku: null, model_number: null })).toBe(false)
+    }
+  })
+})

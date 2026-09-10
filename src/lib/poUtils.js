@@ -248,6 +248,35 @@ export function describeBlockedVendors(blocked) {
 // Only an explicit 'labor' is excluded. Plenty of real materials have
 // material_or_labor unset, and treating a blank as labor would silently stop
 // ordering things that order fine today.
+// A value that is really there, not a placeholder someone typed to fill a box.
+const PLACEHOLDER_CODES = new Set(['', '-', '--', 'n/a', 'na', 'none', 'tbd', '?'])
+function hasOrderCode(product) {
+  for (const v of [product?.vendor_sku, product?.model_number]) {
+    const s = String(v ?? '').trim()
+    if (s && !PLACEHOLDER_CODES.has(s.toLowerCase())) return true
+  }
+  return false
+}
+
 export function isOrderableProduct(product) {
-  return String(product?.material_or_labor ?? '').trim().toLowerCase() !== 'labor'
+  if (!product) return true
+  const taggedLabor = String(product.material_or_labor ?? '').trim().toLowerCase() === 'labor'
+  if (!taggedLabor) return true
+  // Tagged labor, but it carries a vendor SKU or a manufacturer part number.
+  // Something with an order code is a physical thing a vendor sells, whatever
+  // the tag says — so it stays orderable.
+  //
+  // Reading material_or_labor alone was wrong and it cost Alayda a working
+  // day. "SMBE 50/60/70/90/110W Highbay - 2ft Lift/Controls" is tagged labor
+  // (the price bundles the lift) but has vendor_sku 09240-03 and model number
+  // MES-PHB-SSRP-110WB1ML1A1-abW50. It is a fixture. It was skipped, and her
+  // PO for Northwest Standard came out with one of its two products on it.
+  //
+  // That was not one bad row. 82 of HHH's 212 labor-tagged active products
+  // carry an order code, and every one is a fixture — highbays, panels, wraps,
+  // strips, canopies. The other 130 carry none, and every one is a service:
+  // window cleaning, roof washing, shower restoration, ES LIFT. The order code
+  // is what actually separates the two; the tag does not, and `type` does not
+  // either — ES LIFT and that highbay share the same type string exactly.
+  return hasOrderCode(product)
 }
