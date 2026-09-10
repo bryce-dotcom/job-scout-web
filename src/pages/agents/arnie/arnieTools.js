@@ -424,12 +424,12 @@ export function getFinancials(role) {
     customerAR: totalCustomerAR(invItems, paymentsByInv).toFixed(2),
     // What utilities still owe in unpaid rebates — counts as receivable
     // too, separately labeled so the AI can answer "who owes us" correctly.
-    utilityAR: totalUtilityAR(utilItems).toFixed(2),
+    utilityAR: totalUtilityAR(utilItems, invItems).toFixed(2),
     utilityInvoiceCount: utilItems.filter(u => u?.payment_status !== 'Paid' && u?.payment_status !== 'Void').length,
     // Combined AR — this is the number that should be quoted as "accounts
     // receivable" unless the question is specifically about customer or
     // utility only.
-    totalUnpaidAmount: (totalCustomerAR(invItems, paymentsByInv) + totalUtilityAR(utilItems)).toFixed(2),
+    totalUnpaidAmount: (totalCustomerAR(invItems, paymentsByInv) + totalUtilityAR(utilItems, invItems)).toFixed(2),
     topUnpaidCustomers,
     invoiceCount: invItems.length,
     expenseCount: expItems.length,

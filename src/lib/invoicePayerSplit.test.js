@@ -14,6 +14,9 @@ import {
   paymentsByInvoiceIndex,
   totalCustomerAR,
   totalUtilityAR,
+  totalAR,
+  invoiceUtilityBalance,
+  jobARSnapshot,
 } from './arHelpers.js'
 
 const MIGRATION = new URL('../../supabase/migrations/20260910190000_customer_owes_generated.sql', import.meta.url)
@@ -116,6 +119,73 @@ describe('paid_by — a utility payment must not settle the customer balance', (
     const pays = [{ invoice_id: 7, amount: 2000 }]
     expect(invoiceBalance(inv, pays)).toBeCloseTo(4000, 2)
     expect(invoiceBalance(inv, paymentsByInvoiceIndex(pays))).toBeCloseTo(4000, 2)
+  })
+})
+
+describe('utility AR reads the invoice, and the utility row only until it is linked', () => {
+  // The transition has four kinds of row. Each must answer the way the
+  // books already answer today.
+  const invoices = [
+    { id: 1, job_id: 10, payment_status: 'Pending', utility_owes: 14000, utility_paid_at: null },           // carried, unpaid
+    { id: 2, job_id: 20, payment_status: 'Paid',    utility_owes: 9000,  utility_paid_at: '2026-06-18' },   // carried, utility paid
+    { id: 3, job_id: 30, payment_status: 'Pending', utility_owes: null,  utility_paid_at: null },           // not carried
+    { id: 4, job_id: 40, payment_status: 'Void',    utility_owes: 5000,  utility_paid_at: null },           // void invoice
+  ]
+  const rows = [
+    { id: 101, job_id: 10, invoice_id: 1, amount: 14000, payment_status: 'Pending' },  // linked → not double counted
+    { id: 102, job_id: 20, invoice_id: 2, amount: 9000,  payment_status: 'Paid' },
+    { id: 103, job_id: 30, invoice_id: null, amount: 6528, payment_status: 'Pending' }, // unlinked → still counts from the row
+    { id: 104, job_id: 40, invoice_id: 4, amount: 5000,  payment_status: 'Pending' },
+  ]
+
+  it('counts a carried debt from the invoice, an unlinked one from the row, and nothing twice', () => {
+    // 14000 (inv 1) + 6528 (row 103). Inv 2 paid, inv 4 void, rows 101/102/104 are linked carriers.
+    expect(totalUtilityAR(rows, invoices)).toBeCloseTo(20528, 2)
+  })
+
+  it('answers exactly as before when no invoices are passed — an un-updated caller cannot under-report', () => {
+    // Old rule: every unpaid, non-void row. 14000 + 6528 + 5000.
+    expect(totalUtilityAR(rows)).toBeCloseTo(25528, 2)
+    expect(totalUtilityAR(rows, [])).toBeCloseTo(25528, 2)
+  })
+
+  it('a paid utility debt is settled the moment utility_paid_at is set', () => {
+    expect(invoiceUtilityBalance({ utility_owes: 9000, utility_paid_at: null, payment_status: 'Pending' })).toBe(9000)
+    expect(invoiceUtilityBalance({ utility_owes: 9000, utility_paid_at: '2026-06-18', payment_status: 'Pending' })).toBe(0)
+  })
+
+  it('a void or cancelled invoice owes nothing on the utility side either', () => {
+    expect(invoiceUtilityBalance({ utility_owes: 9000, utility_paid_at: null, payment_status: 'Void' })).toBe(0)
+    expect(invoiceUtilityBalance({ utility_owes: 9000, utility_paid_at: null, payment_status: 'Cancelled' })).toBe(0)
+  })
+
+  it('an invoice that does not carry the debt contributes nothing itself', () => {
+    expect(invoiceUtilityBalance({ id: 3, payment_status: 'Pending' })).toBe(0)
+    expect(invoiceUtilityBalance({ utility_owes: null })).toBe(0)
+  })
+
+  // The safe omission: a caller whose select forgot utility_owes reads
+  // undefined on every invoice, nothing is "carried", and every row counts
+  // — the old answer, not a silent zero.
+  it('forgetting utility_owes in the select falls back to the old answer', () => {
+    const stripped = invoices.map((i) => { const c = { ...i }; delete c.utility_owes; return c })
+    expect(totalUtilityAR(rows, stripped)).toBeCloseTo(25528, 2)
+  })
+
+  it('totalAR and jobARSnapshot use the same rule', () => {
+    expect(totalAR(invoices, rows, [])).toBeCloseTo(totalCustomerAR(invoices, []) + 20528, 2)
+    const snap = jobARSnapshot(30, invoices, rows, [])
+    expect(snap.utilityBalance).toBeCloseTo(6528, 2)
+    expect(jobARSnapshot(20, invoices, rows, []).utilityBalance).toBe(0)
+  })
+
+  // The unsafe omission, guarded at the source: the store must keep selecting
+  // both columns, or a paid carrier reads as unpaid and utility AR inflates.
+  it('the store query that feeds AR selects both utility_owes and utility_paid_at', async () => {
+    const { QUERIES } = await import('./schema.js')
+    const q = String(QUERIES.invoices)
+    const ok = q.startsWith('*') || (/\butility_owes\b/.test(q) && /\butility_paid_at\b/.test(q))
+    expect(ok).toBe(true)
   })
 })
 

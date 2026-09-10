@@ -153,19 +153,55 @@ export function totalCustomerAR(invoices = [], paymentsArrOrMap = []) {
     .reduce((s, i) => s + invoiceBalance(i, idx), 0)
 }
 
-// Total utility AR — sum of unpaid utility_invoices. (Utility invoice
-// records don't carry a discount field; the amount IS what the utility
-// owes us.)
-export function totalUtilityAR(utilityInvoices = []) {
-  return (utilityInvoices || [])
+// Does this invoice carry its own utility debt? Set by the step-two backfill
+// and kept current by the mirror_utility_settlement trigger. Null means the
+// debt (if any) still lives only on a utility_invoices row.
+function carriesUtilityDebt(inv) {
+  return inv?.utility_owes != null
+}
+
+// What the utility still owes on ONE invoice that carries the debt.
+// utility_paid_at is the receipt date; null means unpaid. A void or
+// cancelled invoice has no debts on either side.
+export function invoiceUtilityBalance(inv) {
+  if (!carriesUtilityDebt(inv)) return 0
+  if (inv.utility_paid_at) return 0
+  if (inv.payment_status === 'Void' || inv.payment_status === 'Cancelled') return 0
+  return Number(inv.utility_owes) || 0
+}
+
+// Total utility AR — the rebates utilities owe us.
+//
+// Two sources during the transition off the separate utility invoice:
+//
+//   1. Invoices that carry the debt themselves (utility_owes / utility_paid_at).
+//   2. utility_invoices rows whose invoice does NOT yet carry it — rows the
+//      backfill refused because the figures disagreed, or rows nobody has
+//      linked. Same rule as before: unpaid, not void, amount || incentive.
+//
+// A utility row linked to an invoice that carries the debt is NOT counted
+// again from the row. The stitch shrinks as rows get resolved and vanishes
+// when the last one does, with no code change.
+//
+// Callers that pass no invoices get exactly the old answer — every utility
+// row counts — so an un-updated caller cannot under-report. The unsafe
+// omission is selecting utility_owes without utility_paid_at: a paid row
+// would then read as unpaid. The store selects `*`; a test guards that.
+export function totalUtilityAR(utilityInvoices = [], invoices = []) {
+  const carriers = (invoices || []).filter(carriesUtilityDebt)
+  const carrierIds = new Set(carriers.map(i => i.id))
+  const fromInvoices = carriers.reduce((s, i) => s + invoiceUtilityBalance(i), 0)
+  const fromRows = (utilityInvoices || [])
+    .filter(u => !(u?.invoice_id != null && carrierIds.has(u.invoice_id)))
     .filter(u => u?.payment_status !== 'Paid' && u?.payment_status !== 'Void')
     .reduce((s, u) => s + (Number(u.amount || u.incentive_amount) || 0), 0)
+  return fromInvoices + fromRows
 }
 
 // Combined AR — what every surface should show as "accounts receivable"
 // unless it's explicitly labeling one or the other.
 export function totalAR(invoices = [], utilityInvoices = [], paymentsArrOrMap = []) {
-  return totalCustomerAR(invoices, paymentsArrOrMap) + totalUtilityAR(utilityInvoices)
+  return totalCustomerAR(invoices, paymentsArrOrMap) + totalUtilityAR(utilityInvoices, invoices)
 }
 
 // ────────────────────────────── per-job ──────────────────────────────
@@ -182,9 +218,8 @@ export function jobARSnapshot(jobId, invoices = [], utilityInvoices = [], paymen
     .filter(isInvoiceOpen)
     .reduce((s, i) => s + invoiceBalance(i, idx), 0)
   const jobUtility = (utilityInvoices || []).filter(u => u.job_id === jobId)
-  const utilityBalance = jobUtility
-    .filter(u => u?.payment_status !== 'Paid' && u?.payment_status !== 'Void')
-    .reduce((s, u) => s + (Number(u.amount || u.incentive_amount) || 0), 0)
+  // Same two-source rule as totalUtilityAR, scoped to this job.
+  const utilityBalance = totalUtilityAR(jobUtility, jobInvoices)
   return {
     customerBalance,
     utilityBalance,

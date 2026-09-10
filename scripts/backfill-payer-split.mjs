@@ -1,37 +1,26 @@
 #!/usr/bin/env node
-// npm run backfill:payer-split [-- --write]
+// npm run backfill:payer-split — which invoices disagree with their utility row?
 //
-// Step two of retiring the separate utility invoice: put both obligations on
-// the one customer invoice. Reports by default; --write applies.
+// A report. It was the step-two backfill that first wrote utility_owes and
+// utility_provider_id onto the customer invoice; the step-three migration
+// (20260911100000_utility_settlement_mirror) handed those columns to a
+// trigger that mirrors every write to utility_invoices onto its linked
+// invoice, so this script no longer writes anything. Fix the utility row and
+// the invoice follows. Two writers would be the same rule in two places.
 //
-// WHAT IT WRITES
+// What it still does, on live data:
 //
-//   utility_owes         = utility_invoices.amount || incentive_amount
-//   utility_provider_id  = the provider matching utility_invoices.utility_name
+//   1. Asserts the generated customer_owes column equals
+//      arHelpers.invoiceCustomerTotal for every invoice — the SQL and the
+//      JavaScript are the same rule in two languages and must not part.
+//   2. Names every invoice that structurally disagrees with its utility row
+//      about the job, with the dollars involved. Those are real money and a
+//      person's decision; nothing here resolves them.
 //
-// and NOTHING ELSE. customer_owes is a generated column — Postgres derives it
-// from amount and discount_applied, so there is nothing to backfill and no
-// way for it to drift. This script instead ASSERTS that the generated column
-// agrees with arHelpers.invoiceCustomerTotal for every invoice in the
-// database. If the SQL and the JavaScript ever disagree, that assertion fails
-// here rather than showing two different balances on two different screens.
-//
-// WHY RECEIVABLES CANNOT MOVE
-//
-// utility_owes is copied from the figure arHelpers.totalUtilityAR already
-// sums, and nothing reads the new columns yet. The script measures customer
-// and utility AR before and after and exits non-zero if either moved by a
-// cent.
-//
-// WHAT IT REFUSES TO TOUCH
-//
-// A utility row whose own three figures do not reconcile
-// (npm run check:utility-split), and an invoice that structurally disagrees
-// with its utility row. Both are named on screen with the dollars involved.
-// Migrating a wrong number is how it becomes permanent.
+// For the linkage and receivables invariants, see check-payer-split.
 
 import { createClient } from '@supabase/supabase-js'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { invoiceCustomerTotal, totalCustomerAR, totalUtilityAR } from '../src/lib/arHelpers.js'
 
 const env = Object.fromEntries(
@@ -40,7 +29,7 @@ const env = Object.fromEntries(
     .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()])
 )
 const sb = createClient(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
-const APPLY = process.argv.includes('--write')
+
 
 const num = (v) => Number(v) || 0
 const usd = (n) => '$' + num(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -77,11 +66,11 @@ if (drift.length) {
 }
 console.log(`    all ${invoices.length} invoices agree`)
 
-// ── receivables as the books read them right now ───────────────────────────
-const arBefore = { customer: totalCustomerAR(invoices, payments), utility: totalUtilityAR(utilities) }
-console.log('\n  RECEIVABLES BEFORE')
-console.log(`    customer  ${usd(arBefore.customer)}`)
-console.log(`    utility   ${usd(arBefore.utility)}`)
+// ── receivables as the books read them right now (for context) ─────────────
+const ar = { customer: totalCustomerAR(invoices, payments), utility: totalUtilityAR(utilities) }
+console.log('\n  RECEIVABLES')
+console.log(`    customer  ${usd(ar.customer)}`)
+console.log(`    utility   ${usd(ar.utility)}`)
 
 // ── which utility rows are internally consistent ───────────────────────────
 // Same rules as check-utility-split: a row it refuses is a row we do not migrate.
@@ -161,7 +150,7 @@ for (const u of utilities) {
   })
 }
 
-console.log(`\n  ${plan.length} invoice(s) to backfill · ${skipped.length} skipped · ${disputed.length} disputed`)
+console.log(`\n  ${plan.length} invoice(s) agree with their utility row · ${skipped.length} skipped · ${disputed.length} disputed`)
 for (const s of skipped) console.log(`    skip utility ${s.u.id} (job ${s.u.job_id}) — ${s.why}`)
 
 if (disputed.length) {
@@ -178,7 +167,7 @@ if (disputed.length) {
   console.log(`\n    under-billed ${usd(under)} · over-billed ${usd(over)} across ${disputed.length} job(s)`)
 }
 
-console.log('\n  PLAN')
+console.log('\n  AGREE')
 for (const p of plan.slice(0, 6)) {
   console.log(`    ${p.invoice.invoice_id ?? p.invoice.id}  utility owes ${usd(p.utility_owes)}  customer owes ${usd(p.invoice.customer_owes)}  provider ${p.utility_provider_id ?? 'NONE'}`)
 }
@@ -186,50 +175,8 @@ if (plan.length > 6) console.log(`    … and ${plan.length - 6} more`)
 
 const noProvider = plan.filter((p) => p.utility_provider_id == null)
 if (noProvider.length) {
-  console.log(`\n  ${noProvider.length} row(s) have no provider match — the books could not name who owes. Refusing.`)
-  if (APPLY) process.exit(1)
+  console.log(`\n  ${noProvider.length} row(s) have no provider match — the books cannot name who owes.`)
 }
 
-if (!APPLY) { console.log('\n  (report only — pass --write)\n'); process.exit(0) }
-
-writeFileSync(
-  new URL(`../../payer-split-backup-${Date.now()}.json`, import.meta.url),
-  JSON.stringify(plan.map((p) => ({
-    id: p.invoice.id, invoice_id: p.invoice.invoice_id,
-    utility_owes: p.invoice.utility_owes, utility_provider_id: p.invoice.utility_provider_id,
-  })), null, 1)
-)
-
-let wrote = 0
-for (const p of plan) {
-  const { error } = await sb.from('invoices').update({
-    utility_owes: p.utility_owes,
-    utility_provider_id: p.utility_provider_id,
-  }).eq('id', p.invoice.id)
-  if (error) { console.log(`    ERR invoice ${p.invoice.id}: ${error.message}`); continue }
-  wrote++
-}
-console.log(`\n  wrote ${wrote} of ${plan.length}`)
-
-// ── re-read and prove receivables did not move ─────────────────────────────
-const invAfter = await page('invoices', INVOICE_COLS)
-const payAfter = await page('payments', 'id, invoice_id, amount, status, method, paid_by')
-const utilAfter = await page('utility_invoices', 'id, amount, incentive_amount, payment_status')
-const arAfter = { customer: totalCustomerAR(invAfter, payAfter), utility: totalUtilityAR(utilAfter) }
-
-const same = (a, b) => Math.abs(a - b) < CENT
-console.log('\n  RECEIVABLES AFTER')
-console.log(`    customer  ${usd(arAfter.customer)}  ${same(arAfter.customer, arBefore.customer) ? 'unchanged' : '*** MOVED'}`)
-console.log(`    utility   ${usd(arAfter.utility)}  ${same(arAfter.utility, arBefore.utility) ? 'unchanged' : '*** MOVED'}`)
-
-// The stored utility_owes must reproduce utility AR exactly on the rows that
-// carry it — that is the whole point of the column.
-const carried = invAfter.filter((i) => i.utility_owes != null)
-const carriedTotal = carried.reduce((s, i) => s + num(i.utility_owes), 0)
-const sourceTotal = plan.reduce((s, p) => s + p.utility_owes, 0)
-console.log(`\n  ${carried.length} invoice(s) now name a utility debt, totalling ${usd(carriedTotal)}`)
-console.log(`    source rows totalled ${usd(sourceTotal)}  ${same(carriedTotal, sourceTotal) ? 'matches' : '*** MISMATCH'}`)
-
-const moved = !same(arAfter.customer, arBefore.customer) || !same(arAfter.utility, arBefore.utility) || !same(carriedTotal, sourceTotal)
-console.log(moved ? '\n  *** SOMETHING MOVED — investigate before going further\n' : '\n  receivables unchanged, as required\n')
-process.exit(moved ? 1 : 0)
+console.log('\n  (report only — the mirror trigger owns the columns; see check-payer-split for the invariants)\n')
+process.exit(disputed.length || noProvider.length ? 1 : 0)

@@ -324,7 +324,7 @@ export default function Dashboard() {
   // the incentive that's not the customer's to pay). Utility invoices
   // were also being ignored entirely, which under-counted real AR.
   const customerAR = totalCustomerAR(invoices, payments)
-  const utilityAR = totalUtilityAR(utilityInvoices)
+  const utilityAR = totalUtilityAR(utilityInvoices, invoices)
   const accountsReceivable = customerAR + utilityAR
 
   // inLocalRange, not `new Date(x) >= firstOfMonth`: a bare 'YYYY-MM-DD' parses

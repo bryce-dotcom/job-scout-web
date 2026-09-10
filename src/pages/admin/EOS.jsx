@@ -167,7 +167,7 @@ const AUTO_SOURCES = {
       // Books / Dashboard / Frankie / Arnie / JobDetail — see arHelpers.
       const filteredInvs = filterInvoicesByEntity(d.invoices || [], d.jobs, ent)
       const filteredUtil = filterInvoicesByEntity(d.utilityInvoices || [], d.jobs, ent)
-      return totalCustomerAR(filteredInvs, d.payments || []) + totalUtilityAR(filteredUtil)
+      return totalCustomerAR(filteredInvs, d.payments || []) + totalUtilityAR(filteredUtil, filteredInvs)
     },
   },
   expenses_total: {
