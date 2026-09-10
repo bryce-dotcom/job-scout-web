@@ -7,7 +7,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import HelpBadge from '../components/HelpBadge'
 import EmptyState from '../components/EmptyState'
 import ReportsPanel from '../components/ReportsPanel'
-import { computeRevenue, cashExpenses } from '../lib/revenueBasis'
+import { computeRevenue, cashExpenses, collectedIncentives as collectedIncentivesIn } from '../lib/revenueBasis'
 import { isLegacyNetShape } from '../lib/arHelpers'
 import {
   BookOpen, Plus, X, DollarSign, TrendingUp, TrendingDown,
@@ -873,7 +873,7 @@ export default function Books() {
   const collectedIncentives = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && utilityMatchesBu(i))
   const pendingIncentiveTotal = pendingIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
   const collectedIncentiveTotal = collectedIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
-  const collectedIncentiveMTD = collectedIncentives.filter(i => isThisMonth(i.updated_at || i.created_at)).reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
+  const collectedIncentiveMTD = collectedIncentivesIn(collectedIncentives, isThisMonth)
 
   // Money In — respects the company accounting basis. CASH = payments actually
   // collected (no longer double-counts paid invoices + the same money as a bank

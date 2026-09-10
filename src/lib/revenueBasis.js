@@ -33,13 +33,36 @@ export function invoiceNet(inv) {
   return isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
 }
 
+// When the utility's money arrived. paid_at is the receipt date the office
+// records when it marks the incentive paid (and can correct afterwards).
+//
+// This used to read updated_at, and that was a landmine: ANY edit to the row
+// re-dated the revenue. On 2026-09-10 a data fix named the utility on all 28
+// rows, and every incentive collected since March — $432,847.96 — moved into
+// September's cash revenue on the dashboard. The date money arrived is a fact
+// about the money, not about the last time someone touched the record.
+//
+// updated_at remains only as the fallback for a row marked Paid before paid_at
+// existed. The same rule was open-coded on the Dashboard twice and in Books
+// once; they all call this now.
+export function incentiveReceivedAt(u) {
+  return u?.paid_at || u?.updated_at || u?.created_at || null
+}
+
+// Collected utility incentives that arrived inside the period.
+export function collectedIncentives(utilityInvoices = [], inRange = () => true) {
+  return (utilityInvoices || [])
+    .filter(i => i.payment_status === 'Paid' && inRange(incentiveReceivedAt(i)))
+    .reduce((s, i) => s + num(i.amount ?? i.incentive_amount), 0)
+}
+
 export function cashRevenue({ payments = [], leadPayments = [], utilityInvoices = [] }, inRange) {
   // Trade-credit applications reduce an invoice balance but are NOT cash — they
   // draw down credit HHH already holds with a trade partner. Excluding them here
   // keeps cash revenue from being overstated.
   const pay = (payments || []).filter(p => isCollected(p) && p.method !== 'Trade Credit' && inRange(p.date || p.created_at)).reduce((s, p) => s + num(p.amount), 0)
   const dep = (leadPayments || []).filter(d => inRange(d.date_created || d.created_at)).reduce((s, d) => s + num(d.amount), 0)
-  const inc = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && inRange(i.updated_at || i.created_at)).reduce((s, i) => s + num(i.amount ?? i.incentive_amount), 0)
+  const inc = collectedIncentives(utilityInvoices, inRange)
   return pay + dep + inc
 }
 

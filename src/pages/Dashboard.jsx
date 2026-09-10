@@ -9,7 +9,7 @@ import { checkCanClockIn, hoursSince } from '../lib/timeClock'
 import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
-import { computeRevenue, cashExpenses } from '../lib/revenueBasis'
+import { computeRevenue, cashExpenses, collectedIncentives } from '../lib/revenueBasis'
 import { inLocalRange } from '../lib/localDate'
 import { toast } from '../lib/toast'
 import {
@@ -340,7 +340,7 @@ export default function Dashboard() {
   const isCollected = (p) => (p.status || 'Completed') !== 'Refunded' && (p.status || '') !== 'Voided'
   const paymentsMTD = (payments || []).filter(p => isCollected(p) && isThisMonth(p.date || p.created_at)).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const thisMonthDeposits = (leadPayments || []).filter(d => isThisMonth(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
-  const collectedIncentiveMTD = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && isThisMonth(i.updated_at || i.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
+  const collectedIncentiveMTD = collectedIncentives(utilityInvoices, isThisMonth)
   const thisMonthRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isThisMonth)
   // Expenses: manual expenses + Plaid outflows (match Books.jsx)
   // Expenses — cash basis, deduped (bank outflows + manual not linked to a
@@ -423,7 +423,7 @@ export default function Dashboard() {
 
   const paymentsYTD = (payments || []).filter(p => isCollected(p) && isThisYear(p.date || p.created_at)).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const depositsYTD = (leadPayments || []).filter(d => isThisYear(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
-  const collectedIncentiveYTD = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && isThisYear(i.updated_at || i.created_at)).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
+  const collectedIncentiveYTD = collectedIncentives(utilityInvoices, isThisYear)
   const ytdRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isThisYear)
 
   const ytdExpenses = cashExpenses({ expenses, plaidTransactions }, isThisYear)

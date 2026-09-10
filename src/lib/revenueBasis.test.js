@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   BASIS_CASH, BASIS_ACCRUAL, invoiceNet, cashRevenue, accrualRevenue, computeRevenue, cashExpenses,
+  incentiveReceivedAt, collectedIncentives,
 } from './revenueBasis'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -79,6 +80,53 @@ describe('cashRevenue — only money that actually arrived', () => {
 
   it('returns 0 for empty input rather than NaN', () => {
     expect(cashRevenue({}, ALL)).toBe(0)
+  })
+})
+
+describe('incentive revenue is dated by when the money ARRIVED', () => {
+  const inMonth = (ym) => (d) => !!d && String(d).slice(0, 7) === ym
+
+  // The incident this pins: a data fix on 2026-09-10 named the utility on
+  // every row, which stamped updated_at = today on all of them, and every
+  // incentive collected since March — $432,847.96 — landed in September's
+  // revenue. The receipt date is a fact about the money, not about the last
+  // person to touch the record.
+  it('an incentive paid in June stays in June after the row is edited in September', () => {
+    const row = { amount: 162789.14, payment_status: 'Paid', paid_at: '2026-06-18T00:00:00Z', updated_at: '2026-09-10T20:01:00Z', created_at: '2026-05-01' }
+    expect(collectedIncentives([row], inMonth('2026-06'))).toBeCloseTo(162789.14, 2)
+    expect(collectedIncentives([row], inMonth('2026-09'))).toBe(0)
+    expect(cashRevenue({ utilityInvoices: [row] }, inMonth('2026-09'))).toBe(0)
+  })
+
+  it('falls back to updated_at only for a row marked Paid before paid_at existed', () => {
+    expect(incentiveReceivedAt({ paid_at: null, updated_at: '2026-04-02', created_at: '2026-03-01' })).toBe('2026-04-02')
+    expect(incentiveReceivedAt({ updated_at: null, created_at: '2026-03-01' })).toBe('2026-03-01')
+    expect(incentiveReceivedAt({})).toBeNull()
+  })
+
+  it('never counts an unpaid incentive, whatever its dates say', () => {
+    expect(collectedIncentives([{ amount: 9000, payment_status: 'Pending', paid_at: '2026-06-01' }], ALL)).toBe(0)
+  })
+
+  it('the dashboard tile and cash revenue read the same rule', () => {
+    const rows = [
+      { amount: 1000, payment_status: 'Paid', paid_at: '2026-07-03' },
+      { amount: 2000, payment_status: 'Paid', paid_at: '2026-08-03' },
+      { amount: 4000, payment_status: 'Open', paid_at: null },
+    ]
+    expect(collectedIncentives(rows, inMonth('2026-07'))).toBe(1000)
+    expect(cashRevenue({ utilityInvoices: rows }, inMonth('2026-07'))).toBe(1000)
+  })
+
+  // The rule is only as good as the query behind it. If the store ever stops
+  // selecting paid_at, every row reads undefined, the fallback to updated_at
+  // kicks in, and the September incident quietly returns while this file
+  // stays green. A column omitted from .select() reading as undefined has
+  // bitten this codebase repeatedly.
+  it('the store query that feeds the dashboard still selects paid_at', async () => {
+    const { QUERIES } = await import('./schema.js')
+    const q = String(QUERIES.utilityInvoices)
+    expect(q === '*' || /\bpaid_at\b/.test(q)).toBe(true)
   })
 })
 
