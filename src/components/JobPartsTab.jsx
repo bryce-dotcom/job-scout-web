@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabase'
 import { toast } from '../lib/toast'
 import { Package, Truck, CheckCircle, AlertCircle, Plus, ShoppingCart } from 'lucide-react'
 import { recomputeJobPartsStatus } from '../lib/poReceive'
-import { generatePoNumber, expandProductForPO, partitionByVendor, describeBlockedVendors, isOrderableProduct } from '../lib/poUtils'
+import {generatePoNumber, expandProductForPO, partitionByVendor, describeBlockedVendors, isOrderableProduct, UNASSIGNED_VENDOR } from '../lib/poUtils'
 
 const PARTS_STATUS_LABELS = {
   not_needed:        { label: 'No Parts',          color: '#7d8a7f', bg: 'rgba(125,138,127,0.12)' },
@@ -125,9 +125,12 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
   }
 
   // Generate a draft PO for any line items that don't have enough stock + aren't already on a PO.
-  // Groups by default_vendor_id. Anything whose vendor is missing or deactivated
-  // is refused with the product names, rather than being quietly attached to
-  // whichever vendor sorts first — see partitionByVendor in lib/poUtils.
+  // Groups by default_vendor_id. A product with NO vendor assigned lands on a
+  // purchase order with no vendor on it, listed by description, for the buyer
+  // to place — it does not stop the order. A vendor that is set but unusable
+  // (deactivated, or deleted) is reported by name instead, because knowing who
+  // was chosen is the useful part. See partitionByVendor in lib/poUtils.
+  // Nothing is ever attached to a guessed vendor.
   const generatePoForJob = async () => {
     setWorking(true)
     try {
@@ -182,6 +185,15 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
       for (const { line, toOrder } of missing) {
         const orderItems = await expandProductForPO(line.item_id, toOrder, companyId)
         for (const oi of orderItems) {
+          // A bundle can contain labor. "SMBE 50/60/70/90/110W Highbay - 2ft
+          // Lift/Controls" expands to the fixture, its control, and ES LIFT —
+          // and without this the PO asked a vendor for 93 lift charges.
+          // Filtering the job LINE was not enough; the components need the
+          // same test, and anything dropped is named below like everything else.
+          if (!isOrderableProduct(oi.component)) {
+            skippedLabor.push(`${oi.name?.trim() || `product ${oi.productId}`} (inside ${line.item?.name?.trim() || 'a bundle'})`)
+            continue
+          }
           allItems.push({ ...oi, sourceLine: line })
         }
       }
@@ -191,7 +203,7 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
       // This used to fall back to vendors[0], the alphabetically first active
       // vendor, so an unassigned product silently became a real order to
       // whoever happened to sort first.
-      const { groups, blocked } = partitionByVendor(allItems, vendors)
+      const { groups, blocked } = partitionByVendor(allItems, vendors, { unassignedGroup: true })
       // Order everything that CAN be ordered, and say what could not.
       //
       // This used to discard `groups` entirely the moment one item was
@@ -209,7 +221,10 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
       const taggedJobLines = new Set()
       const createdPos = []
 
-      for (const [vendorId, items] of groups.entries()) {
+      for (const [vendorKey, items] of groups.entries()) {
+        // UNASSIGNED_VENDOR is a Symbol, not an id — it becomes a PO with no
+        // vendor, listing the items by description for the buyer to place.
+        const vendorId = vendorKey === UNASSIGNED_VENDOR ? null : vendorKey
         const poNumber = await generatePoNumber(companyId)
         const { data: po, error } = await supabase
           .from('purchase_orders')
@@ -291,6 +306,17 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
           `${skippedLabor.length} line(s) were NOT ordered because they are marked Labor: ` +
           `${skippedLabor.join(', ')}.\n\nIf any of those is a product you actually buy, ` +
           `change it to Material in Products & Services and run this again.`,
+          { duration: 20000 },
+        )
+      }
+      // Name the vendorless one explicitly. It is a real PO that still needs a
+      // vendor chosen before it can be sent, and that is easy to miss in a list.
+      const unassigned = createdPos.filter(p => !p.vendor_id)
+      if (unassigned.length > 0) {
+        toast.error(
+          `${unassigned.map(p => p.po_number).join(', ')} ${unassigned.length === 1 ? 'has' : 'have'} no vendor — ` +
+          `those products have none assigned. The items are listed by description; ` +
+          `pick a vendor on the PO before sending it.`,
           { duration: 20000 },
         )
       }

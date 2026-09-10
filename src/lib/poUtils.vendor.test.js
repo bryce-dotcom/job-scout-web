@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {VENDOR_PROBLEM, resolveOrderVendor, partitionByVendor, describeBlockedVendors, isOrderableProduct } from './poUtils'
+import {VENDOR_PROBLEM, resolveOrderVendor, partitionByVendor, describeBlockedVendors, isOrderableProduct, UNASSIGNED_VENDOR } from './poUtils'
 
 // The real vendor list for company 3 on the day this was reported.
 const vendors = [
@@ -41,18 +41,22 @@ describe('partitionByVendor', () => {
       item({ productId: 14, vendorId: null, name: 'Orphan part' }),   // unassigned
     ]
     const { groups, blocked } = partitionByVendor(items, vendors)
+    // The unassigned part now gets its own PO instead of being refused; a
+    // deactivated vendor is still held back so its name can be reported.
+    // default: unassigned is still held back (Procurement's contract)
     expect([...groups.keys()].sort()).toEqual([2, 4])
     expect(groups.get(4)).toHaveLength(2)
-    expect(blocked.map(b => b.problem).sort())
-      .toEqual([VENDOR_PROBLEM.INACTIVE, VENDOR_PROBLEM.NONE])
+    expect(blocked.map(b => b.problem).sort()).toEqual([VENDOR_PROBLEM.INACTIVE, VENDOR_PROBLEM.NONE])
   })
 
   it('never invents a vendor for an unassigned item', () => {
     // The old code sent these to vendors[0] — the alphabetically first active
     // vendor — so an unassigned product silently became an order to LEDOne.
-    const { groups, blocked } = partitionByVendor([item({ vendorId: null })], vendors)
-    expect(groups.size).toBe(0)
-    expect(blocked).toHaveLength(1)
+    // It goes to the unassigned pile — never to a real vendor's PO.
+    const { groups } = partitionByVendor([item({ vendorId: null })], vendors, { unassignedGroup: true })
+    expect(groups.size).toBe(1)
+    expect(groups.has(UNASSIGNED_VENDOR)).toBe(true)
+    for (const key of groups.keys()) expect(typeof key).not.toBe('number')
   })
 
   it('a PO is never addressed to a deactivated vendor', () => {
@@ -152,9 +156,9 @@ describe('partitionByVendor — partial ordering', () => {
     const items = [
       { productId: 10, name: 'Tube', vendorId: 1 },
       { productId: 11, name: 'Wallpack', vendorId: 2 },
-      { productId: 12, name: 'Mystery', vendorId: null },
+      { productId: 12, name: 'Mystery', vendorId: 3 },
     ]
-    const { groups, blocked } = partitionByVendor(items, vendors)
+    const { groups, blocked } = partitionByVendor(items, [...vendors, { id: 3, name: 'Old Supplier', active: false }])
     // The caller decides what to do; the point is it is given something to do.
     expect(groups.size).toBe(2)
     expect(blocked).toHaveLength(1)
@@ -163,14 +167,18 @@ describe('partitionByVendor — partial ordering', () => {
 
   it('leaves nothing to order when every item is blocked', () => {
     const { groups, blocked } = partitionByVendor(
-      [{ productId: 12, name: 'Mystery', vendorId: null }], vendors,
+      [{ productId: 12, name: 'Mystery', vendorId: 3 }],
+      [...vendors, { id: 3, name: 'Old Supplier', active: false }],
     )
     expect(groups.size).toBe(0)
     expect(blocked).toHaveLength(1)
   })
 
   it('names the blocked product so a human can go fix it', () => {
-    const { blocked } = partitionByVendor([{ productId: 12, name: 'ES LIFT ', vendorId: null }], vendors)
+    const { blocked } = partitionByVendor(
+      [{ productId: 12, name: 'ES LIFT ', vendorId: 3 }],
+      [...vendors, { id: 3, name: 'Old Supplier', active: false }],
+    )
     expect(describeBlockedVendors(blocked)).toContain('ES LIFT')
   })
 })
@@ -237,5 +245,85 @@ describe('isOrderableProduct — labor tag vs order code', () => {
     for (const name of ['Window Well Cleaning', 'Roof cleaning per Sq/Ft', 'Shower Glass Restoration']) {
       expect(isOrderableProduct({ name, material_or_labor: 'labor', vendor_sku: null, model_number: null })).toBe(false)
     }
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// Bryce: "if a product doesn't have a vendor associated with it it shouldn't
+// block the PO, just use the description in a PO that has no vendors."
+// ─────────────────────────────────────────────────────────────────────────
+describe('partitionByVendor — unassigned goes on its own PO', () => {
+  const vendors = [
+    { id: 1, name: 'MES', active: true },
+    { id: 2, name: 'LEDOne', active: true },
+    { id: 3, name: 'Old Supplier', active: false },
+  ]
+
+  it('groups items with no vendor instead of blocking them', () => {
+    const { groups, blocked } = partitionByVendor([
+      { productId: 10, name: 'Tube', vendorId: 1 },
+      { productId: 11, name: 'Highbay', vendorId: null },
+    ], vendors, { unassignedGroup: true })
+    expect(blocked).toHaveLength(0)
+    expect(groups.get(UNASSIGNED_VENDOR).map(i => i.name)).toEqual(['Highbay'])
+    expect(groups.get(1).map(i => i.name)).toEqual(['Tube'])
+  })
+
+  it('puts every unassigned item on ONE purchase order, not one each', () => {
+    const { groups } = partitionByVendor([
+      { productId: 11, name: 'A', vendorId: null },
+      { productId: 12, name: 'B', vendorId: null },
+      { productId: 13, name: 'C', vendorId: undefined },
+    ], vendors, { unassignedGroup: true })
+    expect(groups.size).toBe(1)
+    expect(groups.get(UNASSIGNED_VENDOR)).toHaveLength(3)
+  })
+
+  it('orders nothing but the unassigned pile when that is all there is', () => {
+    const { groups, blocked } = partitionByVendor([{ productId: 11, name: 'Highbay', vendorId: null }], vendors, { unassignedGroup: true })
+    expect(groups.size).toBe(1)
+    expect(blocked).toHaveLength(0)
+  })
+
+  // A vendor that IS chosen but cannot be used is a different problem: the
+  // name is the useful fact, so it is reported rather than anonymised.
+  it('still reports a deactivated vendor by name rather than hiding it', () => {
+    const { groups, blocked } = partitionByVendor([{ productId: 14, name: 'Old part', vendorId: 3 }], vendors)
+    expect(groups.has(UNASSIGNED_VENDOR)).toBe(false)
+    expect(blocked).toHaveLength(1)
+    expect(describeBlockedVendors(blocked)).toContain('Old Supplier')
+  })
+
+  it('still reports a vendor id that no longer exists', () => {
+    const { blocked } = partitionByVendor([{ productId: 15, name: 'Ghost', vendorId: 999 }], vendors)
+    expect(blocked).toHaveLength(1)
+    expect(describeBlockedVendors(blocked)).toMatch(/no longer exists/)
+  })
+
+  it('the unassigned key is not a usable vendor id', () => {
+    // It becomes purchase_orders.vendor_id = NULL; if it ever leaked through as
+    // an id the PO would point at a vendor that does not exist.
+    expect(typeof UNASSIGNED_VENDOR).toBe('symbol')
+    expect(Number.isFinite(Number(UNASSIGNED_VENDOR.toString()))).toBe(false)
+  })
+})
+
+describe('partitionByVendor — the opt-in is per caller', () => {
+  const vendors = [{ id: 1, name: 'MES', active: true }]
+  const orphan = [{ productId: 11, name: 'Highbay', vendorId: null }]
+
+  it('defaults to holding it back, which is what the Procurement Queue relies on', () => {
+    const { groups, blocked } = partitionByVendor(orphan, vendors)
+    expect(groups.size).toBe(0)
+    expect(blocked).toHaveLength(1)
+    // Procurement writes vendor_id straight from these keys; a Symbol there
+    // would be inserted as a vendor id and the insert would fail.
+    for (const k of groups.keys()) expect(typeof k).toBe('number')
+  })
+
+  it('groups it only when the caller asks', () => {
+    const { groups, blocked } = partitionByVendor(orphan, vendors, { unassignedGroup: true })
+    expect(groups.has(UNASSIGNED_VENDOR)).toBe(true)
+    expect(blocked).toHaveLength(0)
   })
 })

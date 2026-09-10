@@ -84,7 +84,10 @@ export async function expandProductForPO(productId, bundleQty, companyId) {
 
   const { data: prod } = await supabase
     .from('products_services')
-    .select('id, name, cost, vendor_sku, default_vendor_id')
+    // material_or_labor + model_number ride along so callers can ask
+    // isOrderableProduct about the row this item came from. A field left out
+    // of a select reads as undefined, which would answer that question wrong.
+    .select('id, name, cost, vendor_sku, model_number, material_or_labor, default_vendor_id')
     .eq('id', productId)
     .maybeSingle()
   if (!prod) return []
@@ -103,13 +106,14 @@ export async function expandProductForPO(productId, bundleQty, companyId) {
       vendorId: prod.default_vendor_id || null,
       isComponent: false,
       bundleParentName: null,
+      component: prod,
     }]
   }
 
   // Case B: no direct cost — look for bundle components
   const { data: comps } = await supabase
     .from('product_components')
-    .select('quantity, component:products_services!component_product_id(id, name, cost, vendor_sku, default_vendor_id)')
+    .select('quantity, component:products_services!component_product_id(id, name, cost, vendor_sku, model_number, material_or_labor, default_vendor_id)')
     .eq('parent_product_id', prod.id)
     .eq('company_id', companyId)
 
@@ -128,6 +132,7 @@ export async function expandProductForPO(productId, bundleQty, companyId) {
         vendorId: comp.default_vendor_id || prod.default_vendor_id || null,
         isComponent: true,
         bundleParentName: prod.name,
+        component: comp,
       }
     })
   }
@@ -143,6 +148,7 @@ export async function expandProductForPO(productId, bundleQty, companyId) {
     vendorId: prod.default_vendor_id || null,
     isComponent: false,
     bundleParentName: null,
+    component: prod,
   }]
 }
 
@@ -175,6 +181,12 @@ export const VENDOR_PROBLEM = {
   UNKNOWN: 'unknown_vendor',
 }
 
+// The group key for items nobody has assigned a vendor to. A Map key, not a
+// vendor id — it becomes purchase_orders.vendor_id = NULL, which the column
+// now permits (migration 20260910150000) and every PO screen already renders
+// as "(no vendor)".
+export const UNASSIGNED_VENDOR = Symbol('unassigned-vendor')
+
 /** Can this item be ordered, and from whom? */
 export function resolveOrderVendor(vendorId, vendorsById) {
   if (!vendorId) return { vendorId: null, problem: VENDOR_PROBLEM.NONE, vendorName: null }
@@ -192,7 +204,16 @@ export function resolveOrderVendor(vendorId, vendorsById) {
  *
  * Returns { groups: Map<vendorId, item[]>, blocked: [{ item, problem, vendorName }] }
  */
-export function partitionByVendor(items, vendors) {
+export function partitionByVendor(items, vendors, opts = {}) {
+  // `unassignedGroup` is opt-in, and deliberately OFF by default.
+  //
+  // The Procurement Queue lets a buyer pick a vendor per item right on the
+  // screen, so telling them "pick a vendor for X" is a thing they can act on
+  // in place; it keeps that behaviour. The job Parts tab has no such picker,
+  // so refusing there was a dead end — that is where the unassigned PO earns
+  // its place. Same helper, two callers, and the caller says which it wants
+  // rather than one of them silently inheriting the other's rules.
+  const { unassignedGroup = false } = opts
   const byId = {}
   for (const v of vendors || []) if (v && v.id != null) byId[v.id] = v
 
@@ -200,6 +221,24 @@ export function partitionByVendor(items, vendors) {
   const blocked = []
   for (const item of items || []) {
     const r = resolveOrderVendor(item?.vendorId, byId)
+    // Nobody assigned yet: this becomes a purchase order with no vendor on it,
+    // listing the items by description, rather than stopping the order.
+    //
+    // Bryce: "if a product doesn't have a vendor associated with it it
+    // shouldn't block the PO, just use the description in a PO that has no
+    // vendors." Refusing is what left Alayda unable to order for Northwest
+    // Standard at all. The buyer fills the vendor in on the PO itself.
+    //
+    // A vendor that is set but unusable — deactivated, or pointing at a row
+    // that no longer exists — is a DIFFERENT problem and still reported. We
+    // know who was chosen; someone has to decide whether to reactivate them or
+    // pick another. Quietly folding those into the unassigned pile would hide
+    // the name, which is the one useful fact about them.
+    if (unassignedGroup && r.problem === VENDOR_PROBLEM.NONE) {
+      if (!groups.has(UNASSIGNED_VENDOR)) groups.set(UNASSIGNED_VENDOR, [])
+      groups.get(UNASSIGNED_VENDOR).push(item)
+      continue
+    }
     if (r.problem) { blocked.push({ item, problem: r.problem, vendorName: r.vendorName }); continue }
     if (!groups.has(r.vendorId)) groups.set(r.vendorId, [])
     groups.get(r.vendorId).push(item)
