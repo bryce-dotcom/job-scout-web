@@ -44,10 +44,16 @@ export default function JobPartsTab({ job, theme, companyId, onChange }) {
     // 1) job_lines for this job (with current allocated/consumed/po_line_id)
     const { data: jl } = await supabase
       .from('job_lines')
-      // material_or_labor is selected because the PO flow filters on it. A
-      // column left out of the select reads as undefined, not as its stored
-      // value, so omitting it here would silently switch that filter off.
-      .select('id, item_id, item_name, description, quantity, allocated_qty, consumed_qty, po_line_id, item:products_services(id, name, default_vendor_id, material_or_labor)')
+      // Every field isOrderableProduct reads has to be selected here.
+      //
+      // It reads material_or_labor AND vendor_sku AND model_number, and a
+      // column left out of a select comes back undefined rather than as its
+      // stored value. Selecting only material_or_labor made every labor-tagged
+      // fixture look like it had no order code, so the highbay on Northwest
+      // Standard was skipped exactly as before — the rule was right and the
+      // query starved it. Caught by clicking the button, not by any test.
+      // poOrderableSelect.test.js now fails if this list falls behind again.
+      .select('id, item_id, item_name, description, quantity, allocated_qty, consumed_qty, po_line_id, item:products_services(id, name, default_vendor_id, material_or_labor, vendor_sku, model_number)')
       .eq('job_id', job.id)
       .order('id')
     const safeLines = (jl || []).filter(l => l.item_id) // only parts-bearing lines
