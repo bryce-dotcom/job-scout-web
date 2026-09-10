@@ -23,7 +23,8 @@
     "fresh": "node scripts/fresh.mjs",
     "fleet": "node scripts/fleet.mjs",
     "claim": "node scripts/claim.mjs",
-    "check:invoice-status": "node scripts/check-invoice-status.mjs"
+    "check:invoice-status": "node scripts/check-invoice-status.mjs",
+    "check:utility-split": "node scripts/check-utility-split.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.36.0",
