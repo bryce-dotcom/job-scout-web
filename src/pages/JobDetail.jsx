@@ -3628,6 +3628,25 @@ function JobDetailInner() {
       }
 
       toast.success(`Submittal sent to ${submittalEmail}`)
+
+      // Start the utility's aging clock. A utility owes nothing until the
+      // submittal is actually in their hands, so their balance ages from
+      // this moment, not from the invoice date. Only invoices that carry a
+      // utility debt and were in this package; never re-stamped.
+      const sentInvoiceIds = [...submittalSelected]
+        .filter(k => k.startsWith('invoice:'))
+        .map(k => parseInt(k.split(':')[1]))
+        .filter(Number.isFinite)
+      if (sentInvoiceIds.length) {
+        const { error: stampErr } = await supabase
+          .from('invoices')
+          .update({ utility_submitted_at: new Date().toISOString() })
+          .in('id', sentInvoiceIds)
+          .is('utility_submitted_at', null)
+          .not('utility_owes', 'is', null)
+        if (stampErr) console.warn('Submittal: could not stamp utility_submitted_at:', stampErr.message)
+      }
+
       setShowSubmittalModal(false)
       setSubmittalEmail('')
       setSubmittalMessage('')

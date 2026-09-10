@@ -20,6 +20,7 @@ import { buildInvoiceSections, buildInvoicePages, incentiveLineLabel, invoiceDis
 import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
 import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
 import LoadingSpinner from '../components/LoadingSpinner'
+import InvoiceSplitPanel from '../components/InvoiceSplitPanel'
 
 // Light theme fallback
 const defaultTheme = {
@@ -1800,6 +1801,20 @@ Add it anyway?`,
     toast.success(next ? 'Line descriptions hidden' : 'Line descriptions shown')
   }
 
+  // The utility's aging clock. A utility owes nothing until the submittal
+  // is actually sent, so its balance ages from this stamp, not from the
+  // invoice date. Set once; the JobDetail submittal "Send" stamps it too.
+  const markUtilitySubmitted = async () => {
+    if (!invoice?.id || invoice.utility_submitted_at) return
+    setSaving(true)
+    const stamp = new Date().toISOString()
+    const { error } = await supabase.from('invoices').update({ utility_submitted_at: stamp }).eq('id', invoice.id)
+    const { toast } = await import('../lib/toast')
+    if (error) toast.error('Could not mark submitted: ' + error.message)
+    else { setInvoice(prev => ({ ...prev, utility_submitted_at: stamp })); toast.success('Marked as submitted to the utility') }
+    setSaving(false)
+  }
+
   // Preview PDF before saving
   const handlePreviewPDF = () => {
     const doc = generateInvoicePDF()
@@ -2414,6 +2429,21 @@ Add it anyway?`,
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) 360px', gap: '24px' }}>
         {/* Main Content */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Where this invoice goes — only on an invoice that carries a
+              utility debt. Everything else on the page is unchanged. */}
+          <InvoiceSplitPanel
+            invoice={invoice}
+            pages={pages}
+            payments={payments}
+            utilityName={invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice)}
+            linkedUtilityInvoice={linkedUtilityInvoice}
+            onMarkSubmitted={markUtilitySubmitted}
+            saving={saving}
+            theme={theme}
+            isMobile={isMobile}
+            formatCurrency={formatCurrency}
+            formatDate={formatDate}
+          />
           {/* Customer Info */}
           <div style={{
             backgroundColor: theme.bgCard,
