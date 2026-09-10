@@ -57,6 +57,24 @@ export function invoiceCustomerTotal(inv) {
   return isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
 }
 
+// A payment the CUSTOMER made. Once a rebate invoice carries both debts, a
+// utility's payment lands on the same invoice_id as the customer's, and
+// summing both would report the customer's balance as settled when only the
+// utility has paid.
+//
+// Written as "not the utility" rather than "is the customer" on purpose. A
+// caller that forgets `paid_by` in its .select() reads undefined, and undefined
+// must keep counting — otherwise the omission silently zeroes customer AR
+// instead of leaving it as it is today. Omitting a selected column and having
+// the code read it as false has bitten this codebase repeatedly; this is the
+// direction where that mistake is harmless.
+//
+// Every payments row is 'customer' today (5,990 of 5,990, NOT NULL DEFAULT),
+// so this changes nothing now. It exists before the data that needs it.
+function isCustomerPayment(p) {
+  return p?.paid_by !== 'utility'
+}
+
 // Outstanding customer balance: customer total minus payments applied to
 // this invoice. Pass either a paymentsByInvoiceId Map (preferred — O(1))
 // or the raw payments array (filtered per call).
@@ -68,7 +86,7 @@ export function invoiceBalance(inv, paymentsArrOrMap = []) {
     paid = paymentsArrOrMap.get(inv.id) || 0
   } else if (Array.isArray(paymentsArrOrMap)) {
     paid = paymentsArrOrMap
-      .filter(p => p.invoice_id === inv.id)
+      .filter(p => p.invoice_id === inv.id && isCustomerPayment(p))
       .reduce((s, p) => s + (Number(p.amount) || 0), 0)
   }
   return Math.max(0, customer - paid)
@@ -116,6 +134,7 @@ export function paymentsByInvoiceIndex(payments) {
   const map = new Map()
   for (const p of payments || []) {
     if (!p.invoice_id) continue
+    if (!isCustomerPayment(p)) continue
     map.set(p.invoice_id, (map.get(p.invoice_id) || 0) + (Number(p.amount) || 0))
   }
   return map

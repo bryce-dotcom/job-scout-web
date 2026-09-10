@@ -24,7 +24,8 @@
     "fleet": "node scripts/fleet.mjs",
     "claim": "node scripts/claim.mjs",
     "check:invoice-status": "node scripts/check-invoice-status.mjs",
-    "check:utility-split": "node scripts/check-utility-split.mjs"
+    "check:utility-split": "node scripts/check-utility-split.mjs",
+    "backfill:payer-split": "node scripts/backfill-payer-split.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.36.0",
