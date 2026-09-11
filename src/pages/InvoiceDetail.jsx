@@ -1505,6 +1505,9 @@ Add it anyway?`,
           if (pages.pageOne.projectDiscount > 0) {
             drawTotalLine('Project Discount:', `-${formatCurrency(pages.pageOne.projectDiscount)}`, { color: [200, 0, 0] })
           }
+          if (pages.pageOne.utilityShortfall > 0) {
+            drawTotalLine('Utility shortfall absorbed:', `-${formatCurrency(pages.pageOne.utilityShortfall)}`, { color: [200, 0, 0] })
+          }
           drawTotalLine('Project Total:', formatCurrency(pages.pageOne.total), { bold: true })
           drawWhoPaysWhat()
           startAddOnsPage()
@@ -1542,6 +1545,9 @@ Add it anyway?`,
         }
         if (sections.projectDiscount > 0) {
           drawTotalLine('Project Discount:', `-${formatCurrency(sections.projectDiscount)}`, { color: [200, 0, 0] })
+        }
+        if (sections.utilityShortfall > 0) {
+          drawTotalLine('Utility shortfall absorbed:', `-${formatCurrency(sections.utilityShortfall)}`, { color: [200, 0, 0] })
         }
         if (useTwoPagePdf) {
           // Page one ends here, on a clean project figure the utility can be
@@ -1661,6 +1667,9 @@ Add it anyway?`,
         }
         if (sections.projectDiscount > 0) {
           drawTotalLine('Project Discount:', `-${formatCurrency(sections.projectDiscount)}`, { color: [200, 0, 0] })
+        }
+        if (sections.utilityShortfall > 0) {
+          drawTotalLine('Utility shortfall absorbed:', `-${formatCurrency(sections.utilityShortfall)}`, { color: [200, 0, 0] })
         }
       }
       // Same as the itemized branch: the two pages have to add up to a stated
@@ -1836,7 +1845,7 @@ Add it anyway?`,
   const recordUtilitySettlement = async (input) => {
     if (!linkedUtilityInvoice) return false
     setSaving(true)
-    const res = await recordUtilityPayment(supabase, linkedUtilityInvoice, input)
+    const res = await recordUtilityPayment(supabase, linkedUtilityInvoice, input, invoice)
     const ok = await afterSettlement(res, res.shortBy && Math.abs(res.shortBy) > 0.005
       ? `Utility payment recorded — ${res.shortBy > 0 ? 'short' : 'over'} by ${formatCurrency(Math.abs(res.shortBy))}`
       : 'Utility payment recorded')
@@ -1847,7 +1856,7 @@ Add it anyway?`,
     if (!linkedUtilityInvoice) return false
     if (!window.confirm('Reopen the utility payment? The paid date clears and the incentive goes back to owed, so the real payment can be recorded fresh.')) return false
     setSaving(true)
-    const ok = await afterSettlement(await reopenUtilityPayment(supabase, linkedUtilityInvoice.id), 'Utility payment reopened')
+    const ok = await afterSettlement(await reopenUtilityPayment(supabase, linkedUtilityInvoice, invoice), 'Utility payment reopened')
     setSaving(false)
     return ok
   }
@@ -3234,6 +3243,12 @@ Add it anyway?`,
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
                       <span style={{ color: theme.textSecondary }}>Project Discount</span>
                       <span style={{ color: '#dc2626' }}>-{formatCurrency(sections.projectDiscount)}</span>
+                    </div>
+                  )}
+                  {sections.utilityShortfall > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
+                      <span style={{ color: theme.textSecondary }}>Utility shortfall absorbed</span>
+                      <span style={{ color: '#dc2626' }}>-{formatCurrency(sections.utilityShortfall)}</span>
                     </div>
                   )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>

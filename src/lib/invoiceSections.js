@@ -164,7 +164,20 @@ export function buildInvoiceSections(invoice, lines, { parentInvoice = null, uti
     Math.max(0, breakoutDownPayment || 0),
     Math.max(0, totalDeductions - incentive),
   ))
-  const projectDiscount = round2(totalDeductions - incentive - downPayment)
+  // A utility shortfall the COMPANY absorbed. The utility paid less than was
+  // claimed, the customer's credit was left whole, and the difference would
+  // otherwise land in the reconciling remainder and print as a "Project
+  // Discount" nobody gave (it did — a $500 short-pay on the demo invoice).
+  // Carve it out under its own name, capped by what is actually left. When
+  // the CUSTOMER bore it, their credit was reduced instead and there is no
+  // gap to explain.
+  const utilityShortfall = invoice?.shortfall_borne_by === 'company'
+    ? round2(Math.min(
+        Math.max(0, Number(invoice?.utility_shortfall) || 0),
+        Math.max(0, totalDeductions - incentive - downPayment),
+      ))
+    : 0
+  const projectDiscount = round2(totalDeductions - incentive - downPayment - utilityShortfall)
 
   // Only apply the two-section incentive treatment to modern-shape invoices
   // that actually have line items. Legacy-net invoices keep their flat
@@ -183,6 +196,7 @@ export function buildInvoiceSections(invoice, lines, { parentInvoice = null, uti
     inScopeSubtotal,
     inScopeLineSum,
     projectDiscount,
+    utilityShortfall,
     downPayment,
     incentive,
     netInScope,
@@ -219,7 +233,7 @@ export function incentiveLineLabel(utilityName) {
 // customer made, not part of the project's price, so it sits with the other
 // credits on page two and page one stays a clean project figure.
 //
-//   page 1:  inScopeSubtotal − incentive − projectDiscount = projectTotal
+//   page 1:  inScopeSubtotal − incentive − projectDiscount − utilityShortfall = projectTotal
 //   page 2:  projectTotal + addOns − downPayment − depositCredit = grandTotal
 //
 // Those two compose back to exactly the old single-page total:
@@ -233,13 +247,14 @@ export function buildInvoicePages(sections) {
   const inScopeSubtotal = Number(s.inScopeSubtotal) || 0
   const incentive = Number(s.incentive) || 0
   const projectDiscount = Number(s.projectDiscount) || 0
+  const utilityShortfall = Number(s.utilityShortfall) || 0
   const downPayment = Number(s.downPayment) || 0
   const depositCredit = Number(s.depositCredit) || 0
   const addOnsSubtotal = Number(s.outScopeSubtotal) || 0
   const grandTotal = Number(s.customerTotal) || 0
 
   // The project as the utility sees it.
-  const projectTotal = round2(inScopeSubtotal - incentive - projectDiscount)
+  const projectTotal = round2(inScopeSubtotal - incentive - projectDiscount - utilityShortfall)
   const carriedSubtotal = round2(projectTotal + addOnsSubtotal)
 
   // A second page only earns its place when there is something to put on it.
@@ -252,6 +267,7 @@ export function buildInvoicePages(sections) {
       subtotal: inScopeSubtotal,
       incentive,
       projectDiscount,
+      utilityShortfall,
       total: projectTotal,
     },
     pageTwo: {

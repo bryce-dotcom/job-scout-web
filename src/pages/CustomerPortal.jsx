@@ -693,6 +693,12 @@ export default function CustomerPortal() {
                         <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(invoiceSections.projectDiscount)}</span>
                       </div>
                     )}
+                    {invoiceSections.utilityShortfall > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: theme.textMuted, fontSize: '13px' }}>Utility shortfall absorbed</span>
+                        <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(invoiceSections.utilityShortfall)}</span>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '6px', borderBottom: `1px solid ${theme.border}` }}>
                       <span style={{ color: theme.text, fontSize: '14px', fontWeight: '700' }}>Net Project</span>
                       <span style={{ fontWeight: '700', color: theme.text, fontSize: '15px' }}>{formatCurrency(invoiceSections.netInScope)}</span>

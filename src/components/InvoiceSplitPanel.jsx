@@ -22,6 +22,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Zap, User, CheckCircle, Clock, Send, ExternalLink, RotateCcw } from 'lucide-react'
 import { invoiceUtilityBalance, invoiceBalance } from '../lib/arHelpers'
+import { expectedUtilityAmount, BORNE_BY_CUSTOMER, BORNE_BY_COMPANY } from '../lib/utilitySettlement'
 
 const UTIL = '#14b8a6'
 const CUST = '#3b82f6'
@@ -43,6 +44,8 @@ export default function InvoiceSplitPanel({
   const [paidOn, setPaidOn] = useState('')
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+  // Who covers a shortfall. Only asked when the amount entered is short.
+  const [borneBy, setBorneBy] = useState(null)
 
   if (!invoice || invoice.utility_owes == null) return null
 
@@ -128,10 +131,11 @@ export default function InvoiceSplitPanel({
     )
   }
 
-  const btn = (key, label, { to, onClick, Icon: BIcon, primary } = {}) => {
+  const btn = (key, label, { to, onClick, Icon: BIcon, primary, disabled = false } = {}) => {
     const style = {
       display: 'inline-flex', alignItems: 'center', gap: '6px', minHeight: '36px', padding: '0 12px',
-      fontSize: '12px', fontWeight: '600', borderRadius: '8px', cursor: saving ? 'wait' : 'pointer',
+      fontSize: '12px', fontWeight: '600', borderRadius: '8px', cursor: saving ? 'wait' : disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.5 : 1,
       textDecoration: 'none',
       backgroundColor: primary ? theme.accent : 'transparent',
       color: primary ? '#fff' : theme.accent,
@@ -140,20 +144,26 @@ export default function InvoiceSplitPanel({
     const inner = <>{BIcon && <BIcon size={13} />}{label}</>
     return to
       ? <Link key={key} to={to} style={style}>{inner}</Link>
-      : <button key={key} type="button" onClick={onClick} disabled={saving} style={style}>{inner}</button>
+      : <button key={key} type="button" onClick={onClick} disabled={saving || disabled} style={style}>{inner}</button>
   }
 
   const canSettle = !!linkedUtilityInvoice?.id
   const openRecord = () => {
     setPaidOn((invoice.utility_paid_at || new Date().toISOString()).slice(0, 10))
-    const expected = linkedUtilityInvoice?.incentive_amount ?? linkedUtilityInvoice?.amount ?? ''
-    setAmount(expected === '' || expected == null ? '' : String(expected))
+    const expected = expectedUtilityAmount(linkedUtilityInvoice, invoice)
+    setAmount(expected > 0 ? String(expected) : '')
     setNote('')
+    setBorneBy(null)
     setForm('record')
   }
   const openDate = () => { setPaidOn((invoice.utility_paid_at || '').slice(0, 10)); setForm('date') }
   const close = () => setForm(null)
-  const submitRecord = async () => { if (await onRecordPayment?.({ paidOn, amount, note })) close() }
+  const expected = expectedUtilityAmount(linkedUtilityInvoice, invoice)
+  const entered = amount === '' ? expected : Number(amount)
+  const shortBy = Number.isFinite(entered) ? Math.round((expected - entered) * 100) / 100 : 0
+  const isShort = form === 'record' && shortBy > 0.005
+  const needsChoice = isShort && borneBy !== BORNE_BY_CUSTOMER && borneBy !== BORNE_BY_COMPANY
+  const submitRecord = async () => { if (await onRecordPayment?.({ paidOn, amount, note, borneBy })) close() }
   const submitDate = async () => { if (await onCorrectDate?.(paidOn)) close() }
 
   const utilityActions = []
@@ -186,13 +196,39 @@ export default function InvoiceSplitPanel({
         {form === 'record' && field('Amount received', <input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={formatCurrency(utilityOwes)} style={inputStyle} />)}
       </div>
       {form === 'record' && field('Reference', <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Check #, ACH ref" style={inputStyle} />)}
-      {form === 'record' && (
+      {form === 'record' && isShort && (
+        <div style={{ padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.warning}`, backgroundColor: 'rgba(234,179,8,0.08)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ fontSize: '12px', fontWeight: '700', color: theme.text }}>
+            {utilityName || 'The utility'} is paying {formatCurrency(shortBy)} less than the {formatCurrency(expected)} claimed. Who covers it?
+          </div>
+          {[
+            [BORNE_BY_CUSTOMER, 'The customer', `Adds ${formatCurrency(shortBy)} to what they owe. Their invoice shows the incentive the utility actually paid.`],
+            [BORNE_BY_COMPANY, 'We absorb it', `The customer owes the same. Their invoice shows the ${formatCurrency(shortBy)} as "utility shortfall absorbed".`],
+          ].map(([value, title, detail]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setBorneBy(value)}
+              aria-pressed={borneBy === value}
+              style={{
+                textAlign: 'left', padding: '8px 10px', minHeight: '44px', borderRadius: '8px', cursor: 'pointer',
+                border: `1px solid ${borneBy === value ? theme.accent : theme.border}`,
+                backgroundColor: borneBy === value ? theme.accentBg : theme.bgCard,
+              }}
+            >
+              <div style={{ fontSize: '12px', fontWeight: '700', color: theme.text }}>{title}</div>
+              <div style={{ fontSize: '11px', color: theme.textSecondary }}>{detail}</div>
+            </button>
+          ))}
+        </div>
+      )}
+      {form === 'record' && !isShort && (
         <div style={{ fontSize: '11px', color: theme.textMuted }}>
-          If the utility paid a different amount than {formatCurrency(utilityOwes)}, enter what arrived. The record keeps what was received and notes the difference.
+          If the utility paid a different amount than {formatCurrency(expected)}, enter what arrived. The record keeps what was received and notes the difference.
         </div>
       )}
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        {btn('save', form === 'record' ? 'Save payment' : 'Save date', { onClick: form === 'record' ? submitRecord : submitDate, Icon: CheckCircle, primary: true })}
+        {btn('save', form === 'record' ? 'Save payment' : 'Save date', { onClick: form === 'record' ? submitRecord : submitDate, Icon: CheckCircle, primary: true, disabled: needsChoice })}
         {btn('cancel', 'Cancel', { onClick: close })}
       </div>
     </div>
@@ -234,10 +270,13 @@ export default function InvoiceSplitPanel({
           amount: utilityOwes,
           status: utilityStatus,
           lines: [
-            ['Incentive claimed', formatCurrency(utilityOwes)],
+            ['Incentive claimed', formatCurrency(Number(invoice.utility_billed) > 0 ? invoice.utility_billed : utilityOwes)],
             utilityPaid
-              ? ['Received', formatDate(invoice.utility_paid_at)]
+              ? ['Received', `${formatCurrency(utilityOwes)} · ${formatDate(invoice.utility_paid_at)}`]
               : ['Still owed', formatCurrency(utilityBalance)],
+            ...(utilityPaid && Number(invoice.utility_shortfall) > 0
+              ? [[`Short by ${formatCurrency(invoice.utility_shortfall)}`, invoice.shortfall_borne_by === BORNE_BY_CUSTOMER ? 'billed to customer' : 'absorbed']]
+              : []),
           ],
           actions: utilityActions,
           extra: settlementForm,

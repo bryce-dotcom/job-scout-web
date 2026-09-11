@@ -352,3 +352,73 @@ describe('invoiceUtilityName — the invoice is the record', () => {
     expect(invoiceUtilityName({ utility_provider_id: 999 }, providers, null)).toBeNull()
   })
 })
+
+describe('utility shortfall — the gap is named, never mislabelled as a discount', () => {
+  // The demo invoice after a $500 short-pay: $22,800 in-scope, $2,000 add-ons,
+  // claimed $8,000, the utility paid $7,500.
+  const lines = [
+    { line_total: 15000, in_utility_scope: true },
+    { line_total: 7800, in_utility_scope: true },
+    { line_total: 2000, in_utility_scope: false },
+  ]
+  const received = 7500
+
+  it('company absorbs it: the gap prints under its own name, not as a project discount', () => {
+    const inv = { amount: 24800, discount_applied: 8000, shortfall_borne_by: 'company', utility_shortfall: 500 }
+    const s = buildInvoiceSections(inv, lines, { utilityIncentive: received })
+    expect(s.incentive).toBe(7500)
+    expect(s.utilityShortfall).toBe(500)
+    expect(s.projectDiscount).toBe(0)
+    expect(s.customerTotal).toBe(16800)
+    expect(s.reconciles).toBe(true)
+    const p = buildInvoicePages(s)
+    expect(p.pageOne.utilityShortfall).toBe(500)
+    expect(p.pageOne.total).toBe(14800)
+    expect(p.reconciles).toBe(true)
+  })
+
+  it('customer covers it: their credit already dropped, so there is no gap and no line', () => {
+    const inv = { amount: 24800, discount_applied: 7500, shortfall_borne_by: 'customer', utility_shortfall: 500 }
+    const s = buildInvoiceSections(inv, lines, { utilityIncentive: received })
+    expect(s.incentive).toBe(7500)
+    expect(s.utilityShortfall).toBe(0)
+    expect(s.projectDiscount).toBe(0)
+    expect(s.customerTotal).toBe(17300)
+    expect(buildInvoicePages(s).pageOne.total).toBe(15300)
+  })
+
+  it('with no decision recorded the old behaviour stands — the gap is a project discount', () => {
+    const inv = { amount: 24800, discount_applied: 8000 }
+    const s = buildInvoiceSections(inv, lines, { utilityIncentive: received })
+    expect(s.utilityShortfall).toBe(0)
+    expect(s.projectDiscount).toBe(500)
+  })
+
+  it('a real project discount and an absorbed shortfall are shown separately', () => {
+    // $300 genuine discount on top of the $500 the company absorbed.
+    const inv = { amount: 24800, discount_applied: 8300, project_discount: 300, shortfall_borne_by: 'company', utility_shortfall: 500 }
+    const s = buildInvoiceSections(inv, lines, { utilityIncentive: received })
+    expect(s.incentive).toBe(7500)
+    expect(s.utilityShortfall).toBe(500)
+    expect(s.projectDiscount).toBe(300)
+    expect(s.reconciles).toBe(true)
+  })
+
+  it('is capped by what is actually left — it can never invent a deduction', () => {
+    // Claims a $900 shortfall but the credit only leaves $500 unexplained.
+    const inv = { amount: 24800, discount_applied: 8000, shortfall_borne_by: 'company', utility_shortfall: 900 }
+    const s = buildInvoiceSections(inv, lines, { utilityIncentive: received })
+    expect(s.utilityShortfall).toBe(500)
+    expect(s.projectDiscount).toBe(0)
+    expect(s.reconciles).toBe(true)
+  })
+
+  it('the customer total is untouched by any of this', () => {
+    for (const inv of [
+      { amount: 24800, discount_applied: 8000, shortfall_borne_by: 'company', utility_shortfall: 500 },
+      { amount: 24800, discount_applied: 8000 },
+    ]) {
+      expect(buildInvoiceSections(inv, lines, { utilityIncentive: received }).customerTotal).toBe(16800)
+    }
+  })
+})
