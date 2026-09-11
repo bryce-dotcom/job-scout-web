@@ -20,8 +20,8 @@
 //   npm run ship -- --sha <sha>  land a specific commit
 //   npm run ship -- --count 3    land the last 3 commits, oldest first
 
-import { execFileSync } from 'node:child_process'
-import { rmSync, existsSync, readFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { rmSync, existsSync, readFileSync, symlinkSync, rmdirSync, lstatSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -135,7 +135,15 @@ function schemaCheck() {
 // Cut from origin/main so it is unaffected by whichever branch this checkout
 // happens to be on, and by anything another session has left uncommitted.
 const TMP = join(ROOT, '..', `js-ship-${process.pid}`)
+const NM_LINK = join(TMP, 'node_modules')
+// The staging tree borrows this worktree's node_modules through a junction so
+// it can build. Remove the LINK before anything recursive touches TMP — a
+// recursive delete that followed it would empty the real node_modules.
+const unlinkNodeModules = () => {
+  try { if (lstatSync(NM_LINK).isSymbolicLink()) rmdirSync(NM_LINK) } catch { /* not there */ }
+}
 const cleanup = () => {
+  unlinkNodeModules()
   tryGit(['worktree', 'remove', '--force', TMP])
   try { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }) } catch { /* windows lock; prune handles it */ }
   tryGit(['worktree', 'prune'])
@@ -152,6 +160,42 @@ for (const s of shas) {
     die(`cherry-pick of ${s.slice(0, 8)} onto origin/main conflicted.\n` +
         `Someone else changed the same lines. Rebase your branch on origin/main and re-run.\n${pick.out}`)
   }
+}
+
+// ── build what will land, the way Vercel will ────────────────────────────
+// Vercel runs `npm run build` = guard + vite build. Anything that fails there
+// fails AFTER it is on main: the deploy errors, the previous bundle keeps
+// serving, and nobody is told until someone notices the fix never arrived.
+// On 2026-09-11 a test file used `Buffer` without importing it; guard flags
+// that, but it had been run through `| tail -1`, whose exit code is tail's,
+// so the ship went ahead. Every deploy after it errored for the rest of the
+// afternoon — three sessions' work — until two other sessions each fixed it.
+//
+// So ship runs the same command on the exact tree it is about to push: the
+// staging worktree, with this worktree's node_modules linked in. Not the
+// source tree — that is this branch's base plus the commits, and what lands
+// is origin/main plus the commits. ~1-2 minutes. It is not optional by
+// habit; JS_BUILD_OK=1 skips it, and then Vercel is the first to run it.
+buildCheck()
+function buildCheck() {
+  if (process.env.JS_BUILD_OK) { say('\nJS_BUILD_OK set — skipping the build; Vercel will be the first to run it.'); return }
+  const nm = join(ROOT, 'node_modules')
+  if (!existsSync(nm)) die('no node_modules in this worktree — run npm install, then ship again.')
+  try { symlinkSync(nm, NM_LINK, 'junction') } catch (e) { die(`could not link node_modules into the staging tree: ${e.message}`) }
+  say('\nnpm run build on the staging tree — the command Vercel runs (~1-2 min, JS_BUILD_OK=1 skips)')
+  const r = spawnSync('npm', ['run', 'build'], {
+    cwd: TMP, encoding: 'utf8', shell: true, stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024, env: { ...process.env, CI: '1' },
+  })
+  unlinkNodeModules()
+  if (r.status !== 0) {
+    const out = ((r.stdout || '') + (r.stderr || '')).trim().split('\n')
+    console.error(out.slice(-40).join('\n'))
+    die('the build Vercel would run rejected this. Nothing was pushed.\n' +
+        'Fix it, commit, ship again. ("Cannot find module" = npm install in this worktree first.)\n' +
+        'Override, knowing production will error: JS_BUILD_OK=1 npm run ship')
+  }
+  say('  build ok')
 }
 
 const landed = git(['rev-parse', 'HEAD'], { cwd: TMP })
