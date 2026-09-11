@@ -4,6 +4,7 @@ import {
   matchInboundToEstimate, normalizeEmail, stripQuotedReply, type QuoteCandidate,
 } from "../_shared/inboundMatch.ts";
 import { parseReplyToken, tokenFromAddresses } from "../_shared/replyToken.ts";
+import { verifySvixSignature, htmlToText } from "../_shared/inboundWebhook.ts";
 
 // Catch customer replies to estimates and put them on the estimate.
 //
@@ -51,6 +52,55 @@ function readEmail(payload: Record<string, any>) {
   return { from: normalizeEmail(from), subject: String(subject || ''), body: String(body || ''), to: normalizeEmail(to), allRecipients };
 }
 
+// Resend's `email.received` webhook is metadata only. Their docs: "Webhooks do
+// not include the email body, headers, or attachments, only their metadata."
+// The words the customer wrote are one more call away, and without this call
+// every reply would land on the estimate as "(empty reply)" — matched to the
+// right place and useless once you got there.
+async function fetchResendBody(emailId: string): Promise<string> {
+  const key = Deno.env.get('RESEND_API_KEY');
+  if (!key) {
+    console.error('[inbound-email] Resend event but RESEND_API_KEY is not set — reply body unavailable');
+    return '';
+  }
+  try {
+    const res = await fetch(`https://api.resend.com/emails/receiving/${encodeURIComponent(emailId)}`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) {
+      console.error('[inbound-email] Resend receiving fetch failed:', res.status, (await res.text().catch(() => '')).slice(0, 300));
+      return '';
+    }
+    const e = await res.json();
+    if (typeof e?.text === 'string' && e.text.trim()) return e.text;
+    return htmlToText(String(e?.html || ''));
+  } catch (err) {
+    console.error('[inbound-email] Resend receiving fetch threw:', (err as Error)?.message);
+    return '';
+  }
+}
+
+// Resend signs every webhook (Svix format). With RESEND_WEBHOOK_SECRET set,
+// a request that is not signed by it is refused — otherwise anyone who knows a
+// customer's email address could POST a made-up "reply" and have it land on
+// that customer's estimate through the sender-matching fallback below.
+//
+// With the secret unset, requests are accepted and the gap is logged on every
+// request, so the endpoint keeps working while the secret is being set up and
+// the log says exactly what is missing.
+async function verifyResendSignature(req: Request, rawBody: string) {
+  const secret = Deno.env.get('RESEND_WEBHOOK_SECRET') || '';
+  if (!secret) {
+    console.warn('[inbound-email] RESEND_WEBHOOK_SECRET not set — accepting unsigned request');
+    return { ok: true };
+  }
+  return verifySvixSignature({
+    id: req.headers.get('svix-id'),
+    timestamp: req.headers.get('svix-timestamp'),
+    signature: req.headers.get('svix-signature'),
+  }, rawBody, secret);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -60,10 +110,23 @@ serve(async (req) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  // The signature covers the exact bytes sent, so read them before parsing.
+  const rawBody = await req.text().catch(() => '');
+  const sig = await verifyResendSignature(req, rawBody);
+  if (!sig.ok) {
+    console.warn('[inbound-email] refused unsigned request:', sig.reason);
+    return json({ ok: false, error: 'invalid signature' }, 401);
+  }
+
   let payload: Record<string, any> = {};
-  try { payload = await req.json(); } catch { /* fall through to a 200 below */ }
+  try { payload = JSON.parse(rawBody); } catch { /* fall through to a 200 below */ }
 
   const mail = readEmail(payload);
+
+  // Resend's webhook has told us an email exists; now go and read it.
+  if (!mail.body && payload?.type === 'email.received' && payload?.data?.email_id) {
+    mail.body = await fetchResendBody(String(payload.data.email_id));
+  }
 
   // Always 200, even on rubbish.
   //
@@ -142,15 +205,24 @@ serve(async (req) => {
     // guessing which job it belongs to would put a stranger's words on somebody
     // else's estimate. A person decides instead.
     const body = stripQuotedReply(mail.body);
-    await supabase.from('company_notifications').insert({
-      company_id: (quotes || [])[0]?.company_id ?? null,
+    const companyId = (quotes || [])[0]?.company_id ?? null;
+    if (companyId == null) {
+      // No tenant ever mailed this address, so there is no one to raise it
+      // to — company_notifications.company_id is NOT NULL and the insert
+      // used to fail here without a word. The log is the only home it has.
+      console.warn(`[inbound-email] unmatched reply from ${mail.from} (no tenant has mailed this address) — subject "${mail.subject}" body: ${body.slice(0, 300)}`);
+      return json({ ok: true, matched: false, from: mail.from, reason: 'no_tenant' });
+    }
+    const { error: unmatchedErr } = await supabase.from('company_notifications').insert({
+      company_id: companyId,
       type: 'estimate_reply_unmatched',
       title: 'Email reply we could not place',
       message: `${mail.from} wrote "${mail.subject || '(no subject)'}" but no estimate was sent to that address.`,
       metadata: { from_email: mail.from, subject: mail.subject, body: body.slice(0, 2000), source: 'inbound_email' },
       created_by: null,
     });
-    console.log(`[inbound-email] unmatched reply from ${mail.from}`);
+    if (unmatchedErr) console.error('[inbound-email] could not raise unmatched reply:', unmatchedErr.message);
+    console.log(`[inbound-email] unmatched reply from ${mail.from} raised to company ${companyId}`);
     return json({ ok: true, matched: false, from: mail.from });
   }
 
