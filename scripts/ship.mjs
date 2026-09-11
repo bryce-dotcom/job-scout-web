@@ -21,7 +21,7 @@
 //   npm run ship -- --count 3    land the last 3 commits, oldest first
 
 import { execFileSync, spawnSync } from 'node:child_process'
-import { rmSync, existsSync, readFileSync, symlinkSync, rmdirSync, lstatSync } from 'node:fs'
+import { rmSync, existsSync, readFileSync, symlinkSync, rmdirSync, lstatSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -131,6 +131,30 @@ function schemaCheck() {
   say(code === 0 ? '  schema:check ok' : `  note: schema:check could not complete (exit ${code}) — shipping anyway.`)
 }
 
+// ── sweep what an earlier ship left behind ───────────────────────────────
+// A ship that was hard-killed — terminal closed, kill from a shell, a Windows
+// lock beating cleanup — leaves its staging tree on disk, and inside it the
+// junction to a real worktree's node_modules. `git worktree remove --force`
+// on that tree follows the junction and empties the real node_modules —
+// proven, not assumed (MSYS `rm -rf` does not, but nobody should have to
+// know which tool is safe). No signal handler covers a hard kill, so the
+// defence is here, on the next run: unlink the junction first, then remove.
+//
+// Only trees whose owning process is dead. The name carries the pid, and
+// another session's ship may be mid-build in its own tree right now.
+const alive = (pid) => { try { process.kill(pid, 0); return true } catch (e) { return e.code === 'EPERM' } }
+for (const name of (() => { try { return readdirSync(join(ROOT, '..')) } catch { return [] } })()) {
+  const m = /^js-ship-(\d+)$/.exec(name)
+  if (!m || Number(m[1]) === process.pid || alive(Number(m[1]))) continue
+  const dir = join(ROOT, '..', name)
+  const nm = join(dir, 'node_modules')
+  try { if (lstatSync(nm).isSymbolicLink()) rmdirSync(nm) } catch { /* no junction */ }
+  tryGit(['worktree', 'remove', '--force', dir])
+  try { if (existsSync(dir)) rmSync(dir, { recursive: true, force: true }) } catch { /* lock; prune */ }
+  say(`swept stale staging tree ${name}`)
+}
+tryGit(['worktree', 'prune'])
+
 // ── land via a throwaway worktree ────────────────────────────────────────
 // Cut from origin/main so it is unaffected by whichever branch this checkout
 // happens to be on, and by anything another session has left uncommitted.
@@ -149,6 +173,9 @@ const cleanup = () => {
   tryGit(['worktree', 'prune'])
 }
 process.on('exit', cleanup)
+// A console Ctrl+C reaches Node as SIGINT and would otherwise skip the exit
+// handlers — leaving the junction behind. A hard kill still can; see the sweep above.
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { cleanup(); process.exit(130) })
 
 const add = tryGit(['worktree', 'add', '--quiet', '--detach', TMP, 'origin/main'])
 if (!add.ok) die(`could not create the staging worktree:\n${add.out}`)
