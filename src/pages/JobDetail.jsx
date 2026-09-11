@@ -35,7 +35,7 @@ import { computeAllottedHours } from '../lib/allottedHours'
 import { fetchJobBonuses, bonusStatusLabel } from '../lib/bonusLedger'
 import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
-import { selectPdfPages, pageIndicesFor, PAGES_FIRST, PAGES_ALL } from '../lib/pdfPages'
+import { selectPdfPages, pageIndicesFor, PAGES_FIRST } from '../lib/pdfPages'
 
 const CATEGORY_COLORS = {
   CONTRACT: { bg: '#dcfce7', text: '#166534' },
@@ -331,11 +331,6 @@ function JobDetailInner() {
   const [submittalMessage, setSubmittalMessage] = useState('')
   const [submittalSending, setSubmittalSending] = useState(false)
   const [submittalHistory, setSubmittalHistory] = useState([])
-  // Per customer invoice: send page one (the utility's project) or every page.
-  // Page one is the default — the utility does not allow add-ons or discounts
-  // in what it audits, and page two is exactly those. Keyed by invoice id;
-  // an invoice with no entry sends page one.
-  const [submittalInvoicePages, setSubmittalInvoicePages] = useState({})
 
   // Bonus hours state
   const [bonusConfig, setBonusConfig] = useState(null) // payroll_config from settings
@@ -3094,7 +3089,12 @@ function JobDetailInner() {
         const invId = parseInt(rest[0])
         const inv = jobInvoices.find(i => i.id === invId)
         if (inv?.pdf_url) {
-          items.push({ type: 'signed_path', bucket: 'project-documents', path: inv.pdf_url, folder: DOCS, filename: `Invoice_${inv.invoice_id || invId}.pdf`, pages: submittalInvoicePages[inv.id] || PAGES_FIRST })
+          // Page one only — the utility's project. The utility does not accept
+          // add-ons or discounts in what it audits, and page two is exactly
+          // those, so the package never sends it. There used to be a choice
+          // here; it was removed on request. A one-page invoice is its own
+          // page one.
+          items.push({ type: 'signed_path', bucket: 'project-documents', path: inv.pdf_url, folder: DOCS, filename: `Invoice_${inv.invoice_id || invId}.pdf`, pages: PAGES_FIRST })
         }
       } else if (type === 'utilinvoice') {
         const invId = parseInt(rest[0])
@@ -7796,38 +7796,14 @@ function JobDetailInner() {
                               </div>
                             </div>
                             {!hasPdf && <span style={{ fontSize: '10px', color: theme.textMuted }}>No PDF</span>}
-                            {hasPdf && (() => {
-                              // Which pages of this invoice go in the package.
-                              // Page one is the utility's project and the
-                              // default; page two is the customer's add-ons,
-                              // which the utility does not accept.
-                              const choice = submittalInvoicePages[inv.id] || PAGES_FIRST
-                              const opt = (value, label) => (
-                                <button
-                                  key={value}
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); setSubmittalInvoicePages(p => ({ ...p, [inv.id]: value })) }}
-                                  title={value === PAGES_FIRST ? 'Page one only — the utility project, what the utility audits' : 'Every page — includes customer add-ons and the invoice total'}
-                                  style={{
-                                    padding: '4px 8px', fontSize: '10px', fontWeight: '600', minHeight: '28px',
-                                    backgroundColor: choice === value ? theme.accent : 'transparent',
-                                    color: choice === value ? '#fff' : theme.textMuted,
-                                    border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {label}
-                                </button>
-                              )
-                              return (
-                                <div
-                                  onClick={(e) => e.stopPropagation()}
-                                  style={{ display: 'flex', border: `1px solid ${theme.border}`, borderRadius: '6px', overflow: 'hidden', flexShrink: 0 }}
-                                >
-                                  {opt(PAGES_FIRST, 'Page 1 · utility')}
-                                  {opt(PAGES_ALL, 'All pages')}
-                                </div>
-                              )
-                            })()}
+                            {hasPdf && (
+                              <span
+                                title="The package sends page one only — the utility's project. Add-ons and the invoice total stay on page two, which the utility does not receive."
+                                style={{ fontSize: '10px', fontWeight: '600', color: '#14b8a6', backgroundColor: 'rgba(20,184,166,0.12)', padding: '3px 8px', borderRadius: '6px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                              >
+                                Page 1 · utility portion
+                              </span>
+                            )}
                           </div>
                         )
                       })}
