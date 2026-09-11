@@ -28,6 +28,23 @@ const corsHeaders = {
 // ============================================================
 const TOOLS = [
   {
+    name: 'query_past_fixes',
+    description:
+      'Search what THIS COMPANY has already diagnosed and fixed — equipment, symptom, cause, fix, parts, which job, who, when. ' +
+      'Call this FIRST whenever someone describes a fault, before answering from general knowledge: a fix that worked here last month beats a textbook. ' +
+      'Put the symptom and the equipment in `search` in plain words (a model number off the nameplate is gold). ' +
+      'Cite a hit as "we fixed this on <job> on <date> (<who>): <fix>". An empty result means the company has no record of it — say so, then diagnose from knowledge.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        search: { type: 'string', description: 'Symptom + equipment in plain words, e.g. "Lennox furnace fires then locks out after 30 seconds"' },
+        equipment: { type: 'string', description: 'Make/model alone, if known, to sharpen the match' },
+        limit: { type: 'integer', description: 'Default 5, max 20' },
+      },
+      required: ['search'],
+    },
+  },
+  {
     name: 'query_invoices',
     description: 'Query invoices. `count` is the exact number matching; `invoice_numbers` lists real invoice ids so anything you claim can be checked. ALWAYS read the `scope` field back to the user — it says what was filtered out. Unpaid is NOT the same as overdue: every returned row carries its own `overdue` boolean, and the result carries `as_of`, `overdue_count` and `overdue_total_owed`. Call an invoice overdue only when its own `overdue` flag is true, and take overdue totals from `overdue_total_owed` — never from `count`, from `total_amount`, or from a sum of every unpaid row. An overdue row also carries `balance`, what is STILL OWED on it: on a part-paid invoice that is less than its `amount`, so quote the balance. An invoice record holds customer_id, NOT a customer name: if you need a name, look it up with query_customers. NEVER name a customer that the tool did not return.',
     input_schema: {
@@ -317,14 +334,18 @@ const PROPOSE_CREATE_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      target: { type: 'string', description: 'What to create. Currently: lead' },
+      target: { type: 'string', enum: ['lead', 'diagnosis'], description: 'lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time.' },
       fields: {
         type: 'object',
-        description: 'For a lead: customer_name (required — the person), business_name, phone, email, address, service_type, lead_source, notes',
+        description:
+          'lead: customer_name (required — the person), business_name, phone, email, address, service_type, lead_source, notes. ' +
+          'diagnosis: symptom (required), fix (required), equipment (make/model), cause, parts, outcome (fixed|partial|escalated|unresolved), trade, job (describe it in words — "the Riverside job" — never an id; omit it if they are clocked in and it is that job).',
         properties: {
           customer_name: { type: 'string' }, business_name: { type: 'string' }, phone: { type: 'string' },
           email: { type: 'string' }, address: { type: 'string' }, service_type: { type: 'string' },
           lead_source: { type: 'string' }, notes: { type: 'string' },
+          equipment: { type: 'string' }, symptom: { type: 'string' }, cause: { type: 'string' }, fix: { type: 'string' },
+          parts: { type: 'string' }, outcome: { type: 'string' }, trade: { type: 'string' }, job: { type: 'string' },
         },
       },
       confirm_new: { type: 'boolean', description: 'Only true after the USER has said the matching lead is a different customer.' },
@@ -426,6 +447,33 @@ async function execTool(name: string, input: any, caller: Caller) {
   const isManager = isAdmin || role === 'manager'
 
   try {
+    if (name === 'query_past_fixes') {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_diagnoses`, {
+        method: 'POST',
+        headers: { ...hdr, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          p_company_id: companyId,
+          p_query: String(input?.search || '').slice(0, 300),
+          p_equipment: input?.equipment ? String(input.equipment).slice(0, 160) : null,
+          p_limit: Math.min(Math.max(Number(input?.limit) || 5, 1), 20),
+        }),
+      })
+      if (!res.ok) return { error: `past fixes search failed: ${res.status} ${await res.text()}` }
+      const rows = await res.json().catch(() => [])
+      if (!Array.isArray(rows) || !rows.length) {
+        return { count: 0, fixes: [], scope: 'No recorded diagnosis in this company matches. That is a fact about our records, not about the fault — diagnose from knowledge, and offer to log the fix when they find it.' }
+      }
+      return {
+        count: rows.length,
+        fixes: rows.map((d: any) => ({
+          id: d.id, when: String(d.created_at).slice(0, 10), who: d.fixed_by || null,
+          job: d.job_label || null, customer: d.customer_name || null,
+          equipment: d.equipment, symptom: d.symptom, cause: d.cause, fix: d.fix, parts: d.parts, outcome: d.outcome,
+        })),
+        scope: 'These are this company\'s own recorded fixes. Say which job and when, and who did it.',
+      }
+    }
+
     if (name === 'query_invoices') {
       const params = new URLSearchParams({ company_id: `eq.${companyId}` })
       const notes: string[] = []

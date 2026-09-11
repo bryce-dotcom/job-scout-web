@@ -48,8 +48,15 @@ export interface RecordTarget {
   allowOnActiveJob?: boolean
 }
 
-const jobLabel = (r: Record<string, any>) =>
-  [r.job_id, r.job_title || r.customer_name || r.business_name].filter(Boolean).join(' — ') || `Job #${r.id}`
+// Title AND customer. "Parking Lot Wall Packs" alone told a tech nothing
+// about whether this was the Riverside job or the Aspen Grove one; the card
+// exists so a person can catch the wrong record, and it cannot do that
+// without the customer on it.
+const jobLabel = (r: Record<string, any>) => {
+  const who = r.customer_name || r.business_name
+  const parts = [r.job_id, r.job_title, who && who !== r.job_title ? who : null].filter(Boolean)
+  return parts.join(' — ') || `Job #${r.id}`
+}
 const leadLabel = (r: Record<string, any>) =>
   [r.lead_id, r.business_name || r.customer_name].filter(Boolean).join(' — ') || `Lead #${r.id}`
 
@@ -123,14 +130,37 @@ export async function resolveEntity(
   let rows = await readRecordList(r,
     `${target.table}?select=${target.selectCols}&company_id=eq.${companyId}&or=(${or})&order=id.desc&limit=7`)
 
-  // Whole-phrase matching is strict; retry on the most distinctive word so
-  // "the Drinkle insurance job" still finds "WY Drinkle Ins Agency".
+  // Whole-phrase matching is strict; retry word by word so "the Drinkle
+  // insurance job" still finds "WY Drinkle Ins Agency".
+  //
+  // Word by word — not "the longest word". That version picked "Apartments"
+  // over "Riverside" for "Riverside Apartments", found the one job with
+  // Apartments in it (Aspen Grove Apartments), and handed it back as THE
+  // match. A diagnosis would have been logged on the wrong job with nobody
+  // asked. Now every distinctive word is tried, rows are ranked by how many
+  // of them hit, and only a row matching ALL of them is returned on its own.
+  // Anything less is offered as a choice, never chosen.
   if (!rows?.length) {
-    const word = term.split(/\s+/).filter((w) => w.length >= 4).sort((a, b) => b.length - a.length)[0]
-    if (word) {
-      const or2 = target.searchCols.map((c) => `${c}.ilike.*${word}*`).join(',')
-      rows = await readRecordList(r,
-        `${target.table}?select=${target.selectCols}&company_id=eq.${companyId}&or=(${or2})&order=id.desc&limit=7`)
+    const words = [...new Set(term.split(/\s+/).filter((w) => w.length >= 4))]
+    if (words.length) {
+      const hits = new Map<number, { row: any; n: number }>()
+      for (const w of words) {
+        const orW = target.searchCols.map((c) => `${c}.ilike.*${w}*`).join(',')
+        const rs = await readRecordList(r,
+          `${target.table}?select=${target.selectCols}&company_id=eq.${companyId}&or=(${orW})&order=id.desc&limit=15`)
+        for (const x of rs) {
+          const h = hits.get(x.id) || { row: x, n: 0 }
+          h.n += 1
+          hits.set(x.id, h)
+        }
+      }
+      const ranked = [...hits.values()].sort((a, b) => b.n - a.n)
+      const best = ranked[0]?.n ?? 0
+      const top = ranked.filter((h) => h.n === best).map((h) => h.row)
+      if (top.length === 1 && best === words.length) return { row: top[0] }
+      if (top.length) {
+        return { candidates: top.slice(0, 6).map((x: any) => ({ id: x.id, label: target.labelOf(x) })) }
+      }
     }
   }
 

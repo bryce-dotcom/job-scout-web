@@ -18,17 +18,26 @@
 import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
 import { readRecordList } from './arnieRest.ts'
+import { RECORD_TARGETS, activeJobId, resolveEntity } from './arnieRecords.ts'
 
 interface CreateField {
-  /** Column on the table. The model never sees this; it sees `key`. */
-  column: string
+  /** Column on the table. null = resolved by `prepare`, never written as-is. */
+  column: string | null
   label: string
   required?: boolean
   /** Longest value accepted; longer is refused rather than silently cut. */
   max?: number
   /** Reject anything that does not look like this kind of value. */
   shape?: 'email' | 'phone'
+  /** Accept only one of these (case-insensitive; stored in this casing). */
+  oneOf?: string[]
 }
+
+/** What `prepare` hands back: extra columns to store, and rows for the card. */
+export type Prepared =
+  | { ok: true; columns: Record<string, unknown>; display: { label: string; value: string }[] }
+  | { ok: false; error: string }
+  | { needs_choice: { id: number; label: string }[]; message: string }
 
 export interface CreateTarget {
   label: string
@@ -38,6 +47,8 @@ export interface CreateTarget {
   fields: Record<string, CreateField>
   /** What the card and the audit call the new row. */
   labelOf: (fields: Record<string, string>) => string
+  /** Resolve anything that is not a plain column — e.g. "the Drinkle job" → job_id. */
+  prepare?: (r: Rest, caller: Caller, fields: Record<string, string>) => Promise<Prepared>
 }
 
 export const CREATE_TARGETS: Record<string, CreateTarget> = {
@@ -59,6 +70,55 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     labelOf: (f) => f.business_name && f.customer_name
       ? `${f.business_name} (${f.customer_name})`
       : (f.business_name || f.customer_name || 'new lead'),
+  },
+
+  // Diagnose slice 2. Slice 1 lets a tech ask why a contactor chatters;
+  // this keeps the answer once they find it, on the job, searchable — so
+  // next time Arnie says "we fixed this on the Drinkle job in March" before
+  // he says anything from general knowledge.
+  diagnosis: {
+    label: 'diagnosis',
+    table: 'job_diagnoses',
+    minLevel: 0,
+    fields: {
+      equipment: { column: 'equipment', label: 'Equipment',  max: 160 },
+      symptom:   { column: 'symptom',   label: 'Symptom',    required: true, max: 600 },
+      cause:     { column: 'cause',     label: 'Cause',      max: 600 },
+      fix:       { column: 'fix',       label: 'Fix',        required: true, max: 1000 },
+      parts:     { column: 'parts',     label: 'Parts used', max: 400 },
+      outcome:   { column: 'outcome',   label: 'Outcome',    max: 20, oneOf: ['fixed', 'partial', 'escalated', 'unresolved'] },
+      trade:     { column: 'trade',     label: 'Trade',      max: 60 },
+      // Not a column: resolved to job_id by `prepare`. The model describes
+      // the job the way the user did; it never supplies an id.
+      job:       { column: null,        label: 'Job',        max: 160 },
+    },
+    labelOf: (f) => `${f.equipment ? f.equipment + ': ' : ''}${f.symptom}`.slice(0, 120),
+    prepare: async (r, caller, f) => {
+      const companyId = caller.companyId as number
+      let jobId: number | null = null
+      let jobLabel = ''
+      if (f.job) {
+        const found = await resolveEntity(r, companyId, RECORD_TARGETS.job_note, f.job)
+        if ('error' in found) return { ok: false, error: found.error }
+        if ('candidates' in found) {
+          return { needs_choice: found.candidates, message: 'More than one job matches. Ask which one, then call again with the job named exactly as listed.' }
+        }
+        jobId = found.row.id
+        jobLabel = RECORD_TARGETS.job_note.labelOf(found.row)
+      } else {
+        // No job named: if they are clocked in, that is the job.
+        const active = await activeJobId(r, companyId, caller.employeeId)
+        if (active) {
+          const rows = await readRecordList(r, `jobs?select=id,job_id,job_title,customer_name,business_name&company_id=eq.${companyId}&id=eq.${active}&limit=1`)
+          if (rows[0]) { jobId = rows[0].id; jobLabel = RECORD_TARGETS.job_note.labelOf(rows[0]) + ' (clocked in)' }
+        }
+      }
+      return {
+        ok: true,
+        columns: { job_id: jobId },
+        display: [{ label: 'Job', value: jobId ? jobLabel : '(none — general note)' }],
+      }
+    },
   },
 }
 
@@ -104,6 +164,12 @@ function cleanFields(target: CreateTarget, raw: unknown): { ok: true; fields: Re
     if (def.max && s.length > def.max) return { ok: false, error: `${def.label} is too long (${s.length} characters, limit ${def.max}).` }
     if (def.shape === 'email' && !EMAIL.test(s)) return { ok: false, error: `"${s}" doesn't look like an email address.` }
     if (def.shape === 'phone' && !PHONE_DIGITS.test(s.replace(/\D/g, ''))) return { ok: false, error: `"${s}" doesn't look like a phone number.` }
+    if (def.oneOf) {
+      const hit = def.oneOf.find((o) => o.toLowerCase() === s.toLowerCase())
+      if (!hit) return { ok: false, error: `${def.label} must be one of: ${def.oneOf.join(', ')}.` }
+      fields[key] = hit
+      continue
+    }
     fields[key] = s
   }
   return { ok: true, fields }
@@ -165,6 +231,16 @@ export async function proposeCreate(
     }
   }
 
+  // Anything that is not a plain column — a job named in words — is resolved
+  // now, so the card shows what the row will actually point at.
+  let prepared: { columns: Record<string, unknown>; display: { label: string; value: string }[] } = { columns: {}, display: [] }
+  if (target.prepare) {
+    const p = await target.prepare(r, caller, fields)
+    if ('needs_choice' in p) return p
+    if (!p.ok) return { error: p.error }
+    prepared = p
+  }
+
   const entity = target.labelOf(fields)
   const summary = `Create ${target.label}: ${entity}` + (fields.service_type ? ` — ${fields.service_type}` : '') + (fields.lead_source ? ` (from ${fields.lead_source})` : '')
 
@@ -179,6 +255,7 @@ export async function proposeCreate(
       action: 'create',
       payload: {
         entity_table: target.table, entity_label: entity, fields,
+        columns: prepared.columns,
         // The person who asked Arnie is the setter/source of the lead unless
         // the fields say otherwise. Recorded now so apply does not have to
         // guess who was talking.
@@ -199,9 +276,12 @@ export async function proposeCreate(
       kind: 'create',
       label: target.label,
       entity,
-      fields: Object.entries(target.fields)
-        .filter(([k]) => fields[k])
-        .map(([k, def]) => ({ label: def.label, value: fields[k] })),
+      fields: [
+        ...Object.entries(target.fields)
+          .filter(([k, def]) => fields[k] && def.column)
+          .map(([k, def]) => ({ label: def.label, value: fields[k] })),
+        ...prepared.display,
+      ],
       ...(despite ? { despite } : {}),
     },
   }
@@ -229,8 +309,13 @@ export async function applyCreateProposal(
     }
   }
 
-  const row: Record<string, unknown> = { company_id: companyId }
-  for (const [key, def] of Object.entries(target.fields)) if (fields[key]) row[def.column] = fields[key]
+  const row: Record<string, unknown> = { company_id: companyId, ...(prop.payload?.columns || {}) }
+  for (const [key, def] of Object.entries(target.fields)) if (fields[key] && def.column) row[def.column] = fields[key]
+  if (target.table === 'job_diagnoses') {
+    row.created_by_employee_id = prop.payload?.proposer_employee_id ?? null
+    row.created_by = prop.created_by ?? null
+    row.source = 'arnie'
+  }
   if (target.table === 'leads') {
     row.status = 'New'
     row.lead_id = `LEAD-${Date.now().toString(36).toUpperCase()}`
