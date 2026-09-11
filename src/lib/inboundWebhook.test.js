@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { createHmac, randomBytes } from 'node:crypto'
+// Explicit, not ambient: the guard's no-undef pass does not know Node globals,
+// and this one line is what stood between main and a green build.
 import { Buffer } from 'node:buffer'
+
 import { verifySvixSignature, htmlToText, SVIX_TOLERANCE_SEC } from './inboundWebhook'
 
 // Signs the way Svix's own reference code does (docs.svix.com, "manual
