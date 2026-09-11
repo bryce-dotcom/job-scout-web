@@ -4,7 +4,8 @@ import {
   matchInboundToEstimate, normalizeEmail, stripQuotedReply, type QuoteCandidate,
 } from "../_shared/inboundMatch.ts";
 import { parseReplyToken, tokenFromAddresses } from "../_shared/replyToken.ts";
-import { verifySvixSignature, htmlToText } from "../_shared/inboundWebhook.ts";
+import { verifySvixSignature, htmlToText, isAutoReply, recipientKind, readEmail } from "../_shared/inboundWebhook.ts";
+import { emailRep, repEmailShell, appLink } from "../_shared/notifyRep.ts";
 
 // Catch customer replies to estimates and put them on the estimate.
 //
@@ -32,51 +33,41 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-// Pull from/subject/body out of whatever the provider sent.
-function readEmail(payload: Record<string, any>) {
-  const d = payload?.data ?? payload ?? {};
-  const from =
-    d.from?.address ?? d.from?.email ?? (typeof d.from === 'string' ? d.from : null) ??
-    d.sender ?? d.envelope?.from ?? payload?.from ?? null;
-  const subject = d.subject ?? payload?.subject ?? '';
-  const body =
-    d.text ?? d['body-plain'] ?? d.plain ?? d.textBody ?? d.body ??
-    d.html ?? d['body-html'] ?? d.htmlBody ?? '';
-  const to =
-    d.to?.[0]?.address ?? d.to?.[0]?.email ?? (typeof d.to === 'string' ? d.to : null) ??
-    d.recipient ?? payload?.to ?? null;
-  const allRecipients = [
-    ...(Array.isArray(d.to) ? d.to : []),
-    ...(Array.isArray(d.cc) ? d.cc : []),
-  ].map((x: any) => normalizeEmail(x?.address ?? x?.email ?? x));
-  return { from: normalizeEmail(from), subject: String(subject || ''), body: String(body || ''), to: normalizeEmail(to), allRecipients };
-}
-
 // Resend's `email.received` webhook is metadata only. Their docs: "Webhooks do
 // not include the email body, headers, or attachments, only their metadata."
 // The words the customer wrote are one more call away, and without this call
 // every reply would land on the estimate as "(empty reply)" — matched to the
 // right place and useless once you got there.
-async function fetchResendBody(emailId: string): Promise<string> {
-  const key = Deno.env.get('RESEND_API_KEY');
+type Received = { body: string; headers: Record<string, unknown> };
+async function fetchResendReceived(emailId: string): Promise<Received> {
+  const none: Received = { body: '', headers: {} };
+  // Reading a received email needs a FULL-ACCESS key. The sending key the
+  // rest of the app uses ("Jobscout Invoices", sending access) gets
+  // 401 restricted_api_key here — seen in Resend's API log on 2026-09-11 —
+  // so the receiver has its own, falling back only so the failure is logged
+  // rather than silent.
+  const key = Deno.env.get('RESEND_INBOUND_API_KEY') || Deno.env.get('RESEND_API_KEY');
   if (!key) {
-    console.error('[inbound-email] Resend event but RESEND_API_KEY is not set — reply body unavailable');
-    return '';
+    console.error('[inbound-email] Resend event but no RESEND_INBOUND_API_KEY / RESEND_API_KEY — reply body unavailable');
+    return none;
   }
   try {
     const res = await fetch(`https://api.resend.com/emails/receiving/${encodeURIComponent(emailId)}`, {
       headers: { Authorization: `Bearer ${key}` },
     });
     if (!res.ok) {
-      console.error('[inbound-email] Resend receiving fetch failed:', res.status, (await res.text().catch(() => '')).slice(0, 300));
-      return '';
+      const detail = (await res.text().catch(() => '')).slice(0, 300);
+      console.error('[inbound-email] Resend receiving fetch failed:', res.status, detail,
+        res.status === 401 ? '— set RESEND_INBOUND_API_KEY to a Full-access Resend key; a sending-only key cannot read received mail' : '');
+      return none;
     }
     const e = await res.json();
-    if (typeof e?.text === 'string' && e.text.trim()) return e.text;
-    return htmlToText(String(e?.html || ''));
+    const headers = (e && typeof e.headers === 'object' && e.headers) ? e.headers : {};
+    if (typeof e?.text === 'string' && e.text.trim()) return { body: e.text, headers };
+    return { body: htmlToText(String(e?.html || '')), headers };
   } catch (err) {
     console.error('[inbound-email] Resend receiving fetch threw:', (err as Error)?.message);
-    return '';
+    return none;
   }
 }
 
@@ -114,8 +105,11 @@ serve(async (req) => {
   const rawBody = await req.text().catch(() => '');
   const sig = await verifyResendSignature(req, rawBody);
   if (!sig.ok) {
+    // The reason is one of four fixed strings and names nothing secret; it is
+    // returned because the provider's delivery log is the only place a
+    // rejected webhook can be read from without dashboard access.
     console.warn('[inbound-email] refused unsigned request:', sig.reason);
-    return json({ ok: false, error: 'invalid signature' }, 401);
+    return json({ ok: false, error: 'invalid signature', reason: sig.reason }, 401);
   }
 
   let payload: Record<string, any> = {};
@@ -124,9 +118,24 @@ serve(async (req) => {
   const mail = readEmail(payload);
 
   // Resend's webhook has told us an email exists; now go and read it.
+  let headers: Record<string, unknown> = (payload?.data?.headers && typeof payload.data.headers === 'object') ? payload.data.headers : {};
   if (!mail.body && payload?.type === 'email.received' && payload?.data?.email_id) {
-    mail.body = await fetchResendBody(String(payload.data.email_id));
+    const got = await fetchResendReceived(String(payload.data.email_id));
+    mail.body = got.body;
+    headers = { ...headers, ...got.headers };
   }
+
+  // Out-of-office, bounces, delivery reports: nobody wrote these, and filing
+  // one on an estimate would light the pipeline card up as "replied".
+  if (isAutoReply(mail.subject, headers)) {
+    console.log(`[inbound-email] auto-reply from ${mail.from || '?'} ignored: "${mail.subject}"`);
+    return json({ ok: true, matched: false, reason: 'auto_reply' });
+  }
+
+  // The MX covers the whole domain, so replies to invoice and receipt emails
+  // arrive here too. Those are not estimate replies and must never be filed
+  // on one; they are raised to the tenant instead, further down.
+  const kind = recipientKind(mail.to);
 
   // Always 200, even on rubbish.
   //
@@ -194,10 +203,33 @@ serve(async (req) => {
     .ilike('sent_to_email', mail.from)
     .limit(50);
 
-  if (!quote) {
+  if (!quote && kind !== 'other') {
     const m = matchInboundToEstimate(mail.from, mail.subject, (quotes || []) as QuoteCandidate[]);
     quote = m.quote;
     reason = m.reason;
+  }
+
+  if (!quote && kind === 'other') {
+    // A reply to an invoice, a receipt, or a no-reply address, from someone we
+    // know. It gets in front of a person; it does not get a home on an estimate
+    // it was never about.
+    const body = stripQuotedReply(mail.body);
+    const companyId = (quotes || [])[0]?.company_id ?? null;
+    if (companyId == null) {
+      console.warn(`[inbound-email] mail to ${mail.to} from ${mail.from} (no tenant has mailed this address) — "${mail.subject}" ${body.slice(0, 200)}`);
+      return json({ ok: true, matched: false, from: mail.from, reason: 'no_tenant' });
+    }
+    const { error: otherErr } = await supabase.from('company_notifications').insert({
+      company_id: companyId,
+      type: 'email_reply_unrouted',
+      title: `Email reply to ${mail.to}`,
+      message: `${mail.from} wrote "${mail.subject || '(no subject)'}": ${body.slice(0, 200)}`,
+      metadata: { from_email: mail.from, to_email: mail.to, subject: mail.subject, body: body.slice(0, 2000), source: 'inbound_email' },
+      created_by: null,
+    });
+    if (otherErr) console.error('[inbound-email] could not raise reply to', mail.to, otherErr.message);
+    console.log(`[inbound-email] reply to ${mail.to} from ${mail.from} raised to company ${companyId}`);
+    return json({ ok: true, matched: false, from: mail.from, reason: 'not_an_estimate_address' });
   }
 
   if (!quote) {
@@ -269,6 +301,23 @@ serve(async (req) => {
   // The message is already saved. A failed notification is worth knowing about
   // but must never turn a captured reply into a provider retry.
   if (notifyErr) console.error('[inbound-email] notification failed:', notifyErr.message);
+
+  // And the rep's inbox — reps live in the field, and the reply used to land
+  // in a mailbox they read. It still does: reply_to is the customer, so
+  // answering from the inbox goes straight back to them.
+  const escaped = cleanBody.replace(/[<>]/g, (c) => c === '<' ? '&lt;' : '&gt;');
+  const emailRes = await emailRep(supabase, {
+    salespersonId: quote.salesperson_id || null,
+    replyTo: mail.from,
+    subject: `Reply from ${mail.from} on ${label}`,
+    html: repEmailShell(
+      'New reply on your estimate',
+      `<p style="font-size:15px;margin:0 0 10px"><b>${mail.from}</b> replied on estimate <b>${label}</b>${mail.subject ? ` — <i>${mail.subject.replace(/[<>]/g, '')}</i>` : ''}:</p>`
+      + `<blockquote style="margin:0;padding:10px 14px;background:#f7f5ef;border-left:3px solid #5a6349;border-radius:6px;font-size:14px;white-space:pre-wrap">${escaped || '(empty reply)'}</blockquote>`,
+      appLink(`/estimates/${quote.id}`), 'Open in JobScout',
+    ),
+  });
+  if (!emailRes.sent) console.log('[inbound-email] rep email skipped:', emailRes.skipped || emailRes.error);
 
   console.log(`[inbound-email] ${mail.from} -> estimate ${quote.id} (${reason})`);
   return json({ ok: true, matched: true, quote_id: quote.id, matched_by: reason });

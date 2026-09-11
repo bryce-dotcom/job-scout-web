@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { replyAddress } from "../_shared/replyToken.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -309,6 +310,14 @@ serve(async (req) => {
 </body>
 </html>`;
 
+      // Replies come back to JobScout, addressed to this estimate — the same
+      // tokened address send-estimate uses, for the same reasons. A chase is
+      // the email most likely to get a reply, so it matters most here. The BU
+      // contact email is the fallback only while the signing secret is unset.
+      const REPLY_SECRET = Deno.env.get('REPLY_TOKEN_SECRET') || '';
+      const INBOUND_DOMAIN = Deno.env.get('INBOUND_EMAIL_DOMAIN') || 'appsannex.com';
+      const replyTo = REPLY_SECRET ? await replyAddress(est.id, REPLY_SECRET, INBOUND_DOMAIN) : (contactEmail || null);
+
       // Send via Resend
       const resendRes = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -319,10 +328,7 @@ serve(async (req) => {
         body: JSON.stringify({
           from: `${displayName} <estimates@appsannex.com>`,
           to: [est.sent_to_email],
-          // Same reason as send-estimate: a chase email is the one most likely
-          // to get a reply, and without this that reply goes to a shared
-          // sending address nobody reads.
-          ...(contactEmail ? { reply_to: contactEmail } : {}),
+          ...(replyTo ? { reply_to: replyTo } : {}),
           subject,
           html: htmlBody,
         }),

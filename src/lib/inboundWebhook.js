@@ -9,5 +9,8 @@
 export {
   verifySvixSignature,
   htmlToText,
+  isAutoReply,
+  recipientKind,
+  readEmail,
   SVIX_TOLERANCE_SEC,
 } from '../../supabase/functions/_shared/inboundWebhook.ts'

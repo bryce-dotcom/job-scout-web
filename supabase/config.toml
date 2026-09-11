@@ -407,6 +407,18 @@ verify_jwt = false
 [functions.zach-instant-quote]
 verify_jwt = false
 
+# These two send customer email from estimates@appsannex.com and MUST require a
+# JWT: send-estimate mails any recipient with any estimate on request, and
+# estimate-followup mass-mails on a bare POST. Both callers carry one — the
+# app sends the anon key, the Vercel cron the service role key. Pinned because
+# a deploy on 2026-09-11 briefly ran with --no-verify-jwt and a plain redeploy
+# did NOT switch verification back on; the setting only follows this file.
+[functions.send-estimate]
+verify_jwt = true
+
+[functions.estimate-followup]
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

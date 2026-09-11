@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveQuoteEmailLinks, renderQuoteEmailLinks } from "../_shared/quoteEmailLinks.ts";
+import { replyAddress } from "../_shared/replyToken.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -264,18 +265,23 @@ serve(async (req) => {
       html: htmlBody,
     };
 
-    // Send replies somewhere a person reads.
+    // Replies come back to JobScout, addressed to this estimate.
     //
-    // Without this, a customer who hits Reply on their estimate is writing to
-    // estimates@appsannex.com — a shared sending address, not a mailbox anyone
-    // watches — and the reply is simply lost. The footer of this very email
-    // already tells them to email contactEmail, so replies landing there is
-    // what the message promises.
+    // reply+<signed token>@appsannex.com: since 2026-09-11 the domain's MX
+    // points at Resend and the inbound-email function receives everything sent
+    // there. The token names the estimate outright, so the reply lands on it
+    // whoever sends it and whatever happens to the subject line — and the rep
+    // is emailed a copy with reply_to set to the customer, so nothing that
+    // used to reach an inbox stops reaching one.
     //
-    // This is not reply TRACKING. Nothing in JobScout can yet show "the
-    // customer replied", because no inbound mail is captured anywhere. It only
-    // stops replies disappearing while that is true.
-    if (contactEmail) {
+    // Without the signing secret the token cannot be made, and a reply-to that
+    // cannot be matched must still reach a person: the BU contact email, which
+    // the footer of this very message tells the customer to use.
+    const REPLY_SECRET = Deno.env.get('REPLY_TOKEN_SECRET') || '';
+    const INBOUND_DOMAIN = Deno.env.get('INBOUND_EMAIL_DOMAIN') || 'appsannex.com';
+    if (REPLY_SECRET) {
+      emailPayload.reply_to = await replyAddress(estimate_id, REPLY_SECRET, INBOUND_DOMAIN);
+    } else if (contactEmail) {
       emailPayload.reply_to = contactEmail;
     }
 
