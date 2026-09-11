@@ -48,8 +48,28 @@ describe('the client declares what it can draw', () => {
 
 describe('the server withholds tools the caller cannot render', () => {
   it('maps every proposal tool to the card it produces', () => {
-    for (const tool of ['propose_change', 'propose_record_change', 'propose_bulk_change']) {
+    for (const tool of ['propose_change', 'propose_record_change', 'propose_bulk_change', 'propose_create']) {
       expect(chatTs).toMatch(new RegExp(`${tool}: '`))
+    }
+  })
+
+  it('every card kind the server can emit is one this client claims', () => {
+    // The mirror of the client-side invariant: a tool mapped to a card the
+    // client does not declare would be withheld forever — silently, since
+    // the handshake is doing exactly what it should.
+    const serverKinds = [...chatTs.matchAll(/propose_[a-z_]+: '([a-z]+)'/g)].map(m => m[1])
+    const claimed = [...engine.matchAll(/export const RENDERABLE_CARDS = \[([^\]]+)\]/g)]
+      .flatMap(m => [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]))
+    expect(serverKinds.length).toBeGreaterThan(0)
+    for (const kind of serverKinds) expect(claimed, `client never claims '${kind}'`).toContain(kind)
+  })
+
+  it('a proposal from any propose_* tool reaches the UI as a card event', () => {
+    const m = chatTs.match(/if \(\[([^\]]+)\]\.includes\(tu\.name\)\s*&& result\?\.proposal/)
+    expect(m, 'proposal emission list not found').toBeTruthy()
+    const emitted = [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1])
+    for (const tool of ['propose_change', 'propose_record_change', 'propose_bulk_change', 'propose_create']) {
+      expect(emitted, `${tool} result would never become a card`).toContain(tool)
     }
   })
 

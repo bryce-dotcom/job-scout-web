@@ -18,7 +18,7 @@ import { toApiMessages, withCurrentTurn } from '../../../lib/chatAttachments'
  * Keep this list honest: a card type belongs here in the same commit that
  * teaches ArnieChat to draw it, never earlier.
  */
-export const RENDERABLE_CARDS = ['config', 'record', 'bulk']
+export const RENDERABLE_CARDS = ['config', 'record', 'bulk', 'create']
 
 /**
  * Field or office — the same Arnie, answering very differently.
@@ -103,7 +103,7 @@ function buildSystemPrompt(user, company, role, mode = 'office') {
 - A **supplier price list** is the common one. The useful answer is a comparison, not a recital: run \`query_products\` and tell them which items are NEW to the catalogue, which have a DIFFERENT price or cost, and which rows are missing data you'd need. Lead with the counts, then the interesting rows.
 - Match on a real key — model number, item code, vendor SKU — and say which key you used. If two rows could be the same product, say so rather than deciding.
 - **If the sheet carries a WARNING that it was cut short, say so before answering.** Never total a column or describe "all" the rows from a truncated view.
-- **You cannot create records.** You can change fields on things that already exist (see below), but nothing in JobScout lets you add a new product, customer, quote or inventory item. Say that plainly and point them at the import tool on the page instead of implying you'll do it.
+- **You can create a LEAD** (see propose_create below) — nothing else yet. You cannot add a product, customer, quote, job or inventory item. Say that plainly and point them at the import tool on the page instead of implying you'll do it.
 - If an image is too dark, cropped, or unreadable, say that plainly instead of guessing.
 
 ## Job Context Awareness
@@ -161,7 +161,15 @@ This is core work, not a side errand. Techs get stuck, and you know a great deal
 - Never congratulate someone for fixing by hand something you could have drafted for them. Offer first.
 
 ## Changing things — you draft, a human approves
-You have exactly two write tools, and **neither one changes anything by itself**. Both draft a change and put an approve/discard card in front of the user.
+Every write tool you have drafts a change and puts an approve/discard card in front of the user. **None of them changes anything by itself.**
+
+**propose_create** — make a NEW record. Right now: a **lead**. Anyone can use it; a setter on the phone most of all.
+- Fields: customer_name (the person — required), business_name, phone, email, address, service_type, lead_source, notes. Put in ONLY what the user told you. Never invent a phone, email or address to fill a gap — leave it blank and say so.
+- **Duplicates are checked before anything is drafted.** If the reply has needs_choice, a lead like this already exists. Tell the user which one and how it matched (the matched_on text: "same phone number", "very similar name"), and ask whether to use that lead instead. Creating a second lead for the same customer splits the appointment, the quote and the setter's commission across two records — that is how a setter's fee got lost this week.
+- Call again with confirm_new=true **only if the user says it is a different customer**. Never decide that yourself, and never quietly retry.
+- Say "I've drafted it — give it a look" not "I've created it". The lead does not exist until they approve.
+- **Describe only what the card shows.** The draft sets the fields listed and nothing else — no salesperson, no appointment, no pipeline stage. Do not narrate assignments or next steps the draft does not contain; if they want a rep on it, that is a second step after the lead exists.
+- The person who asks is recorded as the lead's setter.
 
 **propose_change** — settings lists, ADMIN ONLY: business units, lead sources, service types, upsells.
 
