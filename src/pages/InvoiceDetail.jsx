@@ -16,7 +16,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
 import { resolveMatLabSplit, splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
-import { buildInvoiceSections, buildInvoicePages, incentiveLineLabel, invoiceDiscountBreakout, whoPaysWhat, invoiceUtilityName } from '../lib/invoiceSections'
+import { buildInvoiceSections, buildInvoicePages, incentiveLineLabel, invoiceDiscountBreakout, whoPaysWhat, invoiceUtilityName, lineAmount } from '../lib/invoiceSections'
 import { recordUtilityPayment, reopenUtilityPayment, correctUtilityPaidAt } from '../lib/utilitySettlement'
 import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
 import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
@@ -3298,6 +3298,26 @@ Add it anyway?`,
                   )}
                 </div>
               )}
+              {/* The amount is the whole invoice, add-ons included — the
+                  two-page layout already keeps the project on its own page.
+                  ABC Supply's amount was edited down to exclude a $500
+                  warranty that was still on the invoice, which gave the
+                  warranty away and printed the gap as a "Project Discount"
+                  nobody gave. An amount below the line total is allowed (a
+                  negotiated cut lives there), so say what it will do rather
+                  than block it. */}
+              {isEditing && invoiceLines.length > 0 && (() => {
+                const lineTotal = invoiceLines.reduce((s, l) => s + lineAmount(l), 0)
+                const typed = parseFloat(editForm.amount)
+                const gap = Number.isFinite(typed) ? Math.round((lineTotal - typed) * 100) / 100 : 0
+                return (
+                  <div style={{ fontSize: '11px', color: gap > 0.005 ? theme.warning : theme.textMuted, marginTop: '-6px', marginBottom: '8px', textAlign: 'right' }}>
+                    {gap > 0.005
+                      ? `Line items total ${formatCurrency(lineTotal)} — the ${formatCurrency(gap)} difference will print as a Project Discount.`
+                      : `Line items total ${formatCurrency(lineTotal)}. The amount is the whole invoice, add-ons included; page one shows the project on its own.`}
+                  </div>
+                )
+              })()}
 
               {/* Materials / Labor breakdown — shown on Mode B (incentive-
                   bearing) invoices and whenever a manual Parts/Labor

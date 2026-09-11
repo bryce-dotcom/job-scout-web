@@ -422,3 +422,58 @@ describe('utility shortfall — the gap is named, never mislabelled as a discoun
     }
   })
 })
+
+describe('a down payment rides through the split untouched', () => {
+  // The demo invoice with a $1,000 down payment JobScout covered (routed as a
+  // credit with its own breakout): claim $8,000, so discount_applied is
+  // $9,000, and the customer's number is $15,800.
+  const lines = [
+    { line_total: 15000, in_utility_scope: true },
+    { line_total: 7800, in_utility_scope: true },
+    { line_total: 2000, in_utility_scope: false },
+  ]
+  const inv = { amount: 24800, discount_applied: 9000, down_payment_applied: 1000 }
+
+  it('stays off page one and is credited on page two', () => {
+    const s = buildInvoiceSections(inv, lines, { utilityIncentive: 8000 })
+    const p = buildInvoicePages(s)
+    expect(s.incentive).toBe(8000)
+    expect(s.downPayment).toBe(1000)
+    expect(s.projectDiscount).toBe(0)
+    expect(p.pageOne.total).toBe(14800)          // 22,800 − 8,000: the project, nothing else
+    expect(p.pageTwo.downPayment).toBe(1000)
+    expect(p.pageTwo.grandTotal).toBe(15800)     // 14,800 + 2,000 − 1,000
+    expect(p.reconciles).toBe(true)
+    expect(s.customerTotal).toBe(15800)
+  })
+
+  it('who-pays-what names the project portion, not the after-down-payment figure', () => {
+    const p = buildInvoicePages(buildInvoiceSections(inv, lines, { utilityIncentive: 8000 }))
+    const w = whoPaysWhat({ utilityName: 'Rocky Mountain Power', pageOne: p.pageOne, twoPage: true })
+    expect(w.utility.amount).toBe(8000)
+    expect(w.customer.amount).toBe(14800)
+  })
+
+  it('an absorbed shortfall is carved out after the down payment, not from it', () => {
+    // Utility paid $7,500 of the $8,000 claim; company absorbs $500.
+    const short = { ...inv, shortfall_borne_by: 'company', utility_shortfall: 500 }
+    const s = buildInvoiceSections(short, lines, { utilityIncentive: 7500 })
+    expect(s.incentive).toBe(7500)
+    expect(s.downPayment).toBe(1000)
+    expect(s.utilityShortfall).toBe(500)
+    expect(s.projectDiscount).toBe(0)
+    expect(buildInvoicePages(s).pageOne.total).toBe(14800)
+    expect(s.customerTotal).toBe(15800)          // unchanged: the company ate it
+  })
+
+  it('a customer-borne shortfall reduces the credit but leaves the down payment breakout alone', () => {
+    const short = { ...inv, discount_applied: 8500, shortfall_borne_by: 'customer', utility_shortfall: 500 }
+    const s = buildInvoiceSections(short, lines, { utilityIncentive: 7500 })
+    expect(s.incentive).toBe(7500)
+    expect(s.downPayment).toBe(1000)
+    expect(s.utilityShortfall).toBe(0)
+    expect(s.projectDiscount).toBe(0)
+    expect(s.customerTotal).toBe(16300)          // 15,800 + the 500 they now cover
+    expect(buildInvoicePages(s).pageOne.total).toBe(15300)
+  })
+})

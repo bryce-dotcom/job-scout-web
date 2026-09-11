@@ -58,9 +58,16 @@ export default function InvoiceSplitPanel({
   const customerPaid = (payments || []).filter((p) => p?.paid_by !== 'utility').reduce((s, p) => s + (Number(p.amount) || 0), 0)
   const total = utilityOwes + customerOwes
 
+  // The customer's figure, built the way page two builds it: the project
+  // portion, plus add-ons, less a down payment already credited and a
+  // deposit already paid. Shown only when those compose back to what the
+  // invoice says is owed — the same reconciliation the PDF insists on.
   const inScope = Number(pages?.pageOne?.total) || 0
   const addOns = Number(pages?.pageTwo?.addOnsSubtotal) || 0
-  const showBreakdown = pages?.twoPage && Math.abs(inScope + addOns - customerOwes) < 0.01
+  const downPayment = Number(pages?.pageTwo?.downPayment) || 0
+  const depositCredit = Number(pages?.pageTwo?.depositCredit) || 0
+  const showBreakdown = !!pages && (addOns > 0 || downPayment > 0 || depositCredit > 0)
+    && Math.abs(inScope + addOns - downPayment - depositCredit - customerOwes) < 0.01
 
   const utilityPaid = !!invoice.utility_paid_at
   const submitted = invoice.utility_submitted_at
@@ -235,7 +242,12 @@ export default function InvoiceSplitPanel({
   )
 
   const customerLines = showBreakdown
-    ? [['In-scope out-of-pocket', formatCurrency(inScope)], ['Out-of-scope add-ons', formatCurrency(addOns)]]
+    ? [
+        ['In-scope out-of-pocket', formatCurrency(inScope)],
+        ...(addOns > 0 ? [['Out-of-scope add-ons', formatCurrency(addOns)]] : []),
+        ...(downPayment > 0 ? [['Down payment credited', `−${formatCurrency(downPayment)}`]] : []),
+        ...(depositCredit > 0 ? [['Deposit credited', `−${formatCurrency(depositCredit)}`]] : []),
+      ]
     : []
   if (customerPaid > 0) customerLines.push(['Received', formatCurrency(customerPaid)])
 
