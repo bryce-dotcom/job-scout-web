@@ -32,6 +32,8 @@ import { buildDefaultTerms, DEFAULT_DOWN_PAYMENT_LABEL } from '../components/pro
 import FormalTermsEditor from '../components/proposal/FormalTermsEditor'
 import useSmartBack from '../lib/useSmartBack'
 import { pricePercentOfContractFor } from '../lib/pricingRules'
+import DuplicateLeadWarning from '../components/DuplicateLeadWarning'
+import { findSimilarLeads } from '../lib/leadDuplicates'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -5795,6 +5797,15 @@ function EstimateDetailInner() {
                   padding: '14px', borderRadius: '8px',
                   backgroundColor: theme.accentBg, border: `1px solid ${theme.border}`
                 }}>
+                  {/* A rep linking a "new" lead to an estimate is the exact
+                      moment a duplicate orphans the setter's fee. Offer the
+                      existing lead first; linking it is one click. */}
+                  <DuplicateLeadWarning
+                    matches={findSimilarLeads(newLeadForm, leads)}
+                    employees={employees}
+                    useLabel="Link this lead instead"
+                    onUseExisting={(lead) => { setAssociationType('lead'); setSelectedLeadId(lead.id); setLeadSearch(lead.business_name || lead.customer_name || '') }}
+                  />
                   <div>
                     <label style={labelStyle}>Customer Name *</label>
                     <input

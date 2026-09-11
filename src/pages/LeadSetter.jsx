@@ -16,6 +16,7 @@ import { isAdmin as checkAdmin } from '../lib/accessControl'
 import ProspectResearchDrawer from '../components/ProspectResearchDrawer'
 import SearchableSelect from '../components/SearchableSelect'
 import SalespeopleMultiSelect from '../components/SalespeopleMultiSelect'
+import { findSimilarLeads } from '../lib/leadDuplicates'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -419,6 +420,20 @@ export default function LeadSetter() {
   // Reactivate an existing customer as a fresh lead in the New stage
   const handleReactivateCustomer = async (customer) => {
     if (!customer || reactivating) return
+    // If this customer already has an open lead, that IS the lead. A second
+    // one splits the appointment and the setter fee across two records.
+    const existing = findSimilarLeads(
+      { customer_name: customer.name, business_name: customer.business_name, phone: customer.phone, email: customer.email },
+      leads,
+    )[0]?.lead
+    if (existing) {
+      const { toast } = await import('../lib/toast')
+      toast.error(`${customer.name} already has an open lead (${existing.status || 'New'}). Opening it instead.`)
+      setShowReactivateModal(false)
+      setReactivateSearch('')
+      setSelectedLead(existing)
+      return
+    }
     setReactivating(true)
     const senderName = user?.name || 'Someone'
     const noteText = `Reactivated from existing customer by ${senderName} on ${new Date().toLocaleDateString()}`

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download, Users, Send, MapPin, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download, Users, Send, MapPin, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { leadsFields } from '../lib/importExportFields'
@@ -11,6 +11,8 @@ import { leadStatusColors } from '../lib/statusColors'
 import { fromZonedInput, DEFAULT_TZ } from '../lib/dateTz'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
+import DuplicateLeadWarning from '../components/DuplicateLeadWarning'
+import { findSimilarLeads } from '../lib/leadDuplicates'
 
 const LEAD_STATUSES = ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost']
 const STATUS_LABELS = { 'Quote Sent': 'Estimate Sent' }
@@ -72,6 +74,8 @@ export default function Leads() {
   const [assignSetterId, setAssignSetterId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [dupMatches, setDupMatches] = useState([])
+  const [dupConfirmed, setDupConfirmed] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
@@ -217,6 +221,16 @@ export default function Leads() {
     setEditingLead(null)
     setFormData(emptyLead)
     setError(null)
+    setDupMatches([])
+    setDupConfirmed(false)
+  }
+
+  // Runs when a name, phone or email field loses focus — not per keystroke.
+  // Finds leads that look like the same customer so the rep sees the one
+  // Tracy already set before they finish typing a second one.
+  const checkDuplicates = () => {
+    if (editingLead) return
+    setDupMatches(findSimilarLeads(formData, leads))
   }
 
   const handleChange = (e) => {
@@ -226,8 +240,19 @@ export default function Leads() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setLoading(true)
     setError(null)
+
+    // A new lead that looks like an existing one does not save until the
+    // person has either opened the existing lead or said it really is new.
+    if (!editingLead && !dupConfirmed) {
+      const matches = findSimilarLeads(formData, leads)
+      if (matches.length) {
+        setDupMatches(matches)
+        setError('This looks like a lead that already exists. Open the existing one, or confirm below that it is a different customer.')
+        return
+      }
+    }
+    setLoading(true)
 
     const payload = {
       company_id: companyId,
@@ -423,6 +448,20 @@ export default function Leads() {
           {STATUS_LABELS[lead.status] || lead.status}
         </span>
       </div>
+      {lead.possible_duplicate_of && (() => {
+        // Set by the DB on insert when this looked like an existing lead.
+        // Shown here so the second copy is obvious in the list, not
+        // discovered later when a commission goes missing.
+        const orig = leads.find(l => String(l.id) === String(lead.possible_duplicate_of))
+        return (
+          <button type="button"
+            onClick={(e) => { e.stopPropagation(); navigate(`/leads/${lead.possible_duplicate_of}`) }}
+            title="Open the lead this may be a copy of"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10, padding: '4px 10px', minHeight: 28, borderRadius: 12, fontSize: 11, fontWeight: 600, backgroundColor: 'rgba(234,179,8,0.12)', color: '#b45309', border: '1px solid rgba(234,179,8,0.45)', cursor: 'pointer' }}>
+            <AlertTriangle size={12} /> Possible duplicate{orig ? ` of ${orig.business_name || orig.customer_name}` : ''}
+          </button>
+        )
+      })()}
       {lead.business_name && lead.customer_name && (
         <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '10px' }}>{lead.customer_name}</div>
       )}
@@ -820,11 +859,21 @@ export default function Leads() {
             <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
               {error && <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', borderRadius: '8px', color: '#b91c1c', fontSize: '14px' }}>{error}</div>}
 
+              {!editingLead && !dupConfirmed && (
+                <DuplicateLeadWarning
+                  matches={dupMatches}
+                  employees={employees}
+                  useLabel="Open this lead"
+                  onUseExisting={(lead) => { closeModal(); navigate(`/leads/${lead.id}`) }}
+                  onCreateAnyway={() => { setDupConfirmed(true); setDupMatches([]); setError(null) }}
+                />
+              )}
+
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
-                <div><label style={labelStyle}>Customer Name *</label><input type="text" name="customer_name" value={formData.customer_name} onChange={handleChange} required style={inputStyle} /></div>
-                <div><label style={labelStyle}>Business Name</label><input type="text" name="business_name" value={formData.business_name} onChange={handleChange} style={inputStyle} /></div>
-                <div><label style={labelStyle}>Email</label><input type="email" name="email" value={formData.email} onChange={handleChange} style={inputStyle} /></div>
-                <div><label style={labelStyle}>Phone</label><input type="tel" name="phone" value={formData.phone} onChange={handleChange} style={inputStyle} /></div>
+                <div><label style={labelStyle}>Customer Name *</label><input type="text" name="customer_name" value={formData.customer_name} onChange={handleChange} onBlur={checkDuplicates} required style={inputStyle} /></div>
+                <div><label style={labelStyle}>Business Name</label><input type="text" name="business_name" value={formData.business_name} onChange={handleChange} onBlur={checkDuplicates} style={inputStyle} /></div>
+                <div><label style={labelStyle}>Email</label><input type="email" name="email" value={formData.email} onChange={handleChange} onBlur={checkDuplicates} style={inputStyle} /></div>
+                <div><label style={labelStyle}>Phone</label><input type="tel" name="phone" value={formData.phone} onChange={handleChange} onBlur={checkDuplicates} style={inputStyle} /></div>
               </div>
 
               <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Address</label><textarea name="address" value={formData.address} onChange={handleChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></div>
