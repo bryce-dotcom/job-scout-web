@@ -2118,7 +2118,13 @@ Add it anyway?`,
       // actually in the customer's hands. Pipeline view no longer auto-
       // moves on invoice CREATION — only on this Send moment. Skip if job
       // is already past Invoiced (e.g., Paid).
-      if (invoice.job_id) {
+      //
+      // A deposit invoice is not that moment. It goes out the day the job
+      // is won, before anything is ordered or installed, so sending it must
+      // leave the job where it is. Doug reported JOB-MTJ2MSZX: Tracy sent
+      // the deposit and the job jumped from Chillin to Invoiced with $53k of
+      // work not yet done. The job invoices when the customer invoice goes.
+      if (invoice.job_id && invoice.invoice_type !== 'deposit') {
         const { data: currentJob } = await supabase
           .from('jobs')
           .select('status, lead_id')
