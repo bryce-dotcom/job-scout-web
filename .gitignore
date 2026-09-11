@@ -35,3 +35,6 @@ dist-ssr
 
 # Per-worktree ownership marker (npm run claim) — local only
 .worktree-claim.json
+
+# deno check writes this next to the function it checks; not a project file
+deno.lock
