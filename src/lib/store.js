@@ -972,9 +972,15 @@ export const useStore = create(
         }
       },
 
+      // Not gated on the lighting agent, unlike the other lighting fetches.
+      // A rebate invoice names its utility through utility_provider_id, and
+      // any company can carry one — the agent only sells the audits. With
+      // the gate, a company without Lenard had an empty provider list and
+      // every rebate on its Invoices page read "UTILITY OWES" instead of the
+      // utility's name. It is the fifteen global rows plus the company's own.
       fetchUtilityProviders: async () => {
-        const { companyId, hasAgent } = get();
-        if (!companyId || !hasAgent('lenard-lighting')) return;
+        const { companyId } = get();
+        if (!companyId) return;
 
         // Hydrate from cache
         const cached = await offlineDb.getAll('utilityProviders');

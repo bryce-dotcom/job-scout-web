@@ -194,6 +194,21 @@ describe('utility AR reads the invoice, and the utility row only until it is lin
   // selected job_id: every row was filtered out and the widget silently
   // vanished. Only opening the page in a browser caught it. This reads the
   // page source so the omission fails here instead.
+  // Providers must load for every company, not only ones running the
+  // lighting agent: a rebate invoice names its utility through
+  // utility_provider_id, and with the gate a company without Lenard showed
+  // "UTILITY OWES" on every rebate instead of the utility's name.
+  it('the store loads utility providers without an agent gate', () => {
+    const src = readFileSync(new URL('./store.js', import.meta.url), 'utf8')
+    const start = src.indexOf('fetchUtilityProviders: async')
+    expect(start).toBeGreaterThan(-1)
+    const end = src.indexOf(': async', start + 'fetchUtilityProviders: async'.length)
+    const body = src.slice(start, end === -1 ? undefined : end)
+    expect(body).not.toMatch(/hasAgent\(/)
+    // and still scoped to the company plus the shared global rows
+    expect(body).toMatch(/company_id\.is\.null/)
+  })
+
   it('JobDetail selects every column jobARSnapshot reads', () => {
     const src = readFileSync(new URL('../pages/JobDetail.jsx', import.meta.url), 'utf8')
     const selects = [...src.matchAll(/\.select\('([^']+)'\)/g)].map((m) => m[1])
