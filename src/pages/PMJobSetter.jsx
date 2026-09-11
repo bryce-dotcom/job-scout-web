@@ -1698,6 +1698,13 @@ export default function PMJobSetter() {
 
         const jobTotal = jobLines?.reduce((sum, l) => sum + (l.total || l.quantity * l.price || 0), 0) || jobForInvoice.job_total || 0
         const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+        // The utility incentive is the customer's credit. This path billed the
+        // full project with no credit, so a rebate job dragged to Completed
+        // invoiced the customer for the utility's share too. Same treatment
+        // FieldScout gives it; the full rule (deposits, down payments, the
+        // rep's discount) lives on the job page, which is where a rebate
+        // invoice should really be raised.
+        const jobIncentive = parseFloat(jobForInvoice.utility_incentive) || 0
 
         const { data: newInvoice, error: invError } = await supabase
           .from('invoices')
@@ -1707,6 +1714,7 @@ export default function PMJobSetter() {
             customer_id: jobForInvoice.customer?.id || jobForInvoice.customer_id || null,
             job_id: jobForInvoice.id,
             amount: jobTotal,
+            discount_applied: jobIncentive > 0 ? jobIncentive : null,
             payment_status: 'Pending',
             job_description: jobForInvoice.job_title || jobForInvoice.job_id || null,
             updated_at: new Date().toISOString()

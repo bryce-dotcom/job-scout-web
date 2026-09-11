@@ -970,7 +970,14 @@ function JobDetailInner() {
       quantity: newLine.quantity,
       price: product.unit_price,
       total: lineTotal,
-      labor_cost: laborCost || 0
+      labor_cost: laborCost || 0,
+      // The line freezes whether it is part of the utility's project. This
+      // insert left it to the column default (true), so an add-on picked
+      // here — ABC Supply's extended warranty — was frozen as in-scope, the
+      // invoice inherited that, and the $500 printed on the page that goes
+      // to the utility with no page two. Same rule as lib/invoiceLines and
+      // the estimate paths: the product decides.
+      in_utility_scope: product.in_utility_scope !== false,
     }])
 
     await fetchJobData()
@@ -1003,7 +1010,9 @@ function JobDetailInner() {
       price: line.price,
       discount: line.discount || 0,
       total: line.total,
-      notes: line.notes || null
+      notes: line.notes || null,
+      // A copy keeps the original's scope; the default would make it in-scope.
+      in_utility_scope: line.in_utility_scope !== false,
     }])
     await fetchJobData()
     setSaving(false)

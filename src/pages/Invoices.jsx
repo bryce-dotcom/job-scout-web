@@ -290,6 +290,21 @@ export default function Invoices() {
     // Overdue quick filters. User can override later via InvoiceDetail edit.
     const defaultDue = new Date(); defaultDue.setDate(defaultDue.getDate() + 30)
 
+    // A job with a utility incentive is invoiced from the job page, where
+    // the incentive becomes the customer's credit and the utility's debt
+    // (createInvoice / createBothInvoices). This form takes a typed amount
+    // and a typed discount and knows nothing about incentives, so an invoice
+    // made here billed ABC Supply the full $9,971.12 while Rocky Mountain
+    // Power was also down for $6,528 — the customer over-billed by the whole
+    // rebate. Rather than copy the job page's money rule here, send them there.
+    const linkedJob = formData.job_id ? (jobs || []).find(j => String(j.id) === String(formData.job_id)) : null
+    const jobIncentive = Number(linkedJob?.utility_incentive) || 0
+    if (jobIncentive > 0) {
+      setError(`This job carries a ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(jobIncentive)} utility incentive. Create the invoice from the job page so the incentive is credited to the customer and billed to the utility.`)
+      setLoading(false)
+      return
+    }
+
     const { data, error: insertError } = await supabase
       .from('invoices')
       .insert([{
