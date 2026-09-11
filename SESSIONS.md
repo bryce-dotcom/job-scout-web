@@ -114,6 +114,17 @@ npm run ship -- --count 3  # land the last 3 commits
 cannot disturb whatever anyone else has checked out or left uncommitted. Then it
 re-fetches and checks `merge-base` before claiming success.
 
+**Ship also runs `npm run build` on that staging tree first** — the same
+`guard && vite build` Vercel runs — and pushes nothing if it fails. That is
+the exact tree that will land (origin/main plus your commits), not your
+branch. It costs about a minute. It exists because on 11 Sep a commit with an
+unimported `Buffer` reached main: guard had flagged it, but it had been run as
+`npm run guard | tail -1`, whose exit code is `tail`'s, and every deploy for
+the rest of the afternoon errored while the old bundle kept serving. Do not
+pipe guard through anything; better, do not rely on remembering to run it —
+ship runs it. `JS_BUILD_OK=1` skips the build, and then Vercel is the first to
+run it.
+
 **Do not `git push origin main`.** It pushes the local `main` *ref*, not your
 HEAD. From a feature branch it sends nothing, prints `Everything up-to-date`,
 and exits 0 — so `&& echo PUSHED` reports success while your fix sits on the
