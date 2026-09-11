@@ -181,6 +181,10 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     // app-wide (dropdowns etc.) without a manual reload.
     if (decision === 'apply' && !failed) {
       try { await useStore.getState().fetchSettings?.() } catch { /* refresh is best-effort */ }
+      // A created lead should be on the Leads page the moment they look.
+      if (res.created_id) {
+        try { await useStore.getState().fetchLeads?.() } catch { /* best-effort */ }
+      }
     }
   }
 
@@ -788,6 +792,57 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                     ) : (
                       <div style={{ fontSize: 12.5, fontWeight: 600, color: st === 'applied' ? '#7fdba0' : dark.textSecondary }}>
                         {st === 'applied' ? 'Applied — you can roll this back from Settings.' : 'Discarded.'}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+              {msg.proposal && pv0(msg).kind === 'create' && (() => {
+                // A create has no before/after — there is nothing yet. What the
+                // person is approving is a list of fields, so show every one
+                // of them, and say plainly if this is being made despite a
+                // near-match the user waved off.
+                const pv = msg.proposal.preview || {}
+                const st = msg.proposalStatus
+                return (
+                  <div style={{
+                    marginTop: 8, background: dark.bgChat,
+                    border: `1px solid ${st === 'applied' ? 'rgba(47,125,78,0.6)' : st === 'rejected' ? dark.border : 'rgba(201,129,47,0.7)'}`,
+                    borderRadius: 12, padding: 12,
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#d9963f', marginBottom: 6 }}>
+                      New {pv.label}
+                    </div>
+                    <div style={{ fontSize: 13.5, fontWeight: 650, color: dark.text, marginBottom: 8 }}>{pv.entity}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', columnGap: 12, rowGap: 4, marginBottom: st ? 10 : 12 }}>
+                      {(pv.fields || []).map((f) => (
+                        <div key={f.label} style={{ display: 'contents' }}>
+                          <span style={{ fontSize: 12, color: dark.textMuted }}>{f.label}</span>
+                          <span style={{ fontSize: 12.5, color: dark.text, overflowWrap: 'anywhere' }}>{f.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {pv.despite && (
+                      <div style={{ fontSize: 12, color: '#d9963f', marginBottom: 8 }}>{pv.despite}</div>
+                    )}
+                    {msg.proposalError && (
+                      <div style={{ fontSize: 12.5, color: '#e88', marginBottom: 8 }}>{msg.proposalError}</div>
+                    )}
+                    {!st ? (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button disabled={msg.proposalBusy} onClick={() => decideProposal('apply', msg.proposal.proposal.id, msg.id)} style={{
+                          flex: 1, background: '#c9812f', color: '#fff', border: 0, borderRadius: 8,
+                          padding: '9px 12px', fontWeight: 650, fontSize: 13,
+                          cursor: msg.proposalBusy ? 'default' : 'pointer', opacity: msg.proposalBusy ? 0.6 : 1,
+                        }}>{msg.proposalBusy ? 'Working…' : `Create ${pv.label}`}</button>
+                        <button disabled={msg.proposalBusy} onClick={() => decideProposal('reject', msg.proposal.proposal.id, msg.id)} style={{
+                          background: 'transparent', color: dark.textSecondary, border: `1px solid ${dark.border}`,
+                          borderRadius: 8, padding: '9px 14px', fontSize: 13, cursor: 'pointer',
+                        }}>Discard</button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: st === 'applied' ? '#7fdba0' : dark.textSecondary }}>
+                        {st === 'applied' ? 'Created — you can undo this from Settings while nothing is attached to it.' : 'Discarded.'}
                       </div>
                     )}
                   </div>

@@ -5,6 +5,7 @@ import { proposeChange, targetsSentence } from '../_shared/arnieConfig.ts'
 import { recordTargetsSentence } from '../_shared/arnieRecords.ts'
 import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
 import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arnieBulk.ts'
+import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { invoiceOutstanding, isInvoiceOverdue, SETTLED_STATUSES } from '../_shared/money.ts'
 
 // Still read directly here: the SSE streaming path keeps its own fetch
@@ -300,6 +301,39 @@ const PROPOSE_RECORD_TOOL = {
   },
 }
 
+// The create rail. The model supplies field VALUES against a registry it
+// cannot extend — never a column name, never an id. The server runs the
+// duplicate check before anything is drafted; the model cannot skip it, only
+// the person can wave it off, and the card then says so.
+const PROPOSE_CREATE_TOOL = {
+  name: 'propose_create',
+  description:
+    'Draft a NEW record for a human to approve. Can create: ' +
+    createTargetsSentence() +
+    '. Put what the user told you into `fields` — only the fields they gave; never invent a phone, email or address. ' +
+    'If the reply has needs_choice, a lead like this already exists: tell the user which one and how it matched (the matched_on text), and ask whether to use that lead instead. ' +
+    'Call again with confirm_new=true ONLY if the user says it is a different customer — never decide that yourself. ' +
+    'Nothing exists until they approve the card, so say "I\'ve drafted it" not "I\'ve created it".',
+  input_schema: {
+    type: 'object',
+    properties: {
+      target: { type: 'string', description: 'What to create. Currently: lead' },
+      fields: {
+        type: 'object',
+        description: 'For a lead: customer_name (required — the person), business_name, phone, email, address, service_type, lead_source, notes',
+        properties: {
+          customer_name: { type: 'string' }, business_name: { type: 'string' }, phone: { type: 'string' },
+          email: { type: 'string' }, address: { type: 'string' }, service_type: { type: 'string' },
+          lead_source: { type: 'string' }, notes: { type: 'string' },
+        },
+      },
+      confirm_new: { type: 'boolean', description: 'Only true after the USER has said the matching lead is a different customer.' },
+      request_text: { type: 'string', description: 'What the user actually said, so the audit trail keeps their words.' },
+    },
+    required: ['target', 'fields'],
+  },
+}
+
 // The plural of propose_record_change. The model gives a FILTER, never a list
 // of rows — the server resolves it, so no invented id can become a write, and
 // the card lists every affected product rather than a count.
@@ -342,13 +376,15 @@ const CARD_TOOLS: Record<string, string> = {
   propose_change: 'config',
   propose_record_change: 'record',
   propose_bulk_change: 'bulk',
+  propose_create: 'create',
 }
 
 function toolsFor(role: string, cards: string[]) {
   const isAdmin = ['developer', 'super_admin', 'admin'].includes(role)
+  // Creating a lead is everyone's job — the setter on the phone most of all.
   const offered = isAdmin
-    ? [...TOOLS, PROPOSE_TOOL, PROPOSE_RECORD_TOOL, PROPOSE_BULK_TOOL]
-    : [...TOOLS, PROPOSE_RECORD_TOOL]
+    ? [...TOOLS, PROPOSE_TOOL, PROPOSE_RECORD_TOOL, PROPOSE_BULK_TOOL, PROPOSE_CREATE_TOOL]
+    : [...TOOLS, PROPOSE_RECORD_TOOL, PROPOSE_CREATE_TOOL]
   return offered.filter((t: any) => {
     const needs = CARD_TOOLS[t.name]
     return !needs || cards.includes(needs)
@@ -839,6 +875,14 @@ async function execTool(name: string, input: any, caller: Caller) {
       )
     }
 
+    if (name === 'propose_create') {
+      return await proposeCreate(
+        { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY },
+        caller,
+        { target: String(input?.target || ''), fields: input?.fields, confirm_new: input?.confirm_new === true, request_text: input?.request_text },
+      )
+    }
+
     if (name === 'propose_change') {
       // Re-checked here rather than trusted from toolsFor(): the tool list is
       // an affordance, this is the gate.
@@ -1166,7 +1210,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             // A drafted change has to reach the UI as a card, not as prose —
             // the model describing a diff is not the same as the admin seeing
             // one and clicking approve.
-            if (['propose_change', 'propose_record_change', 'propose_bulk_change'].includes(tu.name)
+            if (['propose_change', 'propose_record_change', 'propose_bulk_change', 'propose_create'].includes(tu.name)
                 && result?.proposal && result?.preview) {
               send('proposal', { proposal: result.proposal, preview: result.preview })
             }

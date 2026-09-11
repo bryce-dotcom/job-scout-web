@@ -17,6 +17,7 @@ import { resolveCaller, type Caller } from "../_shared/auth.ts";
 import { isRecordTarget } from "../_shared/arnieRecords.ts";
 import { applyRecordProposal, mayChange, rollbackRecordProposal } from "../_shared/arnieRecordPropose.ts";
 import { applyBulkProposal, BULK_TARGETS, isBulkTarget, rollbackBulkProposal } from "../_shared/arnieBulk.ts";
+import { applyCreateProposal, CREATE_TARGETS, isCreateTarget, rollbackCreateProposal } from "../_shared/arnieCreate.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -50,6 +51,13 @@ async function mayDecide(rest: { url: string; key: string }, caller: Caller, pro
   }
   if (isRecordTarget(prop.target)) {
     return await mayChange(rest, caller, prop.target, prop.payload?.entity_id ?? null);
+  }
+  if (isCreateTarget(prop.target)) {
+    const need = CREATE_TARGETS[prop.target].minLevel;
+    const own = prop.created_by && caller.email && prop.created_by.toLowerCase() === caller.email.toLowerCase();
+    return caller.level >= need || own
+      ? { ok: true as const }
+      : { ok: false as const, error: `Creating a ${CREATE_TARGETS[prop.target].label} is above your access level.` };
   }
   return caller.level >= 3
     ? { ok: true as const }
@@ -100,6 +108,7 @@ serve(async (req) => {
     if (!permitted.ok) return json({ error: permitted.error }, 403);
     const isRecord = isRecordTarget(prop.target);
     const isBulk = isBulkTarget(prop.target);
+    const isCreate = isCreateTarget(prop.target);
 
     if (action === 'reject') {
       if (prop.status !== 'pending') return json({ error: `Can't reject a ${prop.status} change.` }, 400);
@@ -127,6 +136,25 @@ serve(async (req) => {
           summary: prop.summary, changed: res.changed, before: prop.before_value, after: prop.after_value,
         });
         return json({ ok: true, status: 'applied', target: prop.target, changed: res.changed });
+      }
+      if (isCreate) {
+        const res = await applyCreateProposal(rest, companyId, prop);
+        if (!res.ok) {
+          if (res.stale) {
+            await sb.from('arnie_proposals').update({
+              status: 'failed', error: res.error, decided_by: caller.email, decided_at: new Date().toISOString(),
+            }).eq('id', proposalId);
+            return json({ error: res.error }, 409);
+          }
+          return json({ error: res.error }, 500);
+        }
+        await sb.from('arnie_proposals').update({
+          status: 'applied', decided_by: caller.email, decided_at: new Date().toISOString(),
+        }).eq('id', proposalId);
+        await audit(sb, companyId, caller.email, `arnie_create_apply:${prop.target}`, proposalId, {
+          summary: prop.summary, entity: prop.payload?.entity_label, created_id: res.id, fields: prop.payload?.fields,
+        });
+        return json({ ok: true, status: 'applied', target: prop.target, created_id: res.id });
       }
       if (isRecord) {
         const res = await applyRecordProposal(rest, companyId, prop);
@@ -172,6 +200,17 @@ serve(async (req) => {
           summary: prop.summary, restored: res.restored,
         });
         return json({ ok: true, status: 'rolled_back', target: prop.target, restored: res.restored });
+      }
+      if (isCreate) {
+        const res = await rollbackCreateProposal(rest, companyId, prop);
+        if (!res.ok) return json({ error: res.error }, 409);
+        await sb.from('arnie_proposals').update({
+          status: 'rolled_back', decided_by: caller.email, decided_at: new Date().toISOString(),
+        }).eq('id', proposalId);
+        await audit(sb, companyId, caller.email, `arnie_create_rollback:${prop.target}`, proposalId, {
+          summary: prop.summary, entity: prop.payload?.entity_label, deleted_id: res.deleted,
+        });
+        return json({ ok: true, status: 'rolled_back', target: prop.target, deleted_id: res.deleted });
       }
       if (isRecord) {
         const res = await rollbackRecordProposal(rest, companyId, prop);
