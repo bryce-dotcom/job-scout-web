@@ -6,6 +6,7 @@ import { recordTargetsSentence } from '../_shared/arnieRecords.ts'
 import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
 import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arnieBulk.ts'
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
+import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_shared/arnieMoney.ts'
 import { invoiceOutstanding, isInvoiceOverdue, SETTLED_STATUSES } from '../_shared/money.ts'
 
 // Still read directly here: the SSE streaming path keeps its own fetch
@@ -71,6 +72,71 @@ const TOOLS = [
         start_date: { type: 'string', description: 'ISO date — only jobs scheduled on/after this date' },
         end_date: { type: 'string', description: 'ISO date — only jobs scheduled on/before this date' },
         group_by: { type: 'string', enum: ['status', 'month', 'employee', 'customer', 'none'] },
+      },
+    },
+  },
+  {
+    name: 'query_my_pay',
+    description:
+      'The signed-in person\'s OWN earnings — rep commissions, setter fees, bonuses, recent paystubs, benefits — and what they are owed right now. ' +
+      'Same ledgers as the My Pay page. Works for everyone. There is no way to ask about someone else here: for that see query_payroll, which is HR-gated. ' +
+      'Pay RATES are never included — if asked for an hourly rate or salary, say Arnie cannot look those up.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        period: { type: 'string', enum: ['this_month', 'last_month', 'this_quarter', 'this_year', 'last_year', 'custom', 'all'] },
+        start_date: { type: 'string' },
+        end_date: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'query_payroll',
+    description:
+      'Earnings for OTHER employees, or everyone: what each person is owed (commissions, setter fees, bonuses) and their paystubs. ' +
+      'HR-GATED — the same rule as the Payroll page. If the result says restricted, tell the user who can see it; do not try query_my_pay for them as a workaround. ' +
+      'Pay RATES are never included.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        employee_name: { type: 'string', description: 'One person, by name. Omit for everyone.' },
+        period: { type: 'string', enum: ['this_month', 'last_month', 'this_quarter', 'this_year', 'last_year', 'custom', 'all'] },
+        start_date: { type: 'string' },
+        end_date: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'query_payments',
+    description:
+      'Itemised money IN — individual customer payments with date, amount, method, customer and invoice, plus totals by method and refunds. ' +
+      'OWNER ONLY, the same gate as query_revenue. Use for "what came in this week", "how did X pay", "any refunds".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        period: { type: 'string', enum: ['this_month', 'last_month', 'this_quarter', 'this_year', 'last_year', 'custom', 'all'] },
+        start_date: { type: 'string' },
+        end_date: { type: 'string' },
+        customer_name: { type: 'string' },
+        method: { type: 'string', description: 'e.g. card, check, ach, cash' },
+        limit: { type: 'integer', description: 'Rows to list (default 25, max 100). Totals always cover the whole period.' },
+      },
+    },
+  },
+  {
+    name: 'query_purchase_orders',
+    description:
+      'Purchase orders — what we are buying, from which vendor, for which job, status and totals. ADMIN and above (vendor cost is margin). ' +
+      'Use for "what is on order", "open POs", "how much have we spent with vendor X".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'e.g. draft, sent, received, closed' },
+        vendor_name: { type: 'string' },
+        period: { type: 'string', enum: ['this_month', 'last_month', 'this_quarter', 'this_year', 'last_year', 'custom', 'all'] },
+        start_date: { type: 'string' },
+        end_date: { type: 'string' },
+        limit: { type: 'integer' },
       },
     },
   },
@@ -612,6 +678,18 @@ async function execTool(name: string, input: any, caller: Caller) {
       const got = await fetchRows(sb('jobs'), params, hdr)
       if ('error' in got) return { error: `jobs query failed: ${got.error}` }
       return aggregate(got, input.group_by, ['job_total', 'expense_amount', 'profit_margin'])
+    }
+
+    if (name === 'query_my_pay' || name === 'query_payroll' || name === 'query_payments' || name === 'query_purchase_orders') {
+      const r = { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }
+      const access = await moneyAccess(r, caller)
+      const p = String(input?.period || 'all')
+      const range = p === 'all' ? {} : (() => { const { startDate, endDate } = computePeriod(p, input?.start_date, input?.end_date); return { start: startDate, end: endDate } })()
+      const opts = { ...range, period: p === 'custom' ? `${range.start} to ${range.end}` : p }
+      if (name === 'query_my_pay') return await myPay(r, caller, opts)
+      if (name === 'query_payroll') return await payroll(r, caller, access, { ...opts, employee_name: input?.employee_name })
+      if (name === 'query_payments') return await payments(r, caller, access, { ...opts, customer_name: input?.customer_name, method: input?.method, limit: input?.limit })
+      return await purchaseOrders(r, caller, access, { ...opts, status: input?.status, vendor_name: input?.vendor_name, limit: input?.limit })
     }
 
     if (name === 'query_revenue') {
