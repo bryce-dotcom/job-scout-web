@@ -17,6 +17,7 @@ import useSmartBack from '../lib/useSmartBack'
 import { resolveMatLabSplit, splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { buildInvoiceSections, buildInvoicePages, incentiveLineLabel, invoiceDiscountBreakout, whoPaysWhat, invoiceUtilityName } from '../lib/invoiceSections'
+import { recordUtilityPayment, reopenUtilityPayment, correctUtilityPaidAt } from '../lib/utilitySettlement'
 import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
 import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -53,6 +54,7 @@ export default function InvoiceDetail() {
   const currentEmployee = (employees || []).find(e => e.email === user?.email)
   const canEditAmount = checkAdmin(currentEmployee)
   const fetchInvoices = useStore((state) => state.fetchInvoices)
+  const fetchUtilityInvoices = useStore((state) => state.fetchUtilityInvoices)
   const settings = useStore((state) => state.settings)
   const getSettingValue = useStore((state) => state.getSettingValue)
   const fetchSettings = useStore((state) => state.fetchSettings)
@@ -279,9 +281,13 @@ export default function InvoiceDetail() {
 
       // Check if this invoice is linked to a utility invoice (Mode B —
       // incentive-bearing). Used to gate the Materials/Labor breakdown.
+      // incentive_amount, project_cost and notes are what the settlement
+      // write path reads (lib/utilitySettlement) — the short-pay rule
+      // recomputes net_cost from project_cost and appends to notes. A
+      // column left out of this select reads as undefined there.
       const { data: linkedU } = await supabase
         .from('utility_invoices')
-        .select('id, utility_name, amount, payment_status, paid_at')
+        .select('id, invoice_id, utility_name, amount, incentive_amount, project_cost, net_cost, notes, payment_status, paid_at')
         .eq('invoice_id', invoiceData.id)
         .maybeSingle()
       setLinkedUtilityInvoice(linkedU || null)
@@ -1815,6 +1821,44 @@ Add it anyway?`,
     setSaving(false)
   }
 
+  // The utility's settlement, from the invoice. All three go through
+  // lib/utilitySettlement — the same rules the utility record page applies —
+  // and write the utility row; the database mirrors the result onto this
+  // invoice, so the refetch below is what shows it.
+  const afterSettlement = async (res, okMessage) => {
+    const { toast } = await import('../lib/toast')
+    if (res.error) { toast.error(res.error); return false }
+    await fetchInvoiceData()
+    fetchUtilityInvoices?.()
+    toast.success(okMessage)
+    return true
+  }
+  const recordUtilitySettlement = async (input) => {
+    if (!linkedUtilityInvoice) return false
+    setSaving(true)
+    const res = await recordUtilityPayment(supabase, linkedUtilityInvoice, input)
+    const ok = await afterSettlement(res, res.shortBy && Math.abs(res.shortBy) > 0.005
+      ? `Utility payment recorded — ${res.shortBy > 0 ? 'short' : 'over'} by ${formatCurrency(Math.abs(res.shortBy))}`
+      : 'Utility payment recorded')
+    setSaving(false)
+    return ok
+  }
+  const reopenUtilitySettlement = async () => {
+    if (!linkedUtilityInvoice) return false
+    if (!window.confirm('Reopen the utility payment? The paid date clears and the incentive goes back to owed, so the real payment can be recorded fresh.')) return false
+    setSaving(true)
+    const ok = await afterSettlement(await reopenUtilityPayment(supabase, linkedUtilityInvoice.id), 'Utility payment reopened')
+    setSaving(false)
+    return ok
+  }
+  const correctUtilitySettlementDate = async (paidOn) => {
+    if (!linkedUtilityInvoice) return false
+    setSaving(true)
+    const ok = await afterSettlement(await correctUtilityPaidAt(supabase, linkedUtilityInvoice.id, paidOn), 'Paid date updated')
+    setSaving(false)
+    return ok
+  }
+
   // Preview PDF before saving
   const handlePreviewPDF = () => {
     const doc = generateInvoicePDF()
@@ -2438,6 +2482,9 @@ Add it anyway?`,
             utilityName={invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice)}
             linkedUtilityInvoice={linkedUtilityInvoice}
             onMarkSubmitted={markUtilitySubmitted}
+            onRecordPayment={recordUtilitySettlement}
+            onReopen={reopenUtilitySettlement}
+            onCorrectDate={correctUtilitySettlementDate}
             saving={saving}
             theme={theme}
             isMobile={isMobile}

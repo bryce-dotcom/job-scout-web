@@ -9,6 +9,7 @@ import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { isLegacyNetShape } from '../lib/arHelpers'
 import { Plus, Search, FileText, X, ChevronRight, DollarSign, CheckCircle, Pencil, Trash2, Zap, Upload, Download, Settings as SettingsIcon, Sliders, CreditCard, Mail } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
+import RebatesList from '../components/RebatesList'
 import SearchableSelect from '../components/SearchableSelect'
 import LoadingSpinner from '../components/LoadingSpinner'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
@@ -88,6 +89,8 @@ export default function Invoices() {
   const companyId = useStore((state) => state.companyId)
   const invoices = useStore((state) => state.invoices)
   const utilityInvoices = useStore((state) => state.utilityInvoices)
+  const utilityProviders = useStore((state) => state.utilityProviders)
+  const payments = useStore((state) => state.payments)
   const customers = useStore((state) => state.customers)
   const jobs = useStore((state) => state.jobs)
   const fetchInvoices = useStore((state) => state.fetchInvoices)
@@ -377,13 +380,6 @@ export default function Invoices() {
     setUtilityFormData(prev => ({ ...prev, [name]: value }))
   }
 
-  const openUtilityAddModal = () => {
-    setEditingUtilityInvoice(null)
-    setUtilityFormData(emptyUtilityInvoice)
-    setError(null)
-    setShowUtilityModal(true)
-  }
-
   const openUtilityEditModal = (invoice) => {
     setEditingUtilityInvoice(invoice)
     setUtilityFormData({
@@ -480,10 +476,6 @@ export default function Invoices() {
   const customerTotalPending = invoices.filter(isUnpaid).reduce((sum, i) => sum + customerBalance(i), 0)
   const customerTotalAll = invoices.reduce((sum, i) => sum + customerBalance(i), 0)
 
-  const utilityPendingCount = utilityInvoices.filter(isUnpaid).length
-  const utilityPaidCount = utilityInvoices.filter(i => i.payment_status === 'Paid').length
-  const utilityTotalPending = utilityInvoices.filter(isUnpaid).reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
-  const utilityTotalPaid = utilityInvoices.filter(i => i.payment_status === 'Paid').reduce((sum, i) => sum + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
 
   // --- Styles ---
   const inputStyle = {
@@ -862,27 +854,6 @@ export default function Invoices() {
               New Invoice
             </button>
           )}
-          {(typeFilter === 'all' || typeFilter === 'utility') && (
-            <button
-              onClick={openUtilityAddModal}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '10px 16px',
-                backgroundColor: typeFilter === 'utility' ? theme.accent : 'transparent',
-                color: typeFilter === 'utility' ? '#ffffff' : theme.accent,
-                border: typeFilter === 'utility' ? 'none' : `1px solid ${theme.accent}`,
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: '500',
-                cursor: 'pointer'
-              }}
-            >
-              <Zap size={18} />
-              New Utility Incentive
-            </button>
-          )}
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
@@ -907,7 +878,7 @@ export default function Invoices() {
       }}>
         <button onClick={() => handleTypeFilter('all')} style={filterBtnStyle(typeFilter === 'all')}>All Invoices</button>
         <button onClick={() => handleTypeFilter('customer')} style={filterBtnStyle(typeFilter === 'customer')}>Customer</button>
-        <button onClick={() => handleTypeFilter('utility')} style={filterBtnStyle(typeFilter === 'utility')}>Utility Incentives</button>
+        <button onClick={() => handleTypeFilter('utility')} style={filterBtnStyle(typeFilter === 'utility')}>Rebates</button>
       </div>
 
       {/* Stats */}
@@ -950,32 +921,6 @@ export default function Invoices() {
             }}>
               <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Paid</p>
               <p style={{ fontSize: '24px', fontWeight: '600', color: '#4a7c59' }}>{customerPaidCount}</p>
-            </div>
-          </>
-        )}
-        {typeFilter === 'utility' && (
-          <>
-            <div style={{
-              backgroundColor: theme.bgCard,
-              borderRadius: '12px',
-              border: `1px solid ${theme.border}`,
-              padding: '16px',
-              textAlign: 'center'
-            }}>
-              <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Pending Incentives</p>
-              <p style={{ fontSize: '24px', fontWeight: '600', color: '#c28b38' }}>{utilityPendingCount}</p>
-              <p style={{ fontSize: '12px', color: theme.textMuted }}>{formatCurrency(utilityTotalPending)}</p>
-            </div>
-            <div style={{
-              backgroundColor: theme.bgCard,
-              borderRadius: '12px',
-              border: `1px solid ${theme.border}`,
-              padding: '16px',
-              textAlign: 'center'
-            }}>
-              <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>Collected Incentives</p>
-              <p style={{ fontSize: '24px', fontWeight: '600', color: '#4a7c59' }}>{utilityPaidCount}</p>
-              <p style={{ fontSize: '12px', color: theme.textMuted }}>{formatCurrency(utilityTotalPaid)}</p>
             </div>
           </>
         )}
@@ -1095,9 +1040,13 @@ export default function Invoices() {
 
       {/* ===== ALL INVOICES VIEW ===== */}
       {typeFilter === 'all' && (() => {
+        // A utility record linked to an invoice that carries the debt IS that
+        // invoice's rebate — the invoice card already shows it. Only records
+        // with no such invoice are listed as their own item.
+        const carrierIds = new Set((invoices || []).filter(i => i.utility_owes != null).map(i => i.id))
         const allItems = [
           ...filteredCustomerInvoices.map(inv => ({ ...inv, _type: 'customer' })),
-          ...filteredUtilityInvoices.map(inv => ({ ...inv, _type: 'utility' }))
+          ...filteredUtilityInvoices.filter(u => !(u.invoice_id != null && carrierIds.has(u.invoice_id))).map(inv => ({ ...inv, _type: 'utility' }))
         ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 
         if (allItems.length === 0) {
@@ -1356,103 +1305,24 @@ export default function Invoices() {
         </>
       )}
 
-      {/* ===== UTILITY REBATES VIEW ===== */}
+      {/* ===== REBATES VIEW — one invoice per rebate job ===== */}
       {typeFilter === 'utility' && (
-        <>
-          {filteredUtilityInvoices.length === 0 ? (
-            <div style={{
-              textAlign: 'center',
-              padding: '48px 24px',
-              backgroundColor: theme.bgCard,
-              borderRadius: '12px',
-              border: `1px solid ${theme.border}`
-            }}>
-              <FileText size={48} style={{ color: theme.textMuted, marginBottom: '16px', opacity: 0.5 }} />
-              <p style={{ color: theme.textSecondary, fontSize: '15px' }}>
-                No utility incentives found. Add your first utility incentive.
-              </p>
-            </div>
-          ) : (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
-              gap: '16px'
-            }}>
-              {filteredUtilityInvoices.map((invoice) => {
-                const statusStyle = statusColors[invoice.payment_status] || statusColors['Pending']
-
-                return (
-                  <EntityCard
-                    key={invoice.id}
-                    name={invoice.customer_name}
-                    businessName={invoice.utility_name}
-                    onClick={() => navigate(`/utility-invoices/${invoice.id}`, { state: { from: window.location.pathname } })}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                          width: '44px', height: '44px',
-                          backgroundColor: 'rgba(20,184,166,0.12)',
-                          borderRadius: '10px',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center'
-                        }}>
-                          <Zap size={22} style={{ color: '#14b8a6' }} />
-                        </div>
-                        <div>
-                          <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>
-                            {invoice.customer_name || '-'}
-                          </h3>
-                          <p style={{ fontSize: '13px', color: theme.textSecondary }}>{invoice.utility_name || '-'}</p>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => openUtilityEditModal(invoice)}
-                          style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleUtilityDelete(invoice)}
-                          style={{ padding: '6px', backgroundColor: 'transparent', border: 'none', borderRadius: '6px', cursor: 'pointer', color: theme.textMuted }}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', fontSize: '13px' }}>
-                      <div>
-                        <span style={{ color: theme.textMuted }}>Project </span>
-                        <span style={{ fontWeight: '600', color: theme.text }}>{formatCurrency(invoice.project_cost || invoice.amount)}</span>
-                      </div>
-                      <div>
-                        <span style={{ color: theme.textMuted }}>Incentive </span>
-                        <span style={{ fontWeight: '600', color: '#d4940a' }}>{formatCurrency(invoice.incentive_amount)}</span>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div>
-                        <span style={{ fontSize: '12px', color: theme.textMuted }}>Net </span>
-                        <span style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>{formatCurrency(invoice.net_cost)}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{
-                          padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500',
-                          backgroundColor: statusStyle.bg, color: statusStyle.text
-                        }}>
-                          {invoice.payment_status || 'Pending'}
-                        </span>
-                        <span style={{ fontSize: '12px', color: theme.textMuted }}>{formatDate(invoice.created_at)}</span>
-                      </div>
-                    </div>
-                  </EntityCard>
-                )
-              })}
-            </div>
-          )}
-        </>
+        <RebatesList
+          invoices={invoices}
+          utilityInvoices={utilityInvoices}
+          utilityProviders={utilityProviders}
+          payments={payments}
+          searchTerm={searchTerm}
+          statusFilter={statusFilter}
+          onOpenInvoice={(inv) => navigate(`/invoices/${inv.id}`, { state: { from: window.location.pathname } })}
+          onOpenRecord={(u) => navigate(`/utility-invoices/${u.id}`, { state: { from: window.location.pathname } })}
+          onEditRecord={openUtilityEditModal}
+          onDeleteRecord={handleUtilityDelete}
+          theme={theme}
+          isMobile={isMobile}
+          formatCurrency={formatCurrency}
+          formatDate={formatDate}
+        />
       )}
 
       {/* Create Customer Invoice Modal */}

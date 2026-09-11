@@ -13,14 +13,14 @@
 // the customer's breakdown come from buildInvoicePages, the same numbers
 // the PDF prints. Only invoices that carry a utility debt render this.
 //
-// Recording the utility's payment still happens on the utility record (one
-// form, one write path, mirrored back onto the invoice by the database).
-// That form moves here when utility receipts become ledger rows; building a
-// second copy of it now would be the same rule in two places.
+// Recording the utility's payment, reopening it, and correcting the date
+// happen here, through lib/utilitySettlement — the one write path, shared
+// with the utility record page — and the database mirrors the result back
+// onto this invoice. The panel never computes a settlement itself.
 
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Zap, User, CheckCircle, Clock, Send, ExternalLink } from 'lucide-react'
+import { Zap, User, CheckCircle, Clock, Send, ExternalLink, RotateCcw } from 'lucide-react'
 import { invoiceUtilityBalance, invoiceBalance } from '../lib/arHelpers'
 
 const UTIL = '#14b8a6'
@@ -34,10 +34,15 @@ const days = (from) => {
 
 export default function InvoiceSplitPanel({
   invoice, pages, payments = [], utilityName, linkedUtilityInvoice,
-  onMarkSubmitted, saving = false,
+  onMarkSubmitted, onRecordPayment, onReopen, onCorrectDate, saving = false,
   theme, isMobile = false, formatCurrency, formatDate,
 }) {
   const [hot, setHot] = useState(null) // 'util' | 'cust' | null
+  // The inline settlement form: 'record' | 'date' | null.
+  const [form, setForm] = useState(null)
+  const [paidOn, setPaidOn] = useState('')
+  const [amount, setAmount] = useState('')
+  const [note, setNote] = useState('')
 
   if (!invoice || invoice.utility_owes == null) return null
 
@@ -83,7 +88,7 @@ export default function InvoiceSplitPanel({
     `M${left},${y0} C${left + 150},${y0} ${right - 150},${y1} ${right},${y1} L${right},${y1 + h1} C${right - 150},${y1 + h1} ${left + 150},${y0 + h0} ${left},${y0 + h0} Z`
 
   const card = (side, opts) => {
-    const { color, Icon: PartyIcon, name, amount, status, lines, actions } = opts
+    const { color, Icon: PartyIcon, name, amount, status, lines, actions, extra } = opts
     return (
     <div
       onMouseEnter={() => setHot(side)}
@@ -118,6 +123,7 @@ export default function InvoiceSplitPanel({
       {actions?.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>{actions}</div>
       )}
+      {extra}
     </div>
     )
   }
@@ -137,11 +143,60 @@ export default function InvoiceSplitPanel({
       : <button key={key} type="button" onClick={onClick} disabled={saving} style={style}>{inner}</button>
   }
 
-  const utilityRecord = linkedUtilityInvoice?.id ? `/utility-invoices/${linkedUtilityInvoice.id}` : null
+  const canSettle = !!linkedUtilityInvoice?.id
+  const openRecord = () => {
+    setPaidOn((invoice.utility_paid_at || new Date().toISOString()).slice(0, 10))
+    const expected = linkedUtilityInvoice?.incentive_amount ?? linkedUtilityInvoice?.amount ?? ''
+    setAmount(expected === '' || expected == null ? '' : String(expected))
+    setNote('')
+    setForm('record')
+  }
+  const openDate = () => { setPaidOn((invoice.utility_paid_at || '').slice(0, 10)); setForm('date') }
+  const close = () => setForm(null)
+  const submitRecord = async () => { if (await onRecordPayment?.({ paidOn, amount, note })) close() }
+  const submitDate = async () => { if (await onCorrectDate?.(paidOn)) close() }
+
   const utilityActions = []
-  if (!utilityPaid && !submitted && onMarkSubmitted) utilityActions.push(btn('sub', 'Mark submitted', { onClick: onMarkSubmitted, Icon: Send, primary: true }))
-  if (utilityRecord && !utilityPaid) utilityActions.push(btn('rec', 'Record utility payment', { to: utilityRecord, Icon: ExternalLink, primary: !utilityActions.length }))
-  if (utilityRecord && utilityPaid) utilityActions.push(btn('rec', 'Utility record', { to: utilityRecord, Icon: ExternalLink }))
+  if (!form) {
+    if (!utilityPaid && !submitted && onMarkSubmitted) utilityActions.push(btn('sub', 'Mark submitted', { onClick: onMarkSubmitted, Icon: Send, primary: true }))
+    if (canSettle && !utilityPaid && onRecordPayment) utilityActions.push(btn('rec', 'Record utility payment', { onClick: openRecord, Icon: CheckCircle, primary: !utilityActions.length }))
+    if (canSettle && utilityPaid && onCorrectDate) utilityActions.push(btn('date', 'Correct paid date', { onClick: openDate, Icon: Clock }))
+    if (canSettle && utilityPaid && onReopen) utilityActions.push(btn('reopen', 'Reopen', { onClick: onReopen, Icon: RotateCcw }))
+    if (!canSettle) utilityActions.push(btn('rec', 'Utility records', { to: '/invoices?type=utility', Icon: ExternalLink }))
+  }
+
+  const field = (label, input) => (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontWeight: '600', color: theme.textMuted, minWidth: 0 }}>
+      {label}
+      {input}
+    </label>
+  )
+  const inputStyle = {
+    minHeight: '36px', padding: '0 10px', fontSize: '13px', color: theme.text, backgroundColor: theme.bgCard,
+    border: `1px solid ${theme.border}`, borderRadius: '8px', width: '100%', boxSizing: 'border-box',
+  }
+  // The inline form replaces the action row while it is open.
+  const settlementForm = form && (
+    <div style={{ marginTop: '12px', padding: '12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ fontSize: '12px', fontWeight: '700', color: theme.text }}>
+        {form === 'record' ? `Record the payment from ${utilityName || 'the utility'}` : 'Correct the paid date'}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: form === 'record' && !isMobile ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr)', gap: '10px' }}>
+        {field('Paid on', <input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} style={inputStyle} />)}
+        {form === 'record' && field('Amount received', <input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={formatCurrency(utilityOwes)} style={inputStyle} />)}
+      </div>
+      {form === 'record' && field('Reference', <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Check #, ACH ref" style={inputStyle} />)}
+      {form === 'record' && (
+        <div style={{ fontSize: '11px', color: theme.textMuted }}>
+          If the utility paid a different amount than {formatCurrency(utilityOwes)}, enter what arrived. The record keeps what was received and notes the difference.
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        {btn('save', form === 'record' ? 'Save payment' : 'Save date', { onClick: form === 'record' ? submitRecord : submitDate, Icon: CheckCircle, primary: true })}
+        {btn('cancel', 'Cancel', { onClick: close })}
+      </div>
+    </div>
+  )
 
   const customerLines = showBreakdown
     ? [['In-scope out-of-pocket', formatCurrency(inScope)], ['Out-of-scope add-ons', formatCurrency(addOns)]]
@@ -185,6 +240,7 @@ export default function InvoiceSplitPanel({
               : ['Still owed', formatCurrency(utilityBalance)],
           ],
           actions: utilityActions,
+          extra: settlementForm,
         })}
         {card('cust', {
           color: CUST, Icon: User,

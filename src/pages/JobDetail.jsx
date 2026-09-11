@@ -6096,7 +6096,7 @@ function JobDetailInner() {
               padding: '20px'
             }}>
               <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>
-                Invoices ({jobInvoices.length + jobUtilityInvoices.length})
+                Invoices ({jobInvoices.length + jobUtilityInvoices.filter(u => !(u.invoice_id != null && jobInvoices.some(i => i.id === u.invoice_id && i.utility_owes != null))).length})
               </h3>
 
               {/* "Who pays what" AR breakdown — the same numbers the Dashboard
@@ -6219,7 +6219,7 @@ function JobDetailInner() {
                     </div>
                   </div>
                 ))}
-                {jobUtilityInvoices.map(inv => (
+                {jobUtilityInvoices.filter(u => !(u.invoice_id != null && jobInvoices.some(i => i.id === u.invoice_id && i.utility_owes != null))).map(inv => (
                   <div key={'u-' + inv.id} onClick={() => navigate(`/utility-invoices/${inv.id}`, { state: { from: window.location.pathname } })} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px',

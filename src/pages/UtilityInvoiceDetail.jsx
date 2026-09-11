@@ -10,6 +10,7 @@ import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { jsPDF } from 'jspdf'
 import { toast } from '../lib/toast'
 import { splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../lib/materialLaborSplit'
+import { recordUtilityPayment, reopenUtilityPayment, correctUtilityPaidAt } from '../lib/utilitySettlement'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -88,12 +89,21 @@ export default function UtilityInvoiceDetail() {
     fetchInvoiceData()
   }, [companyId, id, navigate])
 
-  // The utility incentive is its OWN in-house document now — an internal,
-  // incentive-only books record that is never sent to the customer or the
-  // utility. It intentionally does NOT redirect to the linked customer
-  // invoice (which carries the customer-facing two-section payable view).
-  // Keeping them separate is what the "clean books" requirement asks for:
-  // customer AR lives on the customer invoice, utility AR lives here.
+  // A utility record linked to a customer invoice is managed ON that invoice
+  // now: the invoice carries the utility's debt (utility_owes, utility_paid_at,
+  // the provider), receivables read it there, and the invoice page offers
+  // record / reopen / correct-date through the same write path this page
+  // uses. Two pages for one debt was the confusion the rebuild set out to
+  // remove, so a linked record sends you to the invoice.
+  //
+  // An UNLINKED record — no customer invoice, or one the migration refused —
+  // still lives here. It is the only place those can be seen and settled
+  // until they are linked, and their receivable still counts from this row.
+  //
+  // Editing the rebate amounts stays here too, and only for unlinked rows:
+  // the save below updates this row alone, and on a linked record that would
+  // leave the customer invoice's credit disagreeing with it. Money changes on
+  // a linked record belong on the invoice, which reconciles down to the row.
 
   const fetchInvoiceData = async () => {
     setLoading(true)
@@ -102,6 +112,11 @@ export default function UtilityInvoiceDetail() {
       .select('*')
       .eq('id', id)
       .single()
+
+    if (data?.invoice_id) {
+      navigate(`/invoices/${data.invoice_id}`, { replace: true })
+      return
+    }
 
     if (data) {
       setInvoice(data)
@@ -221,50 +236,14 @@ export default function UtilityInvoiceDetail() {
     setShowRecordPayment(true)
   }
 
+  // The three settlement writes — record, reopen, correct the date — live in
+  // lib/utilitySettlement so the invoice page can offer the same actions
+  // without a second copy of the short-pay rule. This page keeps its form.
   const recordPayment = async () => {
-    if (!paymentDate) {
-      toast.error('Pick a payment date')
-      return
-    }
     setSaving(true)
-    // Store the date at noon UTC so it doesn't drift to the day before in
-    // negative timezones when displayed back.
-    const isoPaidAt = `${paymentDate}T12:00:00.000Z`
-    // Parse the actual amount paid. If left blank, fall back to the
-    // existing invoice amount so behavior matches the old read-only flow.
-    const expected = parseFloat(invoice.incentive_amount ?? invoice.amount) || 0
-    const paidNum = paymentAmount === '' ? expected : parseFloat(paymentAmount)
-    if (isNaN(paidNum) || paidNum < 0) {
-      toast.error('Enter a valid amount')
-      setSaving(false)
-      return
-    }
-    const shortBy = Math.round((expected - paidNum) * 100) / 100
-    let amountNote = ''
-    if (shortBy > 0.005) {
-      amountNote = ` — short ${formatCurrency(shortBy)} (expected ${formatCurrency(expected)}, received ${formatCurrency(paidNum)})`
-    } else if (shortBy < -0.005) {
-      amountNote = ` — over ${formatCurrency(-shortBy)} (expected ${formatCurrency(expected)}, received ${formatCurrency(paidNum)})`
-    }
-    const stamped = `Paid ${paymentDate}${paymentNote ? ' — ' + paymentNote : ''}${amountNote}`
-    const newNotes = invoice.notes ? `${invoice.notes}\n\n${stamped}` : stamped
-    const updatePayload = {
-      payment_status: 'Paid',
-      paid_at: isoPaidAt,
-      notes: newNotes,
-      updated_at: new Date().toISOString()
-    }
-    // If the actual paid amount differs from what was on the invoice,
-    // overwrite incentive_amount / amount so the books reflect reality.
-    if (Math.abs(shortBy) > 0.005) {
-      updatePayload.incentive_amount = paidNum
-      updatePayload.amount = paidNum
-      const pcNum = parseFloat(invoice.project_cost) || 0
-      if (pcNum > 0) updatePayload.net_cost = Math.round((pcNum - paidNum) * 100) / 100
-    }
-    const { error } = await supabase.from('utility_invoices').update(updatePayload).eq('id', id)
-    if (error) {
-      toast.error('Failed to record payment: ' + error.message)
+    const res = await recordUtilityPayment(supabase, invoice, { paidOn: paymentDate, amount: paymentAmount, note: paymentNote })
+    if (res.error) {
+      toast.error(res.error.startsWith('Pick') || res.error.startsWith('Enter') ? res.error : 'Failed to record payment: ' + res.error)
       setSaving(false)
       return
     }
@@ -276,17 +255,12 @@ export default function UtilityInvoiceDetail() {
   }
 
   // Reopen a paid utility invoice so a payment can be re-applied or corrected.
-  // Clears paid_at and flips status back to Open. Notes are kept (audit trail).
   const unmarkPaid = async () => {
     if (!confirm('Reopen this utility invoice? The status will go back to Open and the paid date will be cleared so you can record the actual payment fresh.')) return
     setSaving(true)
-    const { error } = await supabase.from('utility_invoices').update({
-      payment_status: 'Open',
-      paid_at: null,
-      updated_at: new Date().toISOString()
-    }).eq('id', id)
-    if (error) {
-      toast.error('Failed to reopen: ' + error.message)
+    const res = await reopenUtilityPayment(supabase, id)
+    if (res.error) {
+      toast.error('Failed to reopen: ' + res.error)
     } else {
       await fetchInvoiceData()
       await fetchUtilityInvoices()
@@ -299,13 +273,9 @@ export default function UtilityInvoiceDetail() {
   const updatePaidAt = async (newDate) => {
     if (!newDate) return
     setSaving(true)
-    const isoPaidAt = `${newDate}T12:00:00.000Z`
-    const { error } = await supabase.from('utility_invoices').update({
-      paid_at: isoPaidAt,
-      updated_at: new Date().toISOString()
-    }).eq('id', id)
-    if (error) {
-      toast.error('Failed to update paid date: ' + error.message)
+    const res = await correctUtilityPaidAt(supabase, id, newDate)
+    if (res.error) {
+      toast.error('Failed to update paid date: ' + res.error)
     } else {
       await fetchInvoiceData()
       await fetchUtilityInvoices()
