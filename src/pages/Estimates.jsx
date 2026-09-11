@@ -11,6 +11,7 @@ import { estimatesFields, quoteLinesFields } from '../lib/importExportFields'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
 import PageHeader from '../components/PageHeader'
 import { matchAllTokens, buildBlob } from '../lib/searchUtils'
+import { findSimilarLeads } from '../lib/leadDuplicates'
 
 // Light theme fallback
 const defaultTheme = {
@@ -719,22 +720,13 @@ export default function Estimates() {
 
                 {/* New Lead inline fields */}
                 {associationType === 'newLead' && (() => {
-                  // Match by phone (digits only) first — most reliable.
-                  // Then name substring. Show ONE suggestion at a time so
-                  // the rep has a clear path to switch instead of creating
-                  // a duplicate (Tracy's #10).
-                  const phoneDigits = (newLeadData.phone || '').replace(/\D/g, '')
-                  const name = (newLeadData.customer_name || '').trim().toLowerCase()
-                  let suggestion = null
-                  if (phoneDigits.length >= 7) {
-                    suggestion = leads.find(l => l.phone && l.phone.replace(/\D/g, '').includes(phoneDigits.slice(-7)))
-                  }
-                  if (!suggestion && name.length >= 3) {
-                    suggestion = leads.find(l =>
-                      (l.customer_name && l.customer_name.toLowerCase().includes(name)) ||
-                      (l.business_name && l.business_name.toLowerCase().includes(name))
-                    )
-                  }
+                  // Show ONE suggestion at a time so the rep has a clear
+                  // path to switch instead of creating a duplicate (Tracy's
+                  // #10). The matching itself lives in lib/leadDuplicates —
+                  // the substring check that used to sit here would not have
+                  // caught "Haliflax" against "Halifax", which is the one
+                  // that actually happened.
+                  const suggestion = findSimilarLeads(newLeadData, leads)[0]?.lead || null
                   return (
                   <div style={{
                     display: 'flex', flexDirection: 'column', gap: '12px',

@@ -72,7 +72,7 @@ const TOOLS = [
   },
   {
     name: 'query_leads',
-    description: 'Query leads/deals with filtering. Use for pipeline questions, conversion rates, or salesperson performance. ADMIN+ only.',
+    description: 'Query leads/deals with filtering. Use for pipeline questions, conversion rates, or salesperson performance. ADMIN+ only. A row with `possible_duplicate_of` set was flagged by the database on creation as looking like an existing lead (same or near-same name, same phone or email) — the value is the id of the lead it probably duplicates. Asked about duplicate leads, filter on that, name both leads, and offer to relink any quote to the original so the setter fee follows.',
     input_schema: {
       type: 'object',
       properties: {
