@@ -177,6 +177,24 @@ means it fails loudly rather than drifting onto a neighbour's port — a session
 once verified a fix against a dev server that was running a *different*
 worktree, on a branch two months stale, and believed the result.
 
+## Test data goes in the sandbox, not in HHH
+
+Company 3 is a live business. On 14 Sep Bryce opened the Employees page and
+found two people nobody had hired: **"ZZ UI Test (temp)"** (created 23 Jul by
+a session's script, role **Admin**, logged into for five weeks, on seven
+payroll runs as a $0 stub) and **"Don Read Test"** (created 19 Aug, role
+**Admin**, with a live login). Alongside them: a fake lead + audit + estimate
++ job + customer at "123 Verification Way", and an estimate called "ZZ MOBILE
+UX TEST - ignore" attached to a real customer. Every one of those was a
+session verifying its own work in production and not cleaning up.
+
+- Verify against **company 20 (Sandbox)** or **company 25 (the demo)**. Both
+  exist for this.
+- If a check genuinely needs company 3, the row is created and deleted in the
+  **same turn**, before you report. A `ZZ` prefix is not a cleanup plan.
+- Never mint a login. Never give a test row the Admin or Owner role.
+- Payroll, invoices and payments are never touched with test rows at all.
+
 ## Before you say it works
 
 `npm run guard && npm test && npm run build` — all three. None is redundant:
