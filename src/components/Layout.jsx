@@ -970,6 +970,26 @@ export default function Layout() {
                 <MapIcon size={20} />
                 Company Map
               </NavLink>
+              {/* The clock. Christopher (26 Aug): "I have to search for Field
+                  Scout in the menu in order to find jobs and clock in." For a
+                  field tech it is already the whole menu; for everyone else
+                  who clocks in it sat five steps down inside WORK. It stays
+                  there — this is the shortcut. */}
+              {!userIsFieldTech && <NavLink
+                to="/field-scout"
+                title="Clock in and out, today's jobs"
+                style={({ isActive }) => ({
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '10px 12px', borderRadius: '8px',
+                  color: isActive ? theme.accent : theme.textMuted,
+                  backgroundColor: isActive ? theme.accentBg : 'transparent',
+                  textDecoration: 'none', fontSize: '14px', fontWeight: '600',
+                  transition: 'all 0.15s ease'
+                })}
+              >
+                <Compass size={20} />
+                Field Scout
+              </NavLink>}
               {/* A lookup, not a stage. You jump to a customer mid-task from
                   wherever you happen to be — which is what everything else up
                   here has in common. Field techs never had it. */}
@@ -1528,6 +1548,22 @@ export default function Layout() {
                     <MapIcon size={20} />
                     Company Map
                   </NavLink>
+                  {/* See the desktop copy — the clock, one tap from the top. */}
+                  {!userIsFieldTech && <NavLink
+                    to="/field-scout"
+                    onClick={() => setMobileMenuOpen(false)}
+                    style={({ isActive }) => ({
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '10px 12px', borderRadius: '8px',
+                      color: isActive ? theme.accent : theme.textMuted,
+                      backgroundColor: isActive ? theme.accentBg : 'transparent',
+                      textDecoration: 'none', fontSize: '14px', fontWeight: '600',
+                      transition: 'all 0.15s ease', minHeight: '44px'
+                    })}
+                  >
+                    <Compass size={20} />
+                    Field Scout
+                  </NavLink>}
                   {/* See the desktop copy — a lookup, not a stage. */}
                   {!userIsFieldTech && <NavLink
                     to="/customers"

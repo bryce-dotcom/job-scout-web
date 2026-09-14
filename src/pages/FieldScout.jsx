@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { supabase } from '../lib/supabase'
+import { fieldJobHeading } from '../lib/jobHeading'
 import { checkCanClockIn, hoursSince } from '../lib/timeClock'
 import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
@@ -1688,7 +1689,7 @@ export default function FieldScout() {
     return { total, perDay, weekStart }
   })()
   const activeJobName = activeEntry?.job_id
-    ? (jobs.find(j => j.id === activeEntry.job_id)?.job_title || 'Job')
+    ? fieldJobHeading(jobs.find(j => j.id === activeEntry.job_id)).title
     : 'General'
 
   // Quick stats
@@ -3137,11 +3138,12 @@ export default function FieldScout() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
+                        {/* Site first, customer + address second — see lib/jobHeading. */}
                         <div style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '2px' }}>
-                          {job.job_title || job.job_id}
+                          {fieldJobHeading(job).title}
                         </div>
-                        <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                          {job.customer?.name}
+                        <div style={{ fontSize: '13px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {fieldJobHeading(job).subtitle}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
