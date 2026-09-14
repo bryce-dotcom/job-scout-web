@@ -70,9 +70,9 @@ describe('no tool returns a pay rate at any level', () => {
     }
   })
 
-  it('the prompt says so, and says where rates live', () => {
+  it('the prompt says rates are owner-only, and says where they live', () => {
     const block = engine.slice(engine.indexOf('## Money — who may see what'), engine.indexOf('## You have a voice'))
-    expect(block).toMatch(/You never have pay RATES/)
+    expect(block).toMatch(/Pay RATES are owner-only/)
     expect(block).toMatch(/Employees page/)
     expect(block).toMatch(/A number that sounds like someone's pay is a leak even when it is wrong/)
   })

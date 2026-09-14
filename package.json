@@ -26,7 +26,8 @@
     "check:invoice-status": "node scripts/check-invoice-status.mjs",
     "check:utility-split": "node scripts/check-utility-split.mjs",
     "backfill:payer-split": "node scripts/backfill-payer-split.mjs",
-    "check:payer-split": "node scripts/check-payer-split.mjs"
+    "check:payer-split": "node scripts/check-payer-split.mjs",
+    "arnie:eval": "node scripts/arnie-eval.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.36.0",

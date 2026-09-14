@@ -773,7 +773,15 @@ async function execTool(name: string, input: any, caller: Caller) {
     }
 
     if (name === 'query_employees') {
-      const select = isOwner ? '*' : 'id,name,email,role,phone,user_role,created_at'
+      // Never `*` here, even for the owner. employees carries 92 columns and
+      // the ones nobody asked for are the worst ones to hand a model:
+      // ssn_last4, date_of_birth, home_address, dd_account_last4, the W-4,
+      // licence numbers. "Show me the team" was sending all of it. The owner
+      // gets pay rates — they are on the Employees page and the quick action
+      // asks for them — and nothing that belongs on a tax form.
+      const select = isOwner
+        ? 'id,name,email,phone,role,user_role,active,business_unit,hire_date,pay_type,hourly_rate,annual_salary,commission_setter_rate,commission_services_rate,commission_goods_rate,has_hr_access,created_at'
+        : 'id,name,email,role,phone,user_role,created_at'
       const params = new URLSearchParams({ company_id: `eq.${companyId}`, select })
       if (input.role) params.append('role', `eq.${input.role}`)
       const got = await fetchRows(sb('employees'), params, hdr, 2000)
