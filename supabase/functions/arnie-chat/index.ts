@@ -418,13 +418,14 @@ const PROPOSE_CREATE_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket'], description: 'lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person.' },
+      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket', 'appointment'], description: 'lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person. appointment = book a sales visit on an existing lead (sets the lead to Appointment Set, hands it to the rep, and creates the setter fee — the same as booking from Lead Setter).' },
       fields: {
         type: 'object',
         description:
           'lead: customer_name (required — the person), business_name, phone, email, address, service_type, lead_source, notes. ' +
           'diagnosis: symptom (required), fix (required), equipment (make/model), cause, parts, outcome (fixed|partial|escalated|unresolved), trade, job (describe it in words — "the Riverside job" — never an id; omit it if they are clocked in and it is that job). ' +
-          'ticket: message (required — what was seen, the exact record ids/numbers involved, what was expected, what you checked), subject, feedback_type (bug|feature|question|feedback).',
+          'ticket: message (required — what was seen, the exact record ids/numbers involved, what was expected, what you checked), subject, feedback_type (bug|feature|question|feedback). ' +
+          'appointment: lead (required — describe it in words, never an id), when (required — YYYY-MM-DD HH:MM in the user\'s zone; work "Tuesday at 2" out from Today in Current User), timezone (from Current User), salesperson (name; omit to use the rep already on the lead), duration_minutes (default 60), location (defaults to the lead\'s address), notes.',
         properties: {
           customer_name: { type: 'string' }, business_name: { type: 'string' }, phone: { type: 'string' },
           email: { type: 'string' }, address: { type: 'string' }, service_type: { type: 'string' },
@@ -432,6 +433,7 @@ const PROPOSE_CREATE_TOOL = {
           equipment: { type: 'string' }, symptom: { type: 'string' }, cause: { type: 'string' }, fix: { type: 'string' },
           parts: { type: 'string' }, outcome: { type: 'string' }, trade: { type: 'string' }, job: { type: 'string' },
           subject: { type: 'string' }, message: { type: 'string' }, feedback_type: { type: 'string' },
+          lead: { type: 'string' }, when: { type: 'string' }, timezone: { type: 'string' }, salesperson: { type: 'string' }, duration_minutes: { type: 'string' }, location: { type: 'string' },
         },
       },
       confirm_new: { type: 'boolean', description: 'Only true after the USER has said the matching lead is a different customer.' },

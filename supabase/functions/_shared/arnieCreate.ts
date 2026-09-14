@@ -19,6 +19,7 @@ import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
 import { readRecordList } from './arnieRest.ts'
 import { RECORD_TARGETS, activeJobId, resolveEntity } from './arnieRecords.ts'
+import { applyAppointment, prepareAppointment, rollbackAppointment } from './arnieAppointment.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -49,6 +50,13 @@ export interface CreateTarget {
   labelOf: (fields: Record<string, string>) => string
   /** Resolve anything that is not a plain column — e.g. "the Drinkle job" → job_id. */
   prepare?: (r: Rest, caller: Caller, fields: Record<string, string>) => Promise<Prepared>
+  /**
+   * A target whose apply is more than one insert (an appointment also
+   * touches the lead and writes fees). Replaces the generic insert; must
+   * return what it made so rollbackCustom can take exactly that away.
+   */
+  applyCustom?: (r: Rest, companyId: number, prop: any) => Promise<{ ok: true; id: number; label: string; created: Record<string, unknown> } | { ok: false; error: string; stale?: boolean }>
+  rollbackCustom?: (r: Rest, companyId: number, prop: any) => Promise<{ ok: true; deleted: number } | { ok: false; error: string }>
 }
 
 export const CREATE_TARGETS: Record<string, CreateTarget> = {
@@ -136,6 +144,28 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
       feedback_type: { column: 'feedback_type', label: 'Type',    max: 20, oneOf: ['bug', 'feature', 'question', 'feedback'] },
     },
     labelOf: (f) => (f.subject || f.message || 'ticket').slice(0, 100),
+  },
+
+  // "Book them Tuesday at two with Jordan." Every side effect the Lead
+  // Setter page has — see arnieAppointment.ts for the list and why it has
+  // to be all of them.
+  appointment: {
+    label: 'appointment',
+    table: 'appointments',
+    minLevel: 0,
+    fields: {
+      lead:             { column: null, label: 'Lead',   required: true, max: 160 },
+      when:             { column: null, label: 'When',   required: true, max: 40 },
+      timezone:         { column: null, label: 'Zone',   max: 64 },
+      salesperson:      { column: null, label: 'With',   max: 80 },
+      duration_minutes: { column: null, label: 'Length', max: 4 },
+      location:         { column: null, label: 'Where',  max: 300 },
+      notes:            { column: null, label: 'Notes',  max: 1000 },
+    },
+    labelOf: (f) => `${f.lead} — ${f.when}${f.salesperson ? ' with ' + f.salesperson : ''}`.slice(0, 120),
+    prepare: prepareAppointment,
+    applyCustom: applyAppointment,
+    rollbackCustom: rollbackAppointment,
   },
 }
 
@@ -326,6 +356,17 @@ export async function applyCreateProposal(
     }
   }
 
+  if (target.applyCustom) {
+    const res = await target.applyCustom(r, companyId, prop)
+    if (!res.ok) return res
+    await fetch(`${r.url}/rest/v1/arnie_proposals?id=eq.${prop.id}`, {
+      method: 'PATCH',
+      headers: { apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ payload: { ...prop.payload, created_id: res.id, created: res.created } }),
+    })
+    return { ok: true, id: res.id, label: res.label }
+  }
+
   const row: Record<string, unknown> = { company_id: companyId, ...(prop.payload?.columns || {}) }
   for (const [key, def] of Object.entries(target.fields)) if (fields[key] && def.column) row[def.column] = fields[key]
   if (target.table === 'job_diagnoses') {
@@ -377,6 +418,7 @@ export async function rollbackCreateProposal(
 ): Promise<{ ok: true; deleted: number } | { ok: false; error: string }> {
   const target = CREATE_TARGETS[prop.target]
   if (!target) return { ok: false, error: 'Unknown create target.' }
+  if (target.rollbackCustom) return await target.rollbackCustom(r, companyId, prop)
   // Not Number(): leads and diagnoses have integer ids, but feedback rows
   // are UUIDs, and Number('8810cf13-…') is NaN — which read as "never
   // created" and left a test ticket in the queue. A string, checked for

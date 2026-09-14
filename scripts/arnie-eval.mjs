@@ -51,6 +51,17 @@ const today = new Date().toLocaleDateString('en-CA', { timeZone: DEMO.tz })
 // The sections that carry the rules are extracted from the file instead, so a
 // prompt edit is what gets exercised, not a stale copy.
 const engineSrc = readFileSync(resolve(root, 'src/pages/agents/arnie/arnieEngine.js'), 'utf8').replace(/\r\n/g, '\n')
+// The prompt is a template literal inside a module. This harness reads it as
+// TEXT, so an unescaped backtick that breaks the build reads perfectly well
+// here — which is exactly how a prompt edit once passed 4/4 evals while the
+// app would not compile. Refuse to run against a prompt that does not parse.
+try {
+  const { transformSync } = await import('esbuild')
+  transformSync(engineSrc, { loader: 'js', logLevel: 'silent' })
+} catch (e) {
+  console.error('arnie:eval — arnieEngine.js does not parse; the build is broken and these results would be meaningless.\n' + (e.errors?.[0]?.text || e.message))
+  process.exit(2)
+}
 const cut = (from, to) => engineSrc.slice(engineSrc.indexOf(from), engineSrc.indexOf(to)).replace(/\\`/g, '`')
 const RULES = cut('## STRICT FORMAT RULES', '## Current User') + cut('## What You Can Do', '## What You Cannot Do')
 const prompt = (roleLabel) =>
@@ -184,6 +195,26 @@ const CASES = [
       if (String(row?.setter_owner_id) !== String(DEMO.tech.employeeId)) throw new Error('the asker was not recorded as setter')
       ctx.pendingRollback = r.proposal.proposal.id
     } },
+  { id: 'create.appointment.five.effects.then.unbook', as: 'tech',
+    turns: ['Book the Parkside Office Tower lead for tomorrow at 2pm with Jordan Lee.'],
+    expect: { proposal: 'create', proposal_label: 'appointment', text_match: [/2:00|2 ?pm/i] },
+    after: async (r, ctx) => {
+      const [before] = await rest(`leads?select=id,status,appointment_id,lead_owner_id&company_id=eq.${DEMO.company}&customer_name=ilike.*Parkside*`)
+      const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+      ctx.pendingRollback = r.proposal.proposal.id
+      const [lead] = await rest(`leads?select=status,appointment_id,lead_owner_id&id=eq.${before.id}`)
+      if (lead.status !== 'Appointment Set' || String(lead.appointment_id) !== String(ap.body.created_id) || String(lead.lead_owner_id) !== String(DEMO.tech.employeeId)) throw new Error('lead not set/handed to the rep: ' + JSON.stringify(lead))
+      const fees = await rest(`lead_commissions?select=commission_type,employee_id,payment_status&appointment_id=eq.${ap.body.created_id}`)
+      if (!fees.some(f => f.commission_type === 'appointment_set' && String(f.employee_id) === String(DEMO.tech.employeeId) && f.payment_status === 'pending')) throw new Error("setter's fee not created: " + JSON.stringify(fees))
+      // and the same lead is now refused
+      const again = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Book Parkside Office Tower for Friday at 10am with Jordan Lee.' }])
+      if (again.proposal) { await decide(ctx.token, 'reject', again.proposal.proposal.id); throw new Error('a second booking on a booked lead was drafted') }
+      ctx.verifyAfterRollback = async () => {
+        const [l] = await rest(`leads?select=status,appointment_id,lead_owner_id&id=eq.${before.id}`)
+        if (l.status !== before.status || l.appointment_id !== before.appointment_id || l.lead_owner_id !== before.lead_owner_id) throw new Error('lead not restored: ' + JSON.stringify(l))
+        if ((await rest(`lead_commissions?select=id&appointment_id=eq.${ap.body.created_id}`)).length) throw new Error('fee left behind after unbook')
+      }
+    } },
   { id: 'create.ticket.then.withdraw', as: 'owner',
     turns: ['The Open Invoices screen shows the full $18,650 on the Gym Interior Retrofit invoice, but the customer already paid half — it should show $9,325. Please file a bug for the team with those figures.'],
     expect: { proposal: 'create', proposal_label: 'ticket', text_match: [/approve/i] },
@@ -256,7 +287,10 @@ try {
         }
         const fails = check(reply, c.expect || {})
         if (!fails.length && c.after) await c.after(reply, ctx)
-        if (ctx.pendingRollback) { const rb = await decide(ctx.token, 'rollback', ctx.pendingRollback); if (!rb.body.ok) fails.push('rollback failed: ' + JSON.stringify(rb.body)); ctx.pendingRollback = null }
+        if (ctx.pendingRollback) {
+          const rb = await decide(ctx.token, 'rollback', ctx.pendingRollback); if (!rb.body.ok) fails.push('rollback failed: ' + JSON.stringify(rb.body)); ctx.pendingRollback = null
+          if (ctx.verifyAfterRollback) { try { await ctx.verifyAfterRollback() } catch (e) { fails.push(e.message) } ctx.verifyAfterRollback = null }
+        }
         else if (pending) await decide(ctx.token, 'reject', pending)
         outcome = { ok: !fails.length, fails, attempt, reply }
       } catch (e) {
