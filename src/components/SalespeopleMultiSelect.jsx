@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
+import { LEAD_OWNER_ROLES } from '../lib/leadOwnerRoles'
 import { X, ChevronDown, Check } from 'lucide-react'
 
 /**
@@ -20,7 +21,7 @@ export default function SalespeopleMultiSelect({
   selectedIds = [],
   onChange,
   theme,
-  allowedRoles = ['Sales', 'Salesman', 'Manager', 'Admin'],
+  allowedRoles = LEAD_OWNER_ROLES,
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')

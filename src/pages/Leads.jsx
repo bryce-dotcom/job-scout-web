@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { leadOwners } from '../lib/leadOwnerRoles'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download, Users, Send, MapPin, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
@@ -400,9 +401,7 @@ export default function Leads() {
 
 
   // Get employees who can be setters
-  const setterEmployees = employees.filter(e =>
-    e.role === 'Setter' || e.role === 'Sales' || e.role === 'Admin' || e.role === 'Manager' || e.role === 'Owner'
-  )
+  const setterEmployees = leadOwners(employees)
 
   const getEmployeeName = (id) => {
     const emp = employees.find(e => e.id === id)

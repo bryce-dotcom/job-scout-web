@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { leadOwners } from '../lib/leadOwnerRoles'
 import { useStore } from '../lib/store'
 import { fromZonedInput, toZonedInput, zonedDayKey, zonedHour, DEFAULT_TZ } from '../lib/dateTz'
 import { useTheme } from '../components/Layout'
@@ -364,9 +365,7 @@ export default function LeadSetter() {
   // Get color for a salesperson chip
   const getSalespersonColor = (empId) => {
     const chipColors = ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899', '#6366f1', '#f97316']
-    const salespeople = employees.filter(e =>
-      e.role === 'Sales' || e.role === 'Salesman' || e.role === 'Manager' || e.role === 'Admin'
-    )
+    const salespeople = leadOwners(employees)
     const idx = salespeople.findIndex(sp => sp.id === empId)
     return idx >= 0 ? chipColors[idx % chipColors.length] : theme.accent
   }
@@ -977,7 +976,7 @@ export default function LeadSetter() {
               options={[
                 { value: '', label: 'All Setters' },
                 { value: 'unassigned', label: 'Unassigned' },
-                ...employees.filter(e => e.role === 'Setter' || e.role === 'Sales' || e.role === 'Admin' || e.role === 'Manager').map(emp => ({ value: emp.id, label: emp.name }))
+                ...leadOwners(employees).map(emp => ({ value: emp.id, label: emp.name }))
               ]}
               value={filterSetter}
               onChange={(val) => setFilterSetter(val)}
@@ -1501,9 +1500,7 @@ export default function LeadSetter() {
 
           {/* Salesperson Calendar Overlay Toggles */}
           {(() => {
-            const salespeople = employees.filter(e =>
-              e.role === 'Sales' || e.role === 'Salesman' || e.role === 'Manager' || e.role === 'Admin'
-            )
+            const salespeople = leadOwners(employees)
             if (salespeople.length === 0) return null
             const chipColors = ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899', '#6366f1', '#f97316']
             return (
@@ -2515,7 +2512,7 @@ export default function LeadSetter() {
 
               <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Rep(s) to block *</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px', maxHeight: '180px', overflowY: 'auto', border: `1px solid ${theme.border}`, borderRadius: '6px', padding: '8px' }}>
-                {employees.filter(e => ['Sales', 'Salesman', 'Manager', 'Admin'].includes(e.role)).map(emp => (
+                {leadOwners(employees).map(emp => (
                   <label key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', color: theme.text }}>
                     <input
                       type="checkbox"
