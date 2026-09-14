@@ -74,7 +74,7 @@ const run = async (label, fn) => { try { const n = await fn(); report[label] = n
 let employees = [];
 await run('employees', async () => {
   employees = await ins('employees', [
-    { name: 'Mike Sullivan', email: EMAIL, role: 'Owner', user_role: 'Admin', is_admin: true, has_hr_access: true, active: true, phone: '(303) 555-0142', annual_salary: 145000, hourly_rate: null, business_unit: 'Commercial', hire_date: '2019-03-01' },
+    { name: 'Mike Sullivan', email: EMAIL, role: 'Owner', user_role: 'Super Admin', is_admin: true, has_hr_access: true, active: true, phone: '(303) 555-0142', annual_salary: 145000, hourly_rate: null, business_unit: 'Commercial', hire_date: '2019-03-01' },
     { name: 'Sarah Chen', email: 'sarah@summitfieldco.com', role: 'Office', user_role: 'Admin', is_admin: true, has_hr_access: true, active: true, phone: '(303) 555-0187', annual_salary: 68000, hourly_rate: null, business_unit: 'Commercial', hire_date: '2020-06-15' },
     { name: 'Carlos Rivera', email: 'carlos@summitfieldco.com', role: 'Field Tech', user_role: 'Team Lead', is_admin: false, has_hr_access: false, active: true, phone: '(303) 555-0203', annual_salary: null, hourly_rate: 38, business_unit: 'Commercial', hire_date: '2021-01-11' },
     { name: 'Tyler Brooks', email: 'tyler@summitfieldco.com', role: 'Field Tech', user_role: 'User', is_admin: false, has_hr_access: false, active: true, phone: '(303) 555-0219', annual_salary: null, hourly_rate: 29, business_unit: 'Commercial', hire_date: '2023-05-02' },
