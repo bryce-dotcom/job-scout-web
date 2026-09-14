@@ -22,7 +22,7 @@ import { readRecordList } from './arnieRest.ts'
 import { invoiceCustomerTotal, isSettledStatus } from './money.ts'
 import { moneyAccess, myPay } from './arnieMoney.ts'
 
-function tzOffsetMinutes(tz: string, at: Date): number {
+export function tzOffsetMinutes(tz: string, at: Date): number {
   try {
     const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(at)
     const g = (t: string) => Number(parts.find((p) => p.type === t)?.value)
