@@ -174,7 +174,11 @@ export default function CustomerPortal() {
       setPaying(false)
     } catch (err) {
       console.error('handlePay error:', err)
-      alert('Payment setup failed: ' + (err?.message || 'Unknown error'))
+      // The server's own sentence when it has one — the double-payment
+      // refusal names the amount and date of the charge that already went
+      // through, and "Payment setup failed:" in front of that would read as
+      // if the customer had done something wrong.
+      alert(err?.message ? err.message : 'Payment setup failed: unknown error')
       setPaying(false)
     }
   }

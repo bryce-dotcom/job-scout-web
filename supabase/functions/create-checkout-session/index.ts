@@ -123,6 +123,54 @@ serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
+      // Refuse to charge an invoice twice.
+      //
+      // Tracy (26 Aug): Mountain Property Management paid the same invoice
+      // twice and wanted the second charge and its fee back. The first
+      // payment had succeeded in Stripe but never reached our books (the
+      // webhook was down that week), so the portal still showed a balance and
+      // let them pay again. The portal cannot know about a payment our
+      // database missed — but Stripe can be asked directly: any SUCCEEDED
+      // PaymentIntent that carries this invoice's id and is absent from our
+      // payments table is money we already took. Stop, say so, and name the
+      // amount and date so the customer knows it was theirs.
+      //
+      // Fails open: if Stripe's search errors, the customer can still pay.
+      // Blocking every payment on a search hiccup is worse than the rare
+      // double charge this exists to prevent.
+      if (tokenRow.document_type === 'invoice' && payment_type === 'invoice_payment') {
+        try {
+          const q = encodeURIComponent(`metadata['document_id']:'${tokenRow.document_id}' AND status:'succeeded'`);
+          const sr = await fetch(`https://api.stripe.com/v1/payment_intents/search?query=${q}&limit=20`, {
+            headers: { 'Authorization': `Bearer ${stripeKey}` },
+          });
+          if (sr.ok) {
+            const found = await sr.json();
+            const succeeded: { id: string; amount: number; created: number; metadata?: Record<string, string> }[] = (found?.data || [])
+              .filter((pi: { metadata?: Record<string, string> }) => String(pi.metadata?.document_type || 'invoice') === 'invoice');
+            if (succeeded.length) {
+              const { data: known } = await supabase
+                .from('payments')
+                .select('stripe_payment_intent_id')
+                .in('stripe_payment_intent_id', succeeded.map(pi => pi.id));
+              const knownIds = new Set((known || []).map((k: { stripe_payment_intent_id: string }) => k.stripe_payment_intent_id));
+              const unrecorded = succeeded.find(pi => !knownIds.has(pi.id));
+              if (unrecorded) {
+                const dollars = (unrecorded.amount / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                const when = new Date(unrecorded.created * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                console.warn(`[create-checkout-session] refused: invoice ${tokenRow.document_id} already has a succeeded PI ${unrecorded.id} not in payments`);
+                return new Response(JSON.stringify({
+                  error: `A card payment of ${dollars} on ${when} already went through for this invoice and is being applied to it. To avoid paying twice, please contact ${company?.company_name || 'the business'} before paying again.`,
+                  already_paid: { amount: unrecorded.amount / 100, date: when, payment_intent: unrecorded.id },
+                }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+              }
+            }
+          }
+        } catch (guardErr) {
+          console.warn('[create-checkout-session] double-pay guard skipped:', (guardErr as Error)?.message);
+        }
+      }
+
       // Check if save-card-on-file is enabled
       const { data: saveCardSetting } = await supabase
         .from('settings')
