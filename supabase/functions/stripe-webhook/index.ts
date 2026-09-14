@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { invoiceCustomerTotal } from "../_shared/money.ts";
+import { invoiceCustomerTotal, cardFeeSplit } from "../_shared/money.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -343,7 +343,7 @@ serve(async (req) => {
         // collected, stuck on Partially Paid because the webhook thought $595
         // was owed. Two Energy Scout invoices were stuck the same way, where
         // the "discount" is the utility incentive and the gap is thousands.
-        .select('id, amount, discount_applied, customer_id, job_id')
+        .select('id, amount, discount_applied, customer_id, job_id, credit_card_fee')
         .eq('id', documentId)
         .single();
 
@@ -370,6 +370,21 @@ serve(async (req) => {
         const pmType = (session.payment_method_types?.[0] || '').toLowerCase();
         const paymentMethodType = pmType === 'us_bank_account' ? 'ACH' : 'Credit Card';
 
+        // How much of this charge was the card processing fee. The portal
+        // adds it on top of the invoice amount; booking the whole charge as
+        // payment made a $540.41 invoice paid by card read "Overpaid by
+        // $10.27" (Tracy, INV-MT4SPB8G, 26 Aug), and she was adding phantom
+        // cash payments to zero invoices out. The fee belongs on the
+        // invoice's credit_card_fee, exactly as the manual card-payment path
+        // in InvoiceDetail records it. Sessions created before cc_fee_cents
+        // existed carry only the percentage; the split is recovered from it.
+        let ccFee = 0;
+        if (paymentMethodType === 'Credit Card') {
+          const feeCents = Number.parseInt(String(metadata.cc_fee_cents ?? ''), 10);
+          if (Number.isFinite(feeCents) && feeCents > 0) ccFee = feeCents / 100;
+          else if (metadata.cc_fee_percent) ccFee = cardFeeSplit(amountDollars, metadata.cc_fee_percent).fee;
+        }
+
         // Insert payment record
         await supabase.from('payments').insert({
           company_id: companyId,
@@ -383,6 +398,12 @@ serve(async (req) => {
           notes: `Stripe payment (${paymentIntent})`,
           stripe_payment_intent_id: paymentIntent || null,
         });
+
+        const priorFee = parseFloat(String(invoice.credit_card_fee ?? 0)) || 0;
+        const feeTotal = Math.round((priorFee + ccFee) * 100) / 100;
+        if (ccFee > 0) {
+          await supabase.from('invoices').update({ credit_card_fee: feeTotal }).eq('id', invoice.id);
+        }
 
         // Recalculate total paid
         const { data: allPayments } = await supabase
@@ -407,7 +428,9 @@ serve(async (req) => {
         // amount = net customer portion; don't subtract again. Shared predicate
         // — this had its own `>=` copy, which computed a fully-covered
         // invoice's balance as the whole gross and so could never mark it Paid.
-        const customerBalance = invoiceCustomerTotal(gross, discount);
+        // The customer owes their net total PLUS any card fee they agreed to
+        // — the same comparison InvoiceDetail's invoicePaymentStatus makes.
+        const customerBalance = invoiceCustomerTotal(gross, discount) + feeTotal;
         const newStatus = totalPaid >= customerBalance - 0.01 ? 'Paid' : 'Partially Paid';
 
         await supabase

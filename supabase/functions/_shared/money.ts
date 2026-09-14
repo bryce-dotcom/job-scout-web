@@ -88,3 +88,34 @@ export function invoiceOutstanding(
   const owed = invoiceCustomerTotal(amount, discountApplied) - (Number(paidToDate) || 0);
   return Math.max(0, owed);
 }
+
+/**
+ * Split a card charge back into what the invoice was owed and the processing
+ * fee that rode on top of it.
+ *
+ * The portal charges principal + round(principal × pct / 100, 2) and, since
+ * 2026-09-13, says so in metadata (cc_fee_cents). A session created before
+ * that carries only cc_fee_percent, so the fee has to be recovered from the
+ * total: find the principal whose forward computation reproduces the total
+ * to the cent, trying the nearest cents either side of the naive division,
+ * and fall back to the naive split if rounding never lands exactly.
+ *
+ * Why it matters: without this the webhook booked the whole charge as
+ * payment and nothing as fee, so a $540.41 invoice paid by card showed
+ * "Overpaid by $10.27" (Tracy, INV-MT4SPB8G) and she was adding phantom
+ * cash payments to make invoices read zero.
+ */
+export function cardFeeSplit(totalDollars: unknown, percent: unknown): { principal: number; fee: number } {
+  const total = Math.round((Number(totalDollars) || 0) * 100) / 100;
+  const pct = Number(percent) || 0;
+  if (total <= 0 || pct <= 0) return { principal: total, fee: 0 };
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const guess = r2(total / (1 + pct / 100));
+  for (const delta of [0, -0.01, 0.01, -0.02, 0.02]) {
+    const cand = r2(guess + delta);
+    if (cand > 0 && Math.abs(cand + r2(cand * pct / 100) - total) < 0.005) {
+      return { principal: cand, fee: r2(total - cand) };
+    }
+  }
+  return { principal: guess, fee: r2(total - guess) };
+}

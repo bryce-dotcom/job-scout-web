@@ -51,7 +51,7 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    const { token, payment_type, amount_cents, provider, stripe_method } = await req.json();
+    const { token, payment_type, amount_cents, provider, stripe_method, cc_fee_cents } = await req.json();
     // provider: 'stripe' | 'paypal' (default: 'stripe')
     // stripe_method: 'card' | 'us_bank_account' (default: both)
 
@@ -234,6 +234,14 @@ serve(async (req) => {
       const ccFeeSettings = await getCcFeeSettings(supabase, tokenRow.company_id);
       if (ccFeeSettings.enabled) {
         params.append('metadata[cc_fee_percent]', String(ccFeeSettings.percent));
+      }
+      // The exact fee the portal added on top, in cents. The webhook books it
+      // as credit_card_fee on the invoice instead of as an overpayment. On
+      // the PI too, for the same reason every other key is mirrored there.
+      const feeCents = Number.parseInt(String(cc_fee_cents ?? ''), 10);
+      if (Number.isFinite(feeCents) && feeCents > 0) {
+        params.append('metadata[cc_fee_cents]', String(feeCents));
+        params.append('payment_intent_data[metadata][cc_fee_cents]', String(feeCents));
       }
 
       const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {

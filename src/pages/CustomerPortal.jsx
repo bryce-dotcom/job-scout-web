@@ -148,7 +148,7 @@ export default function CustomerPortal() {
     await fetchDocument()
   }
 
-  const handlePay = async (paymentType, amountDollars, provider = 'stripe', stripeMethod) => {
+  const handlePay = async (paymentType, amountDollars, provider = 'stripe', stripeMethod, feeDollars = 0) => {
     setPaying(true)
     try {
       const body = {
@@ -158,6 +158,10 @@ export default function CustomerPortal() {
         provider,
       }
       if (stripeMethod) body.stripe_method = stripeMethod
+      // The card total is invoice amount + processing fee. Tell the server
+      // how much is fee, so the webhook can book it as fee and not as an
+      // overpayment of the invoice.
+      if (feeDollars > 0) body.cc_fee_cents = Math.round(feeDollars * 100)
       const result = await invokeEdgeFunction('create-checkout-session', body)
       if (result?.checkout_url) {
         window.location.href = result.checkout_url
@@ -967,7 +971,10 @@ export default function CustomerPortal() {
                           {/* Card payment button */}
                           <div>
                             <button
-                              onClick={() => handlePay(payType, ccFeeEnabled ? (payAmt + Math.round(payAmt * (ccFeePercent / 100) * 100) / 100) : payAmt, 'stripe', 'card')}
+                              onClick={() => {
+                                const fee = ccFeeEnabled ? Math.round(payAmt * (ccFeePercent / 100) * 100) / 100 : 0
+                                handlePay(payType, payAmt + fee, 'stripe', 'card', fee)
+                              }}
                               disabled={paying}
                               style={{
                                 ...styles.primaryButton,
