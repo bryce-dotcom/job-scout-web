@@ -120,6 +120,23 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
       }
     },
   },
+
+  // Arnie files the ticket. Tracy's three tickets in September were all
+  // his diagnosis, copied by hand into the Feedback widget — and he was
+  // right every time. This is the same widget, the same table, the same
+  // queue; the person still approves the card, and the ticket carries
+  // THEIR email so the reply reaches them, not Arnie.
+  ticket: {
+    label: 'ticket',
+    table: 'feedback',
+    minLevel: 0,
+    fields: {
+      subject:       { column: 'subject',       label: 'Subject', max: 140 },
+      message:       { column: 'message',       label: 'Details', required: true, max: 4000 },
+      feedback_type: { column: 'feedback_type', label: 'Type',    max: 20, oneOf: ['bug', 'feature', 'question', 'feedback'] },
+    },
+    labelOf: (f) => (f.subject || f.message || 'ticket').slice(0, 100),
+  },
 }
 
 export const isCreateTarget = (t: string): boolean => Object.hasOwn(CREATE_TARGETS, t)
@@ -316,6 +333,15 @@ export async function applyCreateProposal(
     row.created_by = prop.created_by ?? null
     row.source = 'arnie'
   }
+  if (target.table === 'feedback') {
+    // Exactly what FeedbackButton.jsx writes, so this lands in the same
+    // queue and shows in the person's own "My Feedback" tab.
+    row.user_email = prop.created_by ?? null
+    row.page_url = '/agents/arnie'
+    row.status = 'new'
+    if (!row.feedback_type) row.feedback_type = 'feedback'
+    row.message = String(row.message) + '\n\n(Drafted by Arnie from a conversation; approved and sent by the person named on this ticket.)'
+  }
   if (target.table === 'leads') {
     row.status = 'New'
     row.lead_id = `LEAD-${Date.now().toString(36).toUpperCase()}`
@@ -351,8 +377,20 @@ export async function rollbackCreateProposal(
 ): Promise<{ ok: true; deleted: number } | { ok: false; error: string }> {
   const target = CREATE_TARGETS[prop.target]
   if (!target) return { ok: false, error: 'Unknown create target.' }
-  const id = Number(prop.payload?.created_id)
-  if (!id) return { ok: false, error: 'This draft never created anything.' }
+  // Not Number(): leads and diagnoses have integer ids, but feedback rows
+  // are UUIDs, and Number('8810cf13-…') is NaN — which read as "never
+  // created" and left a test ticket in the queue. A string, checked for
+  // the characters an id can contain, and interpolated as-is.
+  const id = prop.payload?.created_id == null ? '' : String(prop.payload.created_id)
+  if (!id || !/^[A-Za-z0-9-]{1,64}$/.test(id)) return { ok: false, error: 'This draft never created anything.' }
+
+  if (target.table === 'feedback') {
+    const rows = await readRecordList(r, `feedback?select=status,reply_message&company_id=eq.${companyId}&id=eq.${id}&limit=1`)
+    const t = rows[0]
+    if (t && (t.status !== 'new' || t.reply_message)) {
+      return { ok: false, error: `Can't withdraw — that ticket is already ${t.status}${t.reply_message ? ' and has a reply' : ''}.` }
+    }
+  }
 
   if (target.table === 'leads') {
     const refs = await Promise.all([
