@@ -22,7 +22,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { loadGoogleMaps, hasMapsKey } from '../lib/googleMaps'
+import { loadGoogleMaps, awaitLibraries, hasMapsKey } from '../lib/googleMaps'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', bgCardHover: '#eef2eb', border: '#d6cdb8',
@@ -199,16 +199,22 @@ export default function CompanyMap() {
     // the map is simply never constructed. That is exactly how this failed in
     // production while every health signal looked fine.
     //
-    // window.google.maps is the thing we actually need, so wait for that
-    // rather than for the notification that it arrived.
+    // window.google.maps.Map is the thing we actually need — google.maps
+    // alone is the async loader, which exists before any class does. Waiting
+    // on the namespace was the other half of the "Map is not a constructor"
+    // crash; the libraries are awaited here for the same reason they are in
+    // loadGoogleMaps.
     const poll = setInterval(() => {
-      if (window.google && window.google.maps) { clearInterval(poll); ready() }
+      if (window.google && window.google.maps) {
+        clearInterval(poll)
+        awaitLibraries(window.google).then(ready).catch(() => { /* loadGoogleMaps reports it */ })
+      }
     }, 200)
     return () => { cancelled = true; clearInterval(poll) }
   }, [])
 
   useEffect(() => {
-    if (!mapsReady || mapRef.current || !mapElRef.current || !window.google) return
+    if (!mapsReady || mapRef.current || !mapElRef.current || !window.google?.maps?.Map) return
     mapRef.current = new window.google.maps.Map(mapElRef.current, {
       center: { lat: 40.4297, lng: -111.7977 },
       zoom: 10,

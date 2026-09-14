@@ -42,8 +42,11 @@ export function loadGoogleMaps() {
     return Promise.reject(new Error('VITE_GOOGLE_MAPS_API_KEY not set'))
   }
 
+  // Already on the page (another component, or a page reload that kept it).
+  // Still go through awaitLibraries: "google.maps exists" is the loader, not
+  // the classes — see the note above.
   if (window.google && window.google.maps) {
-    loaderPromise = Promise.resolve(window.google)
+    loaderPromise = awaitLibraries(window.google)
     return loaderPromise
   }
 
@@ -51,7 +54,11 @@ export function loadGoogleMaps() {
     const cbName = '__zachGoogleMapsCb_' + Math.random().toString(36).slice(2)
     window[cbName] = () => {
       delete window[cbName]
-      resolve(window.google)
+      // awaitLibraries existed and was tested, and nothing called it — so
+      // every caller's .then() could run with google.maps.Map still
+      // undefined. That is the /company-map crash reported on 20 Aug, 27 Aug
+      // and 10 Sep. The promise now means what its five callers assume.
+      resolve(awaitLibraries(window.google))
     }
     const script = document.createElement('script')
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GOOGLE_MAPS_API_KEY)}&libraries=places,drawing,geometry&callback=${cbName}&loading=async`
