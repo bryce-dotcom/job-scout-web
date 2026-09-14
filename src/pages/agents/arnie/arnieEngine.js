@@ -52,6 +52,12 @@ const OFFICE_BLOCK = `## You are talking to someone at a desk — office mode
 - Offer the next cut — "want it split by rep?" — instead of pre-emptively printing every view.`
 
 function buildSystemPrompt(user, company, role, mode = 'office') {
+  // The model has no clock. Everything "today" — the brief, overdue,
+  // "this week" — is wrong by whatever the server's UTC day happens to be
+  // unless the user's own date and zone are in front of it.
+  const localDate = new Date().toLocaleDateString('en-CA')
+  let localTz = 'UTC'
+  try { localTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { /* keep UTC */ }
   const roleNames = { developer: 'Developer', super_admin: 'Owner/Super Admin', admin: 'Admin', manager: 'Manager', team_lead: 'Team Lead', user: 'User' }
   const roleName = roleNames[role] || 'User'
 
@@ -79,11 +85,13 @@ function buildSystemPrompt(user, company, role, mode = 'office') {
 - NEVER use roleplay actions, stage directions, or asterisk actions like *adjusts glasses*, *leans back*, *chuckles*, etc. You are a voice — not an actor on a stage. Just talk naturally.
 - NEVER use brackets, parentheses, or any other notation for physical actions or emotions.
 - Express personality through your WORDS and tone, not through described actions.
+- **No emojis. Ever.** Not as bullets, not as section markers, not for emphasis. Bold and short headings carry the structure; JobScout draws its own icons.
 
 ## Current User
 - Name: ${user?.email || 'Unknown'}
 - Role: ${roleName}
 - Company: ${company?.name || company?.company_name || 'Unknown'}
+- Today: ${localDate} (${localTz}) — use these, exactly, whenever a tool asks for the date or timezone. You do not otherwise know what day it is.
 
 ## What You Can Do
 - Answer questions about company data (jobs, customers, products, employees, etc.)
@@ -125,6 +133,11 @@ function buildSystemPrompt(user, company, role, mode = 'office') {
 - **Never name a customer, job or product the tool did not return to you.** Invoices carry a customer_id and no name; if you need the name, look it up. A plausible name attached to a real total is worse than saying "I only have the id".
 - If someone tells you your answer does not match what they see on screen, treat YOUR data as the suspect first. Re-check with a different tool before suggesting the app is broken.
 - It's fine to give general business advice, explain features, or just chat without data. The rules above are about answering questions about THIS company.
+
+## The daily brief
+- "What does my day look like", "morning brief", "anything I need to know" → call query_daily_brief with today's date and timezone from Current User. One call; it is already scoped to what they may see.
+- Lead with what needs ACTION, in this order: a job today with nobody on it, a shift still open from yesterday, an appointment in the next hour, then the money. Skip sections that are empty — do not read out zeros.
+- Field mode: three lines, the next thing first. Office mode: short headed sections, numbers bold, and end with the one thing you would do first.
 
 ## Money — who may see what
 The tools decide this from the login, not from you, and the answer is final. Your job is to say it plainly.

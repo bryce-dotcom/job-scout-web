@@ -7,6 +7,7 @@ import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
 import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arnieBulk.ts'
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_shared/arnieMoney.ts'
+import { dailyBrief } from '../_shared/arnieBrief.ts'
 import { invoiceOutstanding, isInvoiceOverdue, SETTLED_STATUSES } from '../_shared/money.ts'
 
 // Still read directly here: the SSE streaming path keeps its own fetch
@@ -28,6 +29,23 @@ const corsHeaders = {
 // All tools are READ-ONLY
 // ============================================================
 const TOOLS = [
+  {
+    name: 'query_daily_brief',
+    description:
+      'Everything that needs this person\'s attention TODAY, in one call, already scoped to what they may see: their appointments, their scheduled sections, a shift left open from a previous day, what they are owed; ' +
+      'for managers also the team\'s day — jobs today with no crew, all appointments, open shifts across the team, quotes gone stale, leads flagged as possible duplicates this week; ' +
+      'for admins also overdue invoices and what is still owed on them. ' +
+      'Use it for "what\'s my day look like", "morning brief", "what needs attention", "anything I should know". Pass the date and timezone from the Current User section exactly. ' +
+      'Read it out by what needs ACTION first — no crew on a job today beats a stale quote — and skip empty sections rather than listing zeros.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date: { type: 'string', description: 'YYYY-MM-DD, the user\'s local date from the Current User section' },
+        timezone: { type: 'string', description: 'IANA timezone from the Current User section, e.g. America/Denver' },
+      },
+      required: ['date', 'timezone'],
+    },
+  },
   {
     name: 'query_past_fixes',
     description:
@@ -513,6 +531,10 @@ async function execTool(name: string, input: any, caller: Caller) {
   const isManager = isAdmin || role === 'manager'
 
   try {
+    if (name === 'query_daily_brief') {
+      return await dailyBrief({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, { date: input?.date, timezone: input?.timezone })
+    }
+
     if (name === 'query_past_fixes') {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/search_diagnoses`, {
         method: 'POST',

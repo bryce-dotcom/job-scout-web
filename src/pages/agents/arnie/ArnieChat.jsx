@@ -6,7 +6,7 @@ import { sendMessageStream, createSession, saveMessage, updateSessionTitle, load
 import { getUserRole, isClockedIn } from './arnieTools'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X, Wrench } from 'lucide-react'
+import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X, Wrench, Sun } from 'lucide-react'
 import { readAttachment, attachmentNote, describeAttachments, ACCEPT_ATTR, MAX_ATTACHMENTS } from '../../../lib/chatAttachments'
 import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, ARNIE_VOICES, unlockAudio } from './arnieVoice'
 import { useIsMobile } from '../../../hooks/useIsMobile'
@@ -37,6 +37,7 @@ const dark = {
 // role sets are all desk questions ("how does our pipeline look?") — nobody up
 // a ladder is asking that, and the four things they DO ask are always the same.
 const FIELD_ACTIONS = [
+  { label: 'My day', icon: Sun, prompt: 'What does my day look like? Just the next thing first.' },
   { label: "What's next?", icon: Briefcase, prompt: 'What should I do next on this job?' },
   { label: 'Fix something', icon: Wrench, prompt: 'Something here is not working right and I need help working out why. Ask me what it is doing.' },
   { label: 'Parts', icon: Package, prompt: 'What am I installing on this job? List the line items and quantities.' },
@@ -46,13 +47,14 @@ const FIELD_ACTIONS = [
 
 const QUICK_ACTIONS = {
   user: [
-    { label: 'My Schedule', icon: Calendar, prompt: 'What jobs do I have scheduled today?' },
+    { label: 'My day', icon: Sun, prompt: 'Give me my daily brief — what needs my attention today?' },
     { label: 'My Jobs', icon: Briefcase, prompt: 'Show me a summary of my assigned jobs' },
     { label: 'Products', icon: Package, prompt: 'What products and services do we offer?' },
     { label: 'Fix something', icon: Wrench, prompt: 'I need help troubleshooting something. Ask me what it is doing.' },
     { label: 'Team', icon: Users, prompt: 'Who is on the team?' },
   ],
   admin: [
+    { label: 'Morning brief', icon: Sun, prompt: 'Morning brief: what needs attention today — jobs with no crew, open shifts, stale quotes, overdue invoices?' },
     { label: 'Job Overview', icon: Briefcase, prompt: 'Give me an overview of all jobs' },
     { label: 'Lead Pipeline', icon: Sparkles, prompt: 'How does our sales pipeline look?' },
     { label: 'Team Status', icon: Users, prompt: 'Show me the team roster' },
@@ -60,6 +62,7 @@ const QUICK_ACTIONS = {
     { label: 'Fleet', icon: Truck, prompt: 'Give me a fleet status report' },
   ],
   super_admin: [
+    { label: 'Morning brief', icon: Sun, prompt: 'Morning brief: what needs attention today — jobs with no crew, open shifts, stale quotes, overdue invoices?' },
     { label: 'Business Overview', icon: BarChart3, prompt: 'Give me a full business overview — jobs, revenue, pipeline, team' },
     { label: 'Financial Summary', icon: FileText, prompt: 'Show me a financial summary — invoices, payments, expenses, revenue' },
     { label: 'Job Overview', icon: Briefcase, prompt: 'Give me an overview of all jobs' },
