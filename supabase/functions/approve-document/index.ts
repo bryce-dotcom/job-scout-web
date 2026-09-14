@@ -373,10 +373,15 @@ serve(async (req) => {
         if (estimate.lead_id) {
           const { data: leadRow } = await supabase
             .from('leads')
-            .select('id, customer_name, business_name, email, phone, address, customer_id')
+            .select('id, customer_name, business_name, email, phone, address, customer_id, converted_customer_id')
             .eq('id', estimate.lead_id)
             .maybeSingle()
           lead = leadRow || null
+        }
+        // The lead usually knows its customer already (party_lead_before links
+        // by email/phone at insert); conversion is a lookup before it is a match.
+        if (!resolvedCustomerId && lead) {
+          resolvedCustomerId = (lead as { converted_customer_id?: number | null }).converted_customer_id || lead.customer_id || null
         }
 
         if (resolvedCustomerId) {

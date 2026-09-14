@@ -299,6 +299,7 @@ serve(async (req) => {
     if (existingLeadId) {
       // Update existing lead
       const [updated] = await supabasePatch(SUPABASE_URL!, 'leads', key, existingLeadId, {
+        customer_id: customerId,
         customer_name: personName || siteName,
         business_name: siteName,
         email: email || null,
@@ -315,6 +316,9 @@ serve(async (req) => {
       // Create new lead
       const [lead] = await supabasePost(`${SUPABASE_URL}/rest/v1/leads`, key, {
         company_id: cid,
+        // Lenard just found-or-created this customer; say so on the lead, so
+        // nothing downstream has to rediscover it.
+        customer_id: customerId,
         customer_name: personName || siteName,
         business_name: siteName,
         email: email || null,

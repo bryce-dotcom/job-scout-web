@@ -1560,7 +1560,7 @@ function EstimateDetailInner() {
       // fetchEstimateData() are not visible inside this same async tick.)
       const { data: freshEstimate } = await supabase
         .from('quotes')
-        .select('*, lead:leads(id, customer_name, business_name, phone, email, address), customer:customers(id, name, email, phone, address, business_name, secondary_contact_name, secondary_contact_phone, secondary_contact_email)')
+        .select('*, lead:leads(id, customer_name, business_name, phone, email, address, customer_id, converted_customer_id), customer:customers(id, name, email, phone, address, business_name, secondary_contact_name, secondary_contact_phone, secondary_contact_email)')
         .eq('id', id)
         .single()
       const estimateRow = freshEstimate || estimate
@@ -1575,7 +1575,10 @@ function EstimateDetailInner() {
       //   b) When a customer was already linked but was missing phone
       //      (e.g. created from a stub lead), we never back-filled from
       //      the lead, so installers couldn't reach the contact.
-      let customerId = estimateRow.customer_id || null
+      // The lead usually knows its customer already: the database links a
+      // lead to an existing customer by email/phone the moment it is created
+      // (party_lead_before), so conversion is a lookup, not a re-match.
+      let customerId = estimateRow.customer_id || estimateRow.lead?.converted_customer_id || estimateRow.lead?.customer_id || null
       const customerInfo = estimateRow.customer || estimateRow.lead
       const leadInfo    = estimateRow.lead || null
       const customerName = customerInfo?.name || customerInfo?.customer_name || ''
