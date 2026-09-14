@@ -4056,7 +4056,7 @@ export default function FieldScout() {
           try {
             const invoice = await ensureJobInvoice(job)
             if (!invoice) throw new Error('Could not create the invoice for this job')
-            const { data: lines } = await supabase.from('invoice_lines').select('description, item_name, quantity, unit_price, line_total').eq('invoice_id', invoice.id).order('id')
+            const { data: lines } = await supabase.from('invoice_lines').select('description, quantity, unit_price, line_total').eq('invoice_id', invoice.id).order('id')
             const { data: cust } = job.customer_id
               ? await supabase.from('customers').select('name, business_name').eq('id', job.customer_id).maybeSingle()
               : { data: null }
