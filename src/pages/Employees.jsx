@@ -196,6 +196,9 @@ export default function Employees() {
   const isDeveloper = canAccessDevTools(currentUser)
   const hasHR = canViewHR(currentUser) // HR-sensitive fields (pay, commission, tax)
   const canGrantHR = canManageHRAccess(currentUser) // Super Admin+ can flip has_hr_access flag
+  // Field permissions (send an invoice / take a payment from the phone) are
+  // access-granting, so the same rule as the database guard: Admin and above.
+  const canGrantField = checkAdmin(currentUser)
 
   useEffect(() => {
     if (!companyId) {
@@ -405,6 +408,8 @@ export default function Employees() {
       user_role: employee.user_role || 'User',
       is_developer: employee.is_developer || false,
       has_hr_access: employee.has_hr_access === true,
+      field_send_invoice: employee.field_send_invoice === true,
+      field_collect_payment: employee.field_collect_payment === true,
       business_unit: employee.business_unit || '',
       employee_id: employee.employee_id || '',
       active: employee.active !== false,
@@ -557,6 +562,8 @@ export default function Employees() {
       // HR access can only be written by a Super Admin. For anyone else, keep
       // the existing DB value (omitting the key so Supabase doesn't overwrite).
       ...(canGrantHR ? { has_hr_access: !!formData.has_hr_access } : {}),
+      // Field permissions: Admin+ only, otherwise leave the stored value alone.
+      ...(canGrantField ? { field_send_invoice: !!formData.field_send_invoice, field_collect_payment: !!formData.field_collect_payment } : {}),
       business_unit: formData.business_unit || null,
       employee_id: formData.employee_id || null,
       active: formData.active,
@@ -838,6 +845,8 @@ export default function Employees() {
       // HR access can only be written by a Super Admin. For anyone else, keep
       // the existing DB value (omitting the key so Supabase doesn't overwrite).
       ...(canGrantHR ? { has_hr_access: !!formData.has_hr_access } : {}),
+      // Field permissions: Admin+ only, otherwise leave the stored value alone.
+      ...(canGrantField ? { field_send_invoice: !!formData.field_send_invoice, field_collect_payment: !!formData.field_collect_payment } : {}),
       business_unit: formData.business_unit || null,
       employee_id: formData.employee_id || null,
       active: formData.active,
@@ -2016,6 +2025,43 @@ export default function Employees() {
                         </div>
                       </div>
                     </label>
+                  </div>
+                )}
+
+                {/* Field permissions — what this person may do from the phone
+                    once a job is complete. Per employee, not per role: a
+                    window-cleaning crew lead sends and collects on the spot;
+                    a lighting tech marks complete and the office bills. */}
+                {canGrantField && (
+                  <div style={{
+                    marginBottom: '16px',
+                    padding: '12px',
+                    backgroundColor: 'rgba(22, 163, 74, 0.08)',
+                    border: '1px solid rgba(22, 163, 74, 0.25)',
+                    borderRadius: '8px'
+                  }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#15803d', letterSpacing: '0.04em', marginBottom: '8px' }}>
+                      FROM THE PHONE (FIELD SCOUT)
+                    </div>
+                    {[
+                      { key: 'field_send_invoice', title: 'Can send the invoice', hint: 'After a job is verified complete, offers "Send invoice now" — the invoice is built from the job\'s line items and emailed to the customer with a pay link. Jobs with a utility incentive are never offered; the office bills those.' },
+                      { key: 'field_collect_payment', title: 'Can collect payment', hint: 'Shows Collect Payment on the job: record cash or check, or open the pay-by-card link on the customer\'s phone.' },
+                    ].map(opt => (
+                      <label key={opt.key} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: isEditing ? 'pointer' : 'not-allowed', marginTop: '8px' }}>
+                        <input
+                          type="checkbox"
+                          name={opt.key}
+                          checked={!!formData[opt.key]}
+                          onChange={(e) => isEditing && setFormData(prev => ({ ...prev, [opt.key]: e.target.checked }))}
+                          disabled={!isEditing}
+                          style={{ width: '18px', height: '18px', marginTop: '1px', cursor: isEditing ? 'pointer' : 'not-allowed', flexShrink: 0 }}
+                        />
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{opt.title}</div>
+                          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>{opt.hint}</div>
+                        </div>
+                      </label>
+                    ))}
                   </div>
                 )}
 

@@ -6,6 +6,9 @@ import { supabase } from '../lib/supabase'
 import { fieldJobHeading } from '../lib/jobHeading'
 import { checkCanClockIn, hoursSince } from '../lib/timeClock'
 import { writeInvoiceLines } from '../lib/invoiceLines'
+import { completionOptions, verificationPassed, completionJobPatch, SEND_BLOCKED_TEXT } from '../lib/fieldCompletion'
+import { sendInvoice, markJobInvoicedAfterSend } from '../lib/invoiceSend'
+import { companyNotify } from '../lib/companyNotify'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -163,6 +166,10 @@ export default function FieldScout() {
 
   // Payment collection
   const [paymentJob, setPaymentJob] = useState(null)
+  // What comes after Victor: { jobId, reportId, passed, score, grade }.
+  // Replaces the dead end where a pass or a fail both just opened the report.
+  const [completionSheet, setCompletionSheet] = useState(null)
+  const [sheetBusy, setSheetBusy] = useState(false)
   const [paymentInvoice, setPaymentInvoice] = useState(null) // linked invoice for payment
   const [portalLink, setPortalLink] = useState(null) // surfaced when popup was blocked so user can tap manually
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'Cash', reference: '', notes: '' })
@@ -1325,15 +1332,10 @@ export default function FieldScout() {
     await fetchEntries()
   }
 
-  // Collect Payment — find or create invoice, then open portal for card/ACH payment
-  const openPaymentModal = async (job) => {
-    setPaymentJob(job)
-    setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' })
-    setPaymentSuccess(false)
-    setPaymentInvoice(null)
-    setStripeLoading(true)
-
-    try {
+  // The job's open customer invoice, or a new one built from its lines.
+  // Shared by Collect Payment and by "Send invoice now" on the completion
+  // sheet, so the phone bills exactly what the desk would.
+  const ensureJobInvoice = async (job) => {
       // 1. Find existing invoice for this job
       const { data: invArr } = await supabase
         .from('invoices')
@@ -1416,6 +1418,19 @@ export default function FieldScout() {
         }
       }
 
+      return invoice
+  }
+
+  // Collect Payment — find or create invoice, then open portal for card/ACH payment
+  const openPaymentModal = async (job) => {
+    setPaymentJob(job)
+    setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' })
+    setPaymentSuccess(false)
+    setPaymentInvoice(null)
+    setStripeLoading(true)
+
+    try {
+      const invoice = await ensureJobInvoice(job)
       if (invoice) {
         setPaymentInvoice(invoice)
 
@@ -3429,8 +3444,9 @@ export default function FieldScout() {
                           </button>
                         </div>
 
-                        {/* Primary: Collect Payment */}
-                        {!isUpcoming && (
+                        {/* Primary: Collect Payment — a per-employee permission
+                            (employee card → From the phone), not a role. */}
+                        {!isUpcoming && currentEmployee?.field_collect_payment === true && (
                         <button
                           onClick={() => openPaymentModal(job)}
                           style={{
@@ -3943,7 +3959,8 @@ export default function FieldScout() {
                   .select('score, grade, status')
                   .eq('id', reportId)
                   .single()
-                if (report?.score >= 60 || report?.status === 'complete_ai_skipped') {
+                const passed = verificationPassed(report)
+                if (passed) {
                   if (verifyType === 'completion' && jobId) {
                     setVerifiedJobs(prev => new Set(prev).add(jobId))
                     setClockOutBlocked(false); setPendingVerifyJobId(null)
@@ -4002,6 +4019,14 @@ export default function FieldScout() {
                     } catch { /* fall back to manual flow */ }
                   }
                 }
+                // Completing a job never ends on the report page any more.
+                // Pass or fail, the next step is a choice on the sheet:
+                // Christopher's "no easy way to say Job Complete and send out
+                // the invoice in the field", Cameron's "it just stops".
+                if (verifyType === 'completion' && jobId) {
+                  setCompletionSheet({ jobId, reportId, passed, score: report?.score ?? null, grade: report?.grade ?? null })
+                  return
+                }
                 navigate(`/agents/victor/report/${reportId}`)
               }}
               onClose={() => setVictorModal(null)}
@@ -4009,6 +4034,141 @@ export default function FieldScout() {
           </div>
         </div>
       )}
+
+      {/* ===== COMPLETION SHEET — what happens after Victor ===== */}
+      {completionSheet && (() => {
+        const job = jobs.find(j => j.id === completionSheet.jobId)
+        const opts = completionOptions({ employee: currentEmployee, job })
+        const blockedText = opts.sendBlockedReason ? SEND_BLOCKED_TEXT[opts.sendBlockedReason] : null
+        const stillOnThisJob = !!activeEntry && activeEntry.job_id === completionSheet.jobId
+        const close = () => setCompletionSheet(null)
+
+        const finish = async () => {
+          // Leaving the sheet on a completed job with the punch still open is
+          // Cameron's "keeps me clocked into that job". End it for them.
+          if (stillOnThisJob && !clockingOut) { try { await handleClockOut() } catch { /* manual flow remains */ } }
+          close()
+        }
+
+        const sendNow = async () => {
+          if (!job || sheetBusy) return
+          setSheetBusy(true)
+          try {
+            const invoice = await ensureJobInvoice(job)
+            if (!invoice) throw new Error('Could not create the invoice for this job')
+            const { data: lines } = await supabase.from('invoice_lines').select('description, item_name, quantity, unit_price, line_total').eq('invoice_id', invoice.id).order('id')
+            const { data: cust } = job.customer_id
+              ? await supabase.from('customers').select('name, business_name').eq('id', job.customer_id).maybeSingle()
+              : { data: null }
+            await sendInvoice(supabase, {
+              invoice: { ...invoice, company_id: companyId }, lines: lines || [], customer: cust, company, settings, recipient: opts.email,
+            })
+            await markJobInvoicedAfterSend(supabase, invoice)
+            toast.success(`Invoice ${invoice.invoice_id} sent to ${opts.email}`)
+            const { fetchJobs } = useStore.getState(); if (fetchJobs) fetchJobs(companyId)
+            await finish()
+          } catch (err) {
+            toast.error('Could not send: ' + (err?.message || 'unknown error'))
+          } finally { setSheetBusy(false) }
+        }
+
+        const completeAnyway = async () => {
+          if (!job || sheetBusy) return
+          setSheetBusy(true)
+          try {
+            // Victor is a flag, not a gate. The job completes; the office is told why it is flagged.
+            await supabase.from('jobs').update(completionJobPatch({ score: completionSheet.score, flagged: true })).eq('id', job.id).eq('company_id', companyId)
+            setVerifiedJobs(prev => new Set(prev).add(job.id))
+            setClockOutBlocked(false); setPendingVerifyJobId(null)
+            await companyNotify({
+              companyId, type: 'job_completed_flagged',
+              title: 'Job completed without a passing verification',
+              message: `${currentEmployee?.name || user?.email || 'A crew member'} marked ${job.job_title || job.job_id} complete with a Victor score of ${Math.round(Number(completionSheet.score) || 0)}. Worth a look before it is invoiced.`,
+              metadata: { job_id: job.id, report_id: completionSheet.reportId, score: completionSheet.score, employee_id: currentEmployee?.id || null },
+              createdBy: currentEmployee?.id || null,
+            })
+            toast.success('Marked complete — flagged for the office to review')
+            const { fetchJobs } = useStore.getState(); if (fetchJobs) fetchJobs(companyId)
+            setCompletionSheet(prev => prev ? { ...prev, passed: true, flagged: true } : prev)
+          } catch (err) {
+            toast.error('Could not complete: ' + (err?.message || 'unknown error'))
+          } finally { setSheetBusy(false) }
+        }
+
+        const btn = (bg, color = '#fff') => ({
+          width: '100%', padding: '14px', background: bg, border: 'none', borderRadius: '10px', color,
+          fontSize: '15px', fontWeight: '700', cursor: sheetBusy ? 'wait' : 'pointer', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', gap: '8px', minHeight: '48px', opacity: sheetBusy ? 0.7 : 1,
+        })
+        const heading = fieldJobHeading(job)
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div onClick={() => !sheetBusy && close()} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} />
+            <div style={{ position: 'relative', width: '100%', maxWidth: '520px', backgroundColor: theme.bgCard, borderRadius: '16px 16px 0 0', padding: '20px 20px 28px', boxShadow: '0 -8px 30px rgba(0,0,0,0.25)' }}>
+              <div style={{ width: '40px', height: '4px', borderRadius: '2px', backgroundColor: theme.border, margin: '0 auto 16px' }} />
+
+              {completionSheet.passed ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                    <CheckCircle size={22} color="#22c55e" />
+                    <div style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>
+                      {completionSheet.flagged ? 'Marked complete (flagged)' : 'Job complete'}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '18px' }}>
+                    {heading.title}{heading.subtitle ? ` · ${heading.subtitle}` : ''}
+                    {Number.isFinite(Number(completionSheet.score)) && <span style={{ color: theme.textMuted }}> · Victor {Math.round(Number(completionSheet.score))}</span>}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {opts.canSend && (
+                      <button onClick={sendNow} disabled={sheetBusy} style={btn('linear-gradient(135deg, #5a6349 0%, #4a5239 100%)')}>
+                        <Send size={18} /> {sheetBusy ? 'Sending…' : `Send invoice to ${opts.email}`}
+                      </button>
+                    )}
+                    {!opts.canSend && blockedText && (
+                      <div style={{ fontSize: '13px', color: theme.textMuted, padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px' }}>{blockedText}</div>
+                    )}
+                    {opts.canCollect && job && (
+                      <button onClick={() => { close(); openPaymentModal(job) }} disabled={sheetBusy} style={btn('linear-gradient(135deg, #16a34a 0%, #15803d 100%)')}>
+                        <DollarSign size={18} /> Collect payment now
+                      </button>
+                    )}
+                    <button onClick={finish} disabled={sheetBusy} style={btn(theme.bg, theme.textSecondary)}>
+                      {stillOnThisJob ? 'Done — clock me out' : 'Done'}
+                    </button>
+                    <button onClick={() => { close(); navigate(`/agents/victor/report/${completionSheet.reportId}`) }} style={{ background: 'none', border: 'none', color: theme.textMuted, fontSize: '13px', padding: '8px', cursor: 'pointer' }}>
+                      View Victor's report
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                    <Shield size={22} color="#f59e0b" />
+                    <div style={{ fontSize: '18px', fontWeight: '700', color: theme.text }}>Victor scored this {Math.round(Number(completionSheet.score) || 0)}</div>
+                  </div>
+                  <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '18px' }}>
+                    {heading.title} · below the passing mark of 60. Usually the site looks unfinished in the photos, or a required photo is missing.
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <button onClick={() => { close(); setVictorModal({ type: 'completion', jobId: completionSheet.jobId, markComplete: true }) }} style={btn('linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)')}>
+                      <Camera size={18} /> Retake the photos
+                    </button>
+                    <button onClick={completeAnyway} disabled={sheetBusy} style={btn(theme.bg, theme.text)}>
+                      {sheetBusy ? 'Saving…' : 'Complete anyway — flag it for the office'}
+                    </button>
+                    <button onClick={() => { close(); navigate(`/agents/victor/report/${completionSheet.reportId}`) }} style={{ background: 'none', border: 'none', color: theme.textMuted, fontSize: '13px', padding: '8px', cursor: 'pointer' }}>
+                      See what Victor flagged
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ===== PAYMENT MODAL ===== */}
       {paymentJob && (

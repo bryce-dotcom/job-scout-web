@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { serviceAddressToShow } from '../lib/serviceAddress'
+import { sendInvoice, markJobInvoicedAfterSend } from '../lib/invoiceSend'
 import { emailListIsClean } from '../../supabase/functions/_shared/emailList.ts'
 import { parseEmailList } from '../../supabase/functions/_shared/emailList.ts'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -2001,161 +2002,28 @@ Add it anyway?`,
         .eq('id', id)
         .single()
 
-      // Create portal token
-      const { data: portalToken } = await supabase
-        .from('customer_portal_tokens')
-        .insert({
-          document_type: 'invoice',
-          document_id: invoice.id,
-          company_id: companyId,
-          customer_id: invoice.customer_id || null,
-          expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(), // 90 days
-        })
-        .select('token')
-        .single()
-
-      const siteUrl = 'https://jobscout.appsannex.com'
-      const portalUrl = portalToken?.token
-        ? `${siteUrl}/portal/${portalToken.token}`
-        : null
-
-      // Get business unit info
-      const settings = useStore.getState().settings
-      const buSetting = settings.find(s => s.key === 'business_units')
-      let buObject = null
-      if (buSetting?.value && invoice.business_unit) {
-        try {
-          const units = JSON.parse(buSetting.value)
-          buObject = units.find(u => u.name === invoice.business_unit)
-        } catch { /* ignore */ }
-      }
-
-      // Resolve logo URL
-      let logoUrl = buObject?.logo_url || ''
-      if (!logoUrl) {
-        const logoSetting = settings.find(s => s.key === 'company_logo_url')
-        logoUrl = logoSetting?.value || company?.logo_url || ''
-      }
-
-      // Determine available payment methods for the email
-      const paymentConfig = settings.find(s => s.key === 'payment_config')
-      const payMethods = []
-      if (paymentConfig?.value) {
-        try {
-          const pc = JSON.parse(paymentConfig.value)
-          if (pc.stripe_enabled) payMethods.push('Credit Card')
-          if (pc.bank_transfer_enabled) payMethods.push('ACH / Bank Transfer')
-          if (pc.paypal_enabled) payMethods.push('PayPal')
-        } catch { /* ignore */ }
-      }
-
-      // Get customer name
-      let customerName = ''
-      if (invoice.customer_id) {
-        const { data: cust } = await supabase.from('customers').select('name').eq('id', invoice.customer_id).single()
-        customerName = cust?.name || ''
-      }
-
-      // Call send-invoice edge function via direct fetch (avoids JWT expiry issues)
-      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-      const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
-      const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/send-invoice`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${ANON_KEY}`,
-          'apikey': ANON_KEY
-        },
-        body: JSON.stringify({
-          company_id: companyId,
-          invoice_id: invoice.id,
-          recipient_email: sendEmail,
-          cc_emails: sendCc,
-          pdf_storage_path: freshInvoice?.pdf_url || invoice.pdf_url,
-          company_name: company?.company_name || '',
-          invoice_number: invoice.invoice_id || `INV-${invoice.id}`,
-          amount: invoice.amount,
-          discount: invoice.discount_applied || 0,
-          job_description: invoice.job_description || '',
-          invoice_lines: (invoiceLines || []).map(l => ({
-            description: l.description || l.item_name || 'Item',
-            quantity: l.quantity || 1,
-            unit_price: parseFloat(l.unit_price) || 0,
-            line_total: parseFloat(l.line_total) || 0,
-          })),
-          customer_name: customerName,
-          portal_url: portalUrl,
-          logo_url: logoUrl,
-          payment_methods: payMethods,
-          business_unit_name: buObject?.name || invoice.business_unit || '',
-          business_unit_phone: buObject?.phone || company?.phone || '',
-          business_unit_email: buObject?.email || company?.owner_email || '',
-          business_unit_address: buObject?.address || company?.remit_to_address || company?.address || '',
-          custom_subject: sendSubject || undefined,
-          extra_attachments: sendAttachments.length > 0 ? sendAttachments.map(a => ({ filename: a.name, content: a.base64 })) : undefined,
-        })
+      // One builder for the send — shared with Field Scout's "Send invoice
+      // now" so the desk and the phone cannot drift (lib/invoiceSend).
+      const { data: cust } = invoice.customer_id
+        ? await supabase.from('customers').select('name, business_name').eq('id', invoice.customer_id).maybeSingle()
+        : { data: null }
+      await sendInvoice(supabase, {
+        invoice: { ...invoice, company_id: invoice.company_id || companyId },
+        lines: invoiceLines,
+        customer: cust,
+        company,
+        settings: useStore.getState().settings,
+        recipient: sendEmail,
+        pdfPath: freshInvoice?.pdf_url || invoice.pdf_url,
+        cc: sendCc,
+        subject: sendSubject,
+        attachments: sendAttachments.length > 0 ? sendAttachments.map(a => ({ filename: a.name, content: a.base64 })) : undefined,
       })
 
-      const sendData = await sendRes.json()
-      if (!sendData.success) throw new Error(sendData.error || 'Failed to send invoice')
-
-      // Update invoice (capture Resend email_id for delivery tracking)
-      await supabase.from('invoices').update({
-        payment_status: invoice.payment_status === 'Draft' ? 'Sent' : invoice.payment_status,
-        last_sent_at: new Date().toISOString(),
-        sent_to_email: sendEmail,
-        portal_token: portalToken?.token || null,
-        email_id: sendData.emailId || null,
-        email_status: 'sent',
-        email_status_at: new Date().toISOString(),
-        email_bounce_reason: null,
-        email_opened_at: null,
-        email_clicked_at: null,
-        updated_at: new Date().toISOString()
-      }).eq('id', id)
-
-      // Move the job to 'Invoiced' pipeline stage now that the invoice is
-      // actually in the customer's hands. Pipeline view no longer auto-
-      // moves on invoice CREATION — only on this Send moment. Skip if job
-      // is already past Invoiced (e.g., Paid).
-      //
-      // A deposit invoice is not that moment. It goes out the day the job
-      // is won, before anything is ordered or installed, so sending it must
-      // leave the job where it is. Doug reported JOB-MTJ2MSZX: Tracy sent
-      // the deposit and the job jumped from Chillin to Invoiced with $53k of
-      // work not yet done. The job invoices when the customer invoice goes.
-      if (invoice.job_id && invoice.invoice_type !== 'deposit') {
-        const { data: currentJob } = await supabase
-          .from('jobs')
-          .select('status, lead_id')
-          .eq('id', invoice.job_id)
-          .single()
-        const status = currentJob?.status
-        if (status && !['Invoiced', 'Paid', 'Closed', 'Archived'].includes(status)) {
-          await supabase.from('jobs').update({
-            status: 'Invoiced',
-            updated_at: new Date().toISOString(),
-          }).eq('id', invoice.job_id)
-        }
-        // Mirror the move to the linked lead so the pipeline card lands
-        // in Invoiced on Send (not on Create — that was Tracy's complaint
-        // on JOB-MP2ZU0VY). Only bump when the lead is in an earlier
-        // stage so we don't undo a manual move to a later column.
-        if (currentJob?.lead_id) {
-          const { data: lead } = await supabase
-            .from('leads')
-            .select('status')
-            .eq('id', currentJob.lead_id)
-            .single()
-          const ls = lead?.status
-          if (ls && !['Invoiced', 'Paid', 'Closed', 'Archived', 'Lost'].includes(ls)) {
-            await supabase.from('leads').update({
-              status: 'Invoiced',
-              updated_at: new Date().toISOString(),
-            }).eq('id', currentJob.lead_id)
-          }
-        }
-      }
+      // The customer invoice going out is what moves the job (and lead) to
+      // Invoiced — on Send, not on Create (Tracy, JOB-MP2ZU0VY), and never a
+      // deposit (Doug, JOB-MTJ2MSZX). The rule lives in lib/invoiceSend.
+      await markJobInvoicedAfterSend(supabase, invoice)
 
       toast.success('Invoice sent successfully!')
       setShowSendModal(false)
