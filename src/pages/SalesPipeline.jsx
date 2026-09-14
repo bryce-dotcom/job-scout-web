@@ -22,6 +22,7 @@ import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipe
 import { soldTotal, periodBounds } from '../lib/soldTotals'
 import { countDueFromRows, dueKeysFromRows } from '../lib/followUpDue'
 import { pushStatus, enablePush, disablePush, PUSH_GRANTED, PUSH_UNSUPPORTED, PUSH_UNCONFIGURED, PUSH_DENIED } from '../lib/pushNotifications'
+import LiahonaMap from '../components/LiahonaMap'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -142,6 +143,31 @@ export default function SalesPipeline() {
   // and "deletes your prefrences". Read whatever was last used ONCE, and let
   // each filter seed itself from it. lib/pipelinePrefs owns the storage.
   const savedPrefs = useMemo(() => loadPipelineFilters(companyId), [companyId])
+  // Sales section view: the drag-and-drop board, or Liahona (the map).
+  // Remembered per browser so reps who live on the map land on it.
+  const [salesView, setSalesViewState] = useState(() => {
+    try { return localStorage.getItem('pipeline.salesView') === 'liahona' ? 'liahona' : 'board' } catch { return 'board' }
+  })
+  const setSalesView = (v) => {
+    setSalesViewState(v)
+    try { localStorage.setItem('pipeline.salesView', v) } catch { /* private mode */ }
+    if (v === 'liahona') setSalesExpanded(true)
+  }
+  // Mobile: list or Liahona map. Reps in the field live on the map, so remember it.
+  const [mobileMap, setMobileMapState] = useState(() => {
+    try { return localStorage.getItem('pipeline.mobileMap') === '1' } catch { return false }
+  })
+  const setMobileMap = (on) => {
+    setMobileMapState(on)
+    try { localStorage.setItem('pipeline.mobileMap', on ? '1' : '0') } catch { /* private mode */ }
+  }
+  // Stages hidden on the map (the stage strip doubles as a legend/filter in Liahona).
+  const [liahonaHidden, setLiahonaHidden] = useState(() => new Set())
+  const toggleLiahonaStage = (stageId) => setLiahonaHidden(prev => {
+    const next = new Set(prev)
+    next.has(stageId) ? next.delete(stageId) : next.add(stageId)
+    return next
+  })
 
   // Search
   const [searchTerm, setSearchTerm] = useState(() => savedPrefs.searchTerm || '')
@@ -1796,6 +1822,23 @@ export default function SalesPipeline() {
     }
   }, [filteredPipelineLeads, stages, dateRange, soldStat])
 
+  // Liahona inputs. Sales-stage leads get pins; won/delivery leads become the
+  // "Customers & jobs" overlay. Both respect the page filters above.
+  // filteredPipelineLeads is rebuilt every render, so memoize on a fingerprint
+  // of what the map actually draws (id, stage, coords) — otherwise every
+  // parent re-render would rebuild a thousand markers.
+  const liahonaKey = filteredPipelineLeads.map(l => `${l.id}:${l.status}:${l.latitude}:${l.longitude}`).join(",")
+  const liahonaLeads = useMemo(
+    () => filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [liahonaKey, stages]
+  )
+  const liahonaCustomers = useMemo(
+    () => filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && (s.isDelivery || s.isClosed) }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [liahonaKey, stages]
+  )
+
   if (loading && pipelineLeads.length === 0) {
     return (
       <div style={{ padding: isMobile ? '16px' : '24px', textAlign: 'center', color: theme.textMuted }}>
@@ -2171,9 +2214,15 @@ export default function SalesPipeline() {
             <div style={{ height: '56px', backgroundColor: m.bg, borderBottom: `1px solid ${m.border}`, display: 'flex', alignItems: 'center', padding: '0 16px', flexShrink: 0, zIndex: 100 }}>
               <span style={{ fontSize: '16px', fontWeight: '700', color: m.text, flex: 1 }}>Sales Pipeline</span>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <button onClick={() => navigate('/leads')} style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: `1px solid ${m.border}`, borderRadius: '8px', color: m.textMuted }}>
-                  <List size={18} />
-                </button>
+                {/* Board | Liahona (map) toggle */}
+                <div style={{ display: 'inline-flex', border: `1px solid ${m.border}`, borderRadius: '8px', overflow: 'hidden', height: '40px' }}>
+                  <button onClick={() => setMobileMap(false)} title="Pipeline list" style={{ width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: mobileMap ? 'transparent' : m.accent, border: 'none', color: mobileMap ? m.textMuted : '#fff' }}>
+                    <List size={18} />
+                  </button>
+                  <button onClick={() => setMobileMap(true)} title="Liahona map" style={{ width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: mobileMap ? m.accent : 'transparent', border: 'none', color: mobileMap ? '#fff' : m.textMuted }}>
+                    <MapPin size={18} />
+                  </button>
+                </div>
                 <button onClick={() => { fetchPipelineLeads(); setRefreshing(true) }} style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: `1px solid ${m.border}`, borderRadius: '8px', color: m.textMuted }}>
                   <RefreshCw size={18} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
                 </button>
@@ -2209,7 +2258,25 @@ export default function SalesPipeline() {
               </div>
             </div>
 
-            {/* Scrollable content */}
+            {/* Liahona map (replaces the list; the search bar above still filters its pins) */}
+            {mobileMap ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <LiahonaMap
+                  compact
+                  leads={liahonaLeads}
+                  customers={liahonaCustomers}
+                  stages={salesStages}
+                  hiddenStages={liahonaHidden}
+                  onToggleStage={toggleLiahonaStage}
+                  companyId={companyId}
+                  employees={employees}
+                  user={user}
+                  theme={m}
+                  onSelectLead={openLeadDetail}
+                  onLeadsChanged={() => fetchPipelineLeads(true)}
+                />
+              </div>
+            ) : (
             <div
               ref={boardScrollRef}
               style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', WebkitOverflowScrolling: 'touch' }}
@@ -2691,6 +2758,7 @@ export default function SalesPipeline() {
                 )}
               </div>
             </div>
+            )}
 
           </div>
         )
@@ -2710,6 +2778,24 @@ export default function SalesPipeline() {
               </div>
               <span style={{ fontSize: '12px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '1px' }}>Sales Pipeline</span>
               <span style={{ fontSize: '10px', color: theme.textMuted }}>Leads & Customers W/Estimates</span>
+              {/* Board | Liahona view toggle (stopPropagation so it doesn't collapse the section) */}
+              <div onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', border: `1px solid ${theme.border}`, borderRadius: '6px', overflow: 'hidden', marginLeft: '8px' }}>
+                {[['board', 'Board'], ['liahona', 'Liahona']].map(([id, name]) => (
+                  <button
+                    key={id}
+                    onClick={() => setSalesView(id)}
+                    title={id === 'liahona' ? 'Map view: pins by stage, territories, routes' : 'Drag-and-drop board'}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 9px', border: 'none', cursor: 'pointer',
+                      fontSize: '11px', fontWeight: '600',
+                      backgroundColor: salesView === id ? theme.accent : 'transparent',
+                      color: salesView === id ? '#fff' : theme.textSecondary
+                    }}
+                  >
+                    {id === 'liahona' ? <MapPin size={12} /> : <List size={12} />} {name}
+                  </button>
+                ))}
+              </div>
               <div style={{ flex: 1, height: '1px', backgroundColor: theme.border }} />
               {(() => {
                 const salesLeads = filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && !s.isDelivery && !s.isClosed })
@@ -2736,8 +2822,13 @@ export default function SalesPipeline() {
                       padding: '6px 8px',
                       borderBottom: `3px solid ${stage.color}`,
                       backgroundColor: isDragOver ? theme.accentBg : theme.bgCard,
-                      transition: 'background-color 0.15s'
+                      transition: 'background-color 0.15s, opacity 0.15s',
+                      // In Liahona the strip is a legend: click a stage to hide/show its pins.
+                      cursor: salesView === 'liahona' ? 'pointer' : 'default',
+                      opacity: salesView === 'liahona' && liahonaHidden.has(stage.id) ? 0.35 : 1
                     }}
+                    title={salesView === 'liahona' ? (liahonaHidden.has(stage.id) ? 'Show these pins' : 'Hide these pins') : undefined}
+                    onClick={salesView === 'liahona' ? () => toggleLiahonaStage(stage.id) : undefined}
                     onDragOver={(e) => handleDragOver(e, stage.id)}
                     onDragLeave={handleDragLeave}
                     onDrop={(e) => handleDrop(e, stage.id)}
@@ -2758,8 +2849,24 @@ export default function SalesPipeline() {
               })}
             </div>
 
+            {/* Liahona (map) - only when expanded and selected */}
+            {salesExpanded && salesView === 'liahona' && (
+              <LiahonaMap
+                leads={liahonaLeads}
+                customers={liahonaCustomers}
+                stages={stages.filter(s => !s.isDelivery && !s.isClosed)}
+                hiddenStages={liahonaHidden}
+                companyId={companyId}
+                employees={employees}
+                user={user}
+                theme={theme}
+                onSelectLead={openLeadDetail}
+                onLeadsChanged={() => fetchPipelineLeads(true)}
+              />
+            )}
+
             {/* Cards Area - only when expanded */}
-            {salesExpanded && (
+            {salesExpanded && salesView !== 'liahona' && (
               <div style={{ flex: 1, display: 'flex', gap: '0px', minHeight: '200px', overflow: 'hidden' }}>
                 {stages.filter(s => !s.isDelivery && !s.isClosed).map(stage => {
                   const stageLeads = getLeadsForStage(stage.id)

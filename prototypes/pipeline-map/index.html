@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipeline Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1b1f24; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb;
+    --s-new:#9ca3af; --s-nothome:#f59e0b; --s-contacted:#3b82f6; --s-interested:#8b5cf6; --s-appt:#06b6d4; --s-sold:#16a34a; --s-no:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg);height:100vh;display:grid;grid-template-columns:340px 1fr;grid-template-rows:auto 1fr}
+  header{grid-column:1/3;display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+  header h1{font-size:16px;margin:0;font-weight:650}
+  header .search{flex:1;display:flex;gap:6px;max-width:520px}
+  header input{flex:1;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}
+  button{font:inherit;padding:7px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel);cursor:pointer}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.on{background:#dbeafe;border-color:var(--accent)}
+  aside{background:var(--panel);border-right:1px solid var(--line);overflow:auto;display:flex;flex-direction:column}
+  section{padding:12px 14px;border-bottom:1px solid var(--line)}
+  section h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 8px}
+  .funnel{display:flex;flex-direction:column;gap:5px}
+  .stage{display:flex;align-items:center;gap:8px;cursor:pointer;padding:3px 4px;border-radius:6px}
+  .stage:hover{background:#f3f4f6}
+  .stage.off{opacity:.35}
+  .dot{width:12px;height:12px;border-radius:50%;flex:none;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+  .stage .bar{flex:1;height:8px;background:#eef0f3;border-radius:4px;overflow:hidden}
+  .stage .bar i{display:block;height:100%}
+  .stage b{width:22px;text-align:right;font-variant-numeric:tabular-nums}
+  .kpis{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .kpi{background:#f3f4f6;border-radius:8px;padding:8px}
+  .kpi small{display:block;color:var(--muted);font-size:11px}
+  .kpi strong{font-size:18px}
+  .tools{display:flex;flex-wrap:wrap;gap:6px}
+  .leads{flex:1;overflow:auto}
+  .lead{padding:8px 14px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;cursor:pointer}
+  .lead:hover{background:#f9fafb}
+  .lead .who{flex:1;min-width:0}
+  .lead .who div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lead .who small{color:var(--muted)}
+  .lead .n{font-size:11px;color:var(--muted)}
+  #map{height:100%}
+  .pin{width:18px;height:18px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+  .pin.sel{outline:3px solid #111;outline-offset:1px}
+  .routeno{background:#111;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid #fff}
+  .leaflet-popup-content{margin:10px 12px;min-width:220px}
+  .pop label{display:block;font-size:11px;color:var(--muted);margin-top:6px}
+  .pop input,.pop select,.pop textarea{width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:6px;font:inherit}
+  .pop .row{display:flex;gap:6px;margin-top:8px}
+  .hint{font-size:12px;color:var(--muted)}
+  .terr{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}
+  .badge{background:#eef0f3;border-radius:10px;padding:1px 8px;font-size:12px}
+  #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:8px 14px;border-radius:8px;opacity:0;transition:.2s;pointer-events:none;z-index:9999}
+  #toast.show{opacity:1}
+  @media (max-width:760px){body{grid-template-columns:1fr;grid-template-rows:auto 1fr 40vh}aside{grid-row:3;border-right:0;border-top:1px solid var(--line)}header{grid-column:1}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Pipeline Map</h1>
+  <div class="search"><input id="q" placeholder="Search an address or area (Nominatim geocoder)…"><button id="go">Go</button></div>
+  <span class="hint" id="mode">Click the map to drop a lead</span>
+</header>
+
+<aside>
+  <section>
+    <h2>Pipeline</h2>
+    <div class="kpis">
+      <div class="kpi"><small>Leads</small><strong id="kTotal">0</strong></div>
+      <div class="kpi"><small>Appts</small><strong id="kAppt">0</strong></div>
+      <div class="kpi"><small>Sold</small><strong id="kSold">0</strong></div>
+    </div>
+    <div class="funnel" id="funnel" style="margin-top:10px"></div>
+    <div class="hint" style="margin-top:6px">Click a stage to show/hide it on the map.</div>
+  </section>
+  <section>
+    <h2>Tools</h2>
+    <div class="tools">
+      <button id="drawBtn">✎ Draw territory</button>
+      <button id="routeBtn" class="primary">⇢ Plan route</button>
+      <button id="clearRoute">Clear route</button>
+      <button id="exportBtn">Export JSON</button>
+      <button id="resetBtn">Reset demo</button>
+    </div>
+    <div id="routeInfo" class="hint" style="margin-top:8px"></div>
+  </section>
+  <section>
+    <h2>Territories</h2>
+    <div id="terrs" class="hint">None yet. Draw one to count leads inside it.</div>
+  </section>
+  <section style="padding-bottom:6px"><h2>Leads <span class="badge" id="leadCount"></span></h2></section>
+  <div class="leads" id="leads"></div>
+</aside>
+
+<div id="map"></div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script>
+// ---------- Pipeline stages ----------
+const STAGES = [
+  {id:'new',        name:'Not contacted', color:'var(--s-new)',        hex:'#9ca3af'},
+  {id:'nothome',    name:'Not home',      color:'var(--s-nothome)',    hex:'#f59e0b'},
+  {id:'contacted',  name:'Contacted',     color:'var(--s-contacted)',  hex:'#3b82f6'},
+  {id:'interested', name:'Interested',    color:'var(--s-interested)', hex:'#8b5cf6'},
+  {id:'appt',       name:'Appointment',   color:'var(--s-appt)',       hex:'#06b6d4'},
+  {id:'sold',       name:'Sold',          color:'var(--s-sold)',       hex:'#16a34a'},
+  {id:'no',         name:'Not interested',color:'var(--s-no)',         hex:'#ef4444'},
+];
+const stageById = Object.fromEntries(STAGES.map(s=>[s.id,s]));
+
+// ---------- Demo data (Gilbert, AZ neighborhood) ----------
+const CENTER = [33.3528, -111.7890];
+const NAMES = ['Garcia','Nguyen','Patel','Smith','Johnson','Lopez','Kim','Brown','Miller','Davis','Rodriguez','Wilson','Anderson','Thomas','Taylor','Moore','Martin','Jackson','Lee','Perez','Hall','Young','Allen','King','Wright'];
+const STREETS = ['E Elliot Rd','S Val Vista Dr','E Warner Rd','S Lindsay Rd','E Ray Rd','S Greenfield Rd','E Guadalupe Rd','S Higley Rd'];
+function seedLeads(){
+  let seed = 7; const rnd = ()=> (seed = (seed*9301+49297)%233280)/233280;
+  const weights = ['new','new','new','new','nothome','nothome','contacted','contacted','interested','appt','sold','no','no'];
+  const out=[];
+  for(let i=0;i<48;i++){
+    const lat = CENTER[0] + (rnd()-.5)*0.028, lng = CENTER[1] + (rnd()-.5)*0.038;
+    out.push({id:'L'+(i+1), name:NAMES[i%NAMES.length]+' residence', addr:(1000+Math.floor(rnd()*3000))+' '+STREETS[Math.floor(rnd()*STREETS.length)],
+      lat:+lat.toFixed(6), lng:+lng.toFixed(6), stage:weights[Math.floor(rnd()*weights.length)], notes:'', updated:Date.now()-Math.floor(rnd()*14)*864e5});
+  }
+  return out;
+}
+
+// ---------- State ----------
+const KEY='pipeline-map-v1';
+let state = load() || {leads:seedLeads(), territories:[], hidden:[]};
+function load(){ try{ return JSON.parse(localStorage.getItem(KEY)); }catch(e){ return null; } }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
+
+// ---------- Map ----------
+const map = L.map('map',{zoomControl:true}).setView(CENTER, 15);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+}).addTo(map);
+
+const leadLayer = L.layerGroup().addTo(map);
+const terrLayer = new L.FeatureGroup().addTo(map);
+const routeLayer = L.layerGroup().addTo(map);
+const markers = {};
+let selectedId = null;
+
+function icon(stage, sel){
+  const s = stageById[stage]||STAGES[0];
+  return L.divIcon({className:'', html:`<div class="pin${sel?' sel':''}" style="background:${s.hex}"></div>`, iconSize:[18,18], iconAnchor:[9,18], popupAnchor:[0,-16]});
+}
+function popupHtml(l){
+  const opts = STAGES.map(s=>`<option value="${s.id}" ${s.id===l.stage?'selected':''}>${s.name}</option>`).join('');
+  return `<div class="pop">
+    <label>Name</label><input data-f="name" value="${esc(l.name)}">
+    <label>Address</label><input data-f="addr" value="${esc(l.addr||'')}">
+    <label>Stage</label><select data-f="stage">${opts}</select>
+    <label>Notes</label><textarea data-f="notes" rows="2">${esc(l.notes||'')}</textarea>
+    <div class="row"><button class="primary" data-a="save">Save</button><button data-a="nav">Navigate</button><button data-a="del" style="margin-left:auto;color:#b91c1c">Delete</button></div>
+    <div class="hint" style="margin-top:6px">Updated ${new Date(l.updated).toLocaleDateString()}</div>
+  </div>`;
+}
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function renderMarkers(){
+  leadLayer.clearLayers(); for(const k in markers) delete markers[k];
+  for(const l of state.leads){
+    if(state.hidden.includes(l.stage)) continue;
+    const m = L.marker([l.lat,l.lng],{icon:icon(l.stage, l.id===selectedId), draggable:true}).addTo(leadLayer);
+    m.bindPopup(()=>popupHtml(l));
+    m.on('dragend', e=>{ const p=e.target.getLatLng(); l.lat=p.lat; l.lng=p.lng; l.updated=Date.now(); save(); renderAll(); });
+    m.on('click', ()=>{ selectedId=l.id; renderList(); });
+    markers[l.id]=m;
+  }
+}
+map.on('popupopen', e=>{
+  const el = e.popup.getElement(); const m = e.popup._source; const id = Object.keys(markers).find(k=>markers[k]===m); const l = state.leads.find(x=>x.id===id); if(!l) return;
+  el.querySelector('[data-a=save]').onclick = ()=>{ el.querySelectorAll('[data-f]').forEach(i=>l[i.dataset.f]=i.value); l.updated=Date.now(); save(); map.closePopup(); renderAll(); toast('Saved'); };
+  el.querySelector('[data-a=del]').onclick = ()=>{ state.leads = state.leads.filter(x=>x!==l); save(); map.closePopup(); renderAll(); toast('Deleted'); };
+  el.querySelector('[data-a=nav]').onclick = ()=> window.open(`https://www.google.com/maps/dir/?api=1&destination=${l.lat},${l.lng}`,'_blank');
+  el.querySelector('[data-f=stage]').onchange = ev=>{ l.stage=ev.target.value; l.updated=Date.now(); save(); renderAll(); markers[l.id]?.openPopup(); };
+});
+
+// Drop a new lead on click (with reverse geocode)
+map.on('click', async e=>{
+  if(drawing) return;
+  const l = {id:'L'+Date.now().toString(36), name:'New lead', addr:'', lat:+e.latlng.lat.toFixed(6), lng:+e.latlng.lng.toFixed(6), stage:'new', notes:'', updated:Date.now()};
+  state.leads.push(l); selectedId=l.id; save(); renderAll(); markers[l.id]?.openPopup();
+  try{
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${l.lat}&lon=${l.lng}`,{headers:{'Accept':'application/json'}});
+    const j = await r.json(); const a=j.address||{};
+    l.addr = [a.house_number,a.road].filter(Boolean).join(' ') || j.display_name?.split(',').slice(0,2).join(',') || '';
+    if(a.house_number) l.name = (a.road? a.house_number+' '+a.road : l.name);
+    save(); renderAll(); markers[l.id]?.openPopup();
+  }catch(err){ /* offline or rate-limited: leave blank */ }
+});
+
+// ---------- Sidebar ----------
+function renderFunnel(){
+  const counts = Object.fromEntries(STAGES.map(s=>[s.id,0])); state.leads.forEach(l=>counts[l.stage]=(counts[l.stage]||0)+1);
+  const max = Math.max(1,...Object.values(counts));
+  document.getElementById('funnel').innerHTML = STAGES.map(s=>`<div class="stage ${state.hidden.includes(s.id)?'off':''}" data-s="${s.id}">
+    <span class="dot" style="background:${s.hex}"></span><span style="width:110px">${s.name}</span>
+    <span class="bar"><i style="width:${counts[s.id]/max*100}%;background:${s.hex}"></i></span><b>${counts[s.id]}</b></div>`).join('');
+  document.querySelectorAll('.stage').forEach(el=>el.onclick=()=>{ const s=el.dataset.s; state.hidden = state.hidden.includes(s)? state.hidden.filter(x=>x!==s) : [...state.hidden,s]; save(); renderAll(); });
+  document.getElementById('kTotal').textContent = state.leads.length;
+  document.getElementById('kAppt').textContent = counts.appt;
+  document.getElementById('kSold').textContent = counts.sold;
+}
+function renderList(){
+  const visible = state.leads.filter(l=>!state.hidden.includes(l.stage)).sort((a,b)=>b.updated-a.updated);
+  document.getElementById('leadCount').textContent = visible.length;
+  document.getElementById('leads').innerHTML = visible.map(l=>`<div class="lead" data-id="${l.id}" style="${l.id===selectedId?'background:#eff6ff':''}">
+    <span class="dot" style="background:${stageById[l.stage].hex}"></span>
+    <div class="who"><div>${esc(l.name)}</div><small>${esc(l.addr||'')} · ${stageById[l.stage].name}</small></div>
+    <span class="n">${Math.round((Date.now()-l.updated)/864e5)}d</span></div>`).join('') || '<div class="hint" style="padding:12px">No leads in view.</div>';
+  document.querySelectorAll('.lead').forEach(el=>el.onclick=()=>{ const l=state.leads.find(x=>x.id===el.dataset.id); selectedId=l.id; map.panTo([l.lat,l.lng]); renderMarkers(); renderList(); markers[l.id]?.openPopup(); });
+}
+function renderTerritories(){
+  terrLayer.clearLayers();
+  const rows = state.territories.map((t,i)=>{
+    const poly = L.polygon(t.coords,{color:'#2563eb',weight:2,fillOpacity:.08}).addTo(terrLayer);
+    const inside = state.leads.filter(l=>pointInPoly([l.lat,l.lng], t.coords));
+    const sold = inside.filter(l=>l.stage==='sold').length;
+    poly.bindTooltip(`${t.name}: ${inside.length} leads, ${sold} sold`);
+    return `<div class="terr"><span>${esc(t.name)}</span><span><span class="badge">${inside.length} leads</span> <span class="badge">${sold} sold</span> <a href="#" data-del="${i}" style="color:#b91c1c">✕</a></span></div>`;
+  });
+  document.getElementById('terrs').innerHTML = rows.join('') || 'None yet. Draw one to count leads inside it.';
+  document.querySelectorAll('[data-del]').forEach(a=>a.onclick=e=>{ e.preventDefault(); state.territories.splice(+a.dataset.del,1); save(); renderAll(); });
+}
+function pointInPoly(p, poly){ // ray casting, [lat,lng]
+  let inside=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const [yi,xi]=poly[i],[yj,xj]=poly[j]; const inter = ((yi>p[0])!==(yj>p[0])) && (p[1] < (xj-xi)*(p[0]-yi)/(yj-yi)+xi); if(inter) inside=!inside; }
+  return inside;
+}
+function renderAll(){ renderMarkers(); renderFunnel(); renderList(); renderTerritories(); }
+
+// ---------- Territory drawing ----------
+let drawing=false, drawer=null;
+document.getElementById('drawBtn').onclick = ()=>{
+  if(drawing){ drawer.disable(); return; }
+  drawer = new L.Draw.Polygon(map,{shapeOptions:{color:'#2563eb'}}); drawer.enable(); drawing=true;
+  document.getElementById('drawBtn').classList.add('on'); document.getElementById('mode').textContent='Click to add polygon points, click the first point to finish';
+};
+map.on(L.Draw.Event.CREATED, e=>{
+  const coords = e.layer.getLatLngs()[0].map(p=>[+p.lat.toFixed(6),+p.lng.toFixed(6)]);
+  const name = 'Territory '+(state.territories.length+1);
+  state.territories.push({name, coords}); save(); renderAll();
+});
+map.on(L.Draw.Event.DRAWSTOP, ()=>{ drawing=false; document.getElementById('drawBtn').classList.remove('on'); document.getElementById('mode').textContent='Click the map to drop a lead'; });
+
+// ---------- Routing (nearest-neighbour order + OSRM road geometry) ----------
+document.getElementById('routeBtn').onclick = async ()=>{
+  const b = map.getBounds();
+  const stops = state.leads.filter(l=>!state.hidden.includes(l.stage) && l.stage!=='sold' && l.stage!=='no' && b.contains([l.lat,l.lng]));
+  if(stops.length<2){ toast('Need at least 2 open leads in view'); return; }
+  // greedy nearest neighbour from the north-west-most lead (stand-in for "start at my location")
+  let cur = stops.reduce((a,c)=> (c.lat-c.lng) > (a.lat-a.lng) ? c : a), order=[cur], left=stops.filter(x=>x!==cur);
+  while(left.length){ let best=null,bd=1e9; for(const s of left){ const d=dist(cur,s); if(d<bd){bd=d;best=s;} } order.push(best); left=left.filter(x=>x!==best); cur=best; }
+  order = order.slice(0,25); // OSRM demo server limit-friendly
+  routeLayer.clearLayers();
+  order.forEach((l,i)=> L.marker([l.lat,l.lng],{icon:L.divIcon({className:'',html:`<div class="routeno">${i+1}</div>`,iconSize:[20,20],iconAnchor:[10,28]}),interactive:false}).addTo(routeLayer));
+  const info = document.getElementById('routeInfo'); info.textContent = `Ordering ${order.length} stops… fetching road route from OSRM`;
+  try{
+    const coords = order.map(l=>`${l.lng},${l.lat}`).join(';');
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`);
+    const j = await r.json(); const rt = j.routes[0];
+    L.geoJSON(rt.geometry,{style:{color:'#111',weight:4,opacity:.75}}).addTo(routeLayer);
+    info.textContent = `${order.length} stops · ${(rt.distance/1609.34).toFixed(1)} mi · ${Math.round(rt.duration/60)} min driving (OSRM)`;
+  }catch(err){
+    L.polyline(order.map(l=>[l.lat,l.lng]),{color:'#111',weight:3,dashArray:'6 6'}).addTo(routeLayer);
+    info.textContent = `${order.length} stops · straight-line order shown (OSRM unreachable)`;
+  }
+};
+document.getElementById('clearRoute').onclick = ()=>{ routeLayer.clearLayers(); document.getElementById('routeInfo').textContent=''; };
+function dist(a,b){ const dx=(a.lng-b.lng)*Math.cos(a.lat*Math.PI/180), dy=a.lat-b.lat; return Math.hypot(dx,dy); }
+
+// ---------- Geocoder search ----------
+async function search(){
+  const q = document.getElementById('q').value.trim(); if(!q) return;
+  try{
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(q)}`); const j = await r.json();
+    if(!j.length){ toast('No results'); return; }
+    const hit=j[0]; map.setView([+hit.lat,+hit.lon], 16); toast(hit.display_name.split(',').slice(0,3).join(','));
+  }catch(e){ toast('Geocoder unavailable'); }
+}
+document.getElementById('go').onclick = search; document.getElementById('q').addEventListener('keydown', e=>{ if(e.key==='Enter') search(); });
+
+// ---------- Misc ----------
+document.getElementById('exportBtn').onclick = ()=>{ const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='pipeline-map.json'; a.click(); };
+document.getElementById('resetBtn').onclick = ()=>{ if(confirm('Reset to demo data?')){ state={leads:seedLeads(),territories:[],hidden:[]}; save(); renderAll(); } };
+
+renderAll();
+new ResizeObserver(()=>map.invalidateSize()).observe(document.getElementById('map')); setTimeout(()=>map.invalidateSize(),300);
+</script>
+</body>
+</html>
