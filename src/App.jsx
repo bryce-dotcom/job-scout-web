@@ -114,6 +114,7 @@ import VictorSettings from './pages/agents/victor/VictorSettings'
 import FrankieWorkspace from './pages/agents/frankie/FrankieWorkspace'
 import FrankieDashboard from './pages/agents/frankie/FrankieDashboard'
 import FrankieAsk from './pages/agents/frankie/FrankieAsk'
+import FrankieHistory from './pages/agents/frankie/FrankieHistory'
 import FrankieCollections from './pages/agents/frankie/FrankieCollections'
 import FrankieInsights from './pages/agents/frankie/FrankieInsights'
 import FrankieReports from './pages/agents/frankie/FrankieReports'
@@ -540,6 +541,7 @@ function App() {
           <Route path="/agents/frankie" element={<AgentRequired slug="frankie-finance"><FrankieWorkspace /></AgentRequired>}>
             <Route index element={<FrankieDashboard />} />
             <Route path="ask" element={<FrankieAsk />} />
+            <Route path="history" element={<FrankieHistory />} />
             <Route path="collections" element={<FrankieCollections />} />
             <Route path="insights" element={<FrankieInsights />} />
             <Route path="reports" element={<FrankieReports />} />

@@ -5,6 +5,7 @@ import AgentHeader from '../../../components/AgentHeader'
 const FRANKIE_TABS = [
   { path: '/agents/frankie', label: 'Dashboard', icon: 'LayoutDashboard', end: true },
   { path: '/agents/frankie/ask', label: 'Ask Frankie', icon: 'MessageCircle' },
+  { path: '/agents/frankie/history', label: 'History', icon: 'Clock' },
   { path: '/agents/frankie/collections', label: 'Collections', icon: 'Bell' },
   { path: '/agents/frankie/insights', label: 'Insights', icon: 'TrendingUp' },
   { path: '/agents/frankie/reports', label: 'Reports', icon: 'BarChart3' },

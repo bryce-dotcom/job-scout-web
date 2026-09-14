@@ -1,17 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useLocation } from 'react-router-dom'
-import { useStore } from '../../../lib/store'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   Send, DollarSign, TrendingUp, Receipt, PieChart,
-  AlertTriangle, Clock, Loader2, Copy, Check, Trash2
+  AlertTriangle, Clock, Loader2, Copy, Check, History
 } from 'lucide-react'
 import {
   sendMessageStream, createSession, saveMessage,
-  loadSessions, loadSessionMessages, deleteSession
+  loadSessions, loadSessionMessages,
+  rememberLastSession, getLastSessionId, forgetLastSession,
 } from './frankieEngine'
 
 const defaultTheme = {
@@ -37,6 +37,7 @@ const QUICK_ACTIONS = [
 
 export default function FrankieAsk() {
   const location = useLocation()
+  const navigate = useNavigate()
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
   const isMobile = useIsMobile()
@@ -46,6 +47,9 @@ export default function FrankieAsk() {
   const [loading, setLoading] = useState(false)
   const [sessionId, setSessionId] = useState(location.state?.sessionId || null)
   const [copied, setCopied] = useState(null)
+  // True while working out which conversation to show, so the welcome screen
+  // does not flash up and then get replaced by yesterday's chat.
+  const [resuming, setResuming] = useState(true)
 
   const messagesEndRef = useRef(null)
   const messagesRef = useRef(messages)
@@ -54,18 +58,54 @@ export default function FrankieAsk() {
 
   useEffect(() => { messagesRef.current = messages }, [messages])
 
-  // Load existing session if provided
+  // Which conversation is this?
+  //
+  // Every message has always been saved, but leaving this tab unmounts it and
+  // coming back showed a blank welcome screen — so to everyone using it the
+  // conversation was simply gone. Now: an explicit session from History wins;
+  // "New chat" from History starts blank; otherwise pick up the conversation
+  // this person was last in, provided it still exists (one deleted from
+  // History would otherwise resume as a blank chat writing into a session
+  // nothing points at).
   useEffect(() => {
-    if (location.state?.sessionId) {
-      loadSessionMessages(location.state.sessionId).then(msgs => {
-        setMessages(msgs.map(m => ({
-          id: m.id || Date.now(),
-          role: m.role,
-          content: m.content
-        })))
-      })
+    let cancelled = false
+    const requested = location.state?.sessionId || null
+    const fresh = location.state?.fresh === true
+
+    async function resolve() {
+      let sid = requested
+      if (!sid && !fresh) {
+        const last = getLastSessionId()
+        if (last) {
+          let existing = []
+          try { existing = await loadSessions() } catch { /* offline — start fresh */ }
+          sid = existing.some(s => s.session_id === last) ? last : null
+          if (!sid) forgetLastSession()
+        }
+      }
+      if (cancelled) return
+      if (!sid) {
+        setSessionId(null)
+        setMessages([])
+        setResuming(false)
+        return
+      }
+      const msgs = await loadSessionMessages(sid)
+      if (cancelled) return
+      setSessionId(sid)
+      rememberLastSession(sid)
+      setMessages(msgs.map((m, i) => ({
+        id: m.id || m.message_id || `${sid}-${i}`,
+        role: m.role,
+        content: m.content
+      })))
+      setResuming(false)
     }
-  }, [location.state?.sessionId])
+
+    setResuming(true)
+    resolve()
+    return () => { cancelled = true }
+  }, [location.state?.sessionId, location.state?.fresh])
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -88,9 +128,10 @@ export default function FrankieAsk() {
     try {
       let sid = sessionId
       if (!sid) {
-        const session = await createSession(msg.slice(0, 80))
+        const session = await createSession(msg)
         sid = session?.session_id
         setSessionId(sid)
+        rememberLastSession(sid)
       }
 
       await saveMessage(sid, 'user', msg)
@@ -134,6 +175,7 @@ export default function FrankieAsk() {
   }
 
   const handleNewChat = () => {
+    forgetLastSession()
     setMessages([])
     setSessionId(null)
     setInput('')
@@ -153,8 +195,15 @@ export default function FrankieAsk() {
         padding: isMobile ? '16px' : '24px',
         display: 'flex', flexDirection: 'column', gap: '16px'
       }}>
+        {resuming && messages.length === 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '48px 24px', color: theme.textMuted, fontSize: '14px' }}>
+            <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+            Picking up where you left off...
+          </div>
+        )}
+
         {/* Welcome state */}
-        {messages.length === 0 && !loading && (
+        {messages.length === 0 && !loading && !resuming && (
           <div style={{ textAlign: 'center', padding: isMobile ? '32px 16px' : '48px 24px' }}>
             <div style={{
               width: '64px', height: '64px', borderRadius: '16px',
@@ -347,18 +396,30 @@ export default function FrankieAsk() {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           marginTop: '8px', fontSize: '12px', color: theme.textMuted
         }}>
-          <span>Press Enter to send, Shift+Enter for new line</span>
-          {sessionId && (
+          <span>{isMobile ? 'Enter to send' : 'Press Enter to send, Shift+Enter for new line'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button
-              onClick={handleNewChat}
+              onClick={() => navigate('/agents/frankie/history')}
               style={{
+                display: 'flex', alignItems: 'center', gap: '4px',
                 background: 'none', border: 'none', color: theme.textMuted,
-                cursor: 'pointer', fontSize: '12px', textDecoration: 'underline'
+                cursor: 'pointer', fontSize: '12px', textDecoration: 'underline', padding: 0
               }}
             >
-              New conversation
+              <History size={12} /> History
             </button>
-          )}
+            {sessionId && (
+              <button
+                onClick={handleNewChat}
+                style={{
+                  background: 'none', border: 'none', color: theme.textMuted,
+                  cursor: 'pointer', fontSize: '12px', textDecoration: 'underline', padding: 0
+                }}
+              >
+                New conversation
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

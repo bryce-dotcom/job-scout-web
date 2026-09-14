@@ -1,5 +1,6 @@
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
+import { createSessionStore } from '../../../lib/agentSessions'
 import {
   invoiceBalance, invoiceCustomerTotal, invoiceDaysOverdue, invoiceStatus,
   isInvoiceOpen, paymentDate, jobIsComplete, jobContractValue,
@@ -376,10 +377,6 @@ function getUserRole() {
   return { role, userId }
 }
 
-function generateId() {
-  return crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)
-}
-
 export async function sendMessageStream(message, history = [], onChunk) {
   const { role } = getUserRole()
   const { user, company } = useStore.getState()
@@ -395,97 +392,14 @@ export async function sendMessageStream(message, history = [], onChunk) {
   return await callClaude(conversationHistory, systemPrompt, dataContext, onChunk)
 }
 
-// Session management — reuses ai_sessions table with module='frankie'
-export async function createSession(title) {
-  const { companyId, user } = useStore.getState()
-  const sessionId = generateId()
-  const now = new Date().toISOString()
+// Session management — the shared ai_sessions / ai_messages tables, tagged
+// module='frankie'. Same helpers Arnie's History tab is built on, from one
+// place (see lib/agentSessions.js) instead of a second copy.
+const sessions = createSessionStore('frankie', { defaultTitle: 'Financial conversation' })
 
-  const { data, error } = await supabase
-    .from('ai_sessions')
-    .insert({
-      company_id: companyId,
-      session_id: sessionId,
-      user_email: user?.email,
-      started: now,
-      last_activity: now,
-      status: 'active',
-      current_module: 'frankie',
-      context_json: JSON.stringify({ title: title || 'Financial conversation' })
-    })
-    .select()
-    .single()
-
-  if (error) {
-    console.error('Error creating session:', error)
-    return null
-  }
-  return data
-}
-
-export async function saveMessage(sessionId, role, content) {
-  if (!sessionId) return null
-  const { companyId } = useStore.getState()
-  const now = new Date().toISOString()
-
-  const { error } = await supabase
-    .from('ai_messages')
-    .insert({
-      company_id: companyId,
-      message_id: generateId(),
-      session_id: sessionId,
-      timestamp: now,
-      role,
-      content,
-      module_used: 'frankie'
-    })
-
-  if (error) console.error('Error saving message:', error)
-
-  await supabase
-    .from('ai_sessions')
-    .update({ last_activity: now })
-    .eq('session_id', sessionId)
-}
-
-export async function loadSessions() {
-  const { companyId, user } = useStore.getState()
-  const { data, error } = await supabase
-    .from('ai_sessions')
-    .select('*')
-    .eq('company_id', companyId)
-    .eq('user_email', user?.email)
-    .eq('current_module', 'frankie')
-    .order('created_at', { ascending: false })
-    .limit(50)
-
-  if (error) {
-    console.error('Error loading sessions:', error)
-    return []
-  }
-
-  return (data || []).map(s => {
-    let title = 'Financial conversation'
-    try { title = JSON.parse(s.context_json || '{}').title || title } catch {}
-    return { ...s, title }
-  })
-}
-
-export async function loadSessionMessages(sessionId) {
-  const { data, error } = await supabase
-    .from('ai_messages')
-    .select('*')
-    .eq('session_id', sessionId)
-    .order('timestamp', { ascending: true })
-
-  if (error) {
-    console.error('Error loading messages:', error)
-    return []
-  }
-  return data || []
-}
-
-export async function deleteSession(sessionId) {
-  await supabase.from('ai_messages').delete().eq('session_id', sessionId)
-  await supabase.from('ai_sessions').delete().eq('session_id', sessionId)
-}
+export const {
+  createSession, saveMessage,
+  loadSessions, loadSessionMessages, deleteSession,
+  renameSession, setSessionPinned, searchSessions,
+  rememberLastSession, getLastSessionId, forgetLastSession,
+} = sessions
