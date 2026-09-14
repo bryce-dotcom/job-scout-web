@@ -215,6 +215,27 @@ const CASES = [
         if ((await rest(`lead_commissions?select=id&appointment_id=eq.${ap.body.created_id}`)).length) throw new Error('fee left behind after unbook')
       }
     } },
+  { id: 'create.quote.unknown.item.asks.for.price', as: 'tech',
+    turns: ['Quote the Parkside Office Tower lead for 10 flux capacitors.'],
+    expect: { proposal: 'none', text_match: [/price/i], no_dollars: true } },
+  { id: 'create.quote.book.prices.then.withdraw', as: 'tech',
+    turns: ['Quote the Parkside Office Tower lead for 40 LED high bays and 12 wall packs.'],
+    expect: { proposal: 'create', proposal_label: 'quote', text_match: [/draft/i, /5,?160/, /7,?128/], text_not_match: [/\b(I'?ve|I have|it'?s been|has been|was) sent\b|\bsent (it|the quote|them)\b/i] },
+    after: async (r, ctx) => {
+      const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+      ctx.pendingRollback = r.proposal.proposal.id
+      const [q] = await rest(`quotes?select=quote_amount,status,lead_id&id=eq.${ap.body.created_id}`)
+      const lines = await rest(`quote_lines?select=item_id,line_total&quote_id=eq.${ap.body.created_id}`)
+      if (q.status !== 'Draft') throw new Error('not a draft: ' + q.status)
+      if (lines.length !== 2 || lines.some(l => !l.item_id)) throw new Error('lines not from the price book: ' + JSON.stringify(lines))
+      const sum = lines.reduce((s, l) => s + Number(l.line_total), 0)
+      if (sum !== Number(q.quote_amount) || sum !== 7128) throw new Error(`lines ${sum} vs headline ${q.quote_amount}`)
+      ctx.verifyAfterRollback = async () => {
+        if ((await rest(`quotes?select=id&id=eq.${ap.body.created_id}`)).length) throw new Error('quote left behind')
+        if ((await rest(`quote_lines?select=id&quote_id=eq.${ap.body.created_id}`)).length) throw new Error('lines left behind')
+        const [l] = await rest(`leads?select=quote_id&id=eq.${q.lead_id}`); if (l.quote_id) throw new Error('lead still points at the withdrawn quote')
+      }
+    } },
   { id: 'create.ticket.then.withdraw', as: 'owner',
     turns: ['The Open Invoices screen shows the full $18,650 on the Gym Interior Retrofit invoice, but the customer already paid half — it should show $9,325. Please file a bug for the team with those figures.'],
     expect: { proposal: 'create', proposal_label: 'ticket', text_match: [/approve/i] },
