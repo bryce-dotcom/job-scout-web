@@ -3784,8 +3784,8 @@ function PayrollTaxSettingsTab({ theme, companyId }) {
           </Field>
         </Row>
         <Row two>
-          <Field label="SUI wage base ($)" help="Utah 2025 = $48,900. Updates each January.">
-            <input type="number" value={form.sui_wage_base ?? ''} onChange={set('sui_wage_base')} placeholder="48900" style={inputStyle} />
+          <Field label="SUI wage base ($)" help="Utah 2026 = $50,700 (2025 was $48,900). Updates each January; leave blank to use the current Utah figure.">
+            <input type="number" value={form.sui_wage_base ?? ''} onChange={set('sui_wage_base')} placeholder="50700" style={inputStyle} />
           </Field>
           <div />
         </Row>

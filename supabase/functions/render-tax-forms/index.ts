@@ -578,7 +578,11 @@ async function generateForm33H({ supabase, company_id, company, year, quarter }:
     .gte('pay_date', yearStart)
     .lte('pay_date', periodEnd);
 
-  const SUI_BASE = Number(company.sui_wage_base) || 48900;
+  // Utah DWS taxable wage base by year (jobs.utah.gov). The 33H is a
+  // quarterly form, so a Q4 render filed in January still needs last year's
+  // base; a company's own sui_wage_base setting wins when it is set.
+  const UTAH_SUI_WAGE_BASE: Record<number, number> = { 2025: 48900, 2026: 50700 };
+  const SUI_BASE = Number(company.sui_wage_base) || UTAH_SUI_WAGE_BASE[Number(year)] || 50700;
   const SUI_RATE = Number(company.sui_rate_pct) || 0;
 
   // Per-employee: total wages this quarter + ytd-through-quarter (for cap)
@@ -1056,7 +1060,7 @@ async function render33HPdf({ company, year, quarter, totalGross, totalTaxable, 
   drawBox(page, margin, y, 260, 28, '1  Total wages paid this quarter', money(totalGross), font, fontB, ink, muted);
   drawBox(page, margin + 270, y, 260, 28, `2  SUI wage base (${money(suiBase)} per employee)`, money(suiBase), font, fontB, ink, muted);
   y -= 32;
-  drawBox(page, margin, y, 260, 28, '3  Excess wages (over $48,900 YTD per employee)', money(totalExcess), font, fontB, ink, muted);
+  drawBox(page, margin, y, 260, 28, `3  Excess wages (over ${money(suiBase)} YTD per employee)`, money(totalExcess), font, fontB, ink, muted);
   drawBox(page, margin + 270, y, 260, 28, '4  Taxable wages (line 1 - line 3)', money(totalTaxable), font, fontB, ink, muted);
   y -= 32;
   drawBox(page, margin, y, 260, 28, '5  Your assigned SUI rate', `${suiRate.toFixed(4)}%`, font, fontB, ink, muted);

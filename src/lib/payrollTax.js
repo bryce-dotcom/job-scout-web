@@ -4,23 +4,25 @@
 // pay frequency, employer state) and returns every tax line + net pay.
 //
 // Sources (must be refreshed each January):
-//   - Federal income tax: IRS Publication 15-T (2025), Worksheet 1B,
-//     Manual Payroll Systems with Forms W-4 from 2020 or later,
-//     Annual Percentage Method tables.
-//   - FICA: Social Security 6.2% to wage base $168,600 (2025);
+//   - Federal income tax: IRS Publication 15-T (2026), Worksheet 1A,
+//     Percentage Method Tables for Automated Payroll Systems (annual
+//     tables, any pay frequency), incl. the line-1g adjustment.
+//   - FICA: Social Security 6.2% to wage base $184,500 (2026);
 //           Medicare 1.45% no cap; Additional Medicare 0.9% over $200k YTD.
 //   - FUTA: 0.6% (after standard 5.4% credit) on first $7,000 YTD.
-//   - Utah SIT: 4.55% flat (2025), with the personal exemption credit.
+//   - Utah SIT: 4.5% flat (2025–2026), with the personal exemption credit.
 //     For simplicity v1 uses the flat rate directly; the Utah TC-40 credit
 //     refunds at filing, so withholding is conservative-but-correct.
-//   - Utah SUI: per-employer assigned rate, on first $48,900 YTD (2025).
+//   - Utah SUI: per-employer assigned rate, on first $50,700 YTD (2026).
 //
-// The numbers below are stamped TAX_YEAR. When the IRS / Utah update
-// for 2026, bump TAX_YEAR and update the constants. Anything else
-// breaking should fail loud (we throw on unknown filing_status etc.).
+// The numbers below are stamped TAX_YEAR. Each January: transcribe the new
+// Pub 15-T page-12 tables, the SSA wage base and Utah's rate/wage base,
+// bump TAX_YEAR, and set the payroll_tax_year setting (the health check
+// reads it). Anything else breaking should fail loud (we throw on unknown
+// filing_status etc.).
 // =====================================================================
 
-export const TAX_YEAR = 2025
+export const TAX_YEAR = 2026
 
 /**
  * Are these tables the ones the IRS is actually using right now?
@@ -51,86 +53,112 @@ export function taxTablesStale(now = new Date()) {
   }
 }
 
-// ---- Federal Pub 15-T 2025 — Annual Percentage Method ---------------
+// ---- Federal Pub 15-T 2026 — Percentage Method, automated systems ---
 // "Form W-4, Step 2, Checkbox, withholding rate schedules" if multiple
-// jobs is checked; otherwise the standard schedule.
+// jobs is checked; otherwise the STANDARD schedule.
 //
-// Each row: [over, baseTax, ratePct] — annual taxable income brackets.
-// Withholding = baseTax + ratePct * (income - over)
-const FED_BRACKETS_2025 = {
-  // Standard (Step 2 NOT checked)
+// Each row: [over, baseTax, ratePct] — ADJUSTED annual wage brackets.
+// Withholding = baseTax + ratePct * (adjustedAnnualWage - over)
+//
+// Transcribed verbatim from IRS Publication 15-T (2026), page 12, "2026
+// Percentage Method Tables for Automated Payroll Systems and Withholding on
+// Periodic Payments of Pensions and Annuities" — columns A (at least),
+// C (tentative amount) and D (percentage). Column C is the running total at
+// each threshold; the tests check every row against its predecessor, so a
+// mistyped digit fails the build rather than a paycheck.
+//
+// Sources: Rev. Proc. 2025-32 (brackets, standard deduction) and Pub 15-T
+// (2026) for the schedules; the 2025 file had 2024's wage base and Utah rate
+// and a first bracket nobody could source, which is why this is transcribed
+// rather than derived.
+const FED_BRACKETS_2026 = {
+  // STANDARD Withholding Rate Schedules (Form W-4 2020+ with Step 2 NOT
+  // checked, or a 2019-or-earlier Form W-4).
   single: [
-    [0,         0.00,     0],
-    [6300,      0.00,    10],
-    [18325,    1202.50,   12],
-    [54875,    5586.50,   22],
-    [109750,  17654.50,   24],
-    [203700,  40199.50,   32],
-    [256925,  57231.50,   35],
-    [632750, 188769.75,   37],
+    [0,           0.00,   0],
+    [7500,        0.00,  10],
+    [19900,    1240.00,  12],
+    [57900,    5800.00,  22],
+    [113200,  17966.00,  24],
+    [209275,  41024.00,  32],
+    [263725,  58448.00,  35],
+    [648100, 192979.25,  37],
   ],
   married_jointly: [
-    [0,        0.00,    0],
-    [16550,    0.00,   10],
-    [40950,  2440.00,  12],
-    [114050, 11212.00, 22],
-    [223800, 35402.00, 24],
-    [411700, 80512.00, 32],
-    [518150,114575.00, 35],
-    [768700,202241.00, 37],
+    [0,           0.00,   0],
+    [19300,       0.00,  10],
+    [44100,    2480.00,  12],
+    [120100,  11600.00,  22],
+    [230700,  35932.00,  24],
+    [422850,  82048.00,  32],
+    [531750, 116896.00,  35],
+    [788000, 206583.50,  37],
   ],
   head_of_household: [
-    [0,        0.00,   0],
-    [13900,    0.00,  10],
-    [30900,  1700.00, 12],
-    [78750, 7442.00,  22],
-    [122050, 16968.00, 24],
-    [201050, 35926.00, 32],
-    [254200, 52934.00, 35],
-    [630050, 184356.50, 37],
+    [0,           0.00,   0],
+    [15550,       0.00,  10],
+    [33250,    1770.00,  12],
+    [83000,    7740.00,  22],
+    [121250,  16155.00,  24],
+    [217300,  39207.00,  32],
+    [271750,  56631.00,  35],
+    [656150, 191171.00,  37],
   ],
 }
 
-// Step 2 (multiple jobs) — used when employee checked the box on Form W-4.
-const FED_BRACKETS_STEP2_2025 = {
+// Form W-4, Step 2, Checkbox, Withholding Rate Schedules (2020+ W-4 with the
+// Step 2 box checked). No Step 1g subtraction goes with these.
+const FED_BRACKETS_STEP2_2026 = {
   single: [
-    [0,        0.00,    0],
-    [7500,     0.00,   10],
-    [13513,    601.30, 12],
-    [31788,   2794.30, 22],
-    [59225,   8830.44, 24],
-    [106200, 20104.44, 32],
-    [132813, 28630.61, 35],
-    [320725, 94400.81, 37],
+    [0,          0.00,   0],
+    [8050,       0.00,  10],
+    [14250,    620.00,  12],
+    [33250,   2900.00,  22],
+    [60900,   8983.00,  24],
+    [108938, 20512.00,  32],
+    [136163, 29224.00,  35],
+    [328350, 96489.63,  37],
   ],
   married_jointly: [
-    [0,        0.00,   0],
-    [15000,    0.00,  10],
-    [27200,  1220.00, 12],
-    [63750,  5606.00, 22],
-    [118625, 17677.00, 24],
-    [165600, 28950.00, 32],
-    [192213, 37466.16, 35],
-    [317488, 81312.41, 37],
+    [0,           0.00,   0],
+    [16100,       0.00,  10],
+    [28500,    1240.00,  12],
+    [66500,    5800.00,  22],
+    [121800,  17966.00,  24],
+    [217875,  41024.00,  32],
+    [272325,  58448.00,  35],
+    [400450, 103291.75,  37],
   ],
   head_of_household: [
-    [0,        0.00,   0],
-    [11250,    0.00,  10],
-    [19750,   850.00, 12],
-    [43675,  3721.00, 22],
-    [65325,  8484.00, 24],
-    [104825, 17968.00, 32],
-    [131400, 26452.00, 35],
-    [319375, 92242.25, 37],
+    [0,          0.00,   0],
+    [12075,      0.00,  10],
+    [20925,    885.00,  12],
+    [45800,   3870.00,  22],
+    [64925,   8077.50,  24],
+    [112950, 19603.50,  32],
+    [140175, 28315.50,  35],
+    [332375, 95585.50,  37],
   ],
 }
 
-// Standard deduction baked into the tables above. Pub 15-T effectively
-// pre-subtracts $14,600 (single) / $29,200 (MFJ) from the bracket
-// thresholds, so we don't double-subtract here.
+// Worksheet 1A, line 1g. When the Step 2 box is NOT checked, Pub 15-T
+// subtracts this from annual wages before the STANDARD schedule is applied —
+// the schedule's first threshold ($7,500 single) is the standard deduction
+// ($16,100) minus this. The 2025 code skipped the step ("baked into the
+// thresholds" — it is not), so every paycheck was taxed on $8,600 (or
+// $12,900) of wages a year that the IRS excludes: about $40 a fortnight too
+// much for a single tech on $2,000, which is the Gusto gap Bryce reported.
+// Unchanged for 2026 (Pub 15-T, Worksheet 1A, line 1g).
+const W4_STEP1G_MARRIED_JOINTLY = 12900
+const W4_STEP1G_OTHER           = 8600
 
-// FICA constants — 2025
-const SS_WAGE_BASE_2025      = 168600
+// Exported for the tests, which check the schedules are internally
+// consistent (every base amount equals the tax accumulated below it).
+export const FED_SCHEDULES = { standard: FED_BRACKETS_2026, step2: FED_BRACKETS_STEP2_2026 }
+
+// FICA constants — 2026. SSA announced the wage base 2025-10-24: $184,500
+// (2025 was $176,100; the "2025" file said $168,600, which was 2024's).
+const SS_WAGE_BASE_2026      = 184500
 const SS_RATE                = 0.062
 const MEDICARE_RATE          = 0.0145
 const ADD_MEDICARE_THRESHOLD = 200000  // employee-only, no employer match
@@ -141,8 +169,11 @@ const FUTA_WAGE_BASE         = 7000
 const FUTA_RATE              = 0.006
 
 // State defaults (Utah). Other states will need their own rate tables.
-const UTAH_SIT_RATE          = 0.0455
-const UTAH_SUI_WAGE_BASE_2025 = 48900
+// Utah State Tax Commission, incometax.utah.gov/paying/tax-rates:
+// "January 1, 2025 – current: 4.5%". The file carried 4.55%, 2024's rate.
+const UTAH_SIT_RATE          = 0.045
+// Utah DWS, jobs.utah.gov: "During 2026, the taxable wage base is $50,700."
+const UTAH_SUI_WAGE_BASE_2026 = 50700
 
 // Pay frequency multipliers — turn one-paycheck into annualized + back.
 export const PAY_FREQUENCY_PERIODS = {
@@ -179,7 +210,7 @@ function r2(n) { return Math.round(n * 100) / 100 }
 
 /**
  * Compute federal income tax withholding for ONE pay period.
- * Implements IRS Pub 15-T 2025 Worksheet 1B (Annual Percentage Method).
+ * Implements IRS Pub 15-T 2026 Worksheet 1A (Percentage Method, automated).
  *
  * @param {object} args
  *   gross            number — this period's gross pay (incl OT, bonus, comm)
@@ -203,21 +234,23 @@ export function calcFederalIncomeTax(args) {
     extraPerPeriod = 0,
   } = args
 
-  if (!FED_BRACKETS_2025[filingStatus]) {
+  if (!FED_BRACKETS_2026[filingStatus]) {
     throw new Error(`Unknown filingStatus: ${filingStatus}`)
   }
 
   // Step 1: Annualize this period's wages, add other income.
   const annualWages = annualize(gross, payFrequency) + (otherIncomeAnnual || 0)
 
-  // Step 2: Subtract Step 4(b) deductions. (No standard deduction
-  // subtraction here — it's baked into the bracket thresholds.)
-  const taxableAnnual = Math.max(0, annualWages - (deductionsAnnual || 0))
+  // Step 2 (Worksheet 1A, lines 1f–1i): subtract Step 4(b) deductions, and —
+  // unless the Step 2 box is checked — line 1g. The STANDARD schedule's
+  // thresholds assume 1g has been taken off; the checkbox schedule's do not.
+  const step1g = multipleJobs ? 0 : (filingStatus === 'married_jointly' ? W4_STEP1G_MARRIED_JOINTLY : W4_STEP1G_OTHER)
+  const taxableAnnual = Math.max(0, annualWages - (deductionsAnnual || 0) - step1g)
 
   // Step 3: Look up bracket — Step 2 schedule if multiple jobs checked.
   const brackets = multipleJobs
-    ? FED_BRACKETS_STEP2_2025[filingStatus]
-    : FED_BRACKETS_2025[filingStatus]
+    ? FED_BRACKETS_STEP2_2026[filingStatus]
+    : FED_BRACKETS_2026[filingStatus]
   const tentativeAnnual = bracketTax(taxableAnnual, brackets)
 
   // Step 4: Subtract Step 3 tax credits (dependents).
@@ -239,7 +272,7 @@ export function calcFICA({ gross, ytdGrossBeforeThis, ytdMedicareBeforeThis }) {
   const ytdMed = Number(ytdMedicareBeforeThis) || 0
 
   // Social Security — caps at wage base
-  const ssRoom = Math.max(0, SS_WAGE_BASE_2025 - ytdSS)
+  const ssRoom = Math.max(0, SS_WAGE_BASE_2026 - ytdSS)
   const ssTaxable = Math.min(grossN, ssRoom)
   const ssEmployee = r2(ssTaxable * SS_RATE)
   const ssEmployer = r2(ssTaxable * SS_RATE)
@@ -280,7 +313,7 @@ export function calcFUTA({ gross, ytdGrossBeforeThis, ratePct }) {
 }
 
 /**
- * Utah state income tax — 4.55% flat (2025).
+ * Utah state income tax — 4.5% flat (2025–2026, per the Tax Commission).
  * Other states: route through this function with their own ratePct.
  */
 export function calcStateIncomeTax({ gross, state = 'UT', ratePct }) {
@@ -303,7 +336,7 @@ export function calcStateIncomeTax({ gross, state = 'UT', ratePct }) {
 export function calcSUI({ gross, ytdGrossBeforeThis, ratePct, wageBase }) {
   const grossN = Number(gross) || 0
   const ytd = Number(ytdGrossBeforeThis) || 0
-  const base = Number(wageBase) || UTAH_SUI_WAGE_BASE_2025
+  const base = Number(wageBase) || UTAH_SUI_WAGE_BASE_2026
   const room = Math.max(0, base - ytd)
   const taxable = Math.min(grossN, room)
   const rate = (Number(ratePct) || 0) / 100
@@ -378,7 +411,7 @@ export function calcPaystubTax(input) {
     gross: taxableWages,
     ytdGrossBeforeThis: Number(ytd.gross) || 0,
     ratePct: Number(company?.sui_rate_pct) || 0,
-    wageBase: Number(company?.sui_wage_base) || UTAH_SUI_WAGE_BASE_2025,
+    wageBase: Number(company?.sui_wage_base) || UTAH_SUI_WAGE_BASE_2026,
   })
 
   // Net pay

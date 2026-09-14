@@ -15,13 +15,13 @@ const r1 = calcPaystubTax({
 console.table(r1)
 // Sanity:
 //  - Annual = 52000
-//  - After std-ded (baked in): bracket 12% over $18,325 → roughly
-//    1202.50 + 12% * (52000-18325) = 1202.50 + 4041 = 5243.50/yr
-//    => $201.67/period FIT
+//  - Less Worksheet 1A line 1g ($8,600) = 43,400; 2026 STANDARD single
+//    row $19,900: 1240 + 12% * (43400-19900) = 1240 + 2820 = 4060/yr
+//    => $156.15/period FIT
 //  - SS  6.2% * 2000 = $124.00
 //  - MED 1.45% * 2000 = $29.00
-//  - SIT 4.55% * 2000 = $91.00
-//  - Net = 2000 - 201.67 - 124 - 29 - 91 = $1,554.33
+//  - SIT 4.5% * 2000 = $90.00
+//  - Net = 2000 - 156.15 - 124 - 29 - 90 = $1,600.85
 
 // --- Scenario 2: MFJ, 2 kids ($4000 dep credit), $3000 semimonthly ---
 header('MFJ, $3,000 semimonthly, 2 dependents ($4000 credit), Utah')
@@ -47,7 +47,7 @@ const r3 = calcPaystubTax({
   payFrequency: 'bi-weekly',
 })
 console.table(r3)
-// SS = 0 (already past 168,600)
+// SS = 0 (already past 184,500)
 // Add'l Medicare kicks in: 0.9% * 5000 = $45 (since YTD already > 200k)
 
 // --- Scenario 4: Just-in-time additional Medicare (crosses 200k mid-period) ---
@@ -56,7 +56,7 @@ const r4 = calcPaystubTax({
   employee: { w4_filing_status: 'single' },
   company:  { sui_rate_pct: 1.2, state_employer_id_state: 'UT' },
   gross: 5000,
-  ytd: { gross: 198000, ssWages: 168600, medicareWages: 198000 },
+  ytd: { gross: 198000, ssWages: 184500, medicareWages: 198000 },
   payFrequency: 'bi-weekly',
 })
 console.table(r4)
