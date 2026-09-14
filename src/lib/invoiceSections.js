@@ -209,12 +209,33 @@ export function buildInvoiceSections(invoice, lines, { parentInvoice = null, uti
   }
 }
 
-// Human label for the incentive line, naming the utility dynamically when
-// we know it. Falls back to a generic label. `utilityName` comes from the
-// linked utility_invoice.utility_name or the job's utility provider.
+// The customer-facing name of the incentive deduction: the utility's own
+// name when it is known ("Rocky Mountain Power Incentive"), the generic word
+// when it is not. Alayda (550b056d): a customer reading "Discount" asks what
+// they did to earn one; naming the utility says who is paying that part.
 export function incentiveLineLabel(utilityName) {
   const name = (utilityName || '').trim()
-  return name ? `Utility incentive (paid by ${name})` : 'Utility incentive'
+  return name ? `${name} Incentive` : 'Utility Incentive'
+}
+
+// Whether the deduction on this invoice is a utility incentive at all, read
+// from every place the fact can live: a linked utility record, the invoice's
+// own utility debt (mirrored from that record), a provider on the invoice,
+// and finally the job's incentive. That last one matters: an invoice raised
+// before its utility record exists still deducts the incentive, and three of
+// Alayda's September invoices printed "Discount" for exactly that reason.
+export function invoiceCarriesIncentive(invoice, linkedUtilityInvoice = null, job = null) {
+  if (linkedUtilityInvoice) return true
+  if (invoice?.utility_owes != null) return true
+  if (invoice?.utility_provider_id != null) return true
+  return (Number(job?.utility_incentive) || 0) > 0
+}
+
+// The label for the deduction line, everywhere it prints — screen, PDF and
+// portal read this one function so they cannot disagree.
+export function deductionLineLabel({ invoice, linkedUtilityInvoice = null, job = null, utilityProviders = [] } = {}) {
+  if (!invoiceCarriesIncentive(invoice, linkedUtilityInvoice, job)) return 'Discount'
+  return incentiveLineLabel(invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, job))
 }
 
 // ── Two-page composition ────────────────────────────────────────────────
@@ -319,12 +340,15 @@ export function whoPaysWhat({ utilityName, pageOne, twoPage }) {
 }
 
 // The utility's name as the invoice records it. Prefers the invoice's own
-// provider link; falls back to the linked utility row.
-export function invoiceUtilityName(invoice, utilityProviders = [], linkedUtilityInvoice = null) {
+// provider link; falls back to the linked utility row, then to the job. The
+// job page writes the placeholder "Utility" on a record raised with no audit
+// to name the provider — that is the absence of a name, not a name.
+export function invoiceUtilityName(invoice, utilityProviders = [], linkedUtilityInvoice = null, job = null) {
   const id = invoice?.utility_provider_id
   if (id != null) {
     const p = (utilityProviders || []).find((x) => Number(x?.id) === Number(id))
     if (p?.provider_name) return String(p.provider_name).trim()
   }
-  return String(linkedUtilityInvoice?.utility_name || '').trim() || null
+  const name = String(linkedUtilityInvoice?.utility_name || job?.utility_name || '').trim()
+  return name && name.toLowerCase() !== 'utility' ? name : null
 }

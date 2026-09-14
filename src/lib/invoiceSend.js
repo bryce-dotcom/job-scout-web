@@ -10,6 +10,7 @@
 // buildInvoiceSendPayload is pure and tested. sendInvoice does the I/O.
 
 import { getCustomerPrimary } from './customerDisplay'
+import { invoiceDiscountBreakout, deductionLineLabel } from './invoiceSections'
 
 const SITE_URL = 'https://jobscout.appsannex.com'
 
@@ -41,6 +42,29 @@ export function paymentMethodsFrom(settings) {
   return out
 }
 
+/**
+ * The deduction rows the email prints under the subtotal — the same split
+ * and the same labels as the PDF, so the email cannot call the incentive a
+ * "Discount" while the attached PDF names the utility (Alayda, 550b056d).
+ *
+ * A deposit-balance invoice whose parent we were not given keeps one plain
+ * row: without the parent, the deposit credit cannot be told apart from the
+ * incentive, and a wrong name is worse than a plain one. Legacy-net invoices
+ * (amount already net of the incentive) keep the row they always had.
+ */
+export function invoiceDeductionRows({ invoice, parentInvoice = null, linkedUtilityInvoice = null, job = null, utilityProviders = [] }) {
+  const b = invoiceDiscountBreakout(invoice, parentInvoice)
+  const r2 = (n) => Math.round(n * 100) / 100
+  if (!(b.discountApplied > 0)) return []
+  if (b.isLegacyNet || (invoice?.parent_invoice_id && !parentInvoice)) return [{ label: 'Discount', amount: r2(b.discountApplied) }]
+  const rows = []
+  if (b.projectDiscountField > 0) rows.push({ label: 'Project Discount', amount: r2(b.projectDiscountField) })
+  if (b.incentive > 0) rows.push({ label: deductionLineLabel({ invoice, linkedUtilityInvoice, job, utilityProviders }), amount: r2(b.incentive) })
+  if (b.downPayment > 0) rows.push({ label: 'Down Payment', amount: r2(b.downPayment) })
+  if (b.depositCredit > 0) rows.push({ label: 'Deposit Applied', amount: r2(b.depositCredit) })
+  return rows
+}
+
 export function logoUrlFrom(settings, businessUnit, company) {
   if (businessUnit?.logo_url) return businessUnit.logo_url
   const logoSetting = (settings || []).find(s => s.key === 'company_logo_url')
@@ -60,8 +84,12 @@ export function logoUrlFrom(settings, businessUnit, company) {
  * @param {string} [p.cc]             cc list
  * @param {string} [p.subject]        custom subject
  * @param {{filename:string, content:string}[]} [p.attachments]
+ * @param {object|null} [p.parentInvoice]        the deposit invoice this one balances
+ * @param {object|null} [p.linkedUtilityInvoice] the utility record on this invoice
+ * @param {object|null} [p.job]                  the job (utility_incentive, utility_name)
+ * @param {object[]} [p.utilityProviders]        the store's providers, to name the utility
  */
-export function buildInvoiceSendPayload({ invoice, lines, customer, company, settings, recipient, portalToken, pdfPath, cc, subject, attachments }) {
+export function buildInvoiceSendPayload({ invoice, lines, customer, company, settings, recipient, portalToken, pdfPath, cc, subject, attachments, parentInvoice = null, linkedUtilityInvoice = null, job = null, utilityProviders = [] }) {
   const bu = businessUnitFor(settings, invoice)
   return {
     company_id: invoice.company_id,
@@ -73,6 +101,8 @@ export function buildInvoiceSendPayload({ invoice, lines, customer, company, set
     invoice_number: invoice.invoice_id || `INV-${invoice.id}`,
     amount: invoice.amount,
     discount: invoice.discount_applied || 0,
+    // What the discount IS, row by row, named the way the PDF names it.
+    deductions: invoiceDeductionRows({ invoice, parentInvoice, linkedUtilityInvoice, job, utilityProviders }),
     job_description: invoice.job_description || '',
     invoice_lines: (lines || []).map(l => ({
       description: l.description || l.item_name || 'Item',
@@ -102,7 +132,7 @@ export function buildInvoiceSendPayload({ invoice, lines, customer, company, set
  * the job to Invoiced; the field sheet does the same through
  * markJobInvoicedAfterSend).
  */
-export async function sendInvoice(supabase, { invoice, lines, customer, company, settings, recipient, pdfPath, cc, subject, attachments }) {
+export async function sendInvoice(supabase, { invoice, lines, customer, company, settings, recipient, pdfPath, cc, subject, attachments, parentInvoice, linkedUtilityInvoice, job, utilityProviders }) {
   const { data: tokenRow } = await supabase
     .from('customer_portal_tokens')
     .insert({
@@ -118,6 +148,7 @@ export async function sendInvoice(supabase, { invoice, lines, customer, company,
   const payload = buildInvoiceSendPayload({
     invoice, lines, customer, company, settings, recipient,
     portalToken: tokenRow?.token || null, pdfPath, cc, subject, attachments,
+    parentInvoice, linkedUtilityInvoice, job, utilityProviders,
   })
 
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL

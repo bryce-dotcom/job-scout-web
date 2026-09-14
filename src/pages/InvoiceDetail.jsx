@@ -17,7 +17,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
 import { resolveMatLabSplit, splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
-import { buildInvoiceSections, buildInvoicePages, incentiveLineLabel, invoiceDiscountBreakout, whoPaysWhat, invoiceUtilityName, lineAmount } from '../lib/invoiceSections'
+import { buildInvoiceSections, buildInvoicePages, deductionLineLabel, invoiceDiscountBreakout, whoPaysWhat, invoiceUtilityName, lineAmount } from '../lib/invoiceSections'
 import { recordUtilityPayment, reopenUtilityPayment, correctUtilityPaidAt } from '../lib/utilitySettlement'
 import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
 import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
@@ -236,7 +236,7 @@ export default function InvoiceDetail() {
 
     const { data: invoiceData } = await supabase
       .from('invoices')
-      .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title, job_address, lead_id, quote_id, service_kind, parts_coverage, labor_coverage, coverage_notes, parent_job_id)')
+      .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title, job_address, lead_id, quote_id, service_kind, parts_coverage, labor_coverage, coverage_notes, parent_job_id, utility_incentive, utility_name)')
       .eq('id', id)
       .single()
 
@@ -1259,7 +1259,14 @@ Add it anyway?`,
       doc.setFontSize(opts.fontSize || 10)
       if (opts.color) doc.setTextColor(...opts.color)
       else doc.setTextColor(0)
-      doc.text(label, totalsX, y)
+      // A label wider than the column starts further left rather than
+      // running into its amount. Nothing else prints on these rows, and a
+      // utility's name ("Salt River Project (SRP) Incentive:") is longer than
+      // the 70 mm the column allows.
+      const labelW = doc.getTextWidth(label)
+      const amountW = doc.getTextWidth(amount)
+      const x = labelW + amountW + 2 > rightEdge - totalsX ? Math.max(margin, rightEdge - amountW - 2 - labelW) : totalsX
+      doc.text(label, x, y)
       doc.text(amount, rightEdge, y, { align: 'right' })
       y += 6
     }
@@ -1384,7 +1391,7 @@ Add it anyway?`,
     // cannot disagree with the lines printed above it.
     const drawWhoPaysWhat = () => {
       const split = whoPaysWhat({
-        utilityName: invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice),
+        utilityName: invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, invoice.job),
         pageOne: pages.pageOne,
         twoPage: true,
       })
@@ -1501,7 +1508,7 @@ Add it anyway?`,
           // Alayda sends the utility ends on Material/Labor with no total.
           drawTotalLine('Project Subtotal:', formatCurrency(pages.pageOne.subtotal))
           if (pages.pageOne.incentive > 0) {
-            drawTotalLine('Utility Incentive:', `-${formatCurrency(pages.pageOne.incentive)}`, { color: [200, 0, 0] })
+            drawTotalLine(`${incentiveLabel}:`, `-${formatCurrency(pages.pageOne.incentive)}`, { color: [200, 0, 0] })
           }
           if (pages.pageOne.projectDiscount > 0) {
             drawTotalLine('Project Discount:', `-${formatCurrency(pages.pageOne.projectDiscount)}`, { color: [200, 0, 0] })
@@ -1530,12 +1537,12 @@ Add it anyway?`,
         // → (project discount) → net project. The incentive visually
         // reduces ONLY the utility-qualifying project, then the add-ons are
         // billed on top at full price.
-        const payer = linkedUtilityInvoice?.utility_name
+        const payer = invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, invoice.job)
         drawSectionTitle('Utility Project', payer ? `Incentive paid by ${payer}` : 'Eligible for utility incentive')
         drawItemRows(sections.inScope)
         drawTotalLine('Project Subtotal:', formatCurrency(sections.inScopeSubtotal))
         if (sections.incentive > 0) {
-          drawTotalLine('Utility Incentive:', `-${formatCurrency(sections.incentive)}`, { color: [200, 0, 0] })
+          drawTotalLine(`${incentiveLabel}:`, `-${formatCurrency(sections.incentive)}`, { color: [200, 0, 0] })
         }
         // Single-page invoices must come out exactly as they do today, down
         // to the order of the deduction lines, so the down payment stays
@@ -1664,7 +1671,7 @@ Add it anyway?`,
       if (!useTwoPagePdf) {
         drawTotalLine('Project Subtotal:', formatCurrency(sections.inScopeSubtotal))
         if (sections.incentive > 0) {
-          drawTotalLine('Utility Incentive:', `-${formatCurrency(sections.incentive)}`, { color: [200, 0, 0] })
+          drawTotalLine(`${incentiveLabel}:`, `-${formatCurrency(sections.incentive)}`, { color: [200, 0, 0] })
         }
         if (sections.projectDiscount > 0) {
           drawTotalLine('Project Discount:', `-${formatCurrency(sections.projectDiscount)}`, { color: [200, 0, 0] })
@@ -1713,7 +1720,7 @@ Add it anyway?`,
             drawTotalLine('Project Discount:', `-${formatCurrency(projectDiscountPortion)}`, { color: [200, 0, 0] })
           }
           if (incentivePortion > 0) {
-            drawTotalLine(linkedUtilityInvoice ? 'Utility Incentive:' : 'Discount:', `-${formatCurrency(incentivePortion)}`, { color: [200, 0, 0] })
+            drawTotalLine(`${incentiveLabel}:`, `-${formatCurrency(incentivePortion)}`, { color: [200, 0, 0] })
           }
           if (downPaymentPortion > 0) {
             drawTotalLine('Down Payment:', `-${formatCurrency(downPaymentPortion)}`, { color: [200, 0, 0] })
@@ -1725,7 +1732,7 @@ Add it anyway?`,
             drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
           }
         } else {
-          drawTotalLine(linkedUtilityInvoice ? 'Utility Incentive:' : 'Discount:', `-${formatCurrency(pdfDiscount)}`, { color: [200, 0, 0] })
+          drawTotalLine(`${incentiveLabel}:`, `-${formatCurrency(pdfDiscount)}`, { color: [200, 0, 0] })
         }
       }
 
@@ -2018,6 +2025,8 @@ Add it anyway?`,
         cc: sendCc,
         subject: sendSubject,
         attachments: sendAttachments.length > 0 ? sendAttachments.map(a => ({ filename: a.name, content: a.base64 })) : undefined,
+        // So the email's deduction rows carry the same names as the PDF.
+        parentInvoice, linkedUtilityInvoice, job: invoice.job, utilityProviders,
       })
 
       // The customer invoice going out is what moves the job (and lead) to
@@ -2166,9 +2175,11 @@ Add it anyway?`,
   // number on a customer invoice".
   const pages = buildInvoicePages(sections)
   const useTwoPagePdf = useSectionLayout && pages.twoPage && pages.reconciles
-  const incentiveLabel = linkedUtilityInvoice
-    ? incentiveLineLabel(linkedUtilityInvoice.utility_name)
-    : 'Discount'
+  // One label for the deduction line, shared with the PDF below and the
+  // customer portal: the utility's name when the invoice or its job knows
+  // one, "Utility Incentive" when only the fact is known, "Discount" when the
+  // deduction is a plain discount.
+  const incentiveLabel = deductionLineLabel({ invoice, linkedUtilityInvoice, job: invoice.job, utilityProviders })
 
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
@@ -2362,7 +2373,7 @@ Add it anyway?`,
             invoice={invoice}
             pages={pages}
             payments={payments}
-            utilityName={invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice)}
+            utilityName={invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, invoice.job)}
             linkedUtilityInvoice={linkedUtilityInvoice}
             onMarkSubmitted={markUtilitySubmitted}
             onRecordPayment={recordUtilitySettlement}
@@ -3269,7 +3280,7 @@ Add it anyway?`,
                   )}
                   {incentivePortion > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
-                      <span style={{ color: theme.textSecondary }}>{linkedUtilityInvoice ? 'Utility Incentive' : 'Discount'}</span>
+                      <span style={{ color: theme.textSecondary }}>{incentiveLabel}</span>
                       <span style={{ color: '#dc2626' }}>-{formatCurrency(incentivePortion)}</span>
                     </div>
                   )}
@@ -3296,7 +3307,7 @@ Add it anyway?`,
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', alignItems: 'center' }}>
                   <span style={{ color: theme.textSecondary }}>
-                    {linkedUtilityInvoice ? 'Utility Incentive' : 'Discount'}
+                    {incentiveLabel}
                   </span>
                   {invoice.discount_applied > 0 ? (
                     <span style={{ color: '#dc2626' }}>-{formatCurrency(invoice.discount_applied)}</span>

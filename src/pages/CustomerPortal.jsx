@@ -2,7 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react'
 import { serviceAddressToShow } from '../lib/serviceAddress'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { buildInvoiceSections, incentiveLineLabel } from '../lib/invoiceSections'
+import { buildInvoiceSections, deductionLineLabel } from '../lib/invoiceSections'
 import { isLegacyNetShape } from '../lib/arHelpers'
 import { withAssets } from '../lib/productAssets'
 
@@ -300,9 +300,10 @@ export default function CustomerPortal() {
       })
     : null
   const useSectionLayout = !!invoiceSections?.applicable && invoiceSections.hasOutScope
-  const portalIncentiveLabel = doc.linked_utility_invoice
-    ? incentiveLineLabel(doc.linked_utility_invoice.utility_name)
-    : 'Discount'
+  // Same rule as the invoice screen and PDF (deductionLineLabel): the
+  // utility's name when the invoice or its job knows one, "Discount" only
+  // when the deduction really is one.
+  const portalIncentiveLabel = deductionLineLabel({ invoice: doc, linkedUtilityInvoice: doc.linked_utility_invoice, job: doc.job })
 
   // When the invoice hides line descriptions, portal rows show just the
   // product name; otherwise the name is followed by the description detail.
@@ -768,7 +769,7 @@ export default function CustomerPortal() {
                         <span style={{ color: theme.textMuted, fontSize: '13px' }}>
                           {invoiceLegacyNet
                             ? 'Utility Incentive (applied)'
-                            : (doc.linked_utility_invoice ? 'Utility Incentive' : 'Discount')}
+                            : portalIncentiveLabel}
                         </span>
                         <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>
                           {invoiceLegacyNet ? formatCurrency(invoiceDiscount) : `-${formatCurrency(invoiceDiscount)}`}
@@ -785,7 +786,7 @@ export default function CustomerPortal() {
                         )}
                         {incentivePortion > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span style={{ color: theme.textMuted, fontSize: '13px' }}>{doc.linked_utility_invoice ? 'Utility Incentive' : 'Discount'}</span>
+                            <span style={{ color: theme.textMuted, fontSize: '13px' }}>{portalIncentiveLabel}</span>
                             <span style={{ fontWeight: '600', color: theme.success, fontSize: '14px' }}>-{formatCurrency(incentivePortion)}</span>
                           </div>
                         )}

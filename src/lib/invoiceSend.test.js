@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildInvoiceSendPayload, paymentMethodsFrom, businessUnitFor, logoUrlFrom, portalUrlFor } from './invoiceSend'
+import { buildInvoiceSendPayload, paymentMethodsFrom, businessUnitFor, logoUrlFrom, portalUrlFor, invoiceDeductionRows } from './invoiceSend'
 
 const settings = [
   { key: 'business_units', value: JSON.stringify([{ name: 'HHH Building Services', phone: '801-555-0100', email: 'info@hhh.services', address: '6395 W 10400 N, Highland, UT', logo_url: 'https://x/bu.png' }]) },
@@ -51,5 +51,69 @@ describe('the pieces', () => {
   it('portal url', () => {
     expect(portalUrlFor('abc')).toBe('https://jobscout.appsannex.com/portal/abc')
     expect(portalUrlFor(null)).toBeNull()
+  })
+})
+
+// ── the email's deduction rows ────────────────────────────────────────────
+// The email used to print one "Discount" row for whatever discount_applied
+// held — the utility incentive included (Alayda, 550b056d). It now prints
+// the same rows, with the same names, as the PDF's totals block.
+describe('the deduction rows in the email', () => {
+  const providers = [{ id: 116, provider_name: 'Rocky Mountain Power' }]
+
+  it('a plain discount is the one row the email always had', () => {
+    expect(invoiceDeductionRows({ invoice: { amount: 595, discount_applied: 54.59 } })).toEqual([{ label: 'Discount', amount: 54.59 }])
+  })
+
+  it('nothing to deduct, no rows', () => {
+    expect(invoiceDeductionRows({ invoice: { amount: 595, discount_applied: 0 } })).toEqual([])
+    expect(invoiceDeductionRows({ invoice: { amount: 595, discount_applied: null } })).toEqual([])
+  })
+
+  it('names the utility on a lighting invoice — ABC Supply', () => {
+    const invoice = { amount: 9971.12, discount_applied: 6528, utility_owes: 6528, utility_provider_id: 116 }
+    expect(invoiceDeductionRows({ invoice, utilityProviders: providers })).toEqual([{ label: 'Rocky Mountain Power Incentive', amount: 6528 }])
+  })
+
+  it('an invoice whose job carries the incentive but has no utility record yet — Intercon', () => {
+    const invoice = { amount: 68235.64, discount_applied: 51176.73, utility_owes: null, utility_provider_id: null }
+    expect(invoiceDeductionRows({ invoice, job: { utility_incentive: 51176.73 } })).toEqual([{ label: 'Utility Incentive', amount: 51176.73 }])
+  })
+
+  it('splits the rep\'s discount, the incentive and a down payment into their own rows — RSW', () => {
+    const invoice = { amount: 6191.84, discount_applied: 4344, project_discount: 200, utility_owes: 4144, down_payment_applied: null }
+    expect(invoiceDeductionRows({ invoice, linkedUtilityInvoice: { utility_name: 'Rocky Mountain Power' } })).toEqual([
+      { label: 'Project Discount', amount: 200 },
+      { label: 'Rocky Mountain Power Incentive', amount: 4144 },
+    ])
+    const withDown = { amount: 18203.8, discount_applied: 15602.85, down_payment_applied: 1950, utility_owes: 13652.85 }
+    expect(invoiceDeductionRows({ invoice: withDown })).toEqual([
+      { label: 'Utility Incentive', amount: 13652.85 },
+      { label: 'Down Payment', amount: 1950 },
+    ])
+  })
+
+  it('a deposit balance names the deposit when the parent is known, and stays plain when it is not', () => {
+    const invoice = { amount: 10000, discount_applied: 5000, parent_invoice_id: 7, utility_owes: 3000 }
+    const parent = { id: 7, invoice_type: 'deposit', amount: 2000 }
+    expect(invoiceDeductionRows({ invoice, parentInvoice: parent })).toEqual([
+      { label: 'Utility Incentive', amount: 3000 },
+      { label: 'Deposit Applied', amount: 2000 },
+    ])
+    // Without the parent the deposit cannot be told apart from the incentive — one honest row.
+    expect(invoiceDeductionRows({ invoice })).toEqual([{ label: 'Discount', amount: 5000 }])
+  })
+
+  it('a legacy-net invoice keeps its row', () => {
+    expect(invoiceDeductionRows({ invoice: { amount: 3000, discount_applied: 6000 } })).toEqual([{ label: 'Discount', amount: 6000 }])
+  })
+
+  it('the rows ride in the payload, and sum to the discount the email subtracts', () => {
+    const p = buildInvoiceSendPayload({
+      invoice: { ...invoice, amount: 9971.12, discount_applied: 6528, utility_owes: 6528 }, lines, customer: null, company, settings, recipient: 'a@b.com', portalToken: null,
+      linkedUtilityInvoice: { utility_name: 'Rocky Mountain Power' },
+    })
+    expect(p.deductions).toEqual([{ label: 'Rocky Mountain Power Incentive', amount: 6528 }])
+    expect(p.deductions.reduce((s, d) => s + d.amount, 0)).toBe(p.discount)
   })
 })

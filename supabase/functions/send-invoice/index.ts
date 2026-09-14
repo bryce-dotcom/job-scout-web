@@ -34,6 +34,7 @@ serve(async (req) => {
       invoice_number,
       amount,
       discount,
+      deductions,
       job_description,
       invoice_lines,
       customer_name,
@@ -93,6 +94,7 @@ serve(async (req) => {
     const contactAddress = business_unit_address || '';
     const invNum = invoice_number || `INV-${invoice_id}`;
     const amountNum = parseFloat(amount) || 0;
+    const escapeHtml = (v: string) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
     const discountNum = parseFloat(discount) || 0;
     const balanceDue = amountNum - discountNum;
     const amountStr = balanceDue > 0 ? `$${balanceDue.toFixed(2)}` : '';
@@ -188,11 +190,26 @@ serve(async (req) => {
           <td style="padding:10px 0;color:#2c3530;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">$${amountNum.toFixed(2)}</td>
         </tr>`;
     }
-    if (discountNum > 0) {
+    // The deduction, row by row, named the way the PDF names it — "Rocky
+    // Mountain Power Incentive", "Project Discount", "Down Payment" — when
+    // the app sends the rows (lib/invoiceSend). A caller that sends none
+    // gets the single "Discount" row this email always had.
+    const deductionRows: { label: string; amount: number }[] = Array.isArray(deductions)
+      ? deductions.filter((d) => d && typeof d.label === 'string' && Number(d.amount) > 0)
+      : [];
+    if (deductionRows.length > 0) {
+      for (const d of deductionRows) {
+        summaryRows += `
+        <tr>
+          <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">${escapeHtml(d.label)}</td>
+          <td style="padding:10px 0;color:#16a34a;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">-${Number(d.amount).toFixed(2)}</td>
+        </tr>`;
+      }
+    } else if (discountNum > 0) {
       summaryRows += `
         <tr>
           <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">Discount</td>
-          <td style="padding:10px 0;color:#16a34a;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">-$${discountNum.toFixed(2)}</td>
+          <td style="padding:10px 0;color:#16a34a;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">-${discountNum.toFixed(2)}</td>
         </tr>`;
     }
 

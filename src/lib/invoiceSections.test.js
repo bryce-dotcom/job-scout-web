@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {lineAmount, lineInScope, invoiceDiscountBreakout, buildInvoiceSections, incentiveLineLabel, buildInvoicePages, whoPaysWhat, invoiceUtilityName } from './invoiceSections'
+import {lineAmount, lineInScope, invoiceDiscountBreakout, buildInvoiceSections, incentiveLineLabel, buildInvoicePages, whoPaysWhat, invoiceUtilityName, invoiceCarriesIncentive, deductionLineLabel } from './invoiceSections'
 
 // ─────────────────────────────────────────────────────────────────────────
 // CHARACTERIZATION TESTS — the two-section Energy Scout invoice.
@@ -475,5 +475,69 @@ describe('a down payment rides through the split untouched', () => {
     expect(s.projectDiscount).toBe(0)
     expect(s.customerTotal).toBe(16300)          // 15,800 + the 500 they now cover
     expect(buildInvoicePages(s).pageOne.total).toBe(15300)
+  })
+})
+
+// ── the deduction line's name ─────────────────────────────────────────────
+// Alayda (550b056d): three September invoices printed "Discount −$51,176.73"
+// for the utility incentive because no utility record was linked yet. The
+// name is one rule for the screen, the PDF, the portal and the email.
+describe('deductionLineLabel — one name for the deduction, wherever it prints', () => {
+  const providers = [{ id: 116, provider_name: 'Rocky Mountain Power' }, { id: 128, provider_name: 'Salt River Project (SRP)' }]
+
+  it('names the utility from the invoice\'s own provider first', () => {
+    expect(deductionLineLabel({ invoice: { utility_provider_id: 116 }, utilityProviders: providers })).toBe('Rocky Mountain Power Incentive')
+  })
+
+  it('then from the linked utility record, then from the job', () => {
+    expect(deductionLineLabel({ invoice: {}, linkedUtilityInvoice: { utility_name: 'Logan City Light & Power' } })).toBe('Logan City Light & Power Incentive')
+    expect(deductionLineLabel({ invoice: {}, job: { utility_incentive: 51176.73, utility_name: 'Rocky Mountain Power' } })).toBe('Rocky Mountain Power Incentive')
+  })
+
+  it('an invoice raised before its utility record exists still says Incentive, not Discount', () => {
+    // Intercon, Halverson, Four Pines: job carries the incentive, nothing linked, no provider, no name.
+    expect(deductionLineLabel({ invoice: { utility_owes: null, utility_provider_id: null }, job: { utility_incentive: 51176.73 } })).toBe('Utility Incentive')
+    // The mirror alone (utility_owes set) is enough too.
+    expect(deductionLineLabel({ invoice: { utility_owes: 6528 } })).toBe('Utility Incentive')
+    // A voided utility record mirrors 0, and 0 is still knowledge of a utility.
+    expect(deductionLineLabel({ invoice: { utility_owes: 0 } })).toBe('Utility Incentive')
+  })
+
+  it('a plain discount is still a Discount', () => {
+    expect(deductionLineLabel({ invoice: { discount_applied: 50 } })).toBe('Discount')
+    expect(deductionLineLabel({ invoice: { discount_applied: 50 }, job: { utility_incentive: 0 } })).toBe('Discount')
+    expect(deductionLineLabel({ invoice: { discount_applied: 50 }, job: { utility_incentive: null } })).toBe('Discount')
+    expect(deductionLineLabel({})).toBe('Discount')
+    expect(deductionLineLabel()).toBe('Discount')
+  })
+
+  it('invoiceCarriesIncentive reads every place the fact can live, and nothing else', () => {
+    expect(invoiceCarriesIncentive({}, { id: 1 })).toBe(true)
+    expect(invoiceCarriesIncentive({ utility_owes: 100 })).toBe(true)
+    expect(invoiceCarriesIncentive({ utility_provider_id: 116 })).toBe(true)
+    expect(invoiceCarriesIncentive({}, null, { utility_incentive: '6528.00' })).toBe(true)
+    expect(invoiceCarriesIncentive({ discount_applied: 999, project_discount: 999 })).toBe(false)
+    // A select that left the columns out reads undefined, which must not count as a utility.
+    expect(invoiceCarriesIncentive({ utility_owes: undefined, utility_provider_id: undefined })).toBe(false)
+    expect(invoiceCarriesIncentive(null)).toBe(false)
+  })
+
+  it('the incentive label itself is the utility\'s name plus Incentive', () => {
+    expect(incentiveLineLabel('Rocky Mountain Power')).toBe('Rocky Mountain Power Incentive')
+    expect(incentiveLineLabel('  Salt River Project (SRP)  ')).toBe('Salt River Project (SRP) Incentive')
+    expect(incentiveLineLabel('')).toBe('Utility Incentive')
+    expect(incentiveLineLabel(null)).toBe('Utility Incentive')
+  })
+
+  it('invoiceUtilityName falls back to the job\'s utility name last', () => {
+    expect(invoiceUtilityName({}, [], null, { utility_name: 'Rocky Mountain Power' })).toBe('Rocky Mountain Power')
+    expect(invoiceUtilityName({}, [], { utility_name: 'Linked' }, { utility_name: 'Job' })).toBe('Linked')
+    expect(invoiceUtilityName({}, [], null, { utility_name: '  ' })).toBe(null)
+    expect(invoiceUtilityName({}, [], null, null)).toBe(null)
+  })
+
+  it('the job page placeholder "Utility" is not a name', () => {
+    expect(invoiceUtilityName({}, [], { utility_name: 'Utility' })).toBe(null)
+    expect(deductionLineLabel({ invoice: {}, linkedUtilityInvoice: { utility_name: 'Utility' } })).toBe('Utility Incentive')
   })
 })

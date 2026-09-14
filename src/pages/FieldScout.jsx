@@ -4062,6 +4062,8 @@ export default function FieldScout() {
               : { data: null }
             await sendInvoice(supabase, {
               invoice: { ...invoice, company_id: companyId }, lines: lines || [], customer: cust, company, settings, recipient: opts.email,
+              // The job names the incentive on the email's deduction row.
+              job,
             })
             await markJobInvoicedAfterSend(supabase, invoice)
             toast.success(`Invoice ${invoice.invoice_id} sent to ${opts.email}`)
