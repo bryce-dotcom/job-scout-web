@@ -82,3 +82,54 @@ export function tokenFromAddresses(addresses: (string | null | undefined)[]): st
   }
   return null
 }
+
+// ── feedback tickets ──────────────────────────────────────────────────────
+//
+// A reply to a ticket answer used to go to noreply@ and vanish: the inbound
+// router filed it nowhere, because nothing said which ticket it belonged
+// to, and the person answering never heard back (Alayda, 2026-09-11 — her
+// answer to "did you edit the discount?" never arrived). Same scheme as the
+// estimate token, with its own prefix so the two parsers never meet:
+//
+//   feedback+<uuid, 32 hex><sig>@<inbound domain>
+//
+// The id is a uuid, so it rides in the address whole (dashes dropped); the
+// signature is the same truncated HMAC, over a namespaced message so an
+// estimate token can never verify as a ticket token or vice versa.
+
+const UUID_HEX = 32
+
+export async function feedbackReplyToken(ticketId: string, secret: string): Promise<string> {
+  const id = String(ticketId).toLowerCase().replace(/-/g, '')
+  if (!/^[0-9a-f]{32}$/.test(id)) throw new Error('feedbackReplyToken: not a uuid')
+  const sig = (await hmacHex(`feedback:${id}`, secret)).slice(0, SIG_LEN)
+  return `${id}${sig}`
+}
+
+export async function feedbackReplyAddress(ticketId: string, secret: string, domain: string): Promise<string> {
+  return `feedback+${await feedbackReplyToken(ticketId, secret)}@${domain}`
+}
+
+/** Recover the ticket id (dashed uuid) from a feedback token, or null. */
+export async function parseFeedbackToken(token: string | null | undefined, secret: string): Promise<string | null> {
+  const t = String(token || '').trim().toLowerCase()
+  if (t.length !== UUID_HEX + SIG_LEN) return null
+  const id = t.slice(0, UUID_HEX)
+  const sig = t.slice(UUID_HEX)
+  if (!/^[0-9a-f]{32}$/.test(id)) return null
+  const expected = (await hmacHex(`feedback:${id}`, secret)).slice(0, SIG_LEN)
+  if (sig.length !== expected.length) return null
+  let diff = 0
+  for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i)
+  if (diff !== 0) return null
+  return `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`
+}
+
+/** Pull a feedback token out of any of the To/Cc addresses on an inbound email. */
+export function feedbackTokenFromAddresses(addresses: (string | null | undefined)[]): string | null {
+  for (const raw of addresses || []) {
+    const m = String(raw || '').toLowerCase().match(/feedback\+([a-z0-9]+)@/)
+    if (m) return m[1]
+  }
+  return null
+}

@@ -136,6 +136,7 @@ module.exports = async function handler(req, res) {
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${anon}`, apikey: anon },
           body: JSON.stringify({
             recipient_email: t.user_email,
+            feedback_id: t.id,
             subject: t.subject || t.feedback_type,
             original_message: t.message,
             reply_message: body,

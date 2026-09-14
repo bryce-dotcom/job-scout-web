@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   matchInboundToEstimate, normalizeEmail, stripQuotedReply, type QuoteCandidate,
 } from "../_shared/inboundMatch.ts";
-import { parseReplyToken, tokenFromAddresses } from "../_shared/replyToken.ts";
+import { parseReplyToken, tokenFromAddresses, parseFeedbackToken, feedbackTokenFromAddresses } from "../_shared/replyToken.ts";
 import { verifySvixSignature, htmlToText, isAutoReply, recipientKind, readEmail } from "../_shared/inboundWebhook.ts";
 import { emailRep, repEmailShell, appLink } from "../_shared/notifyRep.ts";
 
@@ -135,7 +135,7 @@ serve(async (req) => {
   // The MX covers the whole domain, so replies to invoice and receipt emails
   // arrive here too. Those are not estimate replies and must never be filed
   // on one; they are raised to the tenant instead, further down.
-  const kind = recipientKind(mail.to);
+  let kind = recipientKind(mail.to);
 
   // Always 200, even on rubbish.
   //
@@ -173,6 +173,50 @@ serve(async (req) => {
   // against the wrong key. Verifying with a secret that might be wrong is worse
   // than not verifying: it turns a deterministic match into a silent miss.
   const REPLY_SECRET = Deno.env.get('REPLY_TOKEN_SECRET') || '';
+
+  // ── a reply to a feedback ticket ─────────────────────────────────────────
+  // Ticket answers go out with reply_to = feedback+<token>@…, the token
+  // naming the ticket. Before that they went out from noreply@ and a reply
+  // landed here as mail from an address no estimate was ever sent to — which
+  // is a console.warn and nothing else. Alayda's answer about the ABC Supply
+  // discount went that way on 2026-09-11.
+  //
+  // The reply becomes the next entry in the ticket's thread, marked as the
+  // reporter's, and is raised as a company notification so a person sees it.
+  // A resolved ticket that gets a reply reopens: the reporter is saying it
+  // is not done. A token that does not verify is treated as ordinary mail.
+  if (kind === 'feedback') {
+    const fbToken = feedbackTokenFromAddresses([mail.to, ...(mail.allRecipients || [])]);
+    const ticketId = fbToken && REPLY_SECRET ? await parseFeedbackToken(fbToken, REPLY_SECRET) : null;
+    const { data: ticket } = ticketId
+      ? await supabase.from('feedback').select('id, company_id, subject, status, reply_history, user_email').eq('id', ticketId).maybeSingle()
+      : { data: null };
+    if (ticket) {
+      const body = stripQuotedReply(mail.body);
+      const entry = { direction: 'in', from: mail.from, message: body, received_at: new Date().toISOString() };
+      const { error: fbErr } = await supabase.from('feedback').update({
+        reply_history: [...((ticket.reply_history as unknown[]) || []), entry],
+        status: ticket.status === 'resolved' ? 'new' : ticket.status,
+      }).eq('id', ticket.id);
+      if (fbErr) console.error('[inbound-email] could not file feedback reply:', fbErr.message);
+      if (ticket.company_id != null) {
+        const { error: nErr } = await supabase.from('company_notifications').insert({
+          company_id: ticket.company_id,
+          type: 'feedback_reply',
+          title: `Reply on ticket: ${ticket.subject || '(no subject)'}`,
+          message: `${mail.from} wrote: ${body.slice(0, 300)}`,
+          metadata: { feedback_id: ticket.id, from_email: mail.from, source: 'inbound_email' },
+          created_by: null,
+        });
+        if (nErr) console.error('[inbound-email] could not raise feedback-reply notification:', nErr.message);
+      }
+      console.log(`[inbound-email] reply from ${mail.from} filed on ticket ${ticket.id}`);
+      return json({ ok: true, matched: true, kind: 'feedback', feedback_id: ticket.id });
+    }
+    console.warn(`[inbound-email] mail to a feedback address did not resolve to a ticket (${fbToken ? 'token did not verify' : 'no token'}) — handling as other mail`);
+    kind = 'other';
+  }
+
   let quote: QuoteCandidate | null = null;
   let reason = 'none';
 

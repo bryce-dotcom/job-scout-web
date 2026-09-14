@@ -108,10 +108,11 @@ export function isAutoReply(subject: string | null | undefined, headers: Record<
 //                                   may be matched to the sender's estimate
 //   other      invoices@, receipts@, noreply@, anything else — never an estimate
 //                                   reply, so never filed on one
-export type RecipientKind = 'token' | 'estimates' | 'other'
+export type RecipientKind = 'token' | 'feedback' | 'estimates' | 'other'
 export function recipientKind(to: string | null | undefined): RecipientKind {
   const local = String(to || '').toLowerCase().split('@')[0]
   if (/^reply\+/.test(local)) return 'token'
+  if (/^feedback\+/.test(local)) return 'feedback'
   if (local === 'estimates') return 'estimates'
   return 'other'
 }

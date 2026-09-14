@@ -71,3 +71,57 @@ describe('finding the token on an inbound email', () => {
     expect(tokenFromAddresses(null)).toBe(null)
   })
 })
+
+// ── feedback tickets ──────────────────────────────────────────────────────
+// A ticket answer goes out with reply_to = feedback+<token>@domain. The
+// inbound router must get the ticket back from that address and nothing else
+// — not from a forged one, not from an estimate token, not from noreply@.
+import { feedbackReplyAddress, parseFeedbackToken, feedbackTokenFromAddresses } from './replyToken.js'
+import { recipientKind } from './inboundWebhook.js'
+
+const FB_SECRET = 'test-secret-not-real'
+const TICKET = 'ac100312-d4a5-4c2d-8264-1ffdb7c56d7e'
+
+describe('feedback reply token', () => {
+  it('round-trips the ticket id through the address', async () => {
+    const addr = await feedbackReplyAddress(TICKET, FB_SECRET, 'appsannex.com')
+    expect(addr).toMatch(/^feedback\+[0-9a-f]{42}@appsannex\.com$/)
+    const token = feedbackTokenFromAddresses(['Someone <x@y.com>', addr])
+    expect(await parseFeedbackToken(token, FB_SECRET)).toBe(TICKET)
+  })
+
+  it('is case-insensitive — mail systems may not preserve the local part', async () => {
+    const addr = (await feedbackReplyAddress(TICKET, FB_SECRET, 'appsannex.com')).toUpperCase()
+    expect(await parseFeedbackToken(feedbackTokenFromAddresses([addr]), FB_SECRET)).toBe(TICKET)
+  })
+
+  it('refuses a token signed with another secret, or tampered with', async () => {
+    const addr = await feedbackReplyAddress(TICKET, FB_SECRET, 'appsannex.com')
+    const token = feedbackTokenFromAddresses([addr])
+    expect(await parseFeedbackToken(token, 'other-secret')).toBeNull()
+    const flipped = token.slice(0, 5) + (token[5] === '0' ? '1' : '0') + token.slice(6)
+    expect(await parseFeedbackToken(flipped, FB_SECRET)).toBeNull()
+    expect(await parseFeedbackToken('', FB_SECRET)).toBeNull()
+    expect(await parseFeedbackToken(null, FB_SECRET)).toBeNull()
+  })
+
+  it('an estimate token can never verify as a ticket, and vice versa', async () => {
+    const est = await replyAddress(4242, FB_SECRET, 'appsannex.com')
+    expect(feedbackTokenFromAddresses([est])).toBeNull()
+    expect(await parseFeedbackToken(tokenFromAddresses([est]), FB_SECRET)).toBeNull()
+    const fb = await feedbackReplyAddress(TICKET, FB_SECRET, 'appsannex.com')
+    expect(tokenFromAddresses([fb])).toBeNull()
+    expect(await parseReplyToken(feedbackTokenFromAddresses([fb]), FB_SECRET)).toBeNull()
+  })
+
+  it('refuses to build an address for something that is not a uuid', async () => {
+    await expect(feedbackReplyAddress('4242', FB_SECRET, 'appsannex.com')).rejects.toThrow()
+  })
+
+  it('the router tells the kinds apart from the recipient alone', async () => {
+    expect(recipientKind(await feedbackReplyAddress(TICKET, FB_SECRET, 'appsannex.com'))).toBe('feedback')
+    expect(recipientKind(await replyAddress(4242, FB_SECRET, 'appsannex.com'))).toBe('token')
+    expect(recipientKind('estimates@appsannex.com')).toBe('estimates')
+    expect(recipientKind('noreply@appsannex.com')).toBe('other')
+  })
+})

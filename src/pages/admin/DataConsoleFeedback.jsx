@@ -90,6 +90,9 @@ export default function DataConsoleFeedback() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON_KEY}`, 'apikey': ANON_KEY },
         body: JSON.stringify({
           recipient_email: selected.user_email,
+          // Names the ticket, so the email's reply-to carries a signed token
+          // and the reporter's answer lands on this thread instead of noreply@.
+          feedback_id: selected.id,
           subject: selected.subject || selected.feedback_type,
           original_message: selected.message,
           reply_message: replyMessage.trim(),
@@ -236,6 +239,15 @@ export default function DataConsoleFeedback() {
                     onClick={() => { setSelected(f); setAdminNotes(f.notes || ''); }}
                   >
                     {f.subject || 'No subject'}
+                    {/* The reporter has answered and nobody has replied since — the ball is with us. */}
+                    {(() => {
+                      const last = f.reply_history?.[f.reply_history.length - 1]
+                      return last?.direction === 'in' ? (
+                        <span style={{ marginLeft: '8px', padding: '2px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: '700', backgroundColor: 'rgba(59,130,246,0.15)', color: '#3b82f6', whiteSpace: 'nowrap' }}>
+                          replied
+                        </span>
+                      ) : null
+                    })()}
                   </td>
                   <td style={{ padding: '12px 16px', color: adminTheme.textMuted, fontSize: '13px' }}>
                     {f.user_email || 'Unknown'}
@@ -368,22 +380,34 @@ export default function DataConsoleFeedback() {
               </div>
             </div>
 
-            {/* Previous Replies */}
+            {/* The conversation — our replies and theirs, in order. Entries
+                without a direction predate inbound routing and are ours. A
+                reporter's reply arrives via the inbound-email router, which
+                files it here with direction 'in'. */}
             {selected.reply_history?.length > 0 && (
               <div style={{ marginBottom: '20px' }}>
-                <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginBottom: '8px' }}>Reply History</div>
+                <div style={{ color: adminTheme.textMuted, fontSize: '12px', marginBottom: '8px' }}>Conversation</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {selected.reply_history.map((r, i) => (
-                    <div key={i} style={{
-                      padding: '12px',
-                      backgroundColor: 'rgba(249,115,22,0.08)',
-                      border: `1px solid rgba(249,115,22,0.2)`,
-                      borderRadius: '8px'
-                    }}>
-                      <div style={{ fontSize: '13px', color: adminTheme.text, whiteSpace: 'pre-wrap', marginBottom: '6px' }}>{r.message}</div>
-                      <div style={{ fontSize: '11px', color: adminTheme.textMuted }}>{new Date(r.sent_at).toLocaleString()}</div>
-                    </div>
-                  ))}
+                  {selected.reply_history.map((r, i) => {
+                    const theirs = r.direction === 'in'
+                    const when = r.received_at || r.sent_at
+                    return (
+                      <div key={i} style={{
+                        padding: '12px',
+                        marginLeft: theirs ? 0 : '24px',
+                        marginRight: theirs ? '24px' : 0,
+                        backgroundColor: theirs ? 'rgba(59,130,246,0.08)' : 'rgba(249,115,22,0.08)',
+                        border: `1px solid ${theirs ? 'rgba(59,130,246,0.25)' : 'rgba(249,115,22,0.2)'}`,
+                        borderRadius: '8px'
+                      }}>
+                        <div style={{ fontSize: '11px', fontWeight: '600', color: theirs ? '#3b82f6' : '#f97316', marginBottom: '6px' }}>
+                          {theirs ? `${r.from || selected.user_email || 'Reporter'} replied` : 'You replied'}
+                        </div>
+                        <div style={{ fontSize: '13px', color: adminTheme.text, whiteSpace: 'pre-wrap', marginBottom: '6px' }}>{r.message}</div>
+                        <div style={{ fontSize: '11px', color: adminTheme.textMuted }}>{when ? new Date(when).toLocaleString() : ''}</div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
