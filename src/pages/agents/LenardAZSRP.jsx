@@ -288,6 +288,8 @@ function classifyLenardAddOn(svc) {
 export default function LenardAZSRP() {
   const [program, setProgram] = useState('sbc');
   const [projectName, setProjectName] = useState('');
+  // The person at the site — separate from the site itself, which is what projectName is.
+  const [contactName, setContactName] = useState('');
   const [lines, setLines] = useState([]);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddTab, setQuickAddTab] = useState('troffers');
@@ -974,7 +976,7 @@ export default function LenardAZSRP() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
         body: JSON.stringify({
-          customerName: projectName,
+          customerName: projectName, contactName,
           phone: savePhone,
           email: saveEmail,
           address: saveAddress,
@@ -2683,7 +2685,8 @@ export default function LenardAZSRP() {
           )}
           {/* Customer & Contact — matching audit step 1 basic info */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-            <div><label style={S.label}>Customer Name *</label><input type="text" value={projectName} onChange={e => setProjectName(e.target.value)} style={S.input} /></div>
+            <div><label style={S.label}>Business / site name *</label><input type="text" value={projectName} onChange={e => setProjectName(e.target.value)} style={S.input} /></div>
+            <div><label style={S.label}>Contact name</label><input type="text" value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Who you talk to" style={S.input} /></div>
             <div><label style={S.label}>Phone</label><input type="tel" inputMode="tel" value={savePhone} onChange={e => setSavePhone(e.target.value)} placeholder="Optional" style={S.input} /></div>
           </div>
           <div style={{ marginBottom: '10px' }}><label style={S.label}>Email</label><input type="email" inputMode="email" value={saveEmail} onChange={e => setSaveEmail(e.target.value)} placeholder="Optional" style={S.input} /></div>

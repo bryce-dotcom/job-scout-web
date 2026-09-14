@@ -1235,7 +1235,7 @@ export default function LeadDetail() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <User size={16} color={theme.textMuted} style={{ flexShrink: 0 }} />
                     {isEditing ? (
-                      <input type="text" value={editForm.customer_name} onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })} style={inputStyle} placeholder="Customer Name" />
+                      <input type="text" value={editForm.customer_name} onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })} style={inputStyle} placeholder="Contact name (the person)" />
                     ) : (
                       <span style={{ color: theme.text }}>{lead.customer_name}</span>
                     )}
@@ -1243,7 +1243,7 @@ export default function LeadDetail() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <Building2 size={16} color={theme.textMuted} style={{ flexShrink: 0 }} />
                     {isEditing ? (
-                      <input type="text" value={editForm.business_name} onChange={(e) => setEditForm({ ...editForm, business_name: e.target.value })} style={inputStyle} placeholder="Business Name" />
+                      <input type="text" value={editForm.business_name} onChange={(e) => setEditForm({ ...editForm, business_name: e.target.value })} style={inputStyle} placeholder="Business / site name" />
                     ) : (
                       <span style={{ color: theme.text }}>{lead.business_name || '-'}</span>
                     )}

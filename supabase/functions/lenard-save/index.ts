@@ -194,7 +194,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { customerName, phone, email, address, city, state, zip, meterNumber, ein, projectData, programType, leadOwnerId, existingLeadId, existingAuditId, signatureData } = await req.json();
+    const { customerName, contactName, phone, email, address, city, state, zip, meterNumber, ein, projectData, programType, leadOwnerId, existingLeadId, existingAuditId, signatureData } = await req.json();
     if (!customerName) {
       return new Response(JSON.stringify({ error: 'Customer name is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -250,17 +250,29 @@ serve(async (req) => {
     // =====================================================
     // 0. Find or create Customer — matches Leads.jsx
     // =====================================================
+    // Lenard's name box is the SITE ("AZ Camping Nation Rv"); the person is
+    // the contact. For months the site went into customer_name — the
+    // person's slot — with business_name left empty, so every Lenard lead
+    // read as a person called after a building, and reps put the actual
+    // person into the only empty box, Business Name. Damien reported it on
+    // 3 Aug; AZ Camping Nation RV had "Michelle" as the business on 14 Sep.
+    // Site → business_name. Contact → customer_name, falling back to the
+    // site so nothing downstream sees a blank.
+    const siteName = String(customerName || '').trim();
+    const personName = String(contactName || '').trim();
     let customerId: number | null = null;
+    const enc = encodeURIComponent(siteName);
     const existingCustomers = await querySupabase(
       SUPABASE_URL!, 'customers', key,
-      `company_id=eq.${cid}&name=ilike.${encodeURIComponent(customerName.trim())}&limit=1`
+      `company_id=eq.${cid}&or=(business_name.ilike.${enc},name.ilike.${enc})&limit=1`
     );
     if (existingCustomers.length > 0) {
       customerId = existingCustomers[0].id;
     } else {
       const [newCustomer] = await supabasePost(`${SUPABASE_URL}/rest/v1/customers`, key, {
         company_id: cid,
-        name: customerName.trim(),
+        name: personName || siteName,
+        business_name: siteName,
         phone: phone || null,
         email: email || null,
         address: fullAddress,
@@ -287,7 +299,8 @@ serve(async (req) => {
     if (existingLeadId) {
       // Update existing lead
       const [updated] = await supabasePatch(SUPABASE_URL!, 'leads', key, existingLeadId, {
-        customer_name: customerName,
+        customer_name: personName || siteName,
+        business_name: siteName,
         email: email || null,
         phone: phone || null,
         address: fullAddress,
@@ -302,8 +315,8 @@ serve(async (req) => {
       // Create new lead
       const [lead] = await supabasePost(`${SUPABASE_URL}/rest/v1/leads`, key, {
         company_id: cid,
-        customer_name: customerName,
-        business_name: null,
+        customer_name: personName || siteName,
+        business_name: siteName,
         email: email || null,
         phone: phone || null,
         address: fullAddress,

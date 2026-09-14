@@ -869,8 +869,12 @@ export default function Leads() {
               )}
 
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
-                <div><label style={labelStyle}>Customer Name *</label><input type="text" name="customer_name" value={formData.customer_name} onChange={handleChange} onBlur={checkDuplicates} required style={inputStyle} /></div>
-                <div><label style={labelStyle}>Business Name</label><input type="text" name="business_name" value={formData.business_name} onChange={handleChange} onBlur={checkDuplicates} style={inputStyle} /></div>
+                {/* Two names, and which is which was not obvious: "Customer
+                    Name" read as the company to half the office, so the site
+                    went in the person's slot and the person into the only
+                    empty box. Contact = who you talk to. Business = the site. */}
+                <div><label style={labelStyle}>Contact name *</label><input type="text" name="customer_name" value={formData.customer_name} onChange={handleChange} onBlur={checkDuplicates} required placeholder="The person you talk to" style={inputStyle} /></div>
+                <div><label style={labelStyle}>Business / site name</label><input type="text" name="business_name" value={formData.business_name} onChange={handleChange} onBlur={checkDuplicates} placeholder="Company or property (shown first when set)" style={inputStyle} /></div>
                 <div><label style={labelStyle}>Email</label><input type="email" name="email" value={formData.email} onChange={handleChange} onBlur={checkDuplicates} style={inputStyle} /></div>
                 <div><label style={labelStyle}>Phone</label><input type="tel" name="phone" value={formData.phone} onChange={handleChange} onBlur={checkDuplicates} style={inputStyle} /></div>
               </div>
