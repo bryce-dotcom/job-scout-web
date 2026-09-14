@@ -113,3 +113,37 @@ describe('junk', () => {
     expect(internalLabel(null)).toBe('')
   })
 })
+
+describe('a job with no down payment', () => {
+  // The job page adds discountCredit to the deposit total when it raises an
+  // invoice, and subtracts the previous discountCredit when the down payment
+  // is edited. This branch used to leave both keys out, so 0 + undefined was
+  // NaN — and NaN reaches PostgREST as null. Every job-page invoice on a job
+  // without a down payment was inserted with discount_applied empty: the
+  // incentive its own description promised was never deducted (ABC Supply
+  // five times over 9/10–9/11; eight invoices 9/4–9/14, each repaired by hand).
+  it('answers the routing questions with zero, not undefined', () => {
+    for (const job of [{}, null, { down_payment_amount: 0 }, { down_payment_amount: null }]) {
+      const e = downPaymentEffect(job)
+      expect(e.discountCredit).toBe(0)
+      expect(e.paymentAmount).toBe(0)
+    }
+  })
+
+  it('has exactly the shape of a job that has one', () => {
+    expect(Object.keys(downPaymentEffect({})).sort()).toEqual(Object.keys(downPaymentEffect(jobscoutPaid)).sort())
+  })
+
+  it('keeps the invoice deduction a number when nothing is down', () => {
+    // The job page's arithmetic, verbatim in spirit: rebate + deposits + down payment.
+    const totalDiscount = 6528 + 0 + downPaymentEffect({}).discountCredit
+    expect(Number.isFinite(totalDiscount)).toBe(true)
+    expect(Math.max(0, totalDiscount)).toBe(6528)
+  })
+
+  it('moves the credit onto an existing invoice when a down payment is added or removed', () => {
+    const none = downPaymentEffect({})
+    expect(downPaymentEffect(jobscoutPaid).discountCredit - none.discountCredit).toBe(2500)
+    expect(none.discountCredit - downPaymentEffect(jobscoutPaid).discountCredit).toBe(-2500)
+  })
+})

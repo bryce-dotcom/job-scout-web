@@ -35,7 +35,11 @@ const r2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100
  *   cashReceived    money actually collected (customer only)
  *   marginCost      what it costs JobScout (jobscout only)
  *   isDiscount      true when JobScout funded it
+ *   discountCredit  the part that belongs in the invoice deduction (jobscout only)
+ *   paymentAmount   the part that belongs in the payments table (customer only)
  * }
+ * Every key is present on every answer, including for a job with no down
+ * payment at all — callers do arithmetic on these without checking.
  */
 export function downPaymentEffect(job) {
   const amount = r2(job?.down_payment_amount)
@@ -43,6 +47,17 @@ export function downPaymentEffect(job) {
     return {
       amount: 0, fundedBy: null, customerCredit: 0,
       cashReceived: 0, marginCost: 0, isDiscount: false,
+      // Same shape as the full answer below — every key, every time. This
+      // branch used to stop at isDiscount, so a job with no down payment
+      // answered discountCredit with undefined. The job page adds that to the
+      // deposit total when it raises an invoice; 0 + undefined is NaN, and NaN
+      // reaches PostgREST as null. Every job-page invoice on such a job was
+      // inserted with discount_applied empty — the incentive named in its own
+      // description was never deducted (ABC Supply, five times over 9/10–9/11;
+      // eight invoices 9/4–9/14, each repaired by hand). The same undefined
+      // made the down-payment edit's delta NaN, so adding or clearing a down
+      // payment never reached the existing invoice either.
+      discountCredit: 0, paymentAmount: 0,
     }
   }
   // Anything that isn't explicitly jobscout-funded is treated as the customer
