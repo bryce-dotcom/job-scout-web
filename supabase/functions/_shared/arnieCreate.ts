@@ -20,6 +20,7 @@ import type { Caller } from './auth.ts'
 import { readRecordList } from './arnieRest.ts'
 import { RECORD_TARGETS, activeJobId, resolveEntity } from './arnieRecords.ts'
 import { applyAppointment, prepareAppointment, rollbackAppointment } from './arnieAppointment.ts'
+import { applyQuote, prepareQuote, rollbackQuote } from './arnieQuote.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -32,6 +33,8 @@ interface CreateField {
   shape?: 'email' | 'phone'
   /** Accept only one of these (case-insensitive; stored in this casing). */
   oneOf?: string[]
+  /** Structured, not a string: kept as JSON for `prepare` to parse and check. */
+  raw?: true
 }
 
 /** What `prepare` hands back: extra columns to store, and rows for the card. */
@@ -167,6 +170,28 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     applyCustom: applyAppointment,
     rollbackCustom: rollbackAppointment,
   },
+
+  // "Quote Halifax Flooring for 40 high bays and 12 wall packs." Lines come
+  // from the price book; the write goes through estimateIntake. See
+  // arnieQuote.ts.
+  quote: {
+    label: 'quote',
+    table: 'quotes',
+    minLevel: 0,
+    fields: {
+      lead:          { column: null, label: 'Lead',     max: 160 },
+      customer:      { column: null, label: 'Customer', max: 160 },
+      lines:         { column: null, label: 'Lines',    required: true, max: 8000, raw: true },
+      estimate_name: { column: null, label: 'Name',     max: 140 },
+      service_type:  { column: null, label: 'Service',  max: 80 },
+      salesperson:   { column: null, label: 'Rep',      max: 80 },
+      notes:         { column: null, label: 'Notes',    max: 2000 },
+    },
+    labelOf: (f) => `Quote for ${f.lead || f.customer || 'someone'}`.slice(0, 120),
+    prepare: prepareQuote,
+    applyCustom: applyQuote,
+    rollbackCustom: rollbackQuote,
+  },
 }
 
 export const isCreateTarget = (t: string): boolean => Object.hasOwn(CREATE_TARGETS, t)
@@ -203,7 +228,7 @@ function cleanFields(target: CreateTarget, raw: unknown): { ok: true; fields: Re
 
   for (const [key, def] of Object.entries(target.fields)) {
     const v = src[key]
-    const s = v == null ? '' : String(v).trim()
+    const s = v == null ? '' : (def.raw ? JSON.stringify(v) : String(v).trim())
     if (!s) {
       if (def.required) return { ok: false, error: `I need the ${def.label.toLowerCase()} to create a ${target.label}.` }
       continue
