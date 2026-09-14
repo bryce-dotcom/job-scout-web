@@ -15,6 +15,7 @@ import Tooltip from '../components/Tooltip'
 import EmptyState from '../components/EmptyState'
 import { quoteStatusColors, invoiceStatusColors } from '../lib/statusColors'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
+import { statementModel } from '../lib/customerStatement'
 import useSmartBack from '../lib/useSmartBack'
 import { creditTotals, fmtMoney, creditKindLabel } from '../lib/creditLedger'
 
@@ -652,7 +653,7 @@ export default function CustomerDetail() {
   }
 
   // ── Statement Generator ──────────────────────────────────
-  const generateStatement = async () => {
+  const generateStatement = async (opts = {}) => {
     // Tracy reported "I click Generate Statement and nothing happens."
     // Same root cause as Cameron's invoice button: window.open at the
     // end fires AFTER an await chain (jspdf dynamic import) which strips
@@ -662,7 +663,7 @@ export default function CustomerDetail() {
     let pdfWindow = null
     try { pdfWindow = window.open('about:blank', '_blank') } catch { /* blocked */ }
     try {
-      await generateStatementInner(pdfWindow)
+      await generateStatementInner(pdfWindow, opts)
     } catch (err) {
       // Anything throwing before the output stage used to leave the
       // pre-opened tab stranded on about:blank with no download and no
@@ -680,7 +681,10 @@ export default function CustomerDetail() {
     }
   }
 
-  const generateStatementInner = async (pdfWindow) => {
+  const generateStatementInner = async (pdfWindow, { outstandingOnly = true } = {}) => {
+    // One model for the numbers, shared with Books' AR — see lib/customerStatement
+    // for the two ways the old arithmetic went wrong for Tracy.
+    const stmt = statementModel(invoices, invoicePayments, { outstandingOnly })
     const { jsPDF } = await import('jspdf')
     const doc = new jsPDF()
     const pageWidth = doc.internal.pageSize.getWidth()
@@ -716,6 +720,9 @@ export default function CustomerDetail() {
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(80)
     doc.text(`Date: ${fmtDate(new Date())}`, rightEdge, 30, { align: 'right' })
+    doc.setFontSize(9)
+    doc.setTextColor(120)
+    doc.text(stmt.outstandingOnly ? 'Open invoices only' : 'Full account history', rightEdge, 36, { align: 'right' })
 
     // Customer info
     doc.setDrawColor(214, 205, 184)
@@ -735,11 +742,8 @@ export default function CustomerDetail() {
     if (customer.phone) { doc.text(customer.phone, margin, y); y += 5 }
     y += 8
 
-    // Summary box
-    const totalInvoiced = invoices.reduce((s, inv) => s + (parseFloat(inv.amount) || 0), 0)
-    const totalDiscounts = invoices.reduce((s, inv) => s + (parseFloat(inv.discount_applied) || 0), 0)
-    const totalPaid = invoicePayments.filter(p => p.status === 'Completed' || !p.status).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
-    const balance = totalInvoiced - totalDiscounts - totalPaid
+    // Summary box — every figure from the model; nothing re-derived here.
+    const { totalInvoiced, totalPaid, balanceDue: balance } = stmt
 
     doc.setFillColor(247, 245, 239)
     doc.rect(margin, y, contentWidth, 28, 'F')
@@ -751,7 +755,7 @@ export default function CustomerDetail() {
     doc.text('Total Paid', col2, y + 8)
     doc.text('Balance Due', col3, y + 8)
     doc.setFontSize(14)
-    doc.text(currency(totalInvoiced - totalDiscounts), col1, y + 20)
+    doc.text(currency(totalInvoiced), col1, y + 20)
     doc.setTextColor(34, 197, 94)
     doc.text(currency(totalPaid), col2, y + 20)
     doc.setTextColor(balance > 0 ? 239 : 34, balance > 0 ? 68 : 197, balance > 0 ? 68 : 94)
@@ -762,7 +766,13 @@ export default function CustomerDetail() {
     doc.setTextColor(44, 53, 48)
     doc.setFontSize(12)
     doc.setFont('helvetica', 'bold')
-    doc.text('Invoices', margin, y)
+    doc.text(stmt.outstandingOnly ? 'Open Invoices' : 'Invoices', margin, y)
+    if (stmt.outstandingOnly && stmt.hiddenPaidCount > 0) {
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(120)
+      doc.text(`${stmt.hiddenPaidCount} paid invoice${stmt.hiddenPaidCount === 1 ? '' : 's'} not shown`, rightEdge, y, { align: 'right' })
+    }
     y += 8
 
     // Table header
@@ -772,29 +782,32 @@ export default function CustomerDetail() {
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(255)
     doc.text('Invoice #', margin + 2, y)
-    doc.text('Date', margin + 35, y)
-    doc.text('Description', margin + 65, y)
-    doc.text('Amount', rightEdge - 30, y)
-    doc.text('Status', rightEdge - 2, y, { align: 'right' })
+    doc.text('Date', margin + 32, y)
+    doc.text('Description', margin + 56, y)
+    doc.text('Amount', rightEdge - 50, y, { align: 'right' })
+    doc.text('Paid', rightEdge - 26, y, { align: 'right' })
+    doc.text('Balance', rightEdge - 2, y, { align: 'right' })
     y += 7
 
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0)
     doc.setFontSize(9)
-    const sortedInvoices = [...invoices].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-    for (const inv of sortedInvoices) {
+    for (const line of stmt.lines) {
       if (y > 270) { doc.addPage(); y = 20 }
-      const desc = (inv.job_description || '').substring(0, 35)
-      doc.text(inv.invoice_id || `#${inv.id}`, margin + 2, y)
-      doc.text(fmtDate(inv.created_at), margin + 35, y)
-      doc.text(desc, margin + 65, y)
-      doc.text(currency(inv.amount), rightEdge - 30, y)
-      doc.text(inv.payment_status || 'Pending', rightEdge - 2, y, { align: 'right' })
+      doc.setTextColor(0)
+      doc.text(String(line.number).substring(0, 14), margin + 2, y)
+      doc.text(fmtDate(line.date), margin + 32, y)
+      doc.text(line.description.substring(0, 34), margin + 56, y)
+      doc.text(currency(line.total), rightEdge - 50, y, { align: 'right' })
+      doc.text(currency(line.paid), rightEdge - 26, y, { align: 'right' })
+      doc.setTextColor(line.balance > 0 ? 200 : 34, line.balance > 0 ? 50 : 160, line.balance > 0 ? 50 : 60)
+      doc.text(currency(line.balance), rightEdge - 2, y, { align: 'right' })
       y += 6
     }
-    if (invoices.length === 0) {
+    doc.setTextColor(0)
+    if (stmt.lines.length === 0) {
       doc.setTextColor(120)
-      doc.text('No invoices', margin + 2, y)
+      doc.text(stmt.outstandingOnly ? 'Nothing outstanding - this account is paid in full.' : 'No invoices', margin + 2, y)
       y += 6
     }
     y += 6
@@ -820,8 +833,7 @@ export default function CustomerDetail() {
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(0)
     doc.setFontSize(9)
-    const sortedPayments = [...invoicePayments].sort((a, b) => new Date(a.date || a.created_at) - new Date(b.date || b.created_at))
-    for (const pmt of sortedPayments) {
+    for (const pmt of stmt.payments) {
       if (y > 270) { doc.addPage(); y = 20 }
       const linkedInv = invoices.find(i => i.id === pmt.invoice_id)
       doc.text(fmtDate(pmt.date || pmt.created_at), margin + 2, y)
@@ -832,9 +844,9 @@ export default function CustomerDetail() {
       doc.setTextColor(0)
       y += 6
     }
-    if (invoicePayments.length === 0) {
+    if (stmt.payments.length === 0) {
       doc.setTextColor(120)
-      doc.text('No payments recorded', margin + 2, y)
+      doc.text(stmt.outstandingOnly ? 'No payments yet on the open invoices' : 'No payments recorded', margin + 2, y)
       y += 6
     }
     y += 10
@@ -1887,18 +1899,36 @@ export default function CustomerDetail() {
                   Invoices issued to this customer
                 </p>
               </div>
-              <button
-                onClick={generateStatement}
-                style={{
-                  padding: '8px 14px', backgroundColor: theme.accentBg, color: theme.accent,
-                  border: `1px solid ${theme.accent}`, borderRadius: '8px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '500',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                <FileText size={16} />
-                Generate Statement
-              </button>
+              {/* Tracy's two statement asks (24 Aug, 11 Sep): what a customer owes
+                  NOW, without every invoice they have ever had. Default is open
+                  invoices only; the full ledger is one click further. */}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => generateStatement({ outstandingOnly: true })}
+                  title="Open invoices, what has been paid on them, and the balance due"
+                  style={{
+                    padding: '8px 14px', backgroundColor: theme.accentBg, color: theme.accent,
+                    border: `1px solid ${theme.accent}`, borderRadius: '8px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '500',
+                    whiteSpace: 'nowrap', minHeight: '44px'
+                  }}
+                >
+                  <FileText size={16} />
+                  Statement: what's owing
+                </button>
+                <button
+                  onClick={() => generateStatement({ outstandingOnly: false })}
+                  title="Every invoice and payment on the account"
+                  style={{
+                    padding: '8px 14px', backgroundColor: 'transparent', color: theme.textSecondary,
+                    border: `1px solid ${theme.border}`, borderRadius: '8px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '500',
+                    whiteSpace: 'nowrap', minHeight: '44px'
+                  }}
+                >
+                  Full history
+                </button>
+              </div>
             </div>
 
             {invoices.length === 0 ? (
