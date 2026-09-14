@@ -539,5 +539,9 @@ describe('deductionLineLabel — one name for the deduction, wherever it prints'
   it('the job page placeholder "Utility" is not a name', () => {
     expect(invoiceUtilityName({}, [], { utility_name: 'Utility' })).toBe(null)
     expect(deductionLineLabel({ invoice: {}, linkedUtilityInvoice: { utility_name: 'Utility' } })).toBe('Utility Incentive')
+    // ...and it must not hide a real name the job carries (demo job 23522 printed
+    // "Utility Incentive" with "Rocky Mountain Power" sitting on the job).
+    expect(invoiceUtilityName({}, [], { utility_name: 'Utility' }, { utility_name: 'Rocky Mountain Power' })).toBe('Rocky Mountain Power')
+    expect(deductionLineLabel({ invoice: {}, linkedUtilityInvoice: { utility_name: 'Utility' }, job: { utility_name: 'Rocky Mountain Power' } })).toBe('Rocky Mountain Power Incentive')
   })
 })

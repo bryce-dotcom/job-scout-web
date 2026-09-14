@@ -349,6 +349,6 @@ export function invoiceUtilityName(invoice, utilityProviders = [], linkedUtility
     const p = (utilityProviders || []).find((x) => Number(x?.id) === Number(id))
     if (p?.provider_name) return String(p.provider_name).trim()
   }
-  const name = String(linkedUtilityInvoice?.utility_name || job?.utility_name || '').trim()
-  return name && name.toLowerCase() !== 'utility' ? name : null
+  const real = (v) => { const n = String(v || '').trim(); return n && n.toLowerCase() !== 'utility' ? n : null }
+  return real(linkedUtilityInvoice?.utility_name) || real(job?.utility_name) || null
 }
