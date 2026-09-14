@@ -284,13 +284,22 @@ export default function Jobs() {
   const formTz = resolveTimezone(formData.business_unit, businessUnits, DEFAULT_TZ)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('active')
-  const [teamFilter, setTeamFilter] = useState('all')
-  const [buFilter, setBuFilter] = useState('all')
+  // The filters survive leaving the page. Tracy (9 Sep) was moving
+  // Christopher's mis-filed "completed" jobs back to Needs Scheduling one at a
+  // time: filter to Completed + HHH, open a job, fix it, press Back — and the
+  // list was reset to the defaults, so every job cost re-applying every
+  // filter. Kept in sessionStorage: it lasts the tab, not forever, so nobody
+  // opens Jobs next week wondering where all the jobs went.
+  const remembered = (() => {
+    try { return JSON.parse(sessionStorage.getItem('jobs.list.filters') || 'null') || {} } catch { return {} }
+  })()
+  const [searchTerm, setSearchTerm] = useState(() => remembered.searchTerm ?? '')
+  const [statusFilter, setStatusFilter] = useState(() => remembered.statusFilter ?? 'active')
+  const [teamFilter, setTeamFilter] = useState(() => remembered.teamFilter ?? 'all')
+  const [buFilter, setBuFilter] = useState(() => remembered.buFilter ?? 'all')
   // 'all' (default) | 'installs' (parent_job_id IS NULL) | 'services' (parent_job_id IS NOT NULL)
   // Lets dispatch see only the install backlog or only the service queue.
-  const [serviceFilter, setServiceFilter] = useState('all')
+  const [serviceFilter, setServiceFilter] = useState(() => remembered.serviceFilter ?? 'all')
   const [showImportExport, setShowImportExport] = useState(false)
   const [customerSearchText, setCustomerSearchText] = useState('')
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
@@ -305,8 +314,15 @@ export default function Jobs() {
   // answers "which job", and a horizontally-scrolling kanban answered neither
   // without a lot of dragging. The board is still one click away.
   const [viewMode] = useState('list')
-  const [historyYear, setHistoryYear] = useState(null)
-  const [historyMonth, setHistoryMonth] = useState(null)
+  const [historyYear, setHistoryYear] = useState(() => remembered.historyYear ?? null)
+  const [historyMonth, setHistoryMonth] = useState(() => remembered.historyMonth ?? null)
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('jobs.list.filters', JSON.stringify({
+        searchTerm, statusFilter, teamFilter, buFilter, serviceFilter, historyYear, historyMonth,
+      }))
+    } catch { /* private mode: the page simply forgets, as before */ }
+  }, [searchTerm, statusFilter, teamFilter, buFilter, serviceFilter, historyYear, historyMonth])
   const [isMobile, setIsMobile] = useState(false)
   const customerInputRef = useRef(null)
   // Recently Archived — fetched separately because the store filters them out
