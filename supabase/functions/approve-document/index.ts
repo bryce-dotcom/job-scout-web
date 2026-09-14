@@ -432,7 +432,9 @@ serve(async (req) => {
           .insert([{
             company_id: tokenRow.company_id,
             job_id: jobNumber,
-            job_title: estimate.estimate_name || estimate.job_title || `${customerName} - Job`,
+            // Who, then what — never the bare service type (see EstimateDetail).
+            job_title: estimate.estimate_name || estimate.job_title
+              || (estimate.service_type ? `${customerName} - ${estimate.service_type}` : `${customerName} - Job`),
             customer_id: resolvedCustomerId,
             customer_name: contactName || customerName || null,
             job_address: contactAddress || null,

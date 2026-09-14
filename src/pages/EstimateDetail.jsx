@@ -1665,7 +1665,14 @@ function EstimateDetailInner() {
           // business "Electric 51 Speedshop") was landing as "Casey - Job"
           // and flowing through to the job board + POs. Business name first,
           // contact name only when there's no business.
-          job_title: estimateRow.estimate_name || estimateRow.service_type || `${businessName || customerName} - Job`,
+          // ...and never the bare service type. A Lenard estimate has no
+          // estimate_name, so JOB-MTDMUYP4 (AZ Camping Nation RV) came out
+          // titled "Energy Efficiency" — which is what every Lenard job would
+          // be called, and exactly what Cameron cannot tell apart in the
+          // field. Who, then what.
+          job_title: estimateRow.estimate_name
+            || ((businessName || customerName) && estimateRow.service_type ? `${businessName || customerName} - ${estimateRow.service_type}` : null)
+            || `${businessName || customerName} - Job`,
           customer_id: customerId,
           lead_id: estimateRow.lead_id ? parseInt(estimateRow.lead_id) : null,
           salesperson_id: estimateRow.salesperson_id || null,
