@@ -18,6 +18,7 @@ import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import PayrollRemittancePanel from '../components/PayrollRemittancePanel'
 import { suiRateStatus } from '../lib/suiRate'
+import { parseLocalDate } from '../lib/localDate'
 import {
   Inbox, AlertTriangle, CheckCircle2, FileText, Clock, UserPlus,
   Settings as SettingsIcon, ChevronRight, Calendar, Building2,
@@ -40,7 +41,10 @@ function daysBetween(a, b) {
 
 function fmtDate(iso) {
   if (!iso) return ''
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  // Due dates are date-only ('2026-10-31'); new Date() would read that as
+  // UTC midnight and show Oct 30 in Mountain Time (see lib/localDate).
+  const d = parseLocalDate(iso)
+  return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''
 }
 
 function fmtMoney(n) {

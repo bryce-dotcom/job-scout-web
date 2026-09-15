@@ -3858,6 +3858,7 @@ function PayrollTaxSettingsTab({ theme, companyId }) {
     : suiStatus.level === 'estimate' ? { bg: 'rgba(59,130,246,0.10)', border: 'rgba(59,130,246,0.35)', ink: '#1d4ed8' }
     : { bg: 'rgba(234,179,8,0.10)', border: 'rgba(234,179,8,0.35)', ink: '#a16207' }
   const fmtMoney = (n) => ((Number(n) || 0) < 0 ? '−' : '') + '$' + Math.abs(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const fmtDollars = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('en-US')
 
   const gaps = [
     !form.ein && 'EIN missing',
@@ -3971,7 +3972,7 @@ function PayrollTaxSettingsTab({ theme, companyId }) {
               <>
                 <p style={{ margin: '0 0 6px' }}><b>{suiState.agency}</b> assigns every employer its own rate and sends it as the <b>{suiState.notice.name}</b>, {suiState.notice.when}. The number you want is <b>{suiState.notice.field}</b>. {suiState.cautions.map((c, i) => <span key={i}>{c} </span>)}</p>
                 <p style={{ margin: '0 0 6px' }}>Online: <a href={suiState.portal.url} target="_blank" rel="noreferrer" style={{ color: theme.accent }}>{suiState.portal.label}</a>. {suiState.facts}</p>
-                <p style={{ margin: '0 0 6px' }}>Rates run {suiState.rateRange[0]}%–{suiState.rateRange[1]}% in {thisYear}; the taxable wage base is {fmtMoney(suiWageBaseFor(suiState.code, thisYear))} per employee. {suiState.dueDates}</p>
+                <p style={{ margin: '0 0 6px' }}>Rates run {suiState.rateRange[0]}%–{suiState.rateRange[1]}% in {thisYear}; the taxable wage base is {fmtDollars(suiWageBaseFor(suiState.code, thisYear))} per employee. {suiState.dueDates}</p>
               </>
             ) : (
               <p style={{ margin: '0 0 6px' }}>Your state's unemployment agency assigns every employer its own rate and mails a rate notice each year — the number is on that notice, or in your state employer portal.</p>
@@ -4035,7 +4036,7 @@ function PayrollTaxSettingsTab({ theme, companyId }) {
         )}
 
         <Row two>
-          <Field label="SUI wage base ($)" help={suiState ? `${suiState.name} ${thisYear} = ${fmtMoney(suiWageBaseFor(suiState.code, thisYear))}. Leave blank to use the state figure for each year.` : 'From your state; leave blank if unsure.'}>
+          <Field label="SUI wage base ($)" help={suiState ? `${suiState.name} ${thisYear} = ${fmtDollars(suiWageBaseFor(suiState.code, thisYear))}. Leave blank to use the state figure for each year.` : 'From your state; leave blank if unsure.'}>
             <input type="number" value={form.sui_wage_base ?? ''} onChange={set('sui_wage_base')} placeholder={suiState ? String(suiWageBaseFor(suiState.code, thisYear)) : ''} style={inputStyle} />
           </Field>
           <div />
@@ -4066,7 +4067,7 @@ function PayrollTaxSettingsTab({ theme, companyId }) {
                 <span>from {String(r.effective_date).slice(0, 10)}</span>
                 <span>· {SUI_SOURCES[r.source]?.label || r.source}</span>
                 {r.entered_by && <span>· {r.entered_by}</span>}
-                <span style={{ color: theme.textMuted }}>· entered {String(r.created_at).slice(0, 10)}</span>
+                <span style={{ color: theme.textMuted }}>· entered {new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
               </div>
             ))}
           </div>
