@@ -5154,7 +5154,7 @@ function JobDetailInner() {
                       onChange={(e) => saveJobUtility(e.target.value ? Number(e.target.value) : null)}
                       style={{ minWidth: '200px', padding: '6px 10px', border: '1px solid rgba(74,124,89,0.3)', borderRadius: '6px', fontSize: '13px', color: '#4a7c59', backgroundColor: theme.bgCard }}
                     >
-                      <option value="">{effective.name ? `${effective.name} (${effective.source === 'default' ? 'company default' : 'from the audit'})` : 'Choose the utility…'}</option>
+                      <option value="">{effective.name ? `${effective.name} (${effective.source === 'default' ? 'company default' : effective.source === 'audit' ? 'from the audit' : 'on this job'})` : 'Choose the utility…'}</option>
                       {listed.map(p => <option key={p.id} value={String(p.id)}>{p.provider_name}</option>)}
                     </select>
                   </div>
