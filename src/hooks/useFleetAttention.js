@@ -26,7 +26,7 @@ async function fetchAttention(companyId) {
       .eq('company_id', companyId).in('status', OPEN_STATUSES),
     supabase.from('fleet_pm_status')
       .select('schedule_id,fleet_id,name,status,days_remaining,meter_remaining')
-      .eq('company_id', companyId).in('status', ['overdue', 'due_soon']),
+      .eq('company_id', companyId).in('status', ['overdue', 'due_soon', 'never_done']),
     // Which assets have a schedule at all. The fleet pages still carry the
     // older single-date PM field, and the rule for which one speaks is: once
     // an asset has a real schedule, the schedule does, and the old date is
@@ -70,7 +70,7 @@ export function useFleetAttention() {
     const byAsset = new Map()
     const bump = (id, key) => {
       if (id == null) return
-      const e = byAsset.get(id) || { requests: 0, unsafe: 0, overdue: 0, dueSoon: 0 }
+      const e = byAsset.get(id) || { requests: 0, unsafe: 0, overdue: 0, dueSoon: 0, neverDone: 0 }
       e[key] += 1
       byAsset.set(id, e)
     }
@@ -81,7 +81,9 @@ export function useFleetAttention() {
       // into one.
       if (r.severity === 'safety') bump(r.fleet_id, 'unsafe')
     }
-    for (const s of due) bump(s.fleet_id, s.status === 'overdue' ? 'overdue' : 'dueSoon')
+    for (const s of due) {
+      bump(s.fleet_id, s.status === 'overdue' ? 'overdue' : s.status === 'due_soon' ? 'dueSoon' : 'neverDone')
+    }
 
     return {
       loading: requests === null || pm === null,
@@ -94,6 +96,9 @@ export function useFleetAttention() {
         unsafe: reqs.filter(r => r.severity === 'safety').length,
         overdue: due.filter(s => s.status === 'overdue').length,
         dueSoon: due.filter(s => s.status === 'due_soon').length,
+        // Not surfaced as a pill: a schedule with no history is a starting
+        // point, not an alarm. Carried so a tile can avoid calling it fine.
+        neverDone: due.filter(s => s.status === 'never_done').length,
       },
       refresh: load,
     }

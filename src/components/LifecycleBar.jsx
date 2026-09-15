@@ -93,6 +93,8 @@ export default function LifecycleBar({ lifecycle, recommendation, theme, compact
     )
   }
 
+  const wearUnknown = (missing || []).some(m => m === 'meter_at_purchase' || m === 'odometer_anchor' || m === 'meter_reading')
+
   const headline = HEADLINE[recommendation?.action] || HEADLINE[verdict] ||
     { text: VERDICT_COPY[verdict], colour: ZONE[verdict] || theme.textMuted }
   const colour = headline.colour
@@ -137,7 +139,13 @@ export default function LifecycleBar({ lifecycle, recommendation, theme, compact
       {!compact && (
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 10, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}>
-            {limitedBy === 'age'
+            {wearUnknown
+              // The bar draws from age alone, but "ageing faster than it
+              // wears" is a comparison, and with no wear clock it is a claim
+              // nobody made. A 2015 truck at 162,800 miles was reading that
+              // line because nobody had typed the miles when bought.
+              ? <><Clock size={10} /> wear unknown — add the {basis === 'hours' ? 'hours' : 'miles'} when bought</>
+              : limitedBy === 'age'
               // The surprising case, and the one worth naming out loud: low
               // mileage does not mean low cost.
               ? <><TrendingDown size={10} /> ageing faster than it wears</>

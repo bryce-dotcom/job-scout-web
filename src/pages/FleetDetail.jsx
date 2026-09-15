@@ -599,7 +599,13 @@ export default function FleetDetail() {
             color: overdue ? '#c25a5a' : theme.text
           }}>
             {hasSchedule
-              ? (overdue ? `${flags.overdue} overdue` : (flags?.dueSoon ? `${flags.dueSoon} due soon` : 'On track'))
+              ? (overdue ? `${flags.overdue} overdue`
+                : flags?.dueSoon ? `${flags.dueSoon} due soon`
+                // A schedule nobody has logged against is not "on track";
+                // it has not started. Saying so is what gets the first
+                // service recorded.
+                : flags?.neverDone ? `${flags.neverDone} not yet logged`
+                : 'On track')
               : formatDate(asset.next_pm_due)}
           </div>
           {daysUntil !== null && (
