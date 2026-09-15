@@ -5,6 +5,20 @@ import { TABLES, QUERIES } from './schema';
 import { offlineDb } from './offlineDb';
 import { syncQueue } from './syncQueue';
 import { dedupeStripePayouts } from './bankLedger';
+import { geocodeAddress } from './geocode';
+
+// Geocode on save, client half: a lead typed into the app gets its pin before
+// the row leaves the browser, so Liahona shows it immediately. The server
+// cron (/api/cron/geocode-leads) is the safety net for offline saves, misses,
+// and every other path that writes leads. Bounded so a slow geocoder never
+// delays the save itself.
+const geocodeForSave = async (address) => {
+  if (!address || !navigator.onLine || !/\d/.test(address)) return null
+  try {
+    const hit = await Promise.race([geocodeAddress(address), new Promise(r => setTimeout(() => r(null), 6000))])
+    return hit ? { latitude: hit.lat, longitude: hit.lng, geocoded_at: new Date().toISOString() } : null
+  } catch { return null }
+}
 
 // Sidebar-menu templates for each agent slug. Recruiting an agent inserts
 // into company_agents (subscription record) AND ai_modules (sidebar entry),
@@ -2157,6 +2171,10 @@ export const useStore = create(
       // --- Leads ---
       createLead: async (leadData) => {
         const tempId = `temp_${crypto.randomUUID()}`
+        if (leadData.address && leadData.latitude == null) {
+          const coords = await geocodeForSave(leadData.address)
+          if (coords) leadData = { ...leadData, ...coords }
+        }
         const record = { ...leadData, id: tempId, created_at: new Date().toISOString() }
         set(state => ({ leads: [record, ...state.leads] }))
         await offlineDb.put('leads', record)
@@ -2165,6 +2183,13 @@ export const useStore = create(
         return tempId
       },
       updateLead: async (id, changes) => {
+        // Address edited without new coordinates: re-geocode now, or clear the
+        // stale pin so the cron picks it up (the DB trigger does the same).
+        const before = get().leads.find(l => String(l.id) === String(id))
+        if (changes.address !== undefined && changes.latitude === undefined && before && changes.address !== before.address) {
+          const coords = await geocodeForSave(changes.address)
+          changes = { ...changes, ...(coords || { latitude: null, longitude: null, geocoded_at: null }) }
+        }
         set(state => ({ leads: state.leads.map(l => String(l.id) === String(id) ? { ...l, ...changes } : l) }))
         const full = get().leads.find(l => String(l.id) === String(id))
         if (full) await offlineDb.put('leads', full)

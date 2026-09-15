@@ -45,6 +45,10 @@
     {
       "path": "/api/cron/estimate-followup",
       "schedule": "10 16 * * *"
+    },
+    {
+      "path": "/api/cron/geocode-leads",
+      "schedule": "*/10 * * * *"
     }
   ],
   "functions": {
@@ -65,6 +69,9 @@
     },
     "api/cron/estimate-followup.js": {
       "maxDuration": 300
+    },
+    "api/cron/geocode-leads.js": {
+      "maxDuration": 120
     }
   }
 }
