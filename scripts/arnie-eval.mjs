@@ -201,6 +201,23 @@ const CASES = [
     turns: ["Close Mike Sullivan's open shift at 4pm yesterday."],
     expect: { proposal: 'none', text_match: [/admin/i] } },
 
+  // — the push: the brief SENT, not asked for (dry run, nothing goes out) —
+  { id: 'brief.push.tech.own.day.no.invented.names', as: 'tech',
+    run: async () => {
+      // A subscription for the run, deleted after; the seeded open shift is the thing it should talk about.
+      const [sub] = await rest('arnie_brief_subscriptions', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, employee_id: DEMO.tech.employeeId, enabled: true, channel: 'sms', hour_local: 6, timezone: DEMO.tz }) })
+      try {
+        const r = await fetch(`${U}/functions/v1/arnie-brief-push`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SR, apikey: ANON }, body: JSON.stringify({ dry_run: true, employee_id: DEMO.tech.employeeId }) })
+        const body = await r.json()
+        const text = body.results?.[0]?.text || ''
+        // Every capitalised word that could be a person must be a real employee.
+        const names = new Set((await rest(`employees?select=name&company_id=eq.${DEMO.company}`)).flatMap((e) => e.name.split(' ')))
+        const suspects = [...new Set([...text.matchAll(/(?<![A-Za-z])([A-Z][a-z]{2,})(?![A-Za-z])/g)].map((m) => m[1]))].filter((w) => /^(Danny|Dave|Mike|Sarah|Carlos|Tyler|Jordan|Chris|John|Steve|Tom|Bob|Joe)$/.test(w) && !names.has(w))
+        return { text: r.ok && !suspects.length ? text : `PUSH ${r.status} suspects=[${suspects.join(',')}] ${text}`, tools: r.ok ? ['arnie-brief-push'] : [], proposal: null }
+      } finally { if (sub?.id) await rest(`arnie_brief_subscriptions?id=eq.${sub.id}`, { method: 'DELETE' }) }
+    },
+    expect: { tools_include: ['arnie-brief-push'], text_match: [/clocked in|shift/i, /(^|[^a-z])you(?![a-z])/i], text_not_match: [/^PUSH /, /invoice|overdue|stale quote|no crew|unstaffed/i] } },
+
   // — the create rail —
   { id: 'create.lead.duplicate.refused', as: 'owner', turns: ['Add a new lead for Riversde Apartments, contact Jordan Lee.'],
     expect: { tools_include: ['propose_create'], proposal: 'none', text_match: [/Riverside/] } },
@@ -316,11 +333,13 @@ try {
   for (const c of selected) {
     const ctx = { token: tokens[c.as], roleLabel: labels[c.as], pendingRollback: null }
     let outcome = null
+    const attempts = []
     for (let attempt = 1; attempt <= 2; attempt++) {
       let reply = null, pending = null
       try {
         const messages = []
-        for (const turn of c.turns) {
+        if (c.run) reply = await c.run(ctx)
+        else for (const turn of c.turns) {
           messages.push({ role: 'user', content: turn })
           reply = await chat(ctx.token, ctx.roleLabel, messages)
           messages.push({ role: 'assistant', content: reply.text || '(no text)' })
@@ -339,12 +358,15 @@ try {
         else if (pending) { try { await decide(ctx.token, 'reject', pending) } catch {} }
         outcome = { ok: false, fails: [e.message], attempt, reply }
       }
+      attempts.push(outcome)
       if (outcome.ok) break
     }
     results.push({ id: c.id, ...outcome })
     const tag = outcome.ok ? (outcome.attempt === 2 ? 'PASS (retry)' : 'PASS') : 'FAIL'
     console.log(`${tag.padEnd(12)} ${c.id}`)
     if (!outcome.ok) for (const f of outcome.fails) console.log(`             - ${f}`)
+    // A pass on retry is still a tendency worth seeing: show what the first attempt did wrong.
+    if (outcome.ok && attempts.length > 1) { const first = attempts[0]; for (const f of first.fails) console.log(`             first attempt: ${f}`); console.log(`             first attempt said: ${(first.reply?.text || '').replace(/s+/g, ' ').slice(0, 300)}`) }
     if (VERBOSE || !outcome.ok) console.log(`             tools: [${outcome.reply?.tools.join(', ') || ''}]\n             ${(outcome.reply?.text || '').replace(/\s+/g, ' ').slice(0, 300)}\n`)
   }
 } finally {

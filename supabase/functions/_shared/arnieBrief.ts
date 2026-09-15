@@ -79,10 +79,15 @@ export async function dailyBrief(r: Rest, caller: Caller, input: { date?: string
                : 'Your day and the team\'s day. Invoices are admin-level.')
       : 'Your own day. Team-wide items need manager access.',
     my_day: {
+      about: `${name(me) || caller.email} — the person reading this brief. Everything in my_day is theirs.`,
       appointments: myAppts.map((a: any) => ({ time: clock(a.start_time, tz), title: a.title, location: a.location, type: a.appointment_type, status: a.status })),
       sections_scheduled: mySections.map((s: any) => ({ time: s.start_time ? clock(s.start_time, tz) : null, section: s.name, job: jobLabel(s.job_id), address: job(s.job_id)?.address || null, status: s.status })),
       leads_i_set_meeting_today: myLeadsToday.map((l: any) => ({ time: clock(l.appointment_time, tz), lead: l.business_name || l.customer_name, status: l.status })),
-      open_shift_from_earlier_day: myOpenShifts.map((s: any) => ({ clocked_in: s.clock_in, job: s.job_id ? jobLabel(s.job_id) : null, note: 'Still clocked in from a previous day — this will not pay correctly until it is closed.' })),
+      // `who` is spelled out even though this is the caller's own section. A
+      // model writing this up once turned an unnamed open shift into "Danny" —
+      // a person who does not exist — because nothing on the row said whose
+      // it was. Ambiguity gets filled with a guess; a name does not.
+      open_shift_from_earlier_day: myOpenShifts.map((s: any) => ({ who: `${name(me) || 'you'} (you — the person reading this)`, clocked_in: s.clock_in, job: s.job_id ? jobLabel(s.job_id) : null, note: 'YOUR shift, still clocked in from a previous day — it will not pay correctly until you close it.' })),
       owed_to_me_now: pay?.total_owed_now ?? null,
       setter_fees_pending_not_yet_qualified: pay?.setter_commissions?.pending_not_yet_qualified ?? null,
     },

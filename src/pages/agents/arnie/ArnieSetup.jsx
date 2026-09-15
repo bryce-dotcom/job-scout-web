@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { Wrench, Check, X, RotateCcw, Send, Sparkles, ShieldAlert, MessageCircle } from 'lucide-react'
+import MorningBriefSettings from './MorningBriefSettings'
 
 const t = {
   bg: '#f7f5ef', card: '#ffffff', card2: '#f0ebdd', ink: '#2c3530', sub: '#4d5a52',
@@ -86,10 +87,14 @@ export default function ArnieSetup() {
 
   if (!canSeeHistory) {
     return (
-      <div style={{ maxWidth: 620, margin: '48px auto', padding: 24, textAlign: 'center', color: t.sub }}>
+      <div style={{ maxWidth: 620, margin: '24px auto', padding: 24, color: t.sub }}>
+        {/* Everyone gets the morning brief — the gate below is for the change log. */}
+        <MorningBriefSettings />
+        <div style={{ textAlign: 'center', marginTop: 24 }}>
         <ShieldAlert size={28} color={t.muted} />
         <h2 style={{ color: t.ink, margin: '12px 0 6px' }}>Manager access or above</h2>
         <p>Changes Arnie makes are reviewed and rolled back from here, which is limited to managers, admins and owners.</p>
+        </div>
       </div>
     )
   }
@@ -109,6 +114,8 @@ export default function ArnieSetup() {
           ? 'Tell Arnie what to change in plain English. He drafts it, you review the before-and-after, and nothing changes until you approve. Every change is logged and can be rolled back.'
           : 'Every change Arnie makes for you lands here — what it was, what it became, and a way to put it back.'}
       </p>
+
+      <MorningBriefSettings />
 
       {/* Arnie lives in the corner guy — you can also just talk to him there. */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: t.accentBg, border: `1px solid ${t.line}`, borderRadius: 12, padding: '12px 14px', margin: '0 0 18px' }}>
