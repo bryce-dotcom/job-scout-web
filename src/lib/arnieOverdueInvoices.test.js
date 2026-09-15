@@ -35,6 +35,15 @@ const chatTs = readFileSync(resolve(here, '../../supabase/functions/arnie-chat/i
 
 const asOf = '2026-09-01'
 
+// Every test below reads the edge function as TEXT, so an apostrophe inside a
+// single-quoted tool description reads perfectly well here and fails only at
+// deploy ("Expected ',', got 's'") — which is what happened. guard runs eslint
+// on JS and never parses the TS. Parse it.
+it('arnie-chat/index.ts parses as TypeScript', async () => {
+  const { transformSync } = await import('esbuild')
+  expect(() => transformSync(chatTs, { loader: 'ts', logLevel: 'silent' })).not.toThrow()
+})
+
 const invoicesBranch = () => {
   const start = chatTs.indexOf("if (name === 'query_invoices')")
   const end = chatTs.indexOf("if (name === 'query_jobs')")
@@ -202,5 +211,104 @@ describe('the aggregate cannot be read as an overdue total by accident', () => {
     expect(desc, 'query_invoices description not found').toBeTruthy()
     expect(desc[1]).toContain('overdue_total_owed')
     expect(desc[1]).toContain('STILL OWED')
+  })
+})
+
+// Three more gaps, found by running an AR conversation against the deployed
+// function on 2026-09-15 and checking every figure against the database:
+//
+//   "Which invoices come due in the next 7 days?"  → "none", 3 of 3 tries.
+//   There were two. start_date/end_date were undocumented and filtered
+//   created_at, so the model windowed the DUE date on the CREATED date.
+//
+//   "Total accounts receivable?"  → $27,265. It was $32,315. `balance` was
+//   only worked out for overdue rows, so the model added overdue balances
+//   to not-yet-due amounts by hand, and got it wrong.
+//
+//   "Which customer owes us the most?"  → "customer ID 7944". The invoice
+//   carries an id, the description said to look it up with query_customers,
+//   and query_customers had no way to look up an id.
+
+describe('a due-date window is a due-date window', () => {
+  it('offers due_from / due_to and filters due_date with them', () => {
+    const branch = invoicesBranch()
+    expect(branch).toContain("params.append('due_date', `gte.${input.due_from}`)")
+    expect(branch).toContain("params.append('due_date', `lte.${input.due_to}`)")
+    expect(chatTs).toMatch(/due_from: \{ type: 'string', description: '[^']*DUE/)
+    expect(chatTs).toMatch(/due_to: \{ type: 'string', description: '[^']*DUE/)
+  })
+
+  it('says what start_date / end_date actually window on', () => {
+    // These filter created_at. Undescribed, they read as "the date".
+    const params = chatTs.slice(chatTs.indexOf("name: 'query_invoices'"), chatTs.indexOf("name: 'query_jobs'"))
+    expect(params).toMatch(/start_date: \{ type: 'string', description: '[^']*CREATED/)
+    expect(params).toMatch(/end_date: \{ type: 'string', description: '[^']*CREATED/)
+    expect(invoicesBranch()).toContain('Windowed on created_at')
+    expect(invoicesBranch()).toContain('Windowed on due_date')
+  })
+})
+
+describe('the receivable is totalled by the tool, not by the model', () => {
+  it('works out a balance for every open row, not only the overdue ones', () => {
+    const branch = invoicesBranch()
+    expect(branch).toMatch(/const open = got\.rows\.filter\(\(r: any\) => !isSettledStatus\(r\.payment_status\)\)/)
+    expect(branch).toMatch(/const overdue = open\.filter/)
+    expect(branch).toMatch(/for \(const r of got\.rows\) \{\s*\n\s*r\.balance = isSettledStatus/)
+  })
+
+  it('carries open_count and open_total_owed beside the overdue pair', () => {
+    const branch = invoicesBranch()
+    expect(branch).toMatch(/agg\.open_count = open\.length/)
+    expect(branch).toMatch(/agg\.open_total_owed = owed\(open\)/)
+    expect(branch).toMatch(/agg\.overdue_total_owed = owed\(overdue\)/)
+  })
+
+  it('sums balance per customer group so who-owes-most is a lookup', () => {
+    expect(invoicesBranch()).toMatch(/aggregate\(got, input\.group_by, \['amount', 'balance'\]\)/)
+  })
+
+  it('demo tenant: open is not overdue, and neither is a sum of amounts', () => {
+    const rows = [
+      { payment_status: 'Partially Paid', due_date: '2026-08-13', amount: 18650, paid: 9325 },
+      { payment_status: 'Pending', due_date: '2026-08-19', amount: 9750, paid: 0 },
+      { payment_status: 'Pending', due_date: '2026-08-28', amount: 6300, paid: 0 },
+      { payment_status: 'Pending', due_date: '2026-09-17', amount: 3850, paid: 0 },
+      { payment_status: 'Pending', due_date: '2026-09-18', amount: 1650, paid: 0 },
+      { payment_status: 'Pending', due_date: '2026-09-01', amount: 240, paid: 0 },
+      { payment_status: 'Partially Paid', due_date: '2026-08-25', amount: 2400, paid: 1200 },
+      { payment_status: 'Paid', due_date: '2026-07-30', amount: 24800, paid: 24800 },
+    ]
+    const today = '2026-09-15'
+    const open = rows.filter(r => !isSettledStatus(r.payment_status))
+    const overdue = open.filter(r => isInvoiceOverdue(r, today))
+    const owed = rs => rs.reduce((s, r) => s + invoiceOutstanding(r.amount, 0, r.paid), 0)
+    expect(open).toHaveLength(7)
+    expect(overdue).toHaveLength(5)
+    expect(owed(overdue)).toBe(26815)
+    expect(owed(open)).toBe(32315)
+    // What Arnie said on 2026-09-15, and what summing `amount` would say.
+    expect(owed(open)).not.toBe(27265)
+    expect(open.reduce((s, r) => s + r.amount, 0)).toBe(42840)
+  })
+})
+
+describe('a customer id can be turned into a name', () => {
+  it('query_invoices puts customer_name on every row', () => {
+    const branch = invoicesBranch()
+    expect(branch).toMatch(/sb\('customers'\)/)
+    expect(branch).toMatch(/r\.customer_name = nameById\.get\(r\.customer_id\)/)
+    const desc = chatTs.match(/name: 'query_invoices',\n\s*description: '([^']*(?:\\'[^']*)*)'/)
+    expect(desc[1]).toContain('`customer_name`')
+    // The old advice — go and look it up — pointed at a tool that could not.
+    expect(desc[1]).not.toContain('look it up with query_customers')
+  })
+
+  it('query_customers accepts ids', () => {
+    const def = chatTs.slice(chatTs.indexOf("name: 'query_customers'"), chatTs.indexOf("name: 'query_employees'"))
+    expect(def).toMatch(/ids: \{ type: 'array', items: \{ type: 'integer' \}/)
+    const branch = chatTs.slice(chatTs.indexOf("if (name === 'query_customers')"), chatTs.indexOf("if (name === 'query_employees')"))
+    expect(branch).toContain("params.append('id', `in.(${ids.join(',')})`)")
+    // Non-numeric junk is dropped before it reaches PostgREST, and the list is capped.
+    expect(branch).toMatch(/input\.ids\.map\(Number\)\.filter\(Number\.isFinite\)\.slice\(0, 200\)/)
   })
 })

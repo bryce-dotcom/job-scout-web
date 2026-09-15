@@ -8,7 +8,7 @@ import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arn
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_shared/arnieMoney.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
-import { invoiceOutstanding, isInvoiceOverdue, SETTLED_STATUSES } from '../_shared/money.ts'
+import { invoiceOutstanding, isInvoiceOverdue, isSettledStatus, SETTLED_STATUSES } from '../_shared/money.ts'
 
 // Still read directly here: the SSE streaming path keeps its own fetch
 // (the shared wrapper buffers responses, which would break streaming).
@@ -65,16 +65,18 @@ const TOOLS = [
   },
   {
     name: 'query_invoices',
-    description: 'Query invoices. `count` is the exact number matching; `invoice_numbers` lists real invoice ids so anything you claim can be checked. ALWAYS read the `scope` field back to the user — it says what was filtered out. Unpaid is NOT the same as overdue: every returned row carries its own `overdue` boolean, and the result carries `as_of`, `overdue_count` and `overdue_total_owed`. Call an invoice overdue only when its own `overdue` flag is true, and take overdue totals from `overdue_total_owed` — never from `count`, from `total_amount`, or from a sum of every unpaid row. An overdue row also carries `balance`, what is STILL OWED on it: on a part-paid invoice that is less than its `amount`, so quote the balance. An invoice record holds customer_id, NOT a customer name: if you need a name, look it up with query_customers. NEVER name a customer that the tool did not return.',
+    description: 'Query invoices. `count` is the exact number matching; `invoice_numbers` lists real invoice ids so anything you claim can be checked. ALWAYS read the `scope` field back to the user — it says what was filtered out. Every row carries `customer_name` (resolved for you), `overdue` (true only when not settled AND past due as of `as_of`) and `balance` (what is STILL OWED — on a part-paid invoice, less than `amount`; 0 when settled). Unpaid is NOT the same as overdue: call an invoice overdue only when its own `overdue` flag is true. Totals are computed for you — quote them, never add `amount`s yourself: `overdue_count` / `overdue_total_owed` for overdue, `open_count` / `open_total_owed` for everything not settled (= accounts receivable). For who-owes-most, pass group_by=customer and read `total_balance` per group. Dates: `due_from` / `due_to` window on the DUE date ("coming due this week"); `start_date` / `end_date` window on when the invoice was CREATED. NEVER name a customer that the tool did not return.',
     input_schema: {
       type: 'object',
       properties: {
         status: { type: 'string', enum: ['paid', 'sent', 'overdue', 'draft', 'all'], description: 'overdue = not settled (anything but Paid/Void/Cancelled, so a part-paid invoice counts) AND past its due date. Pass this whenever the question is about overdue invoices — without it the result is every invoice of that status, past due or not.' },
         customer_name: { type: 'string', description: 'Resolved through the customers table. If no customer matches, the result says so — report that, do not substitute a name.' },
         exclude_zero: { type: 'boolean', description: 'Default true. Most zero-amount invoices are migration artefacts; set false to include them.' },
-        start_date: { type: 'string' },
-        end_date: { type: 'string' },
-        group_by: { type: 'string', enum: ['customer', 'month', 'status', 'none'] },
+        due_from: { type: 'string', description: 'YYYY-MM-DD. Only invoices DUE on/after this date. Use with due_to for "coming due this week".' },
+        due_to: { type: 'string', description: 'YYYY-MM-DD. Only invoices DUE on/before this date.' },
+        start_date: { type: 'string', description: 'YYYY-MM-DD. Only invoices CREATED on/after this date. This is NOT the due date — see due_from.' },
+        end_date: { type: 'string', description: 'YYYY-MM-DD. Only invoices CREATED on/before this date. This is NOT the due date — see due_to.' },
+        group_by: { type: 'string', enum: ['customer', 'month', 'status', 'none'], description: 'customer groups by customer_name with total_amount and total_balance (what is owed) per customer.' },
       },
     },
   },
@@ -188,11 +190,12 @@ const TOOLS = [
   },
   {
     name: 'query_customers',
-    description: 'Search customers by name, location, or other attributes. Returns customer details with their job/invoice summary.',
+    description: 'Search customers by name, location, or other attributes, or look specific ones up by id. Returns customer details with their job/invoice summary.',
     input_schema: {
       type: 'object',
       properties: {
         search: { type: 'string', description: 'Search customer name, business name, or email' },
+        ids: { type: 'array', items: { type: 'integer' }, description: 'Look up these customers by id — e.g. the customer_id on an invoice, job or payment. Up to 200.' },
         limit: { type: 'integer', description: 'Max results (default 20, max 100)' },
       },
     },
@@ -314,11 +317,12 @@ const TOOLS = [
 // ============================================================
 const PAGE = 1000
 const MAX_ROWS = 10000
-// How many overdue rows we will read payments for, to turn what they were
-// invoiced for into what is still owed. One request per 200, so five at the
-// ceiling. Past it the balance is reported as an upper bound and the scope
-// note says so — a bounded answer that admits its bound beats a slow one.
-const OVERDUE_BALANCE_MAX = 1000
+// How many open invoices we will read payments for, to turn what they were
+// invoiced for into what is still owed — and how many customers we will
+// name. One request per 200, so five at the ceiling. Past it the balance
+// is reported as an upper bound and the scope note says so — a bounded
+// answer that admits its bound beats a slow one.
+const BALANCE_MAX = 1000
 
 async function fetchRows(
   url: string,
@@ -633,8 +637,20 @@ async function execTool(name: string, input: any, caller: Caller) {
         params.append('amount', 'gt.0')
         notes.push('Zero-amount invoices excluded (most are migration artefacts); pass exclude_zero=false to include them.')
       }
+      // Two windows on two different columns, and each says which. This
+      // pair used to be undocumented and filtered created_at, so "which
+      // invoices come due this week" was answered from the invoices CREATED
+      // this week — none — with complete confidence, three times out of three.
       if (input.start_date) params.append('created_at', `gte.${input.start_date}`)
       if (input.end_date) params.append('created_at', `lte.${input.end_date}`)
+      if (input.start_date || input.end_date) {
+        notes.push(`Windowed on created_at (${input.start_date || 'any'} to ${input.end_date || 'any'}) — when the invoice was CREATED, not when it is due. For a due-date window use due_from/due_to.`)
+      }
+      if (input.due_from) params.append('due_date', `gte.${input.due_from}`)
+      if (input.due_to) params.append('due_date', `lte.${input.due_to}`)
+      if (input.due_from || input.due_to) {
+        notes.push(`Windowed on due_date (${input.due_from || 'any'} to ${input.due_to || 'any'}).`)
+      }
 
       const got = await fetchRows(sb('invoices'), params, hdr)
       if ('error' in got) return { error: `invoices query failed: ${got.error}` }
@@ -647,20 +663,23 @@ async function execTool(name: string, input: any, caller: Caller) {
       // the row is what makes the label impossible to get wrong when it is
       // not passed.
       for (const r of got.rows) r.overdue = isInvoiceOverdue(r, asOf)
-      const overdue = got.rows.filter((r: any) => r.overdue)
+      const open = got.rows.filter((r: any) => !isSettledStatus(r.payment_status))
+      const overdue = open.filter((r: any) => r.overdue)
 
-      // What is OWED on the overdue rows, not what they were invoiced for.
-      // Admitting part-paid invoices to the overdue set is the point of the
-      // filter above, and summing their `amount` would hand back money
-      // already collected as if it were still outstanding — on the demo
-      // tenant, $37,100 for $26,575 of real debt.
+      // What is OWED on every open row, not what it was invoiced for. A
+      // part-paid invoice has had money collected against it, and summing
+      // `amount` hands that back as if it were still outstanding — $37,100
+      // for $26,575 of real debt on the demo tenant. This used to be worked
+      // out for the overdue rows only, which left the model adding overdue
+      // balances to not-yet-due amounts by hand for "total receivables" — and
+      // it got $27,265 for $32,315. The tool adds now; the model reads.
       let balancesApplied = true
       const paidByInvoice = new Map<number, number>()
-      if (overdue.length > OVERDUE_BALANCE_MAX) {
+      if (open.length > BALANCE_MAX) {
         balancesApplied = false
       } else {
-        for (let i = 0; i < overdue.length; i += 200) {
-          const ids = overdue.slice(i, i + 200).map((r: any) => r.id).filter(Boolean)
+        for (let i = 0; i < open.length; i += 200) {
+          const ids = open.slice(i, i + 200).map((r: any) => r.id).filter(Boolean)
           if (!ids.length) continue
           const pays = await fetchRows(sb('payments'), new URLSearchParams({
             select: 'invoice_id,amount',
@@ -674,27 +693,51 @@ async function execTool(name: string, input: any, caller: Caller) {
           }
         }
       }
-      for (const r of overdue) {
-        r.balance = invoiceOutstanding(r.amount, r.discount_applied,
-          balancesApplied ? paidByInvoice.get(r.id) || 0 : 0).toFixed(2)
+      for (const r of got.rows) {
+        r.balance = isSettledStatus(r.payment_status)
+          ? '0.00'
+          : invoiceOutstanding(r.amount, r.discount_applied, balancesApplied ? paidByInvoice.get(r.id) || 0 : 0).toFixed(2)
       }
-      if (overdue.length && !balancesApplied) {
-        notes.push('Payments could not be applied, so `balance` and overdue_total_owed are an UPPER BOUND — money already collected on these invoices is still counted in them. Say so rather than quoting the figure flat.')
+      if (open.length && !balancesApplied) {
+        notes.push('Payments could not be applied, so `balance`, open_total_owed and overdue_total_owed are an UPPER BOUND — money already collected on these invoices is still counted in them. Say so rather than quoting the figure flat.')
       }
 
-      const agg: any = aggregate(got, input.group_by, ['amount'])
+      // The customer's name, on the row. An invoice holds customer_id only,
+      // and the old advice was "look it up with query_customers" — which had
+      // no way to look up an id. So the model called it two, three, four
+      // times, got nothing, and answered "customer ID 7942 owes the most".
+      const custIds = [...new Set(got.rows.map((r: any) => r.customer_id).filter(Boolean))]
+      const nameById = new Map<number, string>()
+      for (let i = 0; i < Math.min(custIds.length, BALANCE_MAX); i += 200) {
+        const ids = custIds.slice(i, i + 200)
+        const custs = await fetchRows(sb('customers'), new URLSearchParams({
+          select: 'id,name,business_name',
+          company_id: `eq.${companyId}`,
+          id: `in.(${ids.join(',')})`,
+        }), hdr, 200)
+        if ('error' in custs) break
+        for (const c of custs.rows) nameById.set(c.id, c.business_name || c.name || '')
+      }
+      for (const r of got.rows) r.customer_name = nameById.get(r.customer_id) || null
+      if (custIds.length > BALANCE_MAX) {
+        notes.push(`customer_name is filled in for the first ${BALANCE_MAX} customers only; the rest carry customer_id alone.`)
+      }
+
+      const agg: any = aggregate(got, input.group_by, ['amount', 'balance'])
+      const owed = (rows: any[]) => rows.reduce((sum: number, r: any) => sum + (parseFloat(r.balance) || 0), 0).toFixed(2)
       agg.as_of = asOf
       agg.overdue_count = overdue.length
-      agg.overdue_total_owed = overdue
-        .reduce((sum: number, r: any) => sum + (parseFloat(r.balance) || 0), 0).toFixed(2)
+      agg.overdue_total_owed = owed(overdue)
+      agg.open_count = open.length
+      agg.open_total_owed = owed(open)
       // Every claim about a specific invoice must be checkable by the user,
       // so hand back the invoice numbers rather than only totals.
       agg.invoice_numbers = got.rows.slice(0, 40).map((r: any) => r.invoice_id).filter(Boolean)
       if (got.truncated) {
-        notes.push(`overdue_count and overdue_total_owed cover only the ${got.rows.length} of ${got.total} matching rows that could be read.`)
+        notes.push(`The *_count and *_total_owed figures cover only the ${got.rows.length} of ${got.total} matching rows that could be read.`)
       }
       if (!askedOverdue) {
-        notes.push(`This result is NOT filtered to overdue: ${got.total} invoice(s) match, of which ${overdue.length} are past due as of ${asOf} (overdue_total_owed ${agg.overdue_total_owed}). Do not call the whole result overdue — only the rows whose own \`overdue\` flag is true.`)
+        notes.push(`This result is NOT filtered to overdue: ${got.total} invoice(s) match, ${open.length} of them not settled (open_total_owed ${agg.open_total_owed}), of which ${overdue.length} are past due as of ${asOf} (overdue_total_owed ${agg.overdue_total_owed}). Do not call the whole result overdue — only the rows whose own \`overdue\` flag is true.`)
       }
       if (notes.length) agg.scope = notes.join(' ')
       return agg
@@ -768,7 +811,12 @@ async function execTool(name: string, input: any, caller: Caller) {
         const term = input.search.replace(/[*]/g, '')
         params.append('or', `(name.ilike.*${term}*,business_name.ilike.*${term}*,email.ilike.*${term}*)`)
       }
-      const got = await fetchRows(sb('customers'), params, hdr, Math.min(input.limit || 20, 100))
+      // By id, for the customer_id a row from another tool carries. There
+      // was no way to do this, so the model searched by whatever words it
+      // had, got nothing, and answered with the bare id.
+      const ids = Array.isArray(input.ids) ? input.ids.map(Number).filter(Number.isFinite).slice(0, 200) : []
+      if (ids.length) params.append('id', `in.(${ids.join(',')})`)
+      const got = await fetchRows(sb('customers'), params, hdr, Math.min(input.limit || (ids.length || 20), 200))
       if ('error' in got) return { error: `customers query failed: ${got.error}` }
       // count is the number of MATCHES, not the number shown — otherwise a
       // search that hits 300 customers reports "20 customers".
