@@ -21,6 +21,14 @@
 -- visible beside the other crons, and a non-2xx shows up in the Vercel log.
 --
 -- Removing the job here is what stops it double-sending once Vercel takes over.
+--
+-- Re-stamped 2026-09-14: this file was written as 20260821120000, the same
+-- version as line_quantity_fractional, which had already been applied under
+-- that number — so the CLI could never apply this one, and the job kept
+-- firing at 15:00 UTC every day, 401 after 401, for another three weeks
+-- (cron.job on 14 Sep: the only job with no Authorization header). Had
+-- verify_jwt ever been switched off again, it would have resumed
+-- mass-mailing alongside the Vercel cron.
 DO $$
 BEGIN
   PERFORM cron.unschedule('estimate-followup-daily');
