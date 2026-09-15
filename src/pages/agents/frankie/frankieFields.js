@@ -23,7 +23,7 @@
 // the call below was hitting an undeclared variable and throwing at runtime.
 // Import it properly, then re-export for existing consumers.
 // Found by the new undefined-reference guard.
-import { invoiceCustomerTotal } from '../../../lib/arHelpers'
+import { invoiceCustomerTotal } from '../../../lib/arHelpers.js'
 export { invoiceCustomerTotal }
 
 // Total a customer still owes on this invoice after applied payments.

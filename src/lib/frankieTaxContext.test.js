@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  fiscalYearWindow, taxProfile, taxLineOf, taxBreakdown, monthlyPnl, internalTransferIds,
+  fiscalYearWindow, taxProfile, taxLineOf, taxBreakdown, monthlyPnl, internalTransferIds, reviewQueue, bankInflows,
   nextEstimatedTaxDate, buildTaxContext, payrollSummary, dateStr,
 } from '../pages/agents/frankie/frankieTaxContext'
 
@@ -144,6 +144,33 @@ describe('what counts as an expense', () => {
       { id: 3, amount: -900, date: '2026-05-15', is_transfer: false, connected_account_id: 6 },   // too far away
     ]
     expect(internalTransferIds(rows).size).toBe(0)
+  })
+
+  it('queues the checks tagged as wages and the deposits nobody has explained', () => {
+    const rows = [
+      { id: 1, amount: 18545.96, date: '2026-07-07', is_transfer: false, name: 'Draft Withdrawal Draft #729', ai_form_1065_line: 'Line 9 - Salaries and wages' },
+      { id: 2, amount: 8480, date: '2026-04-22', is_transfer: false, name: 'Check # 648', ai_form_1065_line: 'Line 9 - Salaries and wages', user_tax_category: 'Line 20 - Contract labor' },  // already reviewed
+      { id: 3, amount: 10789.07, date: '2026-01-19', is_transfer: false, name: 'Gusto', ai_form_1065_line: 'Line 9 - Salaries and wages' },  // real payroll, not a check
+      { id: 4, amount: -60000, date: '2026-03-01', is_transfer: false, name: 'Incoming wire' },
+      { id: 5, amount: -2500, date: '2026-03-02', is_transfer: false, name: 'Stripe payout', matched_payment_id: 77 },
+      { id: 6, amount: -120, date: '2026-03-03', is_transfer: false, name: 'Refund' },   // below the floor
+      { id: 7, amount: -9000, date: '2025-11-30', is_transfer: false, name: 'Old wire' },  // prior tax year
+      { id: 8, amount: 5000, date: '2026-05-01', is_transfer: false, name: 'Check # 700', ai_form_1065_line: 'Line 9 - Salaries and wages', connected_account_id: 5 },
+      { id: 9, amount: -5000, date: '2026-05-02', is_transfer: false, name: 'Deposit', connected_account_id: 6 },   // the other leg of #8
+    ]
+    const q = reviewQueue(rows, { fiscalYearEnd: 'November', now: sept15 })
+    expect(q.wageChecks.map(t => t.id)).toEqual([1])
+    expect(q.unmatchedDeposits.map(t => t.id)).toEqual([4])
+    expect(q.wageChecksTotal).toBeCloseTo(18545.96)
+    expect(q.unmatchedDepositsTotal).toBe(60000)
+  })
+
+  it('stops counting a deposit as revenue once someone marks it a loan', () => {
+    const rows = [
+      { id: 1, amount: -60000, date: '2026-03-01', is_transfer: false, user_tax_category: 'Not deductible' },
+      { id: 2, amount: -400, date: '2026-03-02', is_transfer: false },
+    ]
+    expect(bankInflows(rows, new Date(2026, 0, 1), new Date(2026, 11, 31))).toBe(400)
   })
 
   it('lays the months out with deductible and non-deductible apart', () => {

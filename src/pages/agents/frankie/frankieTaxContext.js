@@ -247,11 +247,57 @@ export function revenueIn(payments = [], start, end) {
     .reduce((s, p) => s + (Number(p.amount) || 0), 0)
 }
 
-/** Money that arrived in the bank that was not a transfer between own accounts. */
+/**
+ * Money that arrived in the bank that was not a transfer between own
+ * accounts and has not been marked as a loan or capital (Not deductible).
+ */
 export function bankInflows(plaidTransactions = [], start, end, exclude = new Set()) {
   return (plaidTransactions || [])
     .filter(t => Number(t.amount) < 0 && !t.is_transfer && !exclude.has(t.id) && inWindow(t.date, start, end))
+    .filter(t => !isNonDeductibleLine(t.user_tax_category))
     .reduce((s, t) => s - Number(t.amount), 0)
+}
+
+/**
+ * The rows a person should look at to make Frankie's tax number solid —
+ * what the "Frankie's second look" panel in Books → Tax lists.
+ *
+ *  - wageChecks: debits the AI tagged as wages that are really checks and
+ *    drafts from checking. Pay, subcontractor, owner draw or loan? Only a
+ *    person knows. Rows where someone already chose a tax line are done.
+ *  - unmatchedDeposits: money in that is not matched to a customer payment
+ *    or invoice, not a transfer, and not yet marked. Customer revenue, loan
+ *    proceeds, owner capital or a refund? Same story.
+ *
+ * Both are the current tax year, biggest first, so ten minutes at the top
+ * of each list moves the number most.
+ */
+export function reviewQueue(plaidTransactions = [], { fiscalYearEnd = null, now = new Date(), minDeposit = 500 } = {}) {
+  const fy = fiscalYearWindow(fiscalYearEnd, now)
+  const internal = internalTransferIds(plaidTransactions)
+  const wageChecks = []
+  const unmatchedDeposits = []
+  for (const t of plaidTransactions || []) {
+    if (t.is_transfer || internal.has(t.id) || !inWindow(t.date, fy.start, now)) continue
+    const amt = Number(t.amount) || 0
+    if (amt > 0) {
+      if (t.user_tax_category) continue
+      if (/salaries and wages/i.test(taxLineOf(t)) && looksLikeCheck(t)) wageChecks.push(t)
+    } else if (amt < 0) {
+      if (t.user_tax_category || t.matched_payment_id || t.matched_invoice_id) continue
+      if (-amt >= minDeposit) unmatchedDeposits.push(t)
+    }
+  }
+  const byAbs = (a, b) => Math.abs(Number(b.amount)) - Math.abs(Number(a.amount))
+  wageChecks.sort(byAbs)
+  unmatchedDeposits.sort(byAbs)
+  return {
+    wageChecks,
+    unmatchedDeposits,
+    wageChecksTotal: wageChecks.reduce((s, t) => s + Number(t.amount), 0),
+    unmatchedDepositsTotal: unmatchedDeposits.reduce((s, t) => s - Number(t.amount), 0),
+    window: fy,
+  }
 }
 
 /**
@@ -268,10 +314,10 @@ export function dataQualityFlags({ breakdown, payroll, revenue, inflows }) {
     const checks = breakdown.wagesByCheckRows > 0
       ? ` ${money(breakdown.wagesByCheck)} of the bank figure is ${breakdown.wagesByCheckRows} checks and drafts from checking that the categoriser guessed were pay. If some of those were owner draws or loan repayments, taxable profit is higher by that amount; if they were subcontractors, they are still deductible (as contract labor).`
       : ' The difference may be payroll taxes and contractor pay, or money the categoriser guessed at.'
-    flags.push(`The bank feed has ${money(bankWages)} tagged as salaries and wages, but completed payroll runs total ${money(payroll.gross)} gross.${checks} Reviewing those rows in Books → Money is the single change that would tighten this number most.`)
+    flags.push(`The bank feed has ${money(bankWages)} tagged as salaries and wages, but completed payroll runs total ${money(payroll.gross)} gross.${checks} Those rows are listed under Books → Tax → "Frankie's second look"; working down that list is the single change that would tighten this number most.`)
   }
   if (revenue > 0 && inflows > revenue * 1.15) {
-    flags.push(`${money(inflows)} came into the bank this tax year against ${money(revenue)} of recorded customer payments. The extra ${money(inflows - revenue)} is not in revenue here — loan draws, owner capital, refunds or incentive payments. Loans and capital are not taxable income; sales that were never recorded as payments would be.`)
+    flags.push(`${money(inflows)} came into the bank this tax year against ${money(revenue)} of recorded customer payments. The extra ${money(inflows - revenue)} is not in revenue here — loan draws, owner capital, refunds or incentive payments. Loans and capital are not taxable income; sales that were never recorded as payments would be. Those deposits are also listed under Books → Tax → "Frankie's second look".`)
   }
   return flags
 }

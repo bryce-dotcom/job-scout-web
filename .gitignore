@@ -38,3 +38,6 @@ dist-ssr
 
 # deno check writes this next to the function it checks; not a project file
 deno.lock
+
+# Frankie eval runs — reports with real answers; local only
+scripts/frankie-eval/runs/

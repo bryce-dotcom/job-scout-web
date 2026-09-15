@@ -1,0 +1,22 @@
+[
+  { "id": 1, "tags": ["money"], "q": "Break down profitability of our recent completed jobs. Which ones had the best and worst margins?" },
+  { "id": 2, "tags": ["money"], "q": "Profit and Loss report from 5/1/2025 - 4/30/2026" },
+  { "id": 3, "tags": ["money"], "q": "need a P&L" },
+  { "id": 4, "tags": ["money", "afford"], "q": "do i have enough money to pay christopher $1500?" },
+  { "id": 5, "tags": ["money", "afford"], "q": "Can i pay 1500 for a tool" },
+  { "id": 6, "tags": ["money", "afford"], "q": "do i have enough money to buy 8k worth of product" },
+  { "id": 7, "tags": ["money"], "q": "i want to eliminate the dumper expense and buy a dump trailer with a month pay of 320.00? we currently pay $420 a month for dumpsters" },
+  { "id": 8, "tags": ["money"], "q": "should I buy $8,000 of lighting product to keep the guys busy at a net profit of 12%" },
+  { "id": 9, "tags": ["money"], "q": "what if I have $250,000 coming in in the next 14 days?" },
+  { "id": 10, "tags": ["money", "afford"], "q": "Can I buy a computer right now" },
+  { "id": 11, "tags": ["money", "afford"], "q": "I need to spend 4,000 dollars for my 35,000 Lane Anderson Job. It starts in two weeks. Can I do that" },
+  { "id": 12, "tags": ["books"], "q": "When a client pays his invoice that credit card money goes from stripe(merchant services provider) to our checking account. So when it deposits into our checking account it actually hits Cameron's expense card. From there I will transfer the funds directly to our checking account. I just want to make sure I categorize this correctly. When it deposits to Cameron's account I will call that a transfer transaction because it's going between accounts. But what would the tax category be? Since a client is paying us for our services would I put it to income? I know that once I transfer it to our checking account with that transaction I can say Services or Sales because this is income but what about the tax category?" },
+  { "id": 13, "tags": ["books"], "q": "If we are reimbursing an employee for materials or fuel for a job. What is this put in the books as?" },
+  { "id": 14, "tags": ["books"], "q": "Bryce has a loan to the company in the amount of $258,000. $125,000 is still owing to Bryce, There are payments to him in the amount of $5000 and $2500 that is venmo to him. How do I categorize these payments? Is this under loan?" },
+  { "id": 15, "tags": ["books"], "q": "If the company is transferring money to Cole's expense card for his truck payment what are the two categories that should be used in the books?" },
+  { "id": 16, "tags": ["money"], "q": "MES we owe $47,934\nTerms $50,000 45 days\n\nAmex we owe $25,000\n\nNeed to order $14,000 today\n\nNeed to order roughly $17,000 in product for AZ jobs by Wed if we want to go install Oct 5-6. We just deposited $56,892.68 into our bank account" },
+  { "id": 17, "tags": ["money"], "q": "What is our monthly burn rate? How has it trended over the last 3 months?" },
+  { "id": 18, "tags": ["money", "tax"], "q": "Thinking about cost segregation and taxes and a new facility or ranch/land somewhere. Would it be smart for us to look at something like this?" },
+  { "id": 19, "tags": ["money", "tax"], "q": "What is my tax liability for this year" },
+  { "id": 20, "tags": ["money", "tax"], "q": "I'm thinking about buying a building before year end for tax reasons. How much tax am I going to owe this year, and does the purchase make sense?" }
+]
