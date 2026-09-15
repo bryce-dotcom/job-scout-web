@@ -419,7 +419,7 @@ const PROPOSE_CREATE_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup'], description: 'lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person. appointment = book a sales visit on an existing lead (sets the lead to Appointment Set, hands it to the rep, and creates the setter fee — the same as booking from Lead Setter). quote = a Draft estimate for a lead or customer, lines from the price book, nothing sent. followup = a personal note from the rep on a quote that has gone quiet, SENT to the customer when they approve the card — the one draft that cannot be undone.' },
+      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup', 'payment'], description: 'lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person. appointment = book a sales visit on an existing lead (sets the lead to Appointment Set, hands it to the rep, and creates the setter fee — the same as booking from Lead Setter). quote = a Draft estimate for a lead or customer, lines from the price book, nothing sent. followup = a personal note from the rep on a quote that has gone quiet, SENT to the customer when they approve the card — the one draft that cannot be undone. payment = money that arrived on an open invoice (cash, check, ACH, Venmo, Zelle, PayPal, financing) — recorded against the invoice, the status updated, the receipt emailed; admin only.' },
       fields: {
         type: 'object',
         description:
@@ -439,6 +439,7 @@ const PROPOSE_CREATE_TOOL = {
           lead: { type: 'string' }, when: { type: 'string' }, timezone: { type: 'string' }, salesperson: { type: 'string' }, duration_minutes: { type: 'string' }, location: { type: 'string' },
           customer: { type: 'string' }, estimate_name: { type: 'string' },
           quote: { type: 'string' }, channel: { type: 'string' },
+          invoice: { type: 'string' }, amount: { type: 'string' }, method: { type: 'string' }, date: { type: 'string' }, reference: { type: 'string' },
           lines: { type: 'array', items: { type: 'object', properties: { item: { type: 'string' }, quantity: { type: 'number' }, price: { type: 'number' }, description: { type: 'string' } }, required: ['item'] } },
         },
       },
