@@ -487,17 +487,31 @@ export const useStore = create(
         const cached = await offlineDb.getAll('appointments');
         if (cached.length > 0 && get().appointments.length === 0) set({ appointments: cached });
 
-        // Network refresh
+        // Network refresh — paginate to get ALL appointments. PostgREST caps a
+        // response at 1000 rows no matter what; ordered by start_time that
+        // would have been the OLDEST thousand, and everything booked this
+        // month would be missing from the calendar and the sales funnel the
+        // day a company passes a thousand appointments. Same shape as quotes.
         try {
-          const { data, error } = await supabase
-            .from(TABLES.appointments)
-            .select(QUERIES.appointments)
-            .eq('company_id', companyId)
-            .order('start_time');
-
-          if (!error) {
-            set({ appointments: data || [] });
-            await offlineDb.putAll('appointments', data || []);
+          let allData = [];
+          let from = 0;
+          const PAGE = 1000;
+          while (true) {
+            const { data, error } = await supabase
+              .from(TABLES.appointments)
+              .select(QUERIES.appointments)
+              .eq('company_id', companyId)
+              .order('start_time')
+              .order('id')
+              .range(from, from + PAGE - 1);
+            if (error) break;
+            allData = allData.concat(data || []);
+            if (!data || data.length < PAGE) break;
+            from += PAGE;
+          }
+          if (allData.length > 0 || from === 0) {
+            set({ appointments: allData });
+            await offlineDb.putAll('appointments', allData);
           }
         } catch (e) {
           console.log('[fetchAppointments] Offline, using cache');

@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
+import { supabase } from '../lib/supabase'
 import { TrendingUp, Users, FileText, CheckCircle2, DollarSign } from 'lucide-react'
-import { computeSalesFunnel, funnelTotals, funnelSince } from '../lib/salesFunnel'
+import { computeSalesFunnel, funnelTotals, funnelWindow } from '../lib/salesFunnel'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8', text: '#2c3530',
@@ -21,18 +22,59 @@ const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('en-US')
 export default function SalesPerformance() {
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
+  const companyId = useStore((s) => s.companyId)
   const quotes = useStore((s) => s.quotes)
   const leads = useStore((s) => s.leads)
   const appointments = useStore((s) => s.appointments)
-  const employees = useStore((s) => s.employees)
+  const storeJobs = useStore((s) => s.jobs)
+  const storeEmployees = useStore((s) => s.employees)
+  // The jobs behind the estimates — where closed value and a last-resort rep
+  // come from. The store keeps only the newest 1,000 jobs, so an estimate that
+  // became a job last year (or at a busier company) would find no job in it.
+  // Fetch exactly the ones the estimates point at; a few hundred rows.
+  const [quoteJobs, setQuoteJobs] = useState([])
+  useEffect(() => {
+    if (!companyId) return
+    let alive = true
+    const ids = [...new Set((quotes || []).map((q) => q?.job_id).filter((v) => v != null))]
+    const cols = 'id, quote_id, lead_id, salesperson_id, job_total'
+    const chunks = []
+    for (let i = 0; i < ids.length; i += 300) chunks.push(ids.slice(i, i + 300))
+    Promise.all([
+      supabase.from('jobs').select(cols).eq('company_id', companyId).not('quote_id', 'is', null).limit(1000),
+      ...chunks.map((c) => supabase.from('jobs').select(cols).eq('company_id', companyId).in('id', c)),
+    ]).then((results) => {
+      if (!alive) return
+      const seen = new Map()
+      for (const r of results) for (const j of r?.data || []) seen.set(j.id, j)
+      setQuoteJobs([...seen.values()])
+    })
+    return () => { alive = false }
+  }, [companyId, quotes])
+  const jobs = useMemo(() => {
+    const byId = new Map((storeJobs || []).filter(Boolean).map((j) => [j.id, j]))
+    for (const j of quoteJobs) byId.set(j.id, j)
+    return [...byId.values()]
+  }, [storeJobs, quoteJobs])
+  // The store holds active employees only; a rep who has since left still
+  // sold this year's work and should be named, not shown as "#118".
+  const [allEmployees, setAllEmployees] = useState(null)
+  useEffect(() => {
+    if (!companyId) return
+    let alive = true
+    supabase.from('employees').select('id, name').eq('company_id', companyId)
+      .then(({ data }) => { if (alive && data?.length) setAllEmployees(data) })
+    return () => { alive = false }
+  }, [companyId])
+  const employees = allEmployees || storeEmployees
 
   const [range, setRange] = useState('ytd')
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
 
   const rows = useMemo(
-    () => computeSalesFunnel({ appointments, quotes, leads, employees }, { sinceIso: funnelSince(range) })
+    () => computeSalesFunnel({ appointments, quotes, leads, employees, jobs }, funnelWindow(range))
       .filter((r) => r.meetings || r.takeoffs),
-    [appointments, quotes, leads, employees, range],
+    [appointments, quotes, leads, employees, jobs, range],
   )
   const totals = useMemo(() => funnelTotals(rows), [rows])
   const maxClosedValue = Math.max(1, ...rows.map((r) => r.closedValue))
@@ -75,9 +117,9 @@ export default function SalesPerformance() {
       {/* Company totals */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 22 }}>
         {stat(<Users size={13} />, 'Meetings set', totals.meetings)}
-        {stat(<FileText size={13} />, 'Estimates', totals.takeoffs)}
+        {stat(<FileText size={13} />, 'Estimates sent', totals.takeoffs)}
         {stat(<CheckCircle2 size={13} />, 'Closed', totals.closed, '#16a34a')}
-        {stat(<DollarSign size={13} />, 'Closed value', money(rows.reduce((s, r) => s + r.closedValue, 0)), theme.accent)}
+        {stat(<DollarSign size={13} />, 'Closed value', money(totals.closedValue), theme.accent)}
         {stat(<TrendingUp size={13} />, 'Close rate', `${totals.closeRate}%`)}
       </div>
 
@@ -94,16 +136,19 @@ export default function SalesPerformance() {
                 <tr>
                   <th style={th}>Rep</th>
                   <th style={{ ...th, textAlign: 'right' }}>Meetings</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Estimates</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Estimates&nbsp;sent</th>
                   <th style={{ ...th, textAlign: 'right' }}>Closed</th>
                   <th style={{ ...th, textAlign: 'right' }}>Close&nbsp;%</th>
                   <th style={{ ...th, textAlign: 'right' }}>Closed&nbsp;value</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.slice().sort((a, b) => b.closedValue - a.closedValue || b.closed - a.closed).map((r) => (
-                  <tr key={r.repId}>
-                    <td style={{ ...td, fontWeight: 600 }}>{r.repName}</td>
+                {rows.slice().sort((a, b) => (a.repId == null) - (b.repId == null) || b.closedValue - a.closedValue || b.closed - a.closed).map((r) => (
+                  <tr key={r.repId ?? 'unattributed'} style={r.repId == null ? { backgroundColor: theme.accentBg } : undefined}>
+                    <td style={{ ...td, fontWeight: 600, color: r.repId == null ? theme.textMuted : theme.text }}>
+                      {r.repName}
+                      {r.repId == null && <div style={{ fontSize: 11, fontWeight: 400, color: theme.textMuted }}>estimates with no rep on the estimate, its lead, or its job</div>}
+                    </td>
                     <td style={{ ...td, textAlign: 'right' }}>{r.meetings || '—'}</td>
                     <td style={{ ...td, textAlign: 'right' }}>{r.takeoffs || '—'}</td>
                     <td style={{ ...td, textAlign: 'right', color: '#16a34a', fontWeight: 700 }}>{r.closed || '—'}</td>
@@ -125,7 +170,7 @@ export default function SalesPerformance() {
       )}
 
       <p style={{ marginTop: 14, fontSize: 12, color: theme.textMuted }}>
-        Meetings = appointments booked for the rep. Estimates &amp; closed are attributed through the lead owner when the quote itself has no rep. Closed = approved estimates.
+        Meetings = sales appointments in the window (blocked time and job visits excluded). Estimates sent = every estimate except drafts. Credit follows the estimate's rep, then its lead's rep, then the rep on the job it became — the same rule as the pipeline and commissions. Closed = approved, or turned into a job; closed value is the job's total once there is one.
       </p>
     </div>
   )
