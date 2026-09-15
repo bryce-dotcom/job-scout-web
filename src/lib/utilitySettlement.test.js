@@ -194,3 +194,51 @@ describe('reopen undoes the settlement', () => {
     expect(invoicePatch).toBeNull()
   })
 })
+
+// ── the utility's payment settles a fully-covered invoice ─────────────────
+// Tracy (470cccc5): SMC Auto — $32,143.06 project, $30,000 SRP incentive plus
+// a $2,143.06 rep discount, so the customer owed $0. SRP's cheque arrived,
+// was recorded on the utility record, and the invoice still read "Pending":
+// everyone who owed had paid and the dashboard listed it as open.
+import { invoicePaymentStatus } from './arHelpers.js'
+describe('settling the utility settles an invoice the customer never owed on', () => {
+  const smc = { id: 32661, amount: 32143.06, discount_applied: 32143.06, payment_status: 'Pending', utility_billed: null, utility_shortfall: null, shortfall_borne_by: null }
+  const srpRow = { id: 111, incentive_amount: '30000', amount: '30000', project_cost: '32143.06', net_cost: '2143.06', notes: null }
+  const settle = (amount, inv = smc, borneBy) => buildUtilityPaymentPatch(srpRow, { paidOn: '2026-09-14', amount, borneBy }, inv)
+
+  it('marks the invoice Paid when the utility pays in full and the customer owes nothing', () => {
+    expect(settle('30000').invoicePatch.payment_status).toBe('Paid')
+  })
+
+  it('leaves the status alone when the customer still owes', () => {
+    const owes = { ...smc, discount_applied: 30000 }               // customer owes 2,143.06
+    expect(settle('30000', owes).invoicePatch.payment_status).toBeUndefined()
+  })
+
+  it('a shortfall billed to the customer means they owe again — no Paid', () => {
+    expect(settle('29000', smc, BORNE_BY_CUSTOMER).invoicePatch.payment_status).toBeUndefined()
+    // ...absorbed by the company, the customer still owes nothing: Paid.
+    expect(settle('29000', smc, BORNE_BY_COMPANY).invoicePatch.payment_status).toBe('Paid')
+  })
+
+  it('never touches Void, Cancelled, an already-Paid invoice, or one with no figures', () => {
+    expect(settle('30000', { ...smc, payment_status: 'Void' }).invoicePatch.payment_status).toBeUndefined()
+    expect(settle('30000', { ...smc, payment_status: 'Cancelled' }).invoicePatch.payment_status).toBeUndefined()
+    expect(settle('30000', { ...smc, payment_status: 'Paid' }).invoicePatch.payment_status).toBeUndefined()
+    expect(settle('30000', { ...smc, amount: null }).invoicePatch.payment_status).toBeUndefined()
+  })
+
+  it('reopening the utility payment reopens the invoice it had settled', () => {
+    const paid = { ...smc, payment_status: 'Paid', utility_billed: 30000 }
+    expect(buildReopenPatch(srpRow, paid).invoicePatch.payment_status).toBe('Pending')
+    // An invoice the customer paid keeps its Paid — their money is still in.
+    const customerPaid = { ...smc, discount_applied: 30000, payment_status: 'Paid', utility_billed: 30000 }
+    expect(buildReopenPatch(srpRow, customerPaid).invoicePatch.payment_status).toBeUndefined()
+  })
+
+  it('and the status rule agrees: utility paid + nothing owed = Paid; utility unpaid = still Pending', () => {
+    expect(invoicePaymentStatus({ ...smc, utility_owes: 30000, utility_paid_at: '2026-09-14T12:00:00Z' }, 0)).toBe('Paid')
+    expect(invoicePaymentStatus({ ...smc, utility_owes: 30000, utility_paid_at: null }, 0)).toBe('Pending')
+    expect(invoicePaymentStatus({ ...smc, utility_owes: null }, 0)).toBe('Pending')  // no utility on it, nothing collected
+  })
+})

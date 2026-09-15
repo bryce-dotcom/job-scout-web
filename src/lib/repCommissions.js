@@ -1,4 +1,5 @@
 import { buildLeadIndex, jobOwnedBy } from './jobOwnership'
+import { invoiceCustomerTotal } from './arHelpers'
 // Rep (%) commission ledger — read/sync helpers for the frozen rep_commissions
 // table (P2). The amount of a rep's services/goods commission is snapshotted
 // per payment when earned and never recomputed, so Payroll and My Pay stop
@@ -51,10 +52,15 @@ export function computeRepRows({ employees = [], jobs = [], leads = [], invoices
         })
       }
       if (inv.payment_status === 'Paid' && invPays.length === 0) {
-        const amt = (parseFloat(inv.amount) || 0) * (rate / 100)
+        // No payment rows to read, so the basis is what the CUSTOMER owed —
+        // gross less the incentive and any credit. The gross would pay the rep
+        // on the utility's share here and again on the utility row below; on
+        // SMC Auto the customer's share is $0 and the utility's is $30,000.
+        const basis = invoiceCustomerTotal(inv)
+        const amt = basis * (rate / 100)
         if (amt > 0) rows.push({
           company_id: e.company_id, employee_id: e.id, invoice_id: inv.id, job_id: inv.job_id, payment_id: null,
-          kind, amount: Math.round(amt * 100) / 100, rate, rate_type: 'percent', basis_amount: parseFloat(inv.amount) || 0,
+          kind, amount: Math.round(amt * 100) / 100, rate, rate_type: 'percent', basis_amount: basis,
           earned_at: inv.updated_at || inv.created_at || null,
           payment_status: 'earned', source: 'live_synthetic',
         })

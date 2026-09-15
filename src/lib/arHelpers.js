@@ -105,16 +105,24 @@ export function invoiceBalance(inv, paymentsArrOrMap = []) {
 //
 // extraFee: a CC processing fee added ON TOP of the customer total (the card
 // payer owes their net portion plus the fee). Pass 0 for cash/check.
+// The utility's money came in: the invoice carries a utility debt and it has
+// been settled (utility_paid_at is mirrored from the utility record). That is
+// money actually received, from the other party who owed on this invoice.
+export function utilityHasPaid(inv) {
+  return (Number(inv?.utility_owes) || 0) > 0 && !!inv?.utility_paid_at
+}
+
 export function invoicePaymentStatus(inv, totalPaid, extraFee = 0) {
   const owed = invoiceCustomerTotal(inv) + (Number(extraFee) || 0)
   const paid = Number(totalPaid) || 0
   // Nothing owed — an empty $0 invoice OR one fully covered by the incentive.
-  // Only call it Paid if money actually came in. Auto-marking these Paid with
-  // $0 collected would (a) flip 850+ empty shell invoices on their next payment
-  // event and (b) trip the "Paid + no payments" fallback in bonusCalc into
-  // paying commission on the full gross. When nothing was collected, leave the
-  // status alone by reporting Pending — matches the old record/rescind paths.
-  if (owed <= 0.01) return paid > 0 ? 'Paid' : 'Pending'
+  // Only call it Paid if money actually came in — from the customer, or from
+  // the utility once its incentive is settled (Tracy, 470cccc5: SMC Auto sat
+  // "open" on the dashboard after SRP's $30,000 arrived, because the customer
+  // owed nothing and nothing counted the utility's cheque). Auto-marking with
+  // NO money in would flip 850+ empty shell invoices on their next payment
+  // event, so with nothing collected from anyone the status stays Pending.
+  if (owed <= 0.01) return paid > 0 || utilityHasPaid(inv) ? 'Paid' : 'Pending'
   if (paid >= owed - 0.01) return 'Paid'
   if (paid > 0) return 'Partially Paid'
   return 'Pending'

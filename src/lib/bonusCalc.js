@@ -7,6 +7,7 @@
 // Node's ESM loader on Vercel, which does not. Without it the cron dies with
 // 'Cannot find module' on every run while the frontend works fine.
 import { verificationRequiredFor } from './verificationPolicy.js'
+import { invoiceCustomerTotal } from './arHelpers.js'
 
 // Default bi-weekly anchor: a known Friday payday in 2024. Companies on
 // bi-weekly should set their own pay_anchor_date in payroll_config; this
@@ -112,7 +113,12 @@ export function calculateInvoiceCommissions({
   const trigger = payrollConfig?.commission_trigger || 'payment_received'
 
   empInvoices.forEach(inv => {
-    const invAmount = parseFloat(inv.amount) || 0
+    // The customer's share of the invoice — gross less the utility incentive
+    // and any credit — is what a rep's invoice commission measures. The gross
+    // counted the utility's share here AND in the utility block below (a
+    // fully-covered invoice read as $32,143.06 of pending commission when the
+    // customer owed $0). The utility's payment earns through its own row.
+    const invAmount = invoiceCustomerTotal(inv)
     if (invAmount <= 0) return
     const job = empJobs.find(j => j.id === inv.job_id)
     const jobLabel = job?.job_title || job?.customer_name || inv.job_description || 'Unknown'

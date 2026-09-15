@@ -206,13 +206,25 @@ describe('the ledger must not be written from half-loaded data', () => {
   const rep = { id: 72, company_id: 3, is_commission: true, commission_services_rate: 8.5, commission_services_type: 'percent' }
   const job = { id: 10, salesperson_id: 72 }
 
-  it('a Paid invoice with genuinely no payment still earns — that case is real', () => {
+  it('a Paid invoice with genuinely no payment still earns — on what the customer owed, not the gross', () => {
+    // $7,113.77 gross less the $5,335.33 incentive: the customer's share is
+    // $1,778.44. The gross paid the rep on the utility's $5,335.33 here and
+    // again on the utility row — the double-pay described above.
     const rows = computeRepRows({
       employees: [rep], jobs: [job], leads: [], invoices: [paidInvoice], payments: [],
     })
     const synth = rows.filter((r) => r.source === 'live_synthetic')
     expect(synth).toHaveLength(1)
-    expect(synth[0].basis_amount).toBe(7113.77)
+    expect(synth[0].basis_amount).toBeCloseTo(1778.44, 2)
+  })
+
+  it('a Paid invoice the customer never owed on earns no synthetic row at all — SMC Auto', () => {
+    // $32,143.06 project, $30,000 SRP incentive, $2,143.06 rep discount: the
+    // customer owed $0 and the utility's cheque settled it. The utility's
+    // $30,000 earns through the utility row; nothing else is owed the rep.
+    const smc = { id: 32661, job_id: 10, amount: 32143.06, payment_status: 'Paid', discount_applied: 32143.06 }
+    const rows = computeRepRows({ employees: [rep], jobs: [job], leads: [], invoices: [smc], payments: [] })
+    expect(rows.filter((r) => r.source === 'live_synthetic')).toHaveLength(0)
   })
 
   // ...which is why the guard cannot live in computeRepRows: an empty payments

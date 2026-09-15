@@ -48,6 +48,8 @@
 // so they cannot drift to the previous day when shown back in a negative
 // timezone. Same convention as before.
 
+import { invoiceCustomerTotal } from './arHelpers.js'
+
 const usd = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(n) || 0)
 const CENT = 0.005
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100
@@ -122,6 +124,15 @@ export function buildUtilityPaymentPatch(row, { paidOn, amount, note, borneBy } 
       shortfall_borne_by: short ? borneBy : null,
       discount_applied: short && borneBy === BORNE_BY_CUSTOMER ? r2(Math.max(0, base - shortBy)) : base,
     }
+    // The customer owed nothing (the incentive covered the project) and the
+    // utility has now paid: everyone who owed on this invoice has, so it is
+    // Paid. A shortfall billed to the customer means they owe again — leave
+    // the status to the customer's own payment. Void/Cancelled stay as they are.
+    const owedAfter = invoiceCustomerTotal({ ...invoice, discount_applied: invoicePatch.discount_applied })
+    const status = String(invoice.payment_status || '')
+    if ((Number(invoice.amount) || 0) > 0 && owedAfter <= 0.01 && status !== 'Void' && status !== 'Cancelled' && status !== 'Paid') {
+      invoicePatch.payment_status = 'Paid'
+    }
   }
   return { rowPatch, invoicePatch, expected, paidNum, shortBy }
 }
@@ -156,6 +167,12 @@ export function buildReopenPatch(row, invoice = null) {
   const invoicePatch = invoice
     ? { discount_applied: creditBeforeShortfall(invoice), utility_shortfall: null, shortfall_borne_by: null }
     : null
+  // The utility's payment was what settled a fully-covered invoice; taking it
+  // back reopens the invoice. An invoice the customer actually paid keeps its
+  // Paid — their money is still in.
+  if (invoicePatch && invoice.payment_status === 'Paid' && (Number(invoice.amount) || 0) > 0 && invoiceCustomerTotal({ ...invoice, discount_applied: invoicePatch.discount_applied }) <= 0.01) {
+    invoicePatch.payment_status = 'Pending'
+  }
   return { rowPatch, invoicePatch }
 }
 
