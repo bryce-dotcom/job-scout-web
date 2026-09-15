@@ -70,7 +70,12 @@ export const SEND_BLOCKED_TEXT = {
  * (Victor is a flag, not a gate) and the office is told.
  */
 export function completionJobPatch({ score, flagged, now = new Date() }) {
-  const patch = { status: 'Completed', updated_at: now.toISOString() }
+  // completed_at is the ACTUAL completion time — the Jobs page and JobDetail
+  // both stamp it, and the next service visit, Frankie's 90-day stats and
+  // the calendar (end_date stays the scheduled end, see Jobs.jsx) all read
+  // it. Field Scout never wrote it, so a job finished from the phone had no
+  // completion time at all. Found on the demo tenant.
+  const patch = { status: 'Completed', completed_at: now.toISOString(), updated_at: now.toISOString() }
   if (flagged) {
     patch.completion_flagged_at = now.toISOString()
     patch.completion_flag_reason = `Marked complete without a passing verification (Victor score ${Number.isFinite(Number(score)) ? Math.round(Number(score)) : '—'}).`

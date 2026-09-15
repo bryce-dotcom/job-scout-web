@@ -39,9 +39,9 @@ describe('what the sheet offers', () => {
 })
 
 describe('the job update', () => {
-  it('a pass completes cleanly', () => {
+  it('a pass completes cleanly, stamping the completion time the Jobs page and JobDetail stamp', () => {
     const p = completionJobPatch({ score: 88, flagged: false, now: new Date('2026-09-14T20:00:00Z') })
-    expect(p).toEqual({ status: 'Completed', updated_at: '2026-09-14T20:00:00.000Z' })
+    expect(p).toEqual({ status: 'Completed', completed_at: '2026-09-14T20:00:00.000Z', updated_at: '2026-09-14T20:00:00.000Z' })
   })
   it('complete-anyway completes AND flags, with the score in the reason', () => {
     const p = completionJobPatch({ score: 41.6, flagged: true, now: new Date('2026-09-14T20:00:00Z') })
