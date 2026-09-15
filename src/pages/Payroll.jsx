@@ -32,7 +32,7 @@ import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 import { payDateForPeriod } from '../lib/payDate'
 import { VERIFICATION_EXEMPT_KEY } from '../lib/verificationPolicy'
 import { needsAttention } from '../lib/openPunches'
-import { localDateStr } from '../lib/localDate'
+import { localDateStr, parseLocalDate } from '../lib/localDate'
 import { quarterDueDate } from '../lib/payrollQuarters'
 import { suiRateInForce, suiWageBaseFor } from '../lib/suiRate'
 
@@ -1624,7 +1624,7 @@ export default function Payroll() {
   // the memo that does the heavy work lists its inputs instead.)
   const taxCompany = (() => {
     if (!company) return company
-    const payDateStr = localDateStr(getNextPayDate())
+    const payDateStr = payDateForPeriod(getCurrentPeriod().periodEnd, payrollConfig) || localDateStr(getNextPayDate())
     const inForce = suiRateInForce(suiRateHistory, company, payDateStr)
     const stateCode = company.state_employer_id_state || 'UT'
     return {
@@ -1691,6 +1691,15 @@ export default function Payroll() {
   const { periodStart, periodEnd } = getCurrentPeriod()
   const nextPayDate = getNextPayDate()
   const daysUntil = getDaysUntilPayday()
+  // The payday this period is PAID on — the same rule the stub preview uses
+  // (lib/payDate), so the run and its paystubs agree. It used to be "the next
+  // payday from today", which is only the same thing when the period being
+  // run is the one that just closed: a period run late got a payday two
+  // weeks after its own stubs said, and a run after 6 pm Mountain stamped
+  // tomorrow's date via toISOString. Falls back to the next payday only when
+  // the schedule cannot say.
+  const runPayDateStr = payDateForPeriod(periodEnd, payrollConfig) || localDateStr(nextPayDate)
+  const runPayDate = parseLocalDate(runPayDateStr) || nextPayDate
 
   const handleApproveRequest = async (requestId) => {
     try {
@@ -1880,7 +1889,7 @@ export default function Payroll() {
 
   const handleRunPayroll = async () => {
     setRunningPayroll(true)
-    const payDate = getNextPayDate()
+    const payDate = runPayDate
     try {
       const { data: payrollRun, error: runError } = await supabase
         .from('payroll_runs')
@@ -1888,7 +1897,7 @@ export default function Payroll() {
           company_id: companyId,
           period_start: localDateStr(periodStart),
           period_end: localDateStr(periodEnd),
-          pay_date: payDate.toISOString().split('T')[0],
+          pay_date: localDateStr(payDate),
           total_gross: totalPayroll,
           employee_count: activeEmployees.length,
           created_by: user?.id
@@ -1907,7 +1916,7 @@ export default function Payroll() {
           payroll_run_id: payrollRun.id,
           period_start: localDateStr(periodStart),
           period_end: localDateStr(periodEnd),
-          pay_date: payDate.toISOString().split('T')[0],
+          pay_date: localDateStr(payDate),
           regular_hours: data.regularHours,
           overtime_hours: data.overtimeHours,
           hourly_rate: data.hourlyRate,
@@ -2092,6 +2101,12 @@ export default function Payroll() {
               {emp.skill_level && <RankBadge rank={emp.skill_level} weight={(() => { const sl = skillLevelSettings.find(s => (s.name || s) === emp.skill_level); return sl?.weight })() } theme={theme} />}
               {emp.is_hourly && <span>${emp.hourly_rate}/hr</span>}
               {emp.is_salary && <span>${(emp.annual_salary || 0).toLocaleString()}/yr</span>}
+              {/* is_hourly / is_salary are the flags pay is computed from; a
+                  rate without a flag pays $0 while the hours still show. The
+                  demo tenant shipped exactly like that. Say it on the row. */}
+              {!emp.is_hourly && !emp.is_salary && (data.regularHours + data.overtimeHours) > 0 && (
+                <span style={{ color: '#a16207', fontWeight: 600 }}>No pay type set — hours counted, nothing paid. Tick Hourly or Salary on their employee card.</span>
+              )}
               <span style={{ color: '#8b5cf6' }}>PTO: {ptoBalance.toFixed(1)} days</span>
             </div>
           </div>
@@ -4511,7 +4526,7 @@ export default function Payroll() {
                 <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', textAlign: 'center' }}>
                   <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Pay Date</div>
                   <div style={{ fontWeight: '600', color: theme.text }}>
-                    {nextPayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    {runPayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </div>
                 </div>
               </div>
