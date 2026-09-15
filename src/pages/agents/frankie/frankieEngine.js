@@ -1,6 +1,7 @@
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { createSessionStore } from '../../../lib/agentSessions'
+import { buildTaxContext } from './frankieTaxContext'
 import {
   invoiceBalance, invoiceCustomerTotal, invoiceDaysOverdue, invoiceStatus,
   isInvoiceOpen, paymentDate, jobIsComplete, jobContractValue,
@@ -43,21 +44,25 @@ function buildSystemPrompt(user, company, role) {
 - You cannot modify data — you are read-only
 - You cannot access external bank accounts or make payments
 - You do not have real-time market data
-- You CANNOT guess or estimate data you don't have — be honest about gaps
 
-## CRITICAL: Data Accuracy Rules
-- ONLY quote numbers from the "Current Data Context" section below.
-- If data is NOT in the context, say so honestly: "I don't have that data in view right now."
-- NEVER fabricate numbers, counts, names, or financial figures.
-- When data shows zero or empty, say so — don't invent entries.
+## Data Rules
+- Every figure you quote comes from the "Current Data Context" below. Never invent a number, a name, or a count.
+- Estimates are your job. When the exact figure is not in the data, work it out from what is — annualize, apply the rate, use the rule of thumb in the context — and label it an estimate with the one assumption that matters. "Roughly $38k, assuming a 24% bracket" is a CFO answer. "I don't have enough data" is not.
+- When a number is zero or missing, say so in half a sentence and keep going with what you do have.
+
+## How You Answer — this is what makes you worth paying for
+- The number first. Then how you got it. Then what to do about it. A question about tax, cash, margin or affordability gets a dollar figure in the first sentence.
+- Never write a list of what you don't have. No "What I Know / What I Don't Have" sections, no ❌ checklists, no inventories of missing inputs. If one missing input would materially change the answer, name it in one clause at the end and say which way it would move the number.
+- You are the finance professional in the room. Do not send them to a CPA, accountant or tax advisor as the answer. If a filing or legal decision genuinely needs one, that is one short sentence at the very end, after you have given your own view.
+- Use the Company & Tax Profile: the entity type, the fiscal year and the state are in the context. "This year" means the tax year shown there, not the calendar year, unless they say otherwise.
+- Profit for tax is revenue minus DEDUCTIBLE expenses. Owner withdrawals, distributions, credit-card payments, loan principal and transfers are money out, not expenses — the context separates them. Never describe a year as a loss because of cash that went to the owners.
+- The 30/60/90-day cash-flow figures are about liquidity. Do not present them as the tax picture.
 
 ## Response Style
 - Lead with the answer, then explain.
-- For financial questions: give the number first, then context.
-- Use tables for comparisons and breakdowns.
-- Keep responses concise — 2-4 paragraphs max for complex analysis.
-- Use bullet points for lists, not paragraphs.
-- End with an actionable recommendation when appropriate.
+- Use a table for a breakdown or a comparison; prose for a judgment.
+- Keep it tight — 2-4 short paragraphs or one table plus a paragraph. No headers for a one-topic answer.
+- End with what you would do next, in one or two lines.
 
 ## Role Permissions (${role})
 ${role === 'user' || role === 'team_lead' ? `- Limited financial access. For detailed financial questions, say: "That's above my clearance for your role. Your admin or owner can pull that up."` : ''}
@@ -65,10 +70,33 @@ ${role === 'manager' ? `- Can see job costs and basic financial summaries. Canno
 ${role === 'admin' || role === 'super_admin' || role === 'developer' ? `- Full financial access. Show everything — revenue, expenses, margins, AR/AP, profitability, burn rate.` : ''}
 
 ## About JobScout Financial Data
-JobScout tracks: invoices (with line items, taxes, discounts), payments (method, processor fees), expenses (categorized, with receipts), jobs (with contract amounts, labor/material/other costs), and customers. You have access to all of this for financial analysis.`
+JobScout tracks: invoices (with line items, taxes, discounts), payments (method, processor fees), expenses and bank-fed transactions (each with a tax line), payroll runs, jobs (with contract amounts, labor/material/other costs), customers, and the company's own tax profile. You have access to all of this for financial analysis.`
 }
 
-function assembleFinancialContext() {
+const FULL_ACCESS_ROLES = new Set(['admin', 'super_admin', 'developer', 'owner'])
+
+// Wages for the year, for the people allowed to see them. Fetched here rather
+// than kept in the store because only Frankie and the Payroll page want it.
+async function loadPayrollRuns(role) {
+  if (!FULL_ACCESS_ROLES.has(String(role || '').toLowerCase())) return null
+  const { companyId } = useStore.getState()
+  if (!companyId) return null
+  try {
+    const { data, error } = await supabase
+      .from('payroll_runs')
+      .select('pay_date, period_end, status, total_gross, employee_count')
+      .eq('company_id', companyId)
+      .order('pay_date', { ascending: false })
+      .limit(120)
+    if (error) throw error
+    return data || []
+  } catch (e) {
+    console.warn('[Frankie Engine] payroll not available:', e?.message)
+    return null
+  }
+}
+
+function assembleFinancialContext(payrollRuns = null) {
   const state = useStore.getState()
   const invoices = state.invoices || []
   const payments = state.payments || []
@@ -321,6 +349,18 @@ function assembleFinancialContext() {
     context += '\n'
   }
 
+  // The year, the entity and the tax picture — see frankieTaxContext.js.
+  // Without this, "how much tax will I owe" got a list of six things Frankie
+  // could not see, every one of which was sitting in JobScout.
+  context += buildTaxContext({
+    company: state.company,
+    payments,
+    plaidTransactions: state.plaidTransactions || [],
+    manualExpenses: state.expenses || [],
+    payrollRuns,
+    now,
+  })
+
   return context
 }
 
@@ -382,7 +422,7 @@ export async function sendMessageStream(message, history = [], onChunk) {
   const { user, company } = useStore.getState()
 
   const systemPrompt = buildSystemPrompt(user, company, role)
-  const dataContext = assembleFinancialContext()
+  const dataContext = assembleFinancialContext(await loadPayrollRuns(role))
 
   const conversationHistory = [
     ...history,
