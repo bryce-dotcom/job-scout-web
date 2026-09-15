@@ -55,6 +55,7 @@ import expenses           from './expenses.js'
 import conrad             from './conrad.js'
 // — Round 3: AI agents + employee/finance corner —
 import victor             from './victor.js'
+import arnie              from './arnie.js'
 import dougie             from './dougie.js'
 import myPay              from './my-pay.js'
 import utilityInvoices    from './utility-invoices.js'
@@ -105,6 +106,7 @@ const CARDS = [
   expenses,
   conrad,
   victor,
+  arnie,
   dougie,
   myPay,
   utilityInvoices,

@@ -737,12 +737,13 @@ export const FEATURE_CATALOG = [
     summary: 'Specialist AI agents you recruit a la carte — each one replaces a whole SaaS category.',
     features: [
       {
-        name: 'Arnie',
+        name: 'OG Arnie',
         icon: 'Bot',
-        summary: "The general-purpose AI assistant — chat with your business data, ask 'how many jobs did we close last quarter?', or 'draft a quote for this lead'.",
-        replaces: ['ChatGPT Team', 'Microsoft Copilot'],
-        highlights: ['Reads your data', 'Floating panel', 'Per-conversation history'],
-        route: null,
+        summary: "Ask anything about your business in plain English and get the answer from live data — then the change as a card you approve: move a job, book an appointment, draft a quote, chase a quiet estimate, close a missed clock-out, merge a duplicate lead. Morning brief pushed by email or text.",
+        replaces: ['a business analyst', 'an office manager', 'ChatGPT Team'],
+        highlights: ['Answers from live data', 'Acts on your OK, with rollback', 'Morning brief, pushed', 'Field mode + any-trade diagnose'],
+        route: '/agents/arnie',
+        walkthrough: 'arnie',
         status: 'shipped',
       },
       {
