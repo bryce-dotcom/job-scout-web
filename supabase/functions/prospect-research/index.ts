@@ -378,8 +378,13 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
     // do we reach them, and what is the property? Cached per address for 30
     // days so re-taps are free; counts as one enrichment otherwise.
     if (action === 'research_address') {
-      const { address, lat, lng } = body;
+      const { address, lat, lng, parcel } = body;
       if (!address?.trim()) return json({ error: 'address required' }, 400);
+      // The map already pulled the county assessor record when it has one;
+      // hand it over so the agent spends its searches on people, not property.
+      const parcelFacts = parcel && typeof parcel === 'object'
+        ? Object.entries(parcel).filter(([, v]) => v !== '' && v != null).map(([k, v]) => `${k}: ${v}`).join('; ')
+        : '';
       const norm = String(address).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
       let ah = 0;
       for (let i = 0; i < norm.length; i++) { ah = ((ah << 5) - ah) + norm.charCodeAt(i); ah |= 0; }
@@ -421,13 +426,14 @@ Rules:
 - Leave a field "" if a source did not confirm it; do NOT guess names or numbers
 - Prefer the business line and public business contacts; only list a mobile number if a public source lists it
 - Property fields come from the county assessor or listing sites; give the year, size and values as shown there
-- Every non-empty fact should be backed by one of the source_urls`;
+- Every non-empty fact should be backed by one of the source_urls${parcelFacts ? `
+- The county assessor record for this parcel is ALREADY KNOWN: ${parcelFacts}. Copy those into "property" as given and do not spend searches re-finding them; use them to identify the occupant or business and its contact details.` : ''}`;
 
       const claudeResponse = await runClaudeAgent({
         companyId: company_id ?? null,
         system,
         userMsg: `Research this address: ${address}${lat != null && lng != null ? ` (approximately ${lat}, ${lng})` : ''}`,
-        maxRounds: 4,
+        maxRounds: parcelFacts ? 3 : 4,
       });
       const parsedAddr = parseJsonLoose(claudeResponse, 'object');
       if (!parsedAddr || typeof parsedAddr !== 'object') {

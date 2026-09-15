@@ -3,9 +3,10 @@
 // "Research this address" asks Find Prospects AI what is at the address —
 // business or home, who to contact, property facts — and prefills the form.
 
-import { X, Sparkles, Loader2, ExternalLink } from 'lucide-react'
+import { X, Sparkles, Loader2, ExternalLink, Landmark } from 'lucide-react'
 import AddressAutocomplete from '../AddressAutocomplete'
 import { makeStyles } from './util'
+import { parcelSummary } from '../../lib/parcels'
 
 export default function DropLeadForm({ t, form, setForm, saving, onSave, onCancel, onPan, onResearch, researching, researchError }) {
   const { btn, input, label } = makeStyles(t)
@@ -29,10 +30,25 @@ export default function DropLeadForm({ t, form, setForm, saving, onSave, onCance
         onChange={text => setForm(f => f && ({ ...f, address: text, research: null }))}
         onSelect={geo => { if (!geo) return; setForm(f => f && ({ ...f, address: geo.address, lat: geo.lat, lng: geo.lng, research: null })); onPan?.(geo.lat, geo.lng) }} />
 
+      {/* County assessor record: free and instant, arrives with the tap */}
+      {form.parcelLoading && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Checking the county record…</div>}
+      {form.parcel && (() => { const pc = form.parcel; return (
+        <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, backgroundColor: 'rgba(14,116,144,0.08)', border: '1px solid #a5d8e6', fontSize: 12, color: t.text }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}><Landmark size={12} color="#0e7490" /> {pc.source_label}</div>
+          {pc.owner_name && <div style={{ marginTop: 4 }}>Owner of record: {pc.owner_name}{pc.mail_address && pc.mail_address !== [pc.address, pc.city].filter(Boolean).join(' ') ? <span style={{ color: t.textMuted }}> · mails to {pc.mail_address}</span> : null}</div>}
+          <div style={{ marginTop: 4, color: t.textSecondary }}>{parcelSummary(pc) || 'On record, no building details'}{pc.last_sale_date ? ` · sold ${pc.last_sale_date}${pc.last_sale_price ? ` for $${pc.last_sale_price.toLocaleString()}` : ''}` : ''}{pc.primary_res ? ' · primary residence' : ''}</div>
+          {pc.subdivision && <div style={{ color: t.textMuted }}>{pc.subdivision}{pc.parcel_id ? ` · parcel ${pc.parcel_id}` : ''}</div>}
+          {pc.source_url && <a href={pc.source_url} target="_blank" rel="noreferrer" style={{ color: '#0e7490', display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 4 }}><ExternalLink size={10} /> county record</a>}
+        </div>
+      ) })()}
+      {!form.parcelLoading && !form.parcel && form.parcelReason === 'no-source' && (
+        <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6 }}>No county parcel source for this area yet (Utah and Maricopa County AZ are covered).</div>
+      )}
+
       {onResearch && !r && (
         <button onClick={onResearch} disabled={researching || !form.address?.trim()} style={btn(false, { marginTop: 8, width: '100%', justifyContent: 'center', boxSizing: 'border-box', color: '#7c3aed', borderColor: '#c4b5fd' })}
-          title="Find Prospects AI: who is at this address, how to reach them, property facts">
-          {researching ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Researching…</> : <><Sparkles size={13} /> Research this address</>}
+          title={form.parcel ? 'Find Prospects AI: who occupies this property and how to reach them (property facts already known)' : 'Find Prospects AI: who is at this address, how to reach them, property facts'}>
+          {researching ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Researching…</> : <><Sparkles size={13} /> {form.parcel ? 'Find contact info (AI)' : 'Research this address (AI)'}</>}
         </button>
       )}
       {researchError && <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 6 }}>{researchError}</div>}

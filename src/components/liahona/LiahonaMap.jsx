@@ -28,6 +28,7 @@ import {
 import { X, Check, Undo2 } from 'lucide-react'
 import ProspectResearchDrawer from '../ProspectResearchDrawer'
 import { callProspectResearch, takeProspectsHandoff } from '../../lib/prospectResearch'
+import { parcelAt, parcelsInBounds, parcelSummary } from '../../lib/parcels'
 import {
   PALETTE, US_CENTER, themeTokens, makeStyles, ensureLeaflet, hasCoords, dist, initials, minutesAgo, esc, loadView, saveView
 } from './util'
@@ -340,9 +341,52 @@ export default function LiahonaMap({
         continue
       }
 
-      // boundary layers
+      // boundary layers (incl. parcels, which pick their county source per view)
       if (!on) {
         if (existing) { groupsRef.current.overlays.removeLayer(existing); delete overlayLayersRef.current[ov.id]; delete overlayExtentRef.current[ov.id] }
+        continue
+      }
+      if (ov.kind === 'parcels') {
+        if (zoom < ov.minZoom) {
+          if (existing) { groupsRef.current.overlays.removeLayer(existing); delete overlayLayersRef.current[ov.id]; delete overlayExtentRef.current[ov.id] }
+          setOverlayStatus(s => ({ ...s, [ov.id]: 'zoom' }))
+          continue
+        }
+        const pExtent = overlayExtentRef.current[ov.id]
+        if (existing && pExtent && pExtent.zoom === zoom && pExtent.bounds.contains(bounds)) continue
+        const pBounds = bounds.pad(0.3)
+        const pReq = (overlayReqRef.current[ov.id] || 0) + 1
+        overlayReqRef.current[ov.id] = pReq
+        setOverlayStatus(s => ({ ...s, [ov.id]: 'loading' }))
+        parcelsInBounds(pBounds).then(res => {
+          if (overlayReqRef.current[ov.id] !== pReq || !mapRef.current) return
+          const prev = overlayLayersRef.current[ov.id]
+          if (prev) groupsRef.current.overlays.removeLayer(prev)
+          if (res.reason === 'no-source') { setOverlayStatus(s => ({ ...s, [ov.id]: 'nosource' })); return }
+          const layer = L.geoJSON({ type: 'FeatureCollection', features: res.features }, {
+            style: { color: ov.color, weight: 1, fillOpacity: 0.04 },
+            onEachFeature: (feature, lyr) => {
+              const pc = feature.properties
+              lyr.bindTooltip(`<b>${esc(pc.address || pc.parcel_id)}</b>${pc.owner_name ? '<br>' + esc(pc.owner_name) : ''}<br>${esc(parcelSummary(pc) || pc.source_label)}`, { sticky: true })
+              lyr.on('click', e => {
+                if (modeRef.current !== 'select') return
+                const el = document.createElement('div')
+                el.style.font = '13px system-ui'
+                el.innerHTML = `<div style="font-weight:700">${esc(pc.address || 'Parcel ' + pc.parcel_id)}</div>${pc.owner_name ? `<div style="color:#666">${esc(pc.owner_name)}</div>` : ''}<div style="color:#666;margin-bottom:8px">${esc(parcelSummary(pc))}</div>`
+                const b = document.createElement('button')
+                b.textContent = 'Add as lead'
+                b.style.cssText = `background:${t.accent};color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;font:600 12px system-ui`
+                b.onclick = () => { mapRef.current?.closePopup(); openDropFromParcel(pc, e.latlng) }
+                el.appendChild(b)
+                L.popup({ autoPan: false }).setLatLng(e.latlng).setContent(el).openOn(mapRef.current)
+              })
+            }
+          })
+          groupsRef.current.overlays.addLayer(layer)
+          overlayLayersRef.current[ov.id] = layer
+          overlayExtentRef.current[ov.id] = { bounds: pBounds, zoom }
+          setOverlayStatus(s => ({ ...s, [ov.id]: res.features.length ? 'ok' : 'empty' }))
+        }).catch(() => setOverlayStatus(s => ({ ...s, [ov.id]: 'error' })))
         continue
       }
       if (zoom < ov.minZoom) {
@@ -446,7 +490,9 @@ export default function LiahonaMap({
     if (!f?.address?.trim() || researching) return
     setResearching(true); setResearchError('')
     try {
-      const res = await callProspectResearch('research_address', companyId, { address: f.address.trim(), lat: f.lat, lng: f.lng })
+      const pc = f.parcel
+      const parcel = pc ? { source: pc.source_label, owner_of_record: pc.owner_name || '', year_built: pc.year_built || '', sqft: pc.sqft || '', lot_acres: pc.lot_acres || '', market_value: pc.market_value || '', last_sale: pc.last_sale_date ? `${pc.last_sale_date}${pc.last_sale_price ? ` $${pc.last_sale_price.toLocaleString()}` : ''}` : '', prop_class: pc.prop_class || '' } : undefined
+      const res = await callProspectResearch('research_address', companyId, { address: f.address.trim(), lat: f.lat, lng: f.lng, parcel })
       const r = { ...res.research, candidate_id: res.candidate_id }
       setDropForm(cur => cur && ({
         ...cur, research: r,
@@ -466,11 +512,34 @@ export default function LiahonaMap({
     if (m === 'draw') {
       setDrawPts([...drawPtsRef.current, { lat: latlng.lat, lng: latlng.lng }])
     } else if (m === 'drop') {
-      const form = { lat: latlng.lat, lng: latlng.lng, address: '', customer_name: '', phone: '', resolving: true }
+      const form = { lat: latlng.lat, lng: latlng.lng, address: '', customer_name: '', phone: '', resolving: true, parcelLoading: true }
       setDropForm(form)
-      const addr = await reverseGeocode(latlng.lat, latlng.lng)
-      setDropForm(f => f && f.lat === form.lat ? { ...f, address: addr || '', resolving: false } : f)
+      // Assessor parcel first (free, instant, exact situs address); reverse
+      // geocode in parallel as the fallback for areas without a parcel source.
+      const [addr, pr] = await Promise.all([reverseGeocode(latlng.lat, latlng.lng), parcelAt(latlng.lat, latlng.lng)])
+      const pc = pr.parcel
+      const parcelAddr = pc?.address ? [pc.address, pc.city, pc.zip].filter(Boolean).join(', ') : ''
+      setDropForm(f => f && f.lat === form.lat ? {
+        ...f, resolving: false, parcelLoading: false, parcel: pc, parcelReason: pc ? null : pr.reason,
+        address: parcelAddr || addr || '',
+        customer_name: f.customer_name || (pc?.owner_name && !/\b(llc|inc|trust|city|town|county|state|church|corp)\b/i.test(pc.owner_name) ? pc.owner_name : ''),
+        business_name: f.business_name || (pc?.owner_name && /\b(llc|inc|corp|church|properties|holdings)\b/i.test(pc.owner_name) ? pc.owner_name : '')
+      } : f)
     }
+  }
+
+  // "Add as lead" from a parcel on the assessor overlay: the drop form, already
+  // filled from the county record, no tap-and-wait.
+  const openDropFromParcel = (pc, latlng) => {
+    setTerritoryForm(null)
+    setDropForm({
+      lat: pc.lat ?? latlng.lat, lng: pc.lng ?? latlng.lng,
+      address: [pc.address, pc.city, pc.zip].filter(Boolean).join(', '),
+      customer_name: pc.owner_name && !/\b(llc|inc|trust|city|town|county|state|church|corp)\b/i.test(pc.owner_name) ? pc.owner_name : '',
+      business_name: pc.owner_name && /\b(llc|inc|corp|church|properties|holdings)\b/i.test(pc.owner_name) ? pc.owner_name : '',
+      phone: '', email: '', resolving: false, parcelLoading: false, parcel: pc
+    })
+    setMode('select')
   }
 
   const changeMode = m => {
@@ -606,6 +675,13 @@ export default function LiahonaMap({
     setSaving(true)
     const r = f.research
     const prop = r?.property || {}
+    const pc = f.parcel
+    const parcelNotes = pc ? [
+      `${pc.source_label}${pc.parcel_id ? ` parcel ${pc.parcel_id}` : ''}: ${parcelSummary(pc) || 'on record'}`,
+      pc.owner_name ? `Owner of record: ${pc.owner_name}${pc.mail_address ? ` (mail: ${pc.mail_address})` : ''}` : null,
+      pc.last_sale_date ? `Last sale: ${pc.last_sale_date}${pc.last_sale_price ? ` $${pc.last_sale_price.toLocaleString()}` : ''}` : null,
+      pc.source_url ? `Source: ${pc.source_url}` : null
+    ].filter(Boolean).join('\n') : null
     const researchNotes = r ? [
       `AI research (${r.kind || 'property'}${r.confidence ? `, ${r.confidence} confidence` : ''})`,
       r.website ? `Website: ${r.website}` : null,
@@ -625,7 +701,8 @@ export default function LiahonaMap({
       latitude: f.lat, longitude: f.lng, geocoded_at: new Date().toISOString(),
       status: 'New', lead_source: 'Door Knock',
       lead_owner_id: user?.id || null, salesperson_id: user?.id || null,
-      ...(r ? { external_prospect_id: r.candidate_id, enrichment_data: r, notes: researchNotes } : {})
+      ...(r ? { external_prospect_id: r.candidate_id } : {}),
+      ...(r || pc ? { enrichment_data: { ...(r || {}), parcel: pc ? { ...pc, geometry: undefined } : undefined }, notes: [parcelNotes, researchNotes].filter(Boolean).join('\n\n') } : {})
     }
     const { data, error } = await supabase.from('leads').insert(row).select().single()
     setSaving(false)

@@ -41,6 +41,8 @@ export const OVERLAYS = [
     urls: [`${TIGER}/PUMA_TAD_TAZ_UGA_ZCTA/MapServer/1`], fields: 'ZCTA5,GEOID,POP100,HU100',
     normalize: p => ({ name: `ZIP ${p.ZCTA5}`, sub: p.HU100 ? `${Number(p.HU100).toLocaleString()} homes` : 'ZIP code', key: `zip-${p.GEOID}` })
   },
+  { id: 'parcels',     group: 'Boundaries',  label: 'Parcels (county assessor)',    kind: 'parcels', color: '#0e7490', minZoom: 16,
+    hint: 'Utah counties and Maricopa County AZ · tap a lot to add it as a lead' },
   { id: 'radar',       group: 'Conditions',  label: 'Weather radar',               kind: 'raster' },
 ]
 
