@@ -22,7 +22,7 @@
 import { readRecordList } from './arnieRest.ts'
 import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
-import { applyShiftClose, proposeShiftClose, rollbackShiftClose } from './arnieShift.ts'
+import { applyShiftClose, applyShiftOpen, proposeShiftClose, proposeShiftOpen, rollbackShiftClose, rollbackShiftOpen } from './arnieShift.ts'
 import { applyLeadMerge, proposeLeadMerge, rollbackLeadMerge } from './arnieLeadMerge.ts'
 
 export interface RecordTarget {
@@ -110,6 +110,15 @@ export const RECORD_TARGETS: Record<string, RecordTarget> = {
       const rows = await readRecordList(r, `time_clock?select=employee_id&company_id=eq.${companyId}&id=eq.${rowId}&limit=1`)
       return rows[0]?.employee_id ?? null
     },
+  },
+  // "Clock me in on the Halifax job." Yourself only — the clock-in button
+  // has no "for someone else" either. The row is the employee, so ownerOf
+  // is identity: your own punch passes below admin. See arnieShift.ts.
+  shift_open: {
+    label: 'shift clock-in', table: 'time_clock', field: 'clock_in', mode: 'set', minLevel: 3,
+    searchCols: [], selectCols: 'id,employee_id,clock_in', labelOf: (r) => `time entry #${r.id}`,
+    proposeCustom: proposeShiftOpen, applyCustom: applyShiftOpen, rollbackCustom: rollbackShiftOpen,
+    ownerOf: async (_r, _companyId, rowId) => rowId,
   },
   // "Merge the Haliflax lead into Halifax Flooring." Manager: the copy is
   // deleted at the end, and deleting a lead is a manager's bar already.
