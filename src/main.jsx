@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.jsx'
-import { reportCrash, installGlobalCrashHandlers, installBreadcrumbs } from './lib/crashReport'
+import { reportCrash, installGlobalCrashHandlers, installBreadcrumbs, addCrumb } from './lib/crashReport'
 import { installOverflowWatch } from './lib/overflowWatch'
 import { useStore } from './lib/store'
 
@@ -58,6 +58,22 @@ window.addEventListener('vite:preloadError', (event) => {
 
 // Service worker management
 if ('serviceWorker' in navigator) {
+  // Registration is ours, not vite-plugin-pwa's injected script (see
+  // vite.config.js). register() re-fetches sw.js on every load; when that
+  // fetch fails the promise rejects even though the worker already installed
+  // keeps serving the app, so a rejection here is "no update this time", not
+  // a crash. Say so in the console and on the breadcrumb trail, and try once
+  // more when the connection comes back.
+  const registerServiceWorker = () =>
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
+      const why = err?.message || String(err)
+      console.warn('[sw] registration skipped — running on the installed worker:', why)
+      addCrumb('sw', `registration skipped: ${why}`)
+      window.addEventListener('online', () => { registerServiceWorker() }, { once: true })
+    })
+  if (document.readyState === 'complete') registerServiceWorker()
+  else window.addEventListener('load', () => { registerServiceWorker() }, { once: true })
+
   // Clean up conflicting sw-lenard.js registrations (now handled by main Vite PWA sw.js)
   // Each of these returns a promise, and a phone on a job site drops the
   // connection mid-fetch constantly. Unhandled, that rejection reached the

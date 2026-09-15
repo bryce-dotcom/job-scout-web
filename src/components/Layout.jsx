@@ -1859,9 +1859,11 @@ export default function Layout() {
                   <button
                     onClick={() => {
                       if ('serviceWorker' in navigator) {
+                        // update() re-fetches sw.js; on a poor connection it
+                        // rejects. The reload below still happens either way.
                         navigator.serviceWorker.getRegistrations().then(regs => {
-                          regs.forEach(r => r.update())
-                        })
+                          regs.forEach(r => r.update().catch(() => {}))
+                        }).catch(() => {})
                       }
                       if ('caches' in window) {
                         caches.keys().then(names => {

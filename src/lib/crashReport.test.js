@@ -54,6 +54,24 @@ describe('an aborted request is not a crash', () => {
   })
 })
 
+describe('a service worker that could not be re-fetched is not a crash', () => {
+  // Six alerts from one iPhone on job-site signal: register()/update()
+  // re-fetch sw.js, the fetch fails, the installed worker keeps serving the
+  // app, and nobody sees anything. main.jsx catches its own registration;
+  // the reporter must ignore the wording whichever path it arrives by.
+  it("ignores Safari's wording", () => {
+    expect(reject(new TypeError('Script https://jobscout.appsannex.com/sw.js load failed'))).toBe(0)
+  })
+
+  it("ignores Chrome's wording", () => {
+    expect(reject(new TypeError("Failed to register a ServiceWorker for scope ('https://jobscout.appsannex.com/') with script ('https://jobscout.appsannex.com/sw.js'): An unknown error occurred when fetching the script."))).toBe(0)
+  })
+
+  it('still reports a script that failed for a reason worth knowing', () => {
+    expect(reject(new TypeError('Script https://maps.googleapis.com/maps/api/js load failed'))).toBe(1)
+  })
+})
+
 describe('real failures still get through', () => {
   it('reports a genuine bug', () => {
     // The FieldScout bonus crash — this one WAS real and must not be filtered.

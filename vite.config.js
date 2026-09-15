@@ -8,6 +8,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // The plugin's injected /registerSW.js calls register() with no catch.
+      // On an iPhone opening the installed app on a job-site connection the
+      // worker script fetch fails ("Script https://…/sw.js load failed"),
+      // and that unhandled rejection was filed as an app crash — 14 times in
+      // one afternoon on /field-scout. main.jsx owns the registration now.
+      injectRegister: null,
       includeAssets: ['favicon.png', 'Scout_LOGO_GUY.png', 'topo-bg.png'],
       // Manifest injection disabled — handled by inline script in index.html
       // so each Lenard agent gets its own PWA name/scope on Add to Home Screen.

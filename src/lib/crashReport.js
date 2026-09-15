@@ -131,6 +131,14 @@ const IGNORED = [
   /^AbortError\b/i,
   /signal is aborted without reason/i,
   /(the user aborted a request|the operation was aborted)/i,
+  // The service worker script could not be re-fetched (Safari: "Script
+  // https://…/sw.js load failed"; Chrome: "Failed to register a
+  // ServiceWorker"). The app keeps running on the worker it already has and
+  // nobody sees anything; main.jsx catches its own registration, this covers
+  // any other path. Six alerts from one iPhone on job-site signal were this.
+  /sw\.js load failed/i,
+  /Failed to register a ServiceWorker/i,
+  /ServiceWorker script/i,
 ]
 
 /** True for an abort however it arrives — DOMException carries the name even
