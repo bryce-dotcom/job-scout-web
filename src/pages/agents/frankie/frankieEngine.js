@@ -78,14 +78,34 @@ function getUserRole() {
   return { role, userId }
 }
 
+// The company's own Expense Category names. Books loads these on its own
+// page rather than through the store, so Frankie asks for them here.
+async function loadExpenseCategories() {
+  const { companyId } = useStore.getState()
+  if (!companyId) return []
+  try {
+    const { data, error } = await supabase
+      .from('expense_categories')
+      .select('name, type')
+      .eq('company_id', companyId)
+      .order('sort_order')
+    if (error) throw error
+    return data || []
+  } catch (e) {
+    console.warn('[Frankie Engine] expense categories not available:', e?.message)
+    return []
+  }
+}
+
 export async function sendMessageStream(message, history = [], onChunk) {
   const { role } = getUserRole()
   const state = useStore.getState()
   const { user, company } = state
 
+  const [payrollRuns, expenseCategories] = await Promise.all([loadPayrollRuns(role), loadExpenseCategories()])
   const systemPrompt = fullSystemPrompt({
     user, company, role,
-    data: { ...state, payrollRuns: await loadPayrollRuns(role) },
+    data: { ...state, payrollRuns, expenseCategories },
   })
 
   const conversationHistory = [

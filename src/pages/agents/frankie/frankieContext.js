@@ -8,6 +8,7 @@
 
 // Explicit extensions: Vite does not need them, plain Node (the eval runner) does.
 import { buildTaxContext } from './frankieTaxContext.js'
+import { TAX_CATEGORIES } from '../../../lib/taxCategories.js'
 import {
   invoiceBalance, invoiceDaysOverdue, invoiceStatus,
   isInvoiceOpen, paymentDate, jobIsComplete, jobContractValue,
@@ -63,7 +64,9 @@ export function buildSystemPrompt(user, company, role) {
 - Use the Company & Tax Profile: the entity type, the fiscal year and the state are in the context. "This year" means the tax year shown there, not the calendar year, unless they say otherwise.
 - Profit for tax is revenue minus DEDUCTIBLE expenses. Owner withdrawals, distributions, credit-card payments, loan principal and transfers are money out, not expenses — the context separates them. Never describe a year as a loss because of cash that went to the owners.
 - The 30/60/90-day cash-flow figures are about liquidity. Do not present them as the tax picture.
-- Bookkeeping questions ("what do I categorize this as") get the two categories to pick in Books — Expense Category and Tax Category — named exactly, plus one line on why. A loan repayment to an owner is principal (Not deductible) unless part is interest; a reimbursement to an employee is whatever they bought; a transfer to an employee's expense card is a transfer, and the spend from that card is the expense.
+- Bookkeeping questions ("what do I categorize this as") get the two things to pick in Books — Expense Category and Tax Category — using the EXACT names from the "Categories in Books" list in the context, in quotes, plus one line on why. Never invent a category name; if nothing fits, say which existing one is closest. A loan repayment to an owner is principal ("Not Deductible") unless part is interest; a reimbursement to an employee is whatever they bought; a transfer to an employee's expense card is a transfer (tick "Transfer between accounts"), and the spend from that card is the expense.
+- "Can I afford X" is answered from the Bank Balances section when it is there: available cash, minus what is due before the next money lands, and the answer is yes or no with the number. When no bank is connected, say so in half a sentence and answer from the last 30 days' cash flow and what is collectible this week — but NEVER compute a "bank balance" from revenue minus expenses and present it as cash on hand.
+- Job margins: when cost data is not captured, rank the jobs by revenue first and say in one line that margin needs job costs — do not open with what you cannot do.
 
 ## Response Style
 - Lead with the answer, then explain.
@@ -80,11 +83,79 @@ ${role === 'admin' || role === 'super_admin' || role === 'developer' || role ===
 JobScout tracks: invoices (with line items, taxes, discounts), payments (method, processor fees), expenses and bank-fed transactions (each with a tax line), payroll runs, jobs (with contract amounts, labor/material/other costs), customers, and the company's own tax profile. You have access to all of this for financial analysis.`
 }
 
+const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/**
+ * What is in the bank right now, from the connected accounts' last sync.
+ *
+ * Six of the twenty questions the team has asked Frankie were "can I afford
+ * X". Without this he answered "I can't see your bank balance" — or worse,
+ * subtracted expenses from revenue and called that the balance. Books has
+ * shown these numbers all along.
+ */
+export function bankBalancesSection(connectedAccounts = [], now = new Date()) {
+  const accts = (connectedAccounts || []).filter(a => a && a.status !== 'inactive' && a.status !== 'disconnected')
+  if (!accts.length) {
+    return `### Bank Balances\n- No bank account is connected, so cash on hand is not visible here. Answer affordability from the last 30 days' cash flow and what is collectible this week, and say the balance is not connected — never derive a balance from revenue minus expenses.\n\n`
+  }
+  let cash = 0, cardOwed = 0, cardAvail = 0
+  let s = `### Bank Balances (live from the bank feed)\n`
+  for (const a of accts) {
+    const cur = Number(a.current_balance) || 0
+    const avail = a.available_balance == null ? null : Number(a.available_balance)
+    const label = `${a.account_name || a.institution_name || 'Account'}${a.mask ? ` (…${a.mask})` : ''}`
+    if (a.account_type === 'credit') {
+      cardOwed += cur
+      if (avail != null) cardAvail += avail
+      s += `- ${label}, credit card: ${money(cur)} owed${avail != null ? `, ${money(avail)} credit available` : ''}\n`
+    } else {
+      const usable = avail != null ? avail : cur
+      cash += usable
+      s += `- ${label}, ${a.account_subtype || a.account_type || 'bank'}: ${money(usable)} available${avail != null && avail !== cur ? ` (${money(cur)} current)` : ''}\n`
+    }
+  }
+  s += `- TOTAL CASH AVAILABLE across bank accounts: ${money(cash)}\n`
+  if (cardOwed > 0 || cardAvail > 0) s += `- Credit cards: ${money(cardOwed)} owed, ${money(cardAvail)} available to spend\n`
+  const synced = accts.map(a => a.last_synced).filter(Boolean).sort().pop()
+  if (synced) {
+    const hrs = Math.round((now - new Date(synced)) / 3600000)
+    s += `- As of the last bank sync ${hrs <= 1 ? 'within the hour' : `${hrs} hours ago`}; pending transactions may not be reflected\n`
+  }
+  s += `- This is the number to use for "can I afford X": available cash, minus what is due before the next money lands\n\n`
+  return s
+}
+
+// The Expense Category dropdown's fixed "Other" group, the same on every
+// tenant, alongside whatever categories the company has defined.
+const FIXED_EXPENSE_CATEGORIES = ['Transfer', 'Owner Distribution', 'Owner Contribution', 'Loan Payment', 'Tax Payment']
+
+/**
+ * The exact names Books offers, so a bookkeeping answer says "Vehicle & Auto
+ * Expenses" and not a plausible category that does not exist.
+ */
+export function categoriesSection(expenseCategories = [], taxCategories = TAX_CATEGORIES) {
+  const own = (expenseCategories || []).filter(c => c && c.name)
+  let s = `### Categories in Books (use these exact names; there are no others)\n`
+  s += `Expense Category (what it was):\n`
+  const expense = own.filter(c => c.type !== 'income').map(c => c.name)
+  const income = own.filter(c => c.type === 'income').map(c => c.name)
+  if (expense.length) s += `- Expense: ${expense.join(', ')}\n`
+  if (income.length) s += `- Income: ${income.join(', ')}\n`
+  if (!own.length) s += `- This company has not set up its own expense categories yet; the AI-suggested category on each bank row is free text\n`
+  s += `- Other (every company): ${FIXED_EXPENSE_CATEGORIES.join(', ')}\n`
+  s += `- A transfer between the company's own accounts is marked with the "Transfer between accounts" checkbox and needs no categories\n`
+  s += `Tax Category (which Form 1065 line):\n`
+  for (const g of taxCategories) s += `- ${g.group}: ${g.options.map(o => `"${o.label}"`).join(', ')}\n`
+  s += '\n'
+  return s
+}
+
 /**
  * The "Current Data Context" Frankie reads from. `data` is the shape of the
  * store: invoices, payments, expenses (manual), plaidTransactions, jobs,
- * customers, employees, timeLogs, company — plus payrollRuns, which the
- * engine fetches for the roles allowed to see wages (null otherwise).
+ * customers, employees, timeLogs, company, connectedAccounts,
+ * expenseCategories — plus payrollRuns, which the engine fetches for the
+ * roles allowed to see wages (null otherwise).
  */
 export function buildFinancialContext(data = {}, now = new Date()) {
   const invoices = data.invoices || []
@@ -111,6 +182,9 @@ export function buildFinancialContext(data = {}, now = new Date()) {
   context += `- Total Expenses: ${expenses.length}\n`
   context += `- Total Jobs: ${jobs.length}\n`
   context += `- Total Customers: ${customers.length}\n\n`
+
+  // Cash on hand first: it is what most questions are really asking about.
+  context += bankBalancesSection(data.connectedAccounts || [], now)
 
   // Payments index for invoiceBalance.
   const paymentsByInv = new Map()
@@ -336,6 +410,9 @@ export function buildFinancialContext(data = {}, now = new Date()) {
     })
     context += '\n'
   }
+
+  // The names Books actually offers, for "what do I categorize this as".
+  context += categoriesSection(data.expenseCategories || [])
 
   // The year, the entity and the tax picture — see frankieTaxContext.js.
   // Without this, "how much tax will I owe" got a list of six things Frankie

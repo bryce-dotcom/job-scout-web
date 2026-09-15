@@ -90,7 +90,7 @@ const sel = (s) => `select=${encodeURIComponent(s)}`
 const co = `company_id=eq.${COMPANY_ID}`
 
 async function loadCompanyData() {
-  const [companies, invoices, payments, expenses, plaidRaw, jobs, customers, employees, timeLogs, payrollRuns] = await Promise.all([
+  const [companies, invoices, payments, expenses, plaidRaw, jobs, customers, employees, timeLogs, payrollRuns, connectedAccounts, expenseCategories] = await Promise.all([
     rows('companies', `id=eq.${COMPANY_ID}&${sel('*')}`),
     rows('invoices', `${co}&${sel(QUERIES.invoices)}`),
     rows('payments', `${co}&${sel(QUERIES.payments)}&order=date.desc`),
@@ -101,9 +101,11 @@ async function loadCompanyData() {
     rows('employees', `${co}&${sel(QUERIES.employees)}`),
     rows('time_logs', `${co}&${sel(QUERIES.timeLogs)}`).catch(() => rows('time_clock', `${co}&${sel('*')}`)).catch(() => []),
     ROLE === 'admin' ? rows('payroll_runs', `${co}&${sel('pay_date, period_end, status, total_gross, employee_count')}&order=pay_date.desc&limit=120`) : Promise.resolve(null),
+    rows('connected_accounts', `${co}&${sel('*')}`),
+    rows('expense_categories', `${co}&${sel('name, type')}&order=sort_order`),
   ])
   const { rows: plaidTransactions } = dedupeStripePayouts(plaidRaw)
-  return { company: companies[0], invoices, payments, expenses, plaidTransactions, jobs, customers, employees, timeLogs, payrollRuns }
+  return { company: companies[0], invoices, payments, expenses, plaidTransactions, jobs, customers, employees, timeLogs, payrollRuns, connectedAccounts, expenseCategories }
 }
 
 // ── the model ────────────────────────────────────────────────────────
@@ -120,21 +122,9 @@ async function ask(model, system, messages, max_tokens = 4096) {
 }
 
 // ── grading ──────────────────────────────────────────────────────────
-const head = (s, n = 260) => s.replace(/\s+/g, ' ').slice(0, n)
-
-export function deterministicChecks(answer, tags = []) {
-  const a = answer || ''
-  const first = head(a)
-  const checks = {}
-  if (tags.includes('money')) checks.leads_with_a_figure = /\$\s?\d/.test(first)
-  checks.no_gap_inventory = !/what i (don'?t|do not) have|❌|not enough data|insufficient data|i (can'?t|cannot) (calculate|determine|confirm) (your|the|this)/i.test(a)
-  const cpaAt = a.search(/\b(CPA|accountant|tax (advisor|professional|attorney))\b/i)
-  checks.no_cpa_handoff = cpaAt < 0 || cpaAt > a.length * 0.6
-  checks.no_stage_directions = !/(^|\s)\*[a-z][^*\n]{2,60}\*(\s|$)/i.test(a)
-  if (tags.includes('tax')) checks.uses_the_tax_year = /fiscal|nov(ember)?\b|dec(ember)? 1|2025-12|tax year/i.test(a)
-  checks.not_a_wall = a.length < 4200
-  return checks
-}
+// The deterministic checks live in frankie-eval/checks.mjs, shared with the
+// grader for answers captured from the running app.
+const { deterministicChecks, head } = await import(pathToFileURL(path.join(here, 'frankie-eval', 'checks.mjs')).href)
 
 const JUDGE_PROMPT = `You are grading an AI CFO's answer for a small contracting company. You are given the DATA CONTEXT the CFO was allowed to use, the QUESTION, and the ANSWER.
 
