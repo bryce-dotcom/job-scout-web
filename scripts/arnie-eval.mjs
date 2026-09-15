@@ -473,7 +473,7 @@ try {
     console.log(`${tag.padEnd(12)} ${c.id}`)
     if (!outcome.ok) for (const f of outcome.fails) console.log(`             - ${f}`)
     // A pass on retry is still a tendency worth seeing: show what the first attempt did wrong.
-    if (outcome.ok && attempts.length > 1) { const first = attempts[0]; for (const f of first.fails) console.log(`             first attempt: ${f}`); console.log(`             first attempt said: ${(first.reply?.text || '').replace(/s+/g, ' ').slice(0, 300)}`) }
+    if (outcome.ok && attempts.length > 1) { const first = attempts[0]; for (const f of first.fails) console.log(`             first attempt: ${f}`); console.log(`             first attempt said: ${(first.reply?.text || '').replace(/\s+/g, ' ').slice(0, 300)}`) }
     if (VERBOSE || !outcome.ok) console.log(`             tools: [${outcome.reply?.tools.join(', ') || ''}]\n             ${(outcome.reply?.text || '').replace(/\s+/g, ' ').slice(0, 300)}\n`)
   }
 } finally {
