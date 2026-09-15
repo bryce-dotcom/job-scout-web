@@ -11,7 +11,9 @@ import FrankieSecondLook from '../components/FrankieSecondLook'
 import { computeRevenue, cashExpenses, collectedIncentives as collectedIncentivesIn } from '../lib/revenueBasis'
 import { isLegacyNetShape } from '../lib/arHelpers'
 import { PAYMENT_METHODS } from '../lib/schema'
-import { isVenmoTransaction, isVirtualAccountFilter, VENMO_FILTER } from '../lib/bankFeedFilters'
+import { isVirtualAccountFilter, matchesAccountFilter, walletForFilter, isWalletTransaction, WALLET_FEED_FILTERS } from '../lib/bankFeedFilters'
+import { WALLETS, walletForAccountName } from '../lib/wallets'
+import { findWalletPayout } from '../lib/walletReconcile'
 import {
   BookOpen, Plus, X, DollarSign, TrendingUp, TrendingDown,
   Wallet, CreditCard, Building, PiggyBank, Pencil, Trash2,
@@ -376,6 +378,10 @@ export default function Books() {
   // Stripe merchant summary (volume + balance + payouts)
   const [merchantSummary, setMerchantSummary] = useState(null)
 
+  // Recorded wallet payments (Venmo, Cash App) from the last few months, to
+  // estimate where each manual wallet balance stands now.
+  const [walletPayments, setWalletPayments] = useState([])
+
   useEffect(() => {
     if (companyId) fetchAllBooksData()
   }, [companyId])
@@ -391,8 +397,20 @@ export default function Books() {
       fetchConnectedAccounts(),
       fetchPlaidTransactions(),
       fetchMerchantSummary(),
+      fetchWalletPayments(),
     ])
     setLoading(false)
+  }
+
+  const fetchWalletPayments = async () => {
+    const since = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10)
+    const { data } = await supabase
+      .from('payments')
+      .select('id, amount, date, method')
+      .eq('company_id', companyId)
+      .in('method', WALLETS.filter(w => w.hasBalance).map(w => w.method))
+      .gte('date', since)
+    setWalletPayments(data || [])
   }
 
   const fetchMerchantSummary = async () => {
@@ -608,13 +626,70 @@ export default function Books() {
       const d = new Date(p.date).getTime()
       return Number.isFinite(d) && Math.abs(d - depTime) <= 14 * 86400000
     })
+    // A wallet payout (Venmo cash-out, Cash App payout, Zelle) is usually
+    // several customers' payments in one lump, or one payment net of the
+    // wallet's fee. Look for the unlinked wallet payments that add up to it.
+    let walletPayout = null
+    const wallet = WALLETS.find(w => isWalletTransaction(w, deposit))
+    if (wallet) {
+      const since = new Date(depTime - 45 * 86400000).toISOString().slice(0, 10)
+      const until = new Date(depTime + 3 * 86400000).toISOString().slice(0, 10)
+      const [{ data: walletPays }, { data: cfgRow }] = await Promise.all([
+        supabase
+          .from('payments')
+          .select('id, invoice_id, amount, date, method, source_transaction_id, invoice:invoices(invoice_id, customer:customers(name))')
+          .eq('company_id', companyId)
+          .is('source_transaction_id', null)
+          .ilike('method', wallet.method)
+          .gte('date', since)
+          .lte('date', until)
+          .order('date', { ascending: false })
+          .limit(60),
+        supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payment_config').maybeSingle(),
+      ])
+      let profile = 'business'
+      try {
+        const cfg = typeof cfgRow?.value === 'string' ? JSON.parse(cfgRow.value) : (cfgRow?.value || {})
+        if (cfg[wallet.keys.profile] === 'personal') profile = 'personal'
+      } catch { /* default to business */ }
+      const found = findWalletPayout(wallet, walletPays || [], depAmount, profile)
+      // A single same-amount payment is already offered as "already recorded";
+      // only surface this when it adds something (a lump, or a fee-adjusted match).
+      if (found && (found.payments.length > 1 || found.basis === 'net')) walletPayout = { wallet, profile, ...found }
+    }
     // Do not pre-select an invoice when the deposit looks like a payment we
     // already have — the recorded one is almost certainly the right answer,
     // and a pre-ticked invoice is what gets confirmed without reading.
     setMatchModal(m => ({
-      ...m, invoices: ranked, recorded, loading: false,
-      selectedId: recorded.length === 0 && ranked[0]?._score >= 100 ? ranked[0].id : null,
+      ...m, invoices: ranked, recorded, walletPayout, loading: false,
+      selectedId: recorded.length === 0 && !walletPayout && ranked[0]?._score >= 100 ? ranked[0].id : null,
     }))
+  }
+
+  // Link every payment in a wallet payout to this one deposit. The bank row
+  // can only point at one payment, so it takes the first; each payment points
+  // back at the bank row, which is what keeps them out of future matching.
+  const linkWalletPayout = async () => {
+    const { deposit, walletPayout } = matchModal
+    if (!deposit || !walletPayout) return
+    setMatchModal(m => ({ ...m, saving: true }))
+    const first = walletPayout.payments[0]
+    const { error } = await supabase.from('plaid_transactions').update({
+      matched_invoice_id: first.invoice_id,
+      matched_payment_id: first.id,
+      matched_at: new Date().toISOString(),
+    }).eq('id', deposit.id)
+    if (error) {
+      toast.error('Could not link the payout: ' + error.message)
+      setMatchModal(m => ({ ...m, saving: false }))
+      return
+    }
+    const ids = walletPayout.payments.map(p => p.id)
+    const { error: e2 } = await supabase.from('payments').update({ source_transaction_id: deposit.id }).in('id', ids)
+    if (e2) toast.error('Deposit linked, but marking the payments failed: ' + e2.message)
+    else toast.success(`Linked this ${walletPayout.wallet.label} payout to ${ids.length} recorded payment${ids.length === 1 ? '' : 's'}. No new payment created.`)
+    setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })
+    await fetchPlaidTransactions?.()
   }
 
   // Link the deposit to a payment that is ALREADY recorded, instead of
@@ -1369,6 +1444,33 @@ export default function Books() {
     setShowAccountModal(false); setEditingItem(null); setAccountForm(EMPTY_ACCOUNT_FORM)
   }
 
+  // Where a wallet balance probably stands now: the balance someone typed in,
+  // plus wallet payments recorded since that day, minus cash-outs seen in the
+  // bank feed since. An estimate — the wallet itself is not connected.
+  const walletEstimateFor = (acct) => {
+    const wallet = walletForAccountName(acct.name)
+    if (!wallet || !acct.last_synced) return null
+    const sinceDay = String(acct.last_synced).slice(0, 10)
+    const inSince = walletPayments
+      .filter(p => (p.method || '').toLowerCase() === wallet.method.toLowerCase() && String(p.date || '') >= sinceDay)
+      .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+    const outSince = plaidTransactions
+      .filter(t => isWalletTransaction(wallet, t) && parseFloat(t.amount) < 0 && String(t.date || '') >= sinceDay)
+      .reduce((sum, t) => sum + Math.abs(parseFloat(t.amount) || 0), 0)
+    if (inSince === 0 && outSince === 0) return null
+    const estimate = Math.round(((parseFloat(acct.current_balance) || 0) + inSince - outSince) * 100) / 100
+    return { wallet, inSince, outSince, estimate }
+  }
+
+  const setBalanceToEstimate = async (acct, estimate) => {
+    const { error } = await supabase.from('bank_accounts')
+      .update({ current_balance: estimate, last_synced: new Date().toISOString() })
+      .eq('id', acct.id)
+    if (error) { toast.error('Could not update the balance: ' + error.message); return }
+    toast.success(`${acct.name} set to ${formatCurrency(estimate)}`)
+    await fetchBankAccounts()
+  }
+
   const handleDeleteAccount = async (acct) => {
     if (!confirm(`Remove "${acct.name}"? Bills already marked as paid from it keep their record; only the account itself goes away.`)) return
     const { error } = await supabase.from('bank_accounts').delete().eq('id', acct.id)
@@ -1453,10 +1555,11 @@ export default function Books() {
   const filteredTxns = plaidTransactions.filter(t => {
     if (txnFilter === 'unreviewed' && t.confirmed) return false
     if (txnFilter === 'reviewed' && !t.confirmed) return false
-    // "Venmo" is a virtual account: it has no connected_account_id, it is
-    // every Venmo cash-out / payment as it hits the real bank. See bankFeedFilters.
-    if (txnAccountFilter === VENMO_FILTER) {
-      if (!isVenmoTransaction(t)) return false
+    // A wallet (Venmo, Cash App, Zelle) is a virtual account: it has no
+    // connected_account_id, it is every cash-out / payment as it hits the
+    // real bank. See bankFeedFilters.
+    if (isVirtualAccountFilter(txnAccountFilter)) {
+      if (!matchesAccountFilter(txnAccountFilter, t)) return false
     } else if (txnAccountFilter !== 'all' && t.connected_account_id !== parseInt(txnAccountFilter)) return false
     if (txnSearch) {
       const s = txnSearch.toLowerCase()
@@ -1944,7 +2047,7 @@ export default function Books() {
                     <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(acct.current_balance)}</span>
                   </div>
                 ))}
-                {manualAccounts.map(acct => (
+                {manualAccounts.map(acct => { const est = walletEstimateFor(acct); return (
                   <div key={`manual-${acct.id}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <Wallet size={14} style={{ color: theme.accent }} />
@@ -1956,9 +2059,14 @@ export default function Books() {
                         <span style={{ fontSize: '11px', color: theme.textMuted }}>updated {new Date(acct.last_synced).toLocaleDateString()}</span>
                       )}
                     </div>
-                    <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(acct.current_balance)}</span>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(acct.current_balance)}</span>
+                      {est && Math.abs(est.estimate - (parseFloat(acct.current_balance) || 0)) >= 0.01 && (
+                        <div style={{ fontSize: '11px', color: theme.textSecondary }}>≈ {formatCurrency(est.estimate)} now</div>
+                      )}
+                    </div>
                   </div>
-                ))}
+                ) })}
               </div>
               {manualAccounts.length > 0 && (
                 <div style={{ marginTop: '10px', fontSize: '11px', color: theme.textMuted }}>
@@ -2156,8 +2264,8 @@ export default function Books() {
                   // filter offered nine identical-looking choices.
                   <option key={a.id} value={a.id}>{a.account_name || a.institution_name}{a.mask ? ` ····${a.mask}` : ''}</option>
                 ))}
-                {/* Virtual: Venmo activity as it lands in the accounts above. */}
-                <option value={VENMO_FILTER}>Venmo (via bank feed)</option>
+                {/* Virtual: wallet activity as it lands in the accounts above. */}
+                {WALLET_FEED_FILTERS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             )}
           </div>
@@ -2166,11 +2274,11 @@ export default function Books() {
           {filteredTxns.length === 0 ? (
             <EmptyState
               icon={FileText}
-              title={plaidTransactions.length === 0 ? 'No transactions yet' : isVirtualAccountFilter(txnAccountFilter) ? 'No Venmo activity in your bank feed' : 'No matching transactions'}
+              title={plaidTransactions.length === 0 ? 'No transactions yet' : isVirtualAccountFilter(txnAccountFilter) ? `No ${walletForFilter(txnAccountFilter)?.label || 'wallet'} activity in your bank feed` : 'No matching transactions'}
               message={plaidTransactions.length === 0
                 ? 'Connect a bank account in Settings, then click Sync to import transactions.'
                 : isVirtualAccountFilter(txnAccountFilter)
-                  ? 'This filter shows Venmo cash-outs, payments and fees as they hit your connected bank accounts. Nothing synced so far mentions Venmo — try Sync All, or widen the filter.'
+                  ? `This filter shows ${walletForFilter(txnAccountFilter)?.label || 'wallet'} cash-outs, payments and fees as they hit your connected bank accounts. Nothing synced so far mentions it — try Sync All, or widen the filter.`
                   : 'Try adjusting your filters.'}
               actionLabel={plaidTransactions.length === 0 ? 'Go to Settings' : undefined}
               onAction={plaidTransactions.length === 0 ? () => navigate('/settings?tab=integrations') : undefined}
@@ -3000,6 +3108,20 @@ export default function Books() {
                               Balance updated {new Date(acct.last_synced).toLocaleDateString()}
                             </div>
                           )}
+                          {(() => {
+                            const est = walletEstimateFor(acct)
+                            if (!est || Math.abs(est.estimate - (parseFloat(acct.current_balance) || 0)) < 0.01) return null
+                            return (
+                              <div style={{ fontSize: '11px', color: theme.textSecondary, marginTop: '4px', lineHeight: 1.5 }}>
+                                Estimated now: <strong>{formatCurrency(est.estimate)}</strong>
+                                {' '}({formatCurrency(est.inSince)} recorded in{est.outSince ? `, ${formatCurrency(est.outSince)} cashed out` : ''} since then) ·{' '}
+                                <button onClick={() => setBalanceToEstimate(acct, est.estimate)}
+                                  style={{ color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontSize: '11px', padding: 0 }}>
+                                  Set to estimate
+                                </button>
+                              </div>
+                            )
+                          })()}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                           <span style={{ fontWeight: '600', color: theme.text }}>{formatCurrency(acct.current_balance)}</span>
@@ -4151,6 +4273,42 @@ export default function Books() {
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
               {matchModal.loading && <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>Loading open invoices…</div>}
+              {/* A wallet payout: several wallet payments in one lump, or one
+                  payment net of the wallet's fee. Link them all at once. */}
+              {!matchModal.loading && matchModal.walletPayout && (() => {
+                const wp = matchModal.walletPayout
+                const depAmt = Math.abs(parseFloat(matchModal.deposit?.amount) || 0)
+                return (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '4px 2px' }}>
+                      {wp.wallet.label} payout — these payments add up to it{wp.basis === 'net' ? ` after ${wp.wallet.label}'s fee` : ''}
+                    </div>
+                    <div style={{ padding: '10px 12px', marginTop: 6, borderRadius: 10, border: `1px solid ${wp.wallet.color}`, backgroundColor: `${wp.wallet.color}14` }}>
+                      {wp.payments.map(pmt => (
+                        <div key={`wp-${pmt.id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12, color: theme.text, padding: '3px 0' }}>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {pmt.invoice?.invoice_id || `Invoice ${pmt.invoice_id}`}{pmt.invoice?.customer?.name ? ` — ${pmt.invoice.customer.name}` : ''} · {formatDate(pmt.date)}
+                          </span>
+                          <span style={{ fontWeight: 600, flexShrink: 0 }}>{formatCurrency(Number(pmt.amount) || 0)}</span>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${theme.border}` }}>
+                        <div style={{ fontSize: 11, color: theme.textSecondary }}>
+                          {formatCurrency(wp.total)} recorded{wp.basis === 'net' ? ` → ${formatCurrency(depAmt)} after fees` : ''}
+                        </div>
+                        <button
+                          onClick={linkWalletPayout}
+                          disabled={matchModal.saving}
+                          style={{ flexShrink: 0, padding: '8px 12px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: matchModal.saving ? 'default' : 'pointer', minHeight: 36 }}
+                        >
+                          Link all {wp.payments.length}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
               {/* A payment already on the books for this exact amount. Shown
                   FIRST because it is almost always the answer: the check was
                   entered when it arrived, and this is the same money reaching

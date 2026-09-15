@@ -688,6 +688,7 @@ export default function LeadPayments() {
                       <option value="wire">Wire Transfer</option>
                       <option value="Zelle">Zelle</option>
                       <option value="Venmo">Venmo</option>
+                      <option value="Cash App">Cash App</option>
                       <option value="PayPal">PayPal</option>
                       <option value="money_order">Money Order</option>
                       <option value="other">Other</option>

@@ -125,6 +125,8 @@ serve(async (req) => {
           'ACH / Bank Transfer': '&#127974;',
           'PayPal': '&#128176;',
           'Venmo': '&#128176;',
+          'Cash App': '&#128181;',
+          'Zelle': '&#127974;',
         };
         const icon = icons[m] || '&#128176;';
         return `<td style="padding:4px 6px;">

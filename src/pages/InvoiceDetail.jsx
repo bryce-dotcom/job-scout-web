@@ -3867,6 +3867,7 @@ Add it anyway?`,
                       <option value="Credit Card">Credit Card</option>
                       <option value="ACH">ACH / Bank Transfer</option>
                       <option value="Venmo">Venmo</option>
+                      <option value="Cash App">Cash App</option>
                       <option value="Zelle">Zelle</option>
                       <option value="PayPal">PayPal</option>
                       <option value="Financing">Financing</option>

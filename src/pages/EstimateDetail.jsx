@@ -34,6 +34,7 @@ import useSmartBack from '../lib/useSmartBack'
 import { pricePercentOfContractFor } from '../lib/pricingRules'
 import DuplicateLeadWarning from '../components/DuplicateLeadWarning'
 import { findSimilarLeads } from '../lib/leadDuplicates'
+import { walletPortalFields } from '../lib/wallets'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -5966,9 +5967,7 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
       bank_routing: cfg.bank_routing || null,
       bank_account: cfg.bank_account ? '****' + String(cfg.bank_account).slice(-4) : null,
       bank_instructions: cfg.bank_instructions || null,
-      venmo_enabled: !!(cfg.venmo_enabled && cfg.venmo_handle),
-      venmo_handle: cfg.venmo_handle || null,
-      venmo_instructions: cfg.venmo_instructions || null,
+      ...walletPortalFields(cfg),
     } : {}
     const invoiceSettings = {
       cc_fee_enabled: getParsed('invoice_cc_fee_enabled') ?? true,

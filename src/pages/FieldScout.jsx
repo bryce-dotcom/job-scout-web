@@ -49,7 +49,8 @@ const NON_CLOCKABLE_STATUSES = new Set([
   'Completed', 'Invoiced', 'Closed', 'Paid',
 ])
 import RankBadge from '../components/RankBadge'
-import { venmoPayUrl, venmoSmsBody } from '../lib/venmo'
+import { enabledWalletsFrom, walletByMethod, displayHandle, walletGuidance, walletSmsBody } from '../lib/wallets'
+import { qrDataUrl } from '../lib/qr'
 
 // Stripe card payment form (rendered inside Elements provider)
 function StripeCardForm({ theme, amount, onSuccess, onError }) {
@@ -177,8 +178,8 @@ export default function FieldScout() {
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'Cash', reference: '', notes: '' })
   const [paymentSaving, setPaymentSaving] = useState(false)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
-  // Venmo handle from Settings → My Money, or null when not set up.
-  const [venmoConfig, setVenmoConfig] = useState(null)
+  // Wallets (Venmo, Cash App, Zelle) enabled in Settings → My Money, with handles.
+  const [walletConfigs, setWalletConfigs] = useState([])
 
   // Stripe card payment state
   const [stripePromise, setStripePromise] = useState(null)
@@ -1426,9 +1427,9 @@ export default function FieldScout() {
   }
 
   // Collect Payment — find or create invoice, then open portal for card/ACH payment
-  // Read the company's Venmo handle (payment_config) so the Collect Payment
+  // Read the company's wallet handles (payment_config) so the Collect Payment
   // sheet can show the customer exactly where to send it.
-  const loadVenmoConfig = async () => {
+  const loadWalletConfigs = async () => {
     try {
       const { data: row } = await supabase
         .from('settings')
@@ -1437,17 +1438,15 @@ export default function FieldScout() {
         .eq('key', 'payment_config')
         .maybeSingle()
       const cfg = typeof row?.value === 'string' ? JSON.parse(row.value) : (row?.value || {})
-      setVenmoConfig(cfg.venmo_enabled && cfg.venmo_handle
-        ? { handle: cfg.venmo_handle, instructions: cfg.venmo_instructions || '' }
-        : null)
+      setWalletConfigs(enabledWalletsFrom(cfg))
     } catch {
-      setVenmoConfig(null)
+      setWalletConfigs([])
     }
   }
 
   const openPaymentModal = async (job) => {
     setPaymentJob(job)
-    loadVenmoConfig()
+    loadWalletConfigs()
     setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' })
     setPaymentSuccess(false)
     setPaymentInvoice(null)
@@ -4402,6 +4401,7 @@ export default function FieldScout() {
                     { id: 'Cash', label: 'Cash' },
                     { id: 'Check', label: 'Check' },
                     { id: 'Venmo', label: 'Venmo' },
+                    { id: 'Cash App', label: 'Cash App' },
                     { id: 'Zelle', label: 'Zelle' },
                     { id: 'Other', label: 'Other' }
                   ].map(m => (
@@ -4425,48 +4425,65 @@ export default function FieldScout() {
                   ))}
                 </div>
 
-                {/* Venmo: put the handle in front of the tech (and the
-                    customer) instead of leaving them to guess it. */}
-                {paymentForm.method === 'Venmo' && (
-                  venmoConfig ? (() => {
-                    const venmoNote = paymentInvoice?.invoice_id || paymentJob.job_id
-                    const venmoUrl = venmoPayUrl({ handle: venmoConfig.handle, amount: paymentForm.amount, note: venmoNote })
-                    const custPhone = paymentJob?.customer?.phone
+                {/* Wallet (Venmo / Cash App / Zelle): put the handle — and a
+                    scan-to-pay code — in front of the customer. */}
+                {(() => {
+                  const wallet = walletByMethod(paymentForm.method)
+                  if (!wallet) return null
+                  const cfg = walletConfigs.find(w => w.id === wallet.id)
+                  if (!cfg) {
                     return (
-                      <div style={{ marginBottom: '12px', padding: '14px', backgroundColor: 'rgba(0,140,255,0.08)', border: '1px solid rgba(0,140,255,0.3)', borderRadius: '10px' }}>
-                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#0369a1', marginBottom: '4px' }}>Customer sends to</div>
-                        <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text, wordBreak: 'break-all' }}>@{venmoConfig.handle}</div>
-                        <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
-                          Note: {venmoNote}{paymentForm.amount ? ` · $${parseFloat(paymentForm.amount).toFixed(2)}` : ''}
-                        </div>
-                        {venmoConfig.instructions && (
-                          <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px', whiteSpace: 'pre-wrap' }}>{venmoConfig.instructions}</div>
-                        )}
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                          {custPhone && (
-                            <a
-                              href={`sms:${custPhone.replace(/\D/g, '')}?body=${encodeURIComponent(venmoSmsBody({ customerName: paymentJob.customer?.name, handle: venmoConfig.handle, amount: paymentForm.amount, note: venmoNote }))}`}
-                              style={{ flex: 1, padding: '10px', backgroundColor: '#3b82f6', color: '#fff', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '13px', fontWeight: '600' }}
-                            >Text Venmo details</a>
-                          )}
-                          {venmoUrl && (
-                            <a
-                              href={venmoUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ flex: 1, padding: '10px', backgroundColor: '#008CFF', color: '#fff', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '13px', fontWeight: '600' }}
-                            >Open Venmo</a>
-                          )}
-                        </div>
-                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px' }}>Once they've sent it, tap Record below.</div>
+                      <div style={{ marginBottom: '12px', padding: '10px 12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+                        No {wallet.label} {wallet.id === 'zelle' ? 'email or phone' : 'handle'} on file yet. An admin can add it under Settings → My Money → {wallet.label} so customers see where to send it. You can still record the payment.
                       </div>
                     )
-                  })() : (
-                    <div style={{ marginBottom: '12px', padding: '10px 12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
-                      No Venmo handle on file yet. An admin can add it under Settings → My Money → Venmo so customers see where to send it. You can still record the payment.
+                  }
+                  const note = paymentInvoice?.invoice_id || paymentJob.job_id
+                  const url = cfg.payUrl ? cfg.payUrl({ handle: cfg.handle, amount: paymentForm.amount, note }) : null
+                  const qr = url ? qrDataUrl(url, { cellSize: 5, margin: 2 }) : null
+                  const custPhone = paymentJob?.customer?.phone
+                  const tint = wallet.color
+                  return (
+                    <div style={{ marginBottom: '12px', padding: '14px', backgroundColor: `${tint}14`, border: `1px solid ${tint}66`, borderRadius: '10px' }}>
+                      <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textSecondary, marginBottom: '4px' }}>Customer sends to</div>
+                          <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text, wordBreak: 'break-all' }}>{displayHandle(cfg, cfg.handle)}</div>
+                          <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
+                            {wallet.id === 'zelle' ? 'Memo' : 'Note'}: {note}{paymentForm.amount ? ` · $${parseFloat(paymentForm.amount).toFixed(2)}` : ''}
+                          </div>
+                          <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px', lineHeight: 1.4 }}>{walletGuidance(cfg, cfg.profile)}</div>
+                          {cfg.instructions && (
+                            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px', whiteSpace: 'pre-wrap' }}>{cfg.instructions}</div>
+                          )}
+                        </div>
+                        {qr && (
+                          <div style={{ flexShrink: 0, textAlign: 'center' }}>
+                            <img src={qr} alt={`Scan to pay with ${wallet.label}`} style={{ width: '112px', height: '112px', borderRadius: '8px', backgroundColor: '#fff', display: 'block' }} />
+                            <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '4px' }}>scan to pay</div>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                        {custPhone && (
+                          <a
+                            href={`sms:${custPhone.replace(/\D/g, '')}?body=${encodeURIComponent(walletSmsBody(cfg, { customerName: paymentJob.customer?.name, handle: cfg.handle, amount: paymentForm.amount, note, profile: cfg.profile }))}`}
+                            style={{ flex: 1, padding: '10px', backgroundColor: '#3b82f6', color: '#fff', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '13px', fontWeight: '600' }}
+                          >Text {wallet.label} details</a>
+                        )}
+                        {url && (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ flex: 1, padding: '10px', backgroundColor: tint, color: '#fff', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '13px', fontWeight: '600' }}
+                          >Open {wallet.label}</a>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px' }}>Once they've sent it, tap Record below.</div>
                     </div>
                   )
-                )}
+                })()}
 
                 {/* Check # / Reference */}
                 {['Check', 'Other'].includes(paymentForm.method) && (

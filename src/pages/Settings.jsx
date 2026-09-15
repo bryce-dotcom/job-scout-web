@@ -55,7 +55,7 @@ import {
 import { seedSampleData, clearAllData } from '../lib/seedData'
 import BillingTab from '../components/BillingTab'
 import { toast } from '../lib/toast'
-import { normalizeVenmoHandle } from '../lib/venmo'
+import { WALLETS } from '../lib/wallets'
 
 // Auto-format phone number as (XXX) XXX-XXXX while typing
 function formatPhoneInput(value) {
@@ -2634,11 +2634,11 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
     paypal_mode: 'sandbox',
     paypal_client_id: '',
     paypal_secret: '',
-    // Venmo: a handle customers pay, no processor. Shown on the portal,
-    // in invoice emails, and in FieldScout's Collect Payment sheet.
-    venmo_enabled: false,
-    venmo_handle: '',
-    venmo_instructions: '',
+    // Wallets (Venmo, Cash App, Zelle): a handle customers pay, no processor.
+    // Shown on the portal, in invoice emails, and in FieldScout.
+    ...Object.fromEntries(WALLETS.flatMap(w => [
+      [w.keys.enabled, false], [w.keys.handle, ''], [w.keys.instructions, ''], [w.keys.profile, 'business'],
+    ])),
     bank_enabled: false,
     bank_name: '',
     bank_routing: '',
@@ -3248,59 +3248,97 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
           </>
         )}
 
-        {/* ---- VENMO ---- */}
-        {sectionCard(
-          'venmo',
-          <Phone size={20} style={{ color: form.venmo_enabled ? '#4a7c59' : theme.accent }} />,
-          'Venmo',
-          'Customers pay your handle — shown on invoices, the portal, and FieldScout',
-          form.venmo_enabled && form.venmo_handle,
-          <>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: '16px' }}>
-              <input
-                type="checkbox"
-                checked={form.venmo_enabled}
-                onChange={() => setForm(prev => ({ ...prev, venmo_enabled: !prev.venmo_enabled }))}
-                style={{ width: '16px', height: '16px', accentColor: theme.accent }}
-              />
-              <span style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Enable Venmo as a payment option</span>
-            </label>
+        {/* ---- WALLETS: Venmo, Cash App, Zelle ---- */}
+        {WALLETS.map(w => {
+          const profile = form[w.keys.profile] || 'business'
+          const feePct = w.businessFee ? +(w.businessFee.pct * 100).toFixed(2) : 0
+          return (
+            <div key={w.id}>
+              {sectionCard(
+                w.id,
+                <Phone size={20} style={{ color: form[w.keys.enabled] ? '#4a7c59' : theme.accent }} />,
+                w.label,
+                w.id === 'zelle'
+                  ? 'Customers send from their bank app — shown on invoices, the portal, and FieldScout'
+                  : `Customers pay your ${w.handleLabel.toLowerCase()} — shown on invoices, the portal, and FieldScout`,
+                form[w.keys.enabled] && form[w.keys.handle],
+                <>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: '16px' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!form[w.keys.enabled]}
+                      onChange={() => setForm(prev => ({ ...prev, [w.keys.enabled]: !prev[w.keys.enabled] }))}
+                      style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+                    />
+                    <span style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Enable {w.label} as a payment option</span>
+                  </label>
 
-            {form.venmo_enabled && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0, lineHeight: '1.5' }}>
-                  Your handle is shown to customers as a no-fee way to pay. Nothing is processed automatically —
-                  record the payment on the invoice (or in FieldScout) when it arrives, and it shows up under Books → Payments.
-                </p>
+                  {form[w.keys.enabled] && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0, lineHeight: '1.5' }}>
+                        Shown to customers as a no-fee way to pay. Nothing is processed automatically —
+                        record the payment on the invoice (or in FieldScout) when it arrives, and it shows up under Books → Payments.
+                      </p>
 
-                <div>
-                  <label style={labelStyle}>Venmo handle</label>
-                  <input
-                    type="text"
-                    value={form.venmo_handle}
-                    onChange={(e) => setForm(prev => ({ ...prev, venmo_handle: normalizeVenmoHandle(e.target.value) }))}
-                    placeholder="YourBusiness"
-                    style={inputStyle}
-                  />
-                  <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0' }}>
-                    Customers will see <strong>@{form.venmo_handle || 'YourBusiness'}</strong>. Find yours in the Venmo app under Me → your username. Pasting a venmo.com link works too.
-                  </p>
-                </div>
+                      <div>
+                        <label style={labelStyle}>{w.handleLabel}</label>
+                        <input
+                          type="text"
+                          value={form[w.keys.handle] || ''}
+                          onChange={(e) => setForm(prev => ({ ...prev, [w.keys.handle]: w.normalize(e.target.value) }))}
+                          placeholder={w.handlePlaceholder}
+                          style={inputStyle}
+                        />
+                        <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0' }}>
+                          Customers will see <strong>{w.prefix}{form[w.keys.handle] || w.handlePlaceholder}</strong>. {w.handleHelp}
+                        </p>
+                      </div>
 
-                <div>
-                  <label style={labelStyle}>Instructions for customers (optional)</label>
-                  <textarea
-                    value={form.venmo_instructions}
-                    onChange={(e) => setForm(prev => ({ ...prev, venmo_instructions: e.target.value }))}
-                    rows={2}
-                    placeholder="e.g. Please put your invoice number in the note."
-                    style={{ ...inputStyle, resize: 'vertical' }}
-                  />
-                </div>
-              </div>
-            )}
-          </>
-        )}
+                      {w.hasProfile && (
+                        <div>
+                          <label style={labelStyle}>Account type</label>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {[['business', 'Business profile'], ['personal', 'Personal profile']].map(([val, lab]) => (
+                              <button
+                                key={val}
+                                type="button"
+                                onClick={() => setForm(prev => ({ ...prev, [w.keys.profile]: val }))}
+                                style={{
+                                  padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+                                  border: `1px solid ${profile === val ? theme.accent : theme.border}`,
+                                  backgroundColor: profile === val ? theme.accent : 'transparent',
+                                  color: profile === val ? '#fff' : theme.text,
+                                }}
+                              >
+                                {lab}
+                              </button>
+                            ))}
+                          </div>
+                          <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0', lineHeight: '1.5' }}>
+                            {profile === 'personal'
+                              ? `Customers are told to send as friends & family so ${w.label} takes no fee. Goods & services payments to a personal profile get charged and can be held.`
+                              : `${w.label} charges you ${feePct}%${w.businessFee?.fixed ? ` + $${w.businessFee.fixed.toFixed(2)}` : ''} per payment received. Books uses that to match payouts to the payments inside them.`}
+                          </p>
+                        </div>
+                      )}
+
+                      <div>
+                        <label style={labelStyle}>Instructions for customers (optional)</label>
+                        <textarea
+                          value={form[w.keys.instructions] || ''}
+                          onChange={(e) => setForm(prev => ({ ...prev, [w.keys.instructions]: e.target.value }))}
+                          rows={2}
+                          placeholder={w.id === 'zelle' ? 'e.g. Please put your invoice number in the memo.' : 'e.g. Please put your invoice number in the note.'}
+                          style={{ ...inputStyle, resize: 'vertical' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )
+        })}
 
         {/* ---- BANK / ACH ---- */}
         {sectionCard(

@@ -129,6 +129,7 @@ export const PAYMENT_METHODS = [
   'Wire Transfer',
   'PayPal',
   'Venmo',
+  'Cash App',
   'Zelle',
   'Financing',
   'Other'

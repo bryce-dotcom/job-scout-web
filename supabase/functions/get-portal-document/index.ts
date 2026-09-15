@@ -388,10 +388,19 @@ serve(async (req) => {
           bank_routing: cfg.bank_routing || null,
           bank_account: cfg.bank_account ? '****' + cfg.bank_account.slice(-4) : null,
           bank_instructions: cfg.bank_instructions || null,
-          // Venmo: just a handle to display — nothing sensitive.
-          venmo_enabled: !!(cfg.venmo_enabled && cfg.venmo_handle),
-          venmo_handle: cfg.venmo_handle || null,
-          venmo_instructions: cfg.venmo_instructions || null,
+          // Wallets (Venmo, Cash App, Zelle): just handles to display — nothing
+          // sensitive. Keep in step with src/lib/wallets.js walletPortalFields.
+          ...(() => {
+            const out: Record<string, unknown> = {}
+            for (const id of ['venmo', 'cashapp', 'zelle']) {
+              const handle = String(cfg[`${id}_handle`] || '').trim()
+              out[`${id}_enabled`] = !!(cfg[`${id}_enabled`] && handle)
+              out[`${id}_handle`] = handle || null
+              out[`${id}_instructions`] = cfg[`${id}_instructions`] || null
+              out[`${id}_profile`] = id === 'zelle' ? null : (cfg[`${id}_profile`] === 'personal' ? 'personal' : 'business')
+            }
+            return out
+          })(),
           // Financing providers — only expose enabled flag (no keys)
           wisetack_enabled: !!(cfg.wisetack_enabled && cfg.wisetack_api_key && cfg.wisetack_merchant_id),
           greensky_enabled: !!(cfg.greensky_enabled && cfg.greensky_merchant_id),
