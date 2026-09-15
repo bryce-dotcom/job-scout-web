@@ -6,12 +6,13 @@ import RepairsPanel from '../components/RepairsPanel'
 import RecurringCostsPanel from '../components/RecurringCostsPanel'
 import AssignedOperator from '../components/AssignedOperator'
 import MaintenancePanel from '../components/MaintenancePanel'
+import { useFleetAttention } from '../hooks/useFleetAttention'
 import LifecycleBar from '../components/LifecycleBar'
 import { useFleetLifecycle } from '../hooks/useFleetLifecycle'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Truck, Wrench, Calendar, Plus, AlertTriangle, DollarSign, Clock, Settings, MapPin, Wifi, WifiOff, Fuel, Battery, Gauge, Link2, Unlink, Lock } from 'lucide-react'
+import { ArrowLeft, Truck, Wrench, Calendar, Plus, AlertTriangle, ShieldAlert, DollarSign, Clock, Settings, MapPin, Wifi, WifiOff, Fuel, Battery, Gauge, Link2, Unlink, Lock } from 'lucide-react'
 
 // Light theme fallback
 const defaultTheme = {
@@ -206,6 +207,7 @@ export default function FleetDetail() {
   // two screens can never disagree about whether to sell it.
   const lifecycleRows = useMemo(() => (asset ? [asset] : []), [asset])
   const { byId: lifecycleById } = useFleetLifecycle(lifecycleRows)
+  const attention = useFleetAttention()
   // Every asset's value, so a fleet-wide cost can be weighted.
   const { byId: allLifecycleById } = useFleetLifecycle(fleet)
   const lc = asset ? lifecycleById.get(asset.id) : null
@@ -360,8 +362,15 @@ export default function FleetDetail() {
     }
   }
 
-  const overdue = isPMOverdue()
-  const daysUntil = getDaysUntilPM()
+  // Same rule as the fleet list: an asset with a real schedule is judged by
+  // it, and the older single next-PM date only speaks for assets without one.
+  const flags = asset ? attention.byAsset.get(asset.id) : null
+  const hasSchedule = asset ? attention.scheduled.has(asset.id) : false
+  const unsafe = (flags?.unsafe || 0) > 0
+  const overdue = hasSchedule ? (flags?.overdue || 0) > 0 : isPMOverdue()
+  const daysUntil = hasSchedule ? null : getDaysUntilPM()
+
+  const refreshAll = () => { fetchFleet(); attention.refresh() }
 
   // Calculate total maintenance cost
   const totalMaintenanceCost = assetMaintenance.reduce((sum, m) => sum + (m.cost || 0), 0)
@@ -472,6 +481,28 @@ export default function FleetDetail() {
       </div>
 
       {/* PM Overdue Warning */}
+      {/* A do-not-operate flag is the first thing on the page, above the
+          maintenance date and above the status pills, because it overrides
+          both: someone set "In Use" before someone else said the brakes
+          are gone. */}
+      {unsafe && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px',
+          backgroundColor: 'rgba(185,28,28,0.12)', borderRadius: '12px', marginBottom: '16px',
+          border: '1px solid rgba(185,28,28,0.4)',
+        }}>
+          <ShieldAlert size={24} style={{ color: '#b91c1c', flexShrink: 0 }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: '#b91c1c' }}>
+              Reported unsafe to run
+            </div>
+            <div style={{ fontSize: '13px', color: '#b91c1c' }}>
+              Do not operate until the report below is cleared.
+            </div>
+          </div>
+        </div>
+      )}
+
       {overdue && (
         <div style={{
           display: 'flex',
@@ -486,10 +517,10 @@ export default function FleetDetail() {
           <AlertTriangle size={24} style={{ color: '#c25a5a' }} />
           <div>
             <div style={{ fontSize: '16px', fontWeight: '600', color: '#c25a5a' }}>
-              Preventive Maintenance Overdue
+              {hasSchedule ? `${flags.overdue} service${flags.overdue === 1 ? '' : 's'} overdue` : 'Preventive Maintenance Overdue'}
             </div>
             <div style={{ fontSize: '14px', color: '#c25a5a' }}>
-              PM was due on {formatDate(asset.next_pm_due)}
+              {hasSchedule ? 'See the service schedule below.' : `PM was due on ${formatDate(asset.next_pm_due)}`}
             </div>
           </div>
         </div>
@@ -560,14 +591,16 @@ export default function FleetDetail() {
           border: `1px solid ${overdue ? '#c25a5a' : theme.border}`
         }}>
           <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>
-            Next PM Due
+            {hasSchedule ? 'Service schedule' : 'Next PM Due'}
           </div>
           <div style={{
             fontSize: '24px',
             fontWeight: '600',
             color: overdue ? '#c25a5a' : theme.text
           }}>
-            {formatDate(asset.next_pm_due)}
+            {hasSchedule
+              ? (overdue ? `${flags.overdue} overdue` : (flags?.dueSoon ? `${flags.dueSoon} due soon` : 'On track'))
+              : formatDate(asset.next_pm_due)}
           </div>
           {daysUntil !== null && (
             <div style={{
@@ -802,7 +835,7 @@ export default function FleetDetail() {
           asset={asset}
           theme={theme}
           currentMeter={(asset.meter_basis === 'hours' ? lc?.meter?.engine_hours : lc?.meter?.odometer_miles) ?? null}
-          onChanged={fetchFleet}
+          onChanged={refreshAll}
         />
       )}
 

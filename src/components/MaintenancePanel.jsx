@@ -43,6 +43,7 @@ const STATUS_TONE = {
 }
 
 const sevMeta = v => SEVERITIES.find(s => s.value === v) || SEVERITIES[2]
+const RANK = { overdue: 0, due_soon: 1, never_done: 2, ok: 3 }
 
 function intervalLabel(s) {
   const parts = []
@@ -56,7 +57,15 @@ function intervalLabel(s) {
 
 export default function MaintenancePanel({ asset, theme, currentMeter = null, onChanged }) {
   const isMobile = useIsMobile()
-  const currentEmployee = useStore(s => s.currentEmployee)
+  // The store holds no "current employee"; every page derives it the same way.
+  // Reading a key that does not exist here filed every report anonymously.
+  const user = useStore(s => s.user)
+  const employees = useStore(s => s.employees)
+  const currentEmployee = useMemo(
+    () => (employees || []).find(e => e.email === user?.email) || null,
+    [employees, user],
+  )
+  const [showAll, setShowAll] = useState(false)
 
   const [pm, setPm] = useState(null)
   const [requests, setRequests] = useState(null)
@@ -105,6 +114,17 @@ export default function MaintenancePanel({ asset, theme, currentMeter = null, on
     () => (pm || []).filter(s => s.status === 'overdue' || s.status === 'due_soon').length,
     [pm],
   )
+
+  // Worst first, and only the first few unless asked. Ten rows of "never
+  // done" on a phone is a wall, and a wall is what people scroll past — which
+  // is how the one overdue row in the middle of it gets missed.
+  const sortedPm = useMemo(
+    () => [...(pm || [])].sort((a, b) => (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9)),
+    [pm],
+  )
+  const SHOW = 4
+  const visiblePm = showAll || sortedPm.length <= SHOW + 1 ? sortedPm : sortedPm.slice(0, SHOW)
+  const hiddenCount = sortedPm.length - visiblePm.length
 
   const suggest = async () => {
     setSuggesting(true)
@@ -165,6 +185,12 @@ export default function MaintenancePanel({ asset, theme, currentMeter = null, on
   }
 
   const resolveRequest = async (req, status) => {
+    // A safety report asserts the machine should not be driven. Clearing that
+    // is a decision, and one tap on a phone in a pocket is not a decision.
+    if (req.severity === 'safety' && status === 'resolved') {
+      const ok = window.confirm('This was reported as unsafe to run. Mark it fixed and clear the flag?')
+      if (!ok) return
+    }
     await supabase.from('fleet_service_requests').update({
       status,
       resolved_at: new Date().toISOString(),
@@ -283,7 +309,7 @@ export default function MaintenancePanel({ asset, theme, currentMeter = null, on
         </div>
       ) : (
         <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {(pm || []).map(s => {
+          {visiblePm.map(s => {
             const tone = STATUS_TONE[s.status] || STATUS_TONE.ok
             const due = []
             if (s.days_remaining != null) due.push(s.days_remaining < 0 ? `${Math.abs(s.days_remaining)}d overdue` : `${s.days_remaining}d`)
@@ -311,6 +337,15 @@ export default function MaintenancePanel({ asset, theme, currentMeter = null, on
             )
           })}
         </div>
+      )}
+
+      {hiddenCount > 0 && (
+        <button onClick={() => setShowAll(true)} style={{
+          width: '100%', minHeight: 44, marginTop: 8, borderRadius: 8, cursor: 'pointer',
+          border: `1px dashed ${theme.border}`, background: 'transparent', color: theme.textSecondary, fontSize: 13, fontWeight: 600,
+        }}>
+          {hiddenCount} more on schedule
+        </button>
       )}
 
       {error && <div style={{ marginTop: 10, fontSize: 12, color: '#b91c1c' }}>{error}</div>}

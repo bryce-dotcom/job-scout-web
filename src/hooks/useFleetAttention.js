@@ -20,27 +20,34 @@ const OPEN_STATUSES = ['open', 'acknowledged', 'scheduled']
 
 async function fetchAttention(companyId) {
   if (!companyId) return null
-  const [r, p] = await Promise.all([
+  const [r, p, s] = await Promise.all([
     supabase.from('fleet_service_requests')
       .select('id,fleet_id,severity,status,description,reported_at')
       .eq('company_id', companyId).in('status', OPEN_STATUSES),
     supabase.from('fleet_pm_status')
       .select('schedule_id,fleet_id,name,status,days_remaining,meter_remaining')
       .eq('company_id', companyId).in('status', ['overdue', 'due_soon']),
+    // Which assets have a schedule at all. The fleet pages still carry the
+    // older single-date PM field, and the rule for which one speaks is: once
+    // an asset has a real schedule, the schedule does, and the old date is
+    // ignored for it. Without this the two disagree on the same card.
+    supabase.from('fleet_pm_schedules').select('fleet_id').eq('company_id', companyId).eq('active', true),
   ])
-  return { requests: r.data || [], pm: p.data || [] }
+  return { requests: r.data || [], pm: p.data || [], scheduled: (s.data || []).map(x => x.fleet_id) }
 }
 
 export function useFleetAttention() {
   const companyId = useStore(s => s.companyId)
   const [requests, setRequests] = useState(null)
   const [pm, setPm] = useState(null)
+  const [scheduled, setScheduled] = useState(null)
 
   const load = useCallback(async () => {
     const r = await fetchAttention(companyId)
     if (!r) return
     setRequests(r.requests)
     setPm(r.pm)
+    setScheduled(r.scheduled)
   }, [companyId])
 
   useEffect(() => {
@@ -50,6 +57,7 @@ export function useFleetAttention() {
       if (cancelled || !r) return
       setRequests(r.requests)
       setPm(r.pm)
+      setScheduled(r.scheduled)
     })()
     return () => { cancelled = true }
   }, [companyId])
@@ -80,6 +88,7 @@ export function useFleetAttention() {
       requests: reqs,
       pmDue: due,
       byAsset,
+      scheduled: new Set(scheduled || []),
       counts: {
         requests: reqs.length,
         unsafe: reqs.filter(r => r.severity === 'safety').length,
@@ -88,5 +97,5 @@ export function useFleetAttention() {
       },
       refresh: load,
     }
-  }, [requests, pm, load])
+  }, [requests, pm, scheduled, load])
 }

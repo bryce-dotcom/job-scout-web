@@ -8,7 +8,7 @@ import FleetAttentionBar from '../components/FleetAttentionBar'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
-import { Truck, Search, Plus, AlertTriangle, Calendar, Wrench, Settings, Upload, Download } from 'lucide-react'
+import { Truck, Search, Plus, AlertTriangle, Calendar, Wrench, Settings, Upload, Download, ShieldAlert } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { fleetFields } from '../lib/importExportFields'
 
@@ -121,10 +121,16 @@ export default function Fleet() {
   const availableCount = fleet.filter(a => a.status === 'Available').length
   const inUseCount = fleet.filter(a => a.status === 'In Use').length
   const maintenanceCount = fleet.filter(a => a.status === 'Maintenance').length
-  const overdueCount = fleet.filter(a => {
-    if (!a.next_pm_due) return false
-    return new Date(a.next_pm_due) < new Date()
-  }).length
+  // One answer to "is PM overdue", used by the tile and every card. An asset
+  // with a real schedule is judged by that schedule; one without falls back to
+  // the older single next-PM date. Two systems answering the same question
+  // differently on one card is worse than either alone.
+  const isPMOverdue = (asset) => {
+    if (attention.scheduled.has(asset.id)) return (attention.byAsset.get(asset.id)?.overdue || 0) > 0
+    if (!asset.next_pm_due) return false
+    return new Date(asset.next_pm_due) < new Date()
+  }
+  const overdueCount = fleet.filter(isPMOverdue).length
 
   const generateAssetId = () => {
     const timestamp = Date.now().toString(36).toUpperCase()
@@ -186,11 +192,6 @@ export default function Fleet() {
       day: 'numeric',
       year: 'numeric'
     })
-  }
-
-  const isPMOverdue = (asset) => {
-    if (!asset.next_pm_due) return false
-    return new Date(asset.next_pm_due) < new Date()
   }
 
   const getDaysUntilPM = (asset) => {
@@ -264,6 +265,16 @@ export default function Fleet() {
           </button>
         </div>
       </div>
+
+      {/* What needs someone today, before the counts of what exists. On a
+          phone the tiles alone are a full screen, and a flag reading "unsafe
+          to run" does not belong below the fold. */}
+      <FleetAttentionBar
+        attention={attention}
+        active={filterAttention}
+        onPick={setFilterAttention}
+        isMobile={isMobile}
+      />
 
       {/* Stats Cards */}
       <div style={{
@@ -410,13 +421,6 @@ export default function Fleet() {
         </select>
       </div>
 
-      <FleetAttentionBar
-        attention={attention}
-        active={filterAttention}
-        onPick={setFilterAttention}
-        isMobile={isMobile}
-      />
-
       {/* Fleet Grid */}
       <div style={{
         display: 'grid',
@@ -440,6 +444,8 @@ export default function Fleet() {
             const TypeIcon = typeIcons[asset.type] || Truck
             const statusStyle = statusColors[asset.status] || statusColors['Available']
             const overdue = isPMOverdue(asset)
+            const flags = attention.byAsset.get(asset.id)
+            const unsafe = (flags?.unsafe || 0) > 0
             const lc = lifecycleById.get(asset.id)
             const daysUntil = getDaysUntilPM(asset)
 
@@ -450,7 +456,7 @@ export default function Fleet() {
                 style={{
                   backgroundColor: theme.bgCard,
                   borderRadius: '12px',
-                  border: `1px solid ${overdue ? '#c25a5a' : theme.border}`,
+                  border: `1px solid ${unsafe ? '#b91c1c' : overdue ? '#c25a5a' : theme.border}`,
                   padding: '20px',
                   cursor: 'pointer',
                   transition: 'background-color 0.15s'
@@ -503,6 +509,35 @@ export default function Fleet() {
                     {asset.status}
                   </span>
                 </div>
+
+                {/* Someone said this machine should not be driven. That beats
+                    a status of "In Use" that was set before they said it. */}
+                {unsafe && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px',
+                    backgroundColor: 'rgba(185,28,28,0.12)', border: '1px solid rgba(185,28,28,0.35)',
+                    borderRadius: '8px', marginBottom: '12px',
+                  }}>
+                    <ShieldAlert size={16} style={{ color: '#b91c1c' }} />
+                    <span style={{ fontSize: '13px', fontWeight: '700', color: '#b91c1c' }}>
+                      UNSAFE TO RUN
+                    </span>
+                    <span style={{ fontSize: '12px', color: '#b91c1c', marginLeft: 'auto' }}>
+                      {flags.requests} open
+                    </span>
+                  </div>
+                )}
+                {!unsafe && (flags?.requests || 0) > 0 && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px',
+                    backgroundColor: 'rgba(194,65,12,0.10)', borderRadius: '8px', marginBottom: '12px',
+                  }}>
+                    <Wrench size={14} style={{ color: '#c2410c' }} />
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: '#c2410c' }}>
+                      {flags.requests} repair request{flags.requests === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                )}
 
                 {/* PM Overdue Warning */}
                 {overdue && (
