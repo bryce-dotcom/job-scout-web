@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildInvoiceLineRows } from './invoiceLines'
+import { buildInvoiceLineRows, summaryLineRows, writeInvoiceLines } from './invoiceLines'
 
 // Locks the behaviour the five drifted copies disagreed about. Each test
 // below corresponds to a real difference measured between them.
@@ -134,5 +134,32 @@ describe('refuses to build junk', () => {
     expect(Number.isFinite(row.line_total)).toBe(true)
     expect(Number.isFinite(row.discount)).toBe(true)
     expect(Number.isFinite(row.labor_cost)).toBe(true)
+  })
+})
+
+describe('a job with no lines still bills for something', () => {
+  // Found on the demo tenant: Collect Payment built INV-MU34ZYYQ for
+  // $21,200 with nothing under Line Items — every service visit created by
+  // hand looks like this. One line, named for the job, for its total.
+  it('writes one summary line named for the job', () => {
+    const rows = summaryLineRows({ description: 'Retail Park High Bay Swap', total: 21200 }, { companyId: 25, invoiceId: 1 })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ description: 'Retail Park High Bay Swap', quantity: 1, unit_price: 21200, line_total: 21200, line_number: 1 })
+  })
+
+  it('names it "Services" when the job has no title, and writes nothing for a $0 job', () => {
+    expect(summaryLineRows({ description: '  ', total: 500 }, { companyId: 25, invoiceId: 1 })[0].description).toBe('Services')
+    expect(summaryLineRows({ description: 'Quote', total: 0 }, { companyId: 25, invoiceId: 1 })).toEqual([])
+    expect(summaryLineRows({ description: 'Quote', total: 'n/a' }, { companyId: 25, invoiceId: 1 })).toEqual([])
+  })
+
+  it('is only used when the job has no lines of its own', async () => {
+    const inserted = []
+    const supabase = { from: () => ({ insert: async (rows) => { inserted.push(...rows); return { error: null } } }) }
+    await writeInvoiceLines(supabase, [{ description: 'Fixture', quantity: 2, price: 100, total: 200 }], { companyId: 25, invoiceId: 1, summaryFor: { description: 'Job', total: 999 } })
+    expect(inserted.map(r => r.description)).toEqual(['Fixture'])
+    inserted.length = 0
+    await writeInvoiceLines(supabase, [], { companyId: 25, invoiceId: 1, summaryFor: { description: 'Job', total: 999 } })
+    expect(inserted.map(r => [r.description, r.line_total])).toEqual([['Job', 999]])
   })
 })

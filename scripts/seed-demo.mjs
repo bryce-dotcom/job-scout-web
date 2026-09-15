@@ -220,7 +220,10 @@ await run('jobs', async () => {
     address: customers[ci]?.address, status, start_date: dstr(off),
     end_date: status === 'Completed' ? dstr(off + 1) : null,
     completed_at: status === 'Completed' ? tstr(off + 1) : null,
-    job_total: total, invoice_status, assigned_team: [tech].filter(Boolean),
+    // assigned_team carries NAMES — Field Scout matches "Your Jobs" by the
+    // signed-in employee's name (HHH rows read "Gage Baughman"). Seeding the
+    // id here left every demo tech with an empty Field Scout.
+    job_total: total, invoice_status, assigned_team: tech ? (employees.find(e => e.id === tech)?.name || '') : '',
     service_type: 'Lighting Retrofit', business_unit: 'Commercial', salesperson_id: jordan,
     allotted_time_hours: Math.max(1, Math.round(total / 900)), time_tracked: status === 'Completed' ? Math.max(1, Math.round(total / 1000)) : 0,
   })));

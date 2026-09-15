@@ -62,11 +62,25 @@ export function buildInvoiceLineRows(lines, { companyId, invoiceId }) {
   })
 }
 
+// A job with no line items still bills for something. Without this the
+// invoice was a total with nothing under "Line Items" — on the PDF, the
+// portal and the email — which is the bare invoice reps kept reporting,
+// and exactly what a service visit created by hand looks like (every demo
+// job, for one). One line, named for the job, for the job's total.
+export function summaryLineRows({ description, total }, { companyId, invoiceId }) {
+  const amount = parseFloat(total)
+  if (!invoiceId || !Number.isFinite(amount) || amount <= 0) return []
+  return buildInvoiceLineRows([{ description: String(description || '').trim() || 'Services', quantity: 1, price: amount, total: amount }], { companyId, invoiceId })
+}
+
 // Write the rows for an invoice. Returns the rows written (empty when there
 // was nothing to copy). Never throws — a failure to copy lines must not roll
 // back an invoice that was already created, but it must be visible.
-export async function writeInvoiceLines(supabase, lines, { companyId, invoiceId }) {
-  const rows = buildInvoiceLineRows(lines, { companyId, invoiceId })
+// `summaryFor` = { description, total }: written as the one line when the
+// job has no lines of its own.
+export async function writeInvoiceLines(supabase, lines, { companyId, invoiceId, summaryFor = null }) {
+  let rows = buildInvoiceLineRows(lines, { companyId, invoiceId })
+  if (rows.length === 0 && summaryFor) rows = summaryLineRows(summaryFor, { companyId, invoiceId })
   if (rows.length === 0) return []
   const { error } = await supabase.from('invoice_lines').insert(rows)
   if (error) {

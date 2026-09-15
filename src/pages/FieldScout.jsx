@@ -1414,7 +1414,7 @@ export default function FieldScout() {
               .select('item_id, description, item_name, quantity, price, discount, total, labor_cost, in_utility_scope, item:products_services(name)')
               .eq('job_id', job.id)
               .order('id', { ascending: true })
-            await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: invoice.id })
+            await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: invoice.id, summaryFor: { description: job.job_title, total: jobTotal } })
           } catch (err) {
             // Non-fatal — invoice still gets created.
             console.error('FieldScout: failed to copy job lines into invoice_lines', err)
