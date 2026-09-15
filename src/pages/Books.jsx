@@ -32,6 +32,32 @@ import {
 import { TAX_CATEGORIES, TAX_CATEGORY_OPTIONS } from '../lib/taxCategories'
 export { TAX_CATEGORIES, TAX_CATEGORY_OPTIONS }
 
+// Manual accounts on the Accounts tab. Venmo, Cash App and PayPal balances
+// are not Plaid-linkable for most small businesses, so they get tracked here
+// by hand. Picking a preset just prefills name + type; everything stays editable.
+const MANUAL_ACCOUNT_PRESETS = [
+  { id: 'venmo',    name: 'Venmo',          account_type: 'wallet' },
+  { id: 'cashapp',  name: 'Cash App',       account_type: 'wallet' },
+  { id: 'paypal',   name: 'PayPal balance', account_type: 'wallet' },
+  { id: 'cash',     name: 'Cash on hand',   account_type: 'cash' },
+  { id: 'checking', name: 'Checking',       account_type: 'checking' },
+  { id: 'savings',  name: 'Savings',        account_type: 'savings' },
+  { id: 'credit',   name: 'Credit card',    account_type: 'credit' },
+]
+const MANUAL_ACCOUNT_TYPES = [
+  { value: 'wallet',   label: 'Wallet (Venmo, Cash App, PayPal)' },
+  { value: 'cash',     label: 'Cash on hand' },
+  { value: 'checking', label: 'Checking' },
+  { value: 'savings',  label: 'Savings' },
+  { value: 'credit',   label: 'Credit card' },
+  { value: 'other',    label: 'Other' },
+]
+const EMPTY_ACCOUNT_FORM = { name: '', account_type: 'wallet', current_balance: '' }
+// Rows synced from Plaid carry connected_account_id; the Stripe balance row
+// carries provider='stripe'. Everything else was typed in by a person.
+const isManualAccount = (b) => !b.connected_account_id && b.provider !== 'plaid' && b.provider !== 'stripe'
+
+
 // How many transaction rows to put in the DOM at once. Each row carries a
 // category select and a tax-category select, and the tax list alone is ~15
 // options — so a row is roughly 40 nodes. All 2,134 at once measured 88,482
@@ -320,6 +346,11 @@ export default function Books() {
   const [showLiabilityModal, setShowLiabilityModal] = useState(false)
   const [assetForm, setAssetForm] = useState({ name: '', asset_type: '', purchase_price: '', current_value: '', status: 'active' })
   const [liabilityForm, setLiabilityForm] = useState({ name: '', liability_type: '', current_balance: '', monthly_payment: '', lender: '', status: 'active' })
+
+  // Manual account modal (Venmo, Cash App, cash drawer, …)
+  const [showAccountModal, setShowAccountModal] = useState(false)
+  const [accountForm, setAccountForm] = useState(EMPTY_ACCOUNT_FORM)
+  const [savingAccount, setSavingAccount] = useState(false)
 
   // Tax date range
   const [taxDateFrom, setTaxDateFrom] = useState(() => {
@@ -1286,6 +1317,53 @@ export default function Books() {
     else { await supabase.from('liabilities').insert([payload]) }
     await fetchLiabilities()
     setShowLiabilityModal(false); setEditingItem(null); setLiabilityForm({ name: '', liability_type: '', current_balance: '', monthly_payment: '', lender: '', status: 'active' })
+  }
+
+  const openAddAccount = () => {
+    setEditingItem(null)
+    setAccountForm(EMPTY_ACCOUNT_FORM)
+    setShowAccountModal(true)
+  }
+
+  const openEditAccount = (acct) => {
+    setEditingItem(acct)
+    setAccountForm({
+      name: acct.name || '',
+      account_type: acct.account_type || 'other',
+      current_balance: acct.current_balance ?? '',
+    })
+    setShowAccountModal(true)
+  }
+
+  const handleSaveAccount = async () => {
+    const name = accountForm.name.trim()
+    if (!name) { toast.error('Give the account a name (e.g. Venmo)'); return }
+    setSavingAccount(true)
+    const payload = {
+      company_id: companyId,
+      name,
+      account_type: accountForm.account_type || 'other',
+      current_balance: parseFloat(accountForm.current_balance) || 0,
+      provider: 'manual',
+      last_synced: new Date().toISOString(),
+    }
+    const { error } = editingItem
+      ? await supabase.from('bank_accounts').update(payload).eq('id', editingItem.id)
+      : await supabase.from('bank_accounts').insert([payload])
+    setSavingAccount(false)
+    if (error) { toast.error('Could not save account: ' + error.message); return }
+    toast.success(editingItem ? 'Account updated' : `${name} added`)
+    await fetchBankAccounts()
+    setShowAccountModal(false); setEditingItem(null); setAccountForm(EMPTY_ACCOUNT_FORM)
+  }
+
+  const handleDeleteAccount = async (acct) => {
+    if (!confirm(`Remove "${acct.name}"? Bills already marked as paid from it keep their record; only the account itself goes away.`)) return
+    const { error } = await supabase.from('bank_accounts').delete().eq('id', acct.id)
+    if (error) { toast.error('Could not remove account: ' + error.message); return }
+    toast.success(`${acct.name} removed`)
+    await fetchBankAccounts()
+    setShowAccountModal(false); setEditingItem(null)
   }
 
   // ─── Tax export ───
@@ -2764,7 +2842,7 @@ export default function Books() {
             </div>
             <p style={{ margin: 0, fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
               Bank accounts, manual cash accounts, and payment processors (like Stripe). Connect a bank via Plaid to auto-import
-              transactions. Manual accounts are for cash on hand or accounts not supported by Plaid.
+              transactions. Manual accounts are for cash on hand or accounts Plaid can't link — Venmo, Cash App, a PayPal balance.
               <strong> Assets and liabilities</strong> are accounting concepts your accountant cares about at year-end —
               most days you can ignore them.
             </p>
@@ -2825,20 +2903,68 @@ export default function Books() {
             </div>
           )}
 
-          {/* Manual bank accounts */}
-          {bankAccounts.length > 0 && (
-            <div style={{ ...statCardStyle, marginBottom: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '12px' }}>Manual Bank Accounts</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {bankAccounts.filter(b => !b.connected_account_id).map(acct => (
-                  <div key={acct.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', backgroundColor: theme.bg, borderRadius: '8px' }}>
-                    <span style={{ fontWeight: '500', color: theme.text }}>{acct.name}</span>
-                    <span style={{ fontWeight: '600', color: theme.text }}>{formatCurrency(acct.current_balance)}</span>
+          {/* Manual accounts — Venmo, Cash App, cash drawer, anything Plaid
+              can't link. Always rendered so the Add button is reachable even
+              before the first one exists. */}
+          {(() => {
+            const manualAccounts = bankAccounts.filter(isManualAccount)
+            return (
+              <div style={{ ...statCardStyle, marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', gap: '12px', flexWrap: 'wrap' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Wallet size={18} style={{ color: theme.accent }} /> Manual &amp; Wallet Accounts
+                  </h3>
+                  <button onClick={openAddAccount}
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.accent, fontSize: '12px', cursor: 'pointer', minHeight: '44px' }}>
+                    <Plus size={12} /> Add account
+                  </button>
+                </div>
+                {manualAccounts.length === 0 ? (
+                  <div style={{ fontSize: '13px', color: theme.textMuted, lineHeight: 1.5 }}>
+                    No manual accounts yet. Add one to track a Venmo or Cash App balance, or cash on hand.
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
+                      {MANUAL_ACCOUNT_PRESETS.slice(0, 4).map(pr => (
+                        <button key={pr.id}
+                          onClick={() => { setEditingItem(null); setAccountForm({ ...EMPTY_ACCOUNT_FORM, name: pr.name, account_type: pr.account_type }); setShowAccountModal(true) }}
+                          style={{ padding: '6px 12px', borderRadius: '999px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '12px', fontWeight: '500', cursor: 'pointer' }}>
+                          + {pr.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                ))}
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {manualAccounts.map(acct => (
+                      <div key={acct.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', backgroundColor: theme.bg, borderRadius: '8px', gap: '12px' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: '500', color: theme.text }}>{acct.name}</span>
+                            <span style={{
+                              padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: '600', textTransform: 'uppercase',
+                              backgroundColor: acct.account_type === 'credit' ? 'rgba(239,68,68,0.1)' : acct.account_type === 'wallet' ? 'rgba(90,99,73,0.12)' : 'rgba(59,130,246,0.1)',
+                              color: acct.account_type === 'credit' ? '#ef4444' : acct.account_type === 'wallet' ? theme.accent : '#3b82f6',
+                            }}>
+                              {acct.account_type || 'other'}
+                            </span>
+                          </div>
+                          {acct.last_synced && (
+                            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                              Balance updated {new Date(acct.last_synced).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          <span style={{ fontWeight: '600', color: theme.text }}>{formatCurrency(acct.current_balance)}</span>
+                          <button onClick={() => openEditAccount(acct)} title="Edit balance or name"
+                            style={{ padding: '4px', background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><Pencil size={12} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Balance sheet items — collapsed by default since most ops
               users don't enter assets/liabilities day-to-day. Expander
@@ -3651,6 +3777,72 @@ export default function Books() {
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button onClick={() => setShowAssetModal(false)} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '14px', cursor: 'pointer', minHeight: '44px' }}>Cancel</button>
                 <button onClick={handleSaveAsset} style={{ flex: 1, padding: '12px', backgroundColor: theme.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500', cursor: 'pointer', minHeight: '44px' }}>Save</button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* MANUAL ACCOUNT MODAL (Venmo, Cash App, cash on hand …) */}
+      {showAccountModal && (
+        <>
+          <div onClick={() => setShowAccountModal(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 50 }} />
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, width: '100%', maxWidth: isMobile ? 'calc(100vw - 32px)' : '480px', zIndex: 51 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px', borderBottom: `1px solid ${theme.border}` }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>{editingItem ? 'Edit Account' : 'Add Account'}</h2>
+              <button onClick={() => setShowAccountModal(false)} style={{ padding: '4px', backgroundColor: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><X size={20} /></button>
+            </div>
+            <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+              {!editingItem && (
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={labelStyle}>Quick pick</label>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {MANUAL_ACCOUNT_PRESETS.map(pr => {
+                      const active = accountForm.name === pr.name && accountForm.account_type === pr.account_type
+                      return (
+                        <button key={pr.id} type="button"
+                          onClick={() => setAccountForm(f => ({ ...f, name: pr.name, account_type: pr.account_type }))}
+                          style={{ padding: '6px 12px', borderRadius: '999px', border: `1px solid ${active ? theme.accent : theme.border}`, backgroundColor: active ? theme.accent : theme.bg, color: active ? '#fff' : theme.text, fontSize: '12px', fontWeight: '500', cursor: 'pointer' }}>
+                          {pr.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>Name *</label>
+                <input type="text" value={accountForm.name} placeholder="Venmo" autoFocus
+                  onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} style={inputStyle} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '8px' }}>
+                <div>
+                  <label style={labelStyle}>Type</label>
+                  <select value={accountForm.account_type} onChange={(e) => setAccountForm({ ...accountForm, account_type: e.target.value })} style={inputStyle}>
+                    {MANUAL_ACCOUNT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Current balance</label>
+                  <input type="number" step="0.01" inputMode="decimal" value={accountForm.current_balance} placeholder="0.00"
+                    onChange={(e) => setAccountForm({ ...accountForm, current_balance: e.target.value })} style={inputStyle} />
+                </div>
+              </div>
+              <p style={{ margin: '0 0 20px', fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+                Manual accounts don't sync. Update the balance here whenever you cash out or move money — the app
+                won't pull it from Venmo for you.
+              </p>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                {editingItem && (
+                  <button onClick={() => handleDeleteAccount(editingItem)} title="Remove this account"
+                    style={{ padding: '12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: '#ef4444', cursor: 'pointer', minHeight: '44px', display: 'flex', alignItems: 'center' }}>
+                    <Trash2 size={16} />
+                  </button>
+                )}
+                <button onClick={() => setShowAccountModal(false)} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '14px', cursor: 'pointer', minHeight: '44px' }}>Cancel</button>
+                <button onClick={handleSaveAccount} disabled={savingAccount} style={{ flex: 1, padding: '12px', backgroundColor: theme.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500', cursor: savingAccount ? 'not-allowed' : 'pointer', minHeight: '44px', opacity: savingAccount ? 0.7 : 1 }}>
+                  {savingAccount ? 'Saving…' : 'Save'}
+                </button>
               </div>
             </div>
           </div>
