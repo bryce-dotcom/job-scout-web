@@ -825,9 +825,19 @@ export default function Books() {
 
   // ─── Calculations ───
   const activeConnected = connectedAccounts.filter(a => a.status === 'active')
-  const totalBankBalance = bankAccounts.reduce((sum, acc) => sum + (parseFloat(acc.current_balance) || 0), 0)
-  const totalConnectedBalance = activeConnected.reduce((sum, acc) => sum + (parseFloat(acc.current_balance) || 0), 0)
-  const totalCash = Math.max(totalBankBalance, totalConnectedBalance) // Avoid double-counting
+  // bank_accounts holds three kinds of row: Plaid mirrors (connected_account_id
+  // set — the same money as connected_accounts, possibly a sync behind), the
+  // Stripe balance row, and manual accounts (Venmo, Cash App, cash on hand).
+  // Only the Plaid mirrors can double-count, so de-dupe those with max() and
+  // add everything else on top. Before this, a Venmo balance only showed up if
+  // it happened to push the bank_accounts sum above the connected sum.
+  const sumBalances = (rows) => rows.reduce((sum, acc) => sum + (parseFloat(acc.current_balance) || 0), 0)
+  const totalPlaidMirrorBalance = sumBalances(bankAccounts.filter(b => b.connected_account_id))
+  const totalConnectedBalance = sumBalances(activeConnected)
+  const manualAccounts = bankAccounts.filter(isManualAccount)
+  const totalManualBalance = sumBalances(manualAccounts)
+  const totalStripeBalance = sumBalances(bankAccounts.filter(b => b.provider === 'stripe'))
+  const totalCash = Math.max(totalPlaidMirrorBalance, totalConnectedBalance) + totalStripeBalance + totalManualBalance
 
   const currentMonth = new Date().getMonth()
   const currentYear = new Date().getFullYear()
@@ -1656,9 +1666,14 @@ export default function Books() {
                   Cash Available
                   {isFilteredByBu && <span style={{ marginLeft: '6px', fontSize: '11px', fontStyle: 'italic' }}>(all units)</span>}
                 </span>
-                <HelpBadge text="Total balance across all your connected bank accounts and manual bank entries. Bank balances are not split by business unit." />
+                <HelpBadge text="Connected bank balances, plus your Stripe balance awaiting payout, plus manual accounts like Venmo or cash on hand. Bank balances are not split by business unit." />
               </div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#22c55e' }}>{formatCurrency(totalCash)}</div>
+              {totalManualBalance !== 0 && (
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                  includes {formatCurrency(totalManualBalance)} in {manualAccounts.map(a => a.name).join(', ')}
+                </div>
+              )}
             </div>
 
             <div style={statCardStyle}>
@@ -1910,11 +1925,13 @@ export default function Books() {
             </div>
           )}
 
-          {/* Connected accounts mini-list */}
-          {activeConnected.length > 0 ? (
+          {/* Accounts mini-list: connected banks first, then manual / wallet
+              accounts (Venmo, Cash App, cash on hand) so the Money tab shows
+              everywhere money lives, not just what Plaid can see. */}
+          {(activeConnected.length > 0 || manualAccounts.length > 0) ? (
             <div style={{ ...statCardStyle, marginBottom: '24px' }}>
               <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Landmark size={16} style={{ color: theme.accent }} /> Connected Accounts
+                <Landmark size={16} style={{ color: theme.accent }} /> Accounts
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {activeConnected.map(acct => (
@@ -1926,7 +1943,27 @@ export default function Books() {
                     <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(acct.current_balance)}</span>
                   </div>
                 ))}
+                {manualAccounts.map(acct => (
+                  <div key={`manual-${acct.id}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <Wallet size={14} style={{ color: theme.accent }} />
+                      <span style={{ fontSize: '13px', fontWeight: '500', color: theme.text }}>{acct.name}</span>
+                      <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: '600', textTransform: 'uppercase', backgroundColor: 'rgba(90,99,73,0.12)', color: theme.accent }}>
+                        {acct.account_type === 'wallet' ? 'wallet' : 'manual'}
+                      </span>
+                      {acct.last_synced && (
+                        <span style={{ fontSize: '11px', color: theme.textMuted }}>updated {new Date(acct.last_synced).toLocaleDateString()}</span>
+                      )}
+                    </div>
+                    <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(acct.current_balance)}</span>
+                  </div>
+                ))}
               </div>
+              {manualAccounts.length > 0 && (
+                <div style={{ marginTop: '10px', fontSize: '11px', color: theme.textMuted }}>
+                  Manual balances don't sync — update them on the <button onClick={() => setActiveTab('accounts')} style={{ color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontSize: '11px', padding: 0 }}>Accounts</button> tab.
+                </div>
+              )}
             </div>
           ) : (
             <EmptyState
@@ -2918,7 +2955,6 @@ export default function Books() {
               can't link. Always rendered so the Add button is reachable even
               before the first one exists. */}
           {(() => {
-            const manualAccounts = bankAccounts.filter(isManualAccount)
             return (
               <div style={{ ...statCardStyle, marginBottom: '24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', gap: '12px', flexWrap: 'wrap' }}>
