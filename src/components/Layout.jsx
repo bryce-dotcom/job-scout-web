@@ -187,10 +187,13 @@ export default function Layout() {
   // corner, exactly where the Arnie pill + Feedback FAB float — so they cover
   // page buttons on mobile. Hide both on detail routes; keep them on the main
   // list/dashboard pages. Static sub-paths that are really lists (e.g.
-  // /jobs/calendar) are excluded so they keep the widgets.
+  // /jobs/calendar) are excluded so they keep the widgets. Frankie's chat is
+  // the same shape: its send button is bottom-right, under both floaters.
   const { pathname } = useLocation()
-  const isDetailRoute = /^\/(estimates|jobs|invoices|customers|leads|vendors|purchase-orders|bills|fleet|lighting-audits|utility-invoices)\/[^/]+$/.test(pathname)
+  const isDetailRoute = (
+    /^\/(estimates|jobs|invoices|customers|leads|vendors|purchase-orders|bills|fleet|lighting-audits|utility-invoices)\/[^/]+$/.test(pathname)
     && !/^\/(jobs|routes)\/calendar$/.test(pathname)
+  ) || pathname === '/agents/frankie/ask'
 
   // Background location tracking while clocked in
   useLocationTracking()

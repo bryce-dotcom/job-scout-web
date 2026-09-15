@@ -1,4 +1,21 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+// Ask Frankie — the conversation.
+//
+// Built for the phone first, because that is where it fell apart. The page
+// used to be a document that grew with every answer: after the first one the
+// composer had scrolled off the bottom of the screen, and when you got down
+// to it, it was under the tab bar and the floating buttons. Now the
+// conversation is a fixed frame between the app's top bar and the tab bar
+// (see chatFrame.js), the messages scroll inside it, and the composer stays
+// put — above the keyboard when it is up, above the tab bar when it is not.
+//
+// While in there: Frankie's answers are full-width cards on a phone (a
+// margin table does not fit in 75% of 375px), tables scroll sideways inside
+// the card instead of crushing their columns, the follow-up questions sit in
+// a strip above the composer where a thumb can reach them, and a "latest"
+// pill appears if you have scrolled up to re-read something when an answer
+// lands.
+
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
@@ -6,13 +23,14 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   Send, DollarSign, TrendingUp, Receipt, PieChart,
-  AlertTriangle, Clock, Loader2, Copy, Check, History
+  AlertTriangle, Clock, Loader2, Copy, Check, History, ArrowDown, Plus, RotateCcw
 } from 'lucide-react'
 import {
   sendMessageStream, createSession, saveMessage,
   loadSessions, loadSessionMessages,
   rememberLastSession, getLastSessionId, forgetLastSession,
 } from './frankieEngine'
+import { chatFrame } from './chatFrame'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -27,13 +45,26 @@ const defaultTheme = {
 
 const QUICK_ACTIONS = [
   { label: 'Which crew is profitable?', icon: TrendingUp, prompt: 'Which crew is actually profitable? Break down revenue, labor hours, and margin by team for recent completed jobs.' },
-  { label: 'Cash Flow', icon: DollarSign, prompt: 'What does our cash flow look like? Revenue vs expenses for the last 30 days.' },
-  { label: 'Overdue Invoices', icon: AlertTriangle, prompt: 'Show me all overdue invoices. Who owes us money and how late are they?' },
-  { label: 'Job Profitability', icon: TrendingUp, prompt: 'Break down profitability of our recent completed jobs. Which ones had the best and worst margins?' },
-  { label: 'Expense Analysis', icon: PieChart, prompt: 'Analyze our expenses for the last 30 days. Any unusual spikes or patterns?' },
-  { label: 'AR Aging', icon: Clock, prompt: 'Give me an AR aging report. How much is current, 30 days, 60 days, and 90+ days overdue?' },
-  { label: 'Burn Rate', icon: Receipt, prompt: 'What is our monthly burn rate? How has it trended over the last 3 months?' },
+  { label: 'Cash flow', icon: DollarSign, prompt: 'What does our cash flow look like? Revenue vs expenses for the last 30 days.' },
+  { label: 'Overdue invoices', icon: AlertTriangle, prompt: 'Show me all overdue invoices. Who owes us money and how late are they?' },
+  { label: 'Job profitability', icon: TrendingUp, prompt: 'Break down profitability of our recent completed jobs. Which ones had the best and worst margins?' },
+  { label: 'Expense analysis', icon: PieChart, prompt: 'Analyze our expenses for the last 30 days. Any unusual spikes or patterns?' },
+  { label: 'AR aging', icon: Clock, prompt: 'Give me an AR aging report. How much is current, 30 days, 60 days, and 90+ days overdue?' },
+  { label: 'Burn rate', icon: Receipt, prompt: 'What is our monthly burn rate? How has it trended over the last 3 months?' },
 ]
+
+const ACCENT = '#5a6349'
+const ACCENT_BG = 'rgba(90,99,73,0.12)'
+const NEAR_BOTTOM = 48   // px from the end that still counts as "reading the latest"
+
+// Tables scroll sideways inside the card rather than folding every cell
+// into a column of single words, which is what a 5-column markdown table
+// does on a 375px screen.
+const markdownComponents = {
+  table: ({ node: _node, ...props }) => (
+    <div className="frankie-table-wrap"><table {...props} /></div>
+  ),
+}
 
 export default function FrankieAsk() {
   const location = useLocation()
@@ -50,23 +81,28 @@ export default function FrankieAsk() {
   // True while working out which conversation to show, so the welcome screen
   // does not flash up and then get replaced by yesterday's chat.
   const [resuming, setResuming] = useState(true)
+  // Where the chat sits on screen — see chatFrame.js.
+  const [frame, setFrame] = useState(() => chatFrame({ isMobile, anchorTop: 0, viewportHeight: 800, layoutHeight: 800 }))
+  // Whether the reader is at the end of the conversation. New content only
+  // auto-scrolls when they are; otherwise a pill offers the way down.
+  const [atBottom, setAtBottom] = useState(true)
+  const [unseen, setUnseen] = useState(false)
 
-  const messagesEndRef = useRef(null)
+  const anchorRef = useRef(null)
+  const listRef = useRef(null)
   const messagesRef = useRef(messages)
   const sendingRef = useRef(false)
   const inputRef = useRef(null)
+  const stickRef = useRef(true)
+  const frameRef = useRef(frame)
 
   useEffect(() => { messagesRef.current = messages }, [messages])
 
-  // Which conversation is this?
+  // ── Which conversation is this? ──────────────────────────────────
   //
-  // Every message has always been saved, but leaving this tab unmounts it and
-  // coming back showed a blank welcome screen — so to everyone using it the
-  // conversation was simply gone. Now: an explicit session from History wins;
-  // "New chat" from History starts blank; otherwise pick up the conversation
-  // this person was last in, provided it still exists (one deleted from
-  // History would otherwise resume as a blank chat writing into a session
-  // nothing points at).
+  // An explicit session from History wins; "New chat" from History starts
+  // blank; otherwise pick up the conversation this person was last in,
+  // provided it still exists.
   useEffect(() => {
     let cancelled = false
     const requested = location.state?.sessionId || null
@@ -94,10 +130,11 @@ export default function FrankieAsk() {
       if (cancelled) return
       setSessionId(sid)
       rememberLastSession(sid)
+      stickRef.current = true
       setMessages(msgs.map((m, i) => ({
         id: m.id || m.message_id || `${sid}-${i}`,
         role: m.role,
-        content: m.content
+        content: m.content,
       })))
       setResuming(false)
     }
@@ -107,17 +144,86 @@ export default function FrankieAsk() {
     return () => { cancelled = true }
   }, [location.state?.sessionId, location.state?.fresh])
 
-  // Auto-scroll to bottom
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  // ── Frame: pin the chat between the bars, track the keyboard ─────
+  useLayoutEffect(() => {
+    const measure = (initial) => {
+      const a = anchorRef.current
+      if (!a) return
+      // The page has nothing to scroll to once the chat is pinned; start it
+      // at the top so the anchor's offset is the real one. Only on mount:
+      // iOS pans the layout viewport itself when the keyboard opens, and
+      // fighting that would jitter the composer.
+      if (isMobile && initial) window.scrollTo(0, 0)
+      const vv = window.visualViewport
+      const tabbar = document.querySelector('[data-mobile-tabbar]')
+      const next = chatFrame({
+        isMobile,
+        anchorTop: Math.round(a.getBoundingClientRect().top + window.scrollY),
+        viewportHeight: Math.round(vv?.height ?? window.innerHeight),
+        layoutHeight: window.innerHeight,
+        viewportOffsetTop: Math.round(vv?.offsetTop ?? 0),
+        tabbarHeight: tabbar ? Math.round(tabbar.getBoundingClientRect().height) : 0,
+      })
+      if (JSON.stringify(next) !== JSON.stringify(frameRef.current)) {
+        frameRef.current = next
+        setFrame(next)
+      }
+    }
+    measure(true)
+    const onChange = () => measure(false)
+    window.addEventListener('resize', onChange)
+    const vv = window.visualViewport
+    vv?.addEventListener('resize', onChange)
+    vv?.addEventListener('scroll', onChange)
+    // Anything that moves the anchor — a banner appearing above, the URL bar
+    // collapsing, a rotation — changes the document's size too.
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(onChange) : null
+    ro?.observe(document.documentElement)
+    return () => {
+      window.removeEventListener('resize', onChange)
+      vv?.removeEventListener('resize', onChange)
+      vv?.removeEventListener('scroll', onChange)
+      ro?.disconnect()
+    }
+  }, [isMobile])
 
+  // ── Scrolling ─────────────────────────────────────────────────────
+  const scrollToEnd = useCallback((smooth = true) => {
+    const el = listRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+    stickRef.current = true
+    setAtBottom(true)
+    setUnseen(false)
+  }, [])
+
+  const onListScroll = () => {
+    const el = listRef.current
+    if (!el) return
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM
+    stickRef.current = near
+    setAtBottom(near)
+    if (near) setUnseen(false)
+  }
+
+  // Follow the conversation while the reader is at the end of it; when they
+  // have scrolled up, leave them there and light the pill instead.
+  useLayoutEffect(() => {
+    if (stickRef.current) scrollToEnd(false)
+    else if (messages.length) setUnseen(true)
+  }, [messages, loading, frame.style.height, scrollToEnd])
+
+  // ── Sending ───────────────────────────────────────────────────────
   const handleSend = useCallback(async (text) => {
     const msg = (text || input).trim()
     if (!msg || loading || sendingRef.current) return
     sendingRef.current = true
-    if (!text) setInput('')
+    if (!text) {
+      setInput('')
+      if (inputRef.current) inputRef.current.style.height = 'auto'
+    }
 
+    stickRef.current = true
     const userMsg = { id: Date.now(), role: 'user', content: msg }
     setMessages(prev => [...prev, userMsg])
 
@@ -137,7 +243,7 @@ export default function FrankieAsk() {
       await saveMessage(sid, 'user', msg)
 
       const history = messagesRef.current
-        .filter(m => m.id !== assistantId)
+        .filter(m => m.id !== assistantId && !m.error)
         .map(m => ({ role: m.role, content: m.content }))
 
       const fullResponse = await sendMessageStream(msg, history, (partialText) => {
@@ -149,19 +255,32 @@ export default function FrankieAsk() {
       await saveMessage(sid, 'assistant', fullResponse)
     } catch (e) {
       console.error('[FrankieAsk] Error:', e)
+      // Kept out of the saved conversation and out of the history sent back
+      // to the model; it is a note to the reader, with a way to retry.
       setMessages(prev => prev.map(m =>
         m.id === assistantId
-          ? { ...m, content: `Something went wrong: ${e.message}. Try again.` }
+          ? { ...m, content: e.message || 'Something went wrong.', error: true, retryOf: msg }
           : m
       ))
     } finally {
       setLoading(false)
       sendingRef.current = false
-      inputRef.current?.focus()
+      // On a phone, refocusing pops the keyboard back up over the answer
+      // that just arrived. Let the reader read.
+      if (!isMobile) inputRef.current?.focus()
     }
-  }, [input, loading, sessionId])
+  }, [input, loading, sessionId, isMobile])
 
+  const retry = (m) => {
+    setMessages(prev => prev.filter(x => x.id !== m.id))
+    handleSend(m.retryOf)
+  }
+
+  // Enter sends on a keyboard with a Shift key. On a phone, Enter is a new
+  // line and the button sends: phone keyboards have no Shift+Enter, and a
+  // question about money is worth a second line before it goes.
   const handleKeyDown = (e) => {
+    if (isMobile) return
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
@@ -179,269 +298,322 @@ export default function FrankieAsk() {
     setMessages([])
     setSessionId(null)
     setInput('')
+    stickRef.current = true
   }
 
-  const accentColor = '#5a6349'
-  const accentBg = 'rgba(90,99,73,0.12)'
+  const canSend = input.trim().length > 0 && !loading
+  const showWelcome = messages.length === 0 && !loading && !resuming
 
-  return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', height: '100%',
-      background: theme.bg, maxWidth: '900px', margin: '0 auto', width: '100%'
-    }}>
-      {/* Messages Area */}
-      <div style={{
-        flex: 1, overflow: 'auto',
-        padding: isMobile ? '16px' : '24px',
-        display: 'flex', flexDirection: 'column', gap: '16px'
-      }}>
-        {resuming && messages.length === 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '48px 24px', color: theme.textMuted, fontSize: '14px' }}>
-            <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-            Picking up where you left off...
-          </div>
-        )}
+  // ── Pieces ────────────────────────────────────────────────────────
 
-        {/* Welcome state */}
-        {messages.length === 0 && !loading && !resuming && (
-          <div style={{ textAlign: 'center', padding: isMobile ? '32px 16px' : '48px 24px' }}>
-            <div style={{
-              width: '64px', height: '64px', borderRadius: '16px',
-              background: accentBg,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 16px'
-            }}>
-              <DollarSign size={32} style={{ color: accentColor }} />
-            </div>
-            <h2 style={{ fontSize: '20px', fontWeight: '700', color: theme.text, marginBottom: '8px' }}>
-              Ask Frankie Anything
-            </h2>
-            <p style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '24px', maxWidth: '420px', margin: '0 auto 24px' }}>
-              Your AI CFO is ready. Ask about cash flow, profitability, expenses, collections, or any financial question about your business.
-            </p>
+  const chip = (action, style = {}) => {
+    const Icon = action.icon
+    return (
+      <button
+        key={action.label}
+        onClick={() => handleSend(action.prompt)}
+        disabled={loading}
+        className="frankie-chip"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '8px 12px', borderRadius: 20,
+          background: theme.bgCard, color: theme.text,
+          border: `1px solid ${theme.border}`,
+          cursor: loading ? 'default' : 'pointer', fontSize: 13, fontWeight: 500,
+          whiteSpace: 'nowrap', opacity: loading ? 0.5 : 1,
+          ...style,
+        }}
+      >
+        <Icon size={13} style={{ color: ACCENT, flexShrink: 0 }} />
+        {action.label}
+      </button>
+    )
+  }
 
-            {/* Quick Actions */}
-            <div style={{
-              display: 'flex', flexWrap: 'wrap', gap: '8px',
-              justifyContent: 'center', maxWidth: '600px', margin: '0 auto'
-            }}>
-              {QUICK_ACTIONS.map(action => {
-                const Icon = action.icon
-                return (
-                  <button
-                    key={action.label}
-                    onClick={() => handleSend(action.prompt)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      padding: '8px 14px', borderRadius: '20px',
-                      background: theme.bgCard, color: theme.text,
-                      border: `1px solid ${theme.border}`,
-                      cursor: 'pointer', fontSize: '13px', fontWeight: '500',
-                      transition: 'all 0.15s'
-                    }}
-                    onMouseOver={e => { e.currentTarget.style.background = accentBg; e.currentTarget.style.borderColor = accentColor }}
-                    onMouseOut={e => { e.currentTarget.style.background = theme.bgCard; e.currentTarget.style.borderColor = theme.border }}
-                  >
-                    <Icon size={14} style={{ color: accentColor }} />
-                    {action.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Message bubbles */}
-        {messages.map(msg => (
-          <div key={msg.id} style={{
-            display: 'flex',
-            justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-            gap: '8px'
-          }}>
-            {msg.role === 'assistant' && (
-              <div style={{
-                width: '32px', height: '32px', borderRadius: '8px',
-                background: accentBg, flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                marginTop: '4px'
-              }}>
-                <DollarSign size={16} style={{ color: accentColor }} />
-              </div>
-            )}
-            <div style={{
-              maxWidth: isMobile ? '85%' : '75%',
-              padding: '12px 16px',
-              borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-              background: msg.role === 'user' ? accentColor : theme.bgCard,
-              color: msg.role === 'user' ? '#fff' : theme.text,
-              border: msg.role === 'user' ? 'none' : `1px solid ${theme.border}`,
-              fontSize: '14px', lineHeight: '1.6',
-              position: 'relative'
-            }}>
-              {msg.role === 'assistant' && msg.content ? (
-                <div className="frankie-markdown">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {msg.content}
-                  </ReactMarkdown>
-                </div>
-              ) : msg.role === 'assistant' && !msg.content && loading ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: theme.textMuted }}>
-                  <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-                  Analyzing your financials...
-                </div>
-              ) : (
-                <span>{msg.content}</span>
-              )}
-
-              {/* Copy button for assistant messages */}
-              {msg.role === 'assistant' && msg.content && (
-                <button
-                  onClick={() => handleCopy(msg.content, msg.id)}
-                  style={{
-                    position: 'absolute', top: '8px', right: '8px',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: theme.textMuted, padding: '4px', borderRadius: '4px',
-                    opacity: 0.5
-                  }}
-                  onMouseOver={e => e.currentTarget.style.opacity = 1}
-                  onMouseOut={e => e.currentTarget.style.opacity = 0.5}
-                >
-                  {copied === msg.id ? <Check size={14} /> : <Copy size={14} />}
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-
-        {/* Quick actions after first response */}
-        {messages.length > 0 && !loading && (
-          <div style={{
-            display: 'flex', gap: '6px', overflowX: 'auto',
-            paddingBottom: '4px', flexShrink: 0
-          }}>
-            {QUICK_ACTIONS.slice(0, 4).map(action => {
-              const Icon = action.icon
-              return (
-                <button
-                  key={action.label}
-                  onClick={() => handleSend(action.prompt)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '4px',
-                    padding: '6px 10px', borderRadius: '16px',
-                    background: accentBg, color: accentColor,
-                    border: 'none', cursor: 'pointer',
-                    fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap'
-                  }}
-                >
-                  <Icon size={12} /> {action.label}
-                </button>
-              )
-            })}
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input Area */}
-      <div style={{
-        padding: isMobile ? '12px 16px' : '16px 24px',
-        borderTop: `1px solid ${theme.border}`,
-        background: theme.bgCard
-      }}>
+  const assistantCard = (msg) => {
+    if (msg.error) {
+      return (
         <div style={{
-          display: 'flex', gap: '8px', alignItems: 'flex-end',
-          maxWidth: '900px', margin: '0 auto'
+          borderRadius: 14, border: '1px solid rgba(192,57,43,0.35)', background: 'rgba(192,57,43,0.06)',
+          padding: '12px 14px', fontSize: 14, lineHeight: 1.5, color: theme.text,
         }}>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask Frankie about your finances..."
-            rows={1}
-            style={{
-              flex: 1, resize: 'none',
-              padding: '12px 16px', borderRadius: '12px',
-              border: `1px solid ${theme.border}`,
-              background: theme.bg, color: theme.text,
-              fontSize: '14px', lineHeight: '1.5',
-              outline: 'none', fontFamily: 'inherit',
-              minHeight: '44px', maxHeight: '120px'
-            }}
-            onInput={e => {
-              e.target.style.height = '44px'
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
-            }}
-          />
-          <button
-            onClick={() => handleSend()}
-            disabled={loading || !input.trim()}
-            style={{
-              width: '44px', height: '44px', borderRadius: '12px',
-              background: input.trim() ? accentColor : theme.border,
-              color: '#fff', border: 'none', cursor: input.trim() ? 'pointer' : 'default',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0, transition: 'background 0.15s'
-            }}
-          >
-            {loading ? (
-              <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-            ) : (
-              <Send size={18} />
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#a93226', fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+            <AlertTriangle size={14} /> Frankie couldn't answer that
+          </div>
+          <div style={{ color: theme.textSecondary, marginBottom: 10 }}>{msg.content}</div>
+          <button onClick={() => retry(msg)} disabled={loading} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 10,
+            background: ACCENT, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+          }}>
+            <RotateCcw size={13} /> Try again
           </button>
         </div>
+      )
+    }
+
+    const thinking = !msg.content && loading
+    return (
+      <div style={{
+        borderRadius: 14, border: `1px solid ${theme.border}`, background: theme.bgCard,
+        boxShadow: '0 1px 2px rgba(44,53,48,0.05)', overflow: 'hidden',
+      }}>
+        {/* Who is talking, and a way to copy. Out of the text, not over it. */}
         <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          marginTop: '8px', fontSize: '12px', color: theme.textMuted
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 12px 0', fontSize: 12, fontWeight: 600, color: ACCENT,
         }}>
-          <span>{isMobile ? 'Enter to send' : 'Press Enter to send, Shift+Enter for new line'}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{
+            width: 20, height: 20, borderRadius: 6, background: ACCENT_BG,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <DollarSign size={12} />
+          </span>
+          Frankie
+          <span style={{ flex: 1 }} />
+          {!thinking && (
             <button
-              onClick={() => navigate('/agents/frankie/history')}
+              onClick={() => handleCopy(msg.content, msg.id)}
+              title="Copy answer"
               style={{
-                display: 'flex', alignItems: 'center', gap: '4px',
-                background: 'none', border: 'none', color: theme.textMuted,
-                cursor: 'pointer', fontSize: '12px', textDecoration: 'underline', padding: 0
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px',
+                borderRadius: 6, color: copied === msg.id ? ACCENT : theme.textMuted, fontSize: 11, fontWeight: 500,
               }}
             >
-              <History size={12} /> History
+              {copied === msg.id ? <><Check size={13} /> Copied</> : <Copy size={13} />}
             </button>
-            {sessionId && (
-              <button
-                onClick={handleNewChat}
-                style={{
-                  background: 'none', border: 'none', color: theme.textMuted,
-                  cursor: 'pointer', fontSize: '12px', textDecoration: 'underline', padding: 0
-                }}
-              >
-                New conversation
-              </button>
-            )}
-          </div>
+          )}
+        </div>
+        <div style={{ padding: '6px 12px 12px', fontSize: 14, lineHeight: 1.6, color: theme.text }}>
+          {thinking ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: theme.textMuted, padding: '4px 0' }}>
+              <span className="frankie-dots"><i /><i /><i /></span>
+              Analyzing your financials…
+            </div>
+          ) : (
+            <div className="frankie-markdown">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {msg.content}
+              </ReactMarkdown>
+            </div>
+          )}
         </div>
       </div>
+    )
+  }
 
-      {/* Spin animation */}
-      <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .frankie-markdown p { margin: 0 0 8px; }
-        .frankie-markdown p:last-child { margin-bottom: 0; }
-        .frankie-markdown ul, .frankie-markdown ol { margin: 4px 0 8px; padding-left: 20px; }
-        .frankie-markdown li { margin-bottom: 2px; }
-        .frankie-markdown table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
-        .frankie-markdown th { background-color: ${accentBg}; color: ${accentColor}; padding: 8px; text-align: left; font-weight: 600; border-bottom: 2px solid ${accentColor}30; }
-        .frankie-markdown td { padding: 6px 8px; border-bottom: 1px solid #e5e5e5; }
-        .frankie-markdown tr:hover td { background-color: ${accentBg}; }
-        .frankie-markdown code { background-color: ${accentBg}; color: ${accentColor}; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
-        .frankie-markdown h1, .frankie-markdown h2, .frankie-markdown h3 { margin: 12px 0 6px; }
-        .frankie-markdown strong { color: inherit; }
-        .frankie-markdown blockquote { border-left: 3px solid ${accentColor}; margin: 8px 0; padding: 4px 12px; color: #666; }
-      `}</style>
-    </div>
+  return (
+    <>
+      {/* In-flow marker for where the chat begins; the chat itself may be
+          pinned to the screen, and this is how it knows where "here" is. */}
+      <div ref={anchorRef} aria-hidden="true" />
+
+      <div style={{
+        ...frame.style,
+        display: 'flex', flexDirection: 'column',
+        background: theme.bg, zIndex: 30,
+        overflow: 'hidden',
+      }}>
+        {/* Messages */}
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex' }}>
+          <div
+            ref={listRef}
+            onScroll={onListScroll}
+            style={{
+              flex: 1, overflowY: 'auto', overscrollBehavior: 'contain',
+              WebkitOverflowScrolling: 'touch',
+              padding: isMobile ? '12px 12px 8px' : '24px 24px 12px',
+            }}
+          >
+            <div style={{
+              maxWidth: 860, margin: '0 auto',
+              display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 16,
+            }}>
+              {resuming && messages.length === 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '48px 24px', color: theme.textMuted, fontSize: 14 }}>
+                  <Loader2 size={16} style={{ animation: 'frankie-spin 1s linear infinite' }} />
+                  Picking up where you left off…
+                </div>
+              )}
+
+              {showWelcome && (
+                <div style={{ textAlign: 'center', padding: isMobile ? '20px 4px 8px' : '48px 24px' }}>
+                  <div style={{
+                    width: isMobile ? 52 : 64, height: isMobile ? 52 : 64, borderRadius: 16,
+                    background: ACCENT_BG, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    margin: '0 auto 12px',
+                  }}>
+                    <DollarSign size={isMobile ? 26 : 32} style={{ color: ACCENT }} />
+                  </div>
+                  <h2 style={{ fontSize: isMobile ? 18 : 20, fontWeight: 700, color: theme.text, margin: '0 0 6px' }}>
+                    Ask Frankie anything
+                  </h2>
+                  <p style={{ fontSize: 14, color: theme.textMuted, maxWidth: 420, margin: '0 auto 20px', lineHeight: 1.5 }}>
+                    Cash flow, profitability, expenses, collections — your AI CFO has the books open.
+                  </p>
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center',
+                    maxWidth: 600, margin: '0 auto',
+                  }}>
+                    {QUICK_ACTIONS.map(a => chip(a, isMobile ? { flex: '1 1 45%', justifyContent: 'center', padding: '11px 12px' } : {}))}
+                  </div>
+                </div>
+              )}
+
+              {messages.map(msg => (
+                msg.role === 'user' ? (
+                  <div key={msg.id} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <div style={{
+                      maxWidth: isMobile ? '88%' : '70%',
+                      padding: '10px 14px', borderRadius: '18px 18px 4px 18px',
+                      background: ACCENT, color: '#fff',
+                      fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    }}>
+                      {msg.content}
+                    </div>
+                  </div>
+                ) : (
+                  <div key={msg.id} style={{ maxWidth: isMobile ? '100%' : '85%' }}>
+                    {assistantCard(msg)}
+                  </div>
+                )
+              ))}
+            </div>
+          </div>
+
+          {/* Back to the latest, when the reader has gone up to re-read. */}
+          {!atBottom && messages.length > 0 && (
+            <button
+              onClick={() => scrollToEnd(true)}
+              style={{
+                position: 'absolute', left: '50%', bottom: 10, transform: 'translateX(-50%)',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '7px 12px', borderRadius: 20, border: `1px solid ${theme.border}`,
+                background: unseen ? ACCENT : theme.bgCard, color: unseen ? '#fff' : theme.textSecondary,
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(44,53,48,0.18)',
+              }}
+            >
+              <ArrowDown size={13} /> {unseen ? 'New answer' : 'Latest'}
+            </button>
+          )}
+        </div>
+
+        {/* Composer */}
+        <div style={{
+          flexShrink: 0, background: theme.bgCard, borderTop: `1px solid ${theme.border}`,
+          paddingBottom: isMobile && !frame.keyboardOpen ? 0 : undefined,
+        }}>
+          <div style={{ maxWidth: 860, margin: '0 auto' }}>
+            {/* Follow-ups, within thumb reach. Only once the talk has started;
+                on the welcome screen the same questions are the main event. */}
+            {messages.length > 0 && (
+              <div className="frankie-chips" style={{
+                display: 'flex', gap: 6, overflowX: 'auto',
+                padding: isMobile ? '8px 12px 0' : '10px 24px 0',
+              }}>
+                {QUICK_ACTIONS.map(a => chip(a, { padding: '6px 10px', fontSize: 12 }))}
+              </div>
+            )}
+
+            <div style={{
+              display: 'flex', gap: 8, alignItems: 'flex-end',
+              padding: isMobile ? '8px 12px' : '10px 24px',
+            }}>
+              <div style={{
+                flex: 1, display: 'flex', alignItems: 'flex-end',
+                background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 22,
+                padding: '4px 4px 4px 14px', minHeight: 44,
+              }}>
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask Frankie about your finances…"
+                  rows={1}
+                  enterKeyHint={isMobile ? 'enter' : 'send'}
+                  style={{
+                    flex: 1, resize: 'none', border: 'none', outline: 'none',
+                    background: 'transparent', color: theme.text,
+                    fontSize: 15, lineHeight: '22px', padding: '7px 0',
+                    fontFamily: 'inherit', maxHeight: 132, minWidth: 0,
+                  }}
+                  onInput={e => {
+                    e.target.style.height = 'auto'
+                    e.target.style.height = Math.min(e.target.scrollHeight, 132) + 'px'
+                  }}
+                />
+                <button
+                  onClick={() => handleSend()}
+                  disabled={!canSend}
+                  aria-label="Send"
+                  style={{
+                    width: 36, height: 36, borderRadius: 18, flexShrink: 0,
+                    background: canSend ? ACCENT : theme.border,
+                    color: '#fff', border: 'none', cursor: canSend ? 'pointer' : 'default',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  {loading
+                    ? <Loader2 size={16} style={{ animation: 'frankie-spin 1s linear infinite' }} />
+                    : <Send size={16} style={{ marginLeft: 2 }} />}
+                </button>
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: isMobile ? '0 14px 8px' : '0 24px 10px', fontSize: 12, color: theme.textMuted,
+            }}>
+              <span>{isMobile ? '' : 'Enter to send · Shift+Enter for a new line'}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <button onClick={() => navigate('/agents/frankie/history')} style={linkBtn(theme)}>
+                  <History size={12} /> History
+                </button>
+                {sessionId && (
+                  <button onClick={handleNewChat} style={linkBtn(theme)}>
+                    <Plus size={12} /> New chat
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <style>{`
+          @keyframes frankie-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          @keyframes frankie-pulse { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+          .frankie-dots { display: inline-flex; gap: 4px; }
+          .frankie-dots i { width: 6px; height: 6px; border-radius: 3px; background: ${ACCENT}; animation: frankie-pulse 1.2s infinite ease-in-out; }
+          .frankie-dots i:nth-child(2) { animation-delay: 0.15s; }
+          .frankie-dots i:nth-child(3) { animation-delay: 0.3s; }
+          .frankie-chips { scrollbar-width: none; }
+          .frankie-chips::-webkit-scrollbar { display: none; }
+          .frankie-chip:not(:disabled):hover { background: ${ACCENT_BG} !important; border-color: ${ACCENT} !important; }
+          .frankie-markdown p { margin: 0 0 8px; }
+          .frankie-markdown p:last-child { margin-bottom: 0; }
+          .frankie-markdown ul, .frankie-markdown ol { margin: 4px 0 8px; padding-left: 20px; }
+          .frankie-markdown li { margin-bottom: 2px; }
+          .frankie-table-wrap { overflow-x: auto; margin: 8px 0; border: 1px solid ${theme.border}; border-radius: 8px; -webkit-overflow-scrolling: touch; }
+          .frankie-markdown table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+          .frankie-markdown th { background-color: ${ACCENT_BG}; color: ${ACCENT}; padding: 8px 10px; text-align: left; font-weight: 600; white-space: nowrap; border-bottom: 1px solid ${theme.border}; }
+          .frankie-markdown td { padding: 6px 10px; border-bottom: 1px solid ${theme.border}; white-space: nowrap; }
+          .frankie-markdown tr:last-child td { border-bottom: none; }
+          .frankie-markdown tr:hover td { background-color: ${ACCENT_BG}; }
+          .frankie-markdown code { background-color: ${ACCENT_BG}; color: ${ACCENT}; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+          .frankie-markdown h1, .frankie-markdown h2, .frankie-markdown h3 { margin: 12px 0 6px; font-size: 15px; }
+          .frankie-markdown strong { color: inherit; }
+          .frankie-markdown blockquote { border-left: 3px solid ${ACCENT}; margin: 8px 0; padding: 4px 12px; color: ${theme.textSecondary}; }
+        `}</style>
+      </div>
+    </>
   )
 }
+
+const linkBtn = (theme) => ({
+  display: 'inline-flex', alignItems: 'center', gap: 4,
+  background: 'none', border: 'none', color: theme.textMuted,
+  cursor: 'pointer', fontSize: 12, fontWeight: 500, padding: '4px 0',
+})

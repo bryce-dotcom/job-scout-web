@@ -55,6 +55,19 @@ export default function AgentHeader({ slug, tabs = [] }) {
   // Close the sheet on navigation, or it lingers over the page just opened.
   useEffect(() => { setMoreOpen(false) }, [location.pathname])
 
+  // Clearance for the fixed bottom bar, so the last row of any page can be
+  // scrolled up from under it. This used to be a spacer <div> rendered right
+  // here — which is above the page, not below it — so every agent page on a
+  // phone opened with a 76px blank band under its header and still had its
+  // last row trapped under the bar. Padding the document instead puts the
+  // room where it was meant to go, whatever the page renders.
+  useEffect(() => {
+    if (!isMobile) return
+    const prev = document.body.style.paddingBottom
+    document.body.style.paddingBottom = `calc(${MOBILE_TABBAR_HEIGHT + 12}px + env(safe-area-inset-bottom, 0px))`
+    return () => { document.body.style.paddingBottom = prev }
+  }, [isMobile])
+
   if (!agent) return null
 
   const AgentIcon = Icons[agent.icon] || Icons.Bot
@@ -94,11 +107,6 @@ export default function AgentHeader({ slug, tabs = [] }) {
           <span title="Active" style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
         </div>
 
-        {/* Content clearance so the last row of any page isn't trapped under
-            the bar. Rendered as a spacer rather than padding on a wrapper the
-            pages don't share. */}
-        <div style={{ height: MOBILE_TABBAR_HEIGHT + 12 }} aria-hidden="true" />
-
         {moreOpen && (
           <>
             <div
@@ -137,7 +145,7 @@ export default function AgentHeader({ slug, tabs = [] }) {
           </>
         )}
 
-        <nav style={{
+        <nav data-mobile-tabbar style={{
           position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 62,
           height: `calc(${MOBILE_TABBAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
