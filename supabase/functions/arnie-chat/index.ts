@@ -393,10 +393,10 @@ const PROPOSE_RECORD_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      target: { type: 'string', description: 'One of: job_status, job_note, job_schedule, lead_status, lead_note, shift_close (close an open time-clock shift — the user\'s own, or an admin closing someone else\'s)' },
-      record_query: { type: 'string', description: 'How the user identified the record, e.g. "the Drinkle insurance job" or "JOB-ABC123". For shift_close: "my shift from yesterday" or "Jordan\'s open shift".' },
+      target: { type: 'string', description: 'One of: job_status, job_note, job_schedule, lead_status, lead_note, shift_close (close an open time-clock shift — the user\'s own, or an admin closing someone else\'s), lead_merge (fold a duplicate lead into the original — manager only)' },
+      record_query: { type: 'string', description: 'How the user identified the record, e.g. "the Drinkle insurance job" or "JOB-ABC123". For shift_close: "my shift from yesterday" or "Jordan\'s open shift". For lead_merge: the customer, e.g. "the Halifax Flooring leads".' },
       record_id: { type: 'integer', description: 'Only after a needs_choice reply, or when the user gave an exact id' },
-      value: { type: 'string', description: 'The new status, the note text, a YYYY-MM-DD date — or for shift_close the clock-out as YYYY-MM-DD HH:MM in the user\'s zone (work "5:30 yesterday" out from Today), or "now"' },
+      value: { type: 'string', description: 'The new status, the note text, a YYYY-MM-DD date — or for shift_close the clock-out as YYYY-MM-DD HH:MM in the user\'s zone (work "5:30 yesterday" out from Today), or "now". For lead_merge: "" to keep the original (or older) lead, "newer" to keep the newer, or the id of the lead to keep.' },
       timezone: { type: 'string', description: 'IANA zone from the Current User section. Needed for shift_close.' },
     },
     required: ['target', 'value'],

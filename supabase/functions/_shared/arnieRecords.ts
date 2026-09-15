@@ -23,6 +23,7 @@ import { readRecordList } from './arnieRest.ts'
 import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
 import { applyShiftClose, proposeShiftClose, rollbackShiftClose } from './arnieShift.ts'
+import { applyLeadMerge, proposeLeadMerge, rollbackLeadMerge } from './arnieLeadMerge.ts'
 
 export interface RecordTarget {
   label: string          // "job status" — used in copy
@@ -109,6 +110,14 @@ export const RECORD_TARGETS: Record<string, RecordTarget> = {
       const rows = await readRecordList(r, `time_clock?select=employee_id&company_id=eq.${companyId}&id=eq.${rowId}&limit=1`)
       return rows[0]?.employee_id ?? null
     },
+  },
+  // "Merge the Haliflax lead into Halifax Flooring." Manager: the copy is
+  // deleted at the end, and deleting a lead is a manager's bar already.
+  // See arnieLeadMerge.ts for what moves — and what does not get decided.
+  lead_merge: {
+    label: 'lead merge', table: 'leads', field: 'merge', mode: 'set', minLevel: 2,
+    searchCols: LEAD_SEARCH, selectCols: LEAD_SELECT, labelOf: leadLabel,
+    proposeCustom: proposeLeadMerge, applyCustom: applyLeadMerge, rollbackCustom: rollbackLeadMerge,
   },
 }
 
