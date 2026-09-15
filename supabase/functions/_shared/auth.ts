@@ -76,10 +76,10 @@ const ROLE_LEVEL: Record<string, number> = {
   'Admin': 3, 'Super Admin': 4, 'Developer': 5,
   'Owner': 4, // legacy — Owner has always meant Super Admin
 }
-const LEVEL_ROLE: CallerRole[] =
+export const LEVEL_ROLE: CallerRole[] =
   ['user', 'team_lead', 'manager', 'admin', 'super_admin', 'developer']
 
-function accessLevel(emp: Record<string, unknown>): number {
+export function accessLevel(emp: Record<string, unknown>): number {
   if (emp?.is_developer === true) return 5
   const ur = emp?.user_role as string | undefined
   if (ur && ROLE_LEVEL[ur] !== undefined) return ROLE_LEVEL[ur]
