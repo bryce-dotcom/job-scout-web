@@ -90,7 +90,7 @@ const sel = (s) => `select=${encodeURIComponent(s)}`
 const co = `company_id=eq.${COMPANY_ID}`
 
 async function loadCompanyData() {
-  const [companies, invoices, payments, expenses, plaidRaw, jobs, customers, employees, timeLogs, payrollRuns, connectedAccounts, expenseCategories] = await Promise.all([
+  const [companies, invoices, payments, expenses, plaidRaw, jobs, customers, employees, timeLogs, payrollRuns, connectedAccounts, expenseCategories, jobLines, products, productComponents] = await Promise.all([
     rows('companies', `id=eq.${COMPANY_ID}&${sel('*')}`),
     rows('invoices', `${co}&${sel(QUERIES.invoices)}`),
     rows('payments', `${co}&${sel(QUERIES.payments)}&order=date.desc`),
@@ -103,9 +103,12 @@ async function loadCompanyData() {
     ROLE === 'admin' ? rows('payroll_runs', `${co}&${sel('pay_date, period_end, status, total_gross, employee_count')}&order=pay_date.desc&limit=120`) : Promise.resolve(null),
     rows('connected_accounts', `${co}&${sel('*')}`),
     rows('expense_categories', `${co}&${sel('name, type')}&order=sort_order`),
+    rows('job_lines', `${co}&${sel('job_id, item_id, quantity, labor_cost')}`),
+    rows('products_services', `${co}&${sel('id, cost, material_or_labor')}`),
+    rows('product_components', `${co}&${sel('parent_product_id, component_product_id, quantity')}`),
   ])
   const { rows: plaidTransactions } = dedupeStripePayouts(plaidRaw)
-  return { company: companies[0], invoices, payments, expenses, plaidTransactions, jobs, customers, employees, timeLogs, payrollRuns, connectedAccounts, expenseCategories }
+  return { company: companies[0], invoices, payments, expenses, plaidTransactions, jobs, customers, employees, timeLogs, payrollRuns, connectedAccounts, expenseCategories, jobLines, products, productComponents }
 }
 
 // ── the model ────────────────────────────────────────────────────────

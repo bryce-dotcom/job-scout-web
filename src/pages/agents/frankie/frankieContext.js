@@ -9,10 +9,11 @@
 // Explicit extensions: Vite does not need them, plain Node (the eval runner) does.
 import { buildTaxContext } from './frankieTaxContext.js'
 import { TAX_CATEGORIES } from '../../../lib/taxCategories.js'
+import { jobCosting } from '../../../lib/reports.js'
 import {
   invoiceBalance, invoiceDaysOverdue, invoiceStatus,
   isInvoiceOpen, paymentDate, jobIsComplete, jobContractValue,
-  jobCostFromLines, expenseCategoryName, unifiedExpenses,
+  expenseCategoryName, unifiedExpenses,
 } from './frankieFields.js'
 
 export function buildSystemPrompt(user, company, role) {
@@ -52,6 +53,14 @@ export function buildSystemPrompt(user, company, role) {
 - You cannot access external bank accounts or make payments
 - You do not have real-time market data
 
+## Your Tools
+The "Current Data Context" below is a snapshot of totals. You also have lookup tools that read the company's own rows — bank transactions, a P&L for any date range, invoices, payments, job profitability, payroll runs, bank balances. Use them, without asking permission, whenever the question is about:
+- specific rows or names ("show me those checks", "what did we pay Lowe's", "the Mile High Fitness invoice")
+- a period the snapshot does not cover ("Q2", "last year", "May to August", "month by month")
+- one job, crew or customer ("margin on the Anderson job", "how is Derrick's crew doing")
+- anything where a list beats a total
+Numbers from a tool are real data, the same as the snapshot. Say what you looked up in half a sentence ("I pulled the bank rows tagged as wages…"). If a tool says restricted, say who can see it and stop.
+
 ## Data Rules
 - Every figure you quote comes from the "Current Data Context" below. Never invent a number, a name, or a count.
 - Estimates are your job. When the exact figure is not in the data, work it out from what is — annualize, apply the rate, use the rule of thumb in the context — and label it an estimate with the one assumption that matters. "Roughly $38k, assuming a 24% bracket" is a CFO answer. "I don't have enough data" is not.
@@ -84,6 +93,42 @@ JobScout tracks: invoices (with line items, taxes, discounts), payments (method,
 }
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/**
+ * What the jobs actually made, from the app's own job costing. Best and
+ * worst by margin, the crew rollup, and an honest count of jobs with no
+ * cost captured — those are named as such, never shown as 100% margin.
+ */
+export function jobProfitabilitySection({ jobs = [], completedJobs = [], data = {}, now = new Date() }) {
+  if (!jobs.length) return ''
+  const report = jobCosting({
+    jobs, jobLines: data.jobLines || [], payments: data.payments || [],
+    products: data.products || [], productComponents: data.productComponents || [],
+    plaidTransactions: data.plaidTransactions || [], manualExpenses: data.expenses || [],
+    from: null, to: now,
+  })
+  const rows = report.rows || []
+  const withCost = rows.filter(r => r.total_cost != null)
+  let s = `### Job Profitability (the Job Costing report: revenue from payments tagged to the job, cost from job lines and tagged expenses)\n`
+  s += `- Completed jobs: ${completedJobs.length}; jobs with revenue or cost recorded: ${rows.length}; with cost captured: ${withCost.length}\n`
+  s += `- Revenue across those jobs: ${money(report.summary?.totalRevenue)}\n`
+  if (withCost.length) {
+    const rev = withCost.reduce((a, r) => a + r.revenue, 0)
+    const cost = withCost.reduce((a, r) => a + (r.total_cost || 0), 0)
+    s += `- On the ${withCost.length} jobs with cost captured: revenue ${money(rev)}, cost ${money(cost)}, profit ${money(rev - cost)}, margin ${rev > 0 ? ((rev - cost) / rev * 100).toFixed(1) : '0.0'}%\n`
+    const ranked = withCost.filter(r => r.revenue > 0).sort((a, b) => (b.margin ?? -1) - (a.margin ?? -1))
+    const line = (r) => `${r.job}${r.title ? ` ${r.title}` : ''}: revenue ${money(r.revenue)}, cost ${money(r.total_cost)}, profit ${money(r.profit)} (${(r.margin * 100).toFixed(0)}%)`
+    if (ranked.length) {
+      s += `- Best margins: ${ranked.slice(0, 5).map(line).join('; ')}\n`
+      s += `- Worst margins: ${ranked.slice(-5).reverse().map(line).join('; ')}\n`
+    }
+  }
+  const noCost = rows.length - withCost.length
+  if (noCost > 0) s += `- ${noCost} job(s) have revenue but no cost captured — say "no cost recorded" for those, never "100% margin". For a ranking, use the query_job_profitability tool.\n`
+  if (!withCost.length) s += `- No job has cost captured yet: rank by revenue and say in one line that margin needs job lines with costed products or expenses tagged to the job.\n`
+  s += '\n'
+  return s
+}
 
 /**
  * What is in the bank right now, from the connected accounts' last sync.
@@ -297,36 +342,14 @@ export function buildFinancialContext(data = {}, now = new Date()) {
     context += '\n'
   }
 
-  // Job Profitability — completed jobs use jobIsComplete (covers Completed,
-  // Verified Complete, Paid, Closed, etc.) and jobContractValue (job_total
-  // column). Cost data lives on job_lines.labor_cost; not yet wired into
-  // the engine so we report "cost data not yet captured" when it's 0.
+  // Job Profitability — the same calculation as the Job Costing report and
+  // the profitability view on each job (lib/reports.js jobCosting): revenue
+  // from payments tagged to the job, cost from job lines walked through
+  // bundle components, plus expenses tagged to the job. This used to hand
+  // the cost helper an empty list and then report "cost data not captured"
+  // on every tenant, including ones whose jobs page showed a margin.
   const completedJobs = jobs.filter(jobIsComplete)
-  if (completedJobs.length > 0) {
-    context += `### Job Profitability (${completedJobs.length} completed jobs)\n`
-    let totalContract = 0, totalCost = 0
-    completedJobs.forEach(j => {
-      totalContract += jobContractValue(j)
-      totalCost += jobCostFromLines(j.id, [])
-    })
-    context += `- Total contract value: $${totalContract.toFixed(2)}\n`
-    if (totalCost > 0) {
-      const avgMargin = totalContract > 0 ? ((totalContract - totalCost) / totalContract * 100) : 0
-      context += `- Total cost: $${totalCost.toFixed(2)}\n`
-      context += `- Total profit: $${(totalContract - totalCost).toFixed(2)}\n`
-      context += `- Average margin: ${avgMargin.toFixed(1)}%\n\n`
-    } else {
-      context += `- Cost data not yet captured on job lines — margin analysis unavailable. Recommend capturing labor_cost on job_lines for future profitability tracking.\n\n`
-    }
-
-    // Top 10 most recent completed jobs
-    context += `### Recent Completed Jobs (up to 10)\n`
-    completedJobs.slice(0, 10).forEach(j => {
-      const contract = jobContractValue(j)
-      context += `- ${j.job_title || j.job_id || '#' + j.id}: Contract $${contract.toFixed(2)}\n`
-    })
-    context += '\n'
-  }
+  context += jobProfitabilitySection({ jobs, completedJobs, data, now })
 
   // Active jobs summary
   const activeJobs = jobs.filter(j => j.status === 'In Progress' || j.status === 'Scheduled')

@@ -21,7 +21,7 @@
 // still used the `disc >= gross` legacy-net test after arHelpers was corrected
 // to `>`, so a fully-covered invoice reported its whole gross as owed. Import
 // the one definition instead of keeping a private twin.
-import { invoiceCustomerTotal } from './arHelpers'
+import { invoiceCustomerTotal } from './arHelpers.js'   // explicit extension: plain Node (the Frankie eval runner) needs it
 
 function paymentsByInvoiceIndex(payments) {
   const map = new Map()

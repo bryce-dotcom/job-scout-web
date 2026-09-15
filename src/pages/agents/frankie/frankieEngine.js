@@ -37,8 +37,12 @@ async function callClaude(conversationHistory, systemPrompt, onChunk) {
     content: msg.content,
   }))
 
+  // `agent` tells the shared edge function whose tools and model to use.
+  // Without it Frankie was offered Arnie's toolset, including the ones that
+  // propose record changes.
   const { data, error } = await supabase.functions.invoke('arnie-chat', {
     body: {
+      agent: 'frankie',
       messages,
       systemPrompt,
       sessionId: null,

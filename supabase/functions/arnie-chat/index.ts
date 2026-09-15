@@ -8,6 +8,16 @@ import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arn
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_shared/arnieMoney.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
+import { FRANKIE_MODEL, FRANKIE_MAX_TOKENS, frankieToolsFor, execFrankieTool } from '../_shared/frankieTools.ts'
+
+// Which agent is talking. Frankie shares this function with Arnie; the
+// body says `agent: 'frankie'` and gets his own read-only toolset, his own
+// model and his own usage line. Anything else is Arnie.
+type Agent = 'arnie' | 'frankie'
+const ARNIE_MODEL = 'claude-sonnet-4-5-20250929'
+function agentFor(body: Record<string, unknown>): Agent {
+  return body.agent === 'frankie' ? 'frankie' : 'arnie'
+}
 import { invoiceOutstanding, isInvoiceOverdue, SETTLED_STATUSES } from '../_shared/money.ts'
 
 // Still read directly here: the SSE streaming path keeps its own fetch
@@ -1166,6 +1176,7 @@ Deno.serve(async (req) => {
     const body = await req.json()
     const { messages, systemPrompt, stream } = body
     const cards = cardsFor(body)
+    const agent = agentFor(body)
 
     // Identity comes from the JWT — NEVER from the body. `companyId` and
     // `role` used to be read off the request and handed straight to the
@@ -1206,11 +1217,11 @@ Deno.serve(async (req) => {
 
     // === STREAMING + TOOL USE LOOP ===
     if (stream) {
-      return streamWithTools(cleaned, systemPrompt, caller, cards)
+      return streamWithTools(cleaned, systemPrompt, caller, cards, agent)
     }
 
     // === NON-STREAMING (with tool support) ===
-    const reply = await callWithTools(cleaned, systemPrompt, caller, cards)
+    const reply = await callWithTools(cleaned, systemPrompt, caller, cards, agent)
     return new Response(JSON.stringify({ reply }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
@@ -1231,20 +1242,45 @@ function jsonError(msg: string, status: number, extra?: Record<string, unknown>)
   })
 }
 
+// Per-agent: which tools are advertised, how a call is executed, which
+// model answers, and which feature the usage is logged under.
+function agentSetup(agent: Agent, caller: Caller, cards: string[]) {
+  const rest = { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }
+  if (agent === 'frankie') {
+    return {
+      model: FRANKIE_MODEL,
+      maxTokens: FRANKIE_MAX_TOKENS,
+      feature: 'frankie-chat',
+      tools: frankieToolsFor(caller),
+      exec: (name: string, input: any) => execFrankieTool(name, input, caller, rest),
+      tangled: "I ran out of lookups on that one. Ask me in smaller pieces and I'll get you the number.",
+    }
+  }
+  return {
+    model: ARNIE_MODEL,
+    maxTokens: 4096,
+    feature: 'arnie-chat',
+    tools: toolsFor(caller.role, cards),
+    exec: (name: string, input: any) => execTool(name, input, caller),
+    tangled: 'Sorry boss, I got tangled up trying to look that up. Try asking me a different way.',
+  }
+}
+
 // Run a non-streaming completion with tool use support (multi-turn)
-async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[]): Promise<string> {
-  const { companyId, role } = caller
+async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie'): Promise<string> {
+  const { companyId } = caller
   let convo = [...messages]
+  const setup = agentSetup(agent, caller, cards)
   // Only advertise tools if we have a companyId to scope queries safely
-  const includeTools = !!companyId
+  const includeTools = !!companyId && setup.tools.length > 0
   for (let i = 0; i < 5; i++) { // up to 5 tool rounds
     const ai = await callAnthropic(
-      { feature: 'arnie-chat', companyId: companyId ?? null },
+      { feature: setup.feature, companyId: companyId ?? null },
       {
-        model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 4096,
+        model: setup.model,
+        max_tokens: setup.maxTokens,
         system: systemPrompt || '',
-        ...(includeTools ? { tools: toolsFor(role, cards) } : {}),
+        ...(includeTools ? { tools: setup.tools } : {}),
         messages: convo,
       },
     )
@@ -1263,18 +1299,19 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
     convo.push({ role: 'assistant', content: blocks })
     const toolResults = []
     for (const tu of toolUses) {
-      const result = await execTool(tu.name, tu.input, caller)
+      const result = await setup.exec(tu.name, tu.input)
       toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) })
     }
     convo.push({ role: 'user', content: toolResults })
   }
-  return 'Sorry boss, I got tangled up trying to look that up. Try asking me a different way.'
+  return setup.tangled
 }
 
 // Streaming version with tool support — emits SSE
-async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[]) {
-  const { companyId, role } = caller
+async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie') {
+  const { companyId } = caller
   const encoder = new TextEncoder()
+  const setup = agentSetup(agent, caller, cards)
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: any) => {
@@ -1282,8 +1319,8 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
       }
       try {
         let convo = [...messages]
-        const includeTools = !!companyId
-        const aiMeta = { feature: 'arnie-chat', companyId: companyId ?? null }
+        const includeTools = !!companyId && setup.tools.length > 0
+        const aiMeta = { feature: setup.feature, companyId: companyId ?? null }
         for (let round = 0; round < 5; round++) {
           const res = await fetch(ANTHROPIC_URL, {
             method: 'POST',
@@ -1293,10 +1330,10 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              model: 'claude-sonnet-4-5-20250929',
-              max_tokens: 4096,
+              model: setup.model,
+              max_tokens: setup.maxTokens,
               system: systemPrompt || '',
-              ...(includeTools ? { tools: toolsFor(role, cards) } : {}),
+              ...(includeTools ? { tools: setup.tools } : {}),
               messages: convo,
               stream: true,
             }),
@@ -1360,7 +1397,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
           }
 
           // Usage metering for this streamed round — fire-and-forget.
-          if (usage) logAnthropicSuccess(aiMeta, 'claude-sonnet-4-5-20250929', usage).catch(() => {})
+          if (usage) logAnthropicSuccess(aiMeta, setup.model, usage).catch(() => {})
 
           const toolUses = blocks.filter((b: any) => b?.type === 'tool_use')
           if (stopReason !== 'tool_use' || toolUses.length === 0) {
@@ -1373,7 +1410,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
           convo.push({ role: 'assistant', content: blocks })
           const toolResults = []
           for (const tu of toolUses) {
-            const result = await execTool(tu.name, tu.input, caller)
+            const result = await setup.exec(tu.name, tu.input)
             // A drafted change has to reach the UI as a card, not as prose —
             // the model describing a diff is not the same as the admin seeing
             // one and clicking approve.
