@@ -201,6 +201,37 @@ const CASES = [
     turns: ["Close Mike Sullivan's open shift at 4pm yesterday."],
     expect: { proposal: 'none', text_match: [/admin/i] } },
 
+  // — merging a duplicate lead: everything moves, pay is not decided, rollback puts it back —
+  { id: 'merge.owner.moves.children.says.both.fees.then.rollback', as: 'owner',
+    run: async (ctx) => {
+      const [orig] = await rest('leads', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, customer_name: 'Ben Rowe', business_name: 'Halifax Flooring', email: 'ben@halifaxflooring.example', status: 'Appointment Set', notes: 'Original.' }) })
+      const [dup] = await rest('leads', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, customer_name: 'Ben Rowe', business_name: 'Haliflax Flooring', phone: '801-555-0142', status: 'Quote Sent' }) })
+      const [feeA] = await rest('setter_commissions', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, lead_id: orig.id, setter_id: DEMO.tech.employeeId, setter_amount: 25, payment_status: 'pending' }) })
+      const [feeB] = await rest('setter_commissions', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, lead_id: dup.id, setter_id: DEMO.tech.employeeId, setter_amount: 25, payment_status: 'pending' }) })
+      const [q] = await rest('quotes', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, quote_id: 'EST-EVAL-HALIFLAX', lead_id: dup.id, status: 'Sent', quote_amount: 7128, estimate_name: 'Haliflax — LED retrofit' }) })
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Merge the Haliflax Flooring lead into Halifax Flooring — they are the same customer.' }])
+        if (r.proposal?.preview?.label === 'lead merge') {
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.ok) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const gone = await rest(`leads?select=id&id=eq.${dup.id}`); const [k] = await rest(`leads?select=phone,notes&id=eq.${orig.id}`)
+          const [qq] = await rest(`quotes?select=lead_id&id=eq.${q.id}`); const fees = await rest(`setter_commissions?select=lead_id&id=in.(${feeA.id},${feeB.id})`)
+          if (gone.length || String(qq.lead_id) !== String(orig.id) || fees.some((f) => String(f.lead_id) !== String(orig.id)) || k.phone !== '801-555-0142' || !/Merged/.test(k.notes || '')) throw new Error('merge did not move everything: ' + JSON.stringify({ gone, qq, fees, k }))
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+          const [back] = await rest(`leads?select=id,phone&id=eq.${dup.id}`); const [k2] = await rest(`leads?select=phone,notes&id=eq.${orig.id}`); const [q2] = await rest(`quotes?select=lead_id&id=eq.${q.id}`)
+          if (!back || back.phone !== '801-555-0142' || k2.phone !== null || /Merged/.test(k2.notes || '') || String(q2.lead_id) !== String(dup.id)) throw new Error('rollback did not put the copy back: ' + JSON.stringify({ back, k2, q2 }))
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally {
+        await rest(`quotes?id=eq.${q.id}`, { method: 'DELETE' }); await rest(`setter_commissions?id=in.(${feeA.id},${feeB.id})`, { method: 'DELETE' })
+        await rest(`leads?id=in.(${orig.id},${dup.id})`, { method: 'DELETE' })
+      }
+    },
+    expect: { proposal_kind: 'record', proposal_label: 'lead merge', text_match: [/setter fee/i, /Lead Setter/, /approve/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) merged\b/i] } },
+  { id: 'merge.tech.refused', as: 'tech',
+    turns: ['Merge the Haliflax Flooring lead into Halifax Flooring, they are the same customer.'],
+    expect: { proposal: 'none', text_match: [/manager|admin/i] } },
+
   // — the push: the brief SENT, not asked for (dry run, nothing goes out) —
   { id: 'brief.push.tech.own.day.no.invented.names', as: 'tech',
     run: async () => {
