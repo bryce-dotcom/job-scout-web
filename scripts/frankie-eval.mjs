@@ -57,6 +57,11 @@ const SB_KEY = env.SUPABASE_SERVICE_ROLE_KEY
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 if (!SB_URL || !SB_KEY) { console.error('Missing VITE_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY in .env'); process.exit(1) }
 if (!DRY && !ANTHROPIC_KEY) { console.error('Set ANTHROPIC_API_KEY (or run with --dry to assemble prompts without calling the model).'); process.exit(1) }
+if (!DRY && !/^sk-ant-/.test(ANTHROPIC_KEY)) {
+  // The first run used the placeholder from the instructions as the key.
+  console.error(`ANTHROPIC_API_KEY does not look like a real key (got "${ANTHROPIC_KEY.slice(0, 12)}…"). Real keys start with sk-ant- — create one at console.anthropic.com → API Keys and paste the whole thing.`)
+  process.exit(1)
+}
 
 // $ per million tokens, in / out. Update when the price sheet does.
 const PRICES = [
