@@ -174,8 +174,10 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       const status = decision === 'apply' ? 'applied' : 'rejected'
       return {
         ...m, proposalBusy: false, proposalStatus: status, proposalError: null,
+        // A card can say what "done" means for it. A follow-up that just went
+        // to a customer must not be told "you can roll it back anytime".
         content: status === 'applied'
-          ? "Done — it's live. I logged the change, and you can roll it back anytime from Arnie's Settings tab."
+          ? (m.proposal?.preview?.done || "Done — it's live. I logged the change, and you can roll it back anytime from Arnie's Settings tab.")
           : 'No sweat — tossed it. Nothing changed.',
       }
     }))
@@ -837,7 +839,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                           flex: 1, background: '#c9812f', color: '#fff', border: 0, borderRadius: 8,
                           padding: '9px 12px', fontWeight: 650, fontSize: 13,
                           cursor: msg.proposalBusy ? 'default' : 'pointer', opacity: msg.proposalBusy ? 0.6 : 1,
-                        }}>{msg.proposalBusy ? 'Working…' : `Create ${pv.label}`}</button>
+                        }}>{msg.proposalBusy ? 'Working…' : `${pv.verb || 'Create'} ${pv.label}`}</button>
                         <button disabled={msg.proposalBusy} onClick={() => decideProposal('reject', msg.proposal.proposal.id, msg.id)} style={{
                           background: 'transparent', color: dark.textSecondary, border: `1px solid ${dark.border}`,
                           borderRadius: 8, padding: '9px 14px', fontSize: 13, cursor: 'pointer',
@@ -845,7 +847,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                       </div>
                     ) : (
                       <div style={{ fontSize: 12.5, fontWeight: 600, color: st === 'applied' ? '#7fdba0' : dark.textSecondary }}>
-                        {st === 'applied' ? 'Created — you can undo this from Settings while nothing is attached to it.' : 'Discarded.'}
+                        {st === 'applied' ? (pv.done || 'Created — you can undo this from Settings while nothing is attached to it.') : 'Discarded.'}
                       </div>
                     )}
                   </div>

@@ -419,7 +419,7 @@ const PROPOSE_CREATE_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket', 'appointment', 'quote'], description: 'lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person. appointment = book a sales visit on an existing lead (sets the lead to Appointment Set, hands it to the rep, and creates the setter fee — the same as booking from Lead Setter). quote = a Draft estimate for a lead or customer, lines from the price book, nothing sent.' },
+      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup'], description: 'lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person. appointment = book a sales visit on an existing lead (sets the lead to Appointment Set, hands it to the rep, and creates the setter fee — the same as booking from Lead Setter). quote = a Draft estimate for a lead or customer, lines from the price book, nothing sent. followup = a personal note from the rep on a quote that has gone quiet, SENT to the customer when they approve the card — the one draft that cannot be undone.' },
       fields: {
         type: 'object',
         description:
@@ -427,7 +427,8 @@ const PROPOSE_CREATE_TOOL = {
           'diagnosis: symptom (required), fix (required), equipment (make/model), cause, parts, outcome (fixed|partial|escalated|unresolved), trade, job (describe it in words — "the Riverside job" — never an id; omit it if they are clocked in and it is that job). ' +
           'ticket: message (required — what was seen, the exact record ids/numbers involved, what was expected, what you checked), subject, feedback_type (bug|feature|question|feedback). ' +
           'appointment: lead (required — describe it in words, never an id), when (required — YYYY-MM-DD HH:MM in the user\'s zone; work "Tuesday at 2" out from Today in Current User), timezone (from Current User), salesperson (name; omit to use the rep already on the lead), duration_minutes (default 60), location (defaults to the lead\'s address), notes. ' +
-          'quote: lead OR customer (one required, in words), lines (required — an ARRAY of { item, quantity, price? }: item is the product as the user said it and the server finds it in the price book; give price ONLY if the user said one, otherwise the book price is used), estimate_name, service_type, salesperson, notes.',
+          'quote: lead OR customer (one required, in words), lines (required — an ARRAY of { item, quantity, price? }: item is the product as the user said it and the server finds it in the price book; give price ONLY if the user said one, otherwise the book price is used), estimate_name, service_type, salesperson, notes. ' +
+          'followup: quote (required — the number, the estimate name, or who it is for, in words), message (required — the note AS THE REP WOULD SAY IT, first person, short, one clear ask, mentioning what the estimate is for; never invent a discount, deadline or price), subject (email only), channel (email|sms, default email). The server finds the recipient on the quote, lead or customer; you never supply an address.',
         properties: {
           customer_name: { type: 'string' }, business_name: { type: 'string' }, phone: { type: 'string' },
           email: { type: 'string' }, address: { type: 'string' }, service_type: { type: 'string' },
@@ -437,6 +438,7 @@ const PROPOSE_CREATE_TOOL = {
           subject: { type: 'string' }, message: { type: 'string' }, feedback_type: { type: 'string' },
           lead: { type: 'string' }, when: { type: 'string' }, timezone: { type: 'string' }, salesperson: { type: 'string' }, duration_minutes: { type: 'string' }, location: { type: 'string' },
           customer: { type: 'string' }, estimate_name: { type: 'string' },
+          quote: { type: 'string' }, channel: { type: 'string' },
           lines: { type: 'array', items: { type: 'object', properties: { item: { type: 'string' }, quantity: { type: 'number' }, price: { type: 'number' }, description: { type: 'string' } }, required: ['item'] } },
         },
       },

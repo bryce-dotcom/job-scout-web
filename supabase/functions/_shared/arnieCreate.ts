@@ -21,6 +21,7 @@ import { readRecordList } from './arnieRest.ts'
 import { RECORD_TARGETS, activeJobId, resolveEntity } from './arnieRecords.ts'
 import { applyAppointment, prepareAppointment, rollbackAppointment } from './arnieAppointment.ts'
 import { applyQuote, prepareQuote, rollbackQuote } from './arnieQuote.ts'
+import { applyFollowup, prepareFollowup, rollbackFollowup } from './arnieFollowup.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -51,6 +52,10 @@ export interface CreateTarget {
   fields: Record<string, CreateField>
   /** What the card and the audit call the new row. */
   labelOf: (fields: Record<string, string>) => string
+  /** The approve button. "Create" unless the action is really something else — "Send". */
+  verb?: string
+  /** What the card says once applied, when "Created" would be wrong. */
+  done?: string
   /** Resolve anything that is not a plain column — e.g. "the Drinkle job" → job_id. */
   prepare?: (r: Rest, caller: Caller, fields: Record<string, string>) => Promise<Prepared>
   /**
@@ -191,6 +196,27 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     prepare: prepareQuote,
     applyCustom: applyQuote,
     rollbackCustom: rollbackQuote,
+  },
+
+  // A personal follow-up on a quote that went quiet. The one rail whose
+  // apply cannot be undone, and the card says Send, not Create. See
+  // arnieFollowup.ts.
+  followup: {
+    label: 'follow-up',
+    table: 'communications_log',
+    minLevel: 0,
+    verb: 'Send',
+    done: 'Sent. It is in the communications log; the quote counts one more follow-up.',
+    fields: {
+      quote:   { column: null, label: 'Quote',   required: true, max: 160 },
+      message: { column: null, label: 'Message', required: true, max: 2000 },
+      subject: { column: null, label: 'Subject', max: 140 },
+      channel: { column: null, label: 'How',     max: 5, oneOf: ['email', 'sms'] },
+    },
+    labelOf: (f) => `Follow-up on ${f.quote}`.slice(0, 120),
+    prepare: prepareFollowup,
+    applyCustom: applyFollowup,
+    rollbackCustom: rollbackFollowup,
   },
 }
 
@@ -354,6 +380,8 @@ export async function proposeCreate(
           .map(([k, def]) => ({ label: def.label, value: fields[k] })),
         ...prepared.display,
       ],
+      ...(target.verb ? { verb: target.verb } : {}),
+      ...(target.done ? { done: target.done } : {}),
       ...(despite ? { despite } : {}),
     },
   }
