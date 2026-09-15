@@ -33,6 +33,8 @@ import { payDateForPeriod } from '../lib/payDate'
 import { VERIFICATION_EXEMPT_KEY } from '../lib/verificationPolicy'
 import { needsAttention } from '../lib/openPunches'
 import { localDateStr } from '../lib/localDate'
+import { quarterDueDate } from '../lib/payrollQuarters'
+import { suiRateInForce, suiWageBaseFor } from '../lib/suiRate'
 
 // Roll the per-employee tax breakdowns up into one row per tax-kind +
 // jurisdiction with the right due date based on the company's deposit
@@ -169,14 +171,12 @@ function computeDepositDueDate(payDate, schedule) {
   return toDateStr(n)
 }
 
+// Quarterly taxes (FUTA, SUI) are due the last day of the month after the
+// quarter. This used to be computed here with the month index off by one
+// (May 31 for Q1, "Nov 31" → Dec 1 for Q3); lib/payrollQuarters is the one
+// definition now, shared with the SUI true-up.
 function nextQuarterEnd(date) {
-  const d = new Date(date)
-  const m = d.getMonth()
-  // Q1 ends 3/31 → due 4/30; Q2 6/30 → 7/31; Q3 9/30 → 10/31; Q4 12/31 → 1/31
-  const dueMonth = m <= 2 ? 4 : m <= 5 ? 7 : m <= 8 ? 10 : 13
-  const dueYear  = dueMonth === 13 ? d.getFullYear() + 1 : d.getFullYear()
-  const due      = new Date(dueYear, dueMonth === 13 ? 0 : dueMonth, 31)
-  return toDateStr(due)
+  return quarterDueDate(toDateStr(date))
 }
 
 const AVATAR_COLORS = [
@@ -322,6 +322,10 @@ export default function Payroll() {
   // cap Social Security wage base + trip Additional Medicare. Built once
   // per fetch, indexed by employee_id.
   const [ytdPaystubs, setYtdPaystubs] = useState([])
+  // Every SUI rate this company has entered (lib/suiRate). Payroll uses the
+  // one in force on the PAY DATE, so a next-year notice entered in December
+  // does not touch December's cheques.
+  const [suiRateHistory, setSuiRateHistory] = useState([])
   const [utilityInvoicesState, setUtilityInvoicesState] = useState([])
   // Admin bonus overrides (release bonuses blocked by the Victor gate).
   // Stored as payroll_adjustments rows, category='bonus_override'.
@@ -829,6 +833,13 @@ export default function Payroll() {
         .eq('company_id', companyId)
         .gte('pay_date', yearStart)
       setYtdPaystubs(ytdRows || [])
+
+      const { data: suiRows } = await supabase
+        .from('company_sui_rates')
+        .select('id, rate_pct, effective_date, source')
+        .eq('company_id', companyId)
+        .order('effective_date', { ascending: false })
+      setSuiRateHistory(suiRows || [])
     } catch (err) {
       console.error('Error:', err)
     } finally {
@@ -1561,7 +1572,7 @@ export default function Payroll() {
       const ytdForEmp = ytdPaystubsByEmployee?.[employee.id] || { gross: 0, ssWages: 0, medicareWages: 0 }
       tax = calcPaystubTax({
         employee,
-        company,
+        company: taxCompany,
         gross: taxableGross,
         ytd: ytdForEmp,
         payFrequency: normalizePayFrequency(payrollConfig.pay_frequency),
@@ -1604,6 +1615,25 @@ export default function Payroll() {
     [employees, isManagerPlus, user]
   )
 
+  // The company row the tax engine calculates with. Same row, except the
+  // SUI rate is the one in force on this run's pay date (rate history first,
+  // the companies row as the fallback) and the wage base defaults to the
+  // state's figure for that year when Settings left it blank.
+  // (A plain value, not a memo: this component's hooks already sit below an
+  // early return, and the guard rightly refuses one more. It is cheap, and
+  // the memo that does the heavy work lists its inputs instead.)
+  const taxCompany = (() => {
+    if (!company) return company
+    const payDateStr = localDateStr(getNextPayDate())
+    const inForce = suiRateInForce(suiRateHistory, company, payDateStr)
+    const stateCode = company.state_employer_id_state || 'UT'
+    return {
+      ...company,
+      sui_rate_pct: inForce.ratePct,
+      sui_wage_base: Number(company.sui_wage_base) || suiWageBaseFor(stateCode, Number(payDateStr.slice(0, 4))) || company.sui_wage_base,
+    }
+  })()
+
   const employeePayData = useMemo(() => {
     const data = {}
     activeEmployees.forEach(emp => {
@@ -1616,7 +1646,7 @@ export default function Payroll() {
     // the memo could cache a result computed before those two finished
     // loading, so commissions stayed at $0 until something else re-triggered
     // a recompute.
-  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports, utilityInvoicesState, bonusOverrides, accruedByEmployee])
+  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports, utilityInvoicesState, bonusOverrides, accruedByEmployee, company, suiRateHistory])
 
   const totalPayroll = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.grossPay, 0),

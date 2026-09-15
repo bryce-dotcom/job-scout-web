@@ -52,7 +52,9 @@ serve(async (req) => {
     // Load company once — used by every form for header + EIN.
     const { data: company, error: coErr } = await supabase
       .from('companies')
-      .select('company_name, legal_name, ein, address, phone, state_employer_id, state_employer_id_state')
+      // The SUI columns were missing here, so Form 33H always answered "set your
+      // DWS account number" even when it was set — it was reading undefined.
+      .select('company_name, legal_name, ein, address, phone, state_employer_id, state_employer_id_state, sui_account_number, sui_rate_pct, sui_wage_base, sui_rate_source, sui_rate_effective_date, futa_rate_pct')
       .eq('id', company_id)
       .single();
     if (coErr || !company) return json({ error: 'company not found' }, 404);
@@ -543,15 +545,35 @@ async function generateForm33H({ supabase, company_id, company, year, quarter }:
   if (!company.sui_account_number) {
     return { ok: false, error: 'Set Utah DWS account number in Settings → Payroll Tax / Compliance before generating Form 33H.' };
   }
-  if (company.sui_rate_pct == null) {
-    return { ok: false, error: 'Set your assigned Utah SUI rate in Settings → Payroll Tax / Compliance before generating Form 33H.' };
-  }
-
   const startMonth = (quarter - 1) * 3;
   const periodStart = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`;
   const periodEndDate = new Date(year, startMonth + 3, 0);
   const periodEnd = periodEndDate.toISOString().slice(0, 10);
   const yearStart = `${year}-01-01`;
+
+  // The rate IN FORCE for this quarter — from the rate history first (so a
+  // Q4 rendered in February still uses Q4's rate after next year's notice
+  // was entered), the companies row as the fallback. Same rule as
+  // lib/suiRate.suiRateInForce on the app side.
+  const { data: rateRows } = await supabase
+    .from('company_sui_rates')
+    .select('id, rate_pct, effective_date, source')
+    .eq('company_id', company_id)
+    .lte('effective_date', periodStart)
+    .order('effective_date', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(1);
+  const rateRow = rateRows?.[0] || null;
+  const suiRatePct = rateRow ? Number(rateRow.rate_pct) : (company.sui_rate_pct == null ? null : Number(company.sui_rate_pct));
+  const suiRateSource = rateRow ? rateRow.source : (company.sui_rate_source || null);
+  if (suiRatePct == null) {
+    return { ok: false, error: 'Set your assigned Utah SUI rate in Settings → Payroll Tax / Compliance before generating Form 33H.' };
+  }
+  // Gusto files nothing on a placeholder, and neither does this: an
+  // estimate is for running payroll, not for the return.
+  if (suiRateSource === 'estimate') {
+    return { ok: false, error: `Your Utah SUI rate on file (${suiRatePct}%) is a temporary estimate. Enter the assigned rate from your DWS Contribution Rate Notice (box J) in Settings → Payroll Tax; JobScout will true-up the quarter, and Form 33H can then be generated.` };
+  }
 
   // Active W-2 employees with paystubs in this quarter
   const { data: emps } = await supabase
@@ -583,7 +605,7 @@ async function generateForm33H({ supabase, company_id, company, year, quarter }:
   // base; a company's own sui_wage_base setting wins when it is set.
   const UTAH_SUI_WAGE_BASE: Record<number, number> = { 2025: 48900, 2026: 50700 };
   const SUI_BASE = Number(company.sui_wage_base) || UTAH_SUI_WAGE_BASE[Number(year)] || 50700;
-  const SUI_RATE = Number(company.sui_rate_pct) || 0;
+  const SUI_RATE = suiRatePct || 0;
 
   // Per-employee: total wages this quarter + ytd-through-quarter (for cap)
   const empTotals: Record<number, { wages_q: number; wages_ytd: number; ytd_before_q: number }> = {};
@@ -622,7 +644,7 @@ async function generateForm33H({ supabase, company_id, company, year, quarter }:
 
   const taxDue = round2(totalTaxable * SUI_RATE / 100);
 
-  const pdfBytes = await render33HPdf({ company, year, quarter, totalGross, totalTaxable, totalExcess, suiRate: SUI_RATE, suiBase: SUI_BASE, taxDue, detail });
+  const pdfBytes = await render33HPdf({ company, year, quarter, totalGross, totalTaxable, totalExcess, suiRate: SUI_RATE, suiBase: SUI_BASE, taxDue, detail, rateEffective: rateRow?.effective_date || company.sui_rate_effective_date || null, rateSource: suiRateSource });
   const path = `tax-filings/${company_id}/${year}/Form33H-Q${quarter}-${year}-${Date.now()}.pdf`;
   await supabase.storage.from('project-documents').upload(path, pdfBytes, { contentType: 'application/pdf', upsert: true });
 
@@ -1032,7 +1054,7 @@ async function renderTC941Pdf({ company, year, quarter, totals, totalDeposits, b
   return pdf.save();
 }
 
-async function render33HPdf({ company, year, quarter, totalGross, totalTaxable, totalExcess, suiRate, suiBase, taxDue, detail }: any): Promise<Uint8Array> {
+async function render33HPdf({ company, year, quarter, totalGross, totalTaxable, totalExcess, suiRate, suiBase, taxDue, detail, rateEffective, rateSource }: any): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const page = pdf.addPage([612, 792]);
   const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -1063,7 +1085,10 @@ async function render33HPdf({ company, year, quarter, totalGross, totalTaxable, 
   drawBox(page, margin, y, 260, 28, `3  Excess wages (over ${money(suiBase)} YTD per employee)`, money(totalExcess), font, fontB, ink, muted);
   drawBox(page, margin + 270, y, 260, 28, '4  Taxable wages (line 1 - line 3)', money(totalTaxable), font, fontB, ink, muted);
   y -= 32;
-  drawBox(page, margin, y, 260, 28, '5  Your assigned SUI rate', `${suiRate.toFixed(4)}%`, font, fontB, ink, muted);
+  const rateLabel = rateEffective
+    ? `5  Assigned SUI rate (effective ${String(rateEffective).slice(0, 10)}${rateSource === 'notice' ? ', per DWS notice' : rateSource === 'provider' ? ', per previous provider' : ''})`
+    : '5  Your assigned SUI rate';
+  drawBox(page, margin, y, 260, 28, rateLabel, `${suiRate.toFixed(4)}%`, font, fontB, ink, muted);
   drawBox(page, margin + 270, y, 260, 32, '6  Contribution due (line 4 × line 5)', money(taxDue), font, fontB, ink, muted);
   y -= 38;
 

@@ -6,6 +6,8 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
+import { suiStateFor, suiWageBaseFor, validateSuiRate, suiRateStatus, suiRateInForce, SUI_SOURCES, PROVIDER_PATHS } from '../lib/suiRate'
+import { applySuiTrueUp } from '../lib/suiTrueUp'
 import { supabase } from '../lib/supabase'
 import {
   Settings as SettingsIcon,
@@ -3633,56 +3635,235 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
 // Payroll Inbox and the calculation engine. Plain-English labels —
 // no IRS jargon in the UI.
 function PayrollTaxSettingsTab({ theme, companyId }) {
+  const user = useStore((state) => state.user)
   const [form, setForm] = useState({
     ein: '', legal_name: '', business_type: '',
     state_employer_id: '', state_employer_id_state: 'UT',
     sui_account_number: '', sui_rate_pct: '', sui_wage_base: '',
+    // The SUI rate the Gusto way (lib/suiRate): where it came from, the
+    // year it applies to (Utah: from January 1), and the notice it was
+    // read from. Not on the companies row directly — see save().
+    sui_rate_source: '', sui_rate_year: String(new Date().getFullYear()), sui_rate_notice_path: '',
     futa_rate_pct: 0.6,
     federal_deposit_schedule: '', state_deposit_schedule: '',
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving]   = useState(false)
   const [savedAt, setSavedAt] = useState(null)
+  const [companyRow, setCompanyRow] = useState(null)   // as loaded — the status banner reads this, not the form
+  const [suiHistory, setSuiHistory] = useState([])     // company_sui_rates, newest first
+  const [suiLoaded, setSuiLoaded] = useState(null)     // snapshot to tell "changed" from "re-saved"
+  const [noticeBusy, setNoticeBusy] = useState(false)
+  const [noticeRead, setNoticeRead] = useState(null)   // what the AI read off an uploaded notice
+  const [trueUp, setTrueUp] = useState(null)           // result of the last save's true-up
+  const [suiNote, setSuiNote] = useState('')
+
+  const loadSui = async () => {
+    const { data: rows } = await supabase
+      .from('company_sui_rates')
+      .select('id, rate_pct, effective_date, source, notice_path, entered_by, created_at')
+      .eq('company_id', companyId)
+      .order('effective_date', { ascending: false })
+      .order('created_at', { ascending: false })
+    setSuiHistory(rows || [])
+    return rows || []
+  }
 
   useEffect(() => {
     if (!companyId) return
     let mounted = true
     ;(async () => {
-      const { data } = await supabase
-        .from('companies')
-        .select('ein, legal_name, business_type, state_employer_id, state_employer_id_state, sui_account_number, sui_rate_pct, sui_wage_base, futa_rate_pct, federal_deposit_schedule, state_deposit_schedule')
-        .eq('id', companyId)
-        .single()
+      const [{ data }, rows] = await Promise.all([
+        supabase
+          .from('companies')
+          .select('ein, legal_name, business_type, state_employer_id, state_employer_id_state, sui_account_number, sui_rate_pct, sui_wage_base, sui_rate_source, sui_rate_effective_date, sui_rate_notice_path, futa_rate_pct, federal_deposit_schedule, state_deposit_schedule')
+          .eq('id', companyId)
+          .single(),
+        loadSui(),
+      ])
       if (!mounted) return
-      if (data) setForm(prev => ({ ...prev, ...data }))
+      if (data) {
+        setCompanyRow(data)
+        // The inputs show the most recently ENTERED rate (a next-year rate
+        // entered in December included), so what you typed is what you see.
+        const latest = rows[0]
+        const rate = latest ? latest.rate_pct : data.sui_rate_pct
+        const eff = latest ? latest.effective_date : data.sui_rate_effective_date
+        const snapshot = {
+          sui_rate_pct: rate ?? '',
+          sui_rate_source: (latest ? latest.source : data.sui_rate_source) || '',
+          sui_rate_year: String(eff || '').slice(0, 4) || String(new Date().getFullYear()),
+          sui_rate_notice_path: (latest ? latest.notice_path : data.sui_rate_notice_path) || '',
+        }
+        setSuiLoaded(snapshot)
+        setForm(prev => ({ ...prev, ...data, ...snapshot }))
+      }
       setLoading(false)
     })()
     return () => { mounted = false }
   }, [companyId])
 
   const save = async () => {
+    const stateCode = form.state_employer_id_state || 'UT'
+    const st = suiStateFor(stateCode)
+    const rateGiven = form.sui_rate_pct !== '' && form.sui_rate_pct != null
+    if (rateGiven) {
+      const bad = validateSuiRate(stateCode, form.sui_rate_pct)
+      if (bad) { alert(bad); return }
+      if (!form.sui_rate_source) { alert('Say where the SUI rate came from — the notice, your previous payroll provider, or a temporary estimate.'); return }
+    }
+
     setSaving(true)
-    const payload = { ...form, updated_at: new Date().toISOString() }
-    // Convert empty strings to null for numeric fields
+    setTrueUp(null); setSuiNote('')
+    const today = new Date()
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    const effectiveDate = `${form.sui_rate_year || today.getFullYear()}-01-01`
+    const takesEffectNow = effectiveDate <= todayStr
+
+    // The companies row carries the rate IN FORCE. A next-year rate entered
+    // early goes into the history only; payroll picks it up on its date.
+    const { sui_rate_year: _year, sui_rate_source, sui_rate_notice_path, ...rest } = form
+    const payload = { ...rest, updated_at: new Date().toISOString() }
     for (const k of ['sui_rate_pct','sui_wage_base','futa_rate_pct']) {
       if (payload[k] === '') payload[k] = null
       else if (payload[k] != null) payload[k] = parseFloat(payload[k])
     }
+    const suiChanged = !!suiLoaded && (
+      String(form.sui_rate_pct) !== String(suiLoaded.sui_rate_pct) ||
+      form.sui_rate_source !== suiLoaded.sui_rate_source ||
+      String(form.sui_rate_year) !== String(suiLoaded.sui_rate_year))
+    if (rateGiven && takesEffectNow) {
+      payload.sui_rate_source = sui_rate_source || null
+      payload.sui_rate_effective_date = effectiveDate
+      payload.sui_rate_notice_path = sui_rate_notice_path || null
+    } else if (rateGiven && !takesEffectNow) {
+      // keep the in-force rate on the row; the history row below waits its turn
+      payload.sui_rate_pct = companyRow?.sui_rate_pct ?? null
+    } else {
+      payload.sui_rate_source = null
+      payload.sui_rate_effective_date = null
+      payload.sui_rate_notice_path = null
+    }
+
     const { error } = await supabase.from('companies').update(payload).eq('id', companyId)
+    if (error) { setSaving(false); alert('Save failed: ' + error.message); return }
+
+    if (rateGiven && suiChanged) {
+      const ratePct = parseFloat(form.sui_rate_pct)
+      const prior = suiRateInForce(suiHistory, companyRow, effectiveDate)
+      const { error: histErr } = await supabase.from('company_sui_rates').insert({
+        company_id: companyId,
+        rate_pct: ratePct,
+        effective_date: effectiveDate,
+        source: sui_rate_source,
+        notice_path: sui_rate_notice_path || null,
+        entered_by: user?.email || null,
+        note: prior.ratePct != null && prior.ratePct !== ratePct
+          ? `Replaces ${prior.ratePct}% (${SUI_SOURCES[prior.source]?.label || prior.source || 'earlier entry'})`
+          : null,
+      })
+      if (histErr) { setSaving(false); alert('The rate saved, but its history row did not: ' + histErr.message); return }
+      const rows = await loadSui()
+
+      if (takesEffectNow) {
+        // Gusto's reconciliation payroll, at the moment the rate changes:
+        // every quarter from the effective date is recomputed at this rate
+        // and the ledger gets one row per quarter for the difference.
+        const wageBase = parseFloat(form.sui_wage_base) || suiWageBaseFor(stateCode, Number(form.sui_rate_year)) || 0
+        const reason = prior.ratePct != null && prior.ratePct !== ratePct
+          ? `rate ${prior.ratePct}% (${SUI_SOURCES[prior.source]?.label?.toLowerCase() || 'earlier entry'}) → ${ratePct}% (${SUI_SOURCES[sui_rate_source]?.label?.toLowerCase() || sui_rate_source})`
+          : `rate ${ratePct}% entered (${SUI_SOURCES[sui_rate_source]?.label?.toLowerCase() || sui_rate_source}); nothing had been booked at this rate`
+        const result = await applySuiTrueUp(supabase, {
+          companyId, ratePct, wageBase, effectiveDate,
+          agency: st?.agencyShort || 'State Unemployment', reason,
+        })
+        setTrueUp(result)
+      } else {
+        setSuiNote(`Saved for ${form.sui_rate_year}. Payroll switches to ${form.sui_rate_pct}% on January 1, ${form.sui_rate_year}; until then it keeps using the rate in force today.`)
+      }
+      setSuiLoaded({ sui_rate_pct: form.sui_rate_pct, sui_rate_source: form.sui_rate_source, sui_rate_year: String(form.sui_rate_year), sui_rate_notice_path: form.sui_rate_notice_path || '' })
+      setCompanyRow(prev => ({ ...(prev || {}), ...payload }))
+      void rows
+    } else {
+      setCompanyRow(prev => ({ ...(prev || {}), ...payload }))
+    }
     setSaving(false)
-    if (error) alert('Save failed: ' + error.message)
-    else setSavedAt(new Date())
+    setSavedAt(new Date())
   }
 
   const set = (k) => (e) => setForm(prev => ({ ...prev, [k]: e.target.value }))
 
+  // "I don't have it yet": the state's new-employer rate as a flagged estimate.
+  const useEstimate = () => {
+    const st = suiStateFor(form.state_employer_id_state || 'UT')
+    if (!st) { alert('JobScout has no new-employer rate on file for this state yet — enter the rate from your notice.'); return }
+    setForm(prev => ({ ...prev, sui_rate_pct: String(st.newEmployerRatePct), sui_rate_source: 'estimate', sui_rate_year: String(new Date().getFullYear()) }))
+  }
+
+  // Upload the rate notice (or a screenshot of a provider's tax screen) and
+  // let the AI read it. Nothing is saved until the person confirms and saves.
+  const readNotice = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    if (file.size > 12 * 1024 * 1024) { alert('That file is over 12 MB — a photo or a one-page PDF is plenty.'); return }
+    setNoticeBusy(true); setNoticeRead(null)
+    try {
+      const ext = (file.name.split('.').pop() || 'pdf').toLowerCase()
+      const path = `${companyId}/docs/sui_rate_notice_${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('project-documents').upload(path, file, { upsert: true })
+      if (upErr) throw new Error('Upload failed: ' + upErr.message)
+      const base64 = await new Promise((resolve, reject) => {
+        const r = new FileReader()
+        r.onload = () => resolve(String(r.result).split(',')[1] || '')
+        r.onerror = () => reject(new Error('Could not read the file'))
+        r.readAsDataURL(file)
+      })
+      const { data: session } = await supabase.auth.getSession()
+      const tok = session?.session?.access_token
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/read-sui-notice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok || import.meta.env.VITE_SUPABASE_ANON_KEY}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ fileBase64: base64, mediaType: file.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'), state: form.state_employer_id_state || 'UT' }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`)
+      setNoticeRead({ ...data.read, path })
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setNoticeBusy(false)
+    }
+  }
+
+  const acceptNoticeRead = () => {
+    if (!noticeRead) return
+    setForm(prev => ({
+      ...prev,
+      sui_rate_pct: noticeRead.assigned_rate_pct != null ? String(noticeRead.assigned_rate_pct) : prev.sui_rate_pct,
+      sui_account_number: noticeRead.account_number || prev.sui_account_number,
+      sui_rate_year: noticeRead.effective_year ? String(noticeRead.effective_year) : prev.sui_rate_year,
+      sui_rate_source: noticeRead.kind === 'provider_screen' ? 'provider' : 'notice',
+      sui_rate_notice_path: noticeRead.path,
+    }))
+    setNoticeRead(null)
+  }
+
   if (loading) return <div style={{ color: theme.textMuted }}>Loading…</div>
+
+  const suiState = suiStateFor(form.state_employer_id_state || 'UT')
+  const suiStatus = suiRateStatus(companyRow, new Date(), suiHistory)
+  const thisYear = new Date().getFullYear()
+  const suiTone = suiStatus.level === 'ok' ? { bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.35)', ink: '#15803d' }
+    : suiStatus.level === 'estimate' ? { bg: 'rgba(59,130,246,0.10)', border: 'rgba(59,130,246,0.35)', ink: '#1d4ed8' }
+    : { bg: 'rgba(234,179,8,0.10)', border: 'rgba(234,179,8,0.35)', ink: '#a16207' }
+  const fmtMoney = (n) => ((Number(n) || 0) < 0 ? '−' : '') + '$' + Math.abs(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   const gaps = [
     !form.ein && 'EIN missing',
     !form.state_employer_id && 'Utah State Tax Commission ID missing',
     !form.federal_deposit_schedule && 'Federal deposit schedule not set',
-    form.sui_rate_pct == null && 'State unemployment (SUI) rate missing',
+    suiStatus.level === 'missing' && 'State unemployment (SUI) rate missing',
   ].filter(Boolean)
 
   const inputStyle = {
@@ -3773,22 +3954,123 @@ function PayrollTaxSettingsTab({ theme, companyId }) {
         </Row>
       </Card>
 
-      {/* State unemployment */}
-      <Card title="State Unemployment (SUI)" theme={theme}>
+      {/* State unemployment — the Gusto model (lib/suiRate, lib/suiTrueUp):
+          say where the number is, run on a flagged estimate until it
+          arrives, true-up the quarter when it does, flag it when it's
+          last year's. The state assigns it; nobody can look it up. */}
+      <Card title={`State Unemployment (SUI) — ${suiState?.name || form.state_employer_id_state || 'your state'}`} theme={theme}>
+        <div style={{ padding: '12px 14px', borderRadius: 10, backgroundColor: suiTone.bg, border: `1px solid ${suiTone.border}`, marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, color: suiTone.ink, fontSize: 13.5 }}>{suiStatus.headline}</div>
+          {suiStatus.detail && <div style={{ fontSize: 12.5, color: theme.textSecondary, marginTop: 4, lineHeight: 1.45 }}>{suiStatus.detail}</div>}
+        </div>
+
+        <details style={{ marginBottom: 14 }}>
+          <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 600, color: theme.accent }}>Where do I find my rate?</summary>
+          <div style={{ fontSize: 12.5, color: theme.textSecondary, lineHeight: 1.5, marginTop: 8, paddingLeft: 4 }}>
+            {suiState ? (
+              <>
+                <p style={{ margin: '0 0 6px' }}><b>{suiState.agency}</b> assigns every employer its own rate and sends it as the <b>{suiState.notice.name}</b>, {suiState.notice.when}. The number you want is <b>{suiState.notice.field}</b>. {suiState.cautions.map((c, i) => <span key={i}>{c} </span>)}</p>
+                <p style={{ margin: '0 0 6px' }}>Online: <a href={suiState.portal.url} target="_blank" rel="noreferrer" style={{ color: theme.accent }}>{suiState.portal.label}</a>. {suiState.facts}</p>
+                <p style={{ margin: '0 0 6px' }}>Rates run {suiState.rateRange[0]}%–{suiState.rateRange[1]}% in {thisYear}; the taxable wage base is {fmtMoney(suiWageBaseFor(suiState.code, thisYear))} per employee. {suiState.dueDates}</p>
+              </>
+            ) : (
+              <p style={{ margin: '0 0 6px' }}>Your state's unemployment agency assigns every employer its own rate and mails a rate notice each year — the number is on that notice, or in your state employer portal.</p>
+            )}
+            <p style={{ margin: '0 0 4px' }}><b>Switching from another payroll provider?</b> They have been filing with it:</p>
+            <ul style={{ margin: '0 0 6px', paddingLeft: 18 }}>
+              {PROVIDER_PATHS.map(pp => <li key={pp.id}><b>{pp.name}:</b> {pp.path}</li>)}
+            </ul>
+          </div>
+        </details>
+
         <Row two>
-          <Field label="DWS account number" help="Utah Department of Workforce Services sends this when you register as an employer.">
-            <input value={form.sui_account_number || ''} onChange={set('sui_account_number')} placeholder="C0123456-7" style={inputStyle} />
+          <Field label={`${suiState?.agencyShort || 'State unemployment'} account number`} help={suiState ? `On the notice and your registration letter. Format: ${suiState.accountFormat}.` : 'From your state registration letter or rate notice.'}>
+            <input value={form.sui_account_number || ''} onChange={set('sui_account_number')} placeholder={suiState?.accountFormat || ''} style={inputStyle} />
           </Field>
-          <Field label="Your assigned SUI rate (%)" help="DWS sends a rate-notice letter each January. New employers usually start at 1.20%.">
-            <input type="number" step="0.0001" value={form.sui_rate_pct ?? ''} onChange={set('sui_rate_pct')} placeholder="1.2000" style={inputStyle} />
+          <Field label="Assigned SUI rate (%)" help={suiState ? `As printed on the notice (${suiState.notice.field}). ${suiState.rateRange[0]}%–${suiState.rateRange[1]}%.` : 'As printed on your rate notice.'}>
+            <input type="number" step="0.0001" min="0" value={form.sui_rate_pct ?? ''} onChange={set('sui_rate_pct')} placeholder={suiState ? String(suiState.newEmployerRatePct) : ''} style={inputStyle} />
           </Field>
         </Row>
         <Row two>
-          <Field label="SUI wage base ($)" help="Utah 2026 = $50,700 (2025 was $48,900). Updates each January; leave blank to use the current Utah figure.">
-            <input type="number" value={form.sui_wage_base ?? ''} onChange={set('sui_wage_base')} placeholder="50700" style={inputStyle} />
+          <Field label="Rate year" help={`The notice says which year it is for. ${suiState ? `${suiState.name} rates take effect ${suiState.effectiveDay}.` : ''} Next year's rate can be entered early — payroll switches on its date.`}>
+            <select value={form.sui_rate_year || String(thisYear)} onChange={set('sui_rate_year')} style={inputStyle}>
+              {[thisYear - 1, thisYear, thisYear + 1].map(y => <option key={y} value={String(y)}>{y}</option>)}
+            </select>
+          </Field>
+          <Field label="Where did this rate come from?" help="Kept with the rate. A temporary estimate is flagged until it is replaced, and Form 33H waits for the assigned rate.">
+            <select value={form.sui_rate_source || ''} onChange={set('sui_rate_source')} style={inputStyle}>
+              <option value="">— Select —</option>
+              {Object.entries(SUI_SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+          </Field>
+        </Row>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 14px', minHeight: 40, borderRadius: 8, border: `1px solid ${theme.accent}`, color: theme.accent, fontSize: 13, fontWeight: 600, cursor: noticeBusy ? 'wait' : 'pointer', opacity: noticeBusy ? 0.6 : 1 }}>
+            <Upload size={15} /> {noticeBusy ? 'Reading…' : 'Upload the rate notice — JobScout reads it'}
+            <input type="file" accept="application/pdf,image/*" onChange={readNotice} disabled={noticeBusy} style={{ display: 'none' }} />
+          </label>
+          {suiState && suiStatus.level !== 'ok' && (
+            <button type="button" onClick={useEstimate} style={{ padding: '9px 14px', minHeight: 40, borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.text, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              I don't have it yet — use {suiState.name}'s new-employer rate ({suiState.newEmployerRatePct}%) for now
+            </button>
+          )}
+        </div>
+        <div style={helpStyle}>A photo of the letter or a screenshot of your previous provider's tax screen both work. Nothing is saved until you check what was read and click Save.</div>
+
+        {noticeRead && (
+          <div style={{ marginTop: 12, padding: 12, borderRadius: 10, backgroundColor: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.30)' }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: '#1d4ed8', marginBottom: 6 }}>Read from the {noticeRead.kind === 'provider_screen' ? 'provider screen' : 'notice'}{noticeRead.employer_name ? ` for ${noticeRead.employer_name}` : ''}:</div>
+            <div style={{ fontSize: 13, color: theme.text, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px' }}>
+              <span style={{ color: theme.textMuted }}>Assigned rate</span><b>{noticeRead.assigned_rate_pct != null ? `${noticeRead.assigned_rate_pct}%` : 'not found'}</b>
+              <span style={{ color: theme.textMuted }}>Account number</span><b>{noticeRead.account_number || 'not found'}</b>
+              <span style={{ color: theme.textMuted }}>Rate year</span><b>{noticeRead.effective_year || 'not found'}</b>
+              {noticeRead.notes && (<><span style={{ color: theme.textMuted }}>Note</span><span>{noticeRead.notes}</span></>)}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button type="button" onClick={acceptNoticeRead} disabled={noticeRead.assigned_rate_pct == null} style={{ padding: '8px 14px', minHeight: 40, borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: noticeRead.assigned_rate_pct == null ? 0.5 : 1 }}>Use these values</button>
+              <button type="button" onClick={() => setNoticeRead(null)} style={{ padding: '8px 14px', minHeight: 40, borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: 'transparent', color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Discard</button>
+            </div>
+          </div>
+        )}
+
+        <Row two>
+          <Field label="SUI wage base ($)" help={suiState ? `${suiState.name} ${thisYear} = ${fmtMoney(suiWageBaseFor(suiState.code, thisYear))}. Leave blank to use the state figure for each year.` : 'From your state; leave blank if unsure.'}>
+            <input type="number" value={form.sui_wage_base ?? ''} onChange={set('sui_wage_base')} placeholder={suiState ? String(suiWageBaseFor(suiState.code, thisYear)) : ''} style={inputStyle} />
           </Field>
           <div />
         </Row>
+
+        {suiNote && <div style={{ fontSize: 13, color: '#1d4ed8', marginTop: 4 }}>{suiNote}</div>}
+
+        {trueUp && (
+          <div style={{ marginTop: 8, padding: 12, borderRadius: 10, backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.30)' }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: '#15803d', marginBottom: 4 }}>
+              {trueUp.error ? 'Rate saved, but the true-up could not run' : trueUp.rows.length ? 'True-up booked' : 'True-up: nothing to book'}
+            </div>
+            <div style={{ fontSize: 12.5, color: theme.textSecondary, lineHeight: 1.5 }}>
+              {trueUp.error ? trueUp.error
+                : trueUp.rows.length
+                  ? <>{trueUp.rows.map(q => <div key={q.label}>{q.label}: wages {fmtMoney(q.taxable_wages)} → owes {fmtMoney(q.corrected)}, {fmtMoney(q.booked)} already booked, <b>{q.diff < 0 ? 'credit ' : ''}{fmtMoney(Math.abs(q.diff))}</b> {q.diff < 0 ? 'to take off your next payment' : 'added'}</div>)}<div style={{ marginTop: 4 }}>Each is a line in the Payroll Inbox. Paystubs are unchanged; if a quarter was already filed, settle the difference with the agency directly.</div></>
+                  : 'Every quarter since the effective date was already booked at this rate.'}
+            </div>
+          </div>
+        )}
+
+        {suiHistory.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: theme.textMuted, letterSpacing: '0.04em', marginBottom: 4 }}>RATES ON FILE</div>
+            {suiHistory.slice(0, 6).map(r => (
+              <div key={r.id} style={{ fontSize: 12.5, color: theme.textSecondary, padding: '3px 0', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <b style={{ color: theme.text, minWidth: 56 }}>{Number(r.rate_pct)}%</b>
+                <span>from {String(r.effective_date).slice(0, 10)}</span>
+                <span>· {SUI_SOURCES[r.source]?.label || r.source}</span>
+                {r.entered_by && <span>· {r.entered_by}</span>}
+                <span style={{ color: theme.textMuted }}>· entered {String(r.created_at).slice(0, 10)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>

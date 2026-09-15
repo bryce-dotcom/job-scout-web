@@ -419,6 +419,11 @@ verify_jwt = true
 [functions.estimate-followup]
 verify_jwt = true
 
+# read-sui-notice reads a tax document for an admin and charges the AI to the
+# caller's company; it must never answer an unsigned request.
+[functions.read-sui-notice]
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

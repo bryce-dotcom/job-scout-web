@@ -11,7 +11,7 @@ import { useStore } from '../lib/store'
 import { supabase } from '../lib/supabase'
 import { groupRemittance, remittanceTotal, buildDepositWorksheet } from '../lib/payrollRemittance'
 
-const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmt = (n) => ((Number(n) || 0) < 0 ? '−' : '') + '$' + Math.abs(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtDate = (d) => {
   if (!d) return '—'
   const [y, m, day] = String(d).slice(0, 10).split('-')
@@ -151,14 +151,18 @@ export default function PayrollRemittancePanel({ liabilities = [], theme, onChan
           {g.buckets.map((b) => (
             <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: `1px solid ${t.border || '#eee'}` }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: ink }}>{b.label}</div>
-                <div style={{ fontSize: 11.5, color: sub }}>{b.method} · due {fmtDate(b.dueDate)}{b.agency ? ` · ${b.agency}` : ''}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: ink }}>{b.label}{b.credit ? ' — credit' : ''}</div>
+                <div style={{ fontSize: 11.5, color: sub }}>
+                  {b.credit
+                    ? `Overpaid earlier (SUI true-up) — deduct this from your next ${b.agency || 'agency'} payment; do not send it`
+                    : `${b.method} · due ${fmtDate(b.dueDate)}${b.agency ? ` · ${b.agency}` : ''}`}
+                </div>
               </div>
               <div style={{ fontSize: 15, fontWeight: 700, color: ink, fontVariantNumeric: 'tabular-nums', minWidth: 90, textAlign: 'right' }}>{fmt(b.amount)}</div>
               <button onClick={() => markPaid(b)} disabled={busy === b.liabilityIds.join(',')}
                 style={{ background: 'transparent', color: t.accent || '#55613c', border: `1px solid ${t.accent || '#55613c'}`,
                   borderRadius: 8, padding: '7px 12px', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', minHeight: 40, whiteSpace: 'nowrap' }}>
-                {busy === b.liabilityIds.join(',') ? '…' : 'Mark remitted'}
+                {busy === b.liabilityIds.join(',') ? '…' : (b.credit ? 'Mark credit taken' : 'Mark remitted')}
               </button>
             </div>
           ))}

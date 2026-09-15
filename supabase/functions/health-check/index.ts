@@ -179,6 +179,49 @@ const CONDITIONS: Condition[] = [
     fix: 'Update the brackets and wage bases in src/lib/payrollTax.js, bump TAX_YEAR, and set the payroll_tax_year setting to match.',
   },
   {
+    id: 'sui_rate_current',
+    label: 'State unemployment (SUI) rate on file',
+    // The state assigns each employer its own rate and mails it every
+    // December; nobody can look it up. JobScout runs on a flagged estimate
+    // until it arrives (lib/suiRate), but a missing, estimated or last-year
+    // rate is employer tax quietly computed wrong — so it is named here,
+    // per tenant that actually runs payroll, until someone enters it.
+    problem: async (sb) => {
+      const since = new Date(Date.now() - 120 * 86_400_000).toISOString().slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
+      const thisYear = Number(today.slice(0, 4));
+      const { data: stubs, error: e1 } = await sb.from('paystubs').select('company_id').gte('pay_date', since).limit(5000);
+      if (e1) throw new Error(`paystubs: ${e1.message}`);
+      const ids = [...new Set((stubs ?? []).map((r: any) => r.company_id))].filter((x) => x != null);
+      if (ids.length === 0) return null;
+      const [{ data: cos, error: e2 }, { data: rates, error: e3 }] = await Promise.all([
+        sb.from('companies').select('id, company_name, sui_rate_pct, sui_rate_source, sui_rate_effective_date').in('id', ids),
+        sb.from('company_sui_rates').select('company_id, rate_pct, effective_date, source').in('company_id', ids)
+          .lte('effective_date', today).order('effective_date', { ascending: false }).order('id', { ascending: false }),
+      ]);
+      if (e2) throw new Error(`companies: ${e2.message}`);
+      if (e3) throw new Error(`company_sui_rates: ${e3.message}`);
+      const problems: string[] = [];
+      for (const c of cos ?? []) {
+        const hist = (rates ?? []).find((r: any) => r.company_id === c.id); // newest in force, per the ordering
+        const inForce = hist
+          ? { rate: Number(hist.rate_pct), source: hist.source, effective: String(hist.effective_date).slice(0, 10) }
+          : c.sui_rate_pct == null ? null
+          : { rate: Number(c.sui_rate_pct), source: c.sui_rate_source, effective: c.sui_rate_effective_date ? String(c.sui_rate_effective_date).slice(0, 10) : null };
+        const who = `${c.company_name} (company ${c.id})`;
+        if (!inForce) {
+          problems.push(`${who} has no state unemployment (SUI) rate on file — employer SUI is accruing at $0.`);
+        } else if (inForce.source === 'estimate') {
+          problems.push(`${who} is running payroll on a temporary SUI estimate of ${inForce.rate}%${inForce.effective ? ` since ${inForce.effective}` : ''}; Form 33H is blocked until the assigned rate is entered.`);
+        } else if (inForce.effective && Number(inForce.effective.slice(0, 4)) < thisYear) {
+          problems.push(`${who} SUI rate on file (${inForce.rate}%) is ${inForce.effective.slice(0, 4)}'s; the state mailed the ${thisYear} notice in December.`);
+        }
+      }
+      return problems.length ? problems.join('\n    ') : null;
+    },
+    fix: 'Settings → Payroll Tax → State Unemployment: enter the assigned rate from the DWS Contribution Rate Notice (box J), copy it from the Utah tax setup in Gusto, or upload the notice and let JobScout read it. The quarter is trued-up automatically.',
+  },
+  {
     id: 'trials_ending_soon',
     label: 'Trials with time left on them',
     // The point is to act BEFORE someone is locked out. Finding out afterwards

@@ -61,9 +61,14 @@ const earliest = (dates) => dates.filter(Boolean).sort()[0] || null
 
 // Group a run's liability rows into the payments an employer must remit.
 // Returns [{ id, label, detail, method, where, agency, amount, dueDate,
-//            liabilityIds, paid, paidAt, breakdown:[{kind, amount}] }]
-// — skipping buckets with a zero total. `liabilities` = payroll_tax_liabilities
+//            liabilityIds, paid, paidAt, credit, breakdown:[{kind, amount}] }]
+// — skipping buckets that net to zero. `liabilities` = payroll_tax_liabilities
 // rows for one payroll_run (or any set you want summarized together).
+//
+// A bucket can be NEGATIVE: an SUI true-up (lib/suiTrueUp) books a credit
+// when payroll ran on an estimate higher than the assigned rate. It is
+// kept, flagged `credit`, and worded as money to take off the next
+// payment rather than dropped as "nothing to remit".
 export function groupRemittance(liabilities = []) {
   const rows = Array.isArray(liabilities) ? liabilities : []
   const out = []
@@ -71,7 +76,7 @@ export function groupRemittance(liabilities = []) {
     const mine = rows.filter((r) => b.kinds.includes(r.kind))
     if (!mine.length) continue
     const amount = round2(mine.reduce((s, r) => s + Number(r.amount_total || 0), 0))
-    if (amount <= 0) continue
+    if (amount === 0) continue
     out.push({
       id: b.id,
       label: b.label,
@@ -84,6 +89,7 @@ export function groupRemittance(liabilities = []) {
       liabilityIds: mine.map((r) => r.id),
       paid: mine.every((r) => !!r.paid_at),
       paidAt: mine.map((r) => r.paid_at).filter(Boolean).sort().slice(-1)[0] || null,
+      credit: amount < 0,
       breakdown: mine
         .slice()
         .sort((a, c) => b.kinds.indexOf(a.kind) - b.kinds.indexOf(c.kind))
@@ -109,7 +115,8 @@ const KIND_LABEL = {
   local: 'Local tax',
 }
 
-const fmtMoney = (n) => '$' + round2(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// ASCII hyphen on purpose: jsPDF's built-in Helvetica has no U+2212.
+const fmtMoney = (n) => (round2(n) < 0 ? '-' : '') + '$' + Math.abs(round2(n)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtDate = (d) => {
   if (!d) return '—'
   // d is 'YYYY-MM-DD' (or ISO) — format without timezone drift.
@@ -159,11 +166,11 @@ export function buildDepositWorksheet(doc, { company = {}, run = {}, buckets = [
   y += 8; rule(y); y += 16
 
   for (const b of buckets) {
-    text(b.label, M, y, { size: 10.5, bold: true })
+    text(b.credit ? `${b.label} — CREDIT` : b.label, M, y, { size: 10.5, bold: true })
     text(fmtDate(b.dueDate), cDue, y, { size: 10 })
     text(fmtMoney(b.amount), cAmt, y, { size: 11, bold: true, align: 'right' })
     y += 13
-    text(`${b.method} · ${b.where}`, M, y, { size: 8.5, color: sub })
+    text(b.credit ? `Overpaid earlier — deduct this from your next payment to ${b.agency || 'the agency'}; do not send it.` : `${b.method} · ${b.where}`, M, y, { size: 8.5, color: sub })
     y += 12
     // breakdown line
     const parts = b.breakdown.map((k) => `${KIND_LABEL[k.kind] || k.kind} ${fmtMoney(k.amount)}`)

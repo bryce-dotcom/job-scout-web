@@ -17,6 +17,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import PayrollRemittancePanel from '../components/PayrollRemittancePanel'
+import { suiRateStatus } from '../lib/suiRate'
 import {
   Inbox, AlertTriangle, CheckCircle2, FileText, Clock, UserPlus,
   Settings as SettingsIcon, ChevronRight, Calendar, Building2,
@@ -62,6 +63,7 @@ export default function PayrollInbox() {
   const [filings, setFilings]         = useState([])
   const [newHires, setNewHires]       = useState([])
   const [employees, setEmployees]     = useState([])
+  const [suiHistory, setSuiHistory]   = useState([]) // company_sui_rates — the rate in force is read from here
   // 1099 contractor YTD totals (this calendar year). Drives the
   // $600-threshold tracker + the year-end 1099-NEC queue.
   const [contractorYTD, setContractorYTD] = useState([])  // [{ id, name, ytd, w9_signed_at }]
@@ -139,7 +141,7 @@ export default function PayrollInbox() {
     const today = new Date()
     const sixtyDaysAgo = new Date(today.getTime() - 60 * 86400000).toISOString().slice(0, 10)
 
-    const [{ data: liab }, { data: fil }, { data: emps }] = await Promise.all([
+    const [{ data: liab }, { data: fil }, { data: emps }, { data: suiRows }] = await Promise.all([
       supabase
         .from('payroll_tax_liabilities')
         .select('*')
@@ -158,11 +160,17 @@ export default function PayrollInbox() {
         .select('id, name, email, active, tax_classification, hire_date, new_hire_reported_at, w4_filing_status, w9_signed_at, ssn_last4, w9_ein_last4, dd_account_last4')
         .eq('company_id', companyId)
         .order('id'),
+      supabase
+        .from('company_sui_rates')
+        .select('id, rate_pct, effective_date, source')
+        .eq('company_id', companyId)
+        .order('effective_date', { ascending: false }),
     ])
 
     setLiabilities(liab || [])
     setFilings(fil || [])
     setEmployees(emps || [])
+    setSuiHistory(suiRows || [])
 
     // Per-contractor YTD totals (calendar year). Source = paystubs.
     // For now we count ALL gross_pay on a 1099's paystubs this year.
@@ -219,8 +227,11 @@ export default function PayrollInbox() {
     if (!company.federal_deposit_schedule) {
       gaps.push({ key: 'fed_sched', text: 'Set how often you deposit federal payroll taxes (the IRS told you in a letter).', cta: 'Open Tax Settings', href: '/settings#tax' })
     }
-    if (company.sui_rate_pct == null) {
-      gaps.push({ key: 'sui_rate', text: 'Add your state unemployment (SUI) rate. Utah DWS sends this in a notice each year.', cta: 'Open Tax Settings', href: '/settings#tax' })
+    // SUI: missing, a temporary estimate, or last year's — lib/suiRate says
+    // which, in the words the Settings card uses, so the two agree.
+    const sui = suiRateStatus(company, new Date(), suiHistory)
+    if (sui.level !== 'ok') {
+      gaps.push({ key: 'sui_rate', text: sui.headline + ' ' + sui.detail, cta: sui.action || 'Open Tax Settings', href: '/settings#tax' })
     }
     // Employees missing W-4
     const missingW4 = (employees || []).filter(e => e.active && !e.w4_filing_status)
@@ -231,7 +242,7 @@ export default function PayrollInbox() {
       })
     }
     return gaps
-  }, [company, employees])
+  }, [company, employees, suiHistory])
 
   // ---------- Categorize liabilities ----------
   const today = new Date()
@@ -917,6 +928,19 @@ function Chip({ tone, theme, icon: Icon, big, label }) {
 }
 
 function LiabilityRow({ l, theme, navigate, todayStr, compact }) {
+  // An SUI true-up can be negative: payroll ran on an estimate above the
+  // assigned rate, so this quarter is money to take OFF the next payment.
+  if (Number(l.amount_total) < 0) {
+    return (
+      <Row
+        tone={TONE.green}
+        theme={theme}
+        icon={Building2}
+        title={`Credit of ${fmtMoney(Math.abs(Number(l.amount_total)))} with ${l.agency} · ${taxKindLabel(l.kind)} true-up`}
+        subtitle={`Deduct it from your next ${l.agency} payment (quarter ending ${fmtDate(l.period_end)}). If that quarter was already filed, take the refund from the agency instead.`}
+      />
+    )
+  }
   const isOverdue = !l.paid_at && l.due_date < todayStr
   const days = daysBetween(new Date(), l.due_date)
   const tone = isOverdue
