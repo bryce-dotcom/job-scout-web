@@ -30,6 +30,23 @@ import {
 const PALETTE = ['#5a6349', '#2457a8', '#b45309', '#7c3aed', '#0f766e', '#b91c1c', '#0369a1', '#a16207']
 const US_CENTER = [39.5, -98.35]
 
+// Last map position per device (and company), so reopening Liahona lands
+// where the rep left it instead of zooming out to fit every pin in the
+// region. Kept in localStorage; a private window simply falls back to fit.
+const viewKey = companyId => `liahona.view.${companyId || "x"}`
+const loadView = companyId => {
+  try {
+    const v = JSON.parse(localStorage.getItem(viewKey(companyId)) || "null")
+    return v && Number.isFinite(v.lat) && Number.isFinite(v.lng) && Number.isFinite(v.zoom) ? v : null
+  } catch { return null }
+}
+const saveView = (companyId, map) => {
+  try {
+    const c = map.getCenter()
+    localStorage.setItem(viewKey(companyId), JSON.stringify({ lat: +c.lat.toFixed(5), lng: +c.lng.toFixed(5), zoom: map.getZoom() }))
+  } catch { /* storage unavailable */ }
+}
+
 let leafletPromise = null
 function ensureLeaflet() {
   if (typeof window !== 'undefined' && window.L) return Promise.resolve(window.L)
@@ -162,13 +179,16 @@ export default function LiahonaMap({
         draw: L.layerGroup().addTo(map),
         search: L.layerGroup().addTo(map)
       }
-      map.on('moveend zoomend', () => setMoveTick(x => x + 1))
+      map.on('moveend zoomend', () => { setMoveTick(x => x + 1); saveView(companyId, map) })
       map.on('click', e => handleMapClick(e.latlng))
       map.on('dblclick', () => { if (modeRef.current === 'draw') finishDraw() })
       mapRef.current = map
 
       const pts = leads.filter(hasCoords)
-      if (pts.length) {
+      const saved = loadView(companyId)
+      if (saved) {
+        map.setView([saved.lat, saved.lng], saved.zoom)
+      } else if (pts.length) {
         map.fitBounds(pts.map(l => [Number(l.latitude), Number(l.longitude)]), { padding: [30, 30], maxZoom: 15 })
       } else if (navigator.geolocation) {
         map.setView(US_CENTER, 4)
