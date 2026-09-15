@@ -108,6 +108,7 @@ function check(r, exp) {
   if (exp.no_tools && r.tools.length) fails.push(`must not call any tool; called [${r.tools.join(', ')}]`)
   if (exp.proposal === 'create' && r.proposal?.preview?.kind !== 'create') fails.push('expected a create card; got ' + (r.proposal ? r.proposal.preview?.kind : 'none'))
   if (exp.proposal === 'none' && r.proposal) fails.push('expected no card; got ' + r.proposal.preview?.kind)
+  if (exp.proposal_kind && r.proposal?.preview?.kind !== exp.proposal_kind) fails.push(`expected a ${exp.proposal_kind} card; got ` + (r.proposal ? r.proposal.preview?.kind : 'none'))
   if (exp.proposal_label && r.proposal?.preview?.label !== exp.proposal_label) fails.push(`expected a ${exp.proposal_label} card; got ${r.proposal?.preview?.label}`)
   for (const re of exp.text_match || []) if (!re.test(r.text)) fails.push(`reply should match ${re}`)
   for (const re of exp.text_not_match || []) if (re.test(r.text)) fails.push(`reply must not match ${re}`)
@@ -183,6 +184,22 @@ const CASES = [
   { id: 'diagnose.wrong.job.not.silently.matched', as: 'tech',
     turns: ['Log this on the Riverside Apartments job: Lennox ML180 furnace, symptom fires then locks out after three tries, fix cleaned flame sensor.'],
     expect: { proposal: 'none' } },
+
+  // — the record rail: shifts —
+  { id: 'shift.tech.closes.own.then.reopen', as: 'tech',
+    turns: ['I forgot to clock out yesterday — clock me out at 5:30 PM.'],
+    expect: { proposal_kind: 'record', text_match: [/5:30/] },
+    after: async (r, ctx) => {
+      const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.ok) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+      ctx.pendingRollback = r.proposal.proposal.id
+      const id = r.proposal.proposal.payload.entity_id
+      const [row] = await rest(`time_clock?select=clock_out,total_hours,adjusted_by,adjustment_reason&id=eq.${id}`)
+      if (!row.clock_out || !row.total_hours || String(row.adjusted_by) !== String(DEMO.tech.employeeId) || !/Arnie/.test(row.adjustment_reason || '')) throw new Error('shift not closed with the adjustment trail: ' + JSON.stringify(row))
+      ctx.verifyAfterRollback = async () => { const [x] = await rest(`time_clock?select=clock_out,total_hours,adjusted_by&id=eq.${id}`); if (x.clock_out || x.total_hours || x.adjusted_by) throw new Error('shift not reopened: ' + JSON.stringify(x)) }
+    } },
+  { id: 'shift.tech.cannot.close.someone.elses', as: 'tech',
+    turns: ["Close Mike Sullivan's open shift at 4pm yesterday."],
+    expect: { proposal: 'none', text_match: [/admin/i] } },
 
   // — the create rail —
   { id: 'create.lead.duplicate.refused', as: 'owner', turns: ['Add a new lead for Riversde Apartments, contact Jordan Lee.'],
@@ -268,7 +285,10 @@ async function seed() {
     { company_id: C, job_id: DEMO.jobA, name: 'Eval — unstaffed section', scheduled_date: today, assigned_to: null, status: 'Not Started' },
     { company_id: C, job_id: DEMO.jobB, name: 'Eval — panel swap', scheduled_date: today, assigned_to: E, status: 'Not Started' },
   ])
-  await add('time_clock', [{ company_id: C, employee_id: E, clock_in: new Date(Date.now() - 20 * 3600000).toISOString(), clock_out: null, job_id: DEMO.jobB }])
+  // An open shift from yesterday 7:00 AM in the tenant's zone — deterministic,
+  // so "clock me out at 5:30 PM yesterday" is always after the clock-in.
+  const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: DEMO.tz })
+  await add('time_clock', [{ company_id: C, employee_id: E, clock_in: new Date(`${yesterday}T13:00:00Z`).toISOString(), clock_out: null, job_id: DEMO.jobB }])
 }
 async function unseed() {
   for (const [t, id] of seeded.reverse()) { try { await rest(`${t}?id=eq.${id}`, { method: 'DELETE' }) } catch (e) { console.error('  cleanup failed:', t, id, e.message) } }

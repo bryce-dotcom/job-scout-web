@@ -21,15 +21,7 @@ import type { Caller } from './auth.ts'
 import { readRecordList } from './arnieRest.ts'
 import { invoiceCustomerTotal, isSettledStatus } from './money.ts'
 import { moneyAccess, myPay } from './arnieMoney.ts'
-
-export function tzOffsetMinutes(tz: string, at: Date): number {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(at)
-    const g = (t: string) => Number(parts.find((p) => p.type === t)?.value)
-    const asUtc = Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute'), g('second'))
-    return Math.round((asUtc - at.getTime()) / 60000)
-  } catch { return 0 }
-}
+import { tzOffsetMinutes } from './arnieTime.ts'
 
 /** UTC instants for the start and end of a calendar day in a timezone. */
 export function dayBounds(date: string, tz: string) {

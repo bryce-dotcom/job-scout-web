@@ -21,6 +21,8 @@
 
 import { readRecordList } from './arnieRest.ts'
 import type { Rest } from './arnieConfig.ts'
+import type { Caller } from './auth.ts'
+import { applyShiftClose, proposeShiftClose, rollbackShiftClose } from './arnieShift.ts'
 
 export interface RecordTarget {
   label: string          // "job status" — used in copy
@@ -46,6 +48,17 @@ export interface RecordTarget {
    * getting written. Only ever relaxes to the job they are actually on.
    */
   allowOnActiveJob?: boolean
+  /**
+   * A target that is not "find a row by words, set one column". The shift
+   * close finds the row by WHOSE open shift it is and writes hours and an
+   * adjustment trail alongside clock_out. These replace the generic path;
+   * the card, the audit and the approve/rollback lifecycle stay the same.
+   */
+  proposeCustom?: (r: Rest, caller: Caller, input: { record_query?: string; record_id?: number; value: string; timezone?: string }) => Promise<any>
+  applyCustom?: (r: Rest, companyId: number, prop: any) => Promise<{ ok: true; before: any; after: any } | { ok: false; error: string; stale?: boolean }>
+  rollbackCustom?: (r: Rest, companyId: number, prop: any) => Promise<{ ok: true; restored: any } | { ok: false; error: string }>
+  /** The employee a row belongs to — a person may always change their own. */
+  ownerOf?: (r: Rest, companyId: number, rowId: number) => Promise<number | null>
 }
 
 // Title AND customer. "Parking Lot Wall Packs" alone told a tech nothing
@@ -85,6 +98,17 @@ export const RECORD_TARGETS: Record<string, RecordTarget> = {
   lead_note: {
     label: 'lead note', table: 'leads', field: 'notes', mode: 'append', minLevel: 2,
     searchCols: LEAD_SEARCH, selectCols: LEAD_SELECT, labelOf: leadLabel,
+  },
+  // "Clock me out at 5:30 yesterday." Own shift: anyone. Someone else's:
+  // admin, the Payroll page's rule. See arnieShift.ts.
+  shift_close: {
+    label: 'shift clock-out', table: 'time_clock', field: 'clock_out', mode: 'set', minLevel: 3,
+    searchCols: [], selectCols: 'id,employee_id,clock_in,clock_out', labelOf: (r) => `time entry #${r.id}`,
+    proposeCustom: proposeShiftClose, applyCustom: applyShiftClose, rollbackCustom: rollbackShiftClose,
+    ownerOf: async (r, companyId, rowId) => {
+      const rows = await readRecordList(r, `time_clock?select=employee_id&company_id=eq.${companyId}&id=eq.${rowId}&limit=1`)
+      return rows[0]?.employee_id ?? null
+    },
   },
 }
 

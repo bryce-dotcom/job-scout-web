@@ -21,7 +21,7 @@ import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
 import { readRecordList, patchRow } from './arnieRest.ts'
 import { RECORD_TARGETS, resolveEntity } from './arnieRecords.ts'
-import { tzOffsetMinutes } from './arnieBrief.ts'
+import { localToUtc } from './arnieTime.ts'
 import type { Prepared } from './arnieCreate.ts'
 
 const H = (r: Rest) => ({ apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' })
@@ -36,14 +36,6 @@ const del = async (r: Rest, table: string, companyId: number, id: unknown) =>
 const LEAD_COLS = 'id,lead_id,customer_name,business_name,service_type,address,status,appointment_id,appointment_time,salesperson_id,salesperson_ids,lead_owner_id,setter_owner_id,lead_source_employee_id,customer_id'
 const leadName = (l: any) => l.business_name || l.customer_name || `lead #${l.id}`
 
-/** "2026-09-16 14:00" or "2026-09-16T14:00" in `tz` → UTC instant. */
-export function localToUtc(when: string, tz: string): Date | null {
-  const m = String(when).trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{1,2}):(\d{2})/)
-  if (!m) return null
-  const guess = new Date(`${m[1]}T${m[2].padStart(2, '0')}:${m[3]}:00Z`)
-  if (isNaN(guess.getTime())) return null
-  return new Date(guess.getTime() - tzOffsetMinutes(tz, guess) * 60000)
-}
 const fmt = (d: Date, tz: string) => {
   try { return d.toLocaleString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return d.toISOString() }
 }
