@@ -238,6 +238,9 @@ const CASES = [
       // Clocked in on one job since this morning; naming another is a switch — the open punch
       // closes with Field Scout's stamp, the new one opens a second later, and rollback undoes both.
       const OWNER = 133, FROM = 23512, TO = 23516
+      // The demo tenant is shared; someone may be clocked in as the owner right now. Park it, restore after.
+      const parked = await rest(`time_clock?select=id,clock_in&company_id=eq.${DEMO.company}&employee_id=eq.${OWNER}&clock_out=is.null`)
+      for (const s of parked) await rest(`time_clock?id=eq.${s.id}`, { method: 'PATCH', body: JSON.stringify({ clock_out: new Date().toISOString() }) })
       const [cur] = await rest('time_clock', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, employee_id: OWNER, job_id: FROM, clock_in: new Date(Date.now() - 2 * 36e5).toISOString(), notes: 'eval' }) })
       const [jb] = await rest(`jobs?select=status&id=eq.${TO}`)
       try {
@@ -260,12 +263,47 @@ const CASES = [
         await rest(`time_clock?company_id=eq.${DEMO.company}&employee_id=eq.${OWNER}&clock_out=is.null`, { method: 'DELETE' })
         await rest(`time_clock?id=eq.${cur.id}`, { method: 'DELETE' })
         await rest(`jobs?id=eq.${TO}`, { method: 'PATCH', body: JSON.stringify({ status: jb.status }) })
+        for (const s of parked) await rest(`time_clock?id=eq.${s.id}`, { method: 'PATCH', body: JSON.stringify({ clock_out: null, total_hours: null }) })
       }
     },
     expect: { proposal_kind: 'record', proposal_label: 'shift clock-in', text_match: [/switch/i, /approve/i] } },
   { id: 'shift.tech.cannot.clock.in.someone.else', as: 'tech',
     turns: ['Clock Mike Sullivan in on the Westside Auto Wash job.'],
     expect: { proposal: 'none', text_match: [/Mike/, /own|themselves|Field Scout|Payroll|only you/i] } },
+
+  // — recording a payment: the page's write, the one status rule, the receipt; refusals over guesses —
+  { id: 'payment.owner.records.check.status.moves.then.rollback', as: 'owner',
+    run: async (ctx) => {
+      // Own customer with the demo inbox as its email, so the receipt lands somewhere we own.
+      const [cust] = await rest('customers', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, name: 'Ben Rowe', business_name: 'Halifax Flooring', email: DEMO.owner.email }) })
+      const [inv] = await rest('invoices', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, invoice_id: 'INV-EVAL-HALIFAX', customer_id: cust.id, amount: 3200, payment_status: 'Pending', invoice_date: today }) })
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Halifax Flooring paid $1,000 by check, check number 4471.' }])
+        if (r.proposal?.preview?.label === 'payment') {
+          const pv = r.proposal.preview
+          const bal = (pv.fields || []).find((f) => f.label === 'Balance')?.value || ''
+          if (!/3,200\.00 → \$2,200\.00/.test(bal) || !/Partially Paid/.test(bal)) throw new Error('card balance line wrong: ' + bal)
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const [p] = await rest(`payments?select=amount,method,status,source,notes,invoice_id&id=eq.${ap.body.created_id}`)
+          const [i] = await rest(`invoices?select=payment_status&id=eq.${inv.id}`)
+          if (Number(p.amount) !== 1000 || p.method !== 'Check' || p.source !== 'arnie' || !/4471/.test(p.notes || '') || i.payment_status !== 'Partially Paid') throw new Error('payment not recorded like the page: ' + JSON.stringify({ p, i }))
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+          const gone = await rest(`payments?select=id&id=eq.${ap.body.created_id}`); const [i2] = await rest(`invoices?select=payment_status&id=eq.${inv.id}`)
+          if (gone.length || i2.payment_status !== 'Pending') throw new Error('rollback left the payment or the status: ' + JSON.stringify({ gone, i2 }))
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally {
+        await rest(`payments?invoice_id=eq.${inv.id}`, { method: 'DELETE' }); await rest(`invoices?id=eq.${inv.id}`, { method: 'DELETE' }); await rest(`customers?id=eq.${cust.id}`, { method: 'DELETE' })
+      }
+    },
+    expect: { proposal: 'create', proposal_label: 'payment', text_match: [/1,000/, /approve/i, /receipt/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) (recorded|marked|applied)\b/i] } },
+  { id: 'payment.owner.overpay.refused.not.shaved', as: 'owner',
+    turns: ['Alpine Cold Storage paid $2,000 in cash today.'],
+    expect: { proposal: 'none', text_match: [/1,650/, /overpay|more than|only .*left|balance/i] } },
+  { id: 'payment.tech.refused', as: 'tech',
+    turns: ['Highlands Brewery just paid their $6,300 invoice by check — record it.'],
+    expect: { proposal: 'none', text_match: [/admin/i] } },
 
   // — merging a duplicate lead: everything moves, pay is not decided, rollback puts it back —
   { id: 'merge.owner.moves.children.says.both.fees.then.rollback', as: 'owner',

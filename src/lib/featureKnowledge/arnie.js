@@ -78,7 +78,7 @@ export default {
       "The general assistant in JobScout. Arnie reads the company's live data (jobs, leads, quotes, invoices, inventory, products, customers, appointments, time clock, pay, payments, purchase orders) and answers in plain English. He also makes changes — but only as a drafted card the person approves, and everything except a sent message can be rolled back.",
 
     howItWorks:
-      "One edge function (arnie-chat) with the identity taken from the login token, never from the request. Read tools are role-gated: own pay for everyone, everyone's pay for HR, payments and revenue for owners, purchase orders for admins. Four write rails share one lifecycle — propose → approve → apply → rollback — through arnie_proposals and arnie-config: (1) admin settings (business units, lead sources, service types, upsells); (2) one field on one record (job/lead status, a note, a start date, closing an open shift, merging a duplicate lead); (3) the same field across many products; (4) creating something new — a lead (duplicate-checked against similar_leads()), an appointment (with the setter fee and every side effect the Lead Setter page has), a Draft quote from the price book, a diagnosis on a job, a bug/feature ticket, or a follow-up on a quiet quote sent in the rep's voice. Apply re-reads the record and refuses if it changed since the draft. A daily brief (query_daily_brief) is also pushed by email or SMS on a Vercel cron (arnie-brief-push) per subscription. Field mode switches on when the person is clocked in. Vision reads attached photos, bills and screenshots. Diagnose answers troubleshooting in any trade from general knowledge.",
+      "One edge function (arnie-chat) with the identity taken from the login token, never from the request. Read tools are role-gated: own pay for everyone, everyone's pay for HR, payments and revenue for owners, purchase orders for admins. Four write rails share one lifecycle — propose → approve → apply → rollback — through arnie_proposals and arnie-config: (1) admin settings (business units, lead sources, service types, upsells); (2) one field on one record (job/lead status, a note, a start date, clocking in or switching jobs, closing an open shift, merging a duplicate lead); (3) the same field across many products; (4) creating something new — a lead (duplicate-checked against similar_leads()), an appointment (with the setter fee and every side effect the Lead Setter page has), a Draft quote from the price book, a diagnosis on a job, a bug/feature ticket, a follow-up on a quiet quote sent in the rep's voice, or a payment on an invoice (admin — the invoice page's write, status from the one rule, receipt sent). Apply re-reads the record and refuses if it changed since the draft. A daily brief (query_daily_brief) is also pushed by email or SMS on a Vercel cron (arnie-brief-push) per subscription. Field mode switches on when the person is clocked in. Vision reads attached photos, bills and screenshots. Diagnose answers troubleshooting in any trade from general knowledge.",
 
     examples: [
       '"How many highbays do we have in stock?" → the real count, fuzzy-matched across product names',
@@ -88,6 +88,7 @@ export default {
       '"Clock me out at 5:30 yesterday" → hours worked out, entry marked adjusted',
       '"Merge the Haliflax lead into Halifax Flooring" → everything moves, both setter fees stay, copy removed',
       '"What did I earn last week?" → your own pay; a tech asking about someone else\'s is told who can see it',
+      '"Halifax paid $1,000 by check" → a card: balance $3,200 → $2,200, Pending → Partially Paid, receipt to the address on file. Record.',
     ],
 
     gotchas: [
@@ -118,7 +119,7 @@ export default {
       },
       {
         q: 'Can he create invoices or purchase orders?',
-        a: 'Not yet. He can read both; creating them stays on the Invoices and PO pages for now.',
+        a: 'Not yet. He can read both, and he can record a payment that arrived on an invoice (admin) — the status updates and the receipt goes out, the same as the invoice page. Creating an invoice or a PO stays on those pages for now.',
       },
     ],
 

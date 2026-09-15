@@ -22,6 +22,7 @@ import { RECORD_TARGETS, activeJobId, resolveEntity } from './arnieRecords.ts'
 import { applyAppointment, prepareAppointment, rollbackAppointment } from './arnieAppointment.ts'
 import { applyQuote, prepareQuote, rollbackQuote } from './arnieQuote.ts'
 import { applyFollowup, prepareFollowup, rollbackFollowup } from './arnieFollowup.ts'
+import { applyPayment, preparePayment, rollbackPayment } from './arniePayment.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -217,6 +218,28 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     prepare: prepareFollowup,
     applyCustom: applyFollowup,
     rollbackCustom: rollbackFollowup,
+  },
+
+  // "Halifax paid $3,200 by check." The Invoices page's Record Payment, by
+  // voice: the row, the status from the one rule, the receipt. Admin —
+  // money in is the owner's ledger. See arniePayment.ts.
+  payment: {
+    label: 'payment',
+    table: 'payments',
+    minLevel: 3,
+    verb: 'Record',
+    done: 'Recorded. The invoice status is updated and the receipt, if there was an address, is on its way.',
+    fields: {
+      invoice:   { column: null, label: 'Invoice',   required: true, max: 160 },
+      amount:    { column: null, label: 'Amount',    required: true, max: 20 },
+      method:    { column: null, label: 'Method',    required: true, max: 40 },
+      date:      { column: null, label: 'Date',      max: 10 },
+      reference: { column: null, label: 'Reference', max: 140 },
+    },
+    labelOf: (f) => `Payment on ${f.invoice}`.slice(0, 120),
+    prepare: preparePayment,
+    applyCustom: applyPayment,
+    rollbackCustom: rollbackPayment,
   },
 }
 
