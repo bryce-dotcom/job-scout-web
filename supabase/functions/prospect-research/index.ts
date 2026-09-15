@@ -174,6 +174,7 @@ serve(async (req) => {
 CRITICAL OUTPUT FORMAT: After you finish researching, return your final answer as a SINGLE JSON array — no markdown, no code fences, no preamble. Each element looks like:
 {
   "company_name": "Acme Manufacturing",
+  "address": "street address if you can confirm one (number + street), else \"\"",
   "city": "Salt Lake City",
   "state": "UT",
   "industry": "manufacturing",
@@ -372,6 +373,86 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
       });
     }
 
+    // ── ACTION: research_address ───────────────────────────────────
+    // Liahona: the rep tapped a spot on the map. What is at this address, how
+    // do we reach them, and what is the property? Cached per address for 30
+    // days so re-taps are free; counts as one enrichment otherwise.
+    if (action === 'research_address') {
+      const { address, lat, lng } = body;
+      if (!address?.trim()) return json({ error: 'address required' }, 400);
+      const norm = String(address).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      let ah = 0;
+      for (let i = 0; i < norm.length; i++) { ah = ((ah << 5) - ah) + norm.charCodeAt(i); ah |= 0; }
+      const addrId = `addr-${Math.abs(ah).toString(36)}`;
+
+      const { data: cachedAddr } = await supabase
+        .from('prospect_enrichments')
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('external_prospect_id', addrId)
+        .maybeSingle();
+      const fresh = cachedAddr?.payload?.research && (Date.now() - new Date(cachedAddr.revealed_at).getTime()) < 30 * 86400e3;
+      if (fresh) {
+        return json({ ok: true, candidate_id: addrId, research: { ...cachedAddr.payload.research, cached: true }, usage, quota, tier });
+      }
+      if (usage.enrichments >= quota.enrichments) return blockedResponse('enrich');
+
+      const { data: company } = await supabase
+        .from('companies').select('company_name').eq('id', company_id).single();
+      const system = `You are a field-sales researcher for ${company?.company_name || 'a service business'}. A rep is standing at a street address and wants to know who is there and how to reach them, using public sources: business listings (Google, Yelp, BBB), the business's own website, state business registries, county assessor / property records, real-estate listing sites, and news.
+
+CRITICAL OUTPUT FORMAT: After you research, return a SINGLE JSON object — no markdown, no code fences, no preamble:
+{
+  "kind": "business" | "residential" | "unknown",
+  "business_name": "",
+  "occupant_or_owner_name": "",
+  "contact_title": "",
+  "phone": "",
+  "mobile_phone": "",
+  "email": "",
+  "website": "",
+  "property": { "type": "", "year_built": "", "sqft": "", "lot_size": "", "owner_of_record": "", "last_sale": "", "assessed_value": "" },
+  "notes": "One or two sentences: what this place is, anything a rep should know before knocking (hours, recent sale, permits, expansion)",
+  "source_urls": [],
+  "confidence": "high" | "medium" | "low"
+}
+
+Rules:
+- Leave a field "" if a source did not confirm it; do NOT guess names or numbers
+- Prefer the business line and public business contacts; only list a mobile number if a public source lists it
+- Property fields come from the county assessor or listing sites; give the year, size and values as shown there
+- Every non-empty fact should be backed by one of the source_urls`;
+
+      const claudeResponse = await runClaudeAgent({
+        companyId: company_id ?? null,
+        system,
+        userMsg: `Research this address: ${address}${lat != null && lng != null ? ` (approximately ${lat}, ${lng})` : ''}`,
+        maxRounds: 4,
+      });
+      const parsedAddr = parseJsonLoose(claudeResponse, 'object');
+      if (!parsedAddr || typeof parsedAddr !== 'object') {
+        console.error('[prospect-research] research_address JSON parse failed, raw:', claudeResponse.slice(0, 500));
+        return json({ error: "Couldn't read the AI's research for this address — please try again.", raw: claudeResponse.slice(0, 500) }, 502);
+      }
+      const research: any = parsedAddr;
+      const persistAddr = {
+        company_id,
+        external_prospect_id: addrId,
+        source: 'ai_address',
+        payload: { address, lat: lat ?? null, lng: lng ?? null, company_name: research.business_name || null, research },
+        full_name: research.occupant_or_owner_name || null,
+        title: research.contact_title || null,
+        email: research.email || null,
+        phone: research.mobile_phone || research.phone || null,
+        company_name: research.business_name || null,
+        linkedin_url: null,
+        revealed_at: new Date().toISOString(),
+      };
+      await supabase.from('prospect_enrichments').upsert(persistAddr, { onConflict: 'company_id,external_prospect_id' });
+      await supabase.rpc('bump_prospecting_usage', { p_company_id: company_id, p_period: period, p_searches: 0, p_enrichments: 1 });
+      return json({ ok: true, candidate_id: addrId, research, usage: { ...usage, enrichments: usage.enrichments + 1 }, quota, tier });
+    }
+
     // ── ACTION: import ─────────────────────────────────────────────
     if (action === 'import') {
       const { candidate_ids, salesperson_id, default_status = 'New', lead_source = 'AI Prospect Research' } = body;
@@ -391,17 +472,21 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
       const leadRows = toImport.map(c => {
         const p = c.payload || {};
         const enr = p.enrichment || {};
+        const rs = p.research || {};   // set for Liahona address research candidates
         // Best phone for the lead's primary field: prefer mobile (textable),
         // fall back to business line, then whatever we had cached.
         const bestPhone = enr.mobile_phone || enr.business_phone || c.phone || p.phone || null;
         const bestEmail = c.email || enr.email || enr.personal_email || null;
         return {
           company_id,
-          customer_name: c.full_name || enr.decision_maker_name || c.company_name || 'AI Prospect',
-          email: bestEmail,
-          phone: bestPhone,
-          address: enr.address || (p.city ? `${p.city}, ${p.state || ''}`.trim() : null),
-          business_name: c.company_name || p.company_name || null,
+          customer_name: c.full_name || enr.decision_maker_name || rs.occupant_or_owner_name || c.company_name || rs.business_name || 'AI Prospect',
+          email: bestEmail || rs.email || null,
+          phone: bestPhone || rs.mobile_phone || rs.phone || null,
+          address: enr.address || p.address || (p.city ? `${p.city}, ${p.state || ''}`.trim() : null),
+          latitude: p.lat ?? null,
+          longitude: p.lng ?? null,
+          geocoded_at: (p.lat != null && p.lng != null ? new Date().toISOString() : null) as string | null,
+          business_name: c.company_name || p.company_name || rs.business_name || null,
           status: default_status,
           lead_source,
           salesperson_id: salesperson_id || callerEmp.id,
@@ -420,6 +505,15 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
           ].filter(Boolean).join('\n'),
         };
       });
+
+      // Pins on Liahona right away: geocode any street address that came
+      // without coordinates (Census, free, no key). Misses are left for the
+      // geocode cron.
+      for (const row of leadRows) {
+        if (row.latitude != null || !row.address || !/\d/.test(row.address)) continue;
+        const g = await geocodeCensus(row.address);
+        if (g) { row.latitude = g.lat; row.longitude = g.lng; row.geocoded_at = new Date().toISOString(); }
+      }
 
       const { data: inserted, error: insErr } = await supabase
         .from('leads')
@@ -450,6 +544,16 @@ Find a decision-maker, their email + LinkedIn + phone, and the business's full a
 });
 
 // ─── Claude agent loop with web_search tool ─────────────────────────
+async function geocodeCensus(address: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const url = `https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?benchmark=Public_AR_Current&format=json&address=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+    if (!res.ok) return null;
+    const m = (await res.json())?.result?.addressMatches?.[0];
+    return m ? { lat: m.coordinates.y, lng: m.coordinates.x } : null;
+  } catch { return null; }
+}
+
 async function runClaudeAgent(args: {
   companyId: number | null; system: string; userMsg: string; maxRounds: number;
 }): Promise<string> {

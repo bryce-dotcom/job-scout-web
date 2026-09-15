@@ -26,6 +26,8 @@ import {
   fetchRepLocations, pointInGeometry, geometryCentroid
 } from '../../lib/mapOverlays'
 import { X, Check, Undo2 } from 'lucide-react'
+import ProspectResearchDrawer from '../ProspectResearchDrawer'
+import { callProspectResearch, takeProspectsHandoff } from '../../lib/prospectResearch'
 import {
   PALETTE, US_CENTER, themeTokens, makeStyles, ensureLeaflet, hasCoords, dist, initials, minutesAgo, esc, loadView, saveView
 } from './util'
@@ -91,6 +93,10 @@ export default function LiahonaMap({
     try { localStorage.setItem('liahona.territoryFilter', v) } catch { /* private mode */ }
   }
   const [claiming, setClaiming] = useState(false)
+  // Find Prospects AI: the drawer, and the address research on a dropped pin.
+  const [showFindProspects, setShowFindProspects] = useState(false)
+  const [researching, setResearching] = useState(false)
+  const [researchError, setResearchError] = useState('')
 
   const setMode = m => { modeRef.current = m; setModeState(m) }
   const setDrawPts = pts => { drawPtsRef.current = pts; setDrawPtsState(pts) }
@@ -156,7 +162,8 @@ export default function LiahonaMap({
         pins: L.layerGroup().addTo(map),
         route: L.layerGroup().addTo(map),
         draw: L.layerGroup().addTo(map),
-        search: L.layerGroup().addTo(map)
+        search: L.layerGroup().addTo(map),
+        prospects: L.layerGroup().addTo(map)
       }
       map.on('moveend zoomend', () => { setMoveTick(x => x + 1); saveView(companyId, map) })
       map.on('click', e => handleMapClick(e.latlng))
@@ -384,6 +391,75 @@ export default function LiahonaMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, activeOverlays, moveTick, customers, companyId, employeeById, stageById])
 
+  // ------------------------------------------------- Find Prospects on the map
+  // Search results that carry a street address become purple prospect pins.
+  // Tapping one imports it as a lead (the function geocodes it on import).
+  const plotProspects = useCallback(async list => {
+    const L = window.L, g = groupsRef.current.prospects, map = mapRef.current
+    if (!L || !g || !map) return
+    g.clearLayers()
+    const withAddr = (list || []).filter(p => (p.address || p.enrichment?.address || '').trim())
+    if (!withAddr.length) { notify('No street addresses in these results to plot'); return }
+    const placed = []
+    for (const p of withAddr) {
+      const addr = [p.enrichment?.address || p.address, p.city, p.state].filter(Boolean).join(', ')
+      const hit = await geocodeAddress(addr)
+      if (!hit) continue
+      placed.push([hit.lat, hit.lng])
+      const icon = L.divIcon({ className: '', html: `<div style="width:22px;height:22px;border-radius:50%;background:#7c3aed;color:#fff;display:flex;align-items:center;justify-content:center;font:700 13px system-ui;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)">✦</div>`, iconSize: [22, 22], iconAnchor: [11, 11] })
+      const m = L.marker([hit.lat, hit.lng], { icon }).addTo(g)
+      m.bindTooltip(`<b>${esc(p.company_name || 'Prospect')}</b><br>${esc(addr)}${p.phone ? '<br>' + esc(p.phone) : ''}`, { direction: 'top' })
+      m.on('click', () => {
+        const el = document.createElement('div')
+        el.style.font = '13px system-ui'
+        el.innerHTML = `<div style="font-weight:700">${esc(p.company_name || 'Prospect')}</div><div style="color:#666">${esc(addr)}</div>${p.phone ? `<div style="color:#666">${esc(p.phone)}</div>` : ''}${p.why_it_matches ? `<div style="margin-top:4px">${esc(p.why_it_matches)}</div>` : ''}`
+        const b = document.createElement('button')
+        b.textContent = 'Import as lead'
+        b.style.cssText = 'margin-top:8px;background:#7c3aed;color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;font:600 12px system-ui'
+        b.onclick = async () => {
+          b.disabled = true; b.textContent = 'Importing…'
+          try {
+            const res = await callProspectResearch('import', companyId, { candidate_ids: [p.candidate_id], salesperson_id: user?.id || undefined, lead_source: 'AI Prospect Research' })
+            mapRef.current?.closePopup(); g.removeLayer(m)
+            notify(res.imported ? 'Prospect added to the pipeline' : 'Already in the pipeline')
+            onLeadsChanged?.()
+          } catch (e) { b.disabled = false; b.textContent = 'Import as lead'; notify('Import failed: ' + e.message) }
+        }
+        el.appendChild(b)
+        L.popup({ autoPan: true }).setLatLng(m.getLatLng()).setContent(el).openOn(map)
+      })
+    }
+    if (placed.length) map.fitBounds(placed, { padding: [40, 40], maxZoom: 14 })
+    notify(`${placed.length} of ${list.length} prospects placed on the map`)
+  }, [companyId, user?.id, notify, onLeadsChanged])
+
+  // Results handed over from the Lead Setter's Find Prospects drawer.
+  useEffect(() => {
+    if (!ready) return
+    const handoff = takeProspectsHandoff()
+    if (handoff) plotProspects(handoff)
+  }, [ready, plotProspects])
+
+  // Ask Find Prospects AI what is at the dropped pin's address.
+  const researchAddress = async () => {
+    const f = dropForm
+    if (!f?.address?.trim() || researching) return
+    setResearching(true); setResearchError('')
+    try {
+      const res = await callProspectResearch('research_address', companyId, { address: f.address.trim(), lat: f.lat, lng: f.lng })
+      const r = { ...res.research, candidate_id: res.candidate_id }
+      setDropForm(cur => cur && ({
+        ...cur, research: r,
+        customer_name: cur.customer_name || r.occupant_or_owner_name || r.business_name || '',
+        business_name: cur.business_name || r.business_name || '',
+        phone: cur.phone || r.mobile_phone || r.phone || '',
+        email: cur.email || r.email || ''
+      }))
+    } catch (e) {
+      setResearchError(e.blocked ? e.message : `Research failed: ${e.message}`)
+    } finally { setResearching(false) }
+  }
+
   // -------------------------------------------------------------- handlers
   const handleMapClick = async latlng => {
     const m = modeRef.current
@@ -528,18 +604,36 @@ export default function LiahonaMap({
     if (!f) return
     if (!f.customer_name.trim() && !f.address.trim()) { notify('Add a name or address'); return }
     setSaving(true)
+    const r = f.research
+    const prop = r?.property || {}
+    const researchNotes = r ? [
+      `AI research (${r.kind || 'property'}${r.confidence ? `, ${r.confidence} confidence` : ''})`,
+      r.website ? `Website: ${r.website}` : null,
+      r.mobile_phone && r.mobile_phone !== f.phone ? `Mobile: ${r.mobile_phone}` : null,
+      r.phone && r.phone !== f.phone ? `Phone: ${r.phone}` : null,
+      [prop.type && `type ${prop.type}`, prop.year_built && `built ${prop.year_built}`, prop.sqft && `${prop.sqft} sq ft`, prop.lot_size && `lot ${prop.lot_size}`, prop.owner_of_record && `owner of record ${prop.owner_of_record}`, prop.last_sale && `last sale ${prop.last_sale}`, prop.assessed_value && `assessed ${prop.assessed_value}`].filter(Boolean).join(' · ') || null,
+      r.notes || null,
+      ...(r.source_urls || []).slice(0, 4).map(u => `Source: ${u}`)
+    ].filter(Boolean).join('\n') : null
     const row = {
       company_id: companyId,
       customer_name: f.customer_name.trim() || f.address.trim(),
+      business_name: (f.business_name || '').trim() || null,
       phone: f.phone.trim() || null,
+      email: (f.email || '').trim() || null,
       address: f.address.trim() || null,
       latitude: f.lat, longitude: f.lng, geocoded_at: new Date().toISOString(),
       status: 'New', lead_source: 'Door Knock',
-      lead_owner_id: user?.id || null, salesperson_id: user?.id || null
+      lead_owner_id: user?.id || null, salesperson_id: user?.id || null,
+      ...(r ? { external_prospect_id: r.candidate_id, enrichment_data: r, notes: researchNotes } : {})
     }
     const { data, error } = await supabase.from('leads').insert(row).select().single()
     setSaving(false)
     if (error) { notify('Could not create lead: ' + error.message); return }
+    if (r?.candidate_id && data?.id) {
+      supabase.from('prospect_enrichments').update({ imported_as_lead_id: data.id, imported_at: new Date().toISOString() })
+        .eq('company_id', companyId).eq('external_prospect_id', r.candidate_id).then(() => {})
+    }
     setDropForm(null); setMode('select')
     groupsRef.current.search?.clearLayers()
     notify('Lead added')
@@ -613,6 +707,7 @@ export default function LiahonaMap({
           onPlanRoute={planRoute} routing={routing}
           activeOverlays={activeOverlays} overlayStatus={overlayStatus} showOverlayMenu={showOverlayMenu} setShowOverlayMenu={setShowOverlayMenu} toggleOverlay={toggleOverlay}
           onFit={fitToPins} unmappedCount={unmappedCount} geocoding={geocoding} onGeocodeMissing={geocodeMissing}
+          onFindProspects={() => setShowFindProspects(true)}
         />
 
         {compact && onToggleStage && (
@@ -653,8 +748,9 @@ export default function LiahonaMap({
             <TerritoryForm t={t} form={territoryForm} setForm={setTerritoryForm} employees={employees} user={user} utilityProviders={utilityProviders}
               saving={saving} onSave={saveTerritory} onCancel={() => setTerritoryForm(null)} />
           ) : dropForm ? (
-            <DropLeadForm t={t} form={dropForm} setForm={setDropForm} saving={saving} onSave={saveDropLead} onCancel={() => setDropForm(null)}
-              onPan={(lat, lng) => mapRef.current?.panTo([lat, lng])} />
+            <DropLeadForm t={t} form={dropForm} setForm={setDropForm} saving={saving} onSave={saveDropLead} onCancel={() => { setDropForm(null); setResearchError('') }}
+              onPan={(lat, lng) => mapRef.current?.panTo([lat, lng])}
+              onResearch={researchAddress} researching={researching} researchError={researchError} />
           ) : (
             <>
               {route && <RoutePanel t={t} route={route} stageById={stageById} onClear={clearRoute} onSelectLead={onSelectLead} />}
@@ -669,6 +765,18 @@ export default function LiahonaMap({
           )
         )}
       </div>
+
+      {showFindProspects && (
+        <ProspectResearchDrawer
+          companyId={companyId}
+          employees={employees}
+          theme={{ bg: t.bg, bgCard: t.bgCard, border: t.border, text: t.text, textMuted: t.textMuted, textSecondary: t.textSecondary, accent: t.accent }}
+          isMobile={compact}
+          onClose={() => setShowFindProspects(false)}
+          onImported={() => onLeadsChanged?.()}
+          onResults={list => plotProspects(list)}
+        />
+      )}
     </div>
   )
 }

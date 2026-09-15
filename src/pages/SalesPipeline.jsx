@@ -136,7 +136,10 @@ export default function SalesPipeline() {
   const [selectedLead, setSelectedLead] = useState(null)
 
   // Section expand/collapse (default collapsed so both sections visible)
-  const [salesExpanded, setSalesExpanded] = useState(false)
+  // Find Prospects "View on map" hands results over via sessionStorage; land
+  // on the open Liahona view so the pins are the first thing on screen.
+  const prospectsHandoff = (() => { try { return !!sessionStorage.getItem('liahona.prospects') } catch { return false } })()
+  const [salesExpanded, setSalesExpanded] = useState(prospectsHandoff)
   const [deliveryExpanded, setDeliveryExpanded] = useState(false)
 
   // Two tickets the same morning: "i have to put all the filters on again"
@@ -146,6 +149,7 @@ export default function SalesPipeline() {
   // Sales section view: the drag-and-drop board, or Liahona (the map).
   // Remembered per browser so reps who live on the map land on it.
   const [salesView, setSalesViewState] = useState(() => {
+    if (prospectsHandoff) return 'liahona'
     try { return localStorage.getItem('pipeline.salesView') === 'liahona' ? 'liahona' : 'board' } catch { return 'board' }
   })
   const setSalesView = (v) => {

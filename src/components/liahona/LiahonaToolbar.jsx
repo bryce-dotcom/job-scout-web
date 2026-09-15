@@ -2,7 +2,7 @@
 // fit, and the geocode-backlog button. Presentational — every action is a prop.
 
 import { useMemo } from 'react'
-import { Search, MapPin, PenTool, Route, Layers, MousePointer2, Loader2, LocateFixed, Maximize2 } from 'lucide-react'
+import { Search, MapPin, PenTool, Route, Layers, MousePointer2, Loader2, LocateFixed, Maximize2, Sparkles } from 'lucide-react'
 import { OVERLAYS } from '../../lib/mapOverlays'
 import { makeStyles } from './util'
 
@@ -14,7 +14,7 @@ export default function LiahonaToolbar({
   territories, territoryFilter, setTerritoryFilter, user,
   onPlanRoute, routing,
   activeOverlays, overlayStatus, showOverlayMenu, setShowOverlayMenu, toggleOverlay,
-  onFit, unmappedCount, geocoding, onGeocodeMissing
+  onFit, unmappedCount, geocoding, onGeocodeMissing, onFindProspects
 }) {
   const { btn, input, label } = makeStyles(t)
   const pad = compact ? { padding: '9px 10px' } : {}
@@ -53,6 +53,11 @@ export default function LiahonaToolbar({
         </select>
       )}
 
+      {onFindProspects && (
+        <button onClick={onFindProspects} style={btn(false, { color: '#7c3aed', borderColor: '#c4b5fd', ...pad })} title="Find Prospects AI: research businesses and plot them on the map">
+          <Sparkles size={iconSize} />{!compact && ' Find Prospects'}
+        </button>
+      )}
       <button onClick={onPlanRoute} disabled={routing} style={btn(false, pad)} title="Order the open leads in view into a driving route">
         {routing ? <Loader2 size={iconSize} style={{ animation: 'spin 1s linear infinite' }} /> : <Route size={iconSize} />}{!compact && ' Plan route'}
       </button>

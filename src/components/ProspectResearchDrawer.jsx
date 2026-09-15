@@ -19,10 +19,13 @@
 // =====================================================================
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { handOffProspectsToMap } from '../lib/prospectResearch'
 import { supabase } from '../lib/supabase'
 import { Search, X, ExternalLink, Sparkles, MapPin, Users, Briefcase, CheckCircle2, Loader2, UserPlus, Zap, AlertCircle } from 'lucide-react'
 
-export default function ProspectResearchDrawer({ companyId, employees = [], onClose, onImported, theme, isMobile }) {
+// onResults: when set (Liahona embeds the drawer), each search's results are
+// handed to the map to plot; otherwise a "View on map" button opens Liahona.
+export default function ProspectResearchDrawer({ companyId, employees = [], onClose, onImported, theme, isMobile, onResults }) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
@@ -91,6 +94,7 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
     try {
       const data = await call('search', { query: query.trim() })
       setResults(data.prospects || [])
+      if (data.prospects?.length) onResults?.(data.prospects)
       if (!data.prospects?.length) setError('No matches found. Try a more specific query.')
     } catch (err) {
       setError(err.message)
@@ -307,6 +311,15 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
             </div>
           )}
 
+          {results.length > 0 && !onResults && (
+            <button
+              onClick={() => { handOffProspectsToMap(results); onClose?.(); navigate('/pipeline') }}
+              style={{ ...btn, width: '100%', marginBottom: 10, backgroundColor: 'transparent', color: '#7c3aed', border: '1px solid #c4b5fd' }}
+              title="Open Liahona with these prospects plotted"
+            >
+              <MapPin size={16} /> View on map
+            </button>
+          )}
           {results.map((p) => {
             const selected = selectedIds.has(p.candidate_id)
             const enriched = enrichments[p.candidate_id]
