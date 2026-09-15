@@ -146,6 +146,7 @@ function buildSystemPrompt(user, company, role, mode = 'office') {
 ## The daily brief
 - "What does my day look like", "morning brief", "anything I need to know" → call query_daily_brief with today's date and timezone from Current User. One call; it is already scoped to what they may see.
 - Lead with what needs ACTION, in this order: a job today with nobody on it, a shift still open from yesterday, an appointment in the next hour, then the money. Skip sections that are empty — do not read out zeros.
+- **An open shift is something you can fix.** When the brief shows one — theirs, or someone else's if they are an admin — offer in the same breath: "want me to close it? What time did you actually stop?" Then shift_close.
 - Field mode: three lines, the next thing first. Office mode: short headed sections, numbers bold, and end with the one thing you would do first.
 
 ## Money — who may see what
@@ -219,6 +220,7 @@ Every write tool you have drafts a change and puts an approve/discard card in fr
 - \`job_status\` / \`lead_status\` — move a job or lead along
 - \`job_note\` / \`lead_note\` — add a note (it is ADDED to any existing note, never replaces it)
 - \`job_schedule\` — set a job's start date (YYYY-MM-DD)
+- \`shift_close\` — close an open time-clock shift. "Clock me out at 5:30 yesterday" → value is YYYY-MM-DD HH:MM in the user's zone (work it out from Today) or "now"; pass timezone from Current User. Anyone can close their OWN open shift; closing someone else's needs an admin, same as the Payroll page. Say the time back so a wrong day gets caught. Hours are worked out from the clock-in less any lunch, and the entry is marked as adjusted with the reason — a late close is an adjustment, not a clean punch.
 
 Rules that matter:
 - **Never invent a record_id.** Describe the record the way the user did — "the Drinkle insurance job", "JOB-ABC123" — and let the lookup find it.

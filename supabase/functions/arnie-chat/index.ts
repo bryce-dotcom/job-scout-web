@@ -393,10 +393,11 @@ const PROPOSE_RECORD_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      target: { type: 'string', description: 'One of: job_status, job_note, job_schedule, lead_status, lead_note' },
-      record_query: { type: 'string', description: 'How the user identified the record, e.g. "the Drinkle insurance job" or "JOB-ABC123"' },
+      target: { type: 'string', description: 'One of: job_status, job_note, job_schedule, lead_status, lead_note, shift_close (close an open time-clock shift — the user\'s own, or an admin closing someone else\'s)' },
+      record_query: { type: 'string', description: 'How the user identified the record, e.g. "the Drinkle insurance job" or "JOB-ABC123". For shift_close: "my shift from yesterday" or "Jordan\'s open shift".' },
       record_id: { type: 'integer', description: 'Only after a needs_choice reply, or when the user gave an exact id' },
-      value: { type: 'string', description: 'The new status, the note text, or a YYYY-MM-DD date' },
+      value: { type: 'string', description: 'The new status, the note text, a YYYY-MM-DD date — or for shift_close the clock-out as YYYY-MM-DD HH:MM in the user\'s zone (work "5:30 yesterday" out from Today), or "now"' },
+      timezone: { type: 'string', description: 'IANA zone from the Current User section. Needed for shift_close.' },
     },
     required: ['target', 'value'],
   },
@@ -1034,7 +1035,7 @@ async function execTool(name: string, input: any, caller: Caller) {
       return await proposeRecordChange(
         { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY },
         caller,
-        { target: String(input?.target || ''), record_query: input?.record_query, record_id: input?.record_id, value: String(input?.value ?? '') },
+        { target: String(input?.target || ''), record_query: input?.record_query, record_id: input?.record_id, value: String(input?.value ?? ''), timezone: input?.timezone },
       )
     }
 

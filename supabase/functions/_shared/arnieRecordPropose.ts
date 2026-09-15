@@ -30,6 +30,11 @@ export async function mayChange(
   if (!target) return { ok: false, error: 'Not a change Arnie can make.' }
   if (caller.companyId == null) return { ok: false, error: 'No company on this login.' }
   if (caller.level >= target.minLevel) return { ok: true }
+  if (target.ownerOf && rowId != null) {
+    const owner = await target.ownerOf(r, caller.companyId, rowId)
+    if (owner != null && String(owner) === String(caller.employeeId)) return { ok: true }
+    return { ok: false, error: `You can change your own ${target.label}. Someone else's needs an admin.` }
+  }
   if (target.allowOnActiveJob && rowId != null) {
     const active = await activeJobId(r, caller.companyId, caller.employeeId)
     if (active != null && Number(active) === Number(rowId)) return { ok: true }
@@ -41,12 +46,13 @@ export async function mayChange(
 export async function proposeRecordChange(
   r: Rest,
   caller: Caller,
-  input: { target: string; record_query?: string; record_id?: number; value: string },
+  input: { target: string; record_query?: string; record_id?: number; value: string; timezone?: string },
 ): Promise<RecordProposeResult> {
   const companyId = caller.companyId
   if (companyId == null) return { error: 'No company on this login.' }
   const target = RECORD_TARGETS[input.target]
   if (!target) return { error: `"${input.target}" isn't something Arnie can change.` }
+  if (target.proposeCustom) return await target.proposeCustom(r, caller, input)
 
   const value = String(input.value ?? '').trim()
   if (!value) return { error: `Nothing to set — tell me the new ${target.label}.` }
@@ -142,6 +148,7 @@ export async function applyRecordProposal(
 ): Promise<{ ok: true; before: any; after: any } | { ok: false; error: string; stale?: boolean }> {
   const target = RECORD_TARGETS[prop.target]
   if (!target) return { ok: false, error: 'Unknown record target.' }
+  if (target.applyCustom) return await target.applyCustom(r, companyId, prop)
   const { entity_id: id, field } = prop.payload || {}
   if (!id || !field) return { ok: false, error: 'That proposal is missing its record.' }
 
@@ -164,6 +171,7 @@ export async function rollbackRecordProposal(
 ): Promise<{ ok: true; restored: any } | { ok: false; error: string }> {
   const target = RECORD_TARGETS[prop.target]
   if (!target) return { ok: false, error: 'Unknown record target.' }
+  if (target.rollbackCustom) return await target.rollbackCustom(r, companyId, prop)
   const { entity_id: id, field } = prop.payload || {}
   if (!id || !field) return { ok: false, error: 'That proposal is missing its record.' }
   const res = await patchRow(r, target.table, companyId, id, { [field]: prop.before_value })
