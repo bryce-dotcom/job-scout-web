@@ -28,6 +28,9 @@
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+// Node strips the types. The rules an AR answer is checked against are the
+// ones the edge function uses, not a copy — guard fails the build otherwise.
+import { isSettledStatus, isInvoiceOverdue, invoiceOutstanding } from '../supabase/functions/_shared/money.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const env = Object.fromEntries(readFileSync(resolve(root, '.env'), 'utf8').split(/\r?\n/)
@@ -122,17 +125,59 @@ function check(r, exp) {
 
 // ─── cases ──────────────────────────────────────────────────────────────────
 // as: 'owner' | 'tech'. turns: user messages; the assistant reply is fed back
-// between them. Assertions apply to the LAST turn. after(): optional, runs with
+// between them. Assertions apply to the LAST turn. expect may be a function of
+// ctx, for cases whose right answer has to be read from the database first
+// (see arTruth). after(): optional, runs with
 // the final reply (e.g. to approve and then roll back a card). Any card left
 // pending at the end is rejected automatically.
+// ─── the AR answers, from the database ──────────────────────────────────────
+// The overdue case used to assert /overdue/ and /\$/ — it passed on "5
+// overdue, $21,790" the day that was wrong. And a fixture goes stale: the
+// $240 invoice crossed its due date on 9/1 and turned "4 overdue" into 5.
+// So the figures a money answer must contain are worked out here, from the
+// same rows and the same rules the tool uses, every run.
+const money = (n) => new RegExp(`\\$\\s?(${Math.round(n).toLocaleString('en-US')}|${Math.round(n)})(\\.\\d\\d)?(?!\\d)`)
+let _ar = null
+async function arTruth() {
+  if (_ar) return _ar
+  const inv = await rest(`invoices?select=id,amount,discount_applied,payment_status,due_date,customer_id&company_id=eq.${DEMO.company}&amount=gt.0&order=id`)
+  const pays = await rest(`payments?select=invoice_id,amount&company_id=eq.${DEMO.company}`)
+  const custs = await rest(`customers?select=id,name,business_name&company_id=eq.${DEMO.company}`)
+  const paid = new Map(); for (const p of pays) if (p.invoice_id) paid.set(p.invoice_id, (paid.get(p.invoice_id) || 0) + (Number(p.amount) || 0))
+  const name = (id) => { const c = custs.find(x => x.id === id); return c ? (c.business_name || c.name) : `#${id}` }
+  const open = inv.filter(r => !isSettledStatus(r.payment_status)).map(r => ({ ...r, balance: invoiceOutstanding(r.amount, r.discount_applied, paid.get(r.id) || 0), customer: name(r.customer_id) }))
+  const overdue = open.filter(r => isInvoiceOverdue(r, today))
+  const sum = (rs) => rs.reduce((s, r) => s + r.balance, 0)
+  const byCust = {}; for (const r of open) byCust[r.customer] = (byCust[r.customer] || 0) + r.balance
+  const [topName, topOwed] = Object.entries(byCust).sort((a, b) => b[1] - a[1])[0] || ['', 0]
+  const weekEnd = new Date(Date.parse(today) + 7 * 86400000).toISOString().slice(0, 10)
+  const dueThisWeek = open.filter(r => r.due_date && r.due_date >= today && r.due_date <= weekEnd)
+  return (_ar = { open, overdue, openOwed: sum(open), overdueOwed: sum(overdue), topName, topOwed, dueThisWeek, weekEnd })
+}
+
 const CASES = [
   // — reading the company, honestly —
   { id: 'inventory.fuzzy.highbay', as: 'owner', turns: ['How many highbays do I have in stock?'],
     expect: { tools_include: ['query_inventory'], text_match: [/\b62\b/] } },
   { id: 'inventory.fuzzy.wallpack', as: 'owner', turns: ['Do we carry any wallpacks? How many in stock?'],
     expect: { tools_include: ['query_inventory'], text_match: [/\b34\b/] } },
-  { id: 'invoices.overdue.is.past.due', as: 'owner', turns: ['How many overdue invoices do we have, and what is the total owed?'],
-    expect: { tools_include: ['query_invoices'], text_match: [/overdue/i, /\$/] } },
+
+  // — accounts receivable: every figure checked against the rows —
+  { id: 'invoices.overdue.is.past.due', as: 'owner', turns: ['How many overdue invoices do we have, and what is the total still owed on them?'],
+    expect: async () => { const t = await arTruth(); return { tools_include: ['query_invoices'], text_match: [/overdue/i, new RegExp(`\\b${t.overdue.length}\\b`), money(t.overdueOwed)],
+      // The sum of `amount` over the overdue rows — what a part-paid invoice was billed, not what is owed on it.
+      text_not_match: [money(t.overdue.reduce((s, r) => s + Number(r.amount), 0))].filter(re => !re.test('$' + Math.round(t.overdueOwed))) } } },
+  { id: 'invoices.receivable.is.balance.not.amount', as: 'owner', turns: ['What is our total accounts receivable — everything customers still owe us across every open invoice, not just the overdue ones?'],
+    expect: async () => { const t = await arTruth(); return { tools_include: ['query_invoices'], text_match: [money(t.openOwed)],
+      text_not_match: [money(t.open.reduce((s, r) => s + Number(r.amount), 0))].filter(re => !re.test('$' + Math.round(t.openOwed))) } } },
+  { id: 'invoices.who.owes.most.is.named', as: 'owner', turns: ['Which customer owes us the most right now, and how much?'],
+    // A name and a balance — not "customer ID 7944", which is what a tool that hands back ids and no way to resolve them produces.
+    expect: async () => { const t = await arTruth(); return { tools_include: ['query_invoices'], text_match: [new RegExp(t.topName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), money(t.topOwed)] } } },
+  { id: 'invoices.due.this.week.is.due.date', as: 'owner', turns: ['Which invoices come due in the next 7 days?'],
+    // start_date/end_date window created_at. Asked this, the model used them as a due-date window, got zero rows, and said "none" — three times out of three, while two were due.
+    expect: async () => { const t = await arTruth(); return t.dueThisWeek.length
+      ? { tools_include: ['query_invoices'], text_match: t.dueThisWeek.map(r => money(r.balance)), text_not_match: [/\bno invoices\b|\bnone\b|nothing (is )?(coming )?due/i] }
+      : { tools_include: ['query_invoices'], text_match: [/\bno invoices\b|\bnone\b|nothing (is )?(coming )?due/i], no_dollars: true } } },
   { id: 'products.none.found.is.scoped', as: 'owner', turns: ['Do we have any products from Wasatch Lighting?'],
     expect: { tools_include: ['query_products'], text_not_match: [/system (error|bug)|report (this|it) to/i] } },
 
@@ -510,7 +555,8 @@ try {
           messages.push({ role: 'assistant', content: reply.text || '(no text)' })
           if (reply.proposal) pending = reply.proposal.proposal.id
         }
-        const fails = check(reply, c.expect || {})
+        const exp = typeof c.expect === 'function' ? await c.expect(ctx) : (c.expect || {})
+        const fails = check(reply, exp)
         if (!fails.length && c.after) await c.after(reply, ctx)
         if (ctx.pendingRollback) {
           const rb = await decide(ctx.token, 'rollback', ctx.pendingRollback); if (!rb.body.ok) fails.push('rollback failed: ' + JSON.stringify(rb.body)); ctx.pendingRollback = null
