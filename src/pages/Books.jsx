@@ -10,6 +10,7 @@ import ReportsPanel from '../components/ReportsPanel'
 import FrankieSecondLook from '../components/FrankieSecondLook'
 import { computeRevenue, cashExpenses, collectedIncentives as collectedIncentivesIn } from '../lib/revenueBasis'
 import { isLegacyNetShape } from '../lib/arHelpers'
+import { isVenmoTransaction, isVirtualAccountFilter, VENMO_FILTER } from '../lib/bankFeedFilters'
 import {
   BookOpen, Plus, X, DollarSign, TrendingUp, TrendingDown,
   Wallet, CreditCard, Building, PiggyBank, Pencil, Trash2,
@@ -1441,7 +1442,11 @@ export default function Books() {
   const filteredTxns = plaidTransactions.filter(t => {
     if (txnFilter === 'unreviewed' && t.confirmed) return false
     if (txnFilter === 'reviewed' && !t.confirmed) return false
-    if (txnAccountFilter !== 'all' && t.connected_account_id !== parseInt(txnAccountFilter)) return false
+    // "Venmo" is a virtual account: it has no connected_account_id, it is
+    // every Venmo cash-out / payment as it hits the real bank. See bankFeedFilters.
+    if (txnAccountFilter === VENMO_FILTER) {
+      if (!isVenmoTransaction(t)) return false
+    } else if (txnAccountFilter !== 'all' && t.connected_account_id !== parseInt(txnAccountFilter)) return false
     if (txnSearch) {
       const s = txnSearch.toLowerCase()
       const matchName = (t.merchant_name || t.name || '').toLowerCase().includes(s)
@@ -2104,7 +2109,7 @@ export default function Books() {
               <option value="unreviewed">Needs Review</option>
               <option value="reviewed">Confirmed</option>
             </select>
-            {activeConnected.length > 1 && (
+            {activeConnected.length > 0 && (
               <select value={txnAccountFilter} onChange={(e) => setTxnAccountFilter(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: '160px' }}>
                 <option value="all">All Accounts</option>
                 {activeConnected.map(a => (
@@ -2113,6 +2118,8 @@ export default function Books() {
                   // filter offered nine identical-looking choices.
                   <option key={a.id} value={a.id}>{a.account_name || a.institution_name}{a.mask ? ` ····${a.mask}` : ''}</option>
                 ))}
+                {/* Virtual: Venmo activity as it lands in the accounts above. */}
+                <option value={VENMO_FILTER}>Venmo (via bank feed)</option>
               </select>
             )}
           </div>
@@ -2121,8 +2128,12 @@ export default function Books() {
           {filteredTxns.length === 0 ? (
             <EmptyState
               icon={FileText}
-              title={plaidTransactions.length === 0 ? 'No transactions yet' : 'No matching transactions'}
-              message={plaidTransactions.length === 0 ? 'Connect a bank account in Settings, then click Sync to import transactions.' : 'Try adjusting your filters.'}
+              title={plaidTransactions.length === 0 ? 'No transactions yet' : isVirtualAccountFilter(txnAccountFilter) ? 'No Venmo activity in your bank feed' : 'No matching transactions'}
+              message={plaidTransactions.length === 0
+                ? 'Connect a bank account in Settings, then click Sync to import transactions.'
+                : isVirtualAccountFilter(txnAccountFilter)
+                  ? 'This filter shows Venmo cash-outs, payments and fees as they hit your connected bank accounts. Nothing synced so far mentions Venmo — try Sync All, or widen the filter.'
+                  : 'Try adjusting your filters.'}
               actionLabel={plaidTransactions.length === 0 ? 'Go to Settings' : undefined}
               onAction={plaidTransactions.length === 0 ? () => navigate('/settings?tab=integrations') : undefined}
             />
