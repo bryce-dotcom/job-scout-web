@@ -5,6 +5,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { buildInvoiceSections, deductionLineLabel } from '../lib/invoiceSections'
 import { isLegacyNetShape } from '../lib/arHelpers'
 import { withAssets } from '../lib/productAssets'
+import { venmoPayUrl } from '../lib/venmo'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -888,6 +889,7 @@ export default function CustomerPortal() {
               const payAmt = partialActive ? parsedPartial : fullAmt
               const payType = isInvoice ? 'invoice_payment' : 'estimate_deposit'
               const hasAnyMethod = payment_config.stripe_enabled || payment_config.paypal_enabled
+                || payment_config.venmo_enabled
                 || payment_config.bank_enabled || payment_config.wisetack_enabled
                 || payment_config.greensky_enabled || payment_config.hearth_enabled
                 || payment_config.service_finance_enabled
@@ -1075,6 +1077,47 @@ export default function CustomerPortal() {
                           {paying ? 'Connecting to PayPal...' : 'Pay with PayPal'}
                         </button>
                       )}
+
+                      {/* Venmo — no processor behind it. The customer pays
+                          the handle from their own app; the office records
+                          it on the invoice when it lands. */}
+                      {payment_config.venmo_enabled && payment_config.venmo_handle && (() => {
+                        const venmoNote = String(isInvoice ? (doc.invoice_id || doc.id) : (doc.quote_id || doc.id))
+                        const venmoUrl = venmoPayUrl({ handle: payment_config.venmo_handle, amount: payAmt, note: venmoNote })
+                        return (
+                          <div style={{
+                            padding: '16px',
+                            backgroundColor: theme.accentBg,
+                            borderRadius: '10px',
+                            border: `1px solid ${theme.border}`,
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                              <p style={{ fontWeight: '600', color: theme.text, fontSize: '14px', margin: 0 }}>Venmo</p>
+                              <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600', backgroundColor: 'rgba(74,124,89,0.12)', color: '#4a7c59' }}>No Fee</span>
+                            </div>
+                            <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.7' }}>
+                              <p style={{ margin: '0 0 4px' }}><strong>Send to:</strong> @{payment_config.venmo_handle}</p>
+                              <p style={{ margin: '0 0 4px' }}><strong>Amount:</strong> {formatCurrency(payAmt)}</p>
+                              <p style={{ margin: '0 0 4px' }}><strong>Note:</strong> {venmoNote}</p>
+                            </div>
+                            {venmoUrl && (
+                              <a
+                                href={venmoUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ ...styles.primaryButton, display: 'block', textAlign: 'center', textDecoration: 'none', backgroundColor: '#008CFF', marginTop: '12px', boxSizing: 'border-box' }}
+                              >
+                                Open Venmo
+                              </a>
+                            )}
+                            {payment_config.venmo_instructions && (
+                              <p style={{ fontSize: '12px', color: theme.textMuted, margin: '10px 0 0', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                                {payment_config.venmo_instructions}
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })()}
 
                       {/* Financing / BNPL section */}
                       {hasFinancing && (

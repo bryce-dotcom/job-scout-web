@@ -38,6 +38,7 @@ export function paymentMethodsFrom(settings) {
     if (pc.stripe_enabled) out.push('Credit Card')
     if (pc.bank_transfer_enabled) out.push('ACH / Bank Transfer')
     if (pc.paypal_enabled) out.push('PayPal')
+    if (pc.venmo_enabled && pc.venmo_handle) out.push('Venmo')
   } catch { /* unreadable config advertises nothing */ }
   return out
 }

@@ -49,6 +49,7 @@ const NON_CLOCKABLE_STATUSES = new Set([
   'Completed', 'Invoiced', 'Closed', 'Paid',
 ])
 import RankBadge from '../components/RankBadge'
+import { venmoPayUrl, venmoSmsBody } from '../lib/venmo'
 
 // Stripe card payment form (rendered inside Elements provider)
 function StripeCardForm({ theme, amount, onSuccess, onError }) {
@@ -176,6 +177,8 @@ export default function FieldScout() {
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'Cash', reference: '', notes: '' })
   const [paymentSaving, setPaymentSaving] = useState(false)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
+  // Venmo handle from Settings → My Money, or null when not set up.
+  const [venmoConfig, setVenmoConfig] = useState(null)
 
   // Stripe card payment state
   const [stripePromise, setStripePromise] = useState(null)
@@ -1423,8 +1426,28 @@ export default function FieldScout() {
   }
 
   // Collect Payment — find or create invoice, then open portal for card/ACH payment
+  // Read the company's Venmo handle (payment_config) so the Collect Payment
+  // sheet can show the customer exactly where to send it.
+  const loadVenmoConfig = async () => {
+    try {
+      const { data: row } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('company_id', companyId)
+        .eq('key', 'payment_config')
+        .maybeSingle()
+      const cfg = typeof row?.value === 'string' ? JSON.parse(row.value) : (row?.value || {})
+      setVenmoConfig(cfg.venmo_enabled && cfg.venmo_handle
+        ? { handle: cfg.venmo_handle, instructions: cfg.venmo_instructions || '' }
+        : null)
+    } catch {
+      setVenmoConfig(null)
+    }
+  }
+
   const openPaymentModal = async (job) => {
     setPaymentJob(job)
+    loadVenmoConfig()
     setPaymentForm({ amount: '', method: 'Cash', reference: '', notes: '' })
     setPaymentSuccess(false)
     setPaymentInvoice(null)
@@ -4401,6 +4424,49 @@ export default function FieldScout() {
                     </button>
                   ))}
                 </div>
+
+                {/* Venmo: put the handle in front of the tech (and the
+                    customer) instead of leaving them to guess it. */}
+                {paymentForm.method === 'Venmo' && (
+                  venmoConfig ? (() => {
+                    const venmoNote = paymentInvoice?.invoice_id || paymentJob.job_id
+                    const venmoUrl = venmoPayUrl({ handle: venmoConfig.handle, amount: paymentForm.amount, note: venmoNote })
+                    const custPhone = paymentJob?.customer?.phone
+                    return (
+                      <div style={{ marginBottom: '12px', padding: '14px', backgroundColor: 'rgba(0,140,255,0.08)', border: '1px solid rgba(0,140,255,0.3)', borderRadius: '10px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#0369a1', marginBottom: '4px' }}>Customer sends to</div>
+                        <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text, wordBreak: 'break-all' }}>@{venmoConfig.handle}</div>
+                        <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
+                          Note: {venmoNote}{paymentForm.amount ? ` · $${parseFloat(paymentForm.amount).toFixed(2)}` : ''}
+                        </div>
+                        {venmoConfig.instructions && (
+                          <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px', whiteSpace: 'pre-wrap' }}>{venmoConfig.instructions}</div>
+                        )}
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                          {custPhone && (
+                            <a
+                              href={`sms:${custPhone.replace(/\D/g, '')}?body=${encodeURIComponent(venmoSmsBody({ customerName: paymentJob.customer?.name, handle: venmoConfig.handle, amount: paymentForm.amount, note: venmoNote }))}`}
+                              style={{ flex: 1, padding: '10px', backgroundColor: '#3b82f6', color: '#fff', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '13px', fontWeight: '600' }}
+                            >Text Venmo details</a>
+                          )}
+                          {venmoUrl && (
+                            <a
+                              href={venmoUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ flex: 1, padding: '10px', backgroundColor: '#008CFF', color: '#fff', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '13px', fontWeight: '600' }}
+                            >Open Venmo</a>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px' }}>Once they've sent it, tap Record below.</div>
+                      </div>
+                    )
+                  })() : (
+                    <div style={{ marginBottom: '12px', padding: '10px 12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+                      No Venmo handle on file yet. An admin can add it under Settings → My Money → Venmo so customers see where to send it. You can still record the payment.
+                    </div>
+                  )
+                )}
 
                 {/* Check # / Reference */}
                 {['Check', 'Other'].includes(paymentForm.method) && (

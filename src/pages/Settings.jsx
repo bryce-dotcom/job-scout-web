@@ -55,6 +55,7 @@ import {
 import { seedSampleData, clearAllData } from '../lib/seedData'
 import BillingTab from '../components/BillingTab'
 import { toast } from '../lib/toast'
+import { normalizeVenmoHandle } from '../lib/venmo'
 
 // Auto-format phone number as (XXX) XXX-XXXX while typing
 function formatPhoneInput(value) {
@@ -2633,6 +2634,11 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
     paypal_mode: 'sandbox',
     paypal_client_id: '',
     paypal_secret: '',
+    // Venmo: a handle customers pay, no processor. Shown on the portal,
+    // in invoice emails, and in FieldScout's Collect Payment sheet.
+    venmo_enabled: false,
+    venmo_handle: '',
+    venmo_instructions: '',
     bank_enabled: false,
     bank_name: '',
     bank_routing: '',
@@ -3236,6 +3242,60 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
                       <p style={{ margin: 0 }}>3. Copy the Client ID and Secret from the app details</p>
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ---- VENMO ---- */}
+        {sectionCard(
+          'venmo',
+          <Phone size={20} style={{ color: form.venmo_enabled ? '#4a7c59' : theme.accent }} />,
+          'Venmo',
+          'Customers pay your handle — shown on invoices, the portal, and FieldScout',
+          form.venmo_enabled && form.venmo_handle,
+          <>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: '16px' }}>
+              <input
+                type="checkbox"
+                checked={form.venmo_enabled}
+                onChange={() => setForm(prev => ({ ...prev, venmo_enabled: !prev.venmo_enabled }))}
+                style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+              />
+              <span style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>Enable Venmo as a payment option</span>
+            </label>
+
+            {form.venmo_enabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0, lineHeight: '1.5' }}>
+                  Your handle is shown to customers as a no-fee way to pay. Nothing is processed automatically —
+                  record the payment on the invoice (or in FieldScout) when it arrives, and it shows up under Books → Payments.
+                </p>
+
+                <div>
+                  <label style={labelStyle}>Venmo handle</label>
+                  <input
+                    type="text"
+                    value={form.venmo_handle}
+                    onChange={(e) => setForm(prev => ({ ...prev, venmo_handle: normalizeVenmoHandle(e.target.value) }))}
+                    placeholder="YourBusiness"
+                    style={inputStyle}
+                  />
+                  <p style={{ fontSize: '12px', color: theme.textMuted, margin: '6px 0 0' }}>
+                    Customers will see <strong>@{form.venmo_handle || 'YourBusiness'}</strong>. Find yours in the Venmo app under Me → your username. Pasting a venmo.com link works too.
+                  </p>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Instructions for customers (optional)</label>
+                  <textarea
+                    value={form.venmo_instructions}
+                    onChange={(e) => setForm(prev => ({ ...prev, venmo_instructions: e.target.value }))}
+                    rows={2}
+                    placeholder="e.g. Please put your invoice number in the note."
+                    style={{ ...inputStyle, resize: 'vertical' }}
+                  />
                 </div>
               </div>
             )}

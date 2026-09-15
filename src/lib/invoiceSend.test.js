@@ -42,6 +42,12 @@ describe('the pieces', () => {
     expect(paymentMethodsFrom([{ key: 'payment_config', value: '{not json' }])).toEqual([])
     expect(paymentMethodsFrom([])).toEqual([])
   })
+  it('advertises Venmo only once a handle is on file', () => {
+    const on = [{ key: 'payment_config', value: JSON.stringify({ venmo_enabled: true, venmo_handle: 'Acme' }) }]
+    const noHandle = [{ key: 'payment_config', value: JSON.stringify({ venmo_enabled: true, venmo_handle: '' }) }]
+    expect(paymentMethodsFrom(on)).toEqual(['Venmo'])
+    expect(paymentMethodsFrom(noHandle)).toEqual([])
+  })
   it('finds the business unit and its logo', () => {
     expect(businessUnitFor(settings, invoice)?.phone).toBe('801-555-0100')
     expect(businessUnitFor(settings, { business_unit: null })).toBeNull()

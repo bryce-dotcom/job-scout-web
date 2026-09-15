@@ -388,6 +388,10 @@ serve(async (req) => {
           bank_routing: cfg.bank_routing || null,
           bank_account: cfg.bank_account ? '****' + cfg.bank_account.slice(-4) : null,
           bank_instructions: cfg.bank_instructions || null,
+          // Venmo: just a handle to display — nothing sensitive.
+          venmo_enabled: !!(cfg.venmo_enabled && cfg.venmo_handle),
+          venmo_handle: cfg.venmo_handle || null,
+          venmo_instructions: cfg.venmo_instructions || null,
           // Financing providers — only expose enabled flag (no keys)
           wisetack_enabled: !!(cfg.wisetack_enabled && cfg.wisetack_api_key && cfg.wisetack_merchant_id),
           greensky_enabled: !!(cfg.greensky_enabled && cfg.greensky_merchant_id),

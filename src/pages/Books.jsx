@@ -10,6 +10,7 @@ import ReportsPanel from '../components/ReportsPanel'
 import FrankieSecondLook from '../components/FrankieSecondLook'
 import { computeRevenue, cashExpenses, collectedIncentives as collectedIncentivesIn } from '../lib/revenueBasis'
 import { isLegacyNetShape } from '../lib/arHelpers'
+import { PAYMENT_METHODS } from '../lib/schema'
 import { isVenmoTransaction, isVirtualAccountFilter, VENMO_FILTER } from '../lib/bankFeedFilters'
 import {
   BookOpen, Plus, X, DollarSign, TrendingUp, TrendingDown,
@@ -4285,12 +4286,13 @@ function StripeTransactionsTab({ companyId, theme, isMobile }) {
   // the Stripe table when configured.
   const [manualPayments, setManualPayments] = useState([])
   const [manualLoading, setManualLoading] = useState(false)
+  const [methodFilter, setMethodFilter] = useState('all') // 'all' | a payments.method value such as 'Venmo'
 
   const loadManualPayments = async () => {
     setManualLoading(true)
     const { data: pays } = await supabase
       .from('payments')
-      .select('id, date, amount, method, status, notes, invoice_id, invoice:invoices(invoice_id), customer_id, customer:customers(name)')
+      .select('id, date, amount, method, status, notes, source_transaction_id, invoice_id, invoice:invoices(invoice_id), customer_id, customer:customers(name)')
       .eq('company_id', companyId)
       .order('date', { ascending: false })
       .limit(50)
@@ -4319,6 +4321,9 @@ function StripeTransactionsTab({ companyId, theme, isMobile }) {
       } else {
         setData(r)
         setStripeConfigured(true)
+        // Venmo / cash / check payments never touch Stripe; keep them one
+        // click away even when Stripe is connected.
+        await loadManualPayments()
       }
     } catch (e) {
       setError(e.message || 'Unexpected error')
@@ -4341,6 +4346,12 @@ function StripeTransactionsTab({ companyId, theme, isMobile }) {
            (t.description || '').toLowerCase().includes(q) ||
            (t.id || '').toLowerCase().includes(q)
   })
+
+  // Method filter for the recorded-payments list. Offer every method the app
+  // knows plus anything already in the data (imports arrive as free text).
+  const methodOptions = Array.from(new Set([...PAYMENT_METHODS, ...manualPayments.map(p => p.method).filter(Boolean)]))
+  const visibleManual = manualPayments.filter(p => methodFilter === 'all' || (p.method || '').toLowerCase() === methodFilter.toLowerCase())
+  const unlinkedCount = visibleManual.filter(p => !p.source_transaction_id).length
 
   const downloadCsv = () => {
     const headers = ['Date', 'Customer', 'Email', 'Amount', 'Status', 'Method', 'Refunded', 'Matched Invoice', 'Job ID', 'Stripe ID', 'Description']
@@ -4469,48 +4480,6 @@ function StripeTransactionsTab({ companyId, theme, isMobile }) {
             </div>
           </div>
 
-          {/* Recent manual / external payments */}
-          <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: theme.text }}>Recent payments (any source)</h3>
-              <HelpBadge text="Every payment record in your books, regardless of how it was received. Includes Stripe (if connected), manual entries from invoices, and bank-deposit matches from the Money tab." />
-            </div>
-            {manualLoading ? (
-              <p style={{ color: theme.textMuted, fontSize: '13px', padding: '20px', textAlign: 'center' }}>Loading…</p>
-            ) : manualPayments.length === 0 ? (
-              <p style={{ color: theme.textMuted, fontSize: '13px', padding: '20px', textAlign: 'center' }}>
-                No payments recorded yet. Once you log one (from an invoice) or connect Stripe, payments will appear here.
-              </p>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                      {['Date', 'Customer', 'Invoice', 'Amount', 'Method', 'Notes'].map(h => (
-                        <th key={h} style={{ padding: '8px 8px 8px 0', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {manualPayments.map(p => (
-                      <tr key={p.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                        <td style={{ padding: '10px 8px 10px 0', color: theme.text, whiteSpace: 'nowrap' }}>{p.date}</td>
-                        <td style={{ padding: '10px 8px', color: theme.text }}>{p.customer?.name || '—'}</td>
-                        <td style={{ padding: '10px 8px' }}>
-                          {p.invoice?.invoice_id ? (
-                            <a href={`/invoices/${p.invoice_id}`} style={{ color: theme.accent, textDecoration: 'none', fontWeight: 500 }}>{p.invoice.invoice_id}</a>
-                          ) : <span style={{ color: theme.textMuted, fontStyle: 'italic' }}>unlinked</span>}
-                        </td>
-                        <td style={{ padding: '10px 8px', color: theme.text, fontWeight: 600, whiteSpace: 'nowrap' }}>{fmt(p.amount)}</td>
-                        <td style={{ padding: '10px 8px', color: theme.textSecondary }}>{p.method || '—'}</td>
-                        <td style={{ padding: '10px 8px', color: theme.textMuted, fontSize: '12px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.notes || ''}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
         </>
       )}
 
@@ -4639,6 +4608,77 @@ function StripeTransactionsTab({ companyId, theme, isMobile }) {
         </div>
       </div>
       </>
+      )}
+      {/* Recorded payments, any source — rendered whether or not Stripe is
+          connected, so Venmo / cash / check payments logged from invoices
+          and FieldScout are always one click away. */}
+      {stripeConfigured !== null && (
+        <>
+          {/* Recent manual / external payments */}
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: theme.text }}>Recent payments (any source)</h3>
+              <HelpBadge text="Every payment record in your books, regardless of how it was received. Includes Stripe (if connected), manual entries from invoices and FieldScout — Venmo, cash, check — and bank-deposit matches from the Money tab. 'Deposit' shows whether the money has been matched to a bank transaction yet." />
+            </div>
+            {manualPayments.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: '13px' }}>
+                  <option value="all">All methods</option>
+                  {methodOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+                <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                  {visibleManual.length} payment{visibleManual.length === 1 ? '' : 's'} · {fmt(visibleManual.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0))}
+                  {unlinkedCount > 0 && <> · {unlinkedCount} not yet matched to a bank deposit</>}
+                </span>
+              </div>
+            )}
+            {manualLoading ? (
+              <p style={{ color: theme.textMuted, fontSize: '13px', padding: '20px', textAlign: 'center' }}>Loading…</p>
+            ) : manualPayments.length === 0 ? (
+              <p style={{ color: theme.textMuted, fontSize: '13px', padding: '20px', textAlign: 'center' }}>
+                No payments recorded yet. Once you log one (from an invoice) or connect Stripe, payments will appear here.
+              </p>
+            ) : visibleManual.length === 0 ? (
+              <p style={{ color: theme.textMuted, fontSize: '13px', padding: '20px', textAlign: 'center' }}>
+                No {methodFilter} payments among the last 50 recorded. Log one from the invoice or FieldScout and it will show here.
+              </p>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                      {['Date', 'Customer', 'Invoice', 'Amount', 'Method', 'Deposit', 'Notes'].map(h => (
+                        <th key={h} style={{ padding: '8px 8px 8px 0', textAlign: 'left', fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleManual.map(p => (
+                      <tr key={p.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                        <td style={{ padding: '10px 8px 10px 0', color: theme.text, whiteSpace: 'nowrap' }}>{p.date}</td>
+                        <td style={{ padding: '10px 8px', color: theme.text }}>{p.customer?.name || '—'}</td>
+                        <td style={{ padding: '10px 8px' }}>
+                          {p.invoice?.invoice_id ? (
+                            <a href={`/invoices/${p.invoice_id}`} style={{ color: theme.accent, textDecoration: 'none', fontWeight: 500 }}>{p.invoice.invoice_id}</a>
+                          ) : <span style={{ color: theme.textMuted, fontStyle: 'italic' }}>unlinked</span>}
+                        </td>
+                        <td style={{ padding: '10px 8px', color: theme.text, fontWeight: 600, whiteSpace: 'nowrap' }}>{fmt(p.amount)}</td>
+                        <td style={{ padding: '10px 8px', color: theme.textSecondary }}>{p.method || '—'}</td>
+                        <td style={{ padding: '10px 8px', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                          {p.source_transaction_id
+                            ? <span style={{ color: '#16a34a', fontWeight: 600 }}>matched</span>
+                            : <span style={{ color: theme.textMuted }}>not yet</span>}
+                        </td>
+                        <td style={{ padding: '10px 8px', color: theme.textMuted, fontSize: '12px', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.notes || ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   )
