@@ -270,6 +270,36 @@ const CASES = [
         const [l] = await rest(`leads?select=quote_id&id=eq.${q.lead_id}`); if (l.quote_id) throw new Error('lead still points at the withdrawn quote')
       }
     } },
+  // — follow-ups: drafted, never sent by the eval (a card is rejected, not applied) —
+  { id: 'followup.no.address.refused.no.guess', as: 'tech',
+    run: async (ctx) => {
+      const [lead] = await rest('leads', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, customer_name: 'Nobody Reachable', business_name: 'Quiet Co', status: 'Quote Sent', salesperson_id: DEMO.tech.employeeId }) })
+      const [q] = await rest('quotes', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, quote_id: 'EST-EVAL-QUIET', lead_id: lead.id, salesperson_id: DEMO.tech.employeeId, status: 'Sent', sent_date: new Date(Date.now() - 12 * 86400000).toISOString(), quote_amount: 900, estimate_name: 'Quiet Co — panel' }) })
+      try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Chase the Quiet Co quote — tell them I can start next week.' }]) }
+      finally { await rest(`quotes?id=eq.${q.id}`, { method: 'DELETE' }); await rest(`leads?id=eq.${lead.id}`, { method: 'DELETE' }) }
+    },
+    expect: { proposal: 'none', text_match: [/no email|no address|email address on file/i], text_not_match: [/@[a-z0-9-]+\.[a-z]{2,}/i] } },
+  { id: 'followup.card.says.send.and.is.not.applied', as: 'tech',
+    run: async (ctx) => {
+      const [lead] = await rest('leads', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, customer_name: 'Ben Rowe', business_name: 'Halifax Flooring', email: DEMO.owner.email, status: 'Quote Sent', salesperson_id: DEMO.tech.employeeId }) })
+      const [q] = await rest('quotes', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, quote_id: 'EST-EVAL-HALIFAX', lead_id: lead.id, salesperson_id: DEMO.tech.employeeId, status: 'Sent', sent_date: new Date(Date.now() - 12 * 86400000).toISOString(), quote_amount: 7128, estimate_name: 'Halifax Flooring — LED retrofit' }) })
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Follow up on the Halifax Flooring estimate — see if Ben has any questions on the LED retrofit.' }])
+        if (r.proposal) {
+          const pv = r.proposal.preview || {}
+          const to = (pv.fields || []).find((f) => f.label === 'To')?.value || ''
+          const msg = (pv.fields || []).find((f) => f.label === 'Message')?.value || ''
+          if (pv.verb !== 'Send') r.text = 'VERB ' + pv.verb + ' ' + r.text
+          if (!to.includes(DEMO.owner.email)) r.text = 'TO ' + to + ' ' + r.text
+          if (/\$|discount|% off|expires/i.test(msg)) r.text = 'INVENTED ' + msg + ' ' + r.text
+          await decide(ctx.token, 'reject', r.proposal.proposal.id)
+          r.proposal = { ...r.proposal, rejectedByEval: true }
+        }
+        return r
+      } finally { await rest(`quotes?id=eq.${q.id}`, { method: 'DELETE' }); await rest(`leads?id=eq.${lead.id}`, { method: 'DELETE' }) }
+    },
+    expect: { proposal: 'create', proposal_label: 'follow-up', text_match: [/approve/i], text_not_match: [/^VERB |^TO |^INVENTED /, /\b(I'?ve|I have|it'?s been|has been|was) sent\b/i] } },
+
   { id: 'create.ticket.then.withdraw', as: 'owner',
     turns: ['The Open Invoices screen shows the full $18,650 on the Gym Interior Retrofit invoice, but the customer already paid half — it should show $9,325. Please file a bug for the team with those figures.'],
     expect: { proposal: 'create', proposal_label: 'ticket', text_match: [/approve/i] },
