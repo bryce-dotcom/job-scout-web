@@ -22,7 +22,7 @@ import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipe
 import { soldTotal, periodBounds } from '../lib/soldTotals'
 import { countDueFromRows, dueKeysFromRows } from '../lib/followUpDue'
 import { pushStatus, enablePush, disablePush, PUSH_GRANTED, PUSH_UNSUPPORTED, PUSH_UNCONFIGURED, PUSH_DENIED } from '../lib/pushNotifications'
-import LiahonaMap from '../components/LiahonaMap'
+import LiahonaMap from '../components/liahona/LiahonaMap'
 
 const defaultTheme = {
   bg: '#f7f5ef',
