@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import AddressAutocomplete from '../components/AddressAutocomplete'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { findMatchingCustomer, contactGapPatch } from '../lib/customerMatch'
@@ -854,6 +855,7 @@ export default function LeadDetail() {
       phone: lead.phone || '',
       email: lead.email || '',
       address: lead.address || '',
+      geo: null,
       lead_source: lead.lead_source || '',
       service_type: lead.service_type || '',
       lead_owner_id: lead.lead_owner_id || '',
@@ -881,6 +883,7 @@ export default function LeadDetail() {
       phone: editForm.phone || null,
       email: editForm.email || null,
       address: editForm.address || null,
+      ...(editForm.geo ? { latitude: editForm.geo.lat, longitude: editForm.geo.lng, geocoded_at: new Date().toISOString() } : {}),
       lead_source: editForm.lead_source || null,
       service_type: editForm.service_type || null,
       lead_owner_id: editForm.lead_owner_id || null,
@@ -1267,7 +1270,7 @@ export default function LeadDetail() {
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                     <MapPin size={16} color={theme.textMuted} style={{ marginTop: '2px', flexShrink: 0 }} />
                     {isEditing ? (
-                      <textarea value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} rows={2} style={{ ...inputStyle, resize: 'vertical' }} placeholder="Address" />
+                      <AddressAutocomplete value={editForm.address} onChange={text => setEditForm(f => ({ ...f, address: text }))} onSelect={geo => setEditForm(f => ({ ...f, geo: geo ? { lat: geo.lat, lng: geo.lng } : null }))} placeholder="Address" style={inputStyle} />
                     ) : (
                       <span style={{ color: theme.text }}>{lead.address || '-'}</span>
                     )}

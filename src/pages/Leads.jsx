@@ -5,6 +5,7 @@ import { leadOwners } from '../lib/leadOwnerRoles'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { Plus, Pencil, X, UserPlus, Phone, Mail, Calendar, FileText, UserCheck, Search, Trash2, Upload, Download, Users, Send, MapPin, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
+import AddressAutocomplete from '../components/AddressAutocomplete'
 import EntityCard from '../components/EntityCard'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { leadsFields } from '../lib/importExportFields'
@@ -24,6 +25,7 @@ const emptyLead = {
   email: '',
   phone: '',
   address: '',
+  geo: null,            // { lat, lng } when the address was picked from suggestions
   service_type: '',
   lead_source: '',
   lead_source_employee_id: '',
@@ -201,6 +203,7 @@ export default function Leads() {
       email: lead.email || '',
       phone: lead.phone || '',
       address: lead.address || '',
+      geo: null,
       service_type: lead.service_type || '',
       lead_source: lead.lead_source || '',
       lead_source_employee_id: lead.lead_source_employee_id || '',
@@ -262,6 +265,8 @@ export default function Leads() {
       email: formData.email || null,
       phone: formData.phone || null,
       address: formData.address || null,
+      // Picked from suggestions → already geocoded; typed → the store geocodes on save.
+      ...(formData.geo ? { latitude: formData.geo.lat, longitude: formData.geo.lng, geocoded_at: new Date().toISOString() } : {}),
       service_type: formData.service_type || null,
       lead_source: formData.lead_source || null,
       lead_source_employee_id: formData.lead_source_employee_id || null,
@@ -879,7 +884,7 @@ export default function Leads() {
                 <div><label style={labelStyle}>Phone</label><input type="tel" name="phone" value={formData.phone} onChange={handleChange} onBlur={checkDuplicates} style={inputStyle} /></div>
               </div>
 
-              <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Address</label><textarea name="address" value={formData.address} onChange={handleChange} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></div>
+              <div style={{ marginBottom: '16px' }}><label style={labelStyle}>Address</label><AddressAutocomplete value={formData.address} onChange={text => setFormData(prev => ({ ...prev, address: text }))} onSelect={geo => setFormData(prev => ({ ...prev, geo: geo ? { lat: geo.lat, lng: geo.lng } : null }))} placeholder="Start typing the street address" style={inputStyle} /></div>
 
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div><label style={labelStyle}>Service Type</label><select name="service_type" value={formData.service_type} onChange={handleChange} style={inputStyle}><option value="">-- Select --</option>{serviceTypes.map(t => <option key={t} value={t}>{t}</option>)}</select></div>

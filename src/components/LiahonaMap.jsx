@@ -18,6 +18,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { geocodeAddress, reverseGeocode, geocodeMissingLeads, googleMapsUsable, markGoogleMapsBroken } from '../lib/geocode'
 import { loadGoogleMaps } from '../lib/googleMaps'
+import AddressAutocomplete from './AddressAutocomplete'
 import {
   OVERLAYS, fetchBoundary, utilityAtPoint, fetchRadarTileTemplate,
   fetchRepLocations, pointInGeometry, geometryCentroid
@@ -829,7 +830,9 @@ export default function LiahonaMap({
               <button onClick={() => setDropForm(null)} style={btn(false, { padding: 4 })}><X size={13} /></button>
             </div>
             <label style={label}>Address {dropForm.resolving && <span style={{ fontWeight: 400, textTransform: 'none' }}>· looking up…</span>}</label>
-            <input style={input} value={dropForm.address} onChange={e => setDropForm({ ...dropForm, address: e.target.value })} />
+            <AddressAutocomplete value={dropForm.address} style={input} placeholder="Street address"
+              onChange={text => setDropForm(f => f && ({ ...f, address: text }))}
+              onSelect={geo => { if (!geo) return; setDropForm(f => f && ({ ...f, address: geo.address, lat: geo.lat, lng: geo.lng })); mapRef.current?.panTo([geo.lat, geo.lng]) }} />
             <label style={label}>Customer name</label>
             <input style={input} value={dropForm.customer_name} onChange={e => setDropForm({ ...dropForm, customer_name: e.target.value })} autoFocus />
             <label style={label}>Phone</label>

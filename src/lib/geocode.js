@@ -20,7 +20,18 @@ const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeo
 // the rest of the session so every geocode/route doesn't wait out the timeout.
 let googleBroken = false
 export const googleMapsUsable = () => hasMapsKey() && !googleBroken
-export const markGoogleMapsBroken = () => { googleBroken = true }
+export const markGoogleMapsBroken = () => {
+  googleBroken = true
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('google-maps-broken'))
+}
+
+// The Maps script calls window.gm_authFailure when the key is rejected for
+// this origin (InvalidKeyMapError). Hook it so every consumer falls back at
+// once instead of each waiting out its own timeout.
+if (typeof window !== 'undefined') {
+  const prev = window.gm_authFailure
+  window.gm_authFailure = () => { markGoogleMapsBroken(); if (typeof prev === 'function') prev() }
+}
 
 async function googleGeocoder() {
   try {
