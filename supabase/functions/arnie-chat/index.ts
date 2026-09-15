@@ -19,6 +19,7 @@ function agentFor(body: Record<string, unknown>): Agent {
   return body.agent === 'frankie' ? 'frankie' : 'arnie'
 }
 import { invoiceOutstanding, isInvoiceOverdue, isSettledStatus, SETTLED_STATUSES } from '../_shared/money.ts'
+import { isOpenQuote, OPEN_QUOTE_STATUSES } from '../_shared/arnieFollowup.ts'
 
 // Still read directly here: the SSE streaming path keeps its own fetch
 // (the shared wrapper buffers responses, which would break streaming).
@@ -96,7 +97,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        status: { type: 'string', description: 'Filter by job status (e.g. Complete, In Progress, Scheduled)' },
+        status: { type: 'string', description: 'Filter by job status, case-insensitive whole value (e.g. Completed, In Progress, Scheduled, Invoiced). Statuses are per-company; if none match, the result names the ones in use.' },
         assigned_to: { type: 'integer', description: 'Filter by employee ID' },
         customer_name: { type: 'string', description: 'Filter by customer name (partial match)' },
         start_date: { type: 'string', description: 'ISO date — only jobs scheduled on/after this date' },
@@ -235,15 +236,15 @@ const TOOLS = [
   },
   {
     name: 'query_quotes',
-    description: 'Query quotes and estimates — counts, dollar totals, win/loss, by salesperson or month. Use for "how many quotes did we send", "what is out for signature", "who is quoting the most". ADMIN+ only.',
+    description: 'Query quotes and estimates — counts, dollar totals, win/loss, by salesperson or month. Use for "how many quotes did we send", "what is out for signature", "which quotes have gone quiet", "who is quoting the most". ADMIN+ only. Every row carries `name`, `customer_name` (resolved for you), and the verdicts `open`, `stale`, `expired`, `days_out`, `days_to_expiry` as of `as_of` — read them, never work out dates yourself. Totals are computed for you: `open_count`/`open_total`, `stale_count`/`stale_total`, `expired_count`/`expired_total`, `approved_count`/`approved_total`, `rejected_count`. Asked about specific quotes you have not fetched in THIS conversation, call this tool — never describe a quote from memory.',
     input_schema: {
       type: 'object',
       properties: {
-        status: { type: 'string', description: 'Quote status as stored, e.g. Sent, Approved, Rejected, Draft' },
+        status: { type: 'string', description: 'A stored status, matched whole and case-insensitively (Sent, Approved, Rejected, Draft) — or one of the verdicts: open (still waiting on an answer), stale (open and sent more than 7 days ago), expired (open and past its expiration date).' },
         salesperson_id: { type: 'integer' },
-        start_date: { type: 'string', description: 'ISO date — quotes created on/after' },
-        end_date: { type: 'string', description: 'ISO date — quotes created on/before' },
-        group_by: { type: 'string', enum: ['status', 'month', 'salesperson', 'service_type', 'none'] },
+        start_date: { type: 'string', description: 'YYYY-MM-DD. Only quotes CREATED on/after this date — not sent, not expiring.' },
+        end_date: { type: 'string', description: 'YYYY-MM-DD. Only quotes CREATED on/before this date.' },
+        group_by: { type: 'string', enum: ['status', 'month', 'salesperson', 'service_type', 'customer', 'none'], description: 'customer groups by customer_name with total_quote_amount per customer.' },
       },
     },
   },
@@ -333,6 +334,9 @@ const MAX_ROWS = 10000
 // is reported as an upper bound and the scope note says so — a bounded
 // answer that admits its bound beats a slow one.
 const BALANCE_MAX = 1000
+// An open quote sent longer ago than this has gone quiet. The daily brief
+// calls it a week too; keep them agreeing.
+const STALE_QUOTE_DAYS = 7
 
 async function fetchRows(
   url: string,
@@ -756,14 +760,26 @@ async function execTool(name: string, input: any, caller: Caller) {
 
     if (name === 'query_jobs') {
       const params = new URLSearchParams({ company_id: `eq.${companyId}` })
-      if (input.status) params.append('status', `eq.${input.status}`)
+      // Case-insensitive, whole-value. The tool description said "Complete";
+      // the column says "Completed"; the filter was `eq`. "List our completed
+      // jobs" came back "no completed jobs in the system" for nine of them.
+      // Statuses are per-company settings, so no list here can be right —
+      // when nothing matches, say what IS in use instead of "none".
+      if (input.status) params.append('status', `ilike.${String(input.status).replace(/[*,()]/g, '')}`)
       if (input.assigned_to) params.append('salesperson_id', `eq.${input.assigned_to}`)
       if (input.customer_name) params.append('customer_name', `ilike.*${input.customer_name}*`)
       if (input.start_date) params.append('start_date', `gte.${input.start_date}`)
       if (input.end_date) params.append('start_date', `lte.${input.end_date}`)
       const got = await fetchRows(sb('jobs'), params, hdr)
       if ('error' in got) return { error: `jobs query failed: ${got.error}` }
-      return aggregate(got, input.group_by, ['job_total', 'expense_amount', 'profit_margin'])
+      // profit_margin is a percentage; a sum of it is a number with no meaning.
+      const agg: any = aggregate(got, input.group_by, ['job_total', 'expense_amount'])
+      if (input.status && !got.total) {
+        const inUse = await fetchRows(sb('jobs'), new URLSearchParams({ select: 'status', company_id: `eq.${companyId}` }), hdr, 5000)
+        const statuses = 'error' in inUse ? [] : [...new Set(inUse.rows.map((r: any) => r.status).filter(Boolean))]
+        agg.scope = `No jobs have status "${input.status}". Statuses in use here: ${statuses.join(', ') || 'none'}. If one of those is what was meant, query it — do not report "no jobs".`
+      }
+      return agg
     }
 
     if (name === 'query_my_pay' || name === 'query_payroll' || name === 'query_payments' || name === 'query_purchase_orders') {
@@ -899,13 +915,95 @@ async function execTool(name: string, input: any, caller: Caller) {
     if (name === 'query_quotes') {
       if (!isAdmin) return { restricted: 'Admin access required for quote data.' }
       const params = new URLSearchParams({ company_id: `eq.${companyId}` })
-      if (input.status) params.append('status', `eq.${input.status}`)
+      const notes: string[] = []
+      // The columns an answer is made of. A quote row also carries the
+      // summary, the estimate message, the add-on recommendations and the
+      // settings overrides — none of which answer "what is out for
+      // signature", all of which crowd the context.
+      params.set('select', 'id,quote_id,estimate_name,job_title,service_type,status,quote_amount,job_total,'
+        + 'salesperson_id,customer_id,lead_id,sent_date,last_sent_at,expiration_date,approved_date,rejected_date,'
+        + 'followup_count,created_at')
+      const asOf = new Date().toISOString().slice(0, 10)
+      // open / stale / expired are not stored statuses; they are verdicts
+      // the rows carry below, and asking for one of them filters on the
+      // verdict after the read. Anything else is a stored status, matched
+      // whole and case-insensitively.
+      const verdict = ['open', 'stale', 'expired'].includes(String(input.status || '').toLowerCase())
+        ? String(input.status).toLowerCase() : null
+      if (input.status && !verdict) params.append('status', `ilike.${String(input.status).replace(/[*,()]/g, '')}`)
+      if (verdict) params.append('status', `in.(${OPEN_QUOTE_STATUSES.join(',')})`)
       if (input.salesperson_id) params.append('salesperson_id', `eq.${input.salesperson_id}`)
       if (input.start_date) params.append('created_at', `gte.${input.start_date}`)
       if (input.end_date) params.append('created_at', `lte.${input.end_date}`)
+      if (input.start_date || input.end_date) notes.push(`Windowed on created_at (${input.start_date || 'any'} to ${input.end_date || 'any'}) — when the quote was created, not when it was sent or expires.`)
       const got = await fetchRows(sb('quotes'), params, hdr)
       if ('error' in got) return { error: `quotes query failed: ${got.error}` }
-      return aggregate(got, input.group_by, ['quote_amount', 'job_total'])
+
+      // The verdicts. Asked which open quotes had expired, the model said
+      // "none" and that the $41,200 one "expires tomorrow (Sep 13)" — on
+      // Sep 15. A row that carries its sent date and its expiry date but no
+      // judgement leaves the date arithmetic to the model, and the model
+      // does not know what day it is unless told on every row.
+      const day = (d: unknown) => d ? String(d).slice(0, 10) : ''
+      const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000)
+      for (const r of got.rows) {
+        r.open = isOpenQuote(r)
+        const sent = day(r.last_sent_at || r.sent_date)
+        r.days_out = r.open && sent ? daysBetween(sent, asOf) : null
+        r.stale = r.open && r.days_out !== null && r.days_out > STALE_QUOTE_DAYS
+        r.expired = r.open && !!day(r.expiration_date) && day(r.expiration_date) < asOf
+        r.days_to_expiry = r.open && day(r.expiration_date) ? daysBetween(asOf, day(r.expiration_date)) : null
+      }
+      if (verdict) got.rows = got.rows.filter((r: any) => r[verdict])
+      if (verdict) got.total = got.rows.length
+
+      // Who each quote is for. A quote holds customer_id or lead_id and no
+      // name; asked "who are they for", the model called query_customers four
+      // times and answered with nothing, or with "Customer ID 7947".
+      const custIds = [...new Set(got.rows.map((r: any) => r.customer_id).filter(Boolean))].slice(0, BALANCE_MAX)
+      const leadIds = [...new Set(got.rows.filter((r: any) => !r.customer_id).map((r: any) => r.lead_id).filter(Boolean))].slice(0, BALANCE_MAX)
+      const nameById = new Map<string, string>()
+      for (let i = 0; i < custIds.length; i += 200) {
+        const rows = await fetchRows(sb('customers'), new URLSearchParams({ select: 'id,name,business_name', company_id: `eq.${companyId}`, id: `in.(${custIds.slice(i, i + 200).join(',')})` }), hdr, 200)
+        if ('error' in rows) break
+        for (const c of rows.rows) nameById.set(`c${c.id}`, c.business_name || c.name || '')
+      }
+      for (let i = 0; i < leadIds.length; i += 200) {
+        const rows = await fetchRows(sb('leads'), new URLSearchParams({ select: 'id,customer_name,business_name', company_id: `eq.${companyId}`, id: `in.(${leadIds.slice(i, i + 200).join(',')})` }), hdr, 200)
+        if ('error' in rows) break
+        for (const l of rows.rows) nameById.set(`l${l.id}`, l.business_name || l.customer_name || '')
+      }
+      for (const r of got.rows) {
+        r.customer_name = (r.customer_id && nameById.get(`c${r.customer_id}`)) || (r.lead_id && nameById.get(`l${r.lead_id}`)) || null
+        r.name = r.estimate_name || r.job_title || null
+      }
+
+      const agg: any = aggregate(got, input.group_by, ['quote_amount', 'job_total'])
+      const sum = (rows: any[]) => rows.reduce((s: number, r: any) => s + (parseFloat(r.quote_amount) || 0), 0).toFixed(2)
+      const open = got.rows.filter((r: any) => r.open)
+      const stale = open.filter((r: any) => r.stale)
+      const expired = open.filter((r: any) => r.expired)
+      const approved = got.rows.filter((r: any) => r.status === 'Approved' || r.approved_date)
+      const rejected = got.rows.filter((r: any) => r.status === 'Rejected' || r.rejected_date)
+      Object.assign(agg, {
+        as_of: asOf,
+        open_count: open.length, open_total: sum(open),
+        stale_count: stale.length, stale_total: sum(stale),
+        expired_count: expired.length, expired_total: sum(expired),
+        approved_count: approved.length, approved_total: sum(approved),
+        rejected_count: rejected.length,
+      })
+      if (verdict) notes.push(`Filtered to ${verdict} quotes only: ${{ open: 'still waiting on an answer', stale: `open and sent more than ${STALE_QUOTE_DAYS} days ago`, expired: 'open and past expiration_date' }[verdict]}, as of ${asOf}.`)
+      else notes.push(`Not filtered to open quotes: ${got.total} match, ${open.length} open (${stale.length} stale, ${expired.length} expired), ${approved.length} approved, ${rejected.length} rejected, as of ${asOf}. Each row says for itself — read \`open\`, \`stale\`, \`expired\`, \`days_out\` and \`days_to_expiry\` rather than working them out.`)
+      if (got.truncated) notes.push(`The *_count and *_total figures cover only the ${got.rows.length} of ${got.total} matching rows that could be read.`)
+      agg.scope = notes.join(' ')
+      // Next to the rows, not only in the tool description. Asked "for whom"
+      // one turn after an unfiltered read had put every quote, named, in
+      // front of it, the model still invented two names and two amounts that
+      // summed to the right total. The description is read once; this is
+      // read with the data.
+      agg.rule = 'Name a quote or a customer ONLY by copying `name` and `customer_name` from a row in a `sample` in this conversation. If the quote you want to mention is not in one, call query_quotes again — never fill in a name or an amount.'
+      return agg
     }
 
     if (name === 'query_expenses') {
@@ -1138,7 +1236,13 @@ function aggregate(
     ? { WARNING: `Totals below cover only ${data.length} of ${total} matching rows. State that the figure is partial.` }
     : {}
   if (!groupBy || groupBy === 'none') {
-    return { count: total, sample: data.slice(0, 30), ...partial }
+    // The totals too, not only when grouped. Asked what Jordan Lee's 18
+    // jobs came to, the model got a count and thirty rows, added the
+    // job_total column by hand, and said $110,985 for $127,225 — with a
+    // breakdown that did not sum to its own total. Sum here; the model reads.
+    const totals: Record<string, number> = {}
+    for (const f of sumFields) totals[`total_${f}`] = data.reduce((s: number, r: any) => s + (parseFloat(r[f]) || 0), 0)
+    return { count: total, ...totals, sample: data.slice(0, 30), ...partial }
   }
   const groups: Record<string, any> = {}
   for (const row of data) {
@@ -1183,6 +1287,11 @@ function aggregate(
     totalRecords: total,
     groups: Object.fromEntries(entries),
     ...(all.length > 30 ? { note: `Showing the 30 largest of ${all.length} groups.` } : {}),
+    // The rows too. A grouped result used to be totals and nothing else, and
+    // a model holding "approved_count: 2, approved_total: 22800" with no rows
+    // to cite made rows up — twice, different names each time, summing to
+    // the right total. Asked "for whom", a model with the rows quotes them.
+    sample: data.slice(0, 30),
     ...partial,
   }
 }
@@ -1432,7 +1541,11 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                   if (b?.type === 'tool_use' && b.input_buf !== undefined) {
                     try { b.input = JSON.parse(b.input_buf) } catch { b.input = {} }
                     delete b.input_buf
-                    send('tool_call', { name: b.name })
+                    // The arguments too, so a transcript shows WHAT was asked
+                    // of the tool, not only that it was called. "Called
+                    // query_quotes three times" says nothing about whether
+                    // the approved rows were ever fetched.
+                    send('tool_call', { name: b.name, input: b.input })
                   }
                 } else if (evt.type === 'message_start') {
                   if (evt.message?.usage) usage = { ...(usage || {}), ...evt.message.usage }

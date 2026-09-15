@@ -31,6 +31,7 @@ import { fileURLToPath } from 'node:url'
 // Node strips the types. The rules an AR answer is checked against are the
 // ones the edge function uses, not a copy — guard fails the build otherwise.
 import { isSettledStatus, isInvoiceOverdue, invoiceOutstanding } from '../supabase/functions/_shared/money.ts'
+import { isOpenQuote } from '../supabase/functions/_shared/arnieFollowup.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const env = Object.fromEntries(readFileSync(resolve(root, '.env'), 'utf8').split(/\r?\n/)
@@ -83,17 +84,17 @@ async function chat(token, roleLabel, messages) {
   const res = await fetch(`${U}/functions/v1/arnie-chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, apikey: ANON },
     body: JSON.stringify({ messages, systemPrompt: prompt(roleLabel), stream: true, supports: ['config', 'record', 'bulk', 'create'] }) })
   if (!res.ok || !res.body) throw new Error(`arnie-chat ${res.status} ${(await res.text()).slice(0, 200)}`)
-  let text = '', proposal = null; const tools = []
+  let text = '', proposal = null; const tools = [], calls = []
   const rd = res.body.getReader(); const dec = new TextDecoder(); let buf = '', ev = ''
   while (true) {
     const { value, done } = await rd.read(); if (done) break
     buf += dec.decode(value, { stream: true }); const ls = buf.split('\n'); buf = ls.pop() || ''
     for (const ln of ls) {
       if (ln.startsWith('event: ')) ev = ln.slice(7).trim()
-      else if (ln.startsWith('data: ')) { try { const p = JSON.parse(ln.slice(6)); if (ev === 'text' && p.delta) text += p.delta; if (ev === 'proposal') proposal = p; if (ev === 'tool_call') tools.push(p.name); if (ev === 'error') throw new Error('stream error: ' + p.message) } catch (e) { if (String(e.message).startsWith('stream error')) throw e } }
+      else if (ln.startsWith('data: ')) { try { const p = JSON.parse(ln.slice(6)); if (ev === 'text' && p.delta) text += p.delta; if (ev === 'proposal') proposal = p; if (ev === 'tool_call') { tools.push(p.name); calls.push(p.name + (p.input && Object.keys(p.input).length ? ' ' + JSON.stringify(p.input) : '')) } if (ev === 'error') throw new Error('stream error: ' + p.message) } catch (e) { if (String(e.message).startsWith('stream error')) throw e } }
     }
   }
-  return { text: text.trim(), tools, proposal }
+  return { text: text.trim(), tools, calls, proposal }
 }
 async function decide(token, action, proposalId) {
   const r = await fetch(`${U}/functions/v1/arnie-config`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, apikey: ANON }, body: JSON.stringify({ action, proposal_id: proposalId }) })
@@ -124,7 +125,9 @@ function check(r, exp) {
 }
 
 // ─── cases ──────────────────────────────────────────────────────────────────
-// as: 'owner' | 'tech'. turns: user messages; the assistant reply is fed back
+// as: 'owner' | 'tech'. turns: user messages (or an async function of ctx
+// returning them, when a question has to name what the database holds); the
+// assistant reply is fed back
 // between them. Assertions apply to the LAST turn. expect may be a function of
 // ctx, for cases whose right answer has to be read from the database first
 // (see arTruth). after(): optional, runs with
@@ -137,6 +140,9 @@ function check(r, exp) {
 // So the figures a money answer must contain are worked out here, from the
 // same rows and the same rules the tool uses, every run.
 const money = (n) => new RegExp(`\\$\\s?(${Math.round(n).toLocaleString('en-US')}|${Math.round(n)})(\\.\\d\\d)?(?!\\d)`)
+// "Four quotes have gone quiet" is a right answer to a question whose answer is 4.
+const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
+const count = (n) => new RegExp(n < WORDS.length ? `\\b(${n}|${WORDS[n]})\\b` : `\\b${n}\\b`, 'i')
 let _ar = null
 async function arTruth() {
   if (_ar) return _ar
@@ -154,6 +160,30 @@ async function arTruth() {
   const dueThisWeek = open.filter(r => r.due_date && r.due_date >= today && r.due_date <= weekEnd)
   return (_ar = { open, overdue, openOwed: sum(open), overdueOwed: sum(overdue), topName, topOwed, dueThisWeek, weekEnd })
 }
+// Same idea for jobs and quotes. The quote rule is the follow-up rail's, so
+// "open" here is what Arnie may chase.
+const rx = (s) => new RegExp(String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+let _jq = null
+async function jobsQuotesTruth() {
+  if (_jq) return _jq
+  const jobs = await rest(`jobs?select=id,status,customer_name,job_title,job_total,invoice_status,salesperson_id&company_id=eq.${DEMO.company}&order=id`)
+  const quotes = await rest(`quotes?select=id,estimate_name,job_title,status,quote_amount,customer_id,lead_id,sent_date,last_sent_at,expiration_date,approved_date,rejected_date&company_id=eq.${DEMO.company}&order=id`)
+  const custs = await rest(`customers?select=id,name,business_name&company_id=eq.${DEMO.company}`)
+  const emps = await rest(`employees?select=id,name&company_id=eq.${DEMO.company}`)
+  const cname = (id) => { const c = custs.find(x => x.id === id); return c ? (c.business_name || c.name) : '' }
+  const completed = jobs.filter(j => /^completed?$/i.test(j.status))
+  const bySeller = {}; for (const j of jobs) { const k = j.salesperson_id; if (k) bySeller[k] = (bySeller[k] || { n: 0, total: 0 }); if (k) { bySeller[k].n++; bySeller[k].total += Number(j.job_total) || 0 } }
+  const [topSellerId, topSeller] = Object.entries(bySeller).sort((a, b) => b[1].total - a[1].total)[0] || [null, { n: 0, total: 0 }]
+  const topSellerName = emps.find(e => e.id === Number(topSellerId))?.name || ''
+  const weekAgo = new Date(Date.parse(today) - 7 * 86400000).toISOString().slice(0, 10)
+  const q = quotes.map(x => ({ ...x, name: x.estimate_name || x.job_title, customer: cname(x.customer_id), sent: (x.last_sent_at || x.sent_date || '').slice(0, 10) }))
+  const open = q.filter(isOpenQuote)
+  const stale = open.filter(x => x.sent && x.sent < weekAgo)
+  const expired = open.filter(x => x.expiration_date && x.expiration_date.slice(0, 10) < today)
+  const approved = q.filter(x => x.status === 'Approved' || x.approved_date)
+  const total = (rs) => rs.reduce((s, r) => s + (Number(r.quote_amount) || 0), 0)
+  return (_jq = { jobs, completed, topSellerName, topSeller, open, stale, expired, approved, openTotal: total(open), approvedTotal: total(approved) })
+}
 
 const CASES = [
   // — reading the company, honestly —
@@ -164,7 +194,7 @@ const CASES = [
 
   // — accounts receivable: every figure checked against the rows —
   { id: 'invoices.overdue.is.past.due', as: 'owner', turns: ['How many overdue invoices do we have, and what is the total still owed on them?'],
-    expect: async () => { const t = await arTruth(); return { tools_include: ['query_invoices'], text_match: [/overdue/i, new RegExp(`\\b${t.overdue.length}\\b`), money(t.overdueOwed)],
+    expect: async () => { const t = await arTruth(); return { tools_include: ['query_invoices'], text_match: [/overdue/i, count(t.overdue.length), money(t.overdueOwed)],
       // The sum of `amount` over the overdue rows — what a part-paid invoice was billed, not what is owed on it.
       text_not_match: [money(t.overdue.reduce((s, r) => s + Number(r.amount), 0))].filter(re => !re.test('$' + Math.round(t.overdueOwed))) } } },
   { id: 'invoices.receivable.is.balance.not.amount', as: 'owner', turns: ['What is our total accounts receivable — everything customers still owe us across every open invoice, not just the overdue ones?'],
@@ -178,6 +208,28 @@ const CASES = [
     expect: async () => { const t = await arTruth(); return t.dueThisWeek.length
       ? { tools_include: ['query_invoices'], text_match: t.dueThisWeek.map(r => money(r.balance)), text_not_match: [/\bno invoices\b|\bnone\b|nothing (is )?(coming )?due/i] }
       : { tools_include: ['query_invoices'], text_match: [/\bno invoices\b|\bnone\b|nothing (is )?(coming )?due/i], no_dollars: true } } },
+
+  // — jobs and quotes: same discipline —
+  { id: 'jobs.completed.status.matches.the.column', as: 'owner', turns: ['List our completed jobs with their totals.'],
+    // The description said Complete, the column says Completed, and the filter was `eq` — "no completed jobs in the system" for nine.
+    expect: async () => { const t = await jobsQuotesTruth(); return { tools_include: ['query_jobs'], text_match: [count(t.completed.length), ...t.completed.slice(0, 3).map(j => rx(j.customer_name))], text_not_match: [/no completed jobs|haven'?t been marked/i] } } },
+  { id: 'jobs.sold.total.is.summed.by.the.tool', as: 'owner',
+    // Ungrouped aggregate() returned a count and thirty rows and no sum; the model added job_total by hand and said $110,985 for $127,225.
+    turns: async () => { const t = await jobsQuotesTruth(); return [`How many jobs has ${t.topSellerName} sold this year, and what do they total?`] },
+    expect: async () => { const t = await jobsQuotesTruth(); return { tools_include: ['query_jobs'], text_match: [count(t.topSeller.n), money(t.topSeller.total)] } } },
+  { id: 'quotes.quiet.are.named', as: 'owner', turns: ['Which quotes have gone quiet — sent more than a week ago with no answer — and who are they for?'],
+    // Who they are FOR. Quote rows carried customer_id and nothing else; the model called query_customers four times and answered with no names.
+    expect: async () => { const t = await jobsQuotesTruth(); return { tools_include: ['query_quotes'], text_match: [count(t.stale.length), ...t.stale.map(q => rx(q.customer)).filter(Boolean)] } } },
+  { id: 'quotes.expired.is.a.verdict.not.arithmetic', as: 'owner', turns: ['Which open quotes have already expired?'],
+    // "Already expired: None", and the $41,200 one "expires tomorrow (Sep 13)" — on Sep 15. The row now says.
+    expect: async () => { const t = await jobsQuotesTruth(); return t.expired.length
+      ? { tools_include: ['query_quotes'], text_match: t.expired.map(q => money(q.quote_amount)), text_not_match: [/\bnone\b|no (open )?quotes have expired|nothing (has )?expired/i] }
+      : { tools_include: ['query_quotes'], text_match: [/\bnone\b|no (open )?quotes have expired|nothing (has )?expired/i] } } },
+  { id: 'quotes.approved.are.real.not.invented', as: 'owner',
+    // A close-rate question makes the model group by status, and a grouped result used to be totals with no rows. Holding "approved_count: 2, approved_total: 22800" and nothing to cite, it invented two names and two amounts that summed to the right total — twice, different names each time, no tool call. The grouped result carries rows now; this is the conversation that produced it.
+    turns: ['How many quotes are out for signature right now, and what do they total?', 'What is our quote close rate?', 'How much have we had approved in quotes, and for whom?'],
+    // The rows may come from this turn's call or the last one's result; either way the names must be the real ones.
+    expect: async () => { const t = await jobsQuotesTruth(); return { text_match: [money(t.approvedTotal), ...t.approved.map(q => rx(q.customer)).filter(Boolean), ...t.approved.map(q => rx(q.name)).filter(Boolean)] } } },
   { id: 'products.none.found.is.scoped', as: 'owner', turns: ['Do we have any products from Wasatch Lighting?'],
     expect: { tools_include: ['query_products'], text_not_match: [/system (error|bug)|report (this|it) to/i] } },
 
@@ -549,9 +601,10 @@ try {
       try {
         const messages = []
         if (c.run) reply = await c.run(ctx)
-        else for (const turn of c.turns) {
+        else for (const turn of (typeof c.turns === 'function' ? await c.turns(ctx) : c.turns)) {
           messages.push({ role: 'user', content: turn })
           reply = await chat(ctx.token, ctx.roleLabel, messages)
+          if (VERBOSE) console.log(`             turn ${(messages.length + 1) / 2}: [${reply.calls.join(' | ') || 'no tools'}]`)
           messages.push({ role: 'assistant', content: reply.text || '(no text)' })
           if (reply.proposal) pending = reply.proposal.proposal.id
         }
@@ -578,7 +631,7 @@ try {
     if (!outcome.ok) for (const f of outcome.fails) console.log(`             - ${f}`)
     // A pass on retry is still a tendency worth seeing: show what the first attempt did wrong.
     if (outcome.ok && attempts.length > 1) { const first = attempts[0]; for (const f of first.fails) console.log(`             first attempt: ${f}`); console.log(`             first attempt said: ${(first.reply?.text || '').replace(/\s+/g, ' ').slice(0, 300)}`) }
-    if (VERBOSE || !outcome.ok) console.log(`             tools: [${outcome.reply?.tools.join(', ') || ''}]\n             ${(outcome.reply?.text || '').replace(/\s+/g, ' ').slice(0, 300)}\n`)
+    if (VERBOSE || !outcome.ok) console.log(`             tools: [${(outcome.reply?.calls || outcome.reply?.tools || []).join(' | ')}]\n             ${(outcome.reply?.text || '').replace(/\s+/g, ' ').slice(0, 300)}\n`)
   }
 } finally {
   await unseed()

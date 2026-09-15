@@ -42,7 +42,9 @@ describe('who may chase whose quote', () => {
   })
 
   it('only open quotes — approved, rejected and won are left alone, at draft and at send', () => {
-    expect(fu).toMatch(/const OPEN = \['Sent', 'Draft', 'Pending'\]/)
+    // Exported now, so query_quotes calls a quote open by the same rule.
+    expect(fu).toMatch(/export const OPEN_QUOTE_STATUSES = \['Sent', 'Draft', 'Pending'\]/)
+    expect(fu).toMatch(/const OPEN = OPEN_QUOTE_STATUSES/)
     expect(apply).toMatch(/if \(q\.approved_date \|\| q\.rejected_date \|\| !OPEN\.includes\(q\.status\)\) return \{ ok: false, stale: true/)
   })
 })

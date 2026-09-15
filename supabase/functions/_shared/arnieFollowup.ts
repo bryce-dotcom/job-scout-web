@@ -22,7 +22,14 @@ const H = (r: Rest) => ({ apikey: r.key, Authorization: `Bearer ${r.key}`, 'Cont
 const usd = (n: number) => '$' + (Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '')
-const OPEN = ['Sent', 'Draft', 'Pending']
+/** A quote still waiting on an answer. The one definition: the follow-up rail
+ * decides whether a quote may be chased with it, and query_quotes decides
+ * which quotes to call open, stale or expired with it. */
+export const OPEN_QUOTE_STATUSES = ['Sent', 'Draft', 'Pending']
+export function isOpenQuote(q: { status?: unknown; approved_date?: unknown; rejected_date?: unknown }): boolean {
+  return !q?.approved_date && !q?.rejected_date && OPEN_QUOTE_STATUSES.includes(String(q?.status ?? ''))
+}
+const OPEN = OPEN_QUOTE_STATUSES
 
 /** Find the quote the user means: a number, an estimate name, or the customer/lead it is for. */
 async function findQuote(r: Rest, companyId: number, said: string) {
