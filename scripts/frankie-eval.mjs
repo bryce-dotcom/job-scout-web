@@ -178,19 +178,33 @@ if (DRY) {
 
 const results = []
 let spent = 0
+const partial = path.join(runDir, `${stamp}-${MODEL}.partial.json`)
 for (const q of questions) {
   process.stderr.write(`#${q.id} ${head(q.q, 60)}… `)
   const t0 = Date.now()
-  const { text, usage } = await ask(MODEL, system, [{ role: 'user', content: q.q }])
+  let text, usage
+  try {
+    ({ text, usage } = await ask(MODEL, system, [{ role: 'user', content: q.q }]))
+  } catch (e) {
+    console.error(`\nstopped at #${q.id}: ${e.message}`)
+    if (results.length) console.error(`${results.length} finished answer(s) kept in ${path.relative(root, partial)}`)
+    process.exit(1)
+  }
   spent += cost(MODEL, usage)
   const checks = deterministicChecks(text, q.tags)
-  const j = await judge(system, q.q, text)
+  // A judge failure (model not enabled on this key, a 529, unparseable
+  // JSON) costs that question its scores, not the whole run its answers.
+  let j = { scores: null, usage: null, error: null }
+  try { j = await judge(system, q.q, text) } catch (e) { j.error = e.message }
   spent += cost(JUDGE, j.usage)
   const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([k]) => k)
-  results.push({ ...q, answer: text, checks, failed, judge: j.scores, ms: Date.now() - t0 })
-  const s = j.scores ? `A${j.scores.accuracy} D${j.scores.decisiveness} U${j.scores.usefulness}` : 'judge?'
+  results.push({ ...q, answer: text, checks, failed, judge: j.scores, judgeError: j.error, ms: Date.now() - t0 })
+  // Every answer is real money; keep what is finished so far.
+  fs.writeFileSync(partial, JSON.stringify({ model: MODEL, judge: JUDGE, company: COMPANY_ID, cost: spent, results }, null, 2))
+  const s = j.scores ? `A${j.scores.accuracy} D${j.scores.decisiveness} U${j.scores.usefulness}` : `judge? ${j.error ? head(j.error, 80) : 'no scores'}`
   process.stderr.write(`${failed.length ? 'FAIL ' + failed.join(',') : 'ok'} · ${s}\n`)
 }
+fs.rmSync(partial, { force: true })
 
 // ── report ───────────────────────────────────────────────────────────
 const avg = (k) => { const v = results.map(r => r.judge?.[k]).filter(Number.isFinite); return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(2) : '—' }
