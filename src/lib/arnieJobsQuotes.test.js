@@ -117,7 +117,15 @@ describe('a quote row says for itself what state it is in', () => {
     expect(brief).toContain('7 * 86400000')
   })
 
-  it('tells the model never to describe a quote it has not fetched', () => {
-    expect(toolDef('query_quotes', 'query_expenses')).toContain('never describe a quote from memory')
+  it('tells the model never to describe a quote it has not fetched — without sending a rep to a tool they cannot use', () => {
+    const def = toolDef('query_quotes', 'query_expenses')
+    expect(def).toContain('Never describe a specific quote from memory')
+    // The first wording said "call this tool" so firmly that a tech tried it,
+    // read ADMIN+, and gave up on a follow-up the rail would have let them send.
+    expect(def).toContain('propose_create with target followup')
+  })
+
+  it('puts the rule next to the rows, not only in the description', () => {
+    expect(branch('query_quotes', 'query_expenses')).toMatch(/agg\.rule = 'Name a quote or a customer ONLY by copying/)
   })
 })

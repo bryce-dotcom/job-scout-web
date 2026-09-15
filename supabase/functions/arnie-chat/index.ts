@@ -236,7 +236,7 @@ const TOOLS = [
   },
   {
     name: 'query_quotes',
-    description: 'Query quotes and estimates — counts, dollar totals, win/loss, by salesperson or month. Use for "how many quotes did we send", "what is out for signature", "which quotes have gone quiet", "who is quoting the most". ADMIN+ only. Every row carries `name`, `customer_name` (resolved for you), and the verdicts `open`, `stale`, `expired`, `days_out`, `days_to_expiry` as of `as_of` — read them, never work out dates yourself. Totals are computed for you: `open_count`/`open_total`, `stale_count`/`stale_total`, `expired_count`/`expired_total`, `approved_count`/`approved_total`, `rejected_count`. Asked about specific quotes you have not fetched in THIS conversation, call this tool — never describe a quote from memory.',
+    description: 'Query quotes and estimates — counts, dollar totals, win/loss, by salesperson or month. Use for "how many quotes did we send", "what is out for signature", "which quotes have gone quiet", "who is quoting the most". ADMIN+ only. Every row carries `name`, `customer_name` (resolved for you), and the verdicts `open`, `stale`, `expired`, `days_out`, `days_to_expiry` as of `as_of` — read them, never work out dates yourself. Totals are computed for you: `open_count`/`open_total`, `stale_count`/`stale_total`, `expired_count`/`expired_total`, `approved_count`/`approved_total`, `rejected_count`. Never describe a specific quote from memory — if it is not in a result in THIS conversation, fetch it first. A rep chasing their own quote does not need this tool: propose_create with target followup finds the quote itself.',
     input_schema: {
       type: 'object',
       properties: {
