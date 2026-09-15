@@ -262,7 +262,7 @@ export default function Onboarding() {
           'zach-yard-yeti':   { module_name: 'zach-yard-yeti', display_name: 'Zach - Lawn Care AI',          icon: 'Sprout',      default_menu_section: 'OPERATIONS', route_path: '/agents/zach',           sort_order: 25, description: 'AI lawn-care specialist — properties, visits, treatments, pricing' },
           'conrad-connect':   { module_name: 'conrad-connect', display_name: 'Conrad - Email Marketing AI', icon: 'Mail',         default_menu_section: 'SALES_FLOW', route_path: '/agents/conrad-connect', sort_order: 30, description: 'AI email marketing agent powered by Constant Contact' },
           'victor-verify':    { module_name: 'victor-verify',  display_name: 'Victor - Verification AI',     icon: 'ShieldCheck', default_menu_section: 'OPERATIONS', route_path: '/agents/victor',         sort_order: 35, description: 'AI quality verification for completed work' },
-          'arnie-og':         { module_name: 'arnie',          display_name: 'OG Arnie',                     icon: 'Bot',         default_menu_section: 'OPERATIONS', route_path: '/agents/arnie',          sort_order: 40, description: 'General-purpose AI assistant' },
+          'arnie-og':         { module_name: 'arnie',          display_name: 'OG Arnie',                     icon: 'Bot',         default_menu_section: 'OPERATIONS', route_path: '/agents/arnie',          sort_order: 40, description: 'Answers from live data; drafts changes you approve; morning brief' },
           'frankie-finance':  { module_name: 'frankie-finance',display_name: 'Frankie - Finance AI',         icon: 'DollarSign',  default_menu_section: 'OPERATIONS', route_path: '/agents/frankie',        sort_order: 45, description: 'AI bookkeeper + finance assistant' },
           'walter-windows':   { module_name: 'walter-windows', display_name: 'Walter - Windows AI',          icon: 'Bot',         default_menu_section: 'OPERATIONS', route_path: '/agents/walter',         sort_order: 50, description: 'AI window-cleaning specialist' },
         }
@@ -531,7 +531,7 @@ export default function Onboarding() {
                   { name: 'Freddy', desc: 'Fleet management & vehicle tracking', trade: 'Fleet / Transportation' },
                   { name: 'Victor', desc: 'Job verification & quality assurance', trade: 'All industries' },
                   { name: 'Conrad', desc: 'Email marketing & customer outreach', trade: 'All industries' },
-                  { name: 'Arnie', desc: 'AI assistant for operations & insights', trade: 'All industries' },
+                  { name: 'Arnie', desc: 'Answers from your live data, acts on your OK, sends the morning brief', trade: 'All industries' },
                   { name: 'Frankie', desc: 'Business analytics & reporting', trade: 'All industries' }
                 ].map(agent => (
                   <div key={agent.name} style={{

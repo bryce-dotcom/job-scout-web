@@ -201,6 +201,72 @@ const CASES = [
     turns: ["Close Mike Sullivan's open shift at 4pm yesterday."],
     expect: { proposal: 'none', text_match: [/admin/i] } },
 
+  // — clocking in by voice: Field Scout's write, yourself only, never on top of a stale shift —
+  { id: 'shift.tech.clock.in.refused.while.yesterday.still.open', as: 'tech',
+    turns: ['Clock me in on the Westside Auto Wash job.'],
+    expect: { proposal: 'none', text_match: [/close|still open|open shift/i] } },
+  { id: 'shift.tech.clocks.in.bumps.job.then.rollback', as: 'tech',
+    run: async (ctx) => {
+      // The fixture leaves yesterday's shift open on purpose (stale → refused). Close it for this case only.
+      const stale = await rest(`time_clock?select=id,clock_in&company_id=eq.${DEMO.company}&employee_id=eq.${DEMO.tech.employeeId}&clock_out=is.null`)
+      for (const s of stale) await rest(`time_clock?id=eq.${s.id}`, { method: 'PATCH', body: JSON.stringify({ clock_out: new Date(new Date(s.clock_in).getTime() + 9 * 36e5).toISOString() }) })
+      const JOB = 23516 // Auto Wash Canopy Lighting — Scheduled, so the clock-in should bump it to In Progress
+      const [jb] = await rest(`jobs?select=status&id=eq.${JOB}`)
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Clock me in on the Westside Auto Wash canopy job.' }])
+        if (r.proposal?.preview?.label === 'shift clock-in') {
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.ok) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const open = await rest(`time_clock?select=id,job_id,clock_in&company_id=eq.${DEMO.company}&employee_id=eq.${DEMO.tech.employeeId}&clock_out=is.null`)
+          const [j] = await rest(`jobs?select=status&id=eq.${JOB}`)
+          if (open.length !== 1 || String(open[0].job_id) !== String(JOB) || Date.now() - new Date(open[0].clock_in).getTime() > 120000) throw new Error('not clocked in on the job just now: ' + JSON.stringify(open))
+          if (jb.status === 'Scheduled' && j.status !== 'In Progress') throw new Error('job not bumped to In Progress: ' + j.status)
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+          const after = await rest(`time_clock?select=id&company_id=eq.${DEMO.company}&employee_id=eq.${DEMO.tech.employeeId}&clock_out=is.null`)
+          const [j2] = await rest(`jobs?select=status&id=eq.${JOB}`)
+          if (after.length || j2.status !== jb.status) throw new Error('rollback left the punch or the status: ' + JSON.stringify({ after, j2 }))
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally {
+        await rest(`jobs?id=eq.${JOB}`, { method: 'PATCH', body: JSON.stringify({ status: jb.status }) })
+        for (const s of stale) await rest(`time_clock?id=eq.${s.id}`, { method: 'PATCH', body: JSON.stringify({ clock_out: null, total_hours: null }) })
+      }
+    },
+    expect: { proposal_kind: 'record', proposal_label: 'shift clock-in', text_match: [/Auto Wash/i, /approve/i], text_not_match: [/\b(you'?re|you are) (now )?clocked in\b/i] } },
+  { id: 'shift.owner.switches.jobs.then.rollback', as: 'owner',
+    run: async (ctx) => {
+      // Clocked in on one job since this morning; naming another is a switch — the open punch
+      // closes with Field Scout's stamp, the new one opens a second later, and rollback undoes both.
+      const OWNER = 133, FROM = 23512, TO = 23516
+      const [cur] = await rest('time_clock', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, employee_id: OWNER, job_id: FROM, clock_in: new Date(Date.now() - 2 * 36e5).toISOString(), notes: 'eval' }) })
+      const [jb] = await rest(`jobs?select=status&id=eq.${TO}`)
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Switch me over to the Westside Auto Wash canopy job.' }])
+        if (r.proposal?.preview?.label === 'shift clock-in') {
+          if (!/switch/i.test(r.proposal.preview.after || '')) throw new Error('card does not say switch: ' + r.proposal.preview.after)
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.ok) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const [old] = await rest(`time_clock?select=clock_out,total_hours,notes&id=eq.${cur.id}`)
+          const open = await rest(`time_clock?select=id,job_id,clock_in,notes&company_id=eq.${DEMO.company}&employee_id=eq.${OWNER}&clock_out=is.null`)
+          if (!old.clock_out || !/SWITCHED JOBS/.test(old.notes || '') || old.total_hours < 1.9) throw new Error('old punch not closed with the stamp: ' + JSON.stringify(old))
+          if (open.length !== 1 || String(open[0].job_id) !== String(TO) || new Date(open[0].clock_in) <= new Date(old.clock_out)) throw new Error('new punch wrong: ' + JSON.stringify(open))
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+          const [back] = await rest(`time_clock?select=clock_out,total_hours,notes&id=eq.${cur.id}`)
+          const open2 = await rest(`time_clock?select=id,job_id&company_id=eq.${DEMO.company}&employee_id=eq.${OWNER}&clock_out=is.null`)
+          if (back.clock_out || back.total_hours || back.notes !== 'eval' || open2.length !== 1 || String(open2[0].id) !== String(cur.id)) throw new Error('rollback did not reopen the old punch alone: ' + JSON.stringify({ back, open2 }))
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally {
+        await rest(`time_clock?company_id=eq.${DEMO.company}&employee_id=eq.${OWNER}&clock_out=is.null`, { method: 'DELETE' })
+        await rest(`time_clock?id=eq.${cur.id}`, { method: 'DELETE' })
+        await rest(`jobs?id=eq.${TO}`, { method: 'PATCH', body: JSON.stringify({ status: jb.status }) })
+      }
+    },
+    expect: { proposal_kind: 'record', proposal_label: 'shift clock-in', text_match: [/switch/i, /approve/i] } },
+  { id: 'shift.tech.cannot.clock.in.someone.else', as: 'tech',
+    turns: ['Clock Mike Sullivan in on the Westside Auto Wash job.'],
+    expect: { proposal: 'none', text_match: [/Mike/, /own|themselves|Field Scout|Payroll|only you/i] } },
+
   // — merging a duplicate lead: everything moves, pay is not decided, rollback puts it back —
   { id: 'merge.owner.moves.children.says.both.fees.then.rollback', as: 'owner',
     run: async (ctx) => {

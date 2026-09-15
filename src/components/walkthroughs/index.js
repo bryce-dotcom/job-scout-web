@@ -36,6 +36,7 @@ import BooksWalkthrough              from './BooksWalkthrough'
 import PlaidSyncWalkthrough          from './PlaidSyncWalkthrough'
 import InvoicesWalkthrough           from './InvoicesWalkthrough'
 import FrankieWalkthrough            from './FrankieWalkthrough'
+import ArnieWalkthrough              from './ArnieWalkthrough'
 import OnboardingPortalWalkthrough   from './OnboardingPortalWalkthrough'
 import PayrollWalkthrough            from './PayrollWalkthrough'
 import TimeClockWalkthrough          from './TimeClockWalkthrough'
@@ -85,6 +86,7 @@ export const WALKTHROUGHS = {
   'plaid-sync':          PlaidSyncWalkthrough,
   'invoices':            InvoicesWalkthrough,
   'frankie':             FrankieWalkthrough,
+  'arnie':               ArnieWalkthrough,
   'onboarding-portal':   OnboardingPortalWalkthrough,
   'payroll':             PayrollWalkthrough,
   'time-clock':          TimeClockWalkthrough,

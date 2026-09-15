@@ -17,8 +17,8 @@ import { PLANS as BILLING_PLANS } from '../lib/billingPlans'
 
 const CREW = [
   { ab: 'AR', name: 'OG Arnie', free: true, role: 'Your right hand',
-    hook: 'Ask anything about your business in plain English. Arnie answers from your live numbers — then makes the change himself, the second you say go.',
-    hi: ['Answers from live data — money, jobs, hours, customers', 'Takes action on your OK: move a job, add a note, reschedule, fix a setting', 'Reads the photos, bills & screenshots you send him', 'Rides shotgun in the field — talks a tech through the job, hands-free'],
+    hook: 'Ask anything about your business in plain English. Arnie answers from your live numbers — then drafts the change and waits for your OK. Every morning, your day in one message.',
+    hi: ['Answers from live data — money, jobs, hours, stock, customers', 'Acts on your OK: book the appointment, draft the quote, chase the quiet estimate, move the job, merge the duplicate lead — nothing changes till you approve', 'Morning brief pushed by email or text at your hour — the schedule, the money, what is stuck', 'Rides shotgun in the field — hands-free, closes a missed clock-out, talks a tech through a fault in any trade'],
     rep: ['a business analyst', 'an office manager', 'hours of admin busywork'],
     out: { kicker: 'answered + drafted', head: '“When’s the Drinkle job — can we push it to Friday?”', rows: ['JOB-2214 · Drinkle Insurance · Thu 8:00 AM', 'Found from your schedule — no ID, no digging'], done: 'Drafted: move it to Friday — nothing changes till you approve' } },
   { ab: 'ZA', name: 'Zach', role: 'Landscaping',
