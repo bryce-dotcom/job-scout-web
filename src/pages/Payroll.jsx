@@ -121,7 +121,7 @@ function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodE
     rows.push({
       company_id: companyId, payroll_run_id: payrollRunId,
       jurisdiction: 'state',
-      agency: company?.state_employer_id_state === 'UT' ? 'Utah State Tax Commission' : 'State',
+      agency: (company?.state_employer_id_state || 'UT') === 'UT' ? 'Utah State Tax Commission' : 'State',
       kind: 'state_income_tax',
       period_start: startStr, period_end: endStr, due_date: stateDue,
       amount_employee: r2(sit), amount_employer: 0,
@@ -133,7 +133,7 @@ function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodE
     rows.push({
       company_id: companyId, payroll_run_id: payrollRunId,
       jurisdiction: 'state',
-      agency: company?.state_employer_id_state === 'UT' ? 'Utah DWS' : 'State Unemployment',
+      agency: (company?.state_employer_id_state || 'UT') === 'UT' ? 'Utah DWS' : 'State Unemployment',
       kind: 'sui',
       period_start: startStr, period_end: endStr,
       due_date: nextQuarterEnd(payDate),
@@ -5058,7 +5058,7 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
               </div>
               {!data.hasW4 && (
                 <div style={{ padding: '8px 12px', marginBottom: 10, backgroundColor: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.35)', borderRadius: 8, fontSize: 12, color: '#a16207' }}>
-                  No W-4 on file — taxes shown are $0. Add this employee's tax info on their employee page so the next paycheck withholds correctly.
+                  No W-4 on file — withholding as Single with no adjustments, which is what the IRS says to do without one. Add this employee's W-4 on their employee page so the next paycheck uses their actual answers.
                 </div>
               )}
               <table style={{ width: '100%', fontSize: 13, color: theme.textSecondary }}>

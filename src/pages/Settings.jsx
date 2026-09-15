@@ -3683,6 +3683,9 @@ function PayrollTaxSettingsTab({ theme, companyId }) {
       ])
       if (!mounted) return
       if (data) {
+        // The State field displayed 'UT' as a fallback but never saved it, so
+        // the ledger's agency names fell back to "State". Load the default.
+        if (!data.state_employer_id_state) data.state_employer_id_state = 'UT'
         setCompanyRow(data)
         // The inputs show the most recently ENTERED rate (a next-year rate
         // entered in December included), so what you typed is what you see.

@@ -19,6 +19,7 @@ import { supabase } from '../lib/supabase'
 import PayrollRemittancePanel from '../components/PayrollRemittancePanel'
 import { suiRateStatus } from '../lib/suiRate'
 import { parseLocalDate } from '../lib/localDate'
+import { quarterOf } from '../lib/payrollQuarters'
 import {
   Inbox, AlertTriangle, CheckCircle2, FileText, Clock, UserPlus,
   Settings as SettingsIcon, ChevronRight, Calendar, Building2,
@@ -476,9 +477,9 @@ export default function PayrollInbox() {
           const year = refDate.getFullYear()
           const startMonth = (q - 1) * 3
           const periodStart = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`
-          const periodEndDate = new Date(year, startMonth + 3, 0)
-          const dueDate = new Date(periodEndDate)
-          dueDate.setMonth(dueDate.getMonth() + 1)  // last day of month after quarter
+          // Due the last day of the month after the quarter (lib/payrollQuarters);
+          // setMonth(+1) on the quarter's last day read May 1 / Jul 30 / Oct 30.
+          const dueDate = parseLocalDate(quarterOf(periodStart).due)
           const filing = filings.find(f => f.form_kind === '941' && f.period_start === periodStart && f.status !== 'superseded')
           const overdue = !filing && now > dueDate
           quarters.push({ year, quarter: q, periodStart, dueDate, filing, overdue })
@@ -532,9 +533,7 @@ export default function PayrollInbox() {
           const year = refDate.getFullYear()
           const startMonth = (q - 1) * 3
           const periodStart = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`
-          const periodEndDate = new Date(year, startMonth + 3, 0)
-          const dueDate = new Date(periodEndDate)
-          dueDate.setMonth(dueDate.getMonth() + 1)
+          const dueDate = parseLocalDate(quarterOf(periodStart).due)
           const tc941    = filings.find(f => f.form_kind === 'TC-941'   && f.period_start === periodStart && f.status !== 'superseded')
           const form33h  = filings.find(f => f.form_kind === 'Form-33H' && f.period_start === periodStart && f.status !== 'superseded')
           quarters.push({ year, quarter: q, periodStart, dueDate, tc941, form33h })
