@@ -25,7 +25,7 @@ import {
 } from '../lib/mapOverlays'
 import {
   Search, MapPin, PenTool, Route, Layers, MousePointer2, X, Trash2, Check,
-  Undo2, Loader2, LocateFixed, Pencil, ExternalLink, Maximize2
+  Undo2, Loader2, LocateFixed, Pencil, ExternalLink, Maximize2, Filter, UserPlus
 } from 'lucide-react'
 
 const PALETTE = ['#5a6349', '#2457a8', '#b45309', '#7c3aed', '#0f766e', '#b91c1c', '#0369a1', '#a16207']
@@ -132,6 +132,17 @@ export default function LiahonaMap({
   // compact only: bottom sheet open/closed. Opens itself whenever there is
   // something to act on (a form or a route), closes on tap of the handle.
   const [sheetOpen, setSheetOpen] = useState(false)
+  // Territory filter: 'all' | 'mine' (territories I own) | a territory id.
+  // Everything downstream (pins, counts, routes) reads visibleLeads, so the
+  // filter applies to all of it. Remembered per device like the map view.
+  const [territoryFilter, setTerritoryFilterState] = useState(() => {
+    try { return localStorage.getItem('liahona.territoryFilter') || 'all' } catch { return 'all' }
+  })
+  const setTerritoryFilter = v => {
+    setTerritoryFilterState(v)
+    try { localStorage.setItem('liahona.territoryFilter', v) } catch { /* private mode */ }
+  }
+  const [claiming, setClaiming] = useState(false)
 
   const setMode = m => { modeRef.current = m; setModeState(m) }
   const setDrawPts = pts => { drawPtsRef.current = pts; setDrawPtsState(pts) }
@@ -141,10 +152,26 @@ export default function LiahonaMap({
   const employeeById = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
   const geocodedLeads = useMemo(() => leads.filter(hasCoords), [leads])
   const unmappedCount = useMemo(() => leads.filter(l => l.address && !hasCoords(l)).length, [leads])
+  // Polygons the current filter selects; null = no territory filtering.
+  const filterPolygons = useMemo(() => {
+    if (territoryFilter === 'all') return null
+    if (territoryFilter === 'mine') return territories.filter(tr => user?.id && String(tr.owner_id) === String(user.id)).map(tr => tr.polygon)
+    const tr = territories.find(x => String(x.id) === String(territoryFilter))
+    return tr ? [tr.polygon] : null
+  }, [territoryFilter, territories, user?.id])
+  const inFilter = useCallback(l => !filterPolygons || filterPolygons.some(poly => pointInGeometry(Number(l.latitude), Number(l.longitude), poly)), [filterPolygons])
   const visibleLeads = useMemo(
-    () => geocodedLeads.filter(l => !hiddenStages || !hiddenStages.has(l.status)),
-    [geocodedLeads, hiddenStages]
+    () => geocodedLeads.filter(l => (!hiddenStages || !hiddenStages.has(l.status)) && inFilter(l)),
+    [geocodedLeads, hiddenStages, inFilter]
   )
+  // Leads in the filtered area nobody owns yet — the "go knock these" list.
+  const unassignedInFilter = useMemo(
+    () => filterPolygons ? geocodedLeads.filter(l => !l.lead_owner_id && inFilter(l)) : [],
+    [filterPolygons, geocodedLeads, inFilter]
+  )
+  const filterLabel = territoryFilter === 'all' ? null
+    : territoryFilter === 'mine' ? 'My territories'
+    : (territories.find(x => String(x.id) === String(territoryFilter))?.name || null)
 
   // Leads / customers inside each territory.
   const territoryCounts = useMemo(() => {
@@ -152,7 +179,7 @@ export default function LiahonaMap({
     for (const tr of territories) {
       const inside = geocodedLeads.filter(l => pointInGeometry(Number(l.latitude), Number(l.longitude), tr.polygon))
       const cust = customers.filter(l => hasCoords(l) && pointInGeometry(Number(l.latitude), Number(l.longitude), tr.polygon))
-      out[tr.id] = { leads: inside.length, customers: cust.length }
+      out[tr.id] = { leads: inside.length, customers: cust.length, unassigned: inside.filter(l => !l.lead_owner_id).length }
     }
     return out
   }, [territories, geocodedLeads, customers])
@@ -573,6 +600,19 @@ export default function LiahonaMap({
   }
 
   // ------------------------------------------------------------------ route
+  // Take ownership of every unowned lead inside the filtered area.
+  const claimUnassigned = async () => {
+    const ids = unassignedInFilter.map(l => l.id)
+    if (!ids.length || !user?.id) return
+    if (!window.confirm(`Assign ${ids.length} unassigned lead${ids.length > 1 ? 's' : ''} in ${filterLabel} to you?`)) return
+    setClaiming(true)
+    const { error } = await supabase.from('leads').update({ lead_owner_id: user.id, updated_at: new Date().toISOString() }).in('id', ids).is('lead_owner_id', null)
+    setClaiming(false)
+    if (error) { notify('Could not assign: ' + error.message); return }
+    notify(`${ids.length} lead${ids.length > 1 ? 's' : ''} assigned to you`)
+    onLeadsChanged?.()
+  }
+
   const planRoute = async () => {
     const L = window.L, map = mapRef.current
     if (!L || !map) return
@@ -701,6 +741,14 @@ export default function LiahonaMap({
             <button title="Tap the map to add a lead" onClick={() => { cancelDraw(); setMode('drop') }} style={btn(mode === 'drop', { border: 0, borderRadius: 0, padding: compact ? '9px 10px' : undefined })}><MapPin size={compact ? 16 : 13} />{!compact && ' Drop lead'}</button>
             <button title="Tap points to outline a territory" onClick={() => setMode('draw')} style={btn(mode === 'draw', { border: 0, borderRadius: 0, padding: compact ? '9px 10px' : undefined })}><PenTool size={compact ? 16 : 13} />{!compact && ' Draw territory'}</button>
           </div>
+          {territories.length > 0 && (
+            <select value={territoryFilter} onChange={e => setTerritoryFilter(e.target.value)} title="Limit the map to a territory"
+              style={{ ...input, width: 'auto', maxWidth: compact ? 150 : 200, padding: compact ? '8px 8px' : '6px 8px', fontSize: 12, fontWeight: 600, color: territoryFilter === 'all' ? t.textSecondary : t.accent, borderColor: territoryFilter === 'all' ? t.border : t.accent }}>
+              <option value="all">All territories</option>
+              {territories.some(tr => user?.id && String(tr.owner_id) === String(user.id)) && <option value="mine">My territories</option>}
+              {territories.map(tr => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+            </select>
+          )}
           <button onClick={planRoute} disabled={routing} style={btn(false, compact ? { padding: '9px 10px' } : {})} title="Order the open leads in view into a driving route">
             {routing ? <Loader2 size={compact ? 16 : 13} style={{ animation: 'spin 1s linear infinite' }} /> : <Route size={compact ? 16 : 13} />}{!compact && ' Plan route'}
           </button>
@@ -782,7 +830,7 @@ export default function LiahonaMap({
           <div onClick={() => setSheetOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
             <span style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: t.border, margin: '0 auto', position: 'absolute', left: 0, right: 0, top: 4 }} />
             <span style={{ fontSize: 13, fontWeight: 600, color: t.text, flex: 1, marginTop: 4 }}>
-              {territoryForm ? (territoryForm.id ? 'Edit territory' : 'New territory') : dropForm ? 'New lead' : route ? `Route · ${route.stops.length} stops` : `Territories · ${territories.length}`}
+              {territoryForm ? (territoryForm.id ? 'Edit territory' : 'New territory') : dropForm ? 'New lead' : route ? `Route · ${route.stops.length} stops` : filterLabel ? `${filterLabel} · ${unassignedInFilter.length} unassigned` : `Territories · ${territories.length}`}
             </span>
             <span style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>{visibleLeads.length}/{leads.length} pinned · {sheetOpen ? 'hide' : 'show'}</span>
           </div>
@@ -867,6 +915,24 @@ export default function LiahonaMap({
               </div>
             )}
 
+            {filterLabel && (
+              <div style={{ margin: 12, marginBottom: 0, padding: '10px 12px', borderRadius: 8, backgroundColor: t.accentBg, border: `1px solid ${t.accent}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <strong style={{ fontSize: 13, color: t.text, display: 'inline-flex', alignItems: 'center', gap: 6 }}><Filter size={13} /> {filterLabel}</strong>
+                  <button onClick={() => setTerritoryFilter('all')} style={btn(false, { padding: '3px 7px' })} title="Show all leads"><X size={12} /></button>
+                </div>
+                <div style={{ fontSize: 12, color: t.textSecondary, marginTop: 4 }}>
+                  {visibleLeads.length} lead{visibleLeads.length === 1 ? '' : 's'} on the map · {unassignedInFilter.length} unassigned
+                  {filterPolygons && filterPolygons.length === 0 && ' · you own no territories yet'}
+                </div>
+                {unassignedInFilter.length > 0 && user?.id && (
+                  <button onClick={claimUnassigned} disabled={claiming} style={btn(true, { marginTop: 8, width: '100%', justifyContent: 'center', boxSizing: 'border-box' })}>
+                    <UserPlus size={13} /> {claiming ? 'Assigning…' : `Assign ${unassignedInFilter.length} unassigned to me`}
+                  </button>
+                )}
+              </div>
+            )}
+
             <div style={{ padding: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                 <strong style={{ fontSize: 13, color: t.text }}>Territories</strong>
@@ -886,11 +952,12 @@ export default function LiahonaMap({
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr.name}</div>
                       <div style={{ fontSize: 11, color: t.textMuted }}>
-                        {c.leads} leads · {c.customers} customers
+                        {c.leads} leads · {c.customers} customers{c.unassigned > 0 && <> · <span style={{ color: '#b45309' }}>{c.unassigned} unassigned</span></>}
                         {employeeById[tr.owner_id] && <> · {employeeById[tr.owner_id].name}</>}
                       </div>
                       {tr.utility_name && <div style={{ fontSize: 11, color: t.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>⚡ {tr.utility_name}</div>}
                     </div>
+                    <button onClick={e => { e.stopPropagation(); setTerritoryFilter(String(territoryFilter) === String(tr.id) ? 'all' : String(tr.id)) }} style={btn(String(territoryFilter) === String(tr.id), { padding: 4 })} title={String(territoryFilter) === String(tr.id) ? 'Show all leads' : 'Show only this territory'}><Filter size={12} /></button>
                     <button onClick={e => { e.stopPropagation(); editTerritory(tr) }} style={btn(false, { padding: 4 })} title="Edit"><Pencil size={12} /></button>
                     <button onClick={e => { e.stopPropagation(); deleteTerritory(tr) }} style={btn(false, { padding: 4, color: '#b91c1c' })} title="Delete"><Trash2 size={12} /></button>
                   </div>
@@ -899,7 +966,7 @@ export default function LiahonaMap({
             </div>
 
             <div style={{ padding: '4px 12px 12px', fontSize: 11, color: t.textMuted, marginTop: 'auto' }}>
-              {visibleLeads.length} of {leads.length} leads pinned{hiddenStages?.size ? ` · ${hiddenStages.size} stage${hiddenStages.size > 1 ? 's' : ''} hidden` : ''}. {compact ? 'Tap' : 'Click'} a stage above to show or hide it.
+              {visibleLeads.length} of {leads.length} leads pinned{filterLabel ? ` · in ${filterLabel}` : ''}{hiddenStages?.size ? ` · ${hiddenStages.size} stage${hiddenStages.size > 1 ? 's' : ''} hidden` : ''}. {compact ? 'Tap' : 'Click'} a stage above to show or hide it.
             </div>
           </>
         )}
