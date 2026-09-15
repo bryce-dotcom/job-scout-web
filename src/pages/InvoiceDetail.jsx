@@ -19,6 +19,7 @@ import { resolveMatLabSplit, splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { buildInvoiceSections, buildInvoicePages, deductionLineLabel, invoiceDiscountBreakout, whoPaysWhat, invoiceUtilityName, lineAmount } from '../lib/invoiceSections'
 import { recordUtilityPayment, reopenUtilityPayment, correctUtilityPaidAt } from '../lib/utilitySettlement'
+import { defaultUtilityProviderId } from '../lib/jobUtility'
 import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
 import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
 import LoadingSpinner from '../components/LoadingSpinner'
@@ -60,6 +61,9 @@ export default function InvoiceDetail() {
   const getSettingValue = useStore((state) => state.getSettingValue)
   const fetchSettings = useStore((state) => state.fetchSettings)
   const utilityProviders = useStore((state) => state.utilityProviders)
+  // The company's default utility — names the incentive on a job that has no
+  // record and no audit to say which utility it is with (lib/jobUtility).
+  const defaultUtilityId = defaultUtilityProviderId(settings)
 
   const [invoice, setInvoice] = useState(null)
   const [parentInvoice, setParentInvoice] = useState(null)
@@ -1391,7 +1395,7 @@ Add it anyway?`,
     // cannot disagree with the lines printed above it.
     const drawWhoPaysWhat = () => {
       const split = whoPaysWhat({
-        utilityName: invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, invoice.job),
+        utilityName: invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, invoice.job, defaultUtilityId),
         pageOne: pages.pageOne,
         twoPage: true,
       })
@@ -1537,7 +1541,7 @@ Add it anyway?`,
         // → (project discount) → net project. The incentive visually
         // reduces ONLY the utility-qualifying project, then the add-ons are
         // billed on top at full price.
-        const payer = invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, invoice.job)
+        const payer = invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, invoice.job, defaultUtilityId)
         drawSectionTitle('Utility Project', payer ? `Incentive paid by ${payer}` : 'Eligible for utility incentive')
         drawItemRows(sections.inScope)
         drawTotalLine('Project Subtotal:', formatCurrency(sections.inScopeSubtotal))
@@ -2026,7 +2030,7 @@ Add it anyway?`,
         subject: sendSubject,
         attachments: sendAttachments.length > 0 ? sendAttachments.map(a => ({ filename: a.name, content: a.base64 })) : undefined,
         // So the email's deduction rows carry the same names as the PDF.
-        parentInvoice, linkedUtilityInvoice, job: invoice.job, utilityProviders,
+        parentInvoice, linkedUtilityInvoice, job: invoice.job, utilityProviders, defaultUtilityProviderId: defaultUtilityId,
       })
 
       // The customer invoice going out is what moves the job (and lead) to
@@ -2179,7 +2183,7 @@ Add it anyway?`,
   // customer portal: the utility's name when the invoice or its job knows
   // one, "Utility Incentive" when only the fact is known, "Discount" when the
   // deduction is a plain discount.
-  const incentiveLabel = deductionLineLabel({ invoice, linkedUtilityInvoice, job: invoice.job, utilityProviders })
+  const incentiveLabel = deductionLineLabel({ invoice, linkedUtilityInvoice, job: invoice.job, utilityProviders, defaultUtilityProviderId: defaultUtilityId })
 
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
@@ -2373,7 +2377,7 @@ Add it anyway?`,
             invoice={invoice}
             pages={pages}
             payments={payments}
-            utilityName={invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, invoice.job)}
+            utilityName={invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, invoice.job, defaultUtilityId)}
             linkedUtilityInvoice={linkedUtilityInvoice}
             onMarkSubmitted={markUtilitySubmitted}
             onRecordPayment={recordUtilitySettlement}

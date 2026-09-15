@@ -207,7 +207,7 @@ serve(async (req) => {
     } else if (tokenRow.document_type === 'invoice') {
       const { data: inv } = await supabase
         .from('invoices')
-        .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title, job_address, service_kind, parts_coverage, labor_coverage, coverage_notes, parent_job_id, utility_incentive, utility_name)')
+        .select('*, customer:customers(id, name, email, phone, address), job:jobs(id, job_id, job_title, job_address, service_kind, parts_coverage, labor_coverage, coverage_notes, parent_job_id, utility_incentive, utility_name, utility_provider_id)')
         .eq('id', tokenRow.document_id)
         .single();
       document = inv;
@@ -259,6 +259,33 @@ serve(async (req) => {
         if (linkedU) {
           (document as Record<string, unknown>).linked_utility_invoice = linkedU;
         }
+
+        // The utility's NAME for the incentive line. The portal has no
+        // provider list of its own, so send the rows the label can need —
+        // the invoice's provider, the job's, and the company's default
+        // (settings.default_utility_provider_id, lib/jobUtility) — and let
+        // the portal apply the same rule as the invoice page and the PDF.
+        const invRec = inv as Record<string, unknown>;
+        const jobRec = (invRec.job || {}) as Record<string, unknown>;
+        const { data: dfltRows } = await supabase
+          .from('settings')
+          .select('value')
+          .eq('company_id', inv.company_id)
+          .eq('key', 'default_utility_provider_id')
+          .limit(1);
+        const dfltRaw = String(dfltRows?.[0]?.value ?? '').replace(/^"|"$/g, '');
+        const dfltId = /^\d+$/.test(dfltRaw) ? Number(dfltRaw) : null;
+        const providerIds = [invRec.utility_provider_id, jobRec.utility_provider_id, dfltId]
+          .map((v) => Number(v))
+          .filter((n) => Number.isInteger(n) && n > 0);
+        if (providerIds.length) {
+          const { data: provs } = await supabase
+            .from('utility_providers')
+            .select('id, provider_name')
+            .in('id', [...new Set(providerIds)]);
+          (document as Record<string, unknown>).utility_providers = provs || [];
+        }
+        (document as Record<string, unknown>).default_utility_provider_id = dfltId;
 
         // A manual Parts/Labor override wins over the computed split, and a
         // set override means the breakdown should show even with no utility

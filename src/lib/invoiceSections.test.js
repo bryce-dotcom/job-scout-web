@@ -545,3 +545,43 @@ describe('deductionLineLabel — one name for the deduction, wherever it prints'
     expect(deductionLineLabel({ invoice: {}, linkedUtilityInvoice: { utility_name: 'Utility' }, job: { utility_name: 'Rocky Mountain Power' } })).toBe('Rocky Mountain Power Incentive')
   })
 })
+
+// ── the company default provider ──────────────────────────────────────────
+// A contractor who works one utility sets it once (Utility Providers page);
+// jobs raised without an audit still get the name. It is the LAST fallback
+// and it only ever names an incentive that is already there.
+describe('the company default utility provider', () => {
+  const providers = [{ id: 116, provider_name: 'Rocky Mountain Power' }, { id: 117, provider_name: 'Logan City Light & Power' }]
+
+  it('names the incentive on a job with no record and no audit — Intercon after the default is set', () => {
+    const invoice = { discount_applied: 51176.73, utility_owes: null, utility_provider_id: null }
+    const job = { utility_incentive: 51176.73, utility_provider_id: null, utility_name: null }
+    expect(deductionLineLabel({ invoice, job, utilityProviders: providers, defaultUtilityProviderId: 116 })).toBe('Rocky Mountain Power Incentive')
+    expect(invoiceUtilityName(invoice, providers, null, job, 116)).toBe('Rocky Mountain Power')
+  })
+
+  it('never turns a plain discount into an incentive', () => {
+    expect(deductionLineLabel({ invoice: { discount_applied: 50 }, job: { utility_incentive: 0 }, utilityProviders: providers, defaultUtilityProviderId: 116 })).toBe('Discount')
+  })
+
+  it('loses to everything the invoice, the record or the job says', () => {
+    expect(invoiceUtilityName({ utility_provider_id: 117 }, providers, null, null, 116)).toBe('Logan City Light & Power')
+    expect(invoiceUtilityName({}, providers, null, { utility_provider_id: 117 }, 116)).toBe('Logan City Light & Power')
+    expect(invoiceUtilityName({}, providers, { utility_name: 'Logan City Light & Power' }, null, 116)).toBe('Logan City Light & Power')
+    expect(invoiceUtilityName({}, providers, null, { utility_name: 'Logan City Light & Power' }, 116)).toBe('Logan City Light & Power')
+    // ...but beats the placeholder the job page writes.
+    expect(invoiceUtilityName({}, providers, { utility_name: 'Utility' }, null, 116)).toBe('Rocky Mountain Power')
+  })
+
+  it('a default pointing nowhere names nothing', () => {
+    expect(invoiceUtilityName({}, providers, null, null, 999)).toBe(null)
+    expect(invoiceUtilityName({}, providers, null, null, null)).toBe(null)
+    expect(deductionLineLabel({ invoice: { utility_owes: 100 }, utilityProviders: providers, defaultUtilityProviderId: 999 })).toBe('Utility Incentive')
+  })
+
+  it('the job provider outranks the linked record name', () => {
+    // The job page is where a person changes the utility; the record is
+    // updated to follow, but if it has not been yet the person's choice wins.
+    expect(invoiceUtilityName({}, providers, { utility_name: 'Rocky Mountain Power' }, { utility_provider_id: 117 })).toBe('Logan City Light & Power')
+  })
+})

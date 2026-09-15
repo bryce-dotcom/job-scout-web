@@ -117,3 +117,14 @@ describe('the deduction rows in the email', () => {
     expect(p.deductions.reduce((s, d) => s + d.amount, 0)).toBe(p.discount)
   })
 })
+
+describe('the email rows with a company default utility', () => {
+  it('names the default on an invoice whose job has no record yet', () => {
+    const invoice = { amount: 68235.64, discount_applied: 51176.73, utility_owes: null, utility_provider_id: null }
+    const rows = invoiceDeductionRows({ invoice, job: { utility_incentive: 51176.73 }, utilityProviders: [{ id: 116, provider_name: 'Rocky Mountain Power' }], defaultUtilityProviderId: 116 })
+    expect(rows).toEqual([{ label: 'Rocky Mountain Power Incentive', amount: 51176.73 }])
+  })
+  it('does not name a plain discount after the default', () => {
+    expect(invoiceDeductionRows({ invoice: { amount: 595, discount_applied: 54.59 }, utilityProviders: [{ id: 116, provider_name: 'Rocky Mountain Power' }], defaultUtilityProviderId: 116 })).toEqual([{ label: 'Discount', amount: 54.59 }])
+  })
+})

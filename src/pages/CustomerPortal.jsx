@@ -303,7 +303,10 @@ export default function CustomerPortal() {
   // Same rule as the invoice screen and PDF (deductionLineLabel): the
   // utility's name when the invoice or its job knows one, "Discount" only
   // when the deduction really is one.
-  const portalIncentiveLabel = deductionLineLabel({ invoice: doc, linkedUtilityInvoice: doc.linked_utility_invoice, job: doc.job })
+  const portalIncentiveLabel = deductionLineLabel({
+    invoice: doc, linkedUtilityInvoice: doc.linked_utility_invoice, job: doc.job,
+    utilityProviders: doc.utility_providers || [], defaultUtilityProviderId: doc.default_utility_provider_id ?? null,
+  })
 
   // When the invoice hides line descriptions, portal rows show just the
   // product name; otherwise the name is followed by the description detail.

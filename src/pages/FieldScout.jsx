@@ -8,6 +8,7 @@ import { checkCanClockIn, hoursSince } from '../lib/timeClock'
 import { writeInvoiceLines } from '../lib/invoiceLines'
 import { completionOptions, verificationPassed, completionJobPatch, SEND_BLOCKED_TEXT } from '../lib/fieldCompletion'
 import { sendInvoice, markJobInvoicedAfterSend } from '../lib/invoiceSend'
+import { defaultUtilityProviderId } from '../lib/jobUtility'
 import { companyNotify } from '../lib/companyNotify'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
@@ -4062,8 +4063,9 @@ export default function FieldScout() {
               : { data: null }
             await sendInvoice(supabase, {
               invoice: { ...invoice, company_id: companyId }, lines: lines || [], customer: cust, company, settings, recipient: opts.email,
-              // The job names the incentive on the email's deduction row.
-              job,
+              // The job (or the company's default utility) names the incentive
+              // on the email's deduction row, the same way the desk does.
+              job, utilityProviders: useStore.getState().utilityProviders, defaultUtilityProviderId: defaultUtilityProviderId(settings),
             })
             await markJobInvoicedAfterSend(supabase, invoice)
             toast.success(`Invoice ${invoice.invoice_id} sent to ${opts.email}`)

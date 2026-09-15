@@ -17,6 +17,7 @@ import { jobStatusColors as statusColors } from '../lib/statusColors'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { isLegacyNetShape, jobARSnapshot } from '../lib/arHelpers'
 import { reconcileInvoicePair } from '../lib/invoiceReconcile'
+import { resolveJobUtility, providerById } from '../lib/jobUtility'
 import {
   downPaymentEffect, customerOutOfPocket, FUNDED_BY_CUSTOMER, FUNDED_BY_JOBSCOUT,
 } from '../lib/downPayment'
@@ -182,6 +183,8 @@ function JobDetailInner() {
   const storeJobSectionStatuses = useStore((state) => state.jobSectionStatuses)
   const laborRates = useStore((state) => state.laborRates)
   const settings = useStore((state) => state.settings)
+  const utilityProviders = useStore((state) => state.utilityProviders) || []
+  const fetchUtilityProviders = useStore((state) => state.fetchUtilityProviders)
 
   // Normalize section statuses from store
   const sectionStatuses = (storeJobSectionStatuses || []).map((s, idx) => {
@@ -246,6 +249,10 @@ function JobDetailInner() {
   const [leadEin, setLeadEin] = useState(null)
   const [jobInvoices, setJobInvoices] = useState([])
   const [jobUtilityInvoices, setJobUtilityInvoices] = useState([])
+  // The utility picker lists the providers; make sure they are loaded.
+  useEffect(() => {
+    if (utilityProviders.length === 0 && fetchUtilityProviders) fetchUtilityProviders()
+  }, [utilityProviders.length, fetchUtilityProviders])
   const [jobTimeEntries, setJobTimeEntries] = useState([])
   const [jobBonuses, setJobBonuses] = useState([])
 
@@ -748,6 +755,33 @@ function JobDetailInner() {
   // settled document is how ledgers stop matching the bank. An invoice that
   // has already been SENT is still corrected — the customer's bill genuinely
   // changed — but we say so, because it needs resending.
+  // The person picked (or cleared) the job's utility. The job carries it, and
+  // the record(s) raised for this job and the customer invoice(s) they mirror
+  // to follow — one fact, three rows. Paid and voided ones are left alone: a
+  // settled record is history. Clearing the choice clears the job only; the
+  // record keeps the name it was raised with.
+  const saveJobUtility = async (providerId) => {
+    const { toast } = await import('../lib/toast')
+    const provider = providerById(utilityProviders, providerId)
+    const { error } = await supabase.from('jobs').update({ utility_provider_id: provider ? provider.id : null }).eq('id', id)
+    if (error) { toast.error('Could not save the utility: ' + error.message); return }
+    setJob(prev => ({ ...prev, utility_provider_id: provider ? provider.id : null }))
+    if (!provider) return
+
+    const openRows = (jobUtilityInvoices || []).filter(u => u.payment_status !== 'Paid' && u.payment_status !== 'Void')
+    for (const row of openRows) {
+      const { error: rowErr } = await supabase.from('utility_invoices')
+        .update({ utility_name: provider.provider_name, updated_at: new Date().toISOString() }).eq('id', row.id)
+      if (rowErr) { toast.error('Utility saved on the job, but its record could not be renamed: ' + rowErr.message); continue }
+      if (row.invoice_id) {
+        const { error: invErr } = await supabase.from('invoices')
+          .update({ utility_provider_id: provider.id, updated_at: new Date().toISOString() }).eq('id', row.invoice_id)
+        if (invErr) toast.error('Utility saved, but the invoice could not follow: ' + invErr.message)
+      }
+    }
+    if (openRows.length) await fetchJobData()
+  }
+
   const propagateIncentiveToInvoices = async (newIncentive) => {
     const { toast } = await import('../lib/toast')
     try {
@@ -1945,6 +1979,7 @@ function JobDetailInner() {
       let projectCost = 0
       let netCost = 0
       let notes = ''
+      let audit = null
 
       // Try to pull details from linked lighting audit
       if (job.lead_id) {
@@ -1955,9 +1990,8 @@ function JobDetailInner() {
           .order('created_at', { ascending: false })
           .limit(1)
 
-        const audit = audits?.[0]
+        audit = audits?.[0] || null
         if (audit) {
-          utilityName = audit.utility_provider?.provider_name || 'Utility'
           totalFixtures = audit.total_fixtures || 0
           // The JOB wins over the audit, same as the customer invoice. This
           // read `audit.estimated_rebate || incentiveAmount`, so the audit's
@@ -1977,6 +2011,19 @@ function JobDetailInner() {
         toast.error('No incentive amount found. Enter a utility incentive on this job first.')
         setSaving(false)
         return
+      }
+
+      // Which utility this record is with: the job's own choice, else the
+      // audit, else the company's default (lib/jobUtility). This used to be
+      // the audit or the placeholder "Utility", so every job raised without
+      // an audit produced a record — and an invoice line — with no utility
+      // named on it. The answer is written back to the job so the invoice,
+      // the portal and the email all read the same one from now on.
+      const utility = resolveJobUtility({ job, audit, providers: utilityProviders, settings })
+      if (utility.name) utilityName = utility.name
+      if (utility.id && utility.id !== (job.utility_provider_id ?? null)) {
+        const { error: rememberErr } = await supabase.from('jobs').update({ utility_provider_id: utility.id }).eq('id', id)
+        if (!rememberErr) setJob(prev => ({ ...prev, utility_provider_id: utility.id }))
       }
 
       // Bryce flagged on utility-invoice 66 / JOB-MNQHM69Z: project_cost
@@ -5087,6 +5134,32 @@ function JobDetailInner() {
                   <span style={{ fontWeight: '600' }}>{formatCurrency(outOfPocket)}</span>
                 </div>
               )}
+              {/* Which utility. Pre-answered by the audit or the company's
+                  default (Utility Providers page); a contractor on two
+                  utilities flips the odd job here. The record, the invoice's
+                  incentive line, the portal and the email all read this. */}
+              {(incentive > 0 || job.utility_provider_id) && (() => {
+                const effective = resolveJobUtility({ job, audit: null, providers: utilityProviders, settings })
+                const chosen = providerById(utilityProviders, job.utility_provider_id)
+                const listed = utilityProviders.slice().sort((a, b) => String(a.provider_name || '').localeCompare(String(b.provider_name || '')))
+                return (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ color: '#4a7c59', fontSize: '13px' }}>
+                      Utility
+                      {!chosen && effective.source === 'default' && <span style={{ color: theme.textMuted }}> · company default</span>}
+                      {!chosen && !effective.name && <span style={{ color: theme.textMuted }}> · not set — the invoice will say "Utility Incentive"</span>}
+                    </span>
+                    <select
+                      value={chosen ? String(chosen.id) : ''}
+                      onChange={(e) => saveJobUtility(e.target.value ? Number(e.target.value) : null)}
+                      style={{ minWidth: '200px', padding: '6px 10px', border: '1px solid rgba(74,124,89,0.3)', borderRadius: '6px', fontSize: '13px', color: '#4a7c59', backgroundColor: theme.bgCard }}
+                    >
+                      <option value="">{effective.name ? `${effective.name} (${effective.source === 'default' ? 'company default' : 'from the audit'})` : 'Choose the utility…'}</option>
+                      {listed.map(p => <option key={p.id} value={String(p.id)}>{p.provider_name}</option>)}
+                    </select>
+                  </div>
+                )
+              })()}
 
               {/* Down payment. Recorded straight on the job because a rep
                   often leaves with a cheque before any invoice exists.

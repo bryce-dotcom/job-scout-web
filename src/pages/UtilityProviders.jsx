@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
-import { Building, Plus, Edit, Search, ExternalLink, Check, X } from 'lucide-react'
+import { Building, Plus, Edit, Search, ExternalLink, Check, X, Star } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { defaultUtilityProviderId, DEFAULT_UTILITY_SETTING } from '../lib/jobUtility'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -24,6 +25,14 @@ export default function UtilityProviders() {
   const companyId = useStore((state) => state.companyId)
   const utilityProviders = useStore((state) => state.utilityProviders)
   const fetchUtilityProviders = useStore((state) => state.fetchUtilityProviders)
+  const settings = useStore((state) => state.settings)
+  const fetchSettings = useStore((state) => state.fetchSettings)
+  // The company's default utility: what a job is with when nothing else says
+  // (no audit, nothing chosen on the job). One utility for most contractors;
+  // a company on two sets the usual one here and flips the odd job on the
+  // job page. lib/jobUtility is the reader.
+  const defaultId = defaultUtilityProviderId(settings)
+  const [savingDefault, setSavingDefault] = useState(false)
 
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -47,6 +56,31 @@ export default function UtilityProviders() {
     }
     fetchUtilityProviders()
   }, [companyId, navigate, fetchUtilityProviders])
+
+  const setDefaultProvider = async (providerId) => {
+    setSavingDefault(true)
+    const { error } = await supabase
+      .from('settings')
+      .upsert({ company_id: companyId, key: DEFAULT_UTILITY_SETTING, value: providerId ? String(providerId) : '', updated_at: new Date().toISOString() }, { onConflict: 'company_id,key' })
+    setSavingDefault(false)
+    if (error) { alert('Could not save the default utility: ' + error.message); return }
+    await fetchSettings()
+  }
+
+  const DefaultControl = ({ provider }) => {
+    const isDefault = defaultId != null && Number(provider.id) === defaultId
+    return isDefault ? (
+      <button onClick={() => setDefaultProvider(null)} disabled={savingDefault} title="Default for new jobs — click to clear"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600', backgroundColor: 'rgba(74,124,89,0.15)', color: '#4a7c59', border: 'none', cursor: 'pointer' }}>
+        <Star size={12} fill="currentColor" /> Default
+      </button>
+    ) : (
+      <button onClick={() => setDefaultProvider(provider.id)} disabled={savingDefault} title="Use this utility on jobs that do not say otherwise"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', backgroundColor: 'transparent', color: theme.textMuted, border: `1px solid ${theme.border}`, cursor: 'pointer' }}>
+        <Star size={12} /> Make default
+      </button>
+    )
+  }
 
   const filteredProviders = utilityProviders.filter(p => {
     const name = p.provider_name?.toLowerCase() || ''
@@ -112,6 +146,12 @@ export default function UtilityProviders() {
         </button>
       </div>
 
+      <p style={{ margin: '-12px 0 20px', fontSize: '13px', color: theme.textMuted, maxWidth: '720px' }}>
+        {defaultId != null && utilityProviders.some(p => Number(p.id) === defaultId)
+          ? `Jobs that do not name a utility are treated as ${utilityProviders.find(p => Number(p.id) === defaultId).provider_name}: the incentive record, the customer invoice, the portal and the email all say so. Change it on any job.`
+          : 'Mark one provider as the default and jobs that do not name a utility will use it — the incentive record, the customer invoice, the portal and the email all say which utility. Work with more than one? Set the usual one here and pick the other on the job.'}
+      </p>
+
       <div style={{ position: 'relative', marginBottom: '20px', maxWidth: isMobile ? '100%' : '400px' }}>
         <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
         <input type="text" placeholder="Search providers..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
@@ -150,6 +190,7 @@ export default function UtilityProviders() {
                       <ExternalLink size={14} />
                     </a>
                   )}
+                  <DefaultControl provider={provider} />
                 </div>
               </div>
             ))
@@ -164,13 +205,14 @@ export default function UtilityProviders() {
                 <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>State</th>
                 <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Service Territory</th>
                 <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Rebate Program</th>
+                <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Default</th>
                 <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Contact</th>
                 <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredProviders.length === 0 ? (
-                <tr><td colSpan="6" style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>No utility providers found</td></tr>
+                <tr><td colSpan="7" style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>No utility providers found</td></tr>
               ) : (
                 filteredProviders.map(provider => (
                   <tr key={provider.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
@@ -187,6 +229,9 @@ export default function UtilityProviders() {
                           <X size={12} /> No
                         </span>
                       )}
+                    </td>
+                    <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                      <DefaultControl provider={provider} />
                     </td>
                     <td style={{ padding: '14px 16px', fontSize: '14px', color: theme.textSecondary }}>
                       {provider.contact_phone || '-'}

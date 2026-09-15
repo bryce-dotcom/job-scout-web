@@ -52,14 +52,14 @@ export function paymentMethodsFrom(settings) {
  * incentive, and a wrong name is worse than a plain one. Legacy-net invoices
  * (amount already net of the incentive) keep the row they always had.
  */
-export function invoiceDeductionRows({ invoice, parentInvoice = null, linkedUtilityInvoice = null, job = null, utilityProviders = [] }) {
+export function invoiceDeductionRows({ invoice, parentInvoice = null, linkedUtilityInvoice = null, job = null, utilityProviders = [], defaultUtilityProviderId = null }) {
   const b = invoiceDiscountBreakout(invoice, parentInvoice)
   const r2 = (n) => Math.round(n * 100) / 100
   if (!(b.discountApplied > 0)) return []
   if (b.isLegacyNet || (invoice?.parent_invoice_id && !parentInvoice)) return [{ label: 'Discount', amount: r2(b.discountApplied) }]
   const rows = []
   if (b.projectDiscountField > 0) rows.push({ label: 'Project Discount', amount: r2(b.projectDiscountField) })
-  if (b.incentive > 0) rows.push({ label: deductionLineLabel({ invoice, linkedUtilityInvoice, job, utilityProviders }), amount: r2(b.incentive) })
+  if (b.incentive > 0) rows.push({ label: deductionLineLabel({ invoice, linkedUtilityInvoice, job, utilityProviders, defaultUtilityProviderId }), amount: r2(b.incentive) })
   if (b.downPayment > 0) rows.push({ label: 'Down Payment', amount: r2(b.downPayment) })
   if (b.depositCredit > 0) rows.push({ label: 'Deposit Applied', amount: r2(b.depositCredit) })
   return rows
@@ -88,8 +88,9 @@ export function logoUrlFrom(settings, businessUnit, company) {
  * @param {object|null} [p.linkedUtilityInvoice] the utility record on this invoice
  * @param {object|null} [p.job]                  the job (utility_incentive, utility_name)
  * @param {object[]} [p.utilityProviders]        the store's providers, to name the utility
+ * @param {number|null} [p.defaultUtilityProviderId] the company's default provider (lib/jobUtility)
  */
-export function buildInvoiceSendPayload({ invoice, lines, customer, company, settings, recipient, portalToken, pdfPath, cc, subject, attachments, parentInvoice = null, linkedUtilityInvoice = null, job = null, utilityProviders = [] }) {
+export function buildInvoiceSendPayload({ invoice, lines, customer, company, settings, recipient, portalToken, pdfPath, cc, subject, attachments, parentInvoice = null, linkedUtilityInvoice = null, job = null, utilityProviders = [], defaultUtilityProviderId = null }) {
   const bu = businessUnitFor(settings, invoice)
   return {
     company_id: invoice.company_id,
@@ -102,7 +103,7 @@ export function buildInvoiceSendPayload({ invoice, lines, customer, company, set
     amount: invoice.amount,
     discount: invoice.discount_applied || 0,
     // What the discount IS, row by row, named the way the PDF names it.
-    deductions: invoiceDeductionRows({ invoice, parentInvoice, linkedUtilityInvoice, job, utilityProviders }),
+    deductions: invoiceDeductionRows({ invoice, parentInvoice, linkedUtilityInvoice, job, utilityProviders, defaultUtilityProviderId }),
     job_description: invoice.job_description || '',
     invoice_lines: (lines || []).map(l => ({
       description: l.description || l.item_name || 'Item',
@@ -132,7 +133,7 @@ export function buildInvoiceSendPayload({ invoice, lines, customer, company, set
  * the job to Invoiced; the field sheet does the same through
  * markJobInvoicedAfterSend).
  */
-export async function sendInvoice(supabase, { invoice, lines, customer, company, settings, recipient, pdfPath, cc, subject, attachments, parentInvoice, linkedUtilityInvoice, job, utilityProviders }) {
+export async function sendInvoice(supabase, { invoice, lines, customer, company, settings, recipient, pdfPath, cc, subject, attachments, parentInvoice, linkedUtilityInvoice, job, utilityProviders, defaultUtilityProviderId }) {
   const { data: tokenRow } = await supabase
     .from('customer_portal_tokens')
     .insert({
@@ -148,7 +149,7 @@ export async function sendInvoice(supabase, { invoice, lines, customer, company,
   const payload = buildInvoiceSendPayload({
     invoice, lines, customer, company, settings, recipient,
     portalToken: tokenRow?.token || null, pdfPath, cc, subject, attachments,
-    parentInvoice, linkedUtilityInvoice, job, utilityProviders,
+    parentInvoice, linkedUtilityInvoice, job, utilityProviders, defaultUtilityProviderId,
   })
 
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL

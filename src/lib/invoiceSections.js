@@ -233,9 +233,9 @@ export function invoiceCarriesIncentive(invoice, linkedUtilityInvoice = null, jo
 
 // The label for the deduction line, everywhere it prints — screen, PDF and
 // portal read this one function so they cannot disagree.
-export function deductionLineLabel({ invoice, linkedUtilityInvoice = null, job = null, utilityProviders = [] } = {}) {
+export function deductionLineLabel({ invoice, linkedUtilityInvoice = null, job = null, utilityProviders = [], defaultUtilityProviderId = null } = {}) {
   if (!invoiceCarriesIncentive(invoice, linkedUtilityInvoice, job)) return 'Discount'
-  return incentiveLineLabel(invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, job))
+  return incentiveLineLabel(invoiceUtilityName(invoice, utilityProviders, linkedUtilityInvoice, job, defaultUtilityProviderId))
 }
 
 // ── Two-page composition ────────────────────────────────────────────────
@@ -339,16 +339,27 @@ export function whoPaysWhat({ utilityName, pageOne, twoPage }) {
   }
 }
 
-// The utility's name as the invoice records it. Prefers the invoice's own
-// provider link; falls back to the linked utility row, then to the job. The
-// job page writes the placeholder "Utility" on a record raised with no audit
-// to name the provider — that is the absence of a name, not a name.
-export function invoiceUtilityName(invoice, utilityProviders = [], linkedUtilityInvoice = null, job = null) {
-  const id = invoice?.utility_provider_id
-  if (id != null) {
+// The utility's name as the invoice records it, most direct statement first:
+// the invoice's own provider link, the job's provider (chosen on the job
+// page), the linked utility record's name, the job's utility name, and last
+// the company's default provider — the one a contractor who works a single
+// utility sets once on the Utility Providers page (lib/jobUtility). The job
+// page writes the placeholder "Utility" on a record raised with no audit to
+// name the provider — that is the absence of a name, not a name.
+//
+// The default only ever NAMES a utility on an invoice that already carries
+// an incentive (invoiceCarriesIncentive decides that); it never creates one.
+export function invoiceUtilityName(invoice, utilityProviders = [], linkedUtilityInvoice = null, job = null, defaultProviderId = null) {
+  const byId = (id) => {
+    if (id == null || id === '') return null
     const p = (utilityProviders || []).find((x) => Number(x?.id) === Number(id))
-    if (p?.provider_name) return String(p.provider_name).trim()
+    return p?.provider_name ? String(p.provider_name).trim() : null
   }
   const real = (v) => { const n = String(v || '').trim(); return n && n.toLowerCase() !== 'utility' ? n : null }
-  return real(linkedUtilityInvoice?.utility_name) || real(job?.utility_name) || null
+  return byId(invoice?.utility_provider_id)
+    || byId(job?.utility_provider_id)
+    || real(linkedUtilityInvoice?.utility_name)
+    || real(job?.utility_name)
+    || byId(defaultProviderId)
+    || null
 }
