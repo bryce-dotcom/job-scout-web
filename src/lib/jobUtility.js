@@ -60,7 +60,65 @@ export function resolveJobUtility({ job, audit = null, providers = [], settings 
   if (auditName) return { id: asId(auditId), name: auditName, source: 'audit' }
 
   const dflt = providerById(providers, defaultUtilityProviderId(settings))
-  if (dflt) return { id: dflt.id, name: dflt.provider_name, source: 'default' }
+  if (dflt && defaultAppliesTo(dflt, job)) return { id: dflt.id, name: dflt.provider_name, source: 'default' }
 
   return { id: null, name: null, source: null }
+}
+
+// ── where a job is ────────────────────────────────────────────────────────
+// A company default must not cross state lines. HHH's default is Rocky
+// Mountain Power (Utah); the same company does Salt River Project work in
+// Arizona, and two of its Arizona records already said "Rocky Mountain Power"
+// because nothing checked. When the job's address names a state and the
+// default provider serves a different one, the default simply does not apply
+// — the invoice says "Utility Incentive" until the job (or its audit) says
+// which, rather than naming the wrong utility on a customer document.
+
+const US_STATES = {
+  alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO', connecticut: 'CT',
+  delaware: 'DE', florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID', illinois: 'IL', indiana: 'IN', iowa: 'IA',
+  kansas: 'KS', kentucky: 'KY', louisiana: 'LA', maine: 'ME', maryland: 'MD', massachusetts: 'MA', michigan: 'MI',
+  minnesota: 'MN', mississippi: 'MS', missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV', 'new hampshire': 'NH',
+  'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY', 'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH',
+  oklahoma: 'OK', oregon: 'OR', pennsylvania: 'PA', 'rhode island': 'RI', 'south carolina': 'SC', 'south dakota': 'SD',
+  tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT', virginia: 'VA', washington: 'WA', 'west virginia': 'WV',
+  wisconsin: 'WI', wyoming: 'WY', 'district of columbia': 'DC',
+}
+const STATE_CODES = new Set(Object.values(US_STATES))
+
+/**
+ * The US state an address names, as a two-letter code, or null. Reads the
+ * way addresses are actually typed: "Mesa, AZ 85205", "mesa az",
+ * "85120, AZ", "Highland, UT", a bare "AZ", "Phoenix, Arizona".
+ */
+export function stateOfAddress(text) {
+  let s = String(text || '').trim()
+  if (!s) return null
+  s = s.replace(/[\s,]*(?:USA|U\.S\.A\.|United States|US)\s*$/i, '').trim()
+  // "<state> <zip>" or a trailing "<state>" — the code sits at the end.
+  const tail = /(?:^|[\s,])([A-Za-z]{2})\.?[\s,]*(?:\d{5}(?:-\d{4})?)?\s*$/.exec(s)
+  if (tail && STATE_CODES.has(tail[1].toUpperCase())) return tail[1].toUpperCase()
+  // A state spelled out anywhere; the last one wins ("New York Ave, Phoenix, Arizona").
+  let found = null
+  for (const [name, code] of Object.entries(US_STATES)) {
+    const re = new RegExp('\\b' + name.replace(' ', '\\s+') + '\\b', 'i')
+    const m = re.exec(s)
+    if (m && (found === null || m.index > found.index)) found = { index: m.index, code }
+  }
+  return found ? found.code : null
+}
+
+/** The state a job is in, from its site address first, then its address. */
+export function jobState(job) {
+  return stateOfAddress(job?.job_address) || stateOfAddress(job?.address) || null
+}
+
+/**
+ * Whether a company default provider may name this job's utility: yes unless
+ * the job's state is known and the provider serves a different one.
+ */
+export function defaultAppliesTo(provider, job) {
+  const pState = String(provider?.state || '').trim().toUpperCase()
+  const jState = jobState(job)
+  return !pState || !jState || pState === jState
 }

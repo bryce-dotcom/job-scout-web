@@ -212,6 +212,26 @@ serve(async (req) => {
     const pd = projectData || {};
     const lines = pd.lines || [];
     const facilityState = state || 'AZ';
+
+    // The program is the utility. Every audit this agent saves is for one
+    // rebate program — Rocky Mountain Power's or Salt River Project's — yet
+    // none of the 95 it had saved named a provider, so the job raised from
+    // the audit could not say which utility it was with, and two Arizona
+    // jobs went out under "Rocky Mountain Power". The provider row is looked
+    // up by name from the shared list (company_id null); if the list ever
+    // lacks it, the audit simply goes without, as before.
+    const programProviderName = programType === 'ut-rmp' ? 'Rocky Mountain Power' : 'Salt River Project (SRP)';
+    let programProviderId: number | null = null;
+    try {
+      const provRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/utility_providers?select=id&provider_name=eq.${encodeURIComponent(programProviderName)}&company_id=is.null&limit=1`,
+        { headers: { 'Authorization': `Bearer ${key}`, 'apikey': key } },
+      );
+      if (provRes.ok) {
+        const rows = await provRes.json();
+        programProviderId = rows?.[0]?.id ?? null;
+      }
+    } catch (_e) { /* the audit is saved either way */ }
     const fullAddress = [address, city, state, zip].filter(Boolean).join(', ') || null;
 
     // --- Shared calculations (used by lead notes + audit) ---
@@ -343,6 +363,7 @@ serve(async (req) => {
       address: fullAddress,
       city: city || null,
       state: facilityState,
+      utility_provider_id: programProviderId,
       zip: zip || null,
       electric_rate: rate,
       operating_hours: opHours,

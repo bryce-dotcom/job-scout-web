@@ -281,7 +281,7 @@ serve(async (req) => {
         if (providerIds.length) {
           const { data: provs } = await supabase
             .from('utility_providers')
-            .select('id, provider_name')
+            .select('id, provider_name, state')
             .in('id', [...new Set(providerIds)]);
           (document as Record<string, unknown>).utility_providers = provs || [];
         }

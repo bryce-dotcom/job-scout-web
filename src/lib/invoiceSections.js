@@ -29,6 +29,7 @@
 // Both hold by construction for every invoice shape — see buildInvoiceSections.
 
 import { invoiceCustomerTotal, isLegacyNetShape } from './arHelpers'
+import { defaultAppliesTo } from './jobUtility'
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
@@ -356,10 +357,17 @@ export function invoiceUtilityName(invoice, utilityProviders = [], linkedUtility
     return p?.provider_name ? String(p.provider_name).trim() : null
   }
   const real = (v) => { const n = String(v || '').trim(); return n && n.toLowerCase() !== 'utility' ? n : null }
+  // The default must not cross state lines: a Utah default says nothing about
+  // an Arizona job (lib/jobUtility.defaultAppliesTo).
+  const byDefault = (id) => {
+    if (id == null || id === '') return null
+    const p = (utilityProviders || []).find((x) => Number(x?.id) === Number(id))
+    return p?.provider_name && defaultAppliesTo(p, job) ? String(p.provider_name).trim() : null
+  }
   return byId(invoice?.utility_provider_id)
     || byId(job?.utility_provider_id)
     || real(linkedUtilityInvoice?.utility_name)
     || real(job?.utility_name)
-    || byId(defaultProviderId)
+    || byDefault(defaultProviderId)
     || null
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveJobUtility, defaultUtilityProviderId, providerById, DEFAULT_UTILITY_SETTING } from './jobUtility'
+import { resolveJobUtility, defaultUtilityProviderId, providerById, DEFAULT_UTILITY_SETTING, stateOfAddress, jobState, defaultAppliesTo } from './jobUtility'
 
 const providers = [
   { id: 116, provider_name: 'Rocky Mountain Power' },
@@ -63,5 +63,61 @@ describe('which utility a job is with', () => {
   it('a job provider that no longer exists falls through rather than naming a ghost', () => {
     const r = resolveJobUtility({ job: { utility_provider_id: 999 }, audit: null, providers, settings: dflt })
     expect(r.source).toBe('default')
+  })
+})
+
+// ── the default must not cross state lines ────────────────────────────────
+// HHH's default is Rocky Mountain Power (UT); the same company does SRP work
+// in Arizona, and two Arizona records already said "Rocky Mountain Power".
+describe('the state an address names', () => {
+  it('reads addresses the way people type them', () => {
+    expect(stateOfAddress('5026 E Main St Mesa, AZ 85205')).toBe('AZ')
+    expect(stateOfAddress('3741 e main st ste 101 mesa az')).toBe('AZ')
+    expect(stateOfAddress('2523 w houston ave 85120, AZ')).toBe('AZ')
+    expect(stateOfAddress('1515 West Broadway, Mesa AZ')).toBe('AZ')
+    expect(stateOfAddress('11325 E Apache Trail AJ AZ')).toBe('AZ')
+    expect(stateOfAddress('7744 E Main St mesa Az')).toBe('AZ')
+    expect(stateOfAddress('AZ')).toBe('AZ')
+    expect(stateOfAddress('6395 W 10400 N, Highland, UT')).toBe('UT')
+    expect(stateOfAddress('123 S Main St, Logan, UT 84321, USA')).toBe('UT')
+    expect(stateOfAddress('418 E Broadway Rd, Phoenix, Arizona')).toBe('AZ')
+    expect(stateOfAddress('Salt Lake City, Utah 84101')).toBe('UT')
+  })
+
+  it('says nothing rather than guessing', () => {
+    expect(stateOfAddress('')).toBe(null)
+    expect(stateOfAddress(null)).toBe(null)
+    expect(stateOfAddress('1234 Industrial Pkwy')).toBe(null)
+    expect(stateOfAddress('Building 7, Suite 200')).toBe(null)
+  })
+
+  it('a job is placed by its site address first, then its address', () => {
+    expect(jobState({ job_address: 'Mesa, AZ 85205', address: 'Highland, UT' })).toBe('AZ')
+    expect(jobState({ job_address: '', address: 'Highland, UT' })).toBe('UT')
+    expect(jobState({})).toBe(null)
+    expect(jobState(null)).toBe(null)
+  })
+})
+
+describe('a Utah default says nothing about an Arizona job', () => {
+  const rmp = { id: 116, provider_name: 'Rocky Mountain Power', state: 'UT' }
+  const srp = { id: 128, provider_name: 'Salt River Project (SRP)', state: 'AZ' }
+  const settings = [{ key: DEFAULT_UTILITY_SETTING, value: '116' }]
+
+  it('applies at home, and where the job does not say', () => {
+    expect(defaultAppliesTo(rmp, { job_address: 'Highland, UT 84003' })).toBe(true)
+    expect(defaultAppliesTo(rmp, { job_address: '1234 Industrial Pkwy' })).toBe(true)
+    expect(defaultAppliesTo({ id: 9, provider_name: 'Co-op' }, { job_address: 'Mesa, AZ' })).toBe(true) // provider with no state
+  })
+
+  it('does not apply across the line', () => {
+    expect(defaultAppliesTo(rmp, { job_address: '5026 E Main St Mesa, AZ 85205' })).toBe(false)
+    expect(resolveJobUtility({ job: { job_address: 'Mesa, AZ 85205' }, providers: [rmp, srp], settings })).toEqual({ id: null, name: null, source: null })
+    expect(resolveJobUtility({ job: { job_address: 'Highland, UT' }, providers: [rmp, srp], settings }).source).toBe('default')
+  })
+
+  it('the job choice and the audit still win, in any state', () => {
+    expect(resolveJobUtility({ job: { job_address: 'Mesa, AZ', utility_provider_id: 128 }, providers: [rmp, srp], settings }).name).toBe('Salt River Project (SRP)')
+    expect(resolveJobUtility({ job: { job_address: 'Mesa, AZ' }, audit: { utility_provider_id: 128 }, providers: [rmp, srp], settings }).source).toBe('audit')
   })
 })

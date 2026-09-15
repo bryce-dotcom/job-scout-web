@@ -585,3 +585,19 @@ describe('the company default utility provider', () => {
     expect(invoiceUtilityName({}, providers, { utility_name: 'Rocky Mountain Power' }, { utility_provider_id: 117 })).toBe('Logan City Light & Power')
   })
 })
+
+describe('the company default does not cross state lines on the invoice', () => {
+  const providers = [{ id: 116, provider_name: 'Rocky Mountain Power', state: 'UT' }, { id: 128, provider_name: 'Salt River Project (SRP)', state: 'AZ' }]
+  it('an Arizona job with a Utah default prints the generic label, not the wrong utility', () => {
+    const invoice = { discount_applied: 14162.93, utility_owes: null, utility_provider_id: null }
+    const job = { utility_incentive: 14162.93, job_address: '1411 W Broadway Rd Mesa, AZ 85202' }
+    expect(deductionLineLabel({ invoice, job, utilityProviders: providers, defaultUtilityProviderId: 116 })).toBe('Utility Incentive')
+    // ...and names SRP the moment the job says so.
+    expect(deductionLineLabel({ invoice, job: { ...job, utility_provider_id: 128 }, utilityProviders: providers, defaultUtilityProviderId: 116 })).toBe('Salt River Project (SRP) Incentive')
+  })
+  it('a Utah job, or one with no state, takes the default', () => {
+    const invoice = { discount_applied: 100, utility_owes: null }
+    expect(deductionLineLabel({ invoice, job: { utility_incentive: 100, job_address: 'Highland, UT 84003' }, utilityProviders: providers, defaultUtilityProviderId: 116 })).toBe('Rocky Mountain Power Incentive')
+    expect(deductionLineLabel({ invoice, job: { utility_incentive: 100, job_address: '1234 Industrial Pkwy' }, utilityProviders: providers, defaultUtilityProviderId: 116 })).toBe('Rocky Mountain Power Incentive')
+  })
+})
