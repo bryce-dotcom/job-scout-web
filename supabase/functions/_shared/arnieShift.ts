@@ -184,7 +184,7 @@ const jobLine = (j: any) => [j.job_id, j.job_title, j.customer_name || j.busines
 const SELF = /\b(my|me|mine|i)\b/
 const nameHits = (name: string, q: string) => { const parts = String(name || '').toLowerCase().split(/\s+/).filter((p) => p.length >= 3); return parts.length > 0 && parts.every((p) => q.includes(p)) }
 
-async function findJob(r: Rest, companyId: number, said: string) {
+export async function findJob(r: Rest, companyId: number, said: string) {
   const term = String(said || '').replace(/[*,()]/g, ' ').trim()
   const NOISE = new Set(['clock', 'punch', 'the', 'job', 'jobs', 'into', 'onto', 'start', 'switch', 'over', 'for', 'with', 'now', 'shift'])
   const words = [...new Set(term.toLowerCase().split(/\s+/).filter((w) => w.length >= 3 && !NOISE.has(w)))]

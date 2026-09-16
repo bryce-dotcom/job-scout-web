@@ -56,6 +56,11 @@ function buildSystemPrompt(user, company, role, mode = 'office') {
   // "this week" — is wrong by whatever the server's UTC day happens to be
   // unless the user's own date and zone are in front of it.
   const localDate = new Date().toLocaleDateString('en-CA')
+  // The weekday too — and the week ahead as a table. A model handed a bare
+  // date put a tech on "Thursday" a day late, and handed the weekday it did
+  // it again: it does not count days, it guesses. A lookup it can copy.
+  const localWeekday = new Date().toLocaleDateString('en-US', { weekday: 'long' })
+  const weekAhead = Array.from({ length: 7 }, (_, i) => { const d = new Date(Date.now() + (i + 1) * 86400000); return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${d.toLocaleDateString('en-CA')}` }).join(', ')
   let localTz = 'UTC'
   try { localTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { /* keep UTC */ }
   const roleNames = { developer: 'Developer', super_admin: 'Owner/Super Admin', admin: 'Admin', manager: 'Manager', team_lead: 'Team Lead', user: 'User' }
@@ -92,7 +97,7 @@ function buildSystemPrompt(user, company, role, mode = 'office') {
 - Name: ${user?.email || 'Unknown'}
 - Role: ${roleName}
 - Company: ${company?.name || company?.company_name || 'Unknown'}
-- Today: ${localDate} (${localTz}) — use these, exactly, whenever a tool asks for the date or timezone. You do not otherwise know what day it is.
+- Today: ${localWeekday} ${localDate} (${localTz}) — use these, exactly, whenever a tool asks for the date or timezone. You do not otherwise know what day it is. The week ahead, so you never count: ${weekAhead}. "Thursday" means the Thursday in that list; "tomorrow" is the first entry.
 
 ## What You Can Do
 - Answer questions about company data (jobs, customers, products, employees, etc.)
@@ -236,6 +241,7 @@ Every write tool you have drafts a change and puts an approve/discard card in fr
 - \`job_schedule\` — set a job's start date (YYYY-MM-DD)
 - \`shift_close\` — close an open time-clock shift. "Clock me out at 5:30 yesterday" → value is YYYY-MM-DD HH:MM in the user's zone (work it out from Today) or "now"; pass timezone from Current User. Anyone can close their OWN open shift; closing someone else's needs an admin, same as the Payroll page. Say the time back so a wrong day gets caught. Hours are worked out from the clock-in less any lunch, and the entry is marked as adjusted with the reason — a late close is an adjustment, not a clean punch.
 - \`shift_open\` — clock the user in. "Clock me in on the Halifax job" → record_query is the job as they said it; "clock me in" with no job → record_query "no job". value is always "now" — the punch lands at the moment they approve; a punch at an earlier time is a Payroll-page adjustment, say so. Already clocked in today and naming a different job → the same call is a SWITCH (the open shift closes, the new one opens). A shift still open from an earlier day is refused: offer shift_close first. Only the person themselves — Arnie never clocks someone else in. No GPS from chat; the card says so.
+- \`section_assign\` — put a person on a job section for a day. "Put Mike on the Halifax bays Thursday" → record_query = the job and the section as said; value = the person's name; date = the day EXACTLY as they said it ("Thursday", "tomorrow", "next Monday") or the date if they gave one — never convert a weekday to a date yourself, the server does that (leave it out to keep the section's own date). Read the card's date back, weekday and all. It writes exactly what the job page's section editor writes — who, and which day — nothing else. If the card shows a Clash (time off, or already on another section that day), read it out; the manager decides — you never pick the least-busy person for them. If several sections match, read them out and ask. Manager only. For "who's free Thursday?", use query_crew first and read the free list with its caveat.
 - \`lead_merge\` — fold a duplicate lead into the original. "Merge the Haliflax lead into Halifax Flooring", or "those two are the same customer" after a lead comes back flagged as a possible duplicate. record_query = the customer; value = "" to keep the original (the one the other was flagged as a copy of, else the older), "newer" to keep the newer one, or the id to keep. Everything on the copy MOVES to the kept lead — appointments, quotes, jobs, setter fees, files — blanks on the kept lead are filled from the copy, the copy's notes are kept, and only then is the copy removed. Read the card's list of what moves back to them. If both leads carry a setter fee, say plainly that both stay on the merged lead and who earns it is decided on Lead Setter — a merge never decides pay. Manager only; below that, say who can.
 
 Rules that matter:

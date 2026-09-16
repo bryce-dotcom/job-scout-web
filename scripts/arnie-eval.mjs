@@ -45,6 +45,8 @@ const DEMO = { company: 25, owner: { email: 'demo@jobscout.app', password: 'Demo
   tech: { email: 'jordan@summitfieldco.com', password: 'Eval-Temp-' + Math.random().toString(36).slice(2, 10) + '!', employeeId: 137 },
   jobA: 23510, jobB: 23506, tz: 'America/Denver' }
 const today = new Date().toLocaleDateString('en-CA', { timeZone: DEMO.tz })
+const todayWeekday = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: DEMO.tz })
+const weekAhead = Array.from({ length: 7 }, (_, i) => { const d = new Date(Date.now() + (i + 1) * 86400000); return `${d.toLocaleDateString('en-US', { weekday: 'short', timeZone: DEMO.tz })} ${d.toLocaleDateString('en-CA', { timeZone: DEMO.tz })}` }).join(', ')
 
 // ─── the prompt: the behaviour-bearing sections, read from the real source ──
 // buildSystemPrompt imports the browser store, so it cannot be called here.
@@ -65,7 +67,7 @@ try {
 const cut = (from, to) => engineSrc.slice(engineSrc.indexOf(from), engineSrc.indexOf(to)).replace(/\\`/g, '`')
 const RULES = cut('## STRICT FORMAT RULES', '## Current User') + cut('## What You Can Do', '## What You Cannot Do')
 const prompt = (roleLabel) =>
-  `You are OG Arnie for JobScout.\n\n## Current User\n- Role: ${roleLabel}\n- Company: Summit Field Co\n- Today: ${today} (${DEMO.tz}) — use these, exactly, whenever a tool asks for the date or timezone.\n\n` +
+  `You are OG Arnie for JobScout.\n\n## Current User\n- Role: ${roleLabel}\n- Company: Summit Field Co\n- Today: ${todayWeekday} ${today} (${DEMO.tz}) — use these, exactly, whenever a tool asks for the date or timezone. The week ahead, so you never count: ${weekAhead}. "Thursday" means the Thursday in that list; "tomorrow" is the first entry.\n\n` +
   RULES + '\n\n## Current Data Context\nNo preloaded data — call a query_* tool to fetch what you need.\n'
 
 // ─── plumbing ───────────────────────────────────────────────────────────────
@@ -270,6 +272,35 @@ const CASES = [
   { id: 'shift.tech.cannot.clock.in.someone.else', as: 'tech',
     turns: ['Clock Mike Sullivan in on the Westside Auto Wash job.'],
     expect: { proposal: 'none', text_match: [/Mike/, /own|themselves|Field Scout|Payroll|only you/i] } },
+
+  // — dispatch: the roster for a day, and a person put on a section — the job page's write, clashes shown not decided —
+  { id: 'crew.owner.who.is.free.tomorrow', as: 'owner',
+    turns: ['Who is free tomorrow?'],
+    expect: { tools_include: ['query_crew'], text_match: [/free|unbooked|available/i] } },
+  { id: 'dispatch.owner.puts.tech.on.section.thursday.then.rollback', as: 'owner',
+    run: async (ctx) => {
+      const JOB = 23516 // Auto Wash Canopy Lighting — Scheduled
+      const [sec] = await rest('job_sections', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, job_id: JOB, name: 'Eval — canopy bays', status: 'Not Started', assigned_to: null, scheduled_date: null, estimated_hours: 6 }) })
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Put Jordan Lee on the Westside Auto Wash canopy bays on Thursday.' }])
+        if (r.proposal?.preview?.label === 'crew assignment') {
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.ok) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const [s] = await rest(`job_sections?select=assigned_to,scheduled_date,status&id=eq.${sec.id}`)
+          const dow = new Date(s.scheduled_date + 'T12:00:00Z').getUTCDay()
+          const ahead = (new Date(s.scheduled_date) - new Date(today)) / 86400000
+          if (String(s.assigned_to) !== String(DEMO.tech.employeeId) || dow !== 4 || ahead < 0 || ahead > 7 || s.status !== 'Not Started') throw new Error('section not assigned to Jordan on the coming Thursday, nothing else touched: ' + JSON.stringify(s))
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+          const [s2] = await rest(`job_sections?select=assigned_to,scheduled_date&id=eq.${sec.id}`)
+          if (s2.assigned_to !== null || s2.scheduled_date !== null) throw new Error('rollback did not clear it: ' + JSON.stringify(s2))
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally { await rest(`job_sections?id=eq.${sec.id}`, { method: 'DELETE' }) }
+    },
+    expect: { proposal_kind: 'record', proposal_label: 'crew assignment', text_match: [/Jordan/, /Thu/i, /approve/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) (assigned|scheduled|put)\b/i] } },
+  { id: 'dispatch.tech.refused', as: 'tech',
+    turns: ['Put Mike Sullivan on the Westside Auto Wash job on Thursday.'],
+    expect: { proposal: 'none', text_match: [/manager/i] } },
 
   // — recording a payment: the page's write, the one status rule, the receipt; refusals over guesses —
   { id: 'payment.owner.records.check.status.moves.then.rollback', as: 'owner',

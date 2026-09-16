@@ -21,7 +21,9 @@ describe('the brief is one call, and "today" is the user\'s day', () => {
   it('the prompt tells Arnie what day it is — he has no clock', () => {
     expect(engine).toMatch(/const localDate = new Date\(\)\.toLocaleDateString\('en-CA'\)/)
     expect(engine).toMatch(/Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/)
-    expect(engine).toMatch(/- Today: \$\{localDate\} \(\$\{localTz\}\)/)
+    // The weekday and the week ahead ride along: a model handed a bare date put a tech on "Thursday" a day late.
+    expect(engine).toMatch(/- Today: \$\{localWeekday\} \$\{localDate\} \(\$\{localTz\}\)/)
+    expect(engine).toMatch(/The week ahead, so you never count: \$\{weekAhead\}/)
   })
 
   it('day bounds are computed in the given zone, not the server\'s', () => {
