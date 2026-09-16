@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computePoTotals, formatCurrency, PO_STATUS_LABELS } from './poUtils'
+import { computePoTotals, formatCurrency, PO_STATUS_LABELS, describeOrderItem, stripBundleSuffix } from './poUtils'
 
 // What a vendor is actually asked to be paid. 17 POs worth ~$42.8k currently
 // sit in draft against these numbers, so a drift here is money out the door.
@@ -93,5 +93,41 @@ describe('PO status labels', () => {
 
   it('has a draft state — 17 live POs sit in it', () => {
     expect(PO_STATUS_LABELS.draft).toBeTruthy()
+  })
+})
+
+// ── what a purchase order line says ───────────────────────────────────────
+// A bundle is what HHH sells; the vendor sells the products inside it. The
+// line names the product and its order code, and never the bundle — 181 of
+// HHH's 215 PO lines carried "[for SMBE 50/60/70/90/110W Highbay - 2ft
+// Lift/Controls]" to vendors before this.
+describe('describeOrderItem — the product and its order code, nothing else', () => {
+  it('names the product with its order code', () => {
+    expect(describeOrderItem({ name: 'MES 50/60/70/90/110W Highbay - 2ft', vendor_sku: '09240-03' })).toBe('MES 50/60/70/90/110W Highbay - 2ft (09240-03)')
+  })
+  it('just the name when there is no code, and never a blank', () => {
+    expect(describeOrderItem({ name: 'MES HB Control', vendor_sku: '' })).toBe('MES HB Control')
+    expect(describeOrderItem({ name: 'MES HB Control', vendor_sku: null })).toBe('MES HB Control')
+    expect(describeOrderItem({})).toBe('Item')
+    expect(describeOrderItem(null)).toBe('Item')
+  })
+  it('never carries a bundle name', () => {
+    const bundle = { name: 'SMBE 50/60/70/90/110W Highbay - 2ft Lift/Controls' }
+    const line = describeOrderItem({ name: 'MES 50/60/70/90/110W Highbay - 2ft', vendor_sku: '09240-03' })
+    expect(line).not.toContain(bundle.name)
+    expect(line).not.toContain('[for')
+  })
+})
+
+describe('stripBundleSuffix — lines written before 2026-09-16', () => {
+  it('removes the bundle name a legacy line carried', () => {
+    expect(stripBundleSuffix('MES 50/60/70/90/110W Highbay - 2ft (09240-03) [for SMBE 50/60/70/90/110W Highbay - 2ft Lift/Controls]'))
+      .toBe('MES 50/60/70/90/110W Highbay - 2ft (09240-03)')
+  })
+  it('leaves a clean line alone, brackets inside a name included', () => {
+    expect(stripBundleSuffix('MES HB Control (6906)')).toBe('MES HB Control (6906)')
+    expect(stripBundleSuffix('Panel [2x4] 40W')).toBe('Panel [2x4] 40W')
+    expect(stripBundleSuffix('')).toBe('')
+    expect(stripBundleSuffix(null)).toBe('')
   })
 })

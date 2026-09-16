@@ -87,7 +87,7 @@ export default function PurchaseOrderDetail() {
       supabase.from('purchase_order_lines').select('*').eq('po_id', id).order('sort_order').order('id'),
       supabase.from('vendors').select('id, name').eq('company_id', companyId).eq('active', true).order('name'),
       supabase.from('products_services')
-        .select('id, item_id, name, cost, unit_price, vendor_sku, default_vendor_id')
+        .select('id, item_id, name, cost, unit_price, vendor_sku, default_vendor_id, manufacturer, model_number')
         .eq('company_id', companyId).eq('active', true).order('name').limit(2000),
     ])
     const poRow = poRes.data
@@ -116,6 +116,10 @@ export default function PurchaseOrderDetail() {
       ...l,
       jobLinks: lineJobs.filter(lj => lj.po_line_id === l.id),
       vendor_sku: prodById.get(l.product_id)?.vendor_sku || null,
+      // The manufacturer's own identification — so the vendor ships exactly
+      // the product named, whatever our name for it is.
+      manufacturer: prodById.get(l.product_id)?.manufacturer || null,
+      model_number: prodById.get(l.product_id)?.model_number || null,
     }))
     setLines(linesWithJobs)
     setVendors(vRes.data || [])
@@ -163,7 +167,27 @@ export default function PurchaseOrderDetail() {
       .eq('id', id)
     if (error) toast.error('Save failed: ' + error.message)
     else {
-      toast.success('Saved')
+      // The buyer just said who this PO goes to. Products on it that have no
+      // vendor of their own learn it, so they never land on a vendorless PO
+      // again. Products that already name a vendor are left alone — a
+      // one-off purchase elsewhere is not a change of supplier.
+      const chosenVendor = parseInt(vendorId) || null
+      let learned = 0
+      if (chosenVendor && chosenVendor !== po.vendor_id) {
+        const ids = [...new Set((lines || []).map(l => l.product_id).filter(v => v != null))]
+        if (ids.length) {
+          const { data: taught, error: learnErr } = await supabase
+            .from('products_services')
+            .update({ default_vendor_id: chosenVendor, updated_at: new Date().toISOString() })
+            .eq('company_id', companyId).in('id', ids).is('default_vendor_id', null)
+            .select('id')
+          if (!learnErr) learned = (taught || []).length
+        }
+      }
+      const learnedVendor = vendors.find(v => String(v.id) === String(chosenVendor))?.name
+      toast.success(learned > 0 && learnedVendor
+        ? `Saved — ${learned} product${learned === 1 ? '' : 's'} will order from ${learnedVendor} from now on`
+        : 'Saved')
       await fetchAll()
     }
     setSaving(false)

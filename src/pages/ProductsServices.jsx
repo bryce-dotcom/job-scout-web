@@ -9,7 +9,7 @@ import {
   Upload, Download, Clock, DollarSign, Pencil, ChevronRight, Archive, Search,
   FileSpreadsheet, CheckCircle, AlertCircle, ArrowRight, Loader,
   ExternalLink, FileText, ShieldCheck, Award, PlusCircle, MinusCircle,
-  Wrench, GripHorizontal, GripVertical, Eye, Lightbulb
+  Wrench, GripHorizontal, GripVertical, Eye, Lightbulb, Truck
 } from 'lucide-react'
 import Tooltip from '../components/Tooltip'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
@@ -102,10 +102,20 @@ function DraggableModal({ children, theme, isMobile, maxWidth = '600px', onClose
 }
 
 // ============ PRODUCT CARD ============
-function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborData, draggable, isAdmin, isManagerPlus, onView, productComponents, products }) {
+function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm, handleDeleteProduct, buttonStyle, inventoryCount, laborData, draggable, isAdmin, isManagerPlus, onView, productComponents, products, vendorName }) {
   const laborCost = laborData?.price || 0
   const components = (productComponents || []).filter(pc => pc.parent_product_id === product.id)
   const isBundle = components.length > 0
+  // What this card is, at a glance: a bundle of N products, a service, or a
+  // product — and for a product, who it is bought from. "No vendor" is shown
+  // deliberately: it is the thing to fix before that product can be ordered.
+  const isService = String(product.material_or_labor || '').toLowerCase() === 'labor' && !isBundle
+  const kindChip = isBundle
+    ? { text: `Bundle · ${components.length} product${components.length === 1 ? '' : 's'}`, bg: 'rgba(139,92,246,0.12)', fg: '#7c3aed', Icon: Boxes }
+    : isService
+      ? { text: 'Service', bg: 'rgba(125,138,127,0.15)', fg: theme.textMuted, Icon: Wrench }
+      : { text: 'Product', bg: theme.accentBg, fg: theme.accent, Icon: Package }
+  const vendorLabel = (!isBundle && !isService) ? (vendorName?.(product.default_vendor_id) || null) : null
   return (
     <div
       draggable={!!draggable}
@@ -207,6 +217,16 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
         {product.type && (
           <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>{product.type}</div>
         )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 7px', borderRadius: '4px', fontSize: '10px', fontWeight: '700', backgroundColor: kindChip.bg, color: kindChip.fg, letterSpacing: '0.2px' }}>
+            <kindChip.Icon size={10} /> {kindChip.text}
+          </span>
+          {!isBundle && !isService && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 7px', borderRadius: '4px', fontSize: '10px', fontWeight: '600', backgroundColor: vendorLabel ? theme.bg : 'rgba(234,179,8,0.15)', color: vendorLabel ? theme.textSecondary : '#a16207', border: `1px solid ${vendorLabel ? theme.border : 'rgba(234,179,8,0.4)'}` }}>
+              <Truck size={10} /> {vendorLabel || 'No vendor'}
+            </span>
+          )}
+        </div>
         {/* Utility-scope badges — fast visual cue when scrolling the catalog. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
           {product.suggest_in_lenard && (
@@ -716,11 +736,26 @@ export default function ProductsServices() {
   // Product modal state
   const [showProductModal, setShowProductModal] = useState(false)
   const [editingProduct, setEditingProduct] = useState(null)
+  // What is being added: a product (one thing bought from a vendor) or a
+  // bundle (several products sold as one line). Asked first, because the
+  // answer decides whether a vendor is picked or the products inside are.
+  // Editing derives it from whether the item has components.
+  const [productKind, setProductKind] = useState(null)
+  // The vendors, for the product form's Vendor field and the card chips.
+  const [vendors, setVendors] = useState([])
+  useEffect(() => {
+    if (!companyId) return
+    let alive = true
+    supabase.from('vendors').select('id, name, active').eq('company_id', companyId).order('name')
+      .then(({ data }) => { if (alive) setVendors(data || []) })
+    return () => { alive = false }
+  }, [companyId])
+  const vendorName = (id) => vendors.find(v => String(v.id) === String(id))?.name || null
   const [productModalTab, setProductModalTab] = useState('overview')
   const [productForm, setProductForm] = useState({
     name: '', description: '', unit_price: '', cost: '', markup_percent: '',
     taxable: true, active: true, image_url: '', allotted_time_hours: '', group_id: null, type: '', labor_rate_id: '',
-    manufacturer: '', model_number: '', vendor_sku: '', product_category: '',
+    manufacturer: '', model_number: '', vendor_sku: '', product_category: '', default_vendor_id: '',
     dlc_listed: false, dlc_listing_number: '', warranty_years: '',
     spec_sheet_url: '', install_guide_url: '', dlc_document_url: '', datasheet_json: {},
     // Utility incentive scope — only items in_utility_scope=true count
@@ -1166,6 +1201,7 @@ export default function ProductsServices() {
         type: product.type || activeSection || serviceTypes[0] || '', labor_rate_id: product.labor_rate_id || '',
         manufacturer: product.manufacturer || '', model_number: product.model_number || '',
         vendor_sku: product.vendor_sku || '',
+        default_vendor_id: product.default_vendor_id != null ? String(product.default_vendor_id) : '',
         product_category: product.product_category || '', dlc_listed: product.dlc_listed ?? false,
         dlc_listing_number: product.dlc_listing_number || '', warranty_years: product.warranty_years || '',
         spec_sheet_url: product.spec_sheet_url || '', install_guide_url: product.install_guide_url || '', dlc_document_url: product.dlc_document_url || '',
@@ -1188,7 +1224,7 @@ export default function ProductsServices() {
         group_id: selectedGroup?.id || null,
         type: activeSection || serviceTypes[0] || '',
         labor_rate_id: '',
-        manufacturer: '', model_number: '', vendor_sku: '', product_category: '',
+        manufacturer: '', model_number: '', vendor_sku: '', product_category: '', default_vendor_id: '',
         dlc_listed: false, dlc_listing_number: '', warranty_years: '',
         spec_sheet_url: '', install_guide_url: '', dlc_document_url: '', datasheet_json: {},
         in_utility_scope: true, floor_price: '', ceiling_price: '', suggest_in_lenard: false,
@@ -1197,7 +1233,23 @@ export default function ProductsServices() {
     }
     setComponentSearch('')
     setProductModalTab('overview')
+    // An existing item is whatever it already is; a new one is asked.
+    if (product) {
+      const hasComponents = productComponents.some(pc => pc.parent_product_id === product.id)
+      setProductKind(hasComponents ? 'bundle' : 'product')
+    } else {
+      setProductKind(null)
+    }
     setShowProductModal(true)
+  }
+
+  const chooseProductKind = (kind) => {
+    setProductKind(kind)
+    // Both start with the details: a product picks its vendor first; a
+    // bundle is named first, then the single products that go in it are
+    // picked on the Components tab (Bryce: "the bundle should be named,
+    // then pick the single items to bundle").
+    setProductModalTab('overview')
   }
 
   // Helper: compute component value from modalComponents using each component's own unit_price
@@ -1334,6 +1386,10 @@ Click OK only if you're sure this is a label correction and not a different prod
       group_id: productForm.group_id, labor_rate_id: productForm.labor_rate_id || null,
       manufacturer: productForm.manufacturer || null, model_number: productForm.model_number || null,
       vendor_sku: productForm.vendor_sku || null,
+      // Who it is bought from. Purchase orders group lines by this; a product
+      // with none lands on a vendorless PO for the buyer to assign. A bundle
+      // has no vendor of its own — its components do.
+      default_vendor_id: productForm.default_vendor_id ? parseInt(productForm.default_vendor_id) : null,
       product_category: productForm.product_category || null, dlc_listed: productForm.dlc_listed,
       dlc_listing_number: productForm.dlc_listing_number || null, warranty_years: productForm.warranty_years || null,
       spec_sheet_url: productForm.spec_sheet_url || null, install_guide_url: productForm.install_guide_url || null, dlc_document_url: productForm.dlc_document_url || null,
@@ -2009,7 +2065,7 @@ Click OK only if you're sure this is a label correction and not a different prod
                       handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
                       inventoryCount={getInventoryCount(product.id)} laborData={getLaborCost(product)}
                       draggable={isManagerPlus} isAdmin={isAdmin} isManagerPlus={isManagerPlus}
-                      onView={setViewingProduct} productComponents={productComponents} products={products} />
+                      onView={setViewingProduct} productComponents={productComponents} products={products} vendorName={vendorName} />
                   ))}
                 </div>
               )}
@@ -2138,7 +2194,7 @@ Click OK only if you're sure this is a label correction and not a different prod
                           handleDeleteProduct={handleDeleteProduct} buttonStyle={buttonStyle}
                           inventoryCount={getInventoryCount(product.id)} laborData={getLaborCost(product)}
                           draggable={isManagerPlus} isAdmin={isAdmin} isManagerPlus={isManagerPlus}
-                          onView={setViewingProduct} productComponents={productComponents} products={products} />
+                          onView={setViewingProduct} productComponents={productComponents} products={products} vendorName={vendorName} />
                       ))}
                     </div>
                   ) : isAdmin && sectionGroups.length > 0 ? (
@@ -2467,14 +2523,40 @@ Click OK only if you're sure this is a label correction and not a different prod
         <DraggableModal theme={theme} isMobile={isMobile} maxWidth="600px" onClose={() => setShowProductModal(false)}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', borderBottom: `1px solid ${theme.border}` }}>
             <h2 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>
-              {editingProduct ? 'Edit Product' : `Add ${'Item'}`}
+              {editingProduct
+                ? (productKind === 'bundle' ? 'Edit Bundle' : 'Edit Product')
+                : (productKind === 'bundle' ? 'Add Bundle' : productKind === 'product' ? 'Add Product' : 'Add Item')}
             </h2>
             <button onClick={() => setShowProductModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
               <X size={20} />
             </button>
           </div>
 
+          {/* A new item: say what it is before anything else. A product is one
+              thing bought from a vendor; a bundle is several products sold as
+              one line and has no vendor of its own. Nothing below shows until
+              this is answered, because the answer decides what is asked. */}
+          {!editingProduct && productKind === null && (
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ fontSize: '13px', color: theme.textSecondary }}>What are you adding?</div>
+              {[
+                { kind: 'product', icon: Package, title: 'A product', body: 'One thing you buy from a vendor and sell. You pick the vendor first, then add the details and order code.' },
+                { kind: 'bundle', icon: Boxes, title: 'A bundle of products', body: 'Several products sold together as one line — a fixture, its control, the lift. You pick the products inside; purchase orders list those, never the bundle.' },
+              ].map(opt => (
+                <button key={opt.kind} type="button" onClick={() => chooseProductKind(opt.kind)}
+                  style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', textAlign: 'left', padding: '14px 16px', minHeight: '44px', borderRadius: '10px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, cursor: 'pointer' }}>
+                  <opt.icon size={22} style={{ color: theme.accent, flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>{opt.title}</div>
+                    <div style={{ fontSize: '12px', color: theme.textMuted, lineHeight: 1.4 }}>{opt.body}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Tabs */}
+          {(editingProduct || productKind !== null) && (
           <div style={{ display: 'flex', gap: '0', borderBottom: `1px solid ${theme.border}`, padding: '0 20px' }}>
             {[
               { key: 'overview', label: 'Overview', icon: Package },
@@ -2499,11 +2581,41 @@ Click OK only if you're sure this is a label correction and not a different prod
               </button>
             ))}
           </div>
+          )}
 
+          {(editingProduct || productKind !== null) && (
           <div style={{ flex: 1, overflow: 'auto', padding: '20px', maxHeight: '55vh' }}>
             {/* OVERVIEW TAB */}
             {productModalTab === 'overview' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Who it is bought from — first, because a product's vendor is
+                    what a purchase order is addressed to. A bundle has none;
+                    its components carry theirs. */}
+                {productKind !== 'bundle' && (
+                  <div style={{ padding: '12px 14px', backgroundColor: theme.bg, borderRadius: '8px', borderLeft: `3px solid ${theme.accent}` }}>
+                    <label style={labelStyle}>Vendor (who you buy it from)</label>
+                    <select name="default_vendor_id" value={productForm.default_vendor_id || ''} onChange={handleProductChange} style={inputStyle}>
+                      <option value="">-- No vendor --</option>
+                      {vendors.filter(v => v.active !== false || String(v.id) === String(productForm.default_vendor_id)).map(v => <option key={v.id} value={String(v.id)}>{v.name}</option>)}
+                    </select>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                      The supplier you order it from — not the manufacturer. Purchase orders are grouped by vendor; a product without one lands on a PO with no vendor for you to assign. Leave blank for a service.
+                    </div>
+                  </div>
+                )}
+                {productKind === 'bundle' && (
+                  <div style={{ padding: '12px 14px', backgroundColor: theme.bg, borderRadius: '8px', borderLeft: `3px solid #7c3aed`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '12px', color: theme.textSecondary, lineHeight: 1.4 }}>
+                      <div style={{ fontWeight: '600', color: theme.text }}>{editingProduct ? 'This is a bundle' : 'Name the bundle, then pick the single products that go in it.'}</div>
+                      A bundle has no vendor or order code of its own — purchase orders list the products inside it, each under its own vendor.
+                      {modalComponents.length > 0 ? ` ${modalComponents.length} product${modalComponents.length === 1 ? '' : 's'} inside so far.` : ' Nothing inside it yet.'}
+                    </div>
+                    <button type="button" onClick={() => setProductModalTab('components')}
+                      style={{ ...buttonStyle, minHeight: '40px', backgroundColor: '#7c3aed', color: '#fff', whiteSpace: 'nowrap' }}>
+                      <Boxes size={14} /> {modalComponents.length > 0 ? 'Edit the products inside' : 'Pick the products inside'}
+                    </button>
+                  </div>
+                )}
                 <div>
                   <label style={labelStyle}>Name *</label>
                   <input type="text" name="name" value={productForm.name} onChange={handleProductChange} style={inputStyle} />
@@ -3151,14 +3263,17 @@ Click OK only if you're sure this is a label correction and not a different prod
               )
             })()}
           </div>
+          )}
 
           <div style={{ display: 'flex', gap: '12px', padding: '16px 20px', borderTop: `1px solid ${theme.border}` }}>
             <button onClick={() => setShowProductModal(false)} style={{ ...buttonStyle, flex: 1, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
               Cancel
             </button>
+            {(editingProduct || productKind !== null) && (
             <button onClick={handleSaveProduct} disabled={saving} style={{ ...buttonStyle, flex: 1, backgroundColor: theme.accent, color: '#fff', opacity: saving ? 0.7 : 1 }}>
               <Save size={16} /> {saving ? 'Saving...' : (editingProduct ? 'Update' : 'Add')}
             </button>
+            )}
           </div>
         </DraggableModal>
       )}

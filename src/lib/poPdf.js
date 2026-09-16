@@ -11,7 +11,7 @@
 // nothing here is hard-coded.
 
 import { jsPDF } from 'jspdf'
-import { formatCurrency } from './poUtils'
+import { formatCurrency, stripBundleSuffix } from './poUtils'
 
 export function generatePoPdf({ po, lines, vendor, company, job, businessUnit }) {
   const doc = new jsPDF()
@@ -107,16 +107,28 @@ export function generatePoPdf({ po, lines, vendor, company, job, businessUnit })
     // Order code = product.vendor_sku (attached by the caller). Strip a
     // trailing "(sku)" from the description so it isn't shown twice.
     const code = line.vendor_sku || ''
-    let desc = line.description || 'Item'
+    // A line written before 2026-09-16 may still carry "[for <bundle>]";
+    // the vendor never needs the bundle's name.
+    let desc = stripBundleSuffix(line.description) || 'Item'
     if (code && desc.includes(`(${code})`)) desc = desc.replace(`(${code})`, '').replace(/\s{2,}/g, ' ').trim()
     const descLines = doc.splitTextToSize(desc, descW)
+    // The manufacturer's identification under our name for it — the vendor
+    // matches on that, not on what we call it. Bryce: "naming the products
+    // for each vendor including the manufacturer's info."
+    const mfrBits = [line.manufacturer, line.model_number ? `Model ${line.model_number}` : null].filter(Boolean)
+    const mfrLines = mfrBits.length ? doc.splitTextToSize(mfrBits.join(' · '), descW) : []
     doc.text(String(code), xNum, y)
     doc.text(String(line.quantity_ordered || 0), xQty, y)
     for (let i = 0; i < descLines.length; i++) doc.text(descLines[i], xDesc, y + i * 4)
+    if (mfrLines.length) {
+      doc.setTextColor(110); doc.setFontSize(8)
+      for (let i = 0; i < mfrLines.length; i++) doc.text(mfrLines[i], xDesc, y + (descLines.length + i) * 4)
+      doc.setTextColor(0); doc.setFontSize(9)
+    }
     doc.text(formatCurrency(line.unit_cost), xPrice, y, { align: 'right' })
     doc.text(formatCurrency(line.line_total), xTotal, y, { align: 'right' })
     qtySum += parseFloat(line.quantity_ordered) || 0
-    y += Math.max(5, descLines.length * 4) + 3
+    y += Math.max(5, (descLines.length + mfrLines.length) * 4) + 3
   }
 
   doc.setDrawColor(120); doc.line(margin, y, rightEdge, y); y += 6

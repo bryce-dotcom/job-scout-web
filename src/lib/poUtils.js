@@ -68,17 +68,44 @@ export function formatCurrency(amount) {
 }
 
 // ── Bundle expansion for PO creation ─────────────────────────────────
-// When a product has no catalog cost it's a bundle whose price is the
-// sum of its components. For PO purposes each component becomes its own
-// PO line (the vendor ships the parts, not an abstract bundle name).
+// A bundle is what HHH sells: "SMBE 50/60/70/90/110W Highbay - 2ft
+// Lift/Controls" is a fixture plus a control plus the lift to hang it. The
+// vendor sells none of that. The vendor sells the fixture and the control,
+// each under its own order code, so a purchase order lists the PRODUCTS
+// INSIDE the bundle and never the bundle. Bryce, after the sixth time a
+// bundle's name reached a vendor: "bundles have names — they contain
+// multiple products."
 //
 // Returns an array of "order items":
-//   { productId, name, description, unitCost, quantity, vendorId }
+//   { productId, name, description, unitCost, quantity, vendorId,
+//     isComponent, bundleParentName, component }
 //
-// If the product has a direct cost, returns a single-element array
-// (the normal case). If it has components, expands them. If it has
-// neither, returns one row with unitCost=0 so the PO line is at least
-// created and the buyer can fill in the price manually.
+// A product with components explodes into one item per component, whatever
+// its own cost says — having components is what makes it a bundle. A leaf
+// product is one item. A product with neither cost nor components is one
+// $0 item so the line exists and the buyer can price it.
+//
+// The description is the product and its order code — nothing else. It
+// used to carry "[for <bundle name>]", and that is the bundle name that kept
+// turning up on vendors' paperwork: 181 of HHH's 215 PO lines read
+// "MES 50/60/70/90/110W Highbay - 2ft (09240-03) [for SMBE 50/60/70/90/110W
+// Highbay - 2ft Lift/Controls]". The bundle stays on the item as
+// bundleParentName for anything in the app that wants it.
+
+// How a product reads on a purchase order line: its name, then its order
+// code in parentheses when it has one. The PDF shows the code in its own
+// column and strips it from here so it is not printed twice.
+export function describeOrderItem(product) {
+  const name = String(product?.name || '').trim() || 'Item'
+  const code = String(product?.vendor_sku || '').trim()
+  return code ? `${name} (${code})` : name
+}
+
+// A legacy line description with the bundle name still attached, cleaned.
+export function stripBundleSuffix(description) {
+  return String(description || '').replace(/\s*\[for [^\]]*\]\s*$/, '').trim()
+}
+
 export async function expandProductForPO(productId, bundleQty, companyId) {
   if (!productId) return []
 
@@ -92,25 +119,7 @@ export async function expandProductForPO(productId, bundleQty, companyId) {
     .maybeSingle()
   if (!prod) return []
 
-  const directCost = parseFloat(prod.cost)
-
-  // Case A: product has a direct catalog cost — order as-is
-  if (directCost > 0) {
-    const desc = prod.vendor_sku ? `${prod.name} (${prod.vendor_sku})` : prod.name
-    return [{
-      productId: prod.id,
-      name: prod.name,
-      description: desc,
-      unitCost: directCost,
-      quantity: bundleQty,
-      vendorId: prod.default_vendor_id || null,
-      isComponent: false,
-      bundleParentName: null,
-      component: prod,
-    }]
-  }
-
-  // Case B: no direct cost — look for bundle components
+  // A bundle: order what is inside it, never the bundle.
   const { data: comps } = await supabase
     .from('product_components')
     .select('quantity, component:products_services!component_product_id(id, name, cost, vendor_sku, model_number, material_or_labor, default_vendor_id)')
@@ -121,13 +130,11 @@ export async function expandProductForPO(productId, bundleQty, companyId) {
     return comps.map(c => {
       const comp = c.component || {}
       const compQty = (parseFloat(c.quantity) || 1) * bundleQty
-      const compCost = parseFloat(comp.cost) || 0
-      const desc = comp.vendor_sku ? `${comp.name} (${comp.vendor_sku})` : comp.name
       return {
         productId: comp.id,
         name: comp.name,
-        description: `${desc} [for ${prod.name}]`,
-        unitCost: compCost,
+        description: describeOrderItem(comp),
+        unitCost: parseFloat(comp.cost) || 0,
         quantity: compQty,
         vendorId: comp.default_vendor_id || prod.default_vendor_id || null,
         isComponent: true,
@@ -137,13 +144,14 @@ export async function expandProductForPO(productId, bundleQty, companyId) {
     })
   }
 
-  // Case C: no cost, no components — create a $0 PO line as a placeholder
-  const desc = prod.vendor_sku ? `${prod.name} (${prod.vendor_sku})` : prod.name
+  // A leaf product: itself, at its catalog cost — $0 when it has none, so
+  // the line exists and the buyer can price it.
+  const directCost = parseFloat(prod.cost)
   return [{
     productId: prod.id,
     name: prod.name,
-    description: desc,
-    unitCost: 0,
+    description: describeOrderItem(prod),
+    unitCost: directCost > 0 ? directCost : 0,
     quantity: bundleQty,
     vendorId: prod.default_vendor_id || null,
     isComponent: false,
