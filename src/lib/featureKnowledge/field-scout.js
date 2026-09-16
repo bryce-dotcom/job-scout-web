@@ -93,6 +93,10 @@ export default {
 
     faqs: [
       {
+        q: 'How does a tech collect Venmo or Cash App on site?',
+        a: 'Collect Payment → pick Venmo / Cash App / Zelle. The sheet shows the company handle large, a scan-to-pay QR code the customer scans with their phone, a "Text details" button that sends handle + amount + link, and Open-in-app. Once the customer has sent it, tap Record — the office gets a notification and Books picks the cash-out up when it lands.',
+      },
+      {
         q: 'What does the progress bar in the clock banner show?',
         a: 'Time used vs allotted hours for the current job. Red when over budget, white when under. When under allotted at clock-out, efficiency bonus pays.',
       },
@@ -112,6 +116,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-06-08',
+  lastVerified: '2026-09-15',
   freshUntil: 90,
 }

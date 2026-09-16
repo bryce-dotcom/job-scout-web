@@ -327,6 +327,12 @@ await run('settings', async () => {
     ['default_labor_warranty_months', JSON.stringify(12)],
     ['default_parts_warranty_months', JSON.stringify(60)],
     ['accounting_basis', JSON.stringify('cash')],
+    // Wallets, so demos show the Venmo / Cash App / Zelle flow end to end.
+    ['payment_config', JSON.stringify({
+      venmo_enabled: true, venmo_handle: 'SummitFieldCo', venmo_profile: 'business', venmo_instructions: 'Please put your invoice number in the note.',
+      cashapp_enabled: true, cashapp_handle: 'SummitFieldCo', cashapp_profile: 'business', cashapp_instructions: '',
+      zelle_enabled: true, zelle_handle: 'pay@summitfield.co', zelle_instructions: 'Please put your invoice number in the memo.',
+    })],
   ];
   const r = await ins('settings', S.map(([key, value]) => ({ company_id: cid, key, value })));
   return r.length;

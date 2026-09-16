@@ -1551,6 +1551,22 @@ export default function FieldScout() {
       if (paymentInvoice?.id) paymentData.invoice_id = paymentInvoice.id
       await supabase.from('payments').insert(paymentData)
 
+      // A wallet payment (Venmo / Cash App / Zelle) moved money the office
+      // cannot see in the bank feed yet. Tell them, so the wallet balance in
+      // Books gets refreshed and the payout gets matched when it lands.
+      const wallet = walletByMethod(paymentForm.method)
+      if (wallet) {
+        const amt = parseFloat(paymentForm.amount) || 0
+        companyNotify({
+          companyId,
+          type: 'wallet_payment_recorded',
+          title: `${wallet.label} payment recorded in the field`,
+          message: `${currentEmployee?.name || firstName || 'A crew member'} recorded $${amt.toFixed(2)} by ${wallet.label} for ${paymentJob.job_title || paymentJob.job_id}${paymentInvoice?.invoice_id ? ` (${paymentInvoice.invoice_id})` : ''}.${wallet.hasBalance ? ` Books → Accounts shows the updated ${wallet.label} balance estimate; the cash-out will match itself when it reaches the bank.` : ''}`,
+          metadata: { job_id: paymentJob.id, invoice_id: paymentInvoice?.id || null, amount: amt, method: wallet.method, employee_id: currentEmployee?.id || null },
+          createdBy: currentEmployee?.id || null,
+        }).catch(() => { /* a missed nudge must not fail the payment */ })
+      }
+
       // Update invoice payment status + amount if it was $0
       if (paymentInvoice?.id) {
         let invAmt = parseFloat(paymentInvoice.amount) || 0

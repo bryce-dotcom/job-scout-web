@@ -24,6 +24,7 @@ import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
 import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
 import LoadingSpinner from '../components/LoadingSpinner'
 import InvoiceSplitPanel from '../components/InvoiceSplitPanel'
+import { enabledWalletsFrom, displayHandle } from '../lib/wallets'
 
 // Light theme fallback
 const defaultTheme = {
@@ -1788,6 +1789,40 @@ Add it anyway?`,
       drawWrappedText(preferredPaymentNote, margin, contentWidth, { fontSize: 9, font: 'italic', color: [100] })
       doc.setTextColor(0)
       y += 6
+    }
+
+    // ── Ways to pay ──
+    // The email lists methods and the portal shows the wallet cards, but a
+    // printed or forwarded PDF used to carry no instructions at all.
+    {
+      let pc = null
+      try {
+        const row = (settings || []).find(x => x.key === 'payment_config')
+        pc = row?.value ? JSON.parse(row.value) : null
+      } catch { pc = null }
+      const wallets = enabledWalletsFrom(pc)
+      const portalLink = invoice.portal_token ? `https://jobscout.appsannex.com/portal/${invoice.portal_token}` : null
+      if (wallets.length > 0 || portalLink) {
+        checkPage(16 + wallets.length * 6)
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(0)
+        doc.text('Ways to pay:', margin, y)
+        y += 6
+        const memo = invoice.invoice_id || `INV-${invoice.id}`
+        if (portalLink) {
+          drawWrappedText(`Online (card / bank transfer): ${portalLink}`, margin, contentWidth, { fontSize: 9, font: 'normal', color: [60] })
+          y += 1.5
+        }
+        for (const w of wallets) {
+          const noteWord = w.id === 'zelle' ? 'memo' : 'note'
+          const ff = w.profile === 'personal' ? ' (send as friends & family)' : ''
+          drawWrappedText(`${w.label}: ${displayHandle(w, w.handle)} — put ${memo} in the ${noteWord}${ff}`, margin, contentWidth, { fontSize: 9, font: 'normal', color: [60] })
+          y += 1.5
+        }
+        doc.setTextColor(0)
+        y += 5
+      }
     }
 
     // ── Notes ──

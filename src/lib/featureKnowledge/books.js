@@ -14,6 +14,7 @@ export default {
 
   replaces: ['QuickBooks Online', 'Xero', 'Wave', 'FreshBooks accounting'],
   highlights: [
+    'Venmo · Cash App · Zelle payouts reconcile themselves',
     'Form 1065 line mapping',
     'Bank reconciliation',
     'Job allocation per transaction',
@@ -82,12 +83,21 @@ export default {
     ],
 
     gotchas: [
+      'Venmo / Cash App / Zelle are wallets, not banks: Plaid never sees the wallet. Books tracks the wallet balance as a manual account (Accounts tab, with a running estimate) and reconciles the CASH-OUT when it lands in the real bank — Transactions tab, "Venmo (via bank feed)" filter, or the Match button on an unmatched deposit.',
       'Transactions without categories sit in Uncategorized → ignored by P&L until you tag them. Don\'t leave Uncategorized lingering.',
       'Form 1065 line mapping only matters for partnerships. Single-member LLCs report on Schedule C — different form.',
       'Locking a reconciled period prevents back-dated edits. Unlock requires admin role.',
     ],
 
     faqs: [
+      {
+        q: 'How do I take Venmo, Cash App or Zelle?',
+        a: 'Settings → My Money, turn the wallet on and enter the handle (business or personal profile). From then on invoice emails, the customer portal, the invoice PDF and FieldScout all show where to send it. Record the payment on the invoice (or FieldScout records it) and it appears under Books → Payments with its method.',
+      },
+      {
+        q: 'A Venmo cash-out hit the bank — do I record it as income again?',
+        a: 'No. The payments were already recorded. Books matches the cash-out to them: automatically when the payments add up unambiguously, otherwise the Match button on the deposit offers "Link all N" (business-profile fees are accounted for). Linked deposits leave the unmatched list and never double-count.',
+      },
       {
         q: 'Do I still need a CPA?',
         a: 'For tax filing, yes. But Books gives them clean books they can actually trust — no QuickBooks cleanup engagement.',
@@ -104,6 +114,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-05-29',
+  lastVerified: '2026-09-15',
   freshUntil: 90,
 }

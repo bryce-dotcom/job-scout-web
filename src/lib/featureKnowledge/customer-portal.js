@@ -13,6 +13,7 @@ export default {
 
   replaces: ['DocuSign portals', 'QuickBooks customer portal', 'HousecallPro portal', "PDF + venmo workarounds"],
   highlights: [
+    'Venmo / Cash App / Zelle pay cards',
     'No-login magic links',
     'Stripe payment buttons',
     'ESIGN audit: IP, UA, doc hash, timestamp',
@@ -88,6 +89,10 @@ export default {
 
     faqs: [
       {
+        q: 'Does the portal show Venmo, Cash App or Zelle?',
+        a: 'Yes — each wallet enabled in Settings → My Money gets a card with the handle, the amount due, the invoice number for the note, fee guidance (friends & family for personal profiles) and an Open-in-app link. No processor is involved; the office records the payment when it lands.',
+      },
+      {
         q: 'Is the portal secure?',
         a: 'Magic-link tokens are 32-character URL-safe random strings, scoped to one customer. RLS enforces tenant + customer isolation. Tokens rotate every 90 days or on demand.',
       },
@@ -102,6 +107,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-05-29',
+  lastVerified: '2026-09-15',
   freshUntil: 90,
 }

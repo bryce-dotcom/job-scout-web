@@ -88,6 +88,10 @@ export default {
 
     faqs: [
       {
+        q: 'Can customers pay by Venmo, Cash App or Zelle?',
+        a: 'Yes, once the handle is set in Settings → My Money. The invoice email lists the wallet as an accepted method, the portal shows the handle with the amount and invoice number to put in the note (plus an Open Venmo / Open Cash App link), and the PDF prints a "Ways to pay" block. Record the payment on the invoice with that method when it arrives.',
+      },
+      {
         q: 'Can I accept ACH?',
         a: 'Yes — Stripe ACH is enabled per-customer. Card fees are higher; ACH is lower. Toggle per customer.',
       },
@@ -103,6 +107,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-05-29',
+  lastVerified: '2026-09-15',
   freshUntil: 90,
 }

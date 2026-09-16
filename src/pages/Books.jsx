@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -8,12 +8,14 @@ import HelpBadge from '../components/HelpBadge'
 import EmptyState from '../components/EmptyState'
 import ReportsPanel from '../components/ReportsPanel'
 import FrankieSecondLook from '../components/FrankieSecondLook'
-import { computeRevenue, cashExpenses, collectedIncentives as collectedIncentivesIn } from '../lib/revenueBasis'
+import { computeRevenue, cashExpenses } from '../lib/revenueBasis'
 import { isLegacyNetShape } from '../lib/arHelpers'
 import { PAYMENT_METHODS } from '../lib/schema'
 import { isVirtualAccountFilter, matchesAccountFilter, walletForFilter, isWalletTransaction, WALLET_FEED_FILTERS } from '../lib/bankFeedFilters'
 import { WALLETS, walletForAccountName } from '../lib/wallets'
 import { findWalletPayout } from '../lib/walletReconcile'
+import { chooseAutoLink, paymentsInWindow } from '../lib/walletAutoLink'
+import { zelleSenderName, matchCustomerName } from '../lib/zelleSender'
 import {
   BookOpen, Plus, X, DollarSign, TrendingUp, TrendingDown,
   Wallet, CreditCard, Building, PiggyBank, Pencil, Trash2,
@@ -313,7 +315,6 @@ export default function Books() {
   const [txnEditTaxCategory, setTxnEditTaxCategory] = useState('')
   const [txnEditNotes, setTxnEditNotes] = useState('')
   const [txnEditJobId, setTxnEditJobId] = useState(null)
-  const [jobSearchText, setJobSearchText] = useState('')
   // Multi-job allocations: [{ job_id, amount, notes }]
   const [txnJobAllocations, setTxnJobAllocations] = useState([])
   const [txnAllocJobSearch, setTxnAllocJobSearch] = useState('')
@@ -363,9 +364,6 @@ export default function Books() {
   })
   const [taxDateTo, setTaxDateTo] = useState(() => new Date().toISOString().split('T')[0])
 
-  // AR filter
-  const [arFilter, setArFilter] = useState('all')
-
   // Manage Categories modal
   const [showManageCategories, setShowManageCategories] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -385,6 +383,16 @@ export default function Books() {
   useEffect(() => {
     if (companyId) fetchAllBooksData()
   }, [companyId])
+
+  // Once per load of the bank feed (and again after Sync All), link wallet
+  // payouts whose payments are unambiguous — see walletAutoLink.js.
+  const autoLinkRan = useRef(false)
+  useEffect(() => {
+    if (!companyId || autoLinkRan.current || (plaidTransactions || []).length === 0) return
+    autoLinkRan.current = true
+    autoLinkWalletPayouts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plaidTransactions, companyId])
 
   const fetchAllBooksData = async () => {
     setLoading(true)
@@ -419,7 +427,7 @@ export default function Books() {
         body: { company_id: companyId, days: 30 },
       })
       if (data && !data.error) setMerchantSummary(data)
-    } catch (e) { /* silent — Stripe might not be configured */ }
+    } catch { /* silent — Stripe might not be configured */ }
   }
 
   const fetchBankAccounts = async () => {
@@ -664,6 +672,61 @@ export default function Books() {
       ...m, invoices: ranked, recorded, walletPayout, loading: false,
       selectedId: recorded.length === 0 && !walletPayout && ranked[0]?._score >= 100 ? ranked[0].id : null,
     }))
+  }
+
+  // Silently link wallet payouts to the recorded payments inside them, but
+  // only when there is exactly one way to read the deposit (chooseAutoLink).
+  // Everything else waits for a person in the match modal.
+  const autoLinkWalletPayouts = async () => {
+    const cutoff = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10)
+    const walletDeposits = (plaidTransactions || [])
+      .filter(t => t.amount < 0 && !t.is_transfer && !t.matched_invoice_id && !t.matched_payment_id && String(t.date || '') >= cutoff)
+      .map(t => ({ t, wallet: WALLETS.find(w => isWalletTransaction(w, t)) }))
+      .filter(x => x.wallet)
+      .sort((a, b) => (a.t.date || '').localeCompare(b.t.date || ''))
+    if (walletDeposits.length === 0) return
+    let cfg = {}
+    try {
+      const { data: cfgRow } = await supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payment_config').maybeSingle()
+      cfg = typeof cfgRow?.value === 'string' ? JSON.parse(cfgRow.value) : (cfgRow?.value || {})
+    } catch { cfg = {} }
+    const since = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10)
+    const { data: pays } = await supabase
+      .from('payments')
+      .select('id, invoice_id, amount, date, method, source_transaction_id')
+      .eq('company_id', companyId)
+      .is('source_transaction_id', null)
+      .in('method', WALLETS.map(w => w.method))
+      .gte('date', since)
+      .limit(500)
+    const used = new Set()
+    let linked = 0
+    for (const { t, wallet } of walletDeposits) {
+      const candidates = paymentsInWindow(
+        (pays || []).filter(p => (p.method || '').toLowerCase() === wallet.method.toLowerCase() && !used.has(p.id)),
+        t.date,
+      )
+      if (candidates.length === 0) continue
+      const profile = cfg[wallet.keys.profile] === 'personal' ? 'personal' : 'business'
+      const found = findWalletPayout(wallet, candidates, Math.abs(parseFloat(t.amount) || 0), profile)
+      const pick = chooseAutoLink(found, candidates, wallet, profile)
+      if (!pick) continue
+      const first = pick.payments[0]
+      const { error } = await supabase.from('plaid_transactions').update({
+        matched_invoice_id: first.invoice_id,
+        matched_payment_id: first.id,
+        matched_at: new Date().toISOString(),
+      }).eq('id', t.id)
+      if (error) continue
+      const ids = pick.payments.map(p => p.id)
+      await supabase.from('payments').update({ source_transaction_id: t.id }).in('id', ids)
+      ids.forEach(id => used.add(id))
+      linked += 1
+    }
+    if (linked > 0) {
+      toast.success(`Matched ${linked} wallet payout${linked === 1 ? '' : 's'} to recorded payments automatically`)
+      await fetchPlaidTransactions?.()
+    }
   }
 
   // Link every payment in a wallet payout to this one deposit. The bank row
@@ -924,21 +987,9 @@ export default function Books() {
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear
   }
 
-  // Money in: deposits + paid invoices + positive plaid transactions.
-  // Invoice contribution uses the CUSTOMER BALANCE (amount - discount),
-  // not gross — utility incentive + deposit credit are paid by the
-  // utility / counted earlier, not by the customer this month.
-  // BU filter applies to invoice + utility-invoice driven values; Plaid
-  // transactions stay company-wide (they aren't tagged with a BU).
-  const paidInvoicesMTD = (invoices || [])
-    .filter(inv => inv.payment_status === 'Paid' && isThisMonth(inv.created_at) && matchesBu(inv.business_unit))
-    .reduce((s, i) => s + invoiceCustomerBalance(i), 0)
-  const depositsMTD = (leadPayments || []).filter(p => isThisMonth(p.date_created || p.created_at)).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
-  const plaidInMTD = plaidTransactions.filter(t => t.amount < 0 && isThisMonth(t.date) && !t.is_transfer).reduce((s, t) => s + Math.abs(parseFloat(t.amount) || 0), 0) // Plaid: negative = money in
-
-  // Money out: expenses + positive plaid transactions
-  const expensesMTD = (storeExpenses || []).filter(e => isThisMonth(e.date || e.created_at)).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
-  const plaidOutMTD = plaidTransactions.filter(t => t.amount > 0 && isThisMonth(t.date) && !t.is_transfer).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0) // Plaid: positive = money out
+  // Money In and Money Out both come from the accounting-basis helpers in
+  // revenueBasis.js (see moneyIn / moneyOut below). The per-source
+  // month-to-date sums that used to sit here were computed and never read.
   // Money Out — cash basis, deduped: bank outflows + manual expenses that
   // aren't already a bank transaction (manual + all-bank double-counted).
   const moneyOut = cashExpenses({ expenses: storeExpenses, plaidTransactions }, isThisMonth)
@@ -956,7 +1007,6 @@ export default function Books() {
   const collectedIncentives = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && utilityMatchesBu(i))
   const pendingIncentiveTotal = pendingIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
   const collectedIncentiveTotal = collectedIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
-  const collectedIncentiveMTD = collectedIncentivesIn(collectedIncentives, isThisMonth)
 
   // Money In — respects the company accounting basis. CASH = payments actually
   // collected (no longer double-counts paid invoices + the same money as a bank
@@ -977,6 +1027,7 @@ export default function Books() {
   // ─── Transaction handlers ───
   const handleSync = async () => {
     setSyncing(true)
+    autoLinkRan.current = false // new rows may be payouts; let the auto-link look again
     try {
       // Run Plaid + Stripe in parallel — both populate Books.
       const [plaid, stripe] = await Promise.all([
@@ -1029,7 +1080,6 @@ export default function Books() {
     setTxnEditIsTransfer(!!txn.is_transfer)
     setTxnEditNotes(txn.notes || '')
     setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
-    setJobSearchText('')
     setTxnAllocJobSearch('')
     // Hydrate Plaid-side splits for this txn (if any).
     const existingPlaidSplits = splitsByPlaidTxn[txn.id] || []
@@ -1293,43 +1343,6 @@ export default function Books() {
     closeExpenseModal()
   }
 
-  const handleDeleteExpense = async (id) => {
-    if (!confirm('Delete this expense?')) return
-    // ON DELETE CASCADE on expense_splits.expense_id handles cleanup, but
-    // delete explicitly anyway so RLS / row-count is predictable.
-    await supabase.from('expense_splits').delete().eq('expense_id', id).eq('company_id', companyId)
-    await supabase.from('manual_expenses').delete().eq('id', id)
-    await fetchExpenses()
-  }
-
-  const openEditExpense = (expense) => {
-    setEditingItem(expense)
-    // Determine which payee mode to land on based on which column has a value.
-    let payee_mode = 'employee'
-    if (expense.payee_vendor_id) payee_mode = 'vendor'
-    else if (!expense.payee_employee_id && expense.payee_name) payee_mode = 'other'
-    setExpenseForm({
-      description: expense.description || '',
-      amount: expense.amount || '',
-      expense_date: expense.expense_date || '',
-      vendor: expense.vendor || '',
-      category_id: expense.category_id || '',
-      payee_mode,
-      payee_employee_id: expense.payee_employee_id ? String(expense.payee_employee_id) : '',
-      payee_vendor_id: expense.payee_vendor_id ? String(expense.payee_vendor_id) : '',
-      payee_name: expense.payee_name || ''
-    })
-    const existingSplits = splitsByExpense[expense.id] || []
-    if (existingSplits.length > 0) {
-      setExpenseSplitsEnabled(true)
-      setExpenseSplits(existingSplits.map(s => ({ category_id: String(s.category_id || ''), amount: String(s.amount || ''), note: s.note || '', tax_category: s.tax_category || '' })))
-    } else {
-      setExpenseSplitsEnabled(false)
-      setExpenseSplits([])
-    }
-    setShowExpenseModal(true)
-  }
-
   const closeExpenseModal = () => {
     setShowExpenseModal(false)
     setEditingItem(null)
@@ -1462,6 +1475,25 @@ export default function Books() {
     return { wallet, inSince, outSince, estimate }
   }
 
+  // What an unmatched deposit probably is, before anyone opens the matcher:
+  // a wallet payout (Match checks recorded wallet payments), or a Zelle from
+  // a named sender who looks like a customer with an open invoice.
+  const openInvoiceCandidates = (invoices || [])
+    .filter(i => !['Paid', 'Cancelled'].includes(i.payment_status) && i.customer?.name)
+    .map(i => ({ name: i.customer.name, invoiceId: i.invoice_id || `INV-${i.id}` }))
+  const depositHint = (t) => {
+    if (!t || !(parseFloat(t.amount) < 0) || t.matched_invoice_id) return null
+    const sender = zelleSenderName(t)
+    if (sender) {
+      const m = matchCustomerName(sender, openInvoiceCandidates)
+      return m
+        ? `Zelle from ${sender} — looks like ${m.candidate.name} · ${m.candidate.invoiceId}`
+        : `Zelle from ${sender}`
+    }
+    const w = WALLETS.find(x => isWalletTransaction(x, t))
+    return w ? `${w.label} payout — Match checks your recorded ${w.label} payments` : null
+  }
+
   const setBalanceToEstimate = async (acct, estimate) => {
     const { error } = await supabase.from('bank_accounts')
       .update({ current_balance: estimate, last_synced: new Date().toISOString() })
@@ -1529,7 +1561,7 @@ export default function Books() {
   const inputStyle = { width: '100%', padding: '10px 12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.text, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }
   const labelStyle = { display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '500', color: theme.text }
 
-  const tabStyle = (isActive, badge) => ({
+  const tabStyle = (isActive) => ({
     padding: '10px 20px',
     backgroundColor: isActive ? theme.accent : 'transparent',
     color: isActive ? '#fff' : theme.textMuted,
@@ -1858,6 +1890,11 @@ export default function Books() {
                           <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {dep.merchant_name || dep.name || '(unnamed deposit)'}
                           </div>
+                          {depositHint(dep) && (
+                            <div style={{ fontSize: '11px', color: theme.accent, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {depositHint(dep)}
+                            </div>
+                          )}
                           <div style={{ fontSize: '11px', color: theme.textMuted }}>
                             {formatDate(dep.date)}
                           </div>
@@ -2315,6 +2352,9 @@ export default function Books() {
                         <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {txn.merchant_name || txn.name || 'Unknown'}
                         </div>
+                        {depositHint(txn) && (
+                          <div style={{ fontSize: '11px', color: theme.accent }}>{depositHint(txn)}</div>
+                        )}
                         {/* The account NAME, not just the mask. All nine of this
                             tenant's accounts report mask 3032, so "Mountain
                             America Credit Union ****3032" printed against every
@@ -4489,7 +4529,13 @@ function StripeTransactionsTab({ companyId, theme, isMobile }) {
     setLoading(false)
   }
 
-  useEffect(() => { if (companyId) load() }, [companyId, days])
+  useEffect(() => {
+    if (!companyId) return
+    // Kick the fetch off a tick later so the effect itself sets no state.
+    const t = setTimeout(load, 0)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, days])
 
   const filtered = (data?.transactions || []).filter(t => {
     if (statusFilter === 'succeeded' && t.status !== 'succeeded') return false
@@ -4912,7 +4958,7 @@ function APSummaryCard({ theme, companyId, statCardStyle, formatCurrency, naviga
 // Small alert that fetches the count of services due in next 30 days and
 // renders a yellow banner on the Money tab. Kept here (not its own file)
 // because it's only used by Books and has no other dependencies.
-function UpcomingServicesAlert({ theme, companyId, navigate }) {
+function UpcomingServicesAlert({ companyId, navigate }) {
   const [count, setCount] = useState(0)
   const [nextDue, setNextDue] = useState(null)
   useEffect(() => {
