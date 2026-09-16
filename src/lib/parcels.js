@@ -52,12 +52,62 @@ async function countyAt(lat, lng) {
   return out
 }
 
+// UGRC's statewide layer strips owner names, but the two counties with most
+// of the work publish them on their own assessor services. Same parcel IDs
+// as UGRC, so owners are merged onto the UGRC record by ID.
+const OWNER_SOURCES = {
+  'Salt Lake County': {
+    url: 'https://apps.saltlakecounty.gov/slcogis/rest/services/Assessor/Parcel_Viewer_external/MapServer/5/query',
+    idField: 'parcel_id', fields: 'parcel_id,own_name,care_of,own_addr,own_citystate,own_zip,year_built,total_sq_ft,full_mkt_prcl_total',
+    read: p => ({
+      id: (p.parcel_id || '').trim(), owner_name: title((p.own_name || '').trim()),
+      mail_address: [(p.own_addr || '').trim(), (p.own_citystate || '').trim(), (p.own_zip || '').trim()].filter(Boolean).map(title).join(', ') || null,
+      year_built: p.year_built || null, sqft: p.total_sq_ft || null, market_value: p.full_mkt_prcl_total || null
+    })
+  },
+  'Utah County': {
+    url: 'https://maps.utahcounty.gov/arcgis/rest/services/Parcels/Parcel_TaxParcels/MapServer/2/query',
+    idField: 'PARCELID', fields: 'PARCELID,OWNER_NAME,CARE_NAME,OWN_FULL_ADDRESS,YEARBLT_RES,GLA_RES,MKT_CUR_VALUE',
+    read: p => ({
+      id: String(p.PARCELID || '').trim(), owner_name: title((p.OWNER_NAME || '').trim()),
+      mail_address: title((p.OWN_FULL_ADDRESS || '').replace(/\s+/g, ' ').trim()) || null,
+      year_built: p.YEARBLT_RES || null, sqft: p.GLA_RES || null, market_value: p.MKT_CUR_VALUE || null
+    })
+  }
+}
+
+// Owner records for a point or a bbox from the county's own service, keyed by parcel id.
+async function ownersFor(county, { lat, lng, bounds }) {
+  const src = OWNER_SOURCES[county?.name]
+  if (!src || county.state !== '49') return null
+  const geom = bounds ? { geometry: `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`, geometryType: 'esriGeometryEnvelope' }
+    : { geometry: `${lng},${lat}`, geometryType: 'esriGeometryPoint' }
+  const params = new URLSearchParams({ ...geom, inSR: '4326', spatialRel: 'esriSpatialRelIntersects', outFields: src.fields, returnGeometry: 'false', resultRecordCount: '800', f: 'json' })
+  try {
+    const j = await fetch(`${src.url}?${params}`, { signal: AbortSignal.timeout(12000) }).then(r => r.json())
+    const out = new Map()
+    for (const f of j.features || []) { const o = src.read(f.attributes || {}); if (o.id) out.set(o.id, o) }
+    return out
+  } catch { return null }
+}
+
+function mergeOwner(parcel, o) {
+  if (!parcel || !o) return parcel
+  return {
+    ...parcel,
+    source_label: `County assessor (${parcel.county || 'UGRC'})`,
+    owner_name: o.owner_name || parcel.owner_name, mail_address: o.mail_address || parcel.mail_address,
+    year_built: parcel.year_built || o.year_built, sqft: parcel.sqft || o.sqft, market_value: parcel.market_value || o.market_value
+  }
+}
+
 function providerFor(county) {
   if (!county) return null
   if (county.state === '49') {
     const svc = county.name.replace(/ County$/i, '').replace(/\s+/g, '')
-    return { id: 'ugrc', county: county.name, url: `${UGRC}/Parcels_${svc}_LIR/FeatureServer/0/query`,
-      fields: 'PARCEL_ID,PARCEL_ADD,PARCEL_CITY,TOTAL_MKT_VALUE,LAND_MKT_VALUE,PARCEL_ACRES,PROP_CLASS,PRIMARY_RES,BLDG_SQFT,BUILT_YR,EFFBUILT_YR,PROP_TYPE,SUBDIV_NAME,ASSESSOR_SRC,CURRENT_ASOF' }
+    // Column sets differ per county (Utah County has no PROP_TYPE/EFFBUILT_YR),
+    // and ArcGIS rejects a query naming a missing field — so ask for all.
+    return { id: 'ugrc', county: county.name, url: `${UGRC}/Parcels_${svc}_LIR/FeatureServer/0/query`, fields: '*' }
   }
   if (county.state === '04' && /^Maricopa/i.test(county.name)) {
     return { id: 'maricopa', county: county.name, url: MARICOPA,
@@ -129,7 +179,12 @@ export async function parcelAt(lat, lng) {
     const j = await fetch(`${provider.url}?${params}`, { signal: AbortSignal.timeout(12000) }).then(r => r.json())
     const f = j.features?.[0]
     if (!f) return { parcel: null, reason: 'none', county: county?.name || null }
-    return { parcel: normalizeParcel(provider, f.properties, f.geometry), county: county?.name || null }
+    let parcel = normalizeParcel(provider, f.properties, f.geometry)
+    if (provider.id === 'ugrc' && OWNER_SOURCES[county?.name]) {
+      const owners = await ownersFor(county, { lat, lng })
+      parcel = mergeOwner(parcel, owners?.get(String(parcel.parcel_id || '').trim()) || (owners && owners.size === 1 ? [...owners.values()][0] : null))
+    }
+    return { parcel, county: county?.name || null }
   } catch {
     return { parcel: null, reason: 'error', county: county?.name || null }
   }
@@ -151,7 +206,13 @@ export async function parcelsInBounds(bounds) {
     geometryType: 'esriGeometryEnvelope', inSR: '4326', outSR: '4326', spatialRel: 'esriSpatialRelIntersects',
     outFields: provider.fields, returnGeometry: 'true', geometryPrecision: '6', resultRecordCount: '600', f: 'geojson'
   })
-  const j = await fetch(`${provider.url}?${params}`, { signal: AbortSignal.timeout(20000) }).then(r => r.json())
-  const features = (j.features || []).filter(f => f.geometry).map(f => ({ type: 'Feature', geometry: f.geometry, properties: normalizeParcel(provider, f.properties, null) }))
+  const [j, owners] = await Promise.all([
+    fetch(`${provider.url}?${params}`, { signal: AbortSignal.timeout(20000) }).then(r => r.json()),
+    provider.id === 'ugrc' && OWNER_SOURCES[county?.name] ? ownersFor(county, { bounds }) : Promise.resolve(null)
+  ])
+  const features = (j.features || []).filter(f => f.geometry).map(f => {
+    const pc = normalizeParcel(provider, f.properties, null)
+    return { type: 'Feature', geometry: f.geometry, properties: owners ? mergeOwner(pc, owners.get(String(pc.parcel_id || '').trim())) : pc }
+  })
   return { features, provider: provider.id, county: county?.name || null }
 }
