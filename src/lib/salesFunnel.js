@@ -23,8 +23,21 @@
 //   - The windows had no end. "This month" counted meetings booked for next
 //     month, and "year to date" counted 22 meetings that had not happened.
 //   - Job and recurring-job appointments are field work, not sales meetings.
+//   - A close counted in the month the ESTIMATE was written, not the month it
+//     closed: September read "closed 1, $10,245" while the company had won
+//     $229,006 that month, nine of those jobs through estimates sent in August.
+//     Closed now counts in the window the deal closed — the job's creation
+//     (the dashboard's "won" date) or the estimate's approval — so the two
+//     pages describe the same month. Estimates sent stay by their sent date;
+//     close rate is closed-this-window over sent-this-window.
+//   - And the dashboard counts EVERY job as a sale, estimate or not: 604 of
+//     HHH's 695 jobs this year never had one (service calls, recurring visits,
+//     jobs booked directly). salesWonBridge shows the dashboard's number
+//     beside this page's and names the gap, instead of leaving a reader to
+//     wonder which page is wrong.
 
 import { buildLeadIndex, primaryOwnerId } from './jobOwnership'
+import { wonJobsInRange, sumJobTotal } from './jobMetrics'
 
 export const UNATTRIBUTED = 'unattributed'
 const FIELD_APPOINTMENTS = new Set(['Block', 'Job', 'Recurring Job'])
@@ -87,11 +100,16 @@ export function computeSalesFunnel(
 
   for (const q of quotes || []) {
     if (!q || q.status === 'Draft') continue
-    if (!inWindow(q.created_at)) continue
-    const r = row(quoteRep(q, leadIndex, jobsByQuote, jobsById))
-    r.takeoffs++
     const job = (q.job_id != null && jobsById.get(key(q.job_id))) || jobsByQuote.get(key(q.id)) || null
-    if (q.status === 'Approved' || job) {
+    const sentHere = inWindow(q.created_at)
+    const isClosed = q.status === 'Approved' || !!job
+    // When it closed: the job's creation (the dashboard's "won" date), else
+    // the approval date, else the best the record has — the day it was written.
+    const closedHere = isClosed && inWindow(closeDateOf(q, job))
+    if (!sentHere && !closedHere) continue
+    const r = row(quoteRep(q, leadIndex, jobsByQuote, jobsById))
+    if (sentHere) r.takeoffs++
+    if (closedHere) {
       r.closed++
       // What was sold: the job's total once there is one, the estimate until then.
       const jobTotal = job ? Number(job.job_total) : NaN
@@ -108,6 +126,33 @@ export function computeSalesFunnel(
     }))
     // Reps by results; the unattributed row always last.
     .sort((a, b) => (a.repId == null) - (b.repId == null) || b.closed - a.closed || b.takeoffs - a.takeoffs || b.meetings - a.meetings)
+}
+
+/** The day a deal closed, for windowing: job creation, else approval, else the estimate's own date. */
+export function closeDateOf(q, job) {
+  return job?.created_at || q?.approved_date || q?.created_at || null
+}
+
+/**
+ * The dashboard's "Sales Won" for the same window — every job created in it,
+ * estimate or not — split into the part this page can see (jobs that came
+ * through an estimate) and the part it cannot (jobs created without one).
+ * Same definition as the dashboard: lib/jobMetrics.wonJobsInRange.
+ */
+export function salesWonBridge({ jobs = [], quotes = [] } = {}, { sinceIso = null, untilIso = null } = {}) {
+  const won = wonJobsInRange(jobs || [], sinceIso, untilIso)
+  const quoteIds = new Set((quotes || []).filter(Boolean).map((q) => key(q.id)))
+  const quoteJobIds = new Set((quotes || []).filter((q) => q && q.job_id != null).map((q) => key(q.job_id)))
+  const quoteAmountById = new Map((quotes || []).filter(Boolean).map((q) => [q.id, q.quote_amount]))
+  const via = won.filter((j) => (j.quote_id != null && quoteIds.has(key(j.quote_id))) || quoteJobIds.has(key(j.id)))
+  const viaSet = new Set(via)
+  const direct = won.filter((j) => !viaSet.has(j))
+  const r2 = (n) => Math.round(n * 100) / 100
+  return {
+    wonCount: won.length, wonTotal: r2(sumJobTotal(won, quoteAmountById)),
+    viaEstimateCount: via.length, viaEstimateTotal: r2(sumJobTotal(via, quoteAmountById)),
+    directCount: direct.length, directTotal: r2(sumJobTotal(direct, quoteAmountById)),
+  }
 }
 
 export function funnelTotals(rows) {

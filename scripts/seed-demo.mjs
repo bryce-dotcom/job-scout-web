@@ -72,6 +72,7 @@ const run = async (label, fn) => { try { const n = await fn(); report[label] = n
 
 // ───────────────────────── EMPLOYEES ─────────────────────────
 let employees = [];
+let leadRows = [];
 await run('employees', async () => {
   employees = await ins('employees', [
     { name: 'Mike Sullivan', email: EMAIL, role: 'Owner', user_role: 'Super Admin', is_admin: true, has_hr_access: true, active: true, phone: '(303) 555-0142', annual_salary: 145000, hourly_rate: null, is_salary: true, is_hourly: false, business_unit: 'Commercial', hire_date: '2019-03-01' },
@@ -152,12 +153,38 @@ await run('leads', async () => {
     ['Old Town Diner', 'oldtowndiner@gmail.com', 'Kitchen Lighting', 'Cold Call', 'Lost', 0],
     ['Foothills Business Park', 'pm@foothillspark.com', 'Parking Lot Lighting', 'Referral', 'New', 0],
   ];
-  const rows = await ins('leads', L.map(([customer_name, email, service_type, lead_source, status, quote_amount], i) => ({
+  leadRows = await ins('leads', L.map(([customer_name, email, service_type, lead_source, status, quote_amount], i) => ({
     company_id: cid, customer_name, business_name: customer_name, email, phone: `(720) 555-0${100 + i}`,
     address: 'Denver, CO', service_type, lead_source, status, salesperson_id: jordan, setter_id: jordan,
     quote_amount: quote_amount || null, business_unit: 'Commercial',
     notes: status === 'Quote Sent' ? 'Proposal sent, following up this week.' : null,
   })));
+  return leadRows.length;
+});
+const leadByName = (name) => leadRows.find(l => l.customer_name === name) || null;
+
+// ───────────────────────── SALES MEETINGS ─────────────────────────
+// The Sales Performance funnel starts at meetings; without these the demo
+// read "Meetings set 0" beside six estimates and two closes.
+await run('appointments', async () => {
+  const M = [
+    // lead, daysAgo, hour (local-ish, stored UTC)
+    ['Northfield Shopping Center', -52, 16], ['Denver Union Storage', -47, 17], ['Riverside Apartments', -41, 15],
+    ['TechFlow Data Center', -38, 16], ['Cedar Point Church', -33, 17], ['Metro Fitness Club', -27, 16],
+    ['Sunset Car Wash', -22, 15], ['Old Town Diner', -18, 17], ['Denver Union Storage', -12, 16],
+    ['Riverside Apartments', 3, 16],   // booked, still ahead
+  ];
+  const rows = await ins('appointments', M.map(([name, off, hour]) => {
+    const lead = leadByName(name);
+    const start = new Date(today.getTime() + off * dayMs); start.setUTCHours(hour, 0, 0, 0);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    return {
+      company_id: cid, lead_id: lead?.id || null, title: `${name} - Lighting walkthrough`,
+      start_time: start.toISOString(), end_time: end.toISOString(), duration_minutes: 60,
+      location: 'Denver, CO', salesperson_id: jordan, salesperson_ids: [jordan], setter_id: jordan, lead_owner_id: jordan,
+      status: off < 0 ? 'Completed' : 'Scheduled',
+    };
+  }));
   return rows.length;
 });
 
@@ -224,6 +251,9 @@ await run('jobs', async () => {
     // signed-in employee's name (HHH rows read "Gage Baughman"). Seeding the
     // id here left every demo tech with an empty Field Scout.
     job_total: total, invoice_status, assigned_team: tech ? (employees.find(e => e.id === tech)?.name || '') : '',
+    // Won (created) a few days before the work starts. All eighteen used to
+    // carry the seed's run date, so the dashboard read one month of sales.
+    created_at: tstr(off - 4),
     service_type: 'Lighting Retrofit', business_unit: 'Commercial', salesperson_id: jordan,
     allotted_time_hours: Math.max(1, Math.round(total / 900)), time_tracked: status === 'Completed' ? Math.max(1, Math.round(total / 1000)) : 0,
   })));
@@ -241,11 +271,22 @@ await run('quotes', async () => {
     [0, 'Warehouse Phase 2 Proposal', 19600, 'Sent', -1],
     [11, 'HOA Common-Area Lighting', 13200, 'Approved', -5],
   ];
-  const rows = await ins('quotes', Q.map(([ci, job_title, quote_amount, status, off]) => ({
-    company_id: cid, customer_id: cust(ci), job_title, quote_amount, job_total: quote_amount,
-    status, sent_date: dstr(off), service_type: 'Lighting Retrofit', business_unit: 'Commercial',
-    salesperson_id: jordan, expiration_date: dstr(off + 30),
-  })));
+  // The two proposals that became jobs: the funnel reads the JOB's total once
+  // there is one, and the dashboard counts the job — link them both ways.
+  const jobFor = { 'HOA Common-Area Lighting': 'HOA Common-Area Lighting', 'Warehouse Phase 2 Proposal': 'Warehouse LED Retrofit — Phase 2' };
+  const rows = await ins('quotes', Q.map(([ci, job_title, quote_amount, status, off]) => {
+    const job = jobFor[job_title] ? jobs.find(j => j.job_title === jobFor[job_title]) : null;
+    const st = job ? 'Approved' : status;
+    return {
+      company_id: cid, customer_id: job?.customer_id || cust(ci), job_title, quote_amount, job_total: quote_amount,
+      status: st, sent_date: dstr(off), created_at: tstr(off), service_type: 'Lighting Retrofit', business_unit: 'Commercial',
+      salesperson_id: jordan, expiration_date: dstr(off + 30),
+      approved_date: st === 'Approved' ? dstr(off + 3) : null,
+      job_id: job?.id || null,
+      lead_id: leadByName({ 'TechFlow High Bay Retrofit': 'TechFlow Data Center', 'Cedar Point Interior Lighting': 'Cedar Point Church', 'Metro Fitness Full Retrofit': 'Metro Fitness Club', 'Sunset Car Wash Canopy': 'Sunset Car Wash' }[job_title] || '')?.id || null,
+    };
+  }));
+  for (const q of rows) if (q.job_id) await fetch(`${URL}/rest/v1/jobs?id=eq.${q.job_id}`, { method: 'PATCH', headers: JH, body: JSON.stringify({ quote_id: q.id }) });
   return rows.length;
 });
 

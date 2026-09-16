@@ -3,7 +3,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { TrendingUp, Users, FileText, CheckCircle2, DollarSign } from 'lucide-react'
-import { computeSalesFunnel, funnelTotals, funnelWindow } from '../lib/salesFunnel'
+import { computeSalesFunnel, funnelTotals, funnelWindow, salesWonBridge } from '../lib/salesFunnel'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8', text: '#2c3530',
@@ -71,12 +71,37 @@ export default function SalesPerformance() {
   const [range, setRange] = useState('ytd')
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
 
+  // Every job created in the window — the dashboard's "Sales Won" set,
+  // estimate or not — so the two pages can be read against each other. The
+  // store's newest 1,000 is not the whole year at a busy company; fetch by
+  // created_at, a page at a time.
+  const [windowJobs, setWindowJobs] = useState([])
+  useEffect(() => {
+    if (!companyId) return
+    let alive = true
+    const { sinceIso } = funnelWindow(range)
+    const cols = 'id, quote_id, job_total, created_at'
+    ;(async () => {
+      const all = []
+      for (let from = 0; from < 20000; from += 1000) {
+        let q = supabase.from('jobs').select(cols).eq('company_id', companyId).order('created_at', { ascending: false }).range(from, from + 999)
+        if (sinceIso) q = q.gte('created_at', sinceIso)
+        const { data } = await q
+        all.push(...(data || []))
+        if (!data || data.length < 1000) break
+      }
+      if (alive) setWindowJobs(all)
+    })()
+    return () => { alive = false }
+  }, [companyId, range])
+
   const rows = useMemo(
     () => computeSalesFunnel({ appointments, quotes, leads, employees, jobs }, funnelWindow(range))
       .filter((r) => r.meetings || r.takeoffs),
     [appointments, quotes, leads, employees, jobs, range],
   )
   const totals = useMemo(() => funnelTotals(rows), [rows])
+  const bridge = useMemo(() => salesWonBridge({ jobs: windowJobs, quotes }, funnelWindow(range)), [windowJobs, quotes, range])
   const maxClosedValue = Math.max(1, ...rows.map((r) => r.closedValue))
 
   const stat = (icon, label, value, color) => (
@@ -122,6 +147,23 @@ export default function SalesPerformance() {
         {stat(<DollarSign size={13} />, 'Closed value', money(totals.closedValue), theme.accent)}
         {stat(<TrendingUp size={13} />, 'Close rate', `${totals.closeRate}%`)}
       </div>
+
+      {/* Against the dashboard. The dashboard counts every job created in the
+          window as a sale, estimate or not; this page can only see the ones
+          that came through an estimate. Show its number and name the gap. */}
+      {bridge.wonCount > 0 && (
+        <div style={{ marginBottom: 22, padding: '12px 16px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, fontSize: 13, color: theme.textSecondary, lineHeight: 1.5 }}>
+          <span style={{ fontWeight: 700, color: theme.text }}>Against the dashboard:</span>{' '}
+          sales won in this window <b style={{ color: theme.text }}>{money(bridge.wonTotal)}</b> across {bridge.wonCount} job{bridge.wonCount === 1 ? '' : 's'} —{' '}
+          <b style={{ color: theme.accent }}>{money(bridge.viaEstimateTotal)}</b> ({bridge.viaEstimateCount}) through estimates on this page
+          {bridge.directCount > 0 && (
+            <>, <b style={{ color: theme.text }}>{money(bridge.directTotal)}</b> ({bridge.directCount}) from jobs created without an estimate — service calls, recurring visits and work booked straight in, which no rep's funnel can show</>
+          )}.
+          {totals.closedValue !== bridge.viaEstimateTotal && (
+            <span style={{ color: theme.textMuted }}> Closed value above can differ from the through-estimates figure by an estimate approved but not yet a job, or a job whose estimate was approved in another window.</span>
+          )}
+        </div>
+      )}
 
       {/* Per-rep table */}
       {rows.length === 0 ? (
@@ -170,7 +212,7 @@ export default function SalesPerformance() {
       )}
 
       <p style={{ marginTop: 14, fontSize: 12, color: theme.textMuted }}>
-        Meetings = sales appointments in the window (blocked time and job visits excluded). Estimates sent = every estimate except drafts. Credit follows the estimate's rep, then its lead's rep, then the rep on the job it became — the same rule as the pipeline and commissions. Closed = approved, or turned into a job; closed value is the job's total once there is one.
+        Meetings = sales appointments in the window (blocked time and job visits excluded). Estimates sent = every estimate except drafts, by the date it was written. Closed = approved, or turned into a job, counted in the window it closed (the job's creation, or the approval) — an estimate sent last month that closed this month closes this month, so close rate can top 100% in a strong month. Closed value is the job's total once there is one. Credit follows the estimate's rep, then its lead's rep, then the rep on the job it became — the same rule as the pipeline and commissions.
       </p>
     </div>
   )
