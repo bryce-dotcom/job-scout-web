@@ -160,8 +160,15 @@ serve(async (req) => {
     // ── ACTION: search ─────────────────────────────────────────────
     if (action === 'search') {
       if (usage.searches >= quota.searches) return blockedResponse('search');
-      const { query, limit = 10 } = body;
+      const { query, limit = 10, where, near } = body;
       if (!query?.trim()) return json({ error: 'query required' }, 400);
+      // Area scoping from Liahona (the map view) or the drawer's Where field.
+      const nearOk = near && Number.isFinite(Number(near.lat)) && Number.isFinite(Number(near.lng));
+      const areaRule = where || nearOk
+        ? `
+- LOCATION IS A HARD FILTER: only businesses physically located ${where ? `in or near ${where}` : 'in the area given'}${nearOk ? ` (within about ${Number(near.radius_km) || 15} km of ${Number(near.lat).toFixed(4)}, ${Number(near.lng).toFixed(4)})` : ''}. Skip anything outside it, even if it matches otherwise.
+- Every result in that area MUST carry its street address in "address"; a business you cannot place at an address does not qualify.`
+        : '';
 
       const { data: company } = await supabase
         .from('companies')
@@ -192,9 +199,9 @@ Rules:
 - Skip duplicates and obviously closed businesses
 - Leave a field as "" if not found; do NOT guess names
 - "confidence" is "high" | "medium" | "low" based on how clearly search confirmed the business
-- Return [] if the query is too vague to research`;
+- Return [] if the query is too vague to research${areaRule}`;
 
-      const userMsg = `Find businesses matching: ${query}`;
+      const userMsg = `Find businesses matching: ${query}${where ? ` — located in or near ${where}` : ''}`;
 
       const claudeResponse = await runClaudeAgent({
         companyId: company_id ?? null,

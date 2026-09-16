@@ -25,9 +25,12 @@ import { Search, X, ExternalLink, Sparkles, MapPin, Users, Briefcase, CheckCircl
 
 // onResults: when set (Liahona embeds the drawer), each search's results are
 // handed to the map to plot; otherwise a "View on map" button opens Liahona.
-export default function ProspectResearchDrawer({ companyId, employees = [], onClose, onImported, theme, isMobile, onResults }) {
+// mapArea: { lat, lng, radius_km, label } — set by Liahona so the search is
+// scoped to what the map is showing; the Where field starts from its label.
+export default function ProspectResearchDrawer({ companyId, employees = [], onClose, onImported, theme, isMobile, onResults, mapArea = null }) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
+  const [where, setWhere] = useState(mapArea?.label || '')
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState([])
   const [error, setError] = useState('')
@@ -89,10 +92,16 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
 
   const runSearch = async (e) => {
     e?.preventDefault?.()
-    if (!query.trim() || searching) return
+    if (searching) return
+    if (!query.trim()) { setError('Type what you are looking for first — the grey text is only an example.'); return }
     setSearching(true); setError(''); setResults([]); setSelectedIds(new Set()); setEnrichments({})
     try {
-      const data = await call('search', { query: query.trim() })
+      const data = await call('search', {
+        query: query.trim(),
+        where: where.trim() || undefined,
+        // only scope by radius while the Where field still names the map area
+        near: mapArea && where.trim() === mapArea.label ? { lat: mapArea.lat, lng: mapArea.lng, radius_km: mapArea.radius_km } : undefined,
+      })
       setResults(data.prospects || [])
       if (data.prospects?.length) onResults?.(data.prospects)
       if (!data.prospects?.length) setError('No matches found. Try a more specific query.')
@@ -269,22 +278,35 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="warehouses in Salt Lake County over 50 employees"
+              placeholder="What are you looking for? e.g. auto repair shops"
               style={{ ...inp, paddingLeft: 36 }}
               autoFocus
             />
+          </div>
+          <div style={{ position: 'relative', marginBottom: 10 }}>
+            <MapPin size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: theme.textMuted }} />
+            <input
+              type="text"
+              value={where}
+              onChange={(e) => setWhere(e.target.value)}
+              placeholder="Where? e.g. Gilbert, AZ or Salt Lake County (blank = anywhere)"
+              style={{ ...inp, paddingLeft: 36 }}
+            />
+            {mapArea && where.trim() === mapArea.label && (
+              <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 4 }}>Scoped to the map view (about {mapArea.radius_km} km around {mapArea.label}). Edit to search elsewhere.</div>
+            )}
           </div>
           <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 10, lineHeight: 1.4 }}>
             <strong>Try:</strong> "auto repair shops in Northern Utah", "restaurants with 20+ locations in Idaho", "manufacturing plants near Lehi with old lighting"
           </div>
           <button
             type="submit"
-            disabled={searching || !query.trim()}
+            disabled={searching}
             style={{
               ...btn, width: '100%',
               backgroundColor: searching ? theme.border : '#7c3aed',
-              opacity: (searching || !query.trim()) ? 0.6 : 1,
-              cursor: (searching || !query.trim()) ? 'not-allowed' : 'pointer',
+              opacity: searching ? 0.6 : 1,
+              cursor: searching ? 'not-allowed' : 'pointer',
             }}
           >
             {searching ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Researching… (10-30s)</> : <><Sparkles size={16} /> Find prospects</>}

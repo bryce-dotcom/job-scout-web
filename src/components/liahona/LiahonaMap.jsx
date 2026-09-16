@@ -20,7 +20,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
-import { geocodeAddress, reverseGeocode, geocodeMissingLeads } from '../../lib/geocode'
+import { geocodeAddress, reverseGeocode, reverseGeocodeArea, geocodeMissingLeads } from '../../lib/geocode'
 import {
   OVERLAYS, fetchBoundary, utilityAtPoint, fetchRadarTileTemplate,
   fetchRepLocations, pointInGeometry, geometryCentroid
@@ -96,6 +96,9 @@ export default function LiahonaMap({
   const [claiming, setClaiming] = useState(false)
   // Find Prospects AI: the drawer, and the address research on a dropped pin.
   const [showFindProspects, setShowFindProspects] = useState(false)
+  // The area on screen when Find Prospects opens: { lat, lng, radius_km, label }.
+  // The search is scoped to it, so "auto repair shops" means the ones here.
+  const [mapArea, setMapArea] = useState(null)
   const [researching, setResearching] = useState(false)
   const [researchError, setResearchError] = useState('')
 
@@ -484,6 +487,21 @@ export default function LiahonaMap({
     if (handoff) plotProspects(handoff)
   }, [ready, plotProspects])
 
+  // Open Find Prospects scoped to what the map is showing.
+  const openFindProspects = async () => {
+    const map = mapRef.current
+    if (!map) { setShowFindProspects(true); return }
+    const c = map.getCenter(), ne = map.getBounds().getNorthEast()
+    // half-diagonal of the view in km, clamped to something a search can mean
+    const toRad = d => d * Math.PI / 180
+    const dLat = toRad(ne.lat - c.lat), dLng = toRad(ne.lng - c.lng)
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(c.lat)) * Math.cos(toRad(ne.lat)) * Math.sin(dLng / 2) ** 2
+    const radiusKm = Math.min(80, Math.max(2, Math.round(2 * 6371 * Math.asin(Math.sqrt(h)))))
+    const label = await reverseGeocodeArea(c.lat, c.lng)
+    setMapArea({ lat: +c.lat.toFixed(5), lng: +c.lng.toFixed(5), radius_km: radiusKm, label: label || `${c.lat.toFixed(3)}, ${c.lng.toFixed(3)}` })
+    setShowFindProspects(true)
+  }
+
   // Ask Find Prospects AI what is at the dropped pin's address.
   const researchAddress = async () => {
     const f = dropForm
@@ -784,7 +802,7 @@ export default function LiahonaMap({
           onPlanRoute={planRoute} routing={routing}
           activeOverlays={activeOverlays} overlayStatus={overlayStatus} showOverlayMenu={showOverlayMenu} setShowOverlayMenu={setShowOverlayMenu} toggleOverlay={toggleOverlay}
           onFit={fitToPins} unmappedCount={unmappedCount} geocoding={geocoding} onGeocodeMissing={geocodeMissing}
-          onFindProspects={() => setShowFindProspects(true)}
+          onFindProspects={openFindProspects}
         />
 
         {compact && onToggleStage && (
@@ -852,6 +870,7 @@ export default function LiahonaMap({
           onClose={() => setShowFindProspects(false)}
           onImported={() => onLeadsChanged?.()}
           onResults={list => plotProspects(list)}
+          mapArea={mapArea}
         />
       )}
     </div>

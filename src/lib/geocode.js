@@ -98,6 +98,22 @@ export async function reverseGeocode(lat, lng) {
   }
 }
 
+// Coarse "where am I" for a map view: "Gilbert, AZ" or "Salt Lake County, UT".
+// Used to scope Find Prospects to the area on screen. Nominatim only — one
+// cheap call per drawer open, no Google quota.
+export async function reverseGeocodeArea(lat, lng) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&addressdetails=1&lat=${lat}&lon=${lng}`)
+    const a = (await res.json())?.address || {}
+    const place = a.city || a.town || a.village || a.municipality || a.county
+    const state = a.state_code || (a.state ? a.state : '')
+    const st = state && state.length > 2 ? (a['ISO3166-2-lvl4'] || '').split('-')[1] || state : state
+    return place ? `${place}${st ? ', ' + st : ''}` : null
+  } catch {
+    return null
+  }
+}
+
 // Geocode one lead and store the result. Returns the coords or null.
 export async function geocodeLead(lead) {
   if (!lead?.address) return null
