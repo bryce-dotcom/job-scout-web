@@ -259,6 +259,19 @@ await run('jobs', async () => {
   })));
   return jobs.length;
 });
+
+// One scope line per job, for the job's total. JobDetail keeps job_total in
+// step with its lines whenever it has any — so a job seeded with a total and
+// NO lines lost that total the moment a visitor added a $165 part (job
+// 23513, 16 Sep: $21,200 → $165). With the scope line in place, an added
+// line adds.
+await run('job_lines', async () => {
+  const rows = await ins('job_lines', jobs.filter(j => Number(j.job_total) > 0).map(j => ({
+    company_id: cid, job_id: j.id, description: `Project scope — ${j.job_title}`, item_name: j.job_title,
+    quantity: 1, price: Number(j.job_total), total: Number(j.job_total), kind: 'service', in_utility_scope: true,
+  })));
+  return rows.length;
+});
 const job = (i) => jobs[i]?.id || null;
 
 // ───────────────────────── QUOTES ─────────────────────────
