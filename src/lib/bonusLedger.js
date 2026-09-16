@@ -96,7 +96,12 @@ export async function fetchJobBonuses(supabase, companyId, jobId) {
   if (!companyId || !jobId) return []
   const { data, error } = await supabase
     .from('job_bonuses')
-    .select('*, employees(name)')
+    // job_bonuses points at employees three times (employee_id, paid_by,
+    // verification_overridden_by), so the embed has to say which one or
+    // PostgREST refuses the whole query — which it did, on every job page,
+    // since the second FK was added: "Could not embed because more than one
+    // relationship was found". The crew member is employee_id.
+    .select('*, employees:employees!job_bonuses_employee_id_fkey(name)')
     .eq('company_id', companyId)
     .eq('job_id', jobId)
     .order('amount', { ascending: false })
