@@ -46,7 +46,7 @@ export async function mayChange(
 export async function proposeRecordChange(
   r: Rest,
   caller: Caller,
-  input: { target: string; record_query?: string; record_id?: number; value: string; timezone?: string },
+  input: { target: string; record_query?: string; record_id?: number; value: string; timezone?: string; date?: string },
 ): Promise<RecordProposeResult> {
   const companyId = caller.companyId
   if (companyId == null) return { error: 'No company on this login.' }

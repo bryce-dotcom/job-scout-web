@@ -55,14 +55,16 @@ describe('the target registry', () => {
     for (const k of Object.keys(RECORD_TARGETS)) expect(ALLOWED_TARGETS).not.toContain(k)
   })
 
-  it('only writes to jobs, leads and time_clock', () => {
+  it('only writes to jobs, leads, time_clock and job_sections', () => {
     // Widening this set is a deliberate act, not something that should slip in
     // — invoices and payments are explicitly out of reach. time_clock was
     // added for shift_close (2026-09-14): a person closing their OWN open
     // shift, or an admin closing someone else's, which is the Payroll page's
     // rule. It writes clock_out and the adjustment trail, never pay.
+    // job_sections was added for section_assign (2026-09-15): who is on a
+    // section and which day — the job page's section editor, by voice.
     const tables = new Set(Object.values(RECORD_TARGETS).map(t => t.table))
-    expect([...tables].sort()).toEqual(['jobs', 'leads', 'time_clock'])
+    expect([...tables].sort()).toEqual(['job_sections', 'jobs', 'leads', 'time_clock'])
   })
 
   it('requires a manager for everything by default', () => {

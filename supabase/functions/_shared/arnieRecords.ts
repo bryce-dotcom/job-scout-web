@@ -24,6 +24,7 @@ import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
 import { applyShiftClose, applyShiftOpen, proposeShiftClose, proposeShiftOpen, rollbackShiftClose, rollbackShiftOpen } from './arnieShift.ts'
 import { applyLeadMerge, proposeLeadMerge, rollbackLeadMerge } from './arnieLeadMerge.ts'
+import { applySectionAssign, proposeSectionAssign, rollbackSectionAssign } from './arnieDispatch.ts'
 
 export interface RecordTarget {
   label: string          // "job status" — used in copy
@@ -55,7 +56,7 @@ export interface RecordTarget {
    * adjustment trail alongside clock_out. These replace the generic path;
    * the card, the audit and the approve/rollback lifecycle stay the same.
    */
-  proposeCustom?: (r: Rest, caller: Caller, input: { record_query?: string; record_id?: number; value: string; timezone?: string }) => Promise<any>
+  proposeCustom?: (r: Rest, caller: Caller, input: { record_query?: string; record_id?: number; value: string; timezone?: string; date?: string }) => Promise<any>
   applyCustom?: (r: Rest, companyId: number, prop: any) => Promise<{ ok: true; before: any; after: any } | { ok: false; error: string; stale?: boolean }>
   rollbackCustom?: (r: Rest, companyId: number, prop: any) => Promise<{ ok: true; restored: any } | { ok: false; error: string }>
   /** The employee a row belongs to — a person may always change their own. */
@@ -119,6 +120,14 @@ export const RECORD_TARGETS: Record<string, RecordTarget> = {
     searchCols: [], selectCols: 'id,employee_id,clock_in', labelOf: (r) => `time entry #${r.id}`,
     proposeCustom: proposeShiftOpen, applyCustom: applyShiftOpen, rollbackCustom: rollbackShiftOpen,
     ownerOf: async (_r, _companyId, rowId) => rowId,
+  },
+  // "Put Mike on the Halifax bays Thursday." The job page's section editor
+  // write: assigned_to + scheduled_date on one section, clashes shown not
+  // decided. Manager. See arnieDispatch.ts.
+  section_assign: {
+    label: 'crew assignment', table: 'job_sections', field: 'assigned_to', mode: 'set', minLevel: 2,
+    searchCols: [], selectCols: 'id,job_id,name,assigned_to,scheduled_date', labelOf: (r) => r.name || `section #${r.id}`,
+    proposeCustom: proposeSectionAssign, applyCustom: applySectionAssign, rollbackCustom: rollbackSectionAssign,
   },
   // "Merge the Haliflax lead into Halifax Flooring." Manager: the copy is
   // deleted at the end, and deleting a lead is a manager's bar already.

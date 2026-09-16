@@ -8,6 +8,7 @@ import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arn
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_shared/arnieMoney.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
+import { crewDay } from '../_shared/arnieDispatch.ts'
 import { FRANKIE_MODEL, FRANKIE_MAX_TOKENS, frankieToolsFor, execFrankieTool } from '../_shared/frankieTools.ts'
 
 // Which agent is talking. Frankie shares this function with Arnie; the
@@ -39,6 +40,20 @@ const corsHeaders = {
 // All tools are READ-ONLY
 // ============================================================
 const TOOLS = [
+  {
+    name: 'query_crew',
+    description:
+      'The roster for ONE day: every active employee with the job sections they are on, their appointments, approved time off, and (today only) whether they are clocked in — plus who is FREE (no section, no appointment, no time off: unbooked, not idle) and which sections that day have nobody on them. ' +
+      'Use it for "who\'s free Thursday", "who\'s on the Halifax job tomorrow", "what does Mike have Friday", "anything unstaffed this week" (one call per day). Work the date out from Today in the Current User section and pass it as YYYY-MM-DD. ' +
+      'Read the free list out with the caveat the tool gives; never call someone free who has time off.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date: { type: 'string', description: 'YYYY-MM-DD in the user\'s zone; defaults to today' },
+        timezone: { type: 'string', description: 'IANA timezone from the Current User section' },
+      },
+    },
+  },
   {
     name: 'query_daily_brief',
     description:
@@ -403,10 +418,11 @@ const PROPOSE_RECORD_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      target: { type: 'string', description: 'One of: job_status, job_note, job_schedule, lead_status, lead_note, shift_close (close an open time-clock shift — the user\'s own, or an admin closing someone else\'s), shift_open (clock the user in — on a job, or general; if they are already clocked in today it switches them to the named job), lead_merge (fold a duplicate lead into the original — manager only)' },
-      record_query: { type: 'string', description: 'How the user identified the record, e.g. "the Drinkle insurance job" or "JOB-ABC123". For shift_close: "my shift from yesterday" or "Jordan\'s open shift". For shift_open: the job as they said it ("the Halifax job", "JOB-2214"), or "no job" for a general punch. For lead_merge: the customer, e.g. "the Halifax Flooring leads".' },
+      target: { type: 'string', description: 'One of: job_status, job_note, job_schedule, lead_status, lead_note, shift_close (close an open time-clock shift — the user\'s own, or an admin closing someone else\'s), shift_open (clock the user in — on a job, or general; if they are already clocked in today it switches them to the named job), section_assign (put a person on a job section for a day — manager only), lead_merge (fold a duplicate lead into the original — manager only)' },
+      record_query: { type: 'string', description: 'How the user identified the record, e.g. "the Drinkle insurance job" or "JOB-ABC123". For shift_close: "my shift from yesterday" or "Jordan\'s open shift". For shift_open: the job as they said it ("the Halifax job", "JOB-2214"), or "no job" for a general punch. For section_assign: the job, and the section if they named one ("the Halifax bays"). For lead_merge: the customer, e.g. "the Halifax Flooring leads".' },
       record_id: { type: 'integer', description: 'Only after a needs_choice reply, or when the user gave an exact id' },
-      value: { type: 'string', description: 'The new status, the note text, a YYYY-MM-DD date — or for shift_close the clock-out as YYYY-MM-DD HH:MM in the user\'s zone (work "5:30 yesterday" out from Today), or "now". For lead_merge: "" to keep the original (or older) lead, "newer" to keep the newer, or the id of the lead to keep.' },
+      value: { type: 'string', description: 'The new status, the note text, a YYYY-MM-DD date — or for shift_close the clock-out as YYYY-MM-DD HH:MM in the user\'s zone (work "5:30 yesterday" out from Today), or "now". For lead_merge: "" to keep the original (or older) lead, "newer" to keep the newer, or the id of the lead to keep. For section_assign: the person\'s name as said.' },
+      date: { type: 'string', description: 'For section_assign: the day EXACTLY as the user said it — "Thursday", "tomorrow", "next Monday" — or YYYY-MM-DD if they gave a date. Do not turn a weekday into a date yourself; the server does that from the user\'s calendar. Leave out to keep the section\'s own date.' },
       timezone: { type: 'string', description: 'IANA zone from the Current User section. Needed for shift_close.' },
     },
     required: ['target', 'value'],
@@ -552,6 +568,10 @@ async function execTool(name: string, input: any, caller: Caller) {
   const isManager = isAdmin || role === 'manager'
 
   try {
+    if (name === 'query_crew') {
+      return await crewDay({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, { date: input?.date, timezone: input?.timezone })
+    }
+
     if (name === 'query_daily_brief') {
       return await dailyBrief({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, { date: input?.date, timezone: input?.timezone })
     }
@@ -1048,7 +1068,7 @@ async function execTool(name: string, input: any, caller: Caller) {
       return await proposeRecordChange(
         { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY },
         caller,
-        { target: String(input?.target || ''), record_query: input?.record_query, record_id: input?.record_id, value: String(input?.value ?? ''), timezone: input?.timezone },
+        { target: String(input?.target || ''), record_query: input?.record_query, record_id: input?.record_id, value: String(input?.value ?? ''), timezone: input?.timezone, date: input?.date },
       )
     }
 
@@ -1384,7 +1404,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                   if (b?.type === 'tool_use' && b.input_buf !== undefined) {
                     try { b.input = JSON.parse(b.input_buf) } catch { b.input = {} }
                     delete b.input_buf
-                    send('tool_call', { name: b.name })
+                    send('tool_call', { name: b.name, input: b.input })
                   }
                 } else if (evt.type === 'message_start') {
                   if (evt.message?.usage) usage = { ...(usage || {}), ...evt.message.usage }
