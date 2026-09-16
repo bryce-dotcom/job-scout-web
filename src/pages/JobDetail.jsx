@@ -18,6 +18,8 @@ import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { isLegacyNetShape, jobARSnapshot } from '../lib/arHelpers'
 import { reconcileInvoicePair } from '../lib/invoiceReconcile'
 import { resolveJobUtility, providerById } from '../lib/jobUtility'
+import { generateWorkOrderPdf, workOrderFilename } from '../lib/workOrderPdf'
+import { businessUnitFor } from '../lib/invoiceSend'
 import {
   downPaymentEffect, customerOutOfPocket, FUNDED_BY_CUSTOMER, FUNDED_BY_JOBSCOUT,
 } from '../lib/downPayment'
@@ -1508,6 +1510,22 @@ function JobDetailInner() {
     }
     toast.success('Sent to setter pipeline')
     navigate('/lead-setter')
+  }
+
+  // The crew's copy of the job: every line with its description and notes,
+  // the job notes, the sections — no prices. Downloads as a PDF. This button
+  // had no handler at all until 2026-09-16.
+  const generateWorkOrder = async () => {
+    if (!job) return
+    const { toast } = await import('../lib/toast')
+    try {
+      const bu = businessUnitFor(settings, job) || (job.business_unit ? { name: job.business_unit } : null)
+      const pdf = generateWorkOrderPdf({ job, lines: lineItems, sections, company, businessUnit: bu, crew: job.assigned_team || '' })
+      pdf.save(workOrderFilename(job))
+      toast.success('Work order downloaded')
+    } catch (err) {
+      toast.error('Could not build the work order: ' + (err?.message || 'unknown error'))
+    }
   }
 
   const generateInvoice = async () => {
@@ -4662,11 +4680,6 @@ function JobDetailInner() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0 }}>{line.item?.name || line.item_name || 'Custom Item'}</p>
-                          {line.notes && (
-                            <span style={{ fontSize: '11px', backgroundColor: 'rgba(59,130,246,0.1)', color: '#3b82f6', padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
-                              <FileText size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />notes
-                            </span>
-                          )}
                           {totalPhotoCount > 0 && (
                             <span style={{ fontSize: '11px', backgroundColor: theme.accentBg, color: theme.accent, padding: '2px 6px', borderRadius: '10px', fontWeight: '600' }}>
                               <Camera size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{totalPhotoCount}
@@ -4683,6 +4696,17 @@ function JobDetailInner() {
                           {line.description && line.description !== (line.item?.name || line.item_name) && (
                             <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0, whiteSpace: 'pre-wrap' }}>
                               {line.description}
+                            </p>
+                          )}
+                          {/* The note is the instruction for whoever does the
+                              line. It used to hide behind a "notes" badge until
+                              the row was expanded; the person reading a job
+                              list should not have to click to find out the
+                              panel is behind the HVAC duct. */}
+                          {line.notes && (
+                            <p style={{ fontSize: '12px', color: '#1d4ed8', margin: 0, whiteSpace: 'pre-wrap', display: 'flex', gap: '5px', alignItems: 'flex-start' }}>
+                              <FileText size={12} style={{ flexShrink: 0, marginTop: '2px' }} />
+                              <span>{line.notes}</span>
                             </p>
                           )}
                         </div>
@@ -5722,7 +5746,7 @@ function JobDetailInner() {
                   </button>
                 )
               })()}
-              <button style={{
+              <button onClick={generateWorkOrder} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 padding: '12px 16px', backgroundColor: theme.accentBg, color: theme.accent,
                 border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer'
