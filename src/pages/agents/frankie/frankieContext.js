@@ -10,6 +10,18 @@
 import { buildTaxContext } from './frankieTaxContext.js'
 import { TAX_CATEGORIES } from '../../../lib/taxCategories.js'
 import { jobCosting } from '../../../lib/reports.js'
+import { getAccessLevel } from '../../../lib/accessControl.js'
+
+// The role Frankie is told about, from the app's one access ladder — the
+// same rule the edge function applies to his tools (auth.ts accessLevel):
+// is_developer first, then user_role, then an admin-or-above job title such
+// as "Owner". The engine used to read `employee.role` off a store field that
+// does not exist, so every person — the owner included — was introduced to
+// Frankie as a basic user and told "that's above my clearance for your role".
+const LEVEL_ROLE = ['user', 'team_lead', 'manager', 'admin', 'super_admin', 'developer']
+export function roleForPrompt(user) {
+  return LEVEL_ROLE[getAccessLevel(user)] || 'user'
+}
 import {
   invoiceBalance, invoiceDaysOverdue, invoiceStatus,
   isInvoiceOpen, paymentDate, jobIsComplete, jobContractValue,

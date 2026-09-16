@@ -1,5 +1,25 @@
 import { describe, it, expect } from 'vitest'
-import { bankBalancesSection, categoriesSection, jobProfitabilitySection, buildFinancialContext, buildSystemPrompt } from '../pages/agents/frankie/frankieContext'
+import { bankBalancesSection, categoriesSection, jobProfitabilitySection, buildFinancialContext, buildSystemPrompt, roleForPrompt } from '../pages/agents/frankie/frankieContext'
+
+describe('who Frankie thinks he is talking to', () => {
+  it('reads the owner as full access, the way the rest of the app does', () => {
+    // Bryce's real row: job title "Owner", is_developer true. He was being
+    // introduced as a basic user and told payroll was above his clearance.
+    expect(roleForPrompt({ role: 'Owner', is_developer: true })).toBe('developer')
+    expect(roleForPrompt({ role: 'Owner' })).toBe('super_admin')
+    expect(roleForPrompt({ role: 'Field Tech', user_role: 'Manager' })).toBe('manager')
+    expect(roleForPrompt({ role: 'Field Tech' })).toBe('user')
+    expect(roleForPrompt(null)).toBe('user')
+  })
+
+  it('gives the owner the full-access line and not the clearance refusal', () => {
+    const p = buildSystemPrompt({ email: 'bryce@x' }, { company_name: 'HHH' }, roleForPrompt({ role: 'Owner', is_developer: true }))
+    expect(p).toMatch(/Full financial access/)
+    expect(p).not.toMatch(/above my clearance/)
+    const q = buildSystemPrompt({ email: 't@x' }, { company_name: 'HHH' }, roleForPrompt({ role: 'Field Tech' }))
+    expect(q).toMatch(/above my clearance/)
+  })
+})
 
 const now = new Date('2026-09-15T20:00:00Z')
 

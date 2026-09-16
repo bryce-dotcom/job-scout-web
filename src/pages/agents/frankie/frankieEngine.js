@@ -1,7 +1,7 @@
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { createSessionStore } from '../../../lib/agentSessions'
-import { fullSystemPrompt } from './frankieContext'
+import { fullSystemPrompt, roleForPrompt } from './frankieContext'
 
 // The persona and the data context live in frankieContext.js, pure, so the
 // eval runner (scripts/frankie-eval.mjs) can build exactly what production
@@ -74,12 +74,12 @@ async function callClaude(conversationHistory, systemPrompt, onChunk) {
   return reply
 }
 
+// The store's `user` IS the signed-in employee row (App.jsx setUser(employee)).
+// Its role for Frankie comes from the shared access ladder, never from the
+// job-title string alone.
 function getUserRole() {
-  const state = useStore.getState()
-  const employee = state.employee
-  const role = employee?.role || 'user'
-  const userId = employee?.id
-  return { role, userId }
+  const { user } = useStore.getState()
+  return { role: roleForPrompt(user), userId: user?.id }
 }
 
 // The company's own Expense Category names. Books loads these on its own
