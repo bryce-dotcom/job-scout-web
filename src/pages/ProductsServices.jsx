@@ -109,13 +109,24 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
   // What this card is, at a glance: a bundle of N products, a service, or a
   // product — and for a product, who it is bought from. "No vendor" is shown
   // deliberately: it is the thing to fix before that product can be ordered.
-  const isService = String(product.material_or_labor || '').toLowerCase() === 'labor' && !isBundle
+  // A service is tagged labor, or is priced by time with nothing to buy
+  // behind it (no cost, no order code) — a lawn visit, a service call.
+  const hasCode = !!String(product.vendor_sku || product.model_number || '').trim()
+  const hasCost = (parseFloat(product.cost) || 0) > 0
+  const isService = !isBundle && (
+    String(product.material_or_labor || '').toLowerCase() === 'labor' ||
+    ((parseFloat(product.allotted_time_hours) || 0) > 0 && !hasCost && !hasCode)
+  )
   const kindChip = isBundle
     ? { text: `Bundle · ${components.length} product${components.length === 1 ? '' : 's'}`, bg: 'rgba(139,92,246,0.12)', fg: '#7c3aed', Icon: Boxes }
     : isService
       ? { text: 'Service', bg: 'rgba(125,138,127,0.15)', fg: theme.textMuted, Icon: Wrench }
       : { text: 'Product', bg: theme.accentBg, fg: theme.accent, Icon: Package }
   const vendorLabel = (!isBundle && !isService) ? (vendorName?.(product.default_vendor_id) || null) : null
+  // "No vendor" is worth shouting only for something that gets bought — it
+  // has a cost or an order code. A priced-by-hand product with neither is
+  // just a product.
+  const wantsVendor = !isBundle && !isService && (hasCost || hasCode)
   return (
     <div
       draggable={!!draggable}
@@ -221,7 +232,7 @@ function ProductCard({ product, theme, isMobile, formatCurrency, openProductForm
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 7px', borderRadius: '4px', fontSize: '10px', fontWeight: '700', backgroundColor: kindChip.bg, color: kindChip.fg, letterSpacing: '0.2px' }}>
             <kindChip.Icon size={10} /> {kindChip.text}
           </span>
-          {!isBundle && !isService && (
+          {(vendorLabel || wantsVendor) && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 7px', borderRadius: '4px', fontSize: '10px', fontWeight: '600', backgroundColor: vendorLabel ? theme.bg : 'rgba(234,179,8,0.15)', color: vendorLabel ? theme.textSecondary : '#a16207', border: `1px solid ${vendorLabel ? theme.border : 'rgba(234,179,8,0.4)'}` }}>
               <Truck size={10} /> {vendorLabel || 'No vendor'}
             </span>
