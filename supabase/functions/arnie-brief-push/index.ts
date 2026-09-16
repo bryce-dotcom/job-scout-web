@@ -20,7 +20,7 @@ import { accessLevel, LEVEL_ROLE, type Caller } from '../_shared/auth.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
 import { tzOffsetMinutes } from '../_shared/arnieTime.ts'
 import { readRecordList } from '../_shared/arnieRest.ts'
-import { appLink, repEmailShell } from '../_shared/notifyRep.ts'
+import { isServiceRole, sendArnieEmail, sendArnieSms } from '../_shared/arnieSend.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -76,25 +76,7 @@ function plainBrief(b: any, first: string): string {
   return L.join('\n')
 }
 
-// ── sending ────────────────────────────────────────────────────────────────
-
-async function sendEmail(to: string, name: string, text: string): Promise<{ sent: boolean; error?: string }> {
-  const key = Deno.env.get('RESEND_API_KEY')
-  if (!key) return { sent: false, error: 'no RESEND_API_KEY' }
-  const html = repEmailShell(`Morning brief — ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`,
-    `<div style="white-space:pre-wrap;font-size:15px;line-height:1.5">${text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>`,
-    appLink('/agents/arnie') || undefined, 'Ask Arnie')
-  const res = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: 'OG Arnie <invoices@appsannex.com>', to: [to], subject: `Your morning brief, ${String(name).split(' ')[0]}`, html }) })
-  if (!res.ok) return { sent: false, error: `Resend ${res.status}: ${(await res.text()).slice(0, 120)}` }
-  return { sent: true }
-}
-
-async function sendSms(companyId: number, to: string, text: string): Promise<{ sent: boolean; error?: string }> {
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/send-sms`, { method: 'POST', headers: H, body: JSON.stringify({ company_id: companyId, to, message: text }) })
-  if (!res.ok) return { sent: false, error: `send-sms ${res.status}: ${(await res.text()).slice(0, 160)}` }
-  return { sent: true }
-}
+// ── sending: _shared/arnieSend.ts, shared with arnie-nudge ────────────────
 
 // ── the run ────────────────────────────────────────────────────────────────
 
@@ -106,10 +88,7 @@ Deno.serve(async (req) => {
   // string is wrong: a project can hold more than one valid service key
   // (rotation), and the one in the edge runtime need not be the one the
   // cron was given.
-  const bearer = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
-  let role = ''
-  try { role = String(JSON.parse(atob(bearer.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))?.role || '') } catch { role = '' }
-  if (role !== 'service_role') return json({ error: 'service role only' }, 401)
+  if (!isServiceRole(req)) return json({ error: 'service role only' }, 401)
 
   const body = await req.json().catch(() => ({}))
   const dryRun = body?.dry_run === true
@@ -132,7 +111,8 @@ Deno.serve(async (req) => {
       if (dryRun) { out.text = text; results.push(out); continue }
       const to = s.channel === 'sms' ? String(emp.phone || '').trim() : String(emp.email || '').trim()
       const sent = !to ? { sent: false, error: `no ${s.channel === 'sms' ? 'phone' : 'email'} on the employee` }
-        : s.channel === 'sms' ? await sendSms(emp.company_id, to, text) : await sendEmail(to, emp.name, text)
+        : s.channel === 'sms' ? await sendArnieSms(r, emp.company_id, to, text)
+        : await sendArnieEmail(to, `Your morning brief, ${String(emp.name).split(' ')[0]}`, `Morning brief — ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`, text)
       out.sent = sent.sent; if (sent.error) out.error = sent.error
       await fetch(`${SUPABASE_URL}/rest/v1/arnie_brief_subscriptions?id=eq.${s.id}`, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
         body: JSON.stringify(sent.sent ? { last_sent_on: date, last_error: null, updated_at: new Date().toISOString() } : { last_error: sent.error || 'send failed', updated_at: new Date().toISOString() }) })

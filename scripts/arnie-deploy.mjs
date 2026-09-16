@@ -8,7 +8,7 @@
 // until the fix was deployed. A person could not have caught it faster; a
 // bundler catches it in five milliseconds.
 //
-//   npm run arnie:deploy                       all three
+//   npm run arnie:deploy                       all four
 //   npm run arnie:deploy -- arnie-chat         one
 //
 // Bundles each function with esbuild first (externalising the imports the
@@ -22,7 +22,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const ALL = ['arnie-chat', 'arnie-config', 'arnie-brief-push']
+const ALL = ['arnie-chat', 'arnie-config', 'arnie-brief-push', 'arnie-nudge']
 const PROJECT = 'tzrhfhisdeahrrmeksif'
 const wanted = process.argv.slice(2).filter((a) => !a.startsWith('-'))
 const fns = wanted.length ? wanted : ALL
