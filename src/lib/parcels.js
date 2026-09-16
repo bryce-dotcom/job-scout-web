@@ -6,10 +6,30 @@
 //   Arizona   Maricopa County Assessor "Parcels" layer: address, owner of
 //             record, mailing address, last sale, living area, lot, full cash
 //             value.
-// Anywhere else returns null and the map says so.
+//   Elsewhere  Regrid, nationwide, through the parcel-lookup edge function
+//             (paid per lookup, cached server-side, token never in the browser).
 //
 // Every parcel is normalized to the same shape so the drop-lead form and the
 // overlay render one way regardless of county.
+
+import { supabase } from './supabase'
+
+// setParcelCompany(companyId) is called by the map so the edge function can
+// meter paid lookups per company.
+let parcelCompanyId = null
+export const setParcelCompany = id => { parcelCompanyId = id }
+
+async function regridCall(action, body) {
+  if (!parcelCompanyId) return { error: 'no_company' }
+  const { data, error } = await supabase.functions.invoke('parcel-lookup', { body: { action, company_id: parcelCompanyId, ...body } })
+  if (error) {
+    // supabase-js hides the JSON body on non-2xx; read it for the regrid_* codes
+    let code = 'regrid_failed'
+    try { code = (await error.context?.json?.())?.error || code } catch { /* keep default */ }
+    return { error: code }
+  }
+  return data || { error: 'regrid_failed' }
+}
 
 const TIGER_COUNTY = 'https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1/query'
 const UGRC = 'https://services1.arcgis.com/99lidPhWCzftIe9K/arcgis/rest/services'
@@ -98,7 +118,12 @@ export function parcelSummary(pc) {
 export async function parcelAt(lat, lng) {
   const county = await countyAt(lat, lng)
   const provider = providerFor(county)
-  if (!provider) return { parcel: null, reason: 'no-source', county: county?.name || null }
+  if (!provider) {
+    // No free source here: nationwide via Regrid (metered, cached server-side).
+    const r = await regridCall('point', { lat, lng })
+    if (r.error) return { parcel: null, reason: r.error === 'regrid_auth' ? 'expired' : r.error === 'regrid_not_configured' ? 'no-source' : 'error', county: county?.name || null }
+    return { parcel: r.parcel || null, reason: r.parcel ? null : 'none', county: county?.name || null, cached: r.cached }
+  }
   const params = new URLSearchParams({ geometry: `${lng},${lat}`, geometryType: 'esriGeometryPoint', inSR: '4326', outSR: '4326', spatialRel: 'esriSpatialRelIntersects', outFields: provider.fields, returnGeometry: 'true', geometryPrecision: '6', f: 'geojson' })
   try {
     const j = await fetch(`${provider.url}?${params}`, { signal: AbortSignal.timeout(12000) }).then(r => r.json())
@@ -116,7 +141,11 @@ export async function parcelsInBounds(bounds) {
   const c = bounds.getCenter()
   const county = await countyAt(c.lat, c.lng)
   const provider = providerFor(county)
-  if (!provider) return { features: [], reason: 'no-source', county: county?.name || null }
+  if (!provider) {
+    const r = await regridCall('area', { bbox: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], limit: 400 })
+    if (r.error) return { features: [], reason: r.error === 'regrid_auth' ? 'expired' : r.error === 'regrid_not_configured' ? 'no-source' : 'error', county: county?.name || null }
+    return { features: r.features || [], provider: 'regrid', county: county?.name || null }
+  }
   const params = new URLSearchParams({
     geometry: `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`,
     geometryType: 'esriGeometryEnvelope', inSR: '4326', outSR: '4326', spatialRel: 'esriSpatialRelIntersects',

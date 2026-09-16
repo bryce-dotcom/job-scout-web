@@ -28,7 +28,7 @@ import {
 import { X, Check, Undo2 } from 'lucide-react'
 import ProspectResearchDrawer from '../ProspectResearchDrawer'
 import { callProspectResearch, takeProspectsHandoff } from '../../lib/prospectResearch'
-import { parcelAt, parcelsInBounds, parcelSummary } from '../../lib/parcels'
+import { parcelAt, parcelsInBounds, parcelSummary, setParcelCompany } from '../../lib/parcels'
 import {
   PALETTE, US_CENTER, themeTokens, makeStyles, ensureLeaflet, hasCoords, dist, initials, minutesAgo, esc, loadView, saveView
 } from './util'
@@ -224,6 +224,8 @@ export default function LiahonaMap({
   }, [companyId, notify])
 
   useEffect(() => { loadTerritories() }, [loadTerritories])
+  // Nationwide parcel lookups are metered per company.
+  useEffect(() => { setParcelCompany(companyId) }, [companyId])
 
   useEffect(() => {
     if (!companyId) return
@@ -365,7 +367,7 @@ export default function LiahonaMap({
           if (overlayReqRef.current[ov.id] !== pReq || !mapRef.current) return
           const prev = overlayLayersRef.current[ov.id]
           if (prev) groupsRef.current.overlays.removeLayer(prev)
-          if (res.reason === 'no-source') { setOverlayStatus(s => ({ ...s, [ov.id]: 'nosource' })); return }
+          if (res.reason === 'no-source' || res.reason === 'expired' || res.reason === 'error') { setOverlayStatus(s => ({ ...s, [ov.id]: res.reason === 'expired' ? 'expired' : res.reason === 'error' ? 'error' : 'nosource' })); return }
           const layer = L.geoJSON({ type: 'FeatureCollection', features: res.features }, {
             style: { color: ov.color, weight: 1, fillOpacity: 0.04 },
             onEachFeature: (feature, lyr) => {

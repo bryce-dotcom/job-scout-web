@@ -6,7 +6,7 @@ import { Search, MapPin, PenTool, Route, Layers, MousePointer2, Loader2, LocateF
 import { OVERLAYS } from '../../lib/mapOverlays'
 import { makeStyles } from './util'
 
-const STATUS_TEXT = { loading: 'loading…', zoom: 'zoom in to load', error: 'unavailable', empty: 'none here', nosource: 'no county source here' }
+const STATUS_TEXT = { loading: 'loading…', zoom: 'zoom in to load', error: 'unavailable', empty: 'none here', nosource: 'no parcel source here', expired: 'parcel token expired' }
 
 export default function LiahonaToolbar({
   t, compact, mode, onMode,

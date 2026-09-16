@@ -42,7 +42,13 @@ export default function DropLeadForm({ t, form, setForm, saving, onSave, onCance
         </div>
       ) })()}
       {!form.parcelLoading && !form.parcel && form.parcelReason === 'no-source' && (
-        <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6 }}>No county parcel source for this area yet (Utah and Maricopa County AZ are covered).</div>
+        <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6 }}>No parcel source is set up for this area.</div>
+      )}
+      {!form.parcelLoading && !form.parcel && form.parcelReason === 'expired' && (
+        <div style={{ fontSize: 11, color: '#b45309', marginTop: 6 }}>The nationwide parcel source's token has expired. Ask an admin to renew the Regrid token.</div>
+      )}
+      {!form.parcelLoading && !form.parcel && form.parcelReason === 'none' && (
+        <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6 }}>No parcel on record at this spot.</div>
       )}
 
       {onResearch && !r && (
