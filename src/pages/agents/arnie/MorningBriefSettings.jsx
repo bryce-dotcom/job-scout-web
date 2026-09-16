@@ -34,7 +34,7 @@ export default function MorningBriefSettings() {
     let live = true
     ;(async () => {
       const { data } = await supabase.from('arnie_brief_subscriptions').select('*').eq('employee_id', user.id).maybeSingle()
-      if (live) setSub(data || { enabled: false, channel: 'email', hour_local: 6, timezone: browserTz, weekdays_only: true, _new: true })
+      if (live) setSub(data || { enabled: false, channel: 'email', hour_local: 6, timezone: browserTz, weekdays_only: true, nudges: true, _new: true })
     })()
     return () => { live = false }
   }, [user?.id, companyId])
@@ -43,7 +43,7 @@ export default function MorningBriefSettings() {
     if (!sub || !user?.id || !companyId) return
     setBusy(true); setError(null); setSaved(false)
     const next = { ...sub, ...patch, timezone: browserTz }
-    const row = { company_id: companyId, employee_id: user.id, enabled: next.enabled, channel: next.channel, hour_local: next.hour_local, timezone: next.timezone, weekdays_only: next.weekdays_only, updated_at: new Date().toISOString() }
+    const row = { company_id: companyId, employee_id: user.id, enabled: next.enabled, channel: next.channel, hour_local: next.hour_local, timezone: next.timezone, weekdays_only: next.weekdays_only, nudges: next.nudges !== false, updated_at: new Date().toISOString() }
     const { data, error: e } = await supabase.from('arnie_brief_subscriptions').upsert(row, { onConflict: 'employee_id' }).select().maybeSingle()
     setBusy(false)
     if (e) { setError(e.message); return }
@@ -100,6 +100,18 @@ export default function MorningBriefSettings() {
           </label>
         </div>
       </div>
+
+      {/* The nudge rides on the brief's channel and hours: same person, same
+          phone or inbox, same zone. Off here means Arnie waits for the brief. */}
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 12, fontSize: 13.5, color: t.ink, cursor: 'pointer' }}>
+        <input type="checkbox" checked={sub.nudges !== false} disabled={busy || !sub.enabled} onChange={(e) => save({ nudges: e.target.checked })} style={{ width: 18, height: 18, marginTop: 2 }} />
+        <span>
+          <span style={{ fontWeight: 600 }}>Nudges between briefs</span>
+          <span style={{ display: 'block', fontSize: 12.5, color: t.muted, marginTop: 2 }}>
+            A quote that has gone quiet ten days, an invoice that just tipped overdue, your own shift still open at night — one message when it happens, 7am to 9pm your time, never the same thing twice.
+          </span>
+        </span>
+      </label>
 
       <div style={{ marginTop: 10, fontSize: 12.5, color: t.muted, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minHeight: 20 }}>
         {saved && <span style={{ color: t.ok, display: 'inline-flex', alignItems: 'center', gap: 4 }}><Check size={14} /> Saved</span>}

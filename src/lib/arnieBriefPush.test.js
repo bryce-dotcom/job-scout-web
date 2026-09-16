@@ -10,6 +10,7 @@ const cron = read('../../api/cron/arnie-brief-push.js')
 const vercel = JSON.parse(read('../../vercel.json'))
 const migration = read('../../supabase/migrations/20260914160000_arnie_brief_subscriptions.sql')
 const brief = read('../../supabase/functions/_shared/arnieBrief.ts')
+const send = read('../../supabase/functions/_shared/arnieSend.ts')
 const settings = read('../pages/agents/arnie/MorningBriefSettings.jsx')
 const setup = read('../pages/agents/arnie/ArnieSetup.jsx')
 
@@ -28,7 +29,8 @@ describe('the schedule lives where a failure is visible', () => {
   })
 
   it('the function accepts only a service-role JWT, judged by its claims, not by comparing the raw key', () => {
-    expect(fn).toMatch(/if \(role !== 'service_role'\) return json\(\{ error: 'service role only' \}, 401\)/)
+    expect(fn).toMatch(/if \(!isServiceRole\(req\)\) return json\(\{ error: 'service role only' \}, 401\)/)
+    expect(send).toMatch(/role \|\| ''\) === 'service_role'/)
     expect(fn).not.toMatch(/bearer !== SERVICE_KEY/)
   })
 })
@@ -73,7 +75,7 @@ describe('what goes out', () => {
 
   it('SMS is capped and plain; email gets the shell with an Ask Arnie link', () => {
     expect(fn).toMatch(/Under 400 characters total\. Plain text\. No headings\./)
-    expect(fn).toMatch(/appLink\('\/agents\/arnie'\)/)
+    expect(send).toMatch(/appLink\('\/agents\/arnie'\)/)
     expect(fn).toMatch(/No emojis\. No tool names\./)
   })
 })
