@@ -532,33 +532,42 @@ export default function LiahonaMap({
     if (m === 'draw') {
       setDrawPts([...drawPtsRef.current, { lat: latlng.lat, lng: latlng.lng }])
     } else if (m === 'drop') {
-      const form = { lat: latlng.lat, lng: latlng.lng, address: '', customer_name: '', phone: '', resolving: true, parcelLoading: true }
-      setDropForm(form)
-      // Assessor parcel first (free, instant, exact situs address); reverse
-      // geocode in parallel as the fallback for areas without a parcel source.
-      const [addr, pr] = await Promise.all([reverseGeocode(latlng.lat, latlng.lng), parcelAt(latlng.lat, latlng.lng)])
-      const pc = pr.parcel
-      const parcelAddr = pc?.address ? [pc.address, pc.city, pc.zip].filter(Boolean).join(', ') : ''
-      setDropForm(f => f && f.lat === form.lat ? {
-        ...f, resolving: false, parcelLoading: false, parcel: pc, parcelReason: pc ? null : pr.reason,
-        address: parcelAddr || addr || '',
-        customer_name: f.customer_name || (pc?.owner_name && !/\b(llc|inc|trust|city|town|county|state|church|corp)\b/i.test(pc.owner_name) ? pc.owner_name : ''),
-        business_name: f.business_name || (pc?.owner_name && /\b(llc|inc|corp|church|properties|holdings)\b/i.test(pc.owner_name) ? pc.owner_name : '')
-      } : f)
+      startDropAt(latlng.lat, latlng.lng)
     }
+  }
+
+  // Every way of starting a lead at a point comes through here: map tap,
+  // "Add lead here" after an address search, a parcel on the overlay.
+  // Assessor parcel first (free, instant, exact situs address, owner where
+  // the county publishes it); reverse geocode in parallel as the fallback.
+  const startDropAt = async (lat, lng, { address = '', parcel: known = null } = {}) => {
+    setTerritoryForm(null)
+    const form = { lat, lng, address, customer_name: '', business_name: '', phone: '', email: '', resolving: !address, parcelLoading: !known, parcel: known }
+    setDropForm(form)
+    if (known) { applyParcelToForm(known, form); return }
+    const [addr, pr] = await Promise.all([address ? Promise.resolve(address) : reverseGeocode(lat, lng), parcelAt(lat, lng)])
+    setDropForm(f => f && f.lat === form.lat && f.lng === form.lng ? {
+      ...f, resolving: false, parcelLoading: false, parcel: pr.parcel, parcelReason: pr.parcel ? null : pr.reason,
+      address: f.address || addr || ''
+    } : f)
+    if (pr.parcel) applyParcelToForm(pr.parcel, form)
+  }
+
+  const isCompanyName = n => /\b(llc|inc|corp|church|properties|holdings|trust|city|town|county|state)\b/i.test(n || '')
+  const applyParcelToForm = (pc, form) => {
+    const parcelAddr = pc.address ? [pc.address, pc.city, pc.zip].filter(Boolean).join(', ') : ''
+    setDropForm(f => f && f.lat === form.lat && f.lng === form.lng ? {
+      ...f, parcel: pc, parcelLoading: false, parcelReason: null,
+      address: parcelAddr || f.address,
+      customer_name: f.customer_name || (pc.owner_name && !isCompanyName(pc.owner_name) ? pc.owner_name : ''),
+      business_name: f.business_name || (pc.owner_name && isCompanyName(pc.owner_name) ? pc.owner_name : '')
+    } : f)
   }
 
   // "Add as lead" from a parcel on the assessor overlay: the drop form, already
   // filled from the county record, no tap-and-wait.
   const openDropFromParcel = (pc, latlng) => {
-    setTerritoryForm(null)
-    setDropForm({
-      lat: pc.lat ?? latlng.lat, lng: pc.lng ?? latlng.lng,
-      address: [pc.address, pc.city, pc.zip].filter(Boolean).join(', '),
-      customer_name: pc.owner_name && !/\b(llc|inc|trust|city|town|county|state|church|corp)\b/i.test(pc.owner_name) ? pc.owner_name : '',
-      business_name: pc.owner_name && /\b(llc|inc|corp|church|properties|holdings)\b/i.test(pc.owner_name) ? pc.owner_name : '',
-      phone: '', email: '', resolving: false, parcelLoading: false, parcel: pc
-    })
+    startDropAt(pc.lat ?? latlng.lat, pc.lng ?? latlng.lng, { address: [pc.address, pc.city, pc.zip].filter(Boolean).join(', '), parcel: pc })
     setMode('select')
   }
 
@@ -683,7 +692,7 @@ export default function LiahonaMap({
     const b = document.createElement('button')
     b.textContent = 'Add lead here'
     b.style.cssText = `background:${t.accent};color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;font:600 12px system-ui`
-    b.onclick = () => { map.closePopup(); setTerritoryForm(null); setDropForm({ lat: hit.lat, lng: hit.lng, address: hit.formatted || q, customer_name: '', phone: '', resolving: false }) }
+    b.onclick = () => { map.closePopup(); startDropAt(hit.lat, hit.lng, { address: hit.formatted || q }) }
     el.appendChild(b)
     L.marker([hit.lat, hit.lng]).addTo(g).bindPopup(el).openPopup()
   }
