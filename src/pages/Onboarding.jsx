@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
-import { Building2, Briefcase, Settings, Upload, Check, ChevronRight, ChevronLeft, Tent, Bot, Database } from 'lucide-react'
+import { Building2, Briefcase, Settings, Upload, Check, ChevronRight, ChevronLeft, Tent, Bot, Database, MessageSquare, ClipboardList } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
+import ArnieChat from './agents/arnie/ArnieChat'
 
 const theme = {
   bg: '#f7f5ef',
@@ -82,6 +83,16 @@ export default function Onboarding() {
   const setCompany = useStore((state) => state.setCompany)
 
   const [step, setStep] = useState(0)
+  // 'arnie' = tell him four things and he derives the rest (the default for a
+  // new tenant); 'form' = the six-step wizard below, kept for people who
+  // would rather type. Arnie's card writes the same rows the wizard does.
+  const [mode, setMode] = useState(null)
+  const [arnieDone, setArnieDone] = useState(false)
+  const reloadCompany = async () => {
+    if (!company?.id) return
+    const { data } = await supabase.from('companies').select('*').eq('id', company.id).maybeSingle()
+    if (data) setCompany(data)
+  }
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [uploading, setUploading] = useState(false)
@@ -410,8 +421,49 @@ export default function Onboarding() {
             </div>
           )}
 
+          {/* Which way in — asked once, before the wizard's first step. */}
+          {step === 0 && mode === null && (
+            <div>
+              <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>How do you want to set up?</h2>
+              <p style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '20px' }}>Either way takes a few minutes. Arnie asks for four things and works out the rest from your address.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'minmax(0,1fr) minmax(0,1fr)', gap: 14 }}>
+                <button type="button" onClick={() => setMode('arnie')} style={{ textAlign: 'left', padding: 18, borderRadius: 14, border: `2px solid ${theme.accent}`, background: theme.accentBg, cursor: 'pointer', minHeight: 44 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: theme.text, fontSize: 15 }}><MessageSquare size={18} color={theme.accent} /> Talk to Arnie <span style={{ fontSize: 11, fontWeight: 600, color: theme.accent, border: `1px solid ${theme.accent}`, borderRadius: 999, padding: '1px 8px', marginLeft: 4 }}>Recommended</span></div>
+                  <div style={{ fontSize: 13, color: theme.textSecondary, marginTop: 8, lineHeight: 1.5 }}>Your name, address, trade and entity type. He derives the time zone, state taxes, sales tax, unemployment insurance, service types, NAICS and your AI crew — and shows you every line before anything is saved.</div>
+                </button>
+                <button type="button" onClick={() => setMode('form')} style={{ textAlign: 'left', padding: 18, borderRadius: 14, border: `1px solid ${theme.border}`, background: theme.bgCard, cursor: 'pointer', minHeight: 44 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: theme.text, fontSize: 15 }}><ClipboardList size={18} color={theme.textMuted} /> Fill in the form</div>
+                  <div style={{ fontSize: 13, color: theme.textSecondary, marginTop: 8, lineHeight: 1.5 }}>Six short steps: company, industry, agents, preferences, logo, import. Same result, more typing.</div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 0 && mode === 'arnie' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, margin: 0 }}>Set up with Arnie</h2>
+                  <p style={{ fontSize: '13px', color: theme.textMuted, margin: '4px 0 0' }}>Answer him in plain English. Approve the card when it looks right; you can change any line in Settings later.</p>
+                </div>
+                <button type="button" onClick={() => setMode('form')} style={{ background: 'none', border: `1px solid ${theme.border}`, borderRadius: 8, padding: '8px 12px', color: theme.textSecondary, fontSize: 13, cursor: 'pointer', minHeight: 44 }}>Use the form instead</button>
+              </div>
+              <div style={{ height: isMobile ? '62vh' : 560, borderRadius: 14, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
+                <ArnieChat isPanel kickoff="Set up my company." onApplied={async (card) => { if (card?.preview?.label === 'company') { await reloadCompany(); setArnieDone(true) } }} />
+              </div>
+              {arnieDone && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, padding: '12px 14px', borderRadius: 10, background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.35)', flexWrap: 'wrap' }}>
+                  <Check size={18} color="#22c55e" />
+                  <span style={{ flex: 1, fontSize: 13.5, color: theme.text }}>Your company is set up. Add a logo or import your customers now, or go straight in.</span>
+                  <button type="button" onClick={() => { setMode('form'); setStep(4) }} style={{ minHeight: 40, padding: '0 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.bgCard, color: theme.text, fontSize: 13, cursor: 'pointer' }}>Logo &amp; import</button>
+                  <button type="button" onClick={() => navigate('/')} style={{ minHeight: 40, padding: '0 14px', borderRadius: 8, border: 'none', background: theme.accent, color: '#fff', fontWeight: 650, fontSize: 13, cursor: 'pointer' }}>Take me in</button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Step 1: Company Info */}
-          {step === 0 && (
+          {step === 0 && mode === 'form' && (
             <div>
               <h2 style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>Company Information</h2>
               <p style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '24px' }}>Basic details about your business</p>
@@ -680,7 +732,8 @@ export default function Onboarding() {
             </div>
           )}
 
-          {/* Navigation Buttons */}
+          {/* Navigation Buttons — the wizard's; Arnie mode has its own way out. */}
+          {(step > 0 || mode === 'form') && (
           <div style={{ display: 'flex', gap: '12px', marginTop: '32px' }}>
             {step > 0 && (
               <button
@@ -727,6 +780,7 @@ export default function Onboarding() {
               </button>
             )}
           </div>
+          )}
         </div>
 
         <p style={{ textAlign: 'center', marginTop: '24px', fontSize: '13px', color: theme.textMuted }}>
