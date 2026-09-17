@@ -72,7 +72,7 @@ export default {
       "An AI CFO agent that answers finance questions in plain English, monitors AR/AP aging, sends automated collection reminders, detects expense anomalies, and computes per-job profitability. Backed by the same data Books reads.",
 
     howItWorks:
-      "Frankie is a Gemini-powered agent with tool calls into Books data: query_general_ledger, ar_aging_by_customer, job_profitability, expense_anomalies, send_collection_reminder. Conversation history per company in agent_conversations. Anomaly detection runs nightly via cron — z-score against trailing 90-day mean.",
+      "Frankie reads the same records Books computes from — payments, invoices, the bank feed, expenses, payroll runs, bank balances — plus the 90-day cash forecast, and answers from that brief. AR aging, per-job profitability and expense breakdowns are computed on the fly (there is no ledger table). Conversation history is kept per company.",
 
     examples: [
       'User: "why is cash tight?" → Frankie: 3 customers 60+ days late ($18k), materials up 18% → here are the customers',

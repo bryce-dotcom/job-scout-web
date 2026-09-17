@@ -32,7 +32,7 @@ import { buildJournal, journalCsv, journalTotals, qboBankCsvs } from '../lib/jou
 import { suggestExpensesForTransaction } from '../lib/expenseMatch'
 import { computeRevenue, computeExpenses } from '../lib/revenueBasis'
 import { inLocalRange, localDateStr } from '../lib/localDate'
-import { isLegacyNetShape, totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
+import { isLegacyNetShape, totalCustomerAR, totalUtilityAR, invoiceBalance, isInvoiceOpen, paymentsByInvoiceIndex } from '../lib/arHelpers'
 import { PAYMENT_METHODS } from '../lib/schema'
 import { isVirtualAccountFilter, matchesAccountFilter, walletForFilter, isWalletTransaction, WALLET_FEED_FILTERS } from '../lib/bankFeedFilters'
 import { WALLETS, walletForAccountName } from '../lib/wallets'
@@ -249,7 +249,7 @@ async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTrans
   // 8. P&L summary (plain text)
   const income = taxTxns.filter(t => parseFloat(t.amount) < 0).reduce((s, t) => s + Math.abs(parseFloat(t.amount) || 0), 0)
   const expensesTotal = taxTxns.filter(t => parseFloat(t.amount) > 0).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0)
-  const customerAR = (invoices || []).filter(i => i.payment_status !== 'Paid').reduce((s, i) => s + customerBalance(i), 0)
+  const customerAR = totalCustomerAR(invoices || [], payments || [])
   const utilityAR = (utilityInvoices || []).filter(i => i.payment_status !== 'Paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
   const pl = [
     `PROFIT & LOSS SUMMARY`,
@@ -4006,8 +4006,13 @@ export default function Books() {
                     // not gross. Mirrors the same legacy/modern detection used
                     // by InvoiceDetail so the AR number matches what the
                     // customer actually owes after utility incentive + deposit.
-                    const unpaidInvoices = (invoices || []).filter(inv => inv.payment_status !== 'Paid' && matchesBu(inv.business_unit))
-                    const customerAR = unpaidInvoices.reduce((s, i) => s + invoiceCustomerBalance(i), 0)
+                    // Balance after the payments already applied — the same rule as
+                    // the AR aging report and the Position block, so the three agree.
+                    // (This card used to sum the full customer total of every unpaid
+                    // invoice and ignored partial payments.)
+                    const payIdx = paymentsByInvoiceIndex(payments || [])
+                    const unpaidInvoices = (invoices || []).filter(inv => isInvoiceOpen(inv) && inv.invoice_type !== 'deposit' && matchesBu(inv.business_unit))
+                    const customerAR = unpaidInvoices.reduce((s, i) => s + invoiceBalance(i, payIdx), 0)
                     const unpaidUtility = (utilityInvoices || []).filter(inv => inv.payment_status !== 'Paid' && utilityMatchesBu(inv))
                     const utilityAR = unpaidUtility.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
                     return (

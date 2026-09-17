@@ -80,7 +80,15 @@ export async function applySalesTaxToInvoice(supabase, { companyId, invoiceId, r
     const { data } = await supabase.from('products_services').select('id, taxable, material_or_labor').in('id', ids)
     productsById = new Map((data || []).map(p => [p.id, p]))
   }
-  const t = computeSalesTax(rows, cfg, productsById)
+  let t
+  if ((rows || []).length > 0) {
+    t = computeSalesTax(rows, cfg, productsById)
+  } else {
+    // No lines to read (quick-created invoice with just a total): tax the
+    // whole pre-tax amount, which is all the invoice knows about itself.
+    const { data: inv } = await supabase.from('invoices').select('amount').eq('id', invoiceId).eq('company_id', companyId).maybeSingle()
+    t = computeSalesTax([{ line_total: parseFloat(inv?.amount) || 0 }], cfg, productsById)
+  }
   const { error } = await supabase.from('invoices').update({ tax_rate: t.rate, tax_amount: t.tax }).eq('id', invoiceId).eq('company_id', companyId)
   if (error) console.warn('Sales tax not stored on invoice', invoiceId, error.message)
   return t

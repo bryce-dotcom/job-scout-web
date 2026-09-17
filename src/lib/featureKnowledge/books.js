@@ -71,22 +71,24 @@ export default {
 
   agentKnowledge: {
     whatItIs:
-      "The full GAAP-light accounting cockpit. Chart of accounts, double-entry ledger, P&L + Balance Sheet + Cash Flow + Trial Balance, IRS Form 1065 line mapping, bank reconciliation, job-level cost allocation. Sits on top of bank_transactions (Plaid), invoices, payments, expenses, payroll_runs.",
+      "The money cockpit for a trades business, computed live from the operating records — no separate ledger to keep in step. Money tab: cash across accounts, Money In / Money Out on a cash or accrual basis, a 90-day cash forecast with a floor, payroll cost, job margins, budget vs actual, fleet cost per vehicle, inventory at cost, memberships. Transactions: the Plaid feed with AI + rule categorization, deposit matching (including Venmo / Cash App / Zelle payouts), receipt links. Accounts: banks, wallets, and a balance-sheet position (receivables, inventory, bills, payroll taxes, sales tax, deposits held). Reports: standard reports, job costing with real labor, and a Year-End / CPA package with a double-entry journal, QuickBooks bank files, payroll, 1099-NEC, sales tax, depreciation.",
 
     howItWorks:
-      "Chart of accounts in chart_of_accounts (per-company, pre-seeded for trades). Every money event writes to general_ledger via triggers (invoice paid → AR + Income; expense → Cash/CC + Expense). Form 1065 mapping in chart_of_accounts.form_1065_line. P&L view materializes from general_ledger by month/quarter/year. Reconciliation compares Plaid bank_accounts.ending_balance to general_ledger sum for the cash account.",
+      "There is no posted general ledger. Every figure is derived from the source tables each time: revenue from payments (cash) or invoices (accrual) via revenueBasis.js; expenses from the bank feed + manual expenses + vendor bills + payroll runs (computeExpenses); AR from invoices net of payments (arHelpers); payroll from payroll_runs + paystubs + payroll_tax_liabilities; job costing from job_lines, time_clock × hourly rate, job_bonuses and tagged bank rows (reports.jobCosting); the cash forecast from open invoices, bills, payroll dates, tax deposits, memberships, payment plans and trailing spend (cashForecast.js). Tax lines: expense_categories.default_tax_category (Form 1065 line labels) and the AI's ai_form_1065_line on bank rows. The CPA package writes a balanced double-entry journal from those same sources on demand (journalExport.js).",
 
     examples: [
-      'Customer pays $4,200 invoice via Stripe → trigger writes Cash +4200, AR -4200 to GL',
-      'Plaid pulls $389 truck repair → AI tags Vehicle Expense → GL writes Cash -389, Vehicle Expense +389',
-      'End of May → reconcile: Plaid ending balance $42,118 = GL cash balance $42,118 ✓',
+      'Customer pays a $4,200 invoice via Stripe → the payment row is cash revenue today; the Stripe payout hits the bank feed later and is linked, not counted again',
+      'Plaid pulls a $389 truck repair → a rule or the AI tags Vehicle Expense → it is in Money Out and the Fleet card that day',
+      'Payroll runs → gross wages + employer taxes show on the Payroll card and, on accrual, in Money Out; the tax deposits appear in the cash forecast on their due dates',
+      'Year-End → one ZIP: categorized transactions, AR aging, payroll runs, tax-category summary, general journal, QuickBooks bank files',
     ],
 
     gotchas: [
       'Venmo / Cash App / Zelle are wallets, not banks: Plaid never sees the wallet. Books tracks the wallet balance as a manual account (Accounts tab, with a running estimate) and reconciles the CASH-OUT when it lands in the real bank — Transactions tab, "Venmo (via bank feed)" filter, or the Match button on an unmatched deposit.',
       'Transactions without categories sit in Uncategorized → ignored by P&L until you tag them. Don\'t leave Uncategorized lingering.',
       'Form 1065 line mapping only matters for partnerships. Single-member LLCs report on Schedule C — different form.',
-      'Locking a reconciled period prevents back-dated edits. Unlock requires admin role.',
+      'Because nothing is posted, a corrected input re-derives history: fix a category, a payment date or an asset life and every report moves with it. There is no period lock.',
+      'Sales tax is computed once, when an invoice\'s lines are written, from the rate set on the Year-End tab. The invoice amount stays pre-tax; the customer total adds the tax.',
     ],
 
     faqs: [
@@ -103,8 +105,12 @@ export default {
         a: 'For tax filing, yes. But Books gives them clean books they can actually trust — no QuickBooks cleanup engagement.',
       },
       {
-        q: 'Can I edit a reconciled transaction?',
-        a: 'Not without unlocking the period. Locked periods are immutable to preserve the trial balance.',
+        q: 'Can I edit a transaction after month end?',
+        a: 'Yes. Nothing is locked; every report recomputes from the source rows, so the change shows immediately. Tell your CPA if you change a period they have already filed.',
+      },
+      {
+        q: 'Where do payroll, fleet and inventory show up in Books?',
+        a: 'Money tab cards: Payroll (this month, YTD, agency money owed), Fleet costs (per vehicle, cost per mile, standard mileage at year end), Inventory (stock at cost, cost of goods used). Payroll counts in Money Out; fleet and inventory are views of spend already in the bank feed and of stock on hand.',
       },
     ],
 

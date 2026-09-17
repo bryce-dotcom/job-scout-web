@@ -45,7 +45,7 @@ const money = (n) => Math.round(n * 100) / 100;
 console.log('Cleaning any prior demo…');
 const prior = await sel('companies', `or=(owner_email.eq.${encodeURIComponent(EMAIL)},company_name.eq.${encodeURIComponent(COMPANY)})&select=id`);
 for (const c of prior) {
-  for (const t of ['payments', 'invoices', 'quotes', 'time_clock', 'expenses', 'jobs', 'leads', 'customers', 'products_services', 'fleet', 'inventory', 'settings', 'employees']) {
+  for (const t of ['payments', 'invoices', 'quotes', 'time_clock', 'expenses', 'jobs', 'leads', 'customers', 'products_services', 'fleet', 'inventory', 'settings', 'employees', 'vendors', 'assets', 'liabilities', 'manual_expenses']) {
     await del(t, `company_id=eq.${c.id}`);
   }
   await del('companies', `id=eq.${c.id}`);
@@ -371,6 +371,24 @@ await run('expenses', async () => {
   const r = await ins('expenses', E.map(([description, amount, category, off]) => ({
     company_id: cid, description, amount, category, date: dstr(off), status: 'Approved', business_unit: 'Commercial',
   })));
+  return r.length;
+});
+
+// ───────────────────────── VENDORS + ASSETS ─────────────────────────
+await run('vendors', async () => {
+  const r = await ins('vendors', [
+    { company_id: cid, name: 'Rocky Mountain Electrical Supply', contact_name: 'Dana Whitfield', email: 'orders@rmes.example', phone: '(801) 555-0140', default_payment_terms: 'Net 30', is_1099: false, active: true },
+    { company_id: cid, name: 'Cole Brannon Electric', business_name: 'Brannon Electric LLC', contact_name: 'Cole Brannon', email: 'cole@brannon.example', phone: '(801) 555-0177', default_payment_terms: 'Due on receipt', is_1099: true, tin_type: 'ein', tin_last4: '4821', w9_signed_at: dstr(-200), active: true },
+  ]);
+  return r.length;
+});
+await run('assets', async () => {
+  const r = await ins('assets', [
+    { company_id: cid, name: '2023 Ford F-250 (TRK-01)', asset_type: 'Vehicle', purchase_price: 58000, salvage_value: 8000, useful_life_years: 5, in_service_date: dstr(-540), purchase_date: dstr(-545), current_value: 58000, status: 'active' },
+    { company_id: cid, name: 'Genie GS-1930 scissor lift', asset_type: 'Equipment', purchase_price: 14500, salvage_value: 1500, useful_life_years: 7, in_service_date: dstr(-900), purchase_date: dstr(-905), current_value: 14500, status: 'active' },
+    // Batch inserts need uniform keys: a missing salvage_value becomes NULL and trips the NOT NULL.
+    { company_id: cid, name: 'Shop tooling (hand tools, testers)', asset_type: 'Equipment', purchase_price: 6200, salvage_value: 0, useful_life_years: null, in_service_date: null, purchase_date: null, current_value: 4000, status: 'active' },
+  ]);
   return r.length;
 });
 

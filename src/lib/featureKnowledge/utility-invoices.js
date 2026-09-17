@@ -73,7 +73,7 @@ export default {
       "The rebate-tracking variant of an invoice. Project Cost (total job cost) + Utility Owes (the rebate amount) drive automatic computation of: materials portion, labor portion, customer portion (project cost minus rebate). Status workflow: Draft → Filed → Paid → Closed.",
 
     howItWorks:
-      "utility_invoices table (sibling to invoices, distinguished by invoice_type='utility'). project_cost and utility_owes are the inputs; materials_portion, labor_portion, customer_portion are computed via a trigger using utility_invoices.materials_split_pct (default 0.70). Status transitions write to utility_invoice_history. GL posting fires on Paid via the same trigger family as regular invoices but credits Rebate Income instead of Sales.",
+      "utility_invoices table (sibling to invoices, distinguished by invoice_type='utility'). project_cost and utility_owes are the inputs; materials_portion, labor_portion, customer_portion are computed via a trigger using utility_invoices.materials_split_pct (default 0.70). Status transitions write to utility_invoice_history. When the utility pays, the incentive counts as collected revenue on Books (dated by paid_at) and leaves the utility receivable.",
 
     examples: [
       'JOB-2147 Northbridge → audit rebate $14,780 → utility invoice draft → filed with RMP June 1',

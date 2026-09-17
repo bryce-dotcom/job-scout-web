@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { loadListPrefs, saveListPrefs } from '../lib/listPrefs'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { writeInvoiceLines } from '../lib/invoiceLines'
+import { writeInvoiceLines, applySalesTaxToInvoice } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
@@ -340,6 +340,12 @@ export default function Invoices() {
     // been filing "line items missing" feedback because the quick-
     // create flow used to skip this step. Best-effort — invoice is
     // already saved if the copy fails.
+    // Job-less quick invoices have no lines to write; give them their sales
+    // tax from the total so they are not the one kind of invoice that
+    // silently escapes it. (Invoices with a job get it from writeInvoiceLines.)
+    if (data?.id && !formData.job_id) {
+      try { await applySalesTaxToInvoice(supabase, { companyId, invoiceId: data.id, rows: [] }) } catch (e) { console.warn('Sales tax not applied:', e?.message) }
+    }
     if (data?.id && formData.job_id) {
       try {
         const { data: jobLines } = await supabase

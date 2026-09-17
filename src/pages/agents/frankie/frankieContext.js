@@ -28,6 +28,7 @@ import {
   isInvoiceOpen, paymentDate, jobIsComplete, jobContractValue,
   expenseCategoryName, unifiedExpenses,
 } from './frankieFields.js'
+import { buildForecast } from '../../../lib/cashForecast'
 
 export function buildSystemPrompt(user, company, role) {
   return `You are Frankie — the sharp, no-nonsense AI CFO for JobScout.
@@ -298,6 +299,24 @@ export function buildFinancialContext(data = {}, now = new Date()) {
   context += `- Last 30 days: $${expenses30d.toFixed(2)}\n`
   context += `- Previous 30 days: $${expensesPrev30d.toFixed(2)}\n`
   context += `- Net Cash Flow (30d): $${(revenue30d - expenses30d).toFixed(2)}\n\n`
+
+  // Forward view — the same 90-day forecast Books shows, so "why is cash
+  // tight" can be answered with what is coming, not only what happened.
+  try {
+    const depository = (data.connectedAccounts || []).filter(a => a.status === 'active' && a.account_type === 'depository')
+    const openingCash = depository.reduce((s, a) => s + (parseFloat(a.current_balance) || 0), 0)
+    const fc = buildForecast({
+      today: now, openingCash,
+      invoices, payments, utilityInvoices: data.utilityInvoices || [], plaidTransactions: data.plaidTransactions || [],
+      payrollRuns: Array.isArray(data.payrollRuns) ? data.payrollRuns : [],
+    })
+    context += `### Cash Forecast (next 90 days, from open invoices, payroll history and everyday spend)\n`
+    context += `- Cash today: $${fc.opening.toFixed(2)} → in 90 days: $${fc.closing.toFixed(2)}\n`
+    context += `- Low point: $${fc.low.balance.toFixed(2)} on ${fc.low.date}\n`
+    context += `- Everyday spend baseline: $${fc.baselineDailyBurn.toFixed(2)}/day\n`
+    for (const e of fc.events.slice(0, 6)) context += `- ${e.date}: ${e.amount >= 0 ? '+' : '−'}$${Math.abs(e.amount).toFixed(2)} ${e.label}${e.confidence === 'overdue' ? ' (overdue)' : e.confidence === 'estimate' ? ' (est.)' : ''}\n`
+    context += '\n'
+  } catch { /* forecast is a bonus; the rest of the brief stands */ }
 
   // Expense categories — expense.category is a JOIN, use helper for the name.
   const catBreakdown = {}

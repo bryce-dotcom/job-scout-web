@@ -35,6 +35,7 @@ import {
   ToggleLeft,
   ToggleRight
 } from 'lucide-react'
+import { summarizePayroll } from '../lib/payrollBooks'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -153,6 +154,20 @@ export default function Dashboard() {
   const [accountingBasis, setAccountingBasis] = useState('cash') // company revenue basis (set in Books)
   // Accrual expenses need vendor bills + their payments; only fetched on accrual.
   const [accrualBills, setAccrualBills] = useState({ bills: [], billPayments: [] })
+  // Payroll runs + stubs so Money Out counts wages the way Books does
+  // (accrual: gross + employer tax; cash: from the bank feed, runs only
+  // when the feed shows no payroll).
+  const [payrollData, setPayrollData] = useState({ payrollRuns: [], paystubs: [] })
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    const since = `${new Date().getFullYear() - 1}-01-01`
+    Promise.all([
+      supabase.from('payroll_runs').select('id, pay_date, total_gross').eq('company_id', companyId).gte('pay_date', since),
+      supabase.from('paystubs').select('payroll_run_id, employee_id, gross_pay, net_pay, federal_income_tax, state_income_tax, social_security_employee, social_security_employer, medicare_employee, medicare_employer, additional_medicare, futa, sui').eq('company_id', companyId).gte('pay_date', since),
+    ]).then(([r, s]) => { if (!cancelled) setPayrollData({ payrollRuns: r.data || [], paystubs: s.data || [] }) })
+    return () => { cancelled = true }
+  }, [companyId])
   useEffect(() => {
     if (!companyId || accountingBasis !== 'accrual') return
     let cancelled = false
@@ -362,7 +377,7 @@ export default function Dashboard() {
   // twice. manualExpensesMTD/plaidOutMTD kept for the breakdown subtitle.
   const manualExpensesMTD = (expenses || []).filter(e => e.date && isThisMonth(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
   const plaidOutMTD = (plaidTransactions || []).filter(t => t.amount > 0 && isThisMonth(t.date) && !t.is_transfer).reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0)
-  const thisMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills }, isThisMonth)
+  const thisMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills, payroll: summarizePayroll(payrollData, isThisMonth) }, isThisMonth)
 
   // Quote amounts by lead (for sales won + pipeline chart)
   const quoteByLead = {}
@@ -422,7 +437,7 @@ export default function Dashboard() {
   const lastMonthLabel = firstOfLastMonth.toLocaleDateString('en-US', { month: 'short' })
 
   const lastMonthRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isLastMonth)
-  const lastMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills }, isLastMonth)
+  const lastMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills, payroll: summarizePayroll(payrollData, isLastMonth) }, isLastMonth)
   const lastMonthNetIncome = lastMonthRevenue - lastMonthExpenses
   const lastMonthDeposits = (leadPayments || []).filter(d => isLastMonth(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
   const lastMonthWonJobs = wonJobsInRange(jobs, firstOfLastMonth, firstOfMonth)
@@ -440,7 +455,7 @@ export default function Dashboard() {
   const collectedIncentiveYTD = collectedIncentives(utilityInvoices, isThisYear)
   const ytdRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isThisYear)
 
-  const ytdExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills }, isThisYear)
+  const ytdExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills, payroll: summarizePayroll(payrollData, isThisYear) }, isThisYear)
   const ytdNetIncome = ytdRevenue - ytdExpenses
 
   // YTD — same definitions as MTD, just a wider window.
