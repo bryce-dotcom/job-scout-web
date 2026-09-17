@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, globSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -35,7 +35,6 @@ describe('one date rule on every money surface', () => {
 
 describe('"today" is never the UTC day', () => {
   it('no page or component defaults a date to new Date().toISOString() — after 6 PM Denver that is tomorrow', () => {
-    const { globSync } = require('node:fs')
     const files = [...globSync('src/pages/**/*.{js,jsx}', { cwd: resolve(here, '../..') }), ...globSync('src/components/**/*.{js,jsx}', { cwd: resolve(here, '../..') })]
       .filter((f) => !/\.test\./.test(f))
     const offenders = files.filter((f) => /new Date\(\)\.toISOString\(\)\.(?:split\('T'\)\[0\]|slice\(0, ?10\))/.test(readFileSync(resolve(here, '../..', f), 'utf8')))
