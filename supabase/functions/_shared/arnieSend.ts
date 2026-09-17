@@ -23,10 +23,18 @@ export async function sendArnieEmail(to: string, subject: string, heading: strin
   return { sent: true }
 }
 
-export async function sendArnieSms(r: { url: string; key: string }, companyId: number, to: string, text: string): Promise<Sent> {
+/**
+ * A text from Arnie. Every one ends with the link into the app — the reply
+ * to a text is a tap, never a text back (there is no inbound SMS, and the
+ * card that makes a change safe cannot fit in one). `trigger` and
+ * `employee_id` go on the communications log so the text is a record.
+ */
+export async function sendArnieSms(r: { url: string; key: string }, companyId: number, to: string, text: string, opts: { trigger?: string; employee_id?: number | null } = {}): Promise<Sent> {
+  const link = appLink('/agents/arnie')
+  const message = text.includes(link) ? text : `${text}\n${link}`
   const res = await fetch(`${r.url}/functions/v1/send-sms`, {
     method: 'POST', headers: { apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ company_id: companyId, to, message: text }),
+    body: JSON.stringify({ company_id: companyId, to, message, trigger: opts.trigger || 'arnie', employee_id: opts.employee_id ?? null }),
   })
   if (!res.ok) return { sent: false, error: `send-sms ${res.status}: ${(await res.text()).slice(0, 160)}` }
   return { sent: true }

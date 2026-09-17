@@ -132,7 +132,7 @@ export async function applyFollowup(r: Rest, companyId: number, prop: any): Prom
   let external: string | null = null
   if (c.channel === 'sms') {
     const body = link ? `${c.message}\n${link}` : c.message
-    const res = await fetch(`${r.url}/functions/v1/send-sms`, { method: 'POST', headers: H(r), body: JSON.stringify({ company_id: companyId, to: c.to, message: body }) })
+    const res = await fetch(`${r.url}/functions/v1/send-sms`, { method: 'POST', headers: H(r), body: JSON.stringify({ company_id: companyId, to: c.to, message: body, log: false }) })
     if (!res.ok) return { ok: false, error: `Text failed: ${res.status} ${(await res.text()).slice(0, 160)}` }
     external = (await res.json().catch(() => ({})))?.sid ?? null
   } else {
