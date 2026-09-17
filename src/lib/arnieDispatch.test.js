@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { transformSync } from 'esbuild'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n')
@@ -17,10 +18,8 @@ const apply = d.slice(d.indexOf('export async function applySectionAssign'), d.i
 const rollback = d.slice(d.indexOf('export async function rollbackSectionAssign'))
 
 // resolveDayWord + tzOffsetMinutes, evaluated here.
-const resolveDayWord = (() => {
-  const src = time.replace(/export /g, '').replace(/: string/g, '').replace(/: number/g, '').replace(/: Date/g, '').replace(/\| null/g, '')
-  return new Function(`${src}; return resolveDayWord`)()
-})()
+// The real module, types stripped by esbuild.
+const resolveDayWord = (() => { const m = { exports: {} }; new Function('module', 'exports', transformSync(time, { loader: 'ts', format: 'cjs' }).code)(m, m.exports); return m.exports.resolveDayWord })()
 
 describe('the day as said, resolved by the server', () => {
   // Tue Sep 15 2026, 23:30 in Denver — already Wednesday in UTC. The trap.

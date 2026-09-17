@@ -415,6 +415,43 @@ const CASES = [
         if ((await rest(`lead_commissions?select=id&appointment_id=eq.${ap.body.created_id}`)).length) throw new Error('fee left behind after unbook')
       }
     } },
+  // The weekday trap, on the two rails that book a moment: the model passes "Thursday at 2" / "5:30 yesterday"
+  // AS SAID and the server does the calendar (resolveWhenSaid). "Thursday" must be the coming Thursday.
+  { id: 'create.appointment.thursday.is.the.coming.thursday', as: 'tech',
+    turns: ['Book the Parkside Office Tower lead for Thursday at 2 with Jordan Lee.'],
+    expect: { proposal: 'create', proposal_label: 'appointment', text_match: [/Thu/i, /2:00|2 ?pm/i] },
+    after: async (r) => {
+      const when = (r.proposal.preview.fields || []).find((f) => f.label === 'When')?.value || ''
+      const iso = r.proposal.proposal.payload?.columns?.appointment_time || r.proposal.proposal.payload?.columns?.start_time
+      const local = new Date(iso).toLocaleString('en-US', { timeZone: DEMO.tz, weekday: 'short', hour: 'numeric', minute: '2-digit' })
+      const ahead = (new Date(new Date(iso).toLocaleDateString('en-CA', { timeZone: DEMO.tz })) - new Date(today)) / 86400000
+      if (!/^Thu/.test(local) || !/2:00 PM/.test(local) || ahead < 1 || ahead > 7) throw new Error(`booked ${local} (${ahead} days out) — card said "${when}"`)
+    } },
+  { id: 'shift.tech.close.thursday.6pm.looks.back', as: 'tech',
+    run: async (ctx) => {
+      // Open since last Thursday 8am Denver; "Thursday at 6pm" must close it THAT Thursday, not the coming one.
+      const now = new Date(); const dow = Number(new Date(now.toLocaleString('en-US', { timeZone: DEMO.tz })).getDay())
+      const back = ((dow - 4 + 7) % 7) || 7
+      const thu = new Date(new Date(today).getTime() - back * 86400000).toISOString().slice(0, 10)
+      const stale = await rest(`time_clock?select=id&company_id=eq.${DEMO.company}&employee_id=eq.${DEMO.tech.employeeId}&clock_out=is.null`)
+      for (const s of stale) await rest(`time_clock?id=eq.${s.id}`, { method: 'PATCH', body: JSON.stringify({ clock_out: new Date().toISOString() }) })
+      const [row] = await rest('time_clock', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, employee_id: DEMO.tech.employeeId, clock_in: `${thu}T14:00:00Z`, clock_out: null }) })
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'I never clocked out last Thursday — clock me out at 6pm that day.' }])
+        if (r.proposal?.preview?.label === 'shift clock-out') {
+          const v = r.proposal.proposal.payload?.value
+          const local = new Date(v).toLocaleString('en-US', { timeZone: DEMO.tz })
+          const d = new Date(v).toLocaleDateString('en-CA', { timeZone: DEMO.tz }), h = new Date(v).toLocaleTimeString('en-US', { timeZone: DEMO.tz, hour: 'numeric', minute: '2-digit' })
+          if (d !== thu || h !== '6:00 PM') throw new Error(`clock-out drafted for ${local}; wanted ${thu} 6:00 PM`)
+          await decide(ctx.token, 'reject', r.proposal.proposal.id); r.proposal = { ...r.proposal, rejectedByEval: true }
+        }
+        return r
+      } finally {
+        await rest(`time_clock?id=eq.${row.id}`, { method: 'DELETE' })
+        for (const s of stale) await rest(`time_clock?id=eq.${s.id}`, { method: 'PATCH', body: JSON.stringify({ clock_out: null, total_hours: null }) })
+      }
+    },
+    expect: { proposal_kind: 'record', proposal_label: 'shift clock-out', text_match: [/Thu/i, /6:00|6 ?pm/i] } },
   { id: 'create.quote.unknown.item.asks.for.price', as: 'tech',
     turns: ['Quote the Parkside Office Tower lead for 10 flux capacitors.'],
     expect: { proposal: 'none', text_match: [/price/i], no_dollars: true } },

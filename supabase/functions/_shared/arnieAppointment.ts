@@ -21,7 +21,7 @@ import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
 import { readRecordList, patchRow } from './arnieRest.ts'
 import { RECORD_TARGETS, resolveEntity } from './arnieRecords.ts'
-import { localToUtc } from './arnieTime.ts'
+import { localToUtc, resolveWhenSaid } from './arnieTime.ts'
 import type { Prepared } from './arnieCreate.ts'
 
 const H = (r: Rest) => ({ apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' })
@@ -61,8 +61,12 @@ export async function prepareAppointment(r: Rest, caller: Caller, f: Record<stri
   }
   const statusOnly = String(lead.status || '').toLowerCase() === 'appointment set'
 
-  // When.
-  const start = localToUtc(f.when, tz)
+  // When — as SAID. The model cannot turn "Thursday" into a date inside a
+  // tool call (see resolveDayWord); the server does the calendar.
+  const said = resolveWhenSaid(f.when, tz, 'forward')
+  if (!said) return { ok: false, error: `When? I can take "Thursday at 2", "tomorrow 9:30am", or YYYY-MM-DD HH:MM — I got "${f.when}".` }
+  if (!said.time) return { ok: false, error: `What time on ${said.date}? I have the day but not the hour.` }
+  const start = localToUtc(`${said.date} ${said.time}`, tz)
   if (!start) return { ok: false, error: `Give me the time as YYYY-MM-DD HH:MM (in ${tz}) — I got "${f.when}".` }
   if (start.getTime() < Date.now() - 3600000) return { ok: false, error: `${fmt(start, tz)} is in the past.` }
   const minutes = Math.min(Math.max(parseInt(f.duration_minutes || '60', 10) || 60, 15), 480)
