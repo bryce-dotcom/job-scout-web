@@ -255,13 +255,28 @@ export default function LiahonaMap({
     const L = window.L, g = groupsRef.current.pins
     if (!ready || !L || !g) return
     g.clearLayers()
+    // Leads on the same spot (units in one building, a strip mall, a city
+    // centroid) would stack and only the top one could ever be tapped. Fan
+    // them out in a ring by shifting the icon anchor in PIXELS, so the spread
+    // holds at every zoom and the marker itself stays on the true point.
+    const spotKey = l => `${Number(l.latitude).toFixed(5)},${Number(l.longitude).toFixed(5)}`
+    const spots = new Map()
+    for (const l of visibleLeads) spots.set(spotKey(l), (spots.get(spotKey(l)) || 0) + 1)
+    const placed = new Map()
     for (const lead of visibleLeads) {
       const stage = stageById[lead.status]
       const color = stage?.color || '#71717a'
+      const key = spotKey(lead), n = spots.get(key)
+      let dx = 0, dy = 0
+      if (n > 1) {
+        const i = placed.get(key) || 0; placed.set(key, i + 1)
+        const r = Math.min(40, 14 + Math.max(0, n - 8) * 1.5), a = (2 * Math.PI * i) / n - Math.PI / 2
+        dx = Math.round(r * Math.cos(a)); dy = Math.round(r * Math.sin(a))
+      }
       const icon = L.divIcon({
         className: '',
         html: `<div style="width:16px;height:16px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45)"></div>`,
-        iconSize: [16, 16], iconAnchor: [8, 16], tooltipAnchor: [0, -14]
+        iconSize: [16, 16], iconAnchor: [8 - dx, 16 - dy], tooltipAnchor: [0, -14]
       })
       const m = L.marker([Number(lead.latitude), Number(lead.longitude)], { icon, draggable: true })
       m.bindTooltip(`<b>${esc(lead.customer_name || lead.business_name || 'Lead')}</b><br>${esc(stage?.name || lead.status)}${lead.address ? '<br>' + esc(lead.address) : ''}`, { direction: 'top' })
