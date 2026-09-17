@@ -5,6 +5,7 @@ import { mergeJobHourSources } from '../lib/jobHours'
 import { validateTimeEntry } from '../lib/timeEntry'
 import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
+import { leadStatusForJob } from '../lib/leadDeliveryStatus'
 import { jobEstimateDrift } from '../lib/jobEstimateDrift'
 import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
 import { RecordHistoryButton } from '../components/RecordHistory'
@@ -1332,15 +1333,9 @@ function JobDetailInner() {
 
     // Sync job status → lead status through delivery pipeline
     if (job.lead_id) {
-      const statusMap = {
-        'Chillin': 'Job Scheduled',
-        'Scheduled': 'Job Scheduled',
-        'In Progress': 'In Progress',
-        'Completed': 'Job Complete',
-        'On Hold': 'Job Scheduled',
-        'Cancelled': 'Lost'
-      }
-      const newLeadStatus = statusMap[newStatus]
+      // The lead mirrors the job's status (the delivery columns are the
+      // company's job statuses); a cancelled job is a lost deal.
+      const newLeadStatus = newStatus === 'Cancelled' ? 'Lost' : leadStatusForJob(newStatus, storeJobStatuses)
       if (newLeadStatus) {
         await supabase.from('leads').update({ status: newLeadStatus, updated_at: new Date().toISOString() }).eq('id', job.lead_id)
       }

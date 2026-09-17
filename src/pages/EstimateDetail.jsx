@@ -10,6 +10,7 @@ import { proposalMode, sendButtonLabel, proposalModeOptions } from '../lib/propo
 import PresentationOptions from '../components/estimate/PresentationOptions'
 import { findMatchingCustomer, contactGapPatch } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
+import { leadStatusForJob } from '../lib/leadDeliveryStatus'
 import { RecordHistoryButton } from '../components/RecordHistory'
 import { deriveBusinessUnit } from '../lib/businessUnitForWork'
 import { useTheme } from '../components/Layout'
@@ -183,6 +184,7 @@ function EstimateDetailInner() {
   const updateQuote = useStore((state) => state.updateQuote)
   const deleteQuote = useStore((state) => state.deleteQuote)
   const updateLead = useStore((state) => state.updateLead)
+  const storeJobStatuses = useStore((state) => state.jobStatuses)
   const settings = useStore((state) => state.settings)
   const businessUnits = useStore((state) => state.businessUnits)
 
@@ -2013,7 +2015,7 @@ function EstimateDetailInner() {
       // 7. Update lead status if linked
       if (estimate.lead_id) {
         await updateLead(estimate.lead_id, {
-          status: 'Job Scheduled',
+          status: leadStatusForJob(newJob.status || 'Chillin', storeJobStatuses),
           converted_customer_id: customerId,
           updated_at: new Date().toISOString()
         })

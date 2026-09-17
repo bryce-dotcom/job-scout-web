@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { leadStatusForJob } from '../lib/leadDeliveryStatus'
 import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
 import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
@@ -827,8 +828,7 @@ export default function Jobs() {
       const newJob = result.data[0]
       const customer = formData.customer_id ? customers.find(c => c.id === parseInt(formData.customer_id)) : null
       const jobStatus = newJob.status || 'Chillin'
-      const leadStatusMap = { 'Chillin': 'Job Scheduled', 'Scheduled': 'Job Scheduled', 'In Progress': 'In Progress', 'Completed': 'Job Complete' }
-      const leadStatus = leadStatusMap[jobStatus] || 'Job Scheduled'
+      const leadStatus = leadStatusForJob(jobStatus, storeJobStatuses)
 
       const { data: trackingLead } = await supabase
         .from('leads')
@@ -902,7 +902,7 @@ export default function Jobs() {
     await supabase.from('jobs').update(updateData).eq('id', job.id)
 
     if (job.lead_id) {
-      await supabase.from('leads').update({ status: 'Job Scheduled', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
+      await supabase.from('leads').update({ status: leadStatusForJob(updateData.status, storeJobStatuses), updated_at: new Date().toISOString() }).eq('id', job.lead_id)
     }
 
     // The second place the mirror appointment was minted — the Schedule action
@@ -948,7 +948,7 @@ export default function Jobs() {
 
     // Sync to lead pipeline
     if (job.lead_id) {
-      await supabase.from('leads').update({ status: 'Job Complete', updated_at: new Date().toISOString() }).eq('id', job.lead_id)
+      await supabase.from('leads').update({ status: leadStatusForJob('Completed', storeJobStatuses), updated_at: new Date().toISOString() }).eq('id', job.lead_id)
     }
 
     const customerName = job.customer?.name || job.customer_name || 'Unknown'

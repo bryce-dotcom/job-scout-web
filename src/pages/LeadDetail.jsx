@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { findMatchingCustomer, contactGapPatch } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
+import { leadStatusForJob } from '../lib/leadDeliveryStatus'
 import { RecordHistoryButton } from '../components/RecordHistory'
 import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
@@ -59,6 +60,7 @@ export default function LeadDetail() {
   const createQuote = useStore((state) => state.createQuote)
   const createQuoteLine = useStore((state) => state.createQuoteLine)
   const updateLead = useStore((state) => state.updateLead)
+  const storeJobStatuses = useStore((state) => state.jobStatuses)
   const deleteLead = useStore((state) => state.deleteLead)
   const fetchLeads = useStore((state) => state.fetchLeads)
   const updateQuote = useStore((state) => state.updateQuote)
@@ -789,8 +791,8 @@ export default function LeadDetail() {
 
       if (jobError) throw jobError
 
-      // Advance lead to Job Scheduled in the delivery pipeline
-      await updateLead(lead.id, { status: 'Job Scheduled', updated_at: new Date().toISOString() })
+      // Advance the lead into the delivery pipeline at the new job's status
+      await updateLead(lead.id, { status: leadStatusForJob('Scheduled', storeJobStatuses), updated_at: new Date().toISOString() })
 
       // 3. Copy audit line items as job_lines
       if (audit) {

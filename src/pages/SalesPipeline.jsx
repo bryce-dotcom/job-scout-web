@@ -563,6 +563,31 @@ export default function SalesPipeline() {
   }
 
   // Fetch pipeline leads — cache-first, then refresh from network
+  // Converted leads carrying the app's ORIGINAL delivery stage names ('Job
+  // Scheduled', 'Job Complete') when the company's own job statuses are the
+  // delivery columns. The board's query is by stage id and never fetches
+  // them; their deals still render as job cards. Loaded here for the map
+  // only, so the won-customers layer (and cloverleaf around a finished job)
+  // sees every converted deal. The board itself is untouched.
+  const [orphanCustomers, setOrphanCustomers] = useState([])
+  const loadOrphanCustomers = async () => {
+    if (!companyId) return
+    const stageIds = new Set(stages.map(s => s.id))
+    const orphanStatuses = ['Job Scheduled', 'Job Complete'].filter(s => !stageIds.has(s))
+    if (orphanStatuses.length === 0) { setOrphanCustomers([]); return }
+    const { data, error } = await supabase
+      .from('leads')
+      .select('*')
+      .eq('company_id', companyId)
+      .in('status', orphanStatuses)
+      .not('latitude', 'is', null)
+      .limit(2000)
+    if (error) { console.warn('[Pipeline] orphan customers unavailable:', error.message); return }
+    setOrphanCustomers((data || []).map(normalizeLead))
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadOrphanCustomers() }, [companyId, stages])
+
   const fetchPipelineLeads = async (background = false) => {
     if (!companyId) return
 
@@ -852,6 +877,7 @@ export default function SalesPipeline() {
     } catch (e) { /* non-critical */ }
 
     setPipelineLeads(normalized)
+    loadOrphanCustomers()
     setLoading(false)
     setRefreshing(false)
 
@@ -1845,10 +1871,17 @@ export default function SalesPipeline() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [liahonaKey, stages]
   )
+  // Won customers for the map: the delivery/closed leads the board has, plus
+  // the converted leads the board never fetches (see orphanCustomers).
+  const orphanKey = orphanCustomers.map(l => `${l.id}:${l.lead_owner_id}:${l.updated_at}`).join(',')
   const liahonaCustomers = useMemo(
-    () => filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && (s.isDelivery || s.isClosed) }),
+    () => {
+      const onBoard = filteredPipelineLeads.filter(l => { const s = stages.find(st => st.id === l.status); return s && (s.isDelivery || s.isClosed) })
+      const seen = new Set(onBoard.map(l => String(l.id)))
+      return [...onBoard, ...orphanCustomers.filter(l => !seen.has(String(l.id)) && matchesCardFilters(l))]
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [liahonaKey, stages]
+    [liahonaKey, orphanKey, stages, ownerFilter, buFilter, searchTerm, dateRange, customDateTo]
   )
 
   if (loading && pipelineLeads.length === 0) {
