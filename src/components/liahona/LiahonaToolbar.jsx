@@ -2,7 +2,7 @@
 // fit, and the geocode-backlog button. Presentational — every action is a prop.
 
 import { useMemo } from 'react'
-import { Search, MapPin, PenTool, Route, Layers, MousePointer2, Loader2, LocateFixed, Maximize2, Sparkles } from 'lucide-react'
+import { Search, MapPin, PenTool, Route, Layers, MousePointer2, Loader2, LocateFixed, Maximize2, Sparkles, Clover } from 'lucide-react'
 import { OVERLAYS } from '../../lib/mapOverlays'
 import { makeStyles } from './util'
 
@@ -42,6 +42,7 @@ export default function LiahonaToolbar({
         <button title="Select" onClick={() => onMode('select')} style={btn(mode === 'select', { border: 0, borderRadius: 0, ...pad })}><MousePointer2 size={iconSize} />{!compact && ' Select'}</button>
         <button title="Tap the map to add a lead" onClick={() => onMode('drop')} style={btn(mode === 'drop', { border: 0, borderRadius: 0, ...pad })}><MapPin size={iconSize} />{!compact && ' Drop lead'}</button>
         <button title="Tap points to outline a territory" onClick={() => onMode('draw')} style={btn(mode === 'draw', { border: 0, borderRadius: 0, ...pad })}><PenTool size={iconSize} />{!compact && ' Draw territory'}</button>
+        <button title="Cloverleaf: tap a finished job or any house to list its neighbors with owner names" onClick={() => onMode('neighbors')} style={btn(mode === 'neighbors', { border: 0, borderRadius: 0, ...pad, ...(mode === 'neighbors' ? { backgroundColor: '#15803d', borderColor: '#15803d' } : { color: '#15803d' }) })}><Clover size={iconSize} />{!compact && ' Neighbors'}</button>
       </div>
 
       {territories.length > 0 && (

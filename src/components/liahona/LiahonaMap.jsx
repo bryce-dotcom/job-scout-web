@@ -28,7 +28,9 @@ import {
 import { X, Check, Undo2 } from 'lucide-react'
 import ProspectResearchDrawer from '../ProspectResearchDrawer'
 import { callProspectResearch, takeProspectsHandoff } from '../../lib/prospectResearch'
-import { parcelAt, parcelsInBounds, parcelSummary, setParcelCompany } from '../../lib/parcels'
+import { parcelAt, parcelsInBounds, parcelSummary, neighborsAround, setParcelCompany } from '../../lib/parcels'
+import { isCompanyName, parcelAddress, parcelNotes, leadRowFromParcel } from './leadRows'
+import NeighborsPanel from './NeighborsPanel'
 import {
   PALETTE, US_CENTER, themeTokens, makeStyles, ensureLeaflet, hasCoords, dist, initials, minutesAgo, esc, loadView, saveView
 } from './util'
@@ -101,6 +103,12 @@ export default function LiahonaMap({
   const [mapArea, setMapArea] = useState(null)
   const [researching, setResearching] = useState(false)
   const [researchError, setResearchError] = useState('')
+  // Cloverleaf: { lat, lng, label, radiusFt, loading, items, origin, reason, provider, county }
+  const [neighbors, setNeighbors] = useState(null)
+  const [neighborSel, setNeighborSel] = useState(() => new Set())
+  const [addingNeighbors, setAddingNeighbors] = useState(false)
+  const neighborsReqRef = useRef(0)
+  const loadNeighborsRef = useRef(null)
 
   const setMode = m => { modeRef.current = m; setModeState(m) }
   const setDrawPts = pts => { drawPtsRef.current = pts; setDrawPtsState(pts) }
@@ -167,7 +175,8 @@ export default function LiahonaMap({
         route: L.layerGroup().addTo(map),
         draw: L.layerGroup().addTo(map),
         search: L.layerGroup().addTo(map),
-        prospects: L.layerGroup().addTo(map)
+        prospects: L.layerGroup().addTo(map),
+        neighbors: L.layerGroup().addTo(map)
       }
       map.on('moveend zoomend', () => { setMoveTick(x => x + 1); saveView(companyId, map) })
       map.on('click', e => handleMapClick(e.latlng))
@@ -249,7 +258,10 @@ export default function LiahonaMap({
       })
       const m = L.marker([Number(lead.latitude), Number(lead.longitude)], { icon, draggable: true })
       m.bindTooltip(`<b>${esc(lead.customer_name || lead.business_name || 'Lead')}</b><br>${esc(stage?.name || lead.status)}${lead.address ? '<br>' + esc(lead.address) : ''}`, { direction: 'top' })
-      m.on('click', () => { if (modeRef.current === 'select') onSelectLead?.(lead) })
+      m.on('click', () => {
+        if (modeRef.current === 'neighbors') loadNeighborsRef.current?.(m.getLatLng(), lead.customer_name || lead.business_name || lead.address)
+        else if (modeRef.current === 'select') onSelectLead?.(lead)
+      })
       m.on('dragend', async e => {
         const p = e.target.getLatLng()
         const { error } = await supabase.from('leads')
@@ -533,8 +545,105 @@ export default function LiahonaMap({
       setDrawPts([...drawPtsRef.current, { lat: latlng.lat, lng: latlng.lng }])
     } else if (m === 'drop') {
       startDropAt(latlng.lat, latlng.lng)
+    } else if (m === 'neighbors') {
+      loadNeighbors(latlng)
     }
   }
+
+  // ------------------------------------------------------------ cloverleaf
+  // The parcels around a point (a finished job, a lead, a tap), nearest
+  // first, owner of record where the county publishes it. Parcels that
+  // already hold a pinned lead are shown but not offered again.
+  const loadNeighbors = async (latlng, label = '', radiusFt = neighbors?.radiusFt || 500) => {
+    const lat = latlng.lat, lng = latlng.lng
+    const req = ++neighborsReqRef.current
+    setTerritoryForm(null); setDropForm(null); setMode('select'); setSheetOpen(true)
+    setNeighbors({ lat, lng, label, radiusFt, loading: true, items: [] })
+    setNeighborSel(new Set())
+    const r = await neighborsAround(lat, lng, radiusFt / 3.28084)
+    if (req !== neighborsReqRef.current) return
+    const items = r.neighbors.map((n, i) => {
+      const key = String(n.parcel.parcel_id || `${n.lat},${n.lng}`) + ':' + i
+      const lead = geocodedLeads.find(l => pointInGeometry(Number(l.latitude), Number(l.longitude), n.parcel.geometry))
+      return { ...n, key, lead: lead || null }
+    })
+    const originLabel = label || parcelAddress(r.origin?.parcel) || (await reverseGeocode(lat, lng).catch(() => '')) || 'this spot'
+    if (req !== neighborsReqRef.current) return
+    setNeighbors({ lat, lng, label: originLabel, radiusFt, loading: false, items, origin: r.origin, reason: r.reason, provider: r.provider, county: r.county })
+    setNeighborSel(new Set(items.filter(i => !i.lead).map(i => i.key)))
+    const map = mapRef.current
+    if (map && items.length) map.fitBounds(items.map(i => [i.lat, i.lng]).concat([[lat, lng]]), { padding: [30, 30], maxZoom: 18 })
+  }
+  loadNeighborsRef.current = loadNeighbors
+
+  const closeNeighbors = () => { neighborsReqRef.current++; setNeighbors(null); setNeighborSel(new Set()); groupsRef.current.neighbors?.clearLayers() }
+
+  const focusNeighbor = it => {
+    const map = mapRef.current, L = window.L
+    if (!map || !L) return
+    map.panTo([it.lat, it.lng])
+    const pc = it.parcel
+    const el = document.createElement('div')
+    el.style.font = '13px system-ui'
+    el.innerHTML = `<div style="font-weight:700">${esc(pc.owner_name || parcelAddress(pc) || 'Parcel')}</div>${pc.owner_name ? `<div style="color:#666">${esc(parcelAddress(pc))}</div>` : ''}<div style="color:#666">${esc(parcelSummary(pc))}</div>`
+    if (!it.lead) {
+      const b = document.createElement('button')
+      b.textContent = 'Add as lead'
+      b.style.cssText = `margin-top:8px;background:${t.accent};color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;font:600 12px system-ui`
+      b.onclick = () => { map.closePopup(); startDropAt(it.lat, it.lng, { address: parcelAddress(pc), parcel: pc }) }
+      el.appendChild(b)
+    }
+    L.popup({ autoPan: true }).setLatLng([it.lat, it.lng]).setContent(el).openOn(map)
+  }
+
+  // Add every ticked neighbor as a New lead in one insert.
+  const addNeighbors = async () => {
+    const picked = (neighbors?.items || []).filter(i => !i.lead && neighborSel.has(i.key))
+    if (!picked.length) return
+    setAddingNeighbors(true)
+    const rows = picked.map(i => leadRowFromParcel({ companyId, user, pc: i.parcel, lat: i.lat, lng: i.lng, leadSource: 'Cloverleaf', notes: `Neighbor of ${neighbors.label}` }))
+    const { data, error } = await supabase.from('leads').insert(rows).select()
+    setAddingNeighbors(false)
+    if (error) { notify('Could not add leads: ' + error.message); return }
+    const byKey = new Map(picked.map((p, i) => [p.key, data?.[i]]))
+    setNeighbors(n => n && ({ ...n, items: n.items.map(i => byKey.has(i.key) ? { ...i, lead: byKey.get(i.key) || { status: 'New' } } : i) }))
+    setNeighborSel(new Set())
+    notify(`${rows.length} neighbor${rows.length > 1 ? 's' : ''} added as leads`)
+    onLeadsChanged?.()
+  }
+
+  // Route the ticked neighbors from where the rep stands. Rows that are not
+  // leads yet ride along as stand-ins (no id) so the route panel can list them.
+  const routeNeighbors = async () => {
+    const L = window.L, map = mapRef.current
+    const picked = (neighbors?.items || []).filter(i => neighborSel.has(i.key) || i.lead)
+    if (!L || !map || !picked.length) return
+    setRouting(true)
+    const start = await getStartPoint(map)
+    const stops = picked.map(i => i.lead?.id ? i.lead : { latitude: i.lat, longitude: i.lng, customer_name: i.parcel.owner_name || parcelAddress(i.parcel) || 'Neighbor', status: 'New', _neighbor: i })
+    const built = await buildRoute(start, stops)
+    drawRoute(L, groupsRef.current.route, built)
+    setRoute(built)
+    setRouting(false)
+  }
+
+  // Outlines and numbered dots for the loaded neighbors; ticked ones are bold.
+  useEffect(() => {
+    const L = window.L, g = groupsRef.current.neighbors
+    if (!ready || !L || !g) return
+    g.clearLayers()
+    if (!neighbors) return
+    L.circle([neighbors.lat, neighbors.lng], { radius: neighbors.radiusFt / 3.28084, color: '#15803d', weight: 1, dashArray: '4 4', fill: false, interactive: false }).addTo(g)
+    if (neighbors.origin?.parcel?.geometry) L.geoJSON(neighbors.origin.parcel.geometry, { style: { color: '#15803d', weight: 2, fillOpacity: 0.25, fillColor: '#15803d' }, interactive: false }).addTo(g)
+    neighbors.items.forEach((it, i) => {
+      const on = neighborSel.has(it.key), done = !!it.lead
+      const color = done ? (stageById[it.lead.status]?.color || '#71717a') : '#15803d'
+      if (it.parcel.geometry) L.geoJSON(it.parcel.geometry, { style: { color, weight: on ? 2 : 1, fillOpacity: on ? 0.18 : 0.06, fillColor: color }, interactive: false }).addTo(g)
+      const icon = L.divIcon({ className: '', html: `<div style="width:20px;height:20px;border-radius:50%;background:${done ? color : on ? '#15803d' : '#fff'};color:${done || on ? '#fff' : '#15803d'};border:2px solid ${color};display:flex;align-items:center;justify-content:center;font:700 11px system-ui;box-shadow:0 1px 3px rgba(0,0,0,.35)">${i + 1}</div>`, iconSize: [20, 20], iconAnchor: [10, 10] })
+      L.marker([it.lat, it.lng], { icon }).on('click', () => focusNeighbor(it)).addTo(g)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, neighbors, neighborSel, stageById])
 
   // Every way of starting a lead at a point comes through here: map tap,
   // "Add lead here" after an address search, a parcel on the overlay.
@@ -553,9 +662,8 @@ export default function LiahonaMap({
     if (pr.parcel) applyParcelToForm(pr.parcel, form)
   }
 
-  const isCompanyName = n => /\b(llc|inc|corp|church|properties|holdings|trust|city|town|county|state)\b/i.test(n || '')
   const applyParcelToForm = (pc, form) => {
-    const parcelAddr = pc.address ? [pc.address, pc.city, pc.zip].filter(Boolean).join(', ') : ''
+    const parcelAddr = parcelAddress(pc)
     setDropForm(f => f && f.lat === form.lat && f.lng === form.lng ? {
       ...f, parcel: pc, parcelLoading: false, parcelReason: null,
       address: parcelAddr || f.address,
@@ -694,6 +802,11 @@ export default function LiahonaMap({
     b.style.cssText = `background:${t.accent};color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;font:600 12px system-ui`
     b.onclick = () => { map.closePopup(); startDropAt(hit.lat, hit.lng, { address: hit.formatted || q }) }
     el.appendChild(b)
+    const nb = document.createElement('button')
+    nb.textContent = 'Neighbors'
+    nb.style.cssText = `margin-left:6px;background:#fff;color:#15803d;border:1px solid #15803d;border-radius:6px;padding:6px 10px;cursor:pointer;font:600 12px system-ui`
+    nb.onclick = () => { map.closePopup(); loadNeighbors({ lat: hit.lat, lng: hit.lng }, hit.formatted || q) }
+    el.appendChild(nb)
     L.marker([hit.lat, hit.lng]).addTo(g).bindPopup(el).openPopup()
   }
 
@@ -705,12 +818,7 @@ export default function LiahonaMap({
     const r = f.research
     const prop = r?.property || {}
     const pc = f.parcel
-    const parcelNotes = pc ? [
-      `${pc.source_label}${pc.parcel_id ? ` parcel ${pc.parcel_id}` : ''}: ${parcelSummary(pc) || 'on record'}`,
-      pc.owner_name ? `Owner of record: ${pc.owner_name}${pc.mail_address ? ` (mail: ${pc.mail_address})` : ''}` : null,
-      pc.last_sale_date ? `Last sale: ${pc.last_sale_date}${pc.last_sale_price ? ` $${pc.last_sale_price.toLocaleString()}` : ''}` : null,
-      pc.source_url ? `Source: ${pc.source_url}` : null
-    ].filter(Boolean).join('\n') : null
+    const parcelNote = parcelNotes(pc)
     const researchNotes = r ? [
       `AI research (${r.kind || 'property'}${r.confidence ? `, ${r.confidence} confidence` : ''})`,
       r.website ? `Website: ${r.website}` : null,
@@ -731,7 +839,7 @@ export default function LiahonaMap({
       status: 'New', lead_source: 'Door Knock',
       lead_owner_id: user?.id || null, salesperson_id: user?.id || null,
       ...(r ? { external_prospect_id: r.candidate_id } : {}),
-      ...(r || pc ? { enrichment_data: { ...(r || {}), parcel: pc ? { ...pc, geometry: undefined } : undefined }, notes: [parcelNotes, researchNotes].filter(Boolean).join('\n\n') } : {})
+      ...(r || pc ? { enrichment_data: { ...(r || {}), parcel: pc ? { ...pc, geometry: undefined } : undefined }, notes: [parcelNote, researchNotes].filter(Boolean).join('\n\n') } : {})
     }
     const { data, error } = await supabase.from('leads').insert(row).select().single()
     setSaving(false)
@@ -798,6 +906,7 @@ export default function LiahonaMap({
 
   const sheetTitle = territoryForm ? (territoryForm.id ? 'Edit territory' : 'New territory')
     : dropForm ? 'New lead'
+    : neighbors ? (neighbors.loading ? 'Neighbors · looking…' : `Neighbors · ${neighbors.items.length} within ${neighbors.radiusFt} ft`)
     : route ? `Route · ${route.stops.length} stops`
     : filterLabel ? `${filterLabel} · ${unassignedInFilter.length} unassigned`
     : `Territories · ${territories.length}`
@@ -825,7 +934,9 @@ export default function LiahonaMap({
           <div ref={mapDivRef} style={{ position: 'absolute', inset: 0, cursor: mode === 'select' ? '' : 'crosshair' }} />
           {mode !== 'select' && (
             <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#111', color: '#fff', padding: '6px 10px', borderRadius: 8, fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.3)' }}>
-              {mode === 'drop' ? `${compact ? 'Tap' : 'Click'} the map where the lead is` : `${compact ? 'Tap' : 'Click'} to add points · ${drawPts.length} so far`}
+              {mode === 'drop' ? `${compact ? 'Tap' : 'Click'} the map where the lead is`
+                : mode === 'neighbors' ? `${compact ? 'Tap' : 'Click'} a pin or a house to see its neighbors`
+                : `${compact ? 'Tap' : 'Click'} to add points · ${drawPts.length} so far`}
               {mode === 'draw' && <>
                 <button onClick={() => setDrawPts(drawPts.slice(0, -1))} disabled={!drawPts.length} style={{ ...btn(false, { padding: '3px 7px' }) }}><Undo2 size={12} /></button>
                 <button onClick={finishDraw} disabled={drawPts.length < 3} style={btn(true, { padding: '3px 8px' })}><Check size={12} /> Finish</button>
@@ -859,7 +970,14 @@ export default function LiahonaMap({
               onResearch={researchAddress} researching={researching} researchError={researchError} />
           ) : (
             <>
-              {route && <RoutePanel t={t} route={route} stageById={stageById} onClear={clearRoute} onSelectLead={onSelectLead} />}
+              {route && <RoutePanel t={t} route={route} stageById={stageById} onClear={clearRoute} onSelectLead={l => l?.id ? onSelectLead?.(l) : l?._neighbor && focusNeighbor(l._neighbor)} />}
+              {neighbors && (
+                <NeighborsPanel t={t} data={neighbors} selected={neighborSel} setSelected={setNeighborSel} stageById={stageById}
+                  onRadius={r => loadNeighbors({ lat: neighbors.lat, lng: neighbors.lng }, neighbors.label, r)}
+                  onAdd={it => startDropAt(it.lat, it.lng, { address: parcelAddress(it.parcel), parcel: it.parcel })}
+                  onAddAll={addNeighbors} onRoute={routeNeighbors} onFocus={focusNeighbor} onClose={closeNeighbors}
+                  adding={addingNeighbors} routing={routing} />
+              )}
               <TerritoryPanel
                 t={t} compact={compact} leads={leads} visibleLeads={visibleLeads} hiddenStages={hiddenStages}
                 territories={territories} territoryCounts={territoryCounts} employeeById={employeeById} selectedTerritoryId={selectedTerritoryId}

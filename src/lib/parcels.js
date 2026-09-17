@@ -13,6 +13,7 @@
 // overlay render one way regardless of county.
 
 import { supabase } from './supabase'
+import { pointInGeometry, geometryCentroid } from './mapOverlays'
 
 // setParcelCompany(companyId) is called by the map so the edge function can
 // meter paid lookups per company.
@@ -91,12 +92,29 @@ async function ownersFor(county, { lat, lng, bounds }) {
   } catch { return null }
 }
 
+// Assessor owner strings as a rep would say them: "Kara Carlston (Jt); David
+// Alan Carlston (Jt)" -> "Kara & David Alan Carlston", tenancy tags dropped,
+// "Trust Not Identified" and friends -> no owner.
+export function tidyOwner(raw) {
+  if (!raw) return null
+  let s = String(raw).replace(/\((jt|tc|trs?|te|etal|et al|life estate|le)\)/gi, ' ').replace(/\b(et al|etal|et ux|et vir)\b\.?/gi, ' ').replace(/\s+/g, ' ').trim()
+  if (!s || /not identified|unknown|unavailable|^n\/?a$|withheld/i.test(s)) return null
+  const parts = s.split(/\s*;\s*/).map(x => x.trim()).filter(Boolean)
+  if (parts.length > 1) {
+    const last = parts.map(x => x.split(' ').pop().toLowerCase())
+    if (last.every(l => l === last[0]) && parts.every(x => x.split(' ').length > 1)) {
+      s = `${parts.map(x => x.split(' ').slice(0, -1).join(' ')).join(' & ')} ${parts[0].split(' ').pop()}`
+    } else s = parts.join(' & ')
+  }
+  return title(s)
+}
+
 function mergeOwner(parcel, o) {
   if (!parcel || !o) return parcel
   return {
     ...parcel,
     source_label: `County assessor (${parcel.county || 'UGRC'})`,
-    owner_name: o.owner_name || parcel.owner_name, mail_address: o.mail_address || parcel.mail_address,
+    owner_name: tidyOwner(o.owner_name) || parcel.owner_name, mail_address: o.mail_address || parcel.mail_address,
     year_built: parcel.year_built || o.year_built, sqft: parcel.sqft || o.sqft, market_value: parcel.market_value || o.market_value
   }
 }
@@ -142,7 +160,7 @@ export function normalizeParcel(provider, p, geometry) {
   return {
     source: 'maricopa', source_label: 'Maricopa County Assessor', county: provider.county,
     parcel_id: p.APN, address: title(street), city: title(p.PHYSICAL_CITY || ''), zip: p.PHYSICAL_ZIP || '',
-    owner_name: title(p.OWNER_NAME), mail_address: title(p.MAIL_ADDRESS),
+    owner_name: tidyOwner(p.OWNER_NAME), mail_address: title(p.MAIL_ADDRESS),
     year_built: num(p.CONST_YEAR), sqft: num(p.LIVING_SPACE), lot_acres: p.LAND_SIZE ? +(num(p.LAND_SIZE) / 43560).toFixed(2) : null,
     market_value: num(p.FCV_CUR), land_value: null,
     last_sale_date: dateStr(p.SALE_DATE), last_sale_price: num(p.SALE_PRICE),
@@ -215,4 +233,32 @@ export async function parcelsInBounds(bounds) {
     return { type: 'Feature', geometry: f.geometry, properties: owners ? mergeOwner(pc, owners.get(String(pc.parcel_id || '').trim())) : pc }
   })
   return { features, provider: provider.id, county: county?.name || null }
+}
+
+// Cloverleaf: every parcel within radiusM of a point, nearest first, with the
+// parcel the point sits in (the finished job, the lead) split out as `origin`.
+// Distances are metres from the point to each parcel's centroid.
+export async function neighborsAround(lat, lng, radiusM = 150) {
+  const dLat = radiusM / 111320, dLng = radiusM / (111320 * Math.cos(lat * Math.PI / 180))
+  const bounds = {
+    getCenter: () => ({ lat, lng }),
+    getWest: () => lng - dLng, getEast: () => lng + dLng, getSouth: () => lat - dLat, getNorth: () => lat + dLat
+  }
+  const r = await parcelsInBounds(bounds)
+  if (!r.features.length) return { origin: null, neighbors: [], reason: r.reason || 'none', county: r.county }
+  const metres = (a, b) => {
+    const dx = (a.lng - b.lng) * Math.cos((a.lat + b.lat) / 2 * Math.PI / 180), dy = a.lat - b.lat
+    return Math.hypot(dx, dy) * 111320
+  }
+  let origin = null
+  const neighbors = []
+  for (const f of r.features) {
+    const c = f.properties.lat != null && f.properties.lng != null ? { lat: Number(f.properties.lat), lng: Number(f.properties.lng) } : geometryCentroid(f.geometry)
+    if (!c) continue
+    const item = { parcel: { ...f.properties, geometry: f.geometry }, lat: c.lat, lng: c.lng, distance_m: metres({ lat, lng }, c) }
+    if (!origin && pointInGeometry(lat, lng, f.geometry)) { origin = item; continue }
+    if (item.distance_m <= radiusM) neighbors.push(item)
+  }
+  neighbors.sort((a, b) => a.distance_m - b.distance_m)
+  return { origin, neighbors, provider: r.provider, county: r.county }
 }
