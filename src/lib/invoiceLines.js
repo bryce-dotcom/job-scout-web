@@ -1,3 +1,5 @@
+import { SALES_TAX_KEY, parseSalesTaxConfig, computeSalesTax } from './salesTax'
+
 // ONE definition of "copy a job's line items onto an invoice".
 //
 // This existed five times before this file: FieldScout, Invoices, JobDetail
@@ -58,8 +60,30 @@ export function buildInvoiceLineRows(lines, { companyId, invoiceId }) {
       // Carries the labor portion so summary PDFs split Parts vs Labor from
       // real per-line data instead of guessing by product type.
       labor_cost: parseFloat(l.labor_cost) || 0,
+      // Carried from the job/quote line so a materials-only tax jurisdiction
+      // can leave labor lines alone. Default taxable, like the column.
+      taxable: l.taxable !== false,
     }
   })
+}
+
+// Sales tax, once, from the rows just written. Reads the company's
+// settings 'sales_tax'; when it is on, stores tax_rate + tax_amount on the
+// invoice. `amount` stays pre-tax; invoiceCustomerTotal adds the tax.
+export async function applySalesTaxToInvoice(supabase, { companyId, invoiceId, rows }) {
+  const { data: cfgRow } = await supabase.from('settings').select('value').eq('company_id', companyId).eq('key', SALES_TAX_KEY).maybeSingle()
+  const cfg = parseSalesTaxConfig(cfgRow?.value)
+  if (!cfg.enabled) return null
+  const ids = [...new Set((rows || []).map(r => r.item_id).filter(Boolean))]
+  let productsById = new Map()
+  if (ids.length > 0) {
+    const { data } = await supabase.from('products_services').select('id, taxable, material_or_labor').in('id', ids)
+    productsById = new Map((data || []).map(p => [p.id, p]))
+  }
+  const t = computeSalesTax(rows, cfg, productsById)
+  const { error } = await supabase.from('invoices').update({ tax_rate: t.rate, tax_amount: t.tax }).eq('id', invoiceId).eq('company_id', companyId)
+  if (error) console.warn('Sales tax not stored on invoice', invoiceId, error.message)
+  return t
 }
 
 // A job with no line items still bills for something. Without this the
@@ -101,5 +125,6 @@ export async function writeInvoiceLines(supabase, lines, { companyId, invoiceId,
     console.error('Failed to copy line items into invoice_lines:', error)
     return []
   }
+  try { await applySalesTaxToInvoice(supabase, { companyId, invoiceId, rows }) } catch (e) { console.warn('Sales tax not applied:', e?.message) }
   return rows
 }

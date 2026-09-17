@@ -46,6 +46,7 @@ serve(async (req) => {
       business_unit_email,
       business_unit_address,
       payment_methods,
+      sales_tax,
       custom_subject,
       extra_attachments,
     } = await req.json();
@@ -96,7 +97,8 @@ serve(async (req) => {
     const amountNum = parseFloat(amount) || 0;
     const escapeHtml = (v: string) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
     const discountNum = parseFloat(discount) || 0;
-    const balanceDue = amountNum - discountNum;
+    const taxNum = parseFloat(sales_tax?.amount) || 0;
+    const balanceDue = amountNum - discountNum + taxNum;
     const amountStr = balanceDue > 0 ? `$${balanceDue.toFixed(2)}` : '';
     const greeting = customer_name ? `Hi ${customer_name.split(' ')[0]},` : 'Hello,';
 
@@ -212,6 +214,14 @@ serve(async (req) => {
         <tr>
           <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">Discount</td>
           <td style="padding:10px 0;color:#16a34a;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">-${discountNum.toFixed(2)}</td>
+        </tr>`;
+    }
+
+    if (taxNum > 0) {
+      summaryRows += `
+        <tr>
+          <td style="padding:10px 0;color:#4d5a52;font-size:13px;border-bottom:1px solid #f0ece4;">Sales Tax (${Number(sales_tax?.rate) || 0}%)</td>
+          <td style="padding:10px 0;color:#2c3530;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">$${taxNum.toFixed(2)}</td>
         </tr>`;
     }
 

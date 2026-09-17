@@ -54,7 +54,10 @@ export function isLegacyNetShape(gross, disc) {
 export function invoiceCustomerTotal(inv) {
   const gross = Number(inv?.amount) || 0
   const disc = Number(inv?.discount_applied) || 0
-  return isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
+  // Sales tax rides on top of the pre-tax gross (invoices.tax_amount, written
+  // when the invoice's lines are). Zero for every invoice that predates it.
+  const tax = Number(inv?.tax_amount) || 0
+  return (isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)) + tax
 }
 
 // A payment the CUSTOMER made. Once a rebate invoice carries both debts, a

@@ -1635,7 +1635,9 @@ Add it anyway?`,
     const pdfDiscount = parseFloat(invoice.discount_applied) || 0
     const pdfCcFee = parseFloat(invoice.credit_card_fee) || 0
     const pdfLegacyNet = isLegacyNetShape(pdfGross, pdfDiscount)
-    const pdfCustomerTotal = pdfLegacyNet ? pdfGross : (pdfGross - pdfDiscount)
+    const pdfTax = parseFloat(invoice.tax_amount) || 0
+    const pdfTaxRate = parseFloat(invoice.tax_rate) || 0
+    const pdfCustomerTotal = (pdfLegacyNet ? pdfGross : (pdfGross - pdfDiscount)) + pdfTax
     const totalPaidAmt = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
 
     if (useSectionLayout && !invoice.summary_format) {
@@ -1662,6 +1664,7 @@ Add it anyway?`,
           : 'Deposit Applied:'
         drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
       }
+      if (pdfTax > 0) drawTotalLine(`Sales Tax (${pdfTaxRate}%):`, formatCurrency(pdfTax))
       if (pdfCcFee > 0) drawTotalLine('CC Processing Fee:', formatCurrency(pdfCcFee))
       if (totalPaidAmt > 0) drawTotalLine('Paid:', formatCurrency(totalPaidAmt), { color: [0, 128, 0] })
     } else if (useSectionLayout && invoice.summary_format) {
@@ -1703,6 +1706,7 @@ Add it anyway?`,
           : 'Deposit Applied:'
         drawTotalLine(depositLabel, `-${formatCurrency(depositCredit)}`, { color: [200, 0, 0] })
       }
+      if (pdfTax > 0) drawTotalLine(`Sales Tax (${pdfTaxRate}%):`, formatCurrency(pdfTax))
       if (pdfCcFee > 0) drawTotalLine('CC Processing Fee:', formatCurrency(pdfCcFee))
       if (totalPaidAmt > 0) drawTotalLine('Paid:', formatCurrency(totalPaidAmt), { color: [0, 128, 0] })
     } else {
@@ -1741,6 +1745,7 @@ Add it anyway?`,
         }
       }
 
+      if (pdfTax > 0) drawTotalLine(`Sales Tax (${pdfTaxRate}%):`, formatCurrency(pdfTax))
       if (pdfCcFee > 0) {
         drawTotalLine('CC Processing Fee:', formatCurrency(pdfCcFee))
       }
@@ -2167,7 +2172,8 @@ Add it anyway?`,
   // discount means the incentive/project discount fully covers the project
   // and the customer owes $0. Shared predicate so this can't drift again.
   const isLegacyNetInvoice = isLegacyNetShape(grossAmount, discountApplied)
-  const customerTotal = isLegacyNetInvoice ? grossAmount : (grossAmount - discountApplied)
+  const salesTaxOnInvoice = parseFloat(invoice.tax_amount) || 0
+  const customerTotal = (isLegacyNetInvoice ? grossAmount : (grossAmount - discountApplied)) + salesTaxOnInvoice
   const balanceDue = customerTotal + ccFeeOnInvoice - totalPaid
 
   // If the invoice was generated from a job with a paid deposit, the deposit
@@ -3459,6 +3465,12 @@ Add it anyway?`,
                 </div>
               )}
 
+              {salesTaxOnInvoice > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                  <span style={{ color: theme.textSecondary }}>Sales Tax ({parseFloat(invoice.tax_rate) || 0}%)</span>
+                  <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(salesTaxOnInvoice)}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
                 <span style={{ color: theme.textSecondary }}>Total Paid</span>
                 <span style={{ fontWeight: '500', color: '#4a7c59' }}>{formatCurrency(totalPaid)}</span>

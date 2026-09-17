@@ -268,7 +268,8 @@ export default function CustomerPortal() {
   const invoiceLegacyNet = isLegacyNetShape(invoiceAmount, invoiceDiscount)
   const totalPaid = isInvoice ? (payments || []).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) : 0
   const existingCcFee = isInvoice ? (parseFloat(doc.credit_card_fee) || 0) : 0
-  const invoiceCustomerTotal = invoiceLegacyNet ? invoiceAmount : (invoiceAmount - invoiceDiscount)
+  const portalSalesTax = isInvoice ? (parseFloat(doc.tax_amount) || 0) : 0
+  const invoiceCustomerTotal = (invoiceLegacyNet ? invoiceAmount : (invoiceAmount - invoiceDiscount)) + portalSalesTax
   const balanceDue = invoiceCustomerTotal + existingCcFee - totalPaid
   const isFullyPaid = isInvoice && (doc.payment_status === 'Paid' || balanceDue <= 0)
 
@@ -810,6 +811,12 @@ export default function CustomerPortal() {
                       </>
                     )}
                   </>
+                )}
+                {portalSalesTax > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: theme.textMuted, fontSize: '13px' }}>Sales Tax ({parseFloat(doc.tax_rate) || 0}%)</span>
+                    <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(portalSalesTax)}</span>
+                  </div>
                 )}
                 {totalPaid > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>

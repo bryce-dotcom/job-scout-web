@@ -102,7 +102,7 @@ describe('row shape and ordering', () => {
     expect(Object.keys(build([{ description: 'A' }])[0]).sort()).toEqual([
       'company_id', 'description', 'discount', 'in_utility_scope', 'invoice_id',
       'item_id', 'labor_cost', 'line_number', 'line_total', 'quantity',
-      'sort_order', 'unit_price',
+      'sort_order', 'taxable', 'unit_price',
     ])
   })
 

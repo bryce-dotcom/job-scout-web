@@ -104,6 +104,7 @@ export function buildInvoiceSendPayload({ invoice, lines, customer, company, set
     invoice_number: invoice.invoice_id || `INV-${invoice.id}`,
     amount: invoice.amount,
     discount: invoice.discount_applied || 0,
+    sales_tax: { rate: parseFloat(invoice.tax_rate) || 0, amount: parseFloat(invoice.tax_amount) || 0 },
     // What the discount IS, row by row, named the way the PDF names it.
     deductions: invoiceDeductionRows({ invoice, parentInvoice, linkedUtilityInvoice, job, utilityProviders, defaultUtilityProviderId }),
     job_description: invoice.job_description || '',

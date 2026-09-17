@@ -241,6 +241,16 @@ async function generate1099Set({ supabase, company_id, company, year }: any) {
   const ytd: Record<number, number> = {};
   for (const c of contractors) ytd[c.id] = 0;
   for (const ps of paystubs || []) ytd[ps.employee_id] = (ytd[ps.employee_id] || 0) + (Number(ps.gross_pay) || 0);
+  // Contractors also get paid straight from Books (manual expense with the
+  // employee as payee). Those dollars are 1099 dollars too.
+  const { data: directPays } = await supabase
+    .from('manual_expenses')
+    .select('payee_employee_id, amount')
+    .eq('company_id', company_id)
+    .in('payee_employee_id', ids)
+    .gte('expense_date', yearStart)
+    .lte('expense_date', yearEnd);
+  for (const x of directPays || []) ytd[x.payee_employee_id] = (ytd[x.payee_employee_id] || 0) + (Number(x.amount) || 0);
 
   // Federal threshold: only contractors paid ≥$600 get a 1099-NEC.
   const need1099 = contractors.filter((c: any) => (ytd[c.id] || 0) >= 600);

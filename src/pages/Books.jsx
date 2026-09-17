@@ -20,6 +20,11 @@ import JobMarginsCard from './books/JobMarginsCard'
 import FleetCostsCard from './books/FleetCostsCard'
 import InventoryCard from './books/InventoryCard'
 import MembershipsCard from './books/MembershipsCard'
+import SalesTaxCard from './books/SalesTaxCard'
+import Contractor1099Card from './books/Contractor1099Card'
+import DepreciationCard from './books/DepreciationCard'
+import { carryingValue, straightLine } from '../lib/depreciation'
+import { salesTaxSummary } from '../lib/salesTax'
 import { depositsHeld } from '../lib/depositsHeld'
 import { taxLiabilitySummary } from '../lib/payrollBooks'
 import { summarizePayroll, payrollJournalRows, isPayrollBankRow } from '../lib/payrollBooks'
@@ -79,6 +84,7 @@ const MANUAL_ACCOUNT_TYPES = [
   { value: 'other',    label: 'Other' },
 ]
 const EMPTY_ACCOUNT_FORM = { name: '', account_type: 'wallet', current_balance: '' }
+const EMPTY_ASSET_FORM = { name: '', asset_type: '', purchase_price: '', current_value: '', status: 'active', purchase_date: '', in_service_date: '', useful_life_years: '', salvage_value: '' }
 // Rows synced from Plaid carry connected_account_id; the Stripe balance row
 // carries provider='stripe'. Everything else was typed in by a person.
 const isManualAccount = (b) => !b.connected_account_id && b.provider !== 'plaid' && b.provider !== 'stripe'
@@ -384,7 +390,12 @@ export default function Books() {
   })
   // vendors table doesn't exist yet — when it does, flip this to true and the
   // Vendor segment will appear in the Payee picker.
-  const VENDORS_ENABLED = false
+  const VENDORS_ENABLED = true
+  const [vendorsList, setVendorsList] = useState([])
+  const fetchVendorsList = async () => {
+    const { data } = await supabase.from('vendors').select('id, name, business_name, is_1099').eq('company_id', companyId).eq('active', true).order('name')
+    setVendorsList(data || [])
+  }
   // Split-across-categories support: when enabled, the expense's amount is
   // distributed across N category lines (e.g. one check to Cole covering
   // materials + fuel + tools). Each line is { category_id, amount, note }.
@@ -404,7 +415,7 @@ export default function Books() {
   // Asset/Liability modals
   const [showAssetModal, setShowAssetModal] = useState(false)
   const [showLiabilityModal, setShowLiabilityModal] = useState(false)
-  const [assetForm, setAssetForm] = useState({ name: '', asset_type: '', purchase_price: '', current_value: '', status: 'active' })
+  const [assetForm, setAssetForm] = useState({ ...EMPTY_ASSET_FORM })
   const [liabilityForm, setLiabilityForm] = useState({ name: '', liability_type: '', current_balance: '', monthly_payment: '', lender: '', status: 'active' })
 
   // Manual account modal (Venmo, Cash App, cash drawer, …)
@@ -503,6 +514,7 @@ export default function Books() {
       fetchMerchantSummary(),
       fetchWalletPayments(),
       fetchBooksExtra(),
+      fetchVendorsList(),
     ])
     setLoading(false)
   }
@@ -1246,7 +1258,7 @@ export default function Books() {
 
   const unreviewedCount = plaidTransactions.filter(t => !t.confirmed && !t.user_category).length
 
-  const totalAssetValue = assets.filter(a => a.status === 'active').reduce((s, a) => s + (parseFloat(a.current_value) || 0), 0)
+  const totalAssetValue = assets.filter(a => a.status === 'active').reduce((s, a) => s + carryingValue(a), 0)
   const totalLiabilityValue = liabilities.filter(l => l.status === 'active').reduce((s, l) => s + (parseFloat(l.current_balance) || 0), 0)
   // What the books themselves say the company holds and owes, alongside the
   // hand-entered assets and liabilities: cash across accounts, receivables,
@@ -1260,9 +1272,10 @@ export default function Books() {
     const ap = (accrualBills.bills || []).filter(b => !['paid', 'void'].includes(b.status)).reduce((s, b) => s + (parseFloat(b.balance_due) || 0), 0)
     const taxesOwed = taxLiabilitySummary(booksExtra.taxLiabilities).total
     const deposits = depositsHeld({ payments, leadPayments, invoices })
+    const salesTaxOwed = Math.max(0, salesTaxSummary({ invoices, payments, manualExpenses: expenses }, () => true, 'cash').owed)
     const assetsTotal = cash + customerAR + utilityAR + inventory + totalAssetValue
-    const liabilitiesTotal = ap + taxesOwed + deposits.total + totalLiabilityValue
-    return { cash, customerAR, utilityAR, inventory, ap, taxesOwed, deposits, assetsTotal, liabilitiesTotal, netWorth: assetsTotal - liabilitiesTotal }
+    const liabilitiesTotal = ap + taxesOwed + salesTaxOwed + deposits.total + totalLiabilityValue
+    return { cash, customerAR, utilityAR, inventory, ap, taxesOwed, salesTaxOwed, deposits, assetsTotal, liabilitiesTotal, netWorth: assetsTotal - liabilitiesTotal }
   })()
 
   // ─── Transaction handlers ───
@@ -1650,11 +1663,18 @@ export default function Books() {
 
   // ─── Asset/Liability handlers ───
   const handleSaveAsset = async () => {
-    const payload = { company_id: companyId, name: assetForm.name, asset_type: assetForm.asset_type || null, purchase_price: parseFloat(assetForm.purchase_price) || 0, current_value: parseFloat(assetForm.current_value) || 0, status: assetForm.status }
+    const payload = {
+      company_id: companyId, name: assetForm.name, asset_type: assetForm.asset_type || null,
+      purchase_price: parseFloat(assetForm.purchase_price) || 0, current_value: parseFloat(assetForm.current_value) || 0, status: assetForm.status,
+      purchase_date: assetForm.purchase_date || null,
+      in_service_date: assetForm.in_service_date || null,
+      useful_life_years: assetForm.useful_life_years === '' ? null : (parseFloat(assetForm.useful_life_years) || null),
+      salvage_value: parseFloat(assetForm.salvage_value) || 0,
+    }
     if (editingItem) { await supabase.from('assets').update(payload).eq('id', editingItem.id) }
     else { await supabase.from('assets').insert([payload]) }
     await fetchAssets()
-    setShowAssetModal(false); setEditingItem(null); setAssetForm({ name: '', asset_type: '', purchase_price: '', current_value: '', status: 'active' })
+    setShowAssetModal(false); setEditingItem(null); setAssetForm({ ...EMPTY_ASSET_FORM })
   }
 
   const handleSaveLiability = async () => {
@@ -3590,7 +3610,7 @@ export default function Books() {
                 <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <TrendingUp size={18} style={{ color: '#22c55e' }} /> Assets
                 </h3>
-                <button onClick={() => { setEditingItem(null); setAssetForm({ name: '', asset_type: '', purchase_price: '', current_value: '', status: 'active' }); setShowAssetModal(true) }}
+                <button onClick={() => { setEditingItem(null); setAssetForm({ ...EMPTY_ASSET_FORM }); setShowAssetModal(true) }}
                   style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.accent, fontSize: '12px', cursor: 'pointer', minHeight: '44px' }}>
                   <Plus size={12} /> Add
                 </button>
@@ -3604,8 +3624,8 @@ export default function Books() {
                         <div style={{ fontSize: '11px', color: theme.textMuted }}>{asset.asset_type}</div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ fontWeight: '600', color: '#22c55e', fontSize: '13px' }}>{formatCurrency(asset.current_value)}</span>
-                        <button onClick={() => { setEditingItem(asset); setAssetForm({ name: asset.name || '', asset_type: asset.asset_type || '', purchase_price: asset.purchase_price || '', current_value: asset.current_value || '', status: asset.status || 'active' }); setShowAssetModal(true) }} style={{ padding: '4px', background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><Pencil size={12} /></button>
+                        <span style={{ fontWeight: '600', color: '#22c55e', fontSize: '13px' }} title={straightLine(asset) ? `Book value: ${formatCurrency(straightLine(asset).bookValue)} (straight-line, ${straightLine(asset).elapsed} of ${straightLine(asset).months} months)` : 'Typed current value'}>{formatCurrency(carryingValue(asset))}</span>
+                        <button onClick={() => { setEditingItem(asset); setAssetForm({ name: asset.name || '', asset_type: asset.asset_type || '', purchase_price: asset.purchase_price || '', current_value: asset.current_value || '', status: asset.status || 'active', purchase_date: asset.purchase_date || '', in_service_date: asset.in_service_date || '', useful_life_years: asset.useful_life_years ?? '', salvage_value: asset.salvage_value ?? '' }); setShowAssetModal(true) }} style={{ padding: '4px', background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer' }}><Pencil size={12} /></button>
                       </div>
                     </div>
                   ))}
@@ -3665,6 +3685,7 @@ export default function Books() {
                 {[
                   ['Vendor bills open', position.ap],
                   ['Payroll taxes not yet deposited', position.taxesOwed],
+                  ['Sales tax collected, not remitted', position.salesTaxOwed],
                   [`Customer deposits held (${position.deposits.count})`, position.deposits.total],
                   ['Liabilities entered above', totalLiabilityValue],
                 ].map(([l, v]) => (
@@ -3716,6 +3737,9 @@ export default function Books() {
 
           {reportsSubTab !== 'standard' && (<>
           <WalletReceiptsCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} from={taxDateFrom} to={taxDateTo} />
+          <SalesTaxCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency} invoices={invoices} payments={payments} manualExpenses={expenses} from={taxDateFrom} to={taxDateTo} accountingBasis={accountingBasis} />
+          <Contractor1099Card companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency} year={parseInt(String(taxDateTo).slice(0, 4), 10)} employees={employees} manualExpenses={expenses} bills={accrualBills.bills} billPayments={accrualBills.billPayments} navigate={navigate} />
+          <DepreciationCard theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency} assets={assets} year={parseInt(String(taxDateTo).slice(0, 4), 10)} />
           {/* "What's this page?" intro card. */}
           <div style={{
             marginBottom: '20px',
@@ -4251,6 +4275,7 @@ export default function Books() {
                     style={inputStyle}
                   >
                     <option value="">-- Select vendor --</option>
+                    {vendorsList.map(v => <option key={v.id} value={v.id}>{v.name}{v.is_1099 ? ' (1099)' : ''}</option>)}
                   </select>
                 )}
                 {expenseForm.payee_mode === 'other' && (
@@ -4404,6 +4429,29 @@ export default function Books() {
                   <input type="number" step="0.01" value={assetForm.current_value} onChange={(e) => setAssetForm({ ...assetForm, current_value: e.target.value })} style={inputStyle} />
                 </div>
               </div>
+              {/* Depreciation: optional. With a life and an in-service date, book
+                  value is computed straight-line and replaces the typed value. */}
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '8px' }}>
+                <div>
+                  <label style={labelStyle}>In service since</label>
+                  <input type="date" value={assetForm.in_service_date} onChange={(e) => setAssetForm({ ...assetForm, in_service_date: e.target.value })} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Useful life (years)</label>
+                  <input type="number" step="0.5" min="0" value={assetForm.useful_life_years} placeholder="e.g. 5" onChange={(e) => setAssetForm({ ...assetForm, useful_life_years: e.target.value })} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Salvage value</label>
+                  <input type="number" step="0.01" value={assetForm.salvage_value} placeholder="0" onChange={(e) => setAssetForm({ ...assetForm, salvage_value: e.target.value })} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Purchase date</label>
+                  <input type="date" value={assetForm.purchase_date} onChange={(e) => setAssetForm({ ...assetForm, purchase_date: e.target.value })} style={inputStyle} />
+                </div>
+              </div>
+              <p style={{ margin: '0 0 20px', fontSize: '12px', color: theme.textMuted, lineHeight: 1.5 }}>
+                Leave life blank to keep a hand-typed current value. With a life set, Books depreciates straight-line from the in-service month and shows the year's expense under Reports → Year-End.
+              </p>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button onClick={() => setShowAssetModal(false)} style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '14px', cursor: 'pointer', minHeight: '44px' }}>Cancel</button>
                 <button onClick={handleSaveAsset} style={{ flex: 1, padding: '12px', backgroundColor: theme.accent, border: 'none', borderRadius: '8px', color: '#fff', fontSize: '14px', fontWeight: '500', cursor: 'pointer', minHeight: '44px' }}>Save</button>

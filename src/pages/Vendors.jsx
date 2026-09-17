@@ -25,6 +25,11 @@ const emptyVendor = {
   default_tax_rate: '',
   notes: '',
   active: true,
+  // 1099-NEC: paid as a contractor. Only the TIN's last four are kept.
+  is_1099: false,
+  tin_type: '',
+  tin_last4: '',
+  w9_signed_at: '',
 }
 
 export default function Vendors() {
@@ -76,6 +81,10 @@ export default function Vendors() {
       phone: v.phone || '',
       billing_address: v.billing_address || '',
       default_payment_terms: v.default_payment_terms || 'Net 30',
+      is_1099: !!v.is_1099,
+      tin_type: v.tin_type || '',
+      tin_last4: v.tin_last4 || '',
+      w9_signed_at: v.w9_signed_at || '',
       default_tax_rate: v.default_tax_rate ?? '',
       notes: v.notes || '',
       active: v.active !== false,
@@ -99,6 +108,10 @@ export default function Vendors() {
       billing_address: formData.billing_address || null,
       default_payment_terms: formData.default_payment_terms || 'Net 30',
       default_tax_rate: formData.default_tax_rate === '' ? null : parseFloat(formData.default_tax_rate) || 0,
+      is_1099: !!formData.is_1099,
+      tin_type: formData.is_1099 && formData.tin_type ? formData.tin_type : null,
+      tin_last4: formData.is_1099 ? (String(formData.tin_last4 || '').replace(/\D/g, '').slice(-4) || null) : null,
+      w9_signed_at: formData.is_1099 && formData.w9_signed_at ? formData.w9_signed_at : null,
       notes: formData.notes || null,
       active: formData.active !== false,
       updated_at: new Date().toISOString(),
@@ -362,6 +375,24 @@ export default function Vendors() {
                   hint="e.g. Net 30, COD, Due on receipt" />
                 <Field label="Default tax rate (%)" value={formData.default_tax_rate} type="number"
                   onChange={(v) => setFormData(p => ({ ...p, default_tax_rate: v }))} theme={theme} />
+              </div>
+              <div style={{ padding: 12, border: `1px solid ${theme.border}`, borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: theme.text, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!formData.is_1099} onChange={(e) => setFormData(p => ({ ...p, is_1099: e.target.checked }))} />
+                  Paid as a contractor — include in year-end 1099-NEC
+                </label>
+                {formData.is_1099 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 10 }}>
+                    <label style={{ fontSize: 12, color: theme.textSecondary }}>TIN type
+                      <select value={formData.tin_type} onChange={(e) => setFormData(p => ({ ...p, tin_type: e.target.value }))}
+                        style={{ display: 'block', width: '100%', marginTop: 4, padding: '8px 10px', borderRadius: 8, border: `1px solid ${theme.border}`, backgroundColor: theme.bg, color: theme.text, fontSize: 13 }}>
+                        <option value="">—</option><option value="ein">EIN</option><option value="ssn">SSN</option>
+                      </select>
+                    </label>
+                    <Field label="TIN last 4" value={formData.tin_last4} onChange={(v) => setFormData(p => ({ ...p, tin_last4: v }))} theme={theme} hint="Only the last four are stored" />
+                    <Field label="W-9 signed on" value={formData.w9_signed_at} type="date" onChange={(v) => setFormData(p => ({ ...p, w9_signed_at: v }))} theme={theme} />
+                  </div>
+                )}
               </div>
               <Field label="Notes" value={formData.notes} multiline
                 onChange={(v) => setFormData(p => ({ ...p, notes: v }))} theme={theme} />

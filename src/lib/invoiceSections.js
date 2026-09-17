@@ -138,10 +138,15 @@ export function buildInvoiceSections(invoice, lines, { parentInvoice = null, uti
   const inScopeBilled = round2(gross - outScopeSubtotal)
 
   const customerTotal = invoiceCustomerTotal(invoice)
+  // Sales tax sits on top of the lines; the sections reconcile to the
+  // pre-tax total and the tax prints as its own row after them.
+  const salesTax = round2(Number(invoice?.tax_amount) || 0)
+  const taxRate = Number(invoice?.tax_rate) || 0
+  const preTaxTotal = round2(customerTotal - salesTax)
   // What the in-scope section must net to so the grand total lands exactly
-  // on customerTotal after the add-ons and deposit are applied:
-  //   netInScope + outScope − deposit = customerTotal
-  const netInScope = Math.max(0, round2(customerTotal - outScopeSubtotal + depositCredit))
+  // on the pre-tax total after the add-ons and deposit are applied:
+  //   netInScope + outScope − deposit = preTaxTotal
+  const netInScope = Math.max(0, round2(preTaxTotal - outScopeSubtotal + depositCredit))
 
   // Normally the listed line sum is the subtotal. Only in the rare inverse
   // case (billed gross exceeds the itemized lines, e.g. an un-itemized
@@ -187,7 +192,7 @@ export function buildInvoiceSections(invoice, lines, { parentInvoice = null, uti
 
   // Reconciliation invariant (must hold by construction).
   const reconstructed = round2(netInScope + outScopeSubtotal - depositCredit)
-  const reconciles = Math.abs(reconstructed - customerTotal) < 0.01
+  const reconciles = Math.abs(reconstructed - preTaxTotal) < 0.01
 
   return {
     applicable,
@@ -206,6 +211,9 @@ export function buildInvoiceSections(invoice, lines, { parentInvoice = null, uti
     isLegacyNet,
     discountApplied,
     customerTotal,
+    salesTax,
+    taxRate,
+    preTaxTotal,
     reconciles,
   }
 }
