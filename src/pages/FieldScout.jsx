@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { fieldJobHeading } from '../lib/jobHeading'
 import { checkCanClockIn, hoursSince } from '../lib/timeClock'
 import { writeInvoiceLines } from '../lib/invoiceLines'
+import { invoiceBalance, invoicePaymentStatus } from '../lib/arHelpers'
 import { completionOptions, verificationPassed, completionJobPatch, SEND_BLOCKED_TEXT } from '../lib/fieldCompletion'
 import { sendInvoice, markJobInvoicedAfterSend } from '../lib/invoiceSend'
 import { defaultUtilityProviderId } from '../lib/jobUtility'
@@ -1343,9 +1344,12 @@ export default function FieldScout() {
   // sheet, so the phone bills exactly what the desk would.
   const ensureJobInvoice = async (job) => {
       // 1. Find existing invoice for this job
+      // discount_applied + the utility columns: the customer's share is read
+      // from them (lib/arHelpers), and a lookup that leaves them out reads the
+      // gross as the balance.
       const { data: invArr } = await supabase
         .from('invoices')
-        .select('id, invoice_id, amount, payment_status, job_id')
+        .select('id, invoice_id, amount, discount_applied, utility_owes, utility_paid_at, payment_status, job_id, customer_id')
         .eq('company_id', companyId)
         .eq('job_id', job.id)
         .in('payment_status', ['Pending', 'Partial', 'Partially Paid', 'Sent', 'Open'])
@@ -1458,14 +1462,17 @@ export default function FieldScout() {
       if (invoice) {
         setPaymentInvoice(invoice)
 
-        // Calculate balance
+        // The balance is the CUSTOMER's share less what they have paid —
+        // lib/arHelpers' rule, the same one the portal and the invoice page
+        // use. Read as amount − paid it prefilled the gross on a lighting
+        // job, asking the customer for the utility's incentive too ($7,900
+        // on a $4,900 share, demo job 23516).
         const { data: existingPayments } = await supabase
           .from('payments')
-          .select('amount')
+          .select('invoice_id, amount, paid_by')
           .eq('invoice_id', invoice.id)
           .eq('status', 'Completed')
-        const paid = (existingPayments || []).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
-        const balance = Math.max(0, (parseFloat(invoice.amount) || 0) - paid)
+        const balance = invoiceBalance(invoice, existingPayments || [])
         if (balance > 0) {
           setPaymentForm(f => ({ ...f, amount: balance.toFixed(2) }))
         }
@@ -1625,7 +1632,10 @@ export default function FieldScout() {
           .eq('invoice_id', paymentInvoice.id)
           .eq('status', 'Completed')
         const totalPaid = (allPayments || []).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
-        const newStatus = totalPaid >= invAmt ? 'Paid' : 'Partially Paid'
+        // Paid vs the customer's share (lib/arHelpers), not the gross — a
+        // customer who paid their whole net portion is paid up, whatever
+        // the utility still owes.
+        const newStatus = invoicePaymentStatus({ ...paymentInvoice, amount: invAmt }, totalPaid)
         await supabase.from('invoices').update({ payment_status: newStatus }).eq('id', paymentInvoice.id)
         // Receipt to the customer, like the office gets when it records one there.
         sendFieldReceipt({ invoiceId: paymentInvoice.id, amount: parseFloat(paymentForm.amount) || 0, method: paymentForm.method, totalPaid, invoiceTotal: invAmt })

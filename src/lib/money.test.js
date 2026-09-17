@@ -86,6 +86,18 @@ describe('invoiceBalance', () => {
     const inv = { id: 9, amount: 1000, discount_applied: 250 }
     expect(invoiceBalance(inv, [{ invoice_id: 9, amount: 900 }])).toBe(0)
   })
+
+  // Field Scout's Collect Payment sheet — the invoice ensureJobInvoice makes
+  // for a lighting job (amount = the job, discount_applied = the incentive).
+  // It prefilled amount − paid, the gross: $7,900 asked of a customer whose
+  // share was $4,900 (demo job 23516, 2026-09-17). The sheet reads this now.
+  it('a field-collected lighting job prefills the customer share, not the gross', () => {
+    const inv = { id: 32895, amount: 7900, discount_applied: 3000 }
+    expect(invoiceBalance(inv, [])).toBe(4900)
+    expect(invoiceBalance(inv, [{ invoice_id: 32895, amount: 4900, paid_by: 'customer' }])).toBe(0)
+    expect(invoicePaymentStatus(inv, 4900)).toBe('Paid')       // was Partially Paid vs the gross
+    expect(invoicePaymentStatus(inv, 2000)).toBe('Partially Paid')
+  })
 })
 
 describe('invoicePaymentStatus', () => {
