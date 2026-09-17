@@ -174,3 +174,17 @@ describe('what gets written to the transcript', () => {
     expect(attachmentNote([])).toBe('')
   })
 })
+
+describe('a sheet keeps its dates', () => {
+  it('a CSV date reads the same day in every zone — not the day before, west of Greenwich', async () => {
+    const { readAttachment } = await import('./chatAttachments.js')
+    const csv = 'vendor,date,amount\nGraybar Electric,2026-09-12,1284.50\nChevron,2026-09-13,96.40\n'
+    const file = new File([csv], 'receipts.csv', { type: 'text/csv' })
+    file.arrayBuffer = async () => new TextEncoder().encode(csv).buffer
+    const att = await readAttachment(file)
+    expect(att.kind).toBe('sheet')
+    expect(att.text).toContain('2026-09-12')
+    expect(att.text).toContain('2026-09-13')
+    expect(att.text).not.toMatch(/9\/11\/26|2026-09-11/)
+  })
+})
