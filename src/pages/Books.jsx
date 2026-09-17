@@ -25,7 +25,7 @@ import {
   Sparkles, Check, CheckCircle, ChevronDown, ChevronRight,
   Download, Filter, AlertCircle, Settings as SettingsIcon,
   Link, Briefcase,
-  Info,
+  Info, ArrowLeftRight,
 } from 'lucide-react'
 import { toast } from '../lib/toast'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
@@ -753,6 +753,18 @@ export default function Books() {
     if (errs.length) toast.error('Deposit linked, but marking what it paid failed: ' + errs.join('; '))
     else toast.success(`Linked to ${entries.length} recorded ${entries.length === 1 ? 'entry' : 'entries'}. No new payment created.${Math.abs(gap) > 0.005 ? ` ${formatCurrency(Math.abs(gap))} is noted on the deposit as unexplained.` : ''}`)
     setMatchModal(EMPTY_MATCH)
+    await fetchPlaidTransactions?.()
+  }
+
+  // A Stripe (Square, PayPal) payout is the customers' card payments reaching
+  // the bank, net of fees. Those payments are already on their invoices, so
+  // there is nothing to match it to — it is a transfer, the same write the
+  // review modal makes when its transfer box is ticked. Tracy had 18 of these
+  // in her queue, each with a Match button inviting the wrong action.
+  const markDepositTransfer = async (dep) => {
+    const { error } = await supabase.from('plaid_transactions').update({ confirmed: true, ...transferFields({ flagged: true }) }).eq('id', dep.id)
+    if (error) { toast.error('Could not mark the deposit as a transfer: ' + error.message); return }
+    toast.success('Marked as a transfer — the card payments inside it are already on their invoices.')
     await fetchPlaidTransactions?.()
   }
 
@@ -1972,7 +1984,7 @@ export default function Books() {
                     Unmatched bank deposits ({unmatchedDeposits.length})
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {unmatchedDeposits.map(dep => (
+                    {unmatchedDeposits.map(dep => { const payout = !!processorPayoutNote(dep.merchant_name || dep.name); return (
                       <div key={dep.id} style={{
                         display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px',
                         backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px'
@@ -1981,7 +1993,11 @@ export default function Books() {
                           <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {dep.merchant_name || dep.name || '(unnamed deposit)'}
                           </div>
-                          {depositHint(dep) && (
+                          {payout ? (
+                            <div style={{ fontSize: '11px', color: theme.textSecondary, marginTop: '2px', lineHeight: 1.4 }}>
+                              A card-processor payout — the customers' payments inside it are already on their invoices, so there is nothing to match. This is that money reaching the bank.
+                            </div>
+                          ) : depositHint(dep) && (
                             <div style={{ fontSize: '11px', color: theme.accent, marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {depositHint(dep)}
                             </div>
@@ -1993,18 +2009,32 @@ export default function Books() {
                         <div style={{ fontSize: '14px', fontWeight: '700', color: '#22c55e', minWidth: '90px', textAlign: 'right' }}>
                           +{formatCurrency(Math.abs(parseFloat(dep.amount) || 0))}
                         </div>
-                        <button
-                          onClick={() => openMatchModal(dep)}
-                          style={{
-                            padding: '6px 14px', backgroundColor: theme.accent, color: '#fff',
-                            border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', gap: '4px'
-                          }}
-                        >
-                          <Link size={12} /> Match
-                        </button>
+                        {payout ? (
+                          <button
+                            onClick={() => markDepositTransfer(dep)}
+                            title="Mark this payout as a transfer between your processor and your bank"
+                            style={{
+                              padding: '6px 14px', backgroundColor: theme.bgCard, color: theme.accent,
+                              border: `1px solid ${theme.accent}`, borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap'
+                            }}
+                          >
+                            <ArrowLeftRight size={12} /> It's a transfer
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => openMatchModal(dep)}
+                            style={{
+                              padding: '6px 14px', backgroundColor: theme.accent, color: '#fff',
+                              border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', gap: '4px'
+                            }}
+                          >
+                            <Link size={12} /> Match
+                          </button>
+                        )}
                       </div>
-                    ))}
+                    ) })}
                   </div>
                 </div>
               )}
