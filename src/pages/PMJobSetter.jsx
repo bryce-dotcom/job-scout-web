@@ -774,6 +774,7 @@ export default function PMJobSetter() {
           j.notes,
           j.business_unit,
           j.assigned_team,
+          j.job_address, // the site itself — a property manager's jobs are not at the customer's address
           j.customer?.name,
           j.customer?.business_name,
           j.customer?.address,

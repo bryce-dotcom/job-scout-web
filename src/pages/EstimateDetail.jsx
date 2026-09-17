@@ -1388,46 +1388,53 @@ function EstimateDetailInner() {
     await fetchEstimateData()
   }
 
-  // Photo upload handler (before/after/notes - matches JobDetail pattern)
+  // Photo upload handler (before/after/notes - matches JobDetail pattern).
+  // The input offers `multiple`; this used to read files[0] and drop the
+  // rest without a word (Doug, 139bdd90: "unable to upload a picture").
   const handleUploadPhoto = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file || !photoUploadTarget) return
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0 || !photoUploadTarget) return
     e.target.value = ''
 
     const { lineId, context } = photoUploadTarget
     setPhotoUploadTarget(null)
 
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const subPath = context === 'notes' ? 'notes' : `${context}/${lineId}`
-    const filePath = `estimates/${id}/photos/${subPath}/${Date.now()}_${safeName}`
+    let saved = 0
+    for (const file of files) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const subPath = context === 'notes' ? 'notes' : `${context}/${lineId}`
+      const filePath = `estimates/${id}/photos/${subPath}/${Date.now()}_${Math.round(Math.random() * 1e6)}_${safeName}`
 
-    const { error: uploadError } = await supabase.storage
-      .from('project-documents')
-      .upload(filePath, file)
+      const { error: uploadError } = await supabase.storage
+        .from('project-documents')
+        .upload(filePath, file, { contentType: file.type || 'image/jpeg' })
 
-    if (uploadError) {
-      toast.error('Upload failed: ' + uploadError.message)
-      return
+      if (uploadError) {
+        toast.error(`Upload failed for ${file.name}: ` + uploadError.message)
+        continue
+      }
+
+      const insertData = {
+        company_id: companyId,
+        quote_id: parseInt(id),
+        lead_id: estimate.lead_id ? parseInt(estimate.lead_id) : null,
+        file_name: file.name,
+        file_path: filePath,
+        file_type: file.type || null,
+        file_size: file.size,
+        storage_bucket: 'project-documents',
+        photo_context: context,
+      }
+      if (lineId && context !== 'notes') insertData.quote_line_id = lineId
+
+      const { error: dbError } = await supabase.from('file_attachments').insert(insertData)
+      if (dbError) {
+        toast.error(`Failed to save ${file.name}: ` + dbError.message)
+        continue
+      }
+      saved++
     }
-
-    const insertData = {
-      company_id: companyId,
-      quote_id: parseInt(id),
-      lead_id: estimate.lead_id ? parseInt(estimate.lead_id) : null,
-      file_name: file.name,
-      file_path: filePath,
-      file_type: file.type || null,
-      file_size: file.size,
-      storage_bucket: 'project-documents',
-      photo_context: context,
-    }
-    if (lineId && context !== 'notes') insertData.quote_line_id = lineId
-
-    const { error: dbError } = await supabase.from('file_attachments').insert(insertData)
-    if (dbError) {
-      toast.error('Failed to save photo: ' + dbError.message)
-      return
-    }
+    if (saved > 0) toast.success(saved === 1 ? 'Photo added' : `${saved} photos added`)
     await fetchEstimateData()
   }
 
