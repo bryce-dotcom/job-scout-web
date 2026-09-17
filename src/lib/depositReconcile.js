@@ -14,6 +14,14 @@
 // So a deposit can be matched to a SET of things already recorded (customer
 // payments, utility settlements, or both), or split into several new ones.
 // Nothing here writes; Books does the I/O with the results.
+//
+// A set is one payer's money. The first version searched every recording in
+// the window for any subset that summed to the deposit, and on HHH's books
+// that manufactured matches: SRP's $57,372.68 cheque came back as the two SRP
+// settlements plus Maria Ferland's $480 cheque entered the same morning, and a
+// $3,000 cheque as six customers' payments down to a $1.81 one. A cheque pays
+// one customer's invoices; a utility's cheque settles that utility's jobs.
+// Subsets are searched within one payer, never across payers or kinds.
 
 import { findSubset } from './walletReconcile'
 import { expectedUtilityAmount } from './utilitySettlement'
@@ -21,6 +29,29 @@ import { expectedUtilityAmount } from './utilitySettlement'
 const CENTS = (n) => Math.round((parseFloat(n) || 0) * 100)
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 const DAY = 86400000
+
+// Who the recorded money came from. A payment with no customer on its
+// invoice, or a settlement with no utility name, is a payer of one — it can
+// still match a deposit alone, never as part of a set.
+function payerOf(kind, row) {
+  if (kind === 'payment') {
+    const inv = row?.invoice
+    if (inv?.customer_id != null) return `customer:${inv.customer_id}`
+    const name = String(inv?.customer?.name || '').trim().toLowerCase()
+    return name ? `customer:${name}` : `payment:${row?.id}`
+  }
+  const util = String(row?.utility_name || '').trim().toLowerCase()
+  return util ? `utility:${util}` : `settlement:${row?.id}`
+}
+
+function groupByPayer(list) {
+  const groups = new Map()
+  for (const e of list) {
+    if (!groups.has(e.payer)) groups.set(e.payer, [])
+    groups.get(e.payer).push(e)
+  }
+  return [...groups.values()]
+}
 
 /**
  * Recorded money with no bank deposit linked yet, as one list the deposit can
@@ -43,6 +74,7 @@ export function recordedEntries({ payments = [], settlements = [], depositDate, 
     if (!p || p.source_transaction_id != null || !(CENTS(p.amount) > 0) || !near(p.date)) continue
     out.push({
       kind: 'payment', key: `payment:${p.id}`, id: p.id, amount: r2(p.amount), date: p.date,
+      payer: payerOf('payment', p),
       invoiceId: p.invoice_id ?? null,
       label: `${p.invoice?.invoice_id || `Invoice ${p.invoice_id}`}${p.invoice?.customer?.name ? ` — ${p.invoice.customer.name}` : ''}`,
       detail: [p.method, p.notes].filter(Boolean).join(' · '),
@@ -53,6 +85,7 @@ export function recordedEntries({ payments = [], settlements = [], depositDate, 
     if (!u || u.source_transaction_id != null || !(CENTS(u.amount) > 0) || !near(u.paid_at)) continue
     out.push({
       kind: 'settlement', key: `settlement:${u.id}`, id: u.id, amount: r2(u.amount), date: u.paid_at,
+      payer: payerOf('settlement', u),
       invoiceId: u.invoice_id ?? null,
       label: `${u.utility_name || 'Utility'} incentive${u.invoice?.invoice_id ? ` on ${u.invoice.invoice_id}` : ''}${u.invoice?.customer?.name ? ` — ${u.invoice.customer.name}` : ''}`,
       detail: 'utility settlement',
@@ -66,8 +99,8 @@ export function recordedEntries({ payments = [], settlements = [], depositDate, 
  * The recorded entries that add up to the deposit, exactly. One entry is the
  * common case (a cheque banked days after it was entered); several is a
  * cheque that paid several invoices (Jan Pro) or a utility's cheque covering
- * several jobs (SRP). Prefers entries that share the deposit's date, and
- * fewer entries over more.
+ * several jobs (SRP). A set is one payer's entries — see the header. Prefers
+ * entries that share the deposit's date, and fewer entries over more.
  *
  * @param depositDate 'YYYY-MM-DD' — entries recorded that day are tried first
  * @returns { entries, total } or null
@@ -79,26 +112,28 @@ export function findRecordedSet(entries, depositAmount, depositDate = null) {
   // One entry, exact.
   const one = list.find((e) => Math.abs(CENTS(e.amount) - target) <= 1)
   if (one) return { entries: [one], total: one.amount }
-  // Several. Try the entries recorded on the deposit's own day first — a
-  // cheque's parts are entered together — then everything in the window.
+  // Several, from one payer. Try the entries recorded on the deposit's own
+  // day first — a cheque's parts are entered together — then the window.
   const day = String(depositDate || '').slice(0, 10)
   const sameDay = day ? list.filter((e) => String(e.date || '').slice(0, 10) === day) : []
   for (const pool of [sameDay, list]) {
-    const capped = pool.slice(0, 40)
-    if (capped.length < 2) continue
-    const subset = findSubset(capped.map((e) => CENTS(e.amount)), target)
-    if (subset && subset.length > 1) {
-      const chosen = subset.map((k) => capped[k])
-      return { entries: chosen, total: r2(chosen.reduce((s, e) => s + e.amount, 0)) }
+    let best = null
+    for (const group of groupByPayer(pool)) {
+      const capped = group.slice(0, 40)
+      if (capped.length < 2) continue
+      const subset = findSubset(capped.map((e) => CENTS(e.amount)), target)
+      if (subset && subset.length > 1 && (!best || subset.length < best.length)) best = subset.map((k) => capped[k])
     }
+    if (best) return { entries: best, total: r2(best.reduce((s, e) => s + e.amount, 0)) }
   }
   return null
 }
 /**
- * When nothing adds up exactly: the recorded entries from the deposit's own
- * day, with the gap named. SRP's cheque was $57,372.68; the two settlements
- * recorded that day total $56,892.68. The $480.00 is the question, and a
- * reconciler needs to see it, not a blank list.
+ * When nothing adds up exactly: one payer's entries from the deposit's own
+ * day, with the gap named. SRP's cheque was $57,372.68; the two SRP
+ * settlements recorded that day total $56,892.68. The $480.00 is the
+ * question, and a reconciler needs to see it, not a blank list. Other
+ * payers' money entered the same morning is not part of the answer.
  *
  * @returns { entries, total, gap } or null (nothing recorded that day, or the gap is too big to be the same money)
  */
@@ -106,11 +141,15 @@ export function nearestRecordedSet(entries, depositAmount, depositDate, { maxGap
   const day = String(depositDate || '').slice(0, 10)
   const sameDay = (entries || []).filter((e) => e && String(e.date || '').slice(0, 10) === day && CENTS(e.amount) > 0)
   if (!sameDay.length) return null
-  const total = r2(sameDay.reduce((s, e) => s + e.amount, 0))
-  const gap = r2(depositAmount - total)
-  if (Math.abs(gap) < 0.005) return null // that is an exact set; findRecordedSet already has it
-  if (Math.abs(gap) > Math.abs(depositAmount) * maxGapPct) return null
-  return { entries: sameDay, total, gap }
+  let best = null
+  for (const group of groupByPayer(sameDay)) {
+    const total = r2(group.reduce((s, e) => s + e.amount, 0))
+    const gap = r2(depositAmount - total)
+    if (Math.abs(gap) < 0.005) continue // that is an exact set; findRecordedSet already has it
+    if (Math.abs(gap) > Math.abs(depositAmount) * maxGapPct) continue
+    if (!best || Math.abs(gap) < Math.abs(best.gap)) best = { entries: group, total, gap }
+  }
+  return best
 }
 
 /**

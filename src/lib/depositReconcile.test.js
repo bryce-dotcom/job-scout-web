@@ -65,6 +65,46 @@ describe('a utility cheque covering two jobs — SRP, $57,372.68', () => {
   })
 })
 
+describe('a set is one payer\'s money — what HHH\'s books taught the first version', () => {
+  const srp = (id, inv, amount, who) => ({ id, invoice_id: inv, utility_name: 'Salt River Project (SRP)', amount, paid_at: '2026-09-14T12:00:00.000Z', payment_status: 'Paid', source_transaction_id: null, invoice: { invoice_id: `INV-${inv}`, customer: { name: who } } })
+  const pay = (id, inv, amount, who, date = '2026-09-14', customerId = null) => ({ id, invoice_id: inv, amount, date, source_transaction_id: null, invoice: { invoice_id: `INV-${inv}`, customer_id: customerId, customer: { name: who } } })
+
+  it('SRP\'s cheque is not the two SRP settlements plus Maria Ferland\'s $480 cheque from the same morning', () => {
+    const entries = recordedEntries({ settlements: [srp(111, 32661, 30000, 'SMC Auto'), srp(116, 32717, 26892.68, 'Drive 999')], payments: [pay(28875, 32862, 480, 'Maria Ferland')], depositDate: '2026-09-14' })
+    expect(findRecordedSet(entries, 57372.68, '2026-09-14')).toBeNull()
+    const near = nearestRecordedSet(entries, 57372.68, '2026-09-14')
+    expect(near.entries.map((e) => e.id).sort()).toEqual([111, 116])
+    expect(near.gap).toBe(480)
+  })
+
+  it('a $3,000 cheque is not six customers\' payments that happen to sum to it', () => {
+    const parts = [[1, 1156.4, 'Reilley'], [2, 983.25, 'Ibarra'], [3, 400, 'Jan Pro'], [4, 244.56, 'Taft'], [5, 213.99, 'Redman'], [6, 1.81, 'Turo']]
+    const strangers = recordedEntries({ payments: parts.map(([id, amt, who]) => pay(id, id, amt, who)), depositDate: '2026-09-14' })
+    expect(findRecordedSet(strangers, 3000, '2026-09-14')).toBeNull()
+    // The same six from one customer are that customer's cheque.
+    const oneCustomer = recordedEntries({ payments: parts.map(([id, amt]) => pay(id, id, amt, 'Reilley')), depositDate: '2026-09-14' })
+    expect(findRecordedSet(oneCustomer, 3000, '2026-09-14').entries).toHaveLength(6)
+  })
+
+  it('one customer\'s payments entered together a day after the deposit are still its parts (Central V, $9,042.67)', () => {
+    const entries = recordedEntries({ payments: [pay(28834, 32739, 6499.71, 'Chris Reilley', '2026-08-27', 77), pay(28835, 32737, 1386.56, 'Chris Reilley', '2026-08-27', 77), pay(28836, 32736, 1156.4, 'Chris Reilley', '2026-08-27', 77), pay(9, 9, 1000, 'Someone Else', '2026-08-27', 78)], depositDate: '2026-08-26' })
+    const set = findRecordedSet(entries, 9042.67, '2026-08-26')
+    expect(set.entries.map((e) => e.id).sort()).toEqual([28834, 28835, 28836])
+  })
+
+  it('a settlement and a customer payment are never one set, even for the same job', () => {
+    const entries = recordedEntries({ settlements: [srp(111, 32661, 30000, 'SMC Auto')], payments: [pay(5, 32661, 480, 'SMC Auto')], depositDate: '2026-09-14' })
+    expect(findRecordedSet(entries, 30480, '2026-09-14')).toBeNull()
+  })
+
+  it('a payment with no customer on it matches alone or not at all', () => {
+    const entries = recordedEntries({ payments: [{ id: 1, invoice_id: null, amount: 100, date: '2026-09-14', source_transaction_id: null }, { id: 2, invoice_id: null, amount: 200, date: '2026-09-14', source_transaction_id: null }], depositDate: '2026-09-14' })
+    expect(findRecordedSet(entries, 300, '2026-09-14')).toBeNull()
+    expect(findRecordedSet(entries, 200, '2026-09-14').entries[0].id).toBe(2)
+    expect(nearestRecordedSet(entries, 305, '2026-09-14')).toBeNull()
+  })
+})
+
 describe('the utility\'s money with no customer invoice to match — Evergreen ACH, $6,524', () => {
   it('a settlement recorded on the day is the exact match', () => {
     const entries = recordedEntries({ settlements: [{ id: 114, invoice_id: 32714, utility_name: 'Rocky Mountain Power', amount: 6524, paid_at: '2026-08-24T12:00:00.000Z', source_transaction_id: null, invoice: { invoice_id: 'INV-MSG82KFQ', customer: { name: 'Ryan Kimball' } } }], depositDate: '2026-08-24' })

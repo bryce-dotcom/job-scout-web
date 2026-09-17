@@ -639,7 +639,7 @@ export default function Books() {
     const [{ data: recentPays }, { data: recentSettled }, { data: utilCarriers }, { data: utilOrphans }] = await Promise.all([
       supabase
         .from('payments')
-        .select('id, invoice_id, amount, date, method, notes, source_transaction_id, invoice:invoices(invoice_id, customer:customers(name))')
+        .select('id, invoice_id, amount, date, method, notes, source_transaction_id, invoice:invoices(invoice_id, customer_id, customer:customers(name))')
         .eq('company_id', companyId)
         .is('source_transaction_id', null)
         .gte('date', winFrom).lte('date', winTo)
