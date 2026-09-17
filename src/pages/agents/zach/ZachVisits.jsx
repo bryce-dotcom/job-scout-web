@@ -5,6 +5,7 @@ import { useIsMobile } from '../../../hooks/useIsMobile'
 import { Plus, ClipboardCheck, X, Save, Trash2, Calendar, Cloud, Clock, Users, TrendingUp } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import { estimateMow, computeEffortFactor, DEFAULT_PRICING } from '../../../lib/lawnEstimator'
+import { localDateStr } from '../../../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -15,7 +16,7 @@ const defaultTheme = {
 
 const SERVICE_TYPES = ['mow', 'edge', 'cleanup', 'fert', 'aeration', 'overseed', 'other']
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => localDateStr(new Date())
 const empty = {
   property_id: '', visit_date: today(), crew: '', duration_minutes: '',
   weather: '', service_type: 'mow', notes: '', billed: false,

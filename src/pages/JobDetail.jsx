@@ -41,6 +41,7 @@ import { fetchJobBonuses, bonusStatusLabel } from '../lib/bonusLedger'
 import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
 import { selectPdfPages, pageIndicesFor, PAGES_FIRST } from '../lib/pdfPages'
+import { localDateStr } from '../lib/localDate'
 
 const CATEGORY_COLORS = {
   CONTRACT: { bg: '#dcfce7', text: '#166534' },
@@ -895,7 +896,7 @@ function JobDetailInner() {
       const row = {
         company_id: companyId, job_id: parseInt(id), customer_id: job.customer_id || null,
         invoice_id: existingDp?.invoice_id ?? target?.id ?? null,
-        amount: eff.paymentAmount, date: next.down_payment_date || new Date().toISOString().slice(0, 10),
+        amount: eff.paymentAmount, date: next.down_payment_date || localDateStr(new Date()),
         method: next.down_payment_method || 'Check', status: 'Completed',
         is_deposit: true, notes: dpNote,
       }
@@ -943,7 +944,7 @@ function JobDetailInner() {
         job_id: parseInt(id),
         amount: 0,
         category: 'Materials',
-        date: new Date().toISOString().split('T')[0],
+        date: localDateStr(new Date()),
         description: 'Receipt capture',
         receipt_url: urlData.publicUrl,
         receipt_storage_path: storagePath,
@@ -965,7 +966,7 @@ function JobDetailInner() {
       category: expenseForm.category || 'Other',
       vendor: expenseForm.merchant || null,
       description: expenseForm.notes || null,
-      date: new Date().toISOString().split('T')[0],
+      date: localDateStr(new Date()),
     }])
     await fetchJobExpenses()
     setExpenseForm({ amount: '', merchant: '', category: 'Materials', notes: '' })
@@ -1204,7 +1205,7 @@ function JobDetailInner() {
       hours: parseFloat(newTime.hours),
       category: newTime.category,
       notes: newTime.notes || null,
-      date: new Date().toISOString().split('T')[0]
+      date: localDateStr(new Date())
     }])
 
     if (error) {

@@ -9,6 +9,7 @@ import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { Plus, Pencil, Trash2, X, Receipt, Search, DollarSign, Upload, Download, Image, ExternalLink, Camera } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { expensesFields } from '../lib/importExportFields'
+import { localDateStr } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -33,7 +34,7 @@ const emptyExpense = {
   source: '',
   description: '',
   receipt: '',
-  date: new Date().toISOString().split('T')[0],
+  date: localDateStr(new Date()),
   amount: '',
   expense_id: '',
   status: 'Pending',

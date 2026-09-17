@@ -36,6 +36,7 @@ import { pricePercentOfContractFor } from '../lib/pricingRules'
 import DuplicateLeadWarning from '../components/DuplicateLeadWarning'
 import { findSimilarLeads } from '../lib/leadDuplicates'
 import { walletPortalFields } from '../lib/wallets'
+import { localDateStr } from '../lib/localDate'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -455,7 +456,7 @@ function EstimateDetailInner() {
   const [depositForm, setDepositForm] = useState({
     deposit_amount: '',
     deposit_method: '',
-    deposit_date: new Date().toISOString().slice(0, 10),
+    deposit_date: localDateStr(new Date()),
     deposit_notes: ''
   })
   const [depositPhoto, setDepositPhoto] = useState(null) // { file, preview }
@@ -748,7 +749,7 @@ function EstimateDetailInner() {
       const filledBytes = await fillPdfForm(pdfBytes, fieldValues)
       const providerSlug = (provider?.provider_name || 'form').replace(/[^a-zA-Z0-9]/g, '_')
       const customerSlug = (customer?.name || customer?.customer_name || 'customer').replace(/[^a-zA-Z0-9]/g, '_')
-      const date = new Date().toISOString().slice(0, 10)
+      const date = localDateStr(new Date())
       downloadPdf(filledBytes, `${providerSlug}_${form.form_name.replace(/[^a-zA-Z0-9]/g, '_')}_${customerSlug}_${date}.pdf`)
     } catch (err) {
       alert('Error filling form: ' + err.message)
@@ -1260,7 +1261,7 @@ function EstimateDetailInner() {
           company_id: companyId,
           payment_id: paymentId,
           amount: depositAmount,
-          date: depositForm.deposit_date || new Date().toISOString().split('T')[0],
+          date: depositForm.deposit_date || localDateStr(new Date()),
           method: depositForm.deposit_method || null,
           status: 'Completed',
           notes: `Deposit for estimate ${estimate.quote_id}${depositForm.deposit_notes ? ' — ' + depositForm.deposit_notes : ''}`,
@@ -1506,7 +1507,7 @@ function EstimateDetailInner() {
       category: expenseForm.category || 'Cost of Sale',
       vendor: expenseForm.merchant || null,
       description: expenseForm.notes || null,
-      date: new Date().toISOString().split('T')[0]
+      date: localDateStr(new Date())
     }])
     await fetchQuoteExpenses()
     setExpenseForm({ amount: '', merchant: '', category: 'Cost of Sale', notes: '' })
@@ -1546,7 +1547,7 @@ function EstimateDetailInner() {
       lead_id: estimate.lead_id ? parseInt(estimate.lead_id) : null,
       amount: 0,
       category: 'Cost of Sale',
-      date: new Date().toISOString().split('T')[0],
+      date: localDateStr(new Date()),
       description: 'Receipt capture',
       receipt_url: urlData.publicUrl,
       receipt_storage_path: storagePath,
@@ -2824,7 +2825,7 @@ function EstimateDetailInner() {
       }
 
       let totalIncentive = 0
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localDateStr(new Date())
 
       for (const area of areas) {
         const areaWattsReduced = (area.fixture_count || 0) * ((area.existing_wattage || 0) - (area.led_wattage || 0))

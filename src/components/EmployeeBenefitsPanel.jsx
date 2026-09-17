@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { Plus, Trash2, Shield } from 'lucide-react'
+import { localDateStr } from '../lib/localDate'
 
 // Admin panel to enroll an employee in benefits / recurring deductions. Fully
 // self-contained (own fetch + writes) so it can drop into the Employees edit
@@ -58,7 +59,7 @@ export default function EmployeeBenefitsPanel({ employee, theme, sectionHeaderSt
       employer_contribution: parseFloat(form.employer_contribution) || 0,
       is_pre_tax: !!form.is_pre_tax,
       frequency: form.frequency,
-      effective_date: new Date().toISOString().split('T')[0],
+      effective_date: localDateStr(new Date()),
       status: 'active',
     })
     setSaving(false)
@@ -69,7 +70,7 @@ export default function EmployeeBenefitsPanel({ employee, theme, sectionHeaderSt
   // Soft end — keep the row (status='ended') so past paychecks stay explainable.
   const end = async (id) => {
     await supabase.from('employee_benefits')
-      .update({ status: 'ended', end_date: new Date().toISOString().split('T')[0], updated_at: new Date().toISOString() })
+      .update({ status: 'ended', end_date: localDateStr(new Date()), updated_at: new Date().toISOString() })
       .eq('id', id)
     load()
   }

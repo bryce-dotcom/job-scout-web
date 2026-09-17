@@ -10,6 +10,7 @@ import {
   DollarSign, Fuel, Wrench, TrendingUp, Plus, X, Save,
   ChevronUp, ChevronDown, Truck, Calculator, Loader2, AlertTriangle
 } from 'lucide-react'
+import { localDateStr } from '../../../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -29,7 +30,7 @@ const formatCurrency = (amount) =>
 
 const emptyFuelForm = {
   asset_id: '',
-  date: new Date().toISOString().split('T')[0],
+  date: localDateStr(new Date()),
   gallons: '',
   cost_per_gallon: '',
   total_cost: '',

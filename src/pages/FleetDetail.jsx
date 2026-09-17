@@ -13,6 +13,7 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Truck, Wrench, Calendar, Plus, AlertTriangle, ShieldAlert, DollarSign, Clock, Settings, MapPin, Wifi, WifiOff, Fuel, Battery, Gauge, Link2, Unlink, Lock } from 'lucide-react'
+import { localDateStr } from '../lib/localDate'
 
 // Light theme fallback
 const defaultTheme = {
@@ -75,7 +76,7 @@ export default function FleetDetail() {
 
   const [maintenanceForm, setMaintenanceForm] = useState({
     type: 'Oil Change',
-    date: new Date().toISOString().split('T')[0],
+    date: localDateStr(new Date()),
     mileage_hours: '',
     description: '',
     cost: ''
@@ -83,7 +84,7 @@ export default function FleetDetail() {
 
   const [rentalForm, setRentalForm] = useState({
     rental_customer: '',
-    start_date: new Date().toISOString().split('T')[0],
+    start_date: localDateStr(new Date()),
     end_date: '',
     rental_rate: 'Daily',
     status: 'Active'
@@ -288,7 +289,7 @@ export default function FleetDetail() {
     setShowMaintenanceModal(false)
     setMaintenanceForm({
       type: 'Oil Change',
-      date: new Date().toISOString().split('T')[0],
+      date: localDateStr(new Date()),
       mileage_hours: '',
       description: '',
       cost: ''
@@ -325,7 +326,7 @@ export default function FleetDetail() {
     setShowRentalModal(false)
     setRentalForm({
       rental_customer: '',
-      start_date: new Date().toISOString().split('T')[0],
+      start_date: localDateStr(new Date()),
       end_date: '',
       rental_rate: 'Daily',
       status: 'Active'

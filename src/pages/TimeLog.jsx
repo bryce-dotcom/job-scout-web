@@ -5,6 +5,7 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Clock, Play, Square, Plus, Search, Filter, Calendar } from 'lucide-react'
+import { localDateStr } from '../lib/localDate'
 
 // Light theme fallback
 const defaultTheme = {
@@ -45,7 +46,7 @@ export default function TimeLog() {
   const [formData, setFormData] = useState({
     employee_id: '',
     job_id: '',
-    date: new Date().toISOString().split('T')[0],
+    date: localDateStr(new Date()),
     category: 'Regular',
     hours: '',
     clock_in_time: '',
@@ -115,7 +116,7 @@ export default function TimeLog() {
 
   // Calculate stats
   const totalHoursToday = timeLogs
-    .filter(log => log.date === new Date().toISOString().split('T')[0])
+    .filter(log => log.date === localDateStr(new Date()))
     .reduce((sum, log) => sum + (log.hours || 0), 0)
 
   const totalHoursWeek = (() => {
@@ -202,7 +203,7 @@ export default function TimeLog() {
       setFormData({
         employee_id: '',
         job_id: '',
-        date: new Date().toISOString().split('T')[0],
+        date: localDateStr(new Date()),
         category: 'Regular',
         hours: '',
         clock_in_time: '',

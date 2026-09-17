@@ -9,6 +9,7 @@ import { LAMP_TYPES, FIXTURE_CATEGORIES, COMMON_WATTAGES, LED_REPLACEMENT_MAP, A
 import { photoQueue } from '../lib/photoQueue'
 import { savingsForStorage } from '../lib/lightingSavings'
 import { ArrowLeft, ArrowRight, Check, Plus, Minus, Trash2, Zap, Info, Building, Building2, Factory, Warehouse, Sparkles, Search, UserPlus, X, Copy } from 'lucide-react'
+import { localDateStr } from '../lib/localDate'
 
 const buildingSizes = [
   { value: 'small', label: 'Small', description: '<10,000 sq ft, <50kW demand' },
@@ -470,7 +471,7 @@ export default function NewLightingAudit() {
       const areaWattsReduced = (area.fixture_count || 0) * ((area.existing_wattage || 0) - (area.led_wattage || 0))
 
       // 1. Try prescriptive_measures (PDF-verified, precise)
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localDateStr(new Date())
       const pmMatches = (prescriptiveMeasures || []).filter(pm => {
         if (pm.measure_category !== 'Lighting') return false
         // Require subcategory match

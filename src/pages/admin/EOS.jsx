@@ -17,6 +17,7 @@ import {
   Timer, Play, Pause, Check, Circle, Minus, ListChecks,
   Activity, Link2, Database, BookOpen, UserCheck
 } from 'lucide-react'
+import { localDateStr } from '../../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -1142,7 +1143,7 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
             // Support both shapes: new owner_ids[] and legacy owner_id
             const ownerIds = (todo.owner_ids && todo.owner_ids.length) ? todo.owner_ids : (todo.owner_id ? [todo.owner_id] : [])
             const owners = ownerIds.map(oid => employees.find(e => String(e.id) === String(oid))).filter(Boolean)
-            const overdue = todo.due_date && todo.due_date < new Date().toISOString().slice(0, 10)
+            const overdue = todo.due_date && todo.due_date < localDateStr(new Date())
             return (
               <div key={todo.id} style={{
                 display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px',
@@ -2002,7 +2003,7 @@ function PeopleTab({ data, save, theme, employees, isMobile }) {
       save('quarterly_convos', [...convos, {
         id: crypto.randomUUID(),
         employee_id: convoEmployee,
-        date: new Date().toISOString().slice(0, 10),
+        date: localDateStr(new Date()),
         values_ratings: coreValues.map(() => null),
         roles_ratings: [null, null, null, null, null],
         rocks_ratings: [],

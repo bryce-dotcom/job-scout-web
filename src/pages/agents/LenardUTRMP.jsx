@@ -10,6 +10,7 @@ import { resolveRmpRate, mapLenardControlsToRmp, SBE_BUSINESS_TYPES, clearRmpRat
 import { orderQty, lampCount, productPricedPerLamp } from '../../lib/lampQuantity';
 import { getMatchedProducts, findBestProduct, groupNameMap } from '../../lib/lenardProductMatch';
 import { effectiveUnitPrice, linesSubtotal, linePricingPayload, extrasPayload } from '../../lib/retrofitPricing';
+import { localDateStr } from '../../lib/localDate'
 
 // ============================================================
 // LENARD UT RMP â€" Rocky Mountain Power Lighting Rebate Calculator
@@ -2040,7 +2041,7 @@ export default function LenardUTRMP() {
 
   const generatePDF = (repMode = false) => {
     const blob = buildAuditPdfBlob(repMode);
-    const fileName = `Energy_Scout_${repMode ? 'Rep_Summary_' : 'Audit_'}${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+    const fileName = `Energy_Scout_${repMode ? 'Rep_Summary_' : 'Audit_'}${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${localDateStr(new Date())}.pdf`;
     const file = new File([blob], fileName, { type: 'application/pdf' });
     if (navigator.share && navigator.canShare?.({ files: [file] })) {
       navigator.share({ files: [file], title: `Energy Scout Audit - ${projectName}` }).catch(() => downloadBlob(blob, fileName));
@@ -2168,7 +2169,7 @@ export default function LenardUTRMP() {
 
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const fileName = `RMP_Application_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const fileName = `RMP_Application_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${localDateStr(new Date())}.xlsx`;
     downloadBlob(blob, fileName);
     showToast('XLS generated', '\uD83D\uDCCA');
   };
@@ -2354,7 +2355,7 @@ export default function LenardUTRMP() {
 
     const pdfBytes = await pdfDoc.save();
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-    const fileName = `W9_${(projectName || 'Form').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+    const fileName = `W9_${(projectName || 'Form').replace(/[^a-zA-Z0-9]/g, '_')}_${localDateStr(new Date())}.pdf`;
     downloadBlob(blob, fileName);
     showToast('W9 PDF generated', '\uD83D\uDCC4');
   };

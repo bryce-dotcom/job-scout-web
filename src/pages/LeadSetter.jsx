@@ -18,6 +18,7 @@ import ProspectResearchDrawer from '../components/ProspectResearchDrawer'
 import SearchableSelect from '../components/SearchableSelect'
 import SalespeopleMultiSelect from '../components/SalespeopleMultiSelect'
 import { findSimilarLeads } from '../lib/leadDuplicates'
+import { localDateStr } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -2109,7 +2110,7 @@ export default function LeadSetter() {
                         type="date"
                         value={contactForm.callback_date}
                         onChange={(e) => setContactForm(prev => ({ ...prev, callback_date: e.target.value }))}
-                        min={new Date().toISOString().split('T')[0]}
+                        min={localDateStr(new Date())}
                         style={{ ...inputStyle, fontSize: '13px' }}
                       />
                     </div>

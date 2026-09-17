@@ -5,6 +5,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { Plus, Pencil, Trash2, X, Route, Search, Calendar, Truck, User, MapPin } from 'lucide-react'
+import { localDateStr } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -20,7 +21,7 @@ const defaultTheme = {
 
 const emptyRoute = {
   route_id: '',
-  date: new Date().toISOString().split('T')[0],
+  date: localDateStr(new Date()),
   team: '',
   total_distance: '',
   total_time: ''

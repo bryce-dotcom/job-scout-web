@@ -8,6 +8,7 @@ import {
 import {
   STANDARD_REPORTS, formatReportCell, downloadReportCsv,
 } from '../lib/reports'
+import { localDateStr } from '../lib/localDate'
 
 // Reusable Reports panel — same data wiring + UI used by Books → Reports
 // and Frankie → Reports. Pure-function reports library does the actual
@@ -21,7 +22,7 @@ const defaultTheme = {
   accent: '#5a6349', accentBg: 'rgba(90,99,73,0.12)',
 }
 
-const todayISO = () => new Date().toISOString().slice(0, 10)
+const todayISO = () => localDateStr(new Date())
 const ytdStart = () => `${new Date().getFullYear()}-01-01`
 
 export default function ReportsPanel({ theme = defaultTheme, isMobile = false, introHidden = false }) {

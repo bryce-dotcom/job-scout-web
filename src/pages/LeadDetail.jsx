@@ -26,6 +26,7 @@ import ProductPickerModal from '../components/ProductPickerModal'
 import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
 import { auditAreasToIntakeLines } from '../lib/auditAreaLine'
+import { localDateStr } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -255,7 +256,7 @@ export default function LeadDetail() {
       category: expenseForm.category || 'Cost of Sale',
       vendor: expenseForm.merchant || null,
       description: expenseForm.notes || null,
-      date: new Date().toISOString().split('T')[0]
+      date: localDateStr(new Date())
     }])
     await fetchLeadExpenses()
     setExpenseForm({ amount: '', merchant: '', category: 'Cost of Sale', notes: '' })
@@ -294,7 +295,7 @@ export default function LeadDetail() {
       lead_id: parseInt(id),
       amount: 0,
       category: 'Cost of Sale',
-      date: new Date().toISOString().split('T')[0],
+      date: localDateStr(new Date()),
       description: 'Receipt capture',
       receipt_url: urlData.publicUrl,
       receipt_storage_path: storagePath,

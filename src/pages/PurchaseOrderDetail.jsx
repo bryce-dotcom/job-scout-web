@@ -10,6 +10,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { PO_STATUS_LABELS, computePoTotals, formatCurrency } from '../lib/poUtils'
 import { generatePoPdf } from '../lib/poPdf'
 import { receiveShipment, autoDistribute, recomputeJobPartsStatus } from '../lib/poReceive'
+import { localDateStr } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', bgCardHover: '#eef2eb',
@@ -707,7 +708,7 @@ export default function PurchaseOrderDetail() {
           bill_number: null,  // user fills in vendor's invoice # on the Bill page
           amount,
           balance_due: amount,
-          bill_date: new Date().toISOString().slice(0, 10),
+          bill_date: localDateStr(new Date()),
           due_date: dueDate.toISOString().slice(0, 10),
           status: 'open',
           notes: `Auto-created from PO ${po.po_number}`,

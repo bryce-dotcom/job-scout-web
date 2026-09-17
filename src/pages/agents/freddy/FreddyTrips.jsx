@@ -10,6 +10,7 @@ import {
   MapPin, Navigation, Clock, Gauge, Route, X, ChevronRight,
   Play, Square, Calendar, Truck, AlertTriangle, Loader2, Search
 } from 'lucide-react'
+import { localDateStr } from '../../../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -87,7 +88,7 @@ export default function FreddyTrips() {
     d.setDate(d.getDate() - 7)
     return d.toISOString().split('T')[0]
   })
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [endDate, setEndDate] = useState(() => localDateStr(new Date()))
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)

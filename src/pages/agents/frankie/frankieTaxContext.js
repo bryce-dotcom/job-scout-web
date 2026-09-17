@@ -17,14 +17,19 @@
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
+import { parseLocalDate, calendarDay } from '../../../lib/localDate.js'   // the one date rule
 const money = (n) => `$${(Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 // Local calendar date, not UTC — toISOString() on "30 Nov 23:59 local"
 // prints 1 Dec in any timezone west of Greenwich.
 export const dateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+// By the day a stored value MEANS (lib/localDate.js): payments.date and
+// plaid_transactions.date are date columns and expenses.date a timestamptz
+// holding a day at UTC midnight — parsed as instants they are the evening
+// before, so every row dated the 1st of a fiscal year fell into the prior
+// year and every 1st-of-month row into the prior month's P&L.
 const inWindow = (raw, start, end) => {
-  if (!raw) return false
-  const t = new Date(raw)
-  return !Number.isNaN(t.getTime()) && t >= start && t <= end
+  const t = parseLocalDate(raw)
+  return !!t && t >= start && t <= end
 }
 
 // ── Fiscal year ──────────────────────────────────────────────────────
@@ -324,10 +329,7 @@ export function dataQualityFlags({ breakdown, payroll, revenue, inflows }) {
 
 /** Revenue, deductible expenses and net by calendar month, oldest first. */
 export function monthlyPnl({ payments = [], plaidTransactions = [], manualExpenses = [], start, end, exclude = new Set() }) {
-  const key = (raw) => {
-    const d = new Date(raw)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-  }
+  const key = (raw) => calendarDay(raw).slice(0, 7)
   const rows = new Map()
   const row = (k) => {
     if (!rows.has(k)) rows.set(k, { month: k, revenue: 0, deductible: 0, nonDeductible: 0 })

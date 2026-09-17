@@ -4,6 +4,7 @@ import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { Plus, Sprout, X, Save, Trash2, Calendar, CheckCircle2, Circle, SkipForward } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
+import { localDateStr } from '../../../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -103,7 +104,7 @@ export default function ZachTreatments() {
   const markComplete = async (t) => {
     await supabase.from('lawn_treatments').update({
       status: 'completed',
-      completed_date: new Date().toISOString().slice(0, 10),
+      completed_date: localDateStr(new Date()),
       updated_at: new Date().toISOString(),
     }).eq('id', t.id)
     fetchLawnTreatments()

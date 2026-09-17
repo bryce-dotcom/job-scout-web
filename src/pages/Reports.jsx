@@ -33,6 +33,7 @@ import {
   Table2,
   Boxes
 } from 'lucide-react'
+import { localDateStr } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -113,7 +114,7 @@ export default function Reports() {
   const [timeClockEntries, setTimeClockEntries] = useState([])
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
+    end: localDateStr(new Date())
   })
   // Drill-in modal for Financial Report stat cards. Stored as
   // { title, rows: [{label, amount, link, sub}] } — rows are the underlying

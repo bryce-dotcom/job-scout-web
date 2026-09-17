@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Wrench, Plus, X, CircleDot, AlertTriangle, ShieldCheck, Package } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { localDateStr } from '../lib/localDate'
 
 // Tyres get their own category rather than hiding inside "repair" because
 // they are a top-five fleet cost and behave differently: predictable by
@@ -36,7 +37,7 @@ const catMeta = v => CATEGORIES.find(c => c.value === v) || CATEGORIES[4]
 const money = n => (n === null || n === undefined || n === '' ? '—' : `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
 
 const emptyForm = () => ({
-  repair_date: new Date().toISOString().slice(0, 10),
+  repair_date: localDateStr(new Date()),
   category: 'repair',
   description: '',
   cost: '',
