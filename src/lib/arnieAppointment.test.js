@@ -7,7 +7,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n')
 const appt = read('../../supabase/functions/_shared/arnieAppointment.ts')
 const create = read('../../supabase/functions/_shared/arnieCreate.ts')
-const setter = read('../pages/LeadSetter.jsx')
+const booking = read('./bookAppointment.js')   // the page and the Liahona lead card both book through this
 
 // Booking through Arnie has to do everything the Lead Setter page does, or
 // Arnie becomes a new way to orphan a setter's fee. These hold the two in
@@ -16,12 +16,12 @@ const setter = read('../pages/LeadSetter.jsx')
 const applyFn = appt.slice(appt.indexOf('export async function applyAppointment'), appt.indexOf('export async function rollbackAppointment'))
 const rollbackFn = appt.slice(appt.indexOf('export async function rollbackAppointment'))
 const prepareFn = appt.slice(appt.indexOf('export async function prepareAppointment'), appt.indexOf('export async function applyAppointment'))
-const pageBooking = setter.slice(setter.indexOf('const handleCreateAppointment'), setter.indexOf('const handleCreateAppointment') + 7000)
+const pageBooking = booking.slice(booking.indexOf('export async function bookAppointment'))
 
 describe('the five writes the page makes, the rail makes too', () => {
   it('1. the appointment, Scheduled, with the setter recorded', () => {
     expect(applyFn).toMatch(/ins\(r, 'appointments', \{[\s\S]*setter_id: setterId[\s\S]*status: 'Scheduled'/)
-    expect(pageBooking).toMatch(/setter_id: user\?\.id/)
+    expect(pageBooking).toMatch(/setter_id: setterId \|\| null/)
     expect(pageBooking).toMatch(/status: 'Scheduled'/)
   })
 
