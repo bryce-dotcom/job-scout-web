@@ -14,6 +14,7 @@
 // the caller; `inRange(dateString)` decides which period a record falls in.
 
 import { isLegacyNetShape } from './arHelpers'
+import { isPayrollBankRow } from './payrollBooks'
 
 export const BASIS_CASH = 'cash'
 export const BASIS_ACCRUAL = 'accrual'
@@ -112,7 +113,31 @@ export function accrualExpenses({ expenses = [], plaidTransactions = [], bills =
   return manual + billed + bank
 }
 
+// Payroll's place in Money Out. `payroll` = summarizePayroll(..., inRange)
+// from lib/payrollBooks (gross + employer taxes for the runs paid in range).
+//
+//   accrual: payroll is the cost of the runs (gross + employer tax), and the
+//            bank rows that are payroll (net pay ACH, tax deposits) are set
+//            aside so the same wages are not counted twice.
+//   cash:    the bank feed already carries payroll as net pay + deposits.
+//            Only when the feed shows no payroll at all in the window (no
+//            bank connected, or payroll paid from an unconnected account)
+//            do the runs stand in for it.
+function payrollForBasis(basis, { payroll, plaidTransactions = [] }, inRange) {
+  if (!payroll || !(payroll.totalCost > 0)) return { add: 0, excludeBankPayroll: false }
+  const feedHasPayroll = (plaidTransactions || []).some(t => num(t.amount) > 0 && !t.is_transfer && inRange(t.date) && isPayrollBankRow(t))
+  if (basis === BASIS_ACCRUAL) return { add: payroll.totalCost, excludeBankPayroll: true }
+  return feedHasPayroll ? { add: 0, excludeBankPayroll: false } : { add: payroll.netPay + payroll.withheld + payroll.employerTaxes, excludeBankPayroll: false }
+}
+
 // The one entry point pages should use, mirroring computeRevenue.
 export function computeExpenses(basis, data, inRange) {
-  return basis === BASIS_ACCRUAL ? accrualExpenses(data, inRange) : cashExpenses(data, inRange)
+  const { add, excludeBankPayroll } = payrollForBasis(basis, data, inRange)
+  const plaidTransactions = excludeBankPayroll
+    ? (data.plaidTransactions || []).filter(t => !isPayrollBankRow(t))
+    : data.plaidTransactions
+  const base = basis === BASIS_ACCRUAL
+    ? accrualExpenses({ ...data, plaidTransactions }, inRange)
+    : cashExpenses({ ...data, plaidTransactions }, inRange)
+  return base + add
 }

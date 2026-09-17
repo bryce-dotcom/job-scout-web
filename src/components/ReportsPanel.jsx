@@ -46,6 +46,8 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
   const [jobLines, setJobLines] = useState([])
   const [products, setProducts] = useState([])
   const [productComponents, setProductComponents] = useState([])
+  const [timeClock, setTimeClock] = useState([])
+  const [jobBonuses, setJobBonuses] = useState([])
   const [jobCostingLoading, setJobCostingLoading] = useState(false)
 
   useEffect(() => {
@@ -61,17 +63,22 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
     let cancelled = false
     setJobCostingLoading(true)
     ;(async () => {
-      const [{ data: lines }, { data: prods }, { data: comps }] = await Promise.all([
+      const [{ data: lines }, { data: prods }, { data: comps }, { data: punches }, { data: bonuses }] = await Promise.all([
         supabase.from('job_lines').select('id, job_id, item_id, quantity, line_total:total, labor_cost').eq('company_id', companyId).limit(20000),
         // material_or_labor needed so classifyProduct credits each
         // component cost to the right column (parts vs labor).
         supabase.from('products_services').select('id, cost, material_or_labor').eq('company_id', companyId).limit(10000),
         supabase.from('product_components').select('parent_product_id, component_product_id, quantity').eq('company_id', companyId).limit(20000),
+        // Actual labor: closed punches on a job. Rates come from the store's employees.
+        supabase.from('time_clock').select('employee_id, job_id, clock_in, clock_out, lunch_start, lunch_end, total_hours').eq('company_id', companyId).not('job_id', 'is', null).not('clock_out', 'is', null).limit(50000),
+        supabase.from('job_bonuses').select('job_id, amount, status').eq('company_id', companyId).in('status', ['accrued', 'paid']).limit(20000),
       ])
       if (cancelled) return
       setJobLines(lines || [])
       setProducts(prods || [])
       setProductComponents(comps || [])
+      setTimeClock(punches || [])
+      setJobBonuses(bonuses || [])
       setJobCostingLoading(false)
     })()
     return () => { cancelled = true }
@@ -91,11 +98,13 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
       jobLines,
       products,
       productComponents,
+      timeClock,
+      jobBonuses,
       from: new Date(from),
       to: new Date(to + 'T23:59:59'),
       now: new Date(),
     })
-  }, [activeId, invoices, payments, customers, jobs, employees, expenses, plaidTransactions, jobLines, products, productComponents, from, to])
+  }, [activeId, invoices, payments, customers, jobs, employees, expenses, plaidTransactions, jobLines, products, productComponents, timeClock, jobBonuses, from, to])
 
   const inputStyle = {
     padding: '8px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`,

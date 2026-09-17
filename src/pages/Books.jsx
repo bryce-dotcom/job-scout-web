@@ -14,6 +14,10 @@ import UpcomingServicesAlert from './books/UpcomingServicesAlert'
 import WalletReceiptsCard from './books/WalletReceiptsCard'
 import CategoryRulesPanel from './books/CategoryRulesPanel'
 import BudgetCard from './books/BudgetCard'
+import PayrollCard from './books/PayrollCard'
+import CashForecastCard from './books/CashForecastCard'
+import JobMarginsCard from './books/JobMarginsCard'
+import { summarizePayroll, payrollJournalRows, isPayrollBankRow } from '../lib/payrollBooks'
 import { buildJournal, journalCsv, journalTotals, qboBankCsvs } from '../lib/journalExport'
 import { suggestExpensesForTransaction } from '../lib/expenseMatch'
 import { computeRevenue, computeExpenses } from '../lib/revenueBasis'
@@ -84,7 +88,7 @@ const TXN_PAGE = 150
 // an accountant typically asks for so the user doesn't have to assemble
 // it themselves. Plain-English filenames inside the ZIP so the accountant
 // can find what they need without guessing.
-async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency, payments = [], storeExpenses = [], connectedAccounts = [], bankAccounts = [] }) {
+async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency, payments = [], storeExpenses = [], connectedAccounts = [], bankAccounts = [], payrollRuns = [], paystubs = [] }) {
   const [{ default: JSZip }, { saveAs }] = await Promise.all([
     import('jszip'),
     import('file-saver'),
@@ -200,8 +204,30 @@ async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTrans
 
   // 6. General journal — every money event as a debit and a credit, so the
   //    CPA can post the period instead of rebuilding it from screenshots.
-  const journal = buildJournal({ payments, manualExpenses: expenses, splitsByExpense, expenses: storeExpenses, plaidTransactions, connectedAccounts, bankAccounts, from, to })
+  // Payroll runs post as wages + employer tax vs net pay + liabilities; when
+  // runs exist in the period, the bank's net-pay and tax-deposit rows are the
+  // same money and are left out of the bank side of the journal.
+  const payrollLines = payrollJournalRows({ payrollRuns, paystubs }, inRange)
+  const journalTxns = payrollLines.length > 0 ? (plaidTransactions || []).filter(t => !isPayrollBankRow(t)) : plaidTransactions
+  const journal = [...buildJournal({ payments, manualExpenses: expenses, splitsByExpense, expenses: storeExpenses, plaidTransactions: journalTxns, connectedAccounts, bankAccounts, from, to }), ...payrollLines]
+    .sort((a, b) => a.date.localeCompare(b.date) || String(a.source).localeCompare(String(b.source)) || String(a.ref).localeCompare(String(b.ref)))
   const jt = journalTotals(journal)
+  const runsInRange = (payrollRuns || []).filter(r => inRange(r.pay_date))
+  if (runsInRange.length > 0) {
+    const stubsByRun = new Map()
+    for (const st of paystubs || []) stubsByRun.set(st.payroll_run_id, [...(stubsByRun.get(st.payroll_run_id) || []), st])
+    zip.file('8-payroll-runs.csv', csv([
+      ['Pay Date', 'Period Start', 'Period End', 'Employees', 'Gross', 'Employer Taxes', 'Withheld', 'Net Pay'],
+      ...runsInRange.map(r => {
+        const st = stubsByRun.get(r.id) || []
+        const gross = st.length ? st.reduce((a, x) => a + (parseFloat(x.gross_pay) || 0), 0) : (parseFloat(r.total_gross) || 0)
+        const employer = st.reduce((a, x) => a + (parseFloat(x.social_security_employer) || 0) + (parseFloat(x.medicare_employer) || 0) + (parseFloat(x.futa) || 0) + (parseFloat(x.sui) || 0), 0)
+        const withheld = st.reduce((a, x) => a + (parseFloat(x.federal_income_tax) || 0) + (parseFloat(x.state_income_tax) || 0) + (parseFloat(x.social_security_employee) || 0) + (parseFloat(x.medicare_employee) || 0) + (parseFloat(x.additional_medicare) || 0), 0)
+        const net = st.length ? st.reduce((a, x) => a + (parseFloat(x.net_pay) || 0), 0) : gross - withheld
+        return [r.pay_date, r.period_start, r.period_end, r.employee_count ?? st.length, gross.toFixed(2), employer.toFixed(2), withheld.toFixed(2), net.toFixed(2)]
+      }),
+    ]))
+  }
   zip.file('6-general-journal.csv', journalCsv(journal))
 
   // 7. QuickBooks Online bank upload files (3-column: Date, Description, Amount), one per account.
@@ -241,6 +267,7 @@ async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTrans
     (entityType === 'Partnership' || entityType === 'LLC') ? `  5-form-1065-line-summary.csv    — totals per Form 1065 line (AI-assigned)` : null,
     `  6-general-journal.csv           — double-entry journal for the period (${journal.length} lines, debits ${fmt(jt.debit)} / credits ${fmt(jt.credit)}${jt.balanced ? ', balanced' : ' — NOT balanced, tell us'})`,
     qbo.length ? `  7-quickbooks/                   — QuickBooks Online bank-upload CSVs, one per account (${qbo.map(f => `${f.account}: ${f.count}`).join('; ')})` : null,
+    runsInRange.length ? `  8-payroll-runs.csv              — every payroll run paid in the period: gross, employer taxes, withholding, net (${runsInRange.length} runs)` : null,
     `  README.txt                      — this file`,
   ].filter(Boolean).join('\n')
   zip.file('README.txt', pl)
@@ -403,17 +430,38 @@ export default function Books() {
   // Accrual basis needs what was BILLED, not just what was paid: vendor bills
   // and their payments (so a bill's bank payment is not counted twice).
   // Only fetched when the company runs accrual.
+  // Payroll, agency money, and the forward-looking inputs (memberships,
+  // payment plans, fleet recurring costs, payroll config) for the Payroll
+  // card, Money Out, the journal export, and the cash forecast.
+  const [booksExtra, setBooksExtra] = useState({ payrollRuns: [], paystubs: [], taxLiabilities: [], payrollConfig: null, memberships: [], paymentPlans: [], fleetRecurringCosts: [] })
+  const fetchBooksExtra = async () => {
+    const lastYear = `${new Date().getFullYear() - 1}-01-01`
+    const [runs, stubs, liab, cfg, mem, plans, fleetRec] = await Promise.all([
+      supabase.from('payroll_runs').select('id, period_start, period_end, pay_date, status, total_gross, employee_count').eq('company_id', companyId).gte('pay_date', lastYear).order('pay_date', { ascending: false }),
+      supabase.from('paystubs').select('id, payroll_run_id, employee_id, pay_date, gross_pay, net_pay, federal_income_tax, state_income_tax, social_security_employee, social_security_employer, medicare_employee, medicare_employer, additional_medicare, futa, sui').eq('company_id', companyId).gte('pay_date', lastYear),
+      supabase.from('payroll_tax_liabilities').select('id, payroll_run_id, jurisdiction, agency, kind, period_start, period_end, amount_employee, amount_employer, amount_total, due_date, paid_at').eq('company_id', companyId).gte('period_end', lastYear),
+      supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payroll_config').maybeSingle(),
+      supabase.from('customer_memberships').select('id, status, price_cents, billing_interval, current_period_end, plan_name').eq('company_id', companyId).in('status', ['active', 'trialing', 'past_due']),
+      supabase.from('payment_plans').select('id, status, frequency, installment_amount, total_installments, installments_completed, next_charge_date, auto_charge').eq('company_id', companyId).eq('status', 'active'),
+      supabase.from('fleet_recurring_costs').select('id, fleet_id, cost_type, label, amount, period, allocation, effective_from, effective_to').eq('company_id', companyId),
+    ])
+    let payrollConfig = null
+    try { payrollConfig = cfg.data?.value ? (typeof cfg.data.value === 'string' ? JSON.parse(cfg.data.value) : cfg.data.value) : null } catch { payrollConfig = null }
+    setBooksExtra({ payrollRuns: runs.data || [], paystubs: stubs.data || [], taxLiabilities: liab.data || [], payrollConfig, memberships: mem.data || [], paymentPlans: plans.data || [], fleetRecurringCosts: fleetRec.data || [] })
+  }
+
   const [accrualBills, setAccrualBills] = useState({ bills: [], billPayments: [] })
   const fetchAccrualBills = async () => {
     const since = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10)
     const [{ data: bills }, { data: billPayments }] = await Promise.all([
-      supabase.from('bills').select('id, amount, bill_date, status').eq('company_id', companyId).gte('bill_date', since),
+      supabase.from('bills').select('id, bill_number, amount, balance_due, bill_date, due_date, status, vendor:vendors(name)').eq('company_id', companyId).gte('bill_date', since),
       supabase.from('bill_payments').select('id, amount, paid_at').eq('company_id', companyId).gte('paid_at', since),
     ])
     setAccrualBills({ bills: bills || [], billPayments: billPayments || [] })
   }
   useEffect(() => {
-    if (companyId && accountingBasis === 'accrual') fetchAccrualBills()
+    // Bills feed accrual expenses AND the cash forecast, so load them on either basis.
+    if (companyId) fetchAccrualBills()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, accountingBasis])
 
@@ -447,6 +495,7 @@ export default function Books() {
       fetchPlaidTransactions(),
       fetchMerchantSummary(),
       fetchWalletPayments(),
+      fetchBooksExtra(),
     ])
     setLoading(false)
   }
@@ -1157,7 +1206,9 @@ export default function Books() {
   // month-to-date sums that used to sit here were computed and never read.
   // Money Out — cash basis, deduped: bank outflows + manual expenses that
   // aren't already a bank transaction (manual + all-bank double-counted).
-  const moneyOut = computeExpenses(accountingBasis, { expenses: storeExpenses, plaidTransactions, bills: accrualBills.bills, billPayments: accrualBills.billPayments }, isThisMonth)
+  const payrollThisMonth = summarizePayroll(booksExtra, isThisMonth)
+  const feedHasPayrollThisMonth = (plaidTransactions || []).some(t => parseFloat(t.amount) > 0 && !t.is_transfer && isThisMonth(t.date) && isPayrollBankRow(t))
+  const moneyOut = computeExpenses(accountingBasis, { expenses: storeExpenses, plaidTransactions, bills: accrualBills.bills, billPayments: accrualBills.billPayments, payroll: payrollThisMonth }, isThisMonth)
 
   // Utility incentives tracking — BU-filtered via the linked customer
   // invoice's business_unit when available (utility_invoices doesn't
@@ -2072,6 +2123,22 @@ export default function Books() {
               commission engine reads. Without this, commissions silently went to $0
               for any invoice closed via the Mark-Paid button or paid via bank deposit
               that nobody manually applied in JobScout. */}
+          <CashForecastCard
+            companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency}
+            openingCash={totalCash}
+            inputs={{
+              invoices, payments, utilityInvoices, plaidTransactions,
+              bills: accrualBills.bills,
+              taxLiabilities: booksExtra.taxLiabilities, payrollConfig: booksExtra.payrollConfig,
+              payrollRuns: booksExtra.payrollRuns, paystubs: booksExtra.paystubs,
+              memberships: booksExtra.memberships, paymentPlans: booksExtra.paymentPlans, fleetRecurringCosts: booksExtra.fleetRecurringCosts,
+            }}
+          />
+
+          <PayrollCard theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency}
+            payrollRuns={booksExtra.payrollRuns} paystubs={booksExtra.paystubs} taxLiabilities={booksExtra.taxLiabilities}
+            isThisMonth={isThisMonth} accountingBasis={accountingBasis} feedHasPayroll={feedHasPayrollThisMonth} navigate={navigate} />
+
           {(unmatchedDeposits.length > 0 || paidWithoutPayment.length > 0) && (
             <div style={{
               ...statCardStyle,
@@ -2307,6 +2374,10 @@ export default function Books() {
           )}
 
           <BudgetCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} manualExpenses={expenses} plaidTransactions={plaidTransactions} expenseCategories={expenseCategories} formatCurrency={formatCurrency} />
+
+          <JobMarginsCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency}
+            jobs={jobs} payments={payments} invoices={invoices} manualExpenses={expenses} plaidTransactions={plaidTransactions} employees={employees}
+            onOpenReports={() => setActiveTab('tax')} />
 
           {/* Accounts mini-list: connected banks first, then manual / wallet
               accounts (Venmo, Cash App, cash on hand) so the Money tab shows
@@ -3636,7 +3707,7 @@ export default function Books() {
             }} title="Export the confirmed-transaction list as a single CSV for the date range above.">
               <Download size={14} /> Transactions CSV
             </button>
-            <button onClick={() => buildCpaPackage({ from: taxDateFrom, to: taxDateTo, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency, payments, storeExpenses, connectedAccounts, bankAccounts })} style={{
+            <button onClick={() => buildCpaPackage({ from: taxDateFrom, to: taxDateTo, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency, payments, storeExpenses, connectedAccounts, bankAccounts, payrollRuns: booksExtra.payrollRuns, paystubs: booksExtra.paystubs })} style={{
               display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 16px',
               backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px',
               fontSize: '13px', fontWeight: '600', cursor: 'pointer', minHeight: '44px'

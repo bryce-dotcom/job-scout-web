@@ -23,6 +23,8 @@
 // the one definition instead of keeping a private twin.
 import { invoiceCustomerTotal } from './arHelpers.js'   // explicit extension: plain Node (the Frankie eval runner) needs it
 
+import { timeClockToJobHours } from './bonusCalc'
+
 function paymentsByInvoiceIndex(payments) {
   const map = new Map()
   for (const p of payments || []) {
@@ -350,8 +352,26 @@ export function jobCosting({
   jobs = [], jobLines = [], payments = [], invoices = [],
   products = [], productComponents = [],
   plaidTransactions = [], manualExpenses = [],
+  timeClock = [], employees = [], jobBonuses = [],
   from, to,
 } = {}) {
+  // Actual labor: punched hours × the employee's hourly rate. When a job has
+  // punches this replaces the line-derived labor estimate; when it has none
+  // the estimate stands (and the row says which it was).
+  const rateByEmployee = new Map((employees || []).map(e => [e.id, Number(e.hourly_rate) || 0]))
+  const actualLaborByJob = new Map()
+  const actualHoursByJob = new Map()
+  for (const h of timeClockToJobHours(timeClock || [])) {
+    const rate = rateByEmployee.get(h.employee_id) || 0
+    actualLaborByJob.set(h.job_id, (actualLaborByJob.get(h.job_id) || 0) + h.hours * rate)
+    actualHoursByJob.set(h.job_id, (actualHoursByJob.get(h.job_id) || 0) + h.hours)
+  }
+  // Crew efficiency bonuses owed or paid on the job are a cost of that job.
+  const bonusByJob = new Map()
+  for (const b of jobBonuses || []) {
+    if (!b?.job_id || !['accrued', 'paid'].includes(b.status)) continue
+    bonusByJob.set(b.job_id, (bonusByJob.get(b.job_id) || 0) + (Number(b.amount) || 0))
+  }
   const fromD = from instanceof Date ? from : new Date(from)
   const toD = to instanceof Date ? to : new Date(to)
 
@@ -486,8 +506,13 @@ export function jobCosting({
       laborCost += Number(l.labor_cost) || 0
     }
     const taggedExpense = expensesByJob.get(j.id) || 0
-    const hasCostData = materialCost > 0 || laborCost > 0 || taggedExpense > 0
-    const totalCost = materialCost + laborCost + taggedExpense
+    const actualLabor = actualLaborByJob.get(j.id) || 0
+    const actualHours = actualHoursByJob.get(j.id) || 0
+    const laborSource = actualHours > 0 ? 'actual' : (laborCost > 0 ? 'estimate' : null)
+    if (actualHours > 0) laborCost = actualLabor
+    const bonusCost = bonusByJob.get(j.id) || 0
+    const hasCostData = materialCost > 0 || laborCost > 0 || taggedExpense > 0 || bonusCost > 0
+    const totalCost = materialCost + laborCost + taggedExpense + bonusCost
     const profit = revenue - totalCost
     const margin = revenue > 0 ? profit / revenue : 0
     // Skip jobs with no revenue AND no cost — uninteresting empty rows.
@@ -509,6 +534,9 @@ export function jobCosting({
       revenue: effectiveRevenue,
       material: hasCostData ? materialCost : null,
       labor: hasCostData ? laborCost : null,
+      labor_source: laborSource,
+      labor_hours: actualHours > 0 ? actualHours : null,
+      bonuses: hasCostData ? bonusCost : null,
       tagged_expense: hasCostData ? taggedExpense : null,
       total_cost: hasCostData ? totalCost : null,
       profit: hasCostData ? effectiveRevenue - totalCost : null,
@@ -554,7 +582,7 @@ export function jobCosting({
   return {
     id: 'job-costing',
     name: 'Job Costing — Actual Profit per Job',
-    description: 'Revenue (payments + prepaid plan allocation), material + labor cost (from job lines), and any bank debits tagged to the job. Service visits (warranty, annual, repair, etc.) roll up under their parent install with an indent. Margin shown only when cost data exists.',
+    description: 'Revenue (payments + prepaid plan allocation), material cost from job lines, labor from punched time-clock hours × hourly rate (line estimate when no punches), crew bonuses accrued or paid, and any bank debits tagged to the job. Service visits (warranty, annual, repair, etc.) roll up under their parent install with an indent. Margin shown only when cost data exists.',
     columns: [
       { key: 'job', label: 'Job' },
       { key: 'title', label: 'Title' },
@@ -563,6 +591,7 @@ export function jobCosting({
       { key: 'revenue', label: 'Revenue', align: 'right', format: 'currency' },
       { key: 'material', label: 'Material', align: 'right', format: 'currency' },
       { key: 'labor', label: 'Labor', align: 'right', format: 'currency' },
+      { key: 'bonuses', label: 'Crew Bonus', align: 'right', format: 'currency' },
       { key: 'tagged_expense', label: 'Other Exp.', align: 'right', format: 'currency' },
       { key: 'total_cost', label: 'Total Cost', align: 'right', format: 'currency' },
       { key: 'profit', label: 'Profit', align: 'right', format: 'currency' },
@@ -574,6 +603,7 @@ export function jobCosting({
       revenue: totalRevenue,
       material: rows.reduce((s, r) => s + (r.material || 0), 0),
       labor: rows.reduce((s, r) => s + (r.labor || 0), 0),
+      bonuses: rows.reduce((s, r) => s + (r.bonuses || 0), 0),
       tagged_expense: rows.reduce((s, r) => s + (r.tagged_expense || 0), 0),
       total_cost: totalCost,
       profit: totalProfit,
