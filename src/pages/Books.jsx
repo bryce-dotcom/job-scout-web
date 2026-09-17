@@ -17,11 +17,16 @@ import BudgetCard from './books/BudgetCard'
 import PayrollCard from './books/PayrollCard'
 import CashForecastCard from './books/CashForecastCard'
 import JobMarginsCard from './books/JobMarginsCard'
+import FleetCostsCard from './books/FleetCostsCard'
+import InventoryCard from './books/InventoryCard'
+import MembershipsCard from './books/MembershipsCard'
+import { depositsHeld } from '../lib/depositsHeld'
+import { taxLiabilitySummary } from '../lib/payrollBooks'
 import { summarizePayroll, payrollJournalRows, isPayrollBankRow } from '../lib/payrollBooks'
 import { buildJournal, journalCsv, journalTotals, qboBankCsvs } from '../lib/journalExport'
 import { suggestExpensesForTransaction } from '../lib/expenseMatch'
 import { computeRevenue, computeExpenses } from '../lib/revenueBasis'
-import { isLegacyNetShape } from '../lib/arHelpers'
+import { isLegacyNetShape, totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
 import { PAYMENT_METHODS } from '../lib/schema'
 import { isVirtualAccountFilter, matchesAccountFilter, walletForFilter, isWalletTransaction, WALLET_FEED_FILTERS } from '../lib/bankFeedFilters'
 import { WALLETS, walletForAccountName } from '../lib/wallets'
@@ -425,6 +430,7 @@ export default function Books() {
   // Stripe merchant summary (volume + balance + payouts)
   const [merchantSummary, setMerchantSummary] = useState(null)
   const [showRules, setShowRules] = useState(false)
+  const [inventoryAtCost, setInventoryAtCost] = useState(0)
   const reconcileTransaction = useStore((state) => state.reconcileTransaction)
 
   // Accrual basis needs what was BILLED, not just what was paid: vendor bills
@@ -441,7 +447,7 @@ export default function Books() {
       supabase.from('paystubs').select('id, payroll_run_id, employee_id, pay_date, gross_pay, net_pay, federal_income_tax, state_income_tax, social_security_employee, social_security_employer, medicare_employee, medicare_employer, additional_medicare, futa, sui').eq('company_id', companyId).gte('pay_date', lastYear),
       supabase.from('payroll_tax_liabilities').select('id, payroll_run_id, jurisdiction, agency, kind, period_start, period_end, amount_employee, amount_employer, amount_total, due_date, paid_at').eq('company_id', companyId).gte('period_end', lastYear),
       supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payroll_config').maybeSingle(),
-      supabase.from('customer_memberships').select('id, status, price_cents, billing_interval, current_period_end, plan_name').eq('company_id', companyId).in('status', ['active', 'trialing', 'past_due']),
+      supabase.from('customer_memberships').select('id, status, price_cents, billing_interval, current_period_end, plan_name, started_at, canceled_at').eq('company_id', companyId),
       supabase.from('payment_plans').select('id, status, frequency, installment_amount, total_installments, installments_completed, next_charge_date, auto_charge').eq('company_id', companyId).eq('status', 'active'),
       supabase.from('fleet_recurring_costs').select('id, fleet_id, cost_type, label, amount, period, allocation, effective_from, effective_to').eq('company_id', companyId),
     ])
@@ -1239,6 +1245,22 @@ export default function Books() {
 
   const totalAssetValue = assets.filter(a => a.status === 'active').reduce((s, a) => s + (parseFloat(a.current_value) || 0), 0)
   const totalLiabilityValue = liabilities.filter(l => l.status === 'active').reduce((s, l) => s + (parseFloat(l.current_balance) || 0), 0)
+  // What the books themselves say the company holds and owes, alongside the
+  // hand-entered assets and liabilities: cash across accounts, receivables,
+  // stock at cost; vendor bills open, payroll taxes not yet remitted, and
+  // customer deposits not yet applied to a final invoice.
+  const position = (() => {
+    const cash = totalCash
+    const customerAR = totalCustomerAR(invoices || [], payments || [])
+    const utilityAR = totalUtilityAR(utilityInvoices || [])
+    const inventory = inventoryAtCost || 0
+    const ap = (accrualBills.bills || []).filter(b => !['paid', 'void'].includes(b.status)).reduce((s, b) => s + (parseFloat(b.balance_due) || 0), 0)
+    const taxesOwed = taxLiabilitySummary(booksExtra.taxLiabilities).total
+    const deposits = depositsHeld({ payments, leadPayments, invoices })
+    const assetsTotal = cash + customerAR + utilityAR + inventory + totalAssetValue
+    const liabilitiesTotal = ap + taxesOwed + deposits.total + totalLiabilityValue
+    return { cash, customerAR, utilityAR, inventory, ap, taxesOwed, deposits, assetsTotal, liabilitiesTotal, netWorth: assetsTotal - liabilitiesTotal }
+  })()
 
   // ─── Transaction handlers ───
   const handleSync = async () => {
@@ -2378,6 +2400,10 @@ export default function Books() {
           <JobMarginsCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency}
             jobs={jobs} payments={payments} invoices={invoices} manualExpenses={expenses} plaidTransactions={plaidTransactions} employees={employees}
             onOpenReports={() => setActiveTab('tax')} />
+
+          <FleetCostsCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency} isThisMonth={isThisMonth} navigate={navigate} />
+          <InventoryCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency} isThisMonth={isThisMonth} navigate={navigate} onValue={setInventoryAtCost} />
+          <MembershipsCard theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency} memberships={booksExtra.memberships} navigate={navigate} />
 
           {/* Accounts mini-list: connected banks first, then manual / wallet
               accounts (Venmo, Cash App, cash on hand) so the Money tab shows
@@ -3613,11 +3639,44 @@ export default function Books() {
             </div>
           </div>
 
+          {/* Position from the books: what the ledger says, next to what was typed in above. */}
+          <div style={{ ...statCardStyle, marginBottom: '24px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              Position from the books
+              <HelpBadge text="Assets the app can see: cash across connected, Stripe and manual accounts; customer and utility receivables; stock at cost. Liabilities the app can see: open vendor bills, payroll taxes withheld or accrued but not yet deposited, and customer deposits taken but not yet applied to a final invoice. Added to the assets and liabilities entered above for net worth." />
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
+              <div>
+                {[
+                  ['Cash across accounts', position.cash],
+                  ['Customer receivables', position.customerAR],
+                  ['Utility incentives receivable', position.utilityAR],
+                  ['Inventory at cost', position.inventory],
+                  ['Assets entered above', totalAssetValue],
+                ].map(([l, v]) => (
+                  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: theme.textSecondary, padding: '3px 0' }}><span>{l}</span><span style={{ color: theme.text, fontWeight: 500 }}>{formatCurrency(v)}</span></div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 700, color: '#22c55e', borderTop: `1px solid ${theme.border}`, marginTop: '4px', paddingTop: '6px' }}><span>Assets</span><span>{formatCurrency(position.assetsTotal)}</span></div>
+              </div>
+              <div>
+                {[
+                  ['Vendor bills open', position.ap],
+                  ['Payroll taxes not yet deposited', position.taxesOwed],
+                  [`Customer deposits held (${position.deposits.count})`, position.deposits.total],
+                  ['Liabilities entered above', totalLiabilityValue],
+                ].map(([l, v]) => (
+                  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: theme.textSecondary, padding: '3px 0' }}><span>{l}</span><span style={{ color: theme.text, fontWeight: 500 }}>{formatCurrency(v)}</span></div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 700, color: '#ef4444', borderTop: `1px solid ${theme.border}`, marginTop: '4px', paddingTop: '6px' }}><span>Liabilities</span><span>{formatCurrency(position.liabilitiesTotal)}</span></div>
+              </div>
+            </div>
+          </div>
+
           {/* Net Worth */}
           <div style={{ ...statCardStyle, textAlign: 'center' }}>
-            <div style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '8px' }}>Net Worth (Assets - Liabilities)</div>
-            <div style={{ fontSize: '36px', fontWeight: '700', color: (totalAssetValue - totalLiabilityValue) >= 0 ? '#22c55e' : '#ef4444' }}>
-              {formatCurrency(totalAssetValue - totalLiabilityValue)}
+            <div style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '8px' }}>Net Worth (Assets − Liabilities, from the books plus the entries above)</div>
+            <div style={{ fontSize: '36px', fontWeight: '700', color: position.netWorth >= 0 ? '#22c55e' : '#ef4444' }}>
+              {formatCurrency(position.netWorth)}
             </div>
           </div>
           </>)}
