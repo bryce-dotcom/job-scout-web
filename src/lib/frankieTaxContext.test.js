@@ -273,3 +273,18 @@ describe('the context Frankie is handed', () => {
     expect(ctx).toMatch(/Files: Schedule C if one owner/)
   })
 })
+
+describe('the 1st of the month is in its own month (the calendar-day rule)', () => {
+  it('a payment dated the first day of the fiscal year is in the year, and January is January', async () => {
+    const { monthlyPnl } = await import('../pages/agents/frankie/frankieTaxContext.js')
+    const rows = monthlyPnl({
+      payments: [{ date: '2026-01-01', amount: 5000 }, { date: '2026-02-01', amount: 100 }],
+      plaidTransactions: [], manualExpenses: [{ date: '2026-02-01T00:00:00+00:00', amount: 40, category: 'Fuel', tax_category: 'Vehicle & Auto Expenses' }],
+      start: new Date(2026, 0, 1), end: new Date(2026, 11, 31, 23, 59, 59),
+    })
+    const jan = rows.find((r) => r.month === '2026-01'), feb = rows.find((r) => r.month === '2026-02'), dec25 = rows.find((r) => r.month === '2025-12')
+    expect(jan?.revenue).toBe(5000)
+    expect(feb?.revenue).toBe(100)
+    expect(dec25).toBeUndefined()
+  })
+})

@@ -25,6 +25,7 @@ import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
 import LoadingSpinner from '../components/LoadingSpinner'
 import InvoiceSplitPanel from '../components/InvoiceSplitPanel'
 import { enabledWalletsFrom, displayHandle } from '../lib/wallets'
+import { localDateStr } from '../lib/localDate'
 
 // Light theme fallback
 const defaultTheme = {
@@ -83,7 +84,7 @@ export default function InvoiceDetail() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentData, setPaymentData] = useState({
     amount: '',
-    date: new Date().toISOString().split('T')[0],
+    date: localDateStr(new Date()),
     method: 'Cash',
     status: 'Completed',
     notes: ''
@@ -192,7 +193,7 @@ export default function InvoiceDetail() {
     frequency: 'monthly',
     installment_amount: '',
     total_installments: '6',
-    start_date: new Date().toISOString().split('T')[0],
+    start_date: localDateStr(new Date()),
     payment_method_id: '',
     auto_charge: false,
     notes: '',
@@ -515,7 +516,7 @@ export default function InvoiceDetail() {
       if (error) throw error
       toast.success('Payment plan created')
       setShowPlanModal(false)
-      setPlanForm({ frequency: 'monthly', installment_amount: '', total_installments: '6', start_date: new Date().toISOString().split('T')[0], payment_method_id: '', auto_charge: false, notes: '' })
+      setPlanForm({ frequency: 'monthly', installment_amount: '', total_installments: '6', start_date: localDateStr(new Date()), payment_method_id: '', auto_charge: false, notes: '' })
       await fetchInvoiceData()
     } catch (err) {
       toast.error(err.message || 'Failed to create payment plan')
@@ -603,7 +604,7 @@ export default function InvoiceDetail() {
     const r = await sendReceiptEmail({
       amount: parseFloat(latest?.amount) || totalPaid,
       method: latest?.method || 'Payment',
-      date: latest?.date || new Date().toISOString().split('T')[0],
+      date: latest?.date || localDateStr(new Date()),
       totalPaid,
     })
     setSendingReceipt(false)
@@ -694,7 +695,7 @@ Add it anyway?`,
 
     setPaymentData({
       amount: '',
-      date: new Date().toISOString().split('T')[0],
+      date: localDateStr(new Date()),
       method: 'Cash',
       status: 'Completed',
       notes: ''
@@ -728,7 +729,7 @@ Add it anyway?`,
       customer_id: invoice.customer_id || null,
       job_id: invoice.job_id || null,
       amount: finalAmt,
-      date: new Date().toISOString().split('T')[0],
+      date: localDateStr(new Date()),
       method: 'Trade Credit',
       status: 'Completed',
       source: 'trade_credit',
@@ -780,7 +781,7 @@ Add it anyway?`,
           customer_id: invoice?.customer_id || null,
           job_id: invoice?.job_id || null,
           amount: Math.round(outstanding * 100) / 100,
-          date: new Date().toISOString().split('T')[0],
+          date: localDateStr(new Date()),
           method: 'Manual',
           status: 'Completed',
           source: 'mark_paid',

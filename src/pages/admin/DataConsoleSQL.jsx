@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { Play, Save, Clock, Trash2, Download, AlertCircle, CheckCircle } from 'lucide-react'
+import { localDateStr } from '../../lib/localDate'
 
 export default function DataConsoleSQL() {
   const isMobile = useIsMobile()
@@ -150,7 +151,7 @@ export default function DataConsoleSQL() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `query_results_${new Date().toISOString().split('T')[0]}.csv`
+    a.download = `query_results_${localDateStr(new Date())}.csv`
     a.click()
   }
 

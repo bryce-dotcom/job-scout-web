@@ -20,6 +20,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import {
   COST_TYPES, ALLOCATIONS, annualAmount, isActiveOn, annualRecurringByAsset,
 } from '../lib/fleetRecurringCosts'
+import { localDateStr } from '../lib/localDate'
 
 const PERIODS = ['weekly', 'monthly', 'quarterly', 'annual']
 
@@ -33,7 +34,7 @@ const emptyForm = (fleetId) => ({
   amount: '',
   period: 'monthly',
   allocation: 'value',
-  effective_from: new Date().toISOString().slice(0, 10),
+  effective_from: localDateStr(new Date()),
 })
 
 export default function RecurringCostsPanel({ asset, fleet = [], lifecycleById, theme, onChanged }) {

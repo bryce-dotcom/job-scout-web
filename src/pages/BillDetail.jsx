@@ -12,6 +12,7 @@ import { toast } from '../lib/toast'
 import { ArrowLeft, DollarSign, Building2, FileText, X, Pencil, Trash2 } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { formatCurrency } from '../lib/poUtils'
+import { localDateStr } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', bgCardHover: '#eef2eb',
@@ -286,7 +287,7 @@ function PayModal({ bill, bankAccounts, theme, companyId, onClose, onSaved }) {
   const [form, setForm] = useState({
     amount: bill.balance_due,
     method: 'Check',
-    paid_at: new Date().toISOString().slice(0, 10),
+    paid_at: localDateStr(new Date()),
     reference: '',
     notes: '',
     bank_account_id: bankAccounts[0]?.id || '',

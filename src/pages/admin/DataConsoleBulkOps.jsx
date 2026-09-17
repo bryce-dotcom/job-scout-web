@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { adminTheme } from './components/adminTheme'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { Upload, Download, FileText, CheckCircle, AlertCircle, X } from 'lucide-react'
+import { localDateStr } from '../../lib/localDate'
 
 const TABLES = [
   'companies', 'employees', 'customers', 'leads', 'jobs', 'quotes', 'invoices',
@@ -173,7 +174,7 @@ export default function DataConsoleBulkOps() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${exportTable}_${new Date().toISOString().split('T')[0]}.csv`
+      a.download = `${exportTable}_${localDateStr(new Date())}.csv`
       a.click()
     } catch (err) {
       alert('Export error: ' + err.message)

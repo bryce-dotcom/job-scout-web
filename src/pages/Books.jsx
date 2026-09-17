@@ -31,7 +31,7 @@ import { summarizePayroll, payrollJournalRows, isPayrollBankRow } from '../lib/p
 import { buildJournal, journalCsv, journalTotals, qboBankCsvs } from '../lib/journalExport'
 import { suggestExpensesForTransaction } from '../lib/expenseMatch'
 import { computeRevenue, computeExpenses } from '../lib/revenueBasis'
-import { inLocalRange } from '../lib/localDate'
+import { inLocalRange, localDateStr } from '../lib/localDate'
 import { isLegacyNetShape, totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
 import { PAYMENT_METHODS } from '../lib/schema'
 import { isVirtualAccountFilter, matchesAccountFilter, walletForFilter, isWalletTransaction, WALLET_FEED_FILTERS } from '../lib/bankFeedFilters'
@@ -264,7 +264,7 @@ async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTrans
     ``,
     `NET (income − expenses):    ${fmt(income - expensesTotal)}`,
     ``,
-    `ACCOUNTS RECEIVABLE (as of ${new Date().toISOString().slice(0,10)})`,
+    `ACCOUNTS RECEIVABLE (as of ${localDateStr(new Date())})`,
     `  Customer AR (open invoices, after discount/incentive/deposit):  ${fmt(customerAR)}`,
     `  Utility AR (incentive invoices not yet paid):                   ${fmt(utilityAR)}`,
     `  Combined AR:                                                    ${fmt(customerAR + utilityAR)}`,
@@ -428,7 +428,7 @@ export default function Books() {
     const d = new Date()
     return `${d.getFullYear()}-01-01`
   })
-  const [taxDateTo, setTaxDateTo] = useState(() => new Date().toISOString().split('T')[0])
+  const [taxDateTo, setTaxDateTo] = useState(() => localDateStr(new Date()))
 
   // Manage Categories modal
   const [showManageCategories, setShowManageCategories] = useState(false)
@@ -3776,7 +3776,7 @@ export default function Books() {
             </div>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
               {[
-                { label: 'YTD', fn: () => { const y = new Date().getFullYear(); setTaxDateFrom(`${y}-01-01`); setTaxDateTo(new Date().toISOString().slice(0,10)) } },
+                { label: 'YTD', fn: () => { const y = new Date().getFullYear(); setTaxDateFrom(`${y}-01-01`); setTaxDateTo(localDateStr(new Date())) } },
                 { label: 'Last Q', fn: () => { const n=new Date(); const m=n.getMonth(); const qS=Math.floor((m-3)/3)*3; const y=n.getFullYear()-(qS<0?1:0); const ms=((qS+12)%12); const me=ms+2; setTaxDateFrom(new Date(y,ms,1).toISOString().slice(0,10)); setTaxDateTo(new Date(y,me+1,0).toISOString().slice(0,10)) } },
                 { label: 'Last Yr', fn: () => { const y = new Date().getFullYear()-1; setTaxDateFrom(`${y}-01-01`); setTaxDateTo(`${y}-12-31`) } },
               ].map(b => (

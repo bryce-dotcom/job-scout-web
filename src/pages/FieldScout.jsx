@@ -53,6 +53,7 @@ import RankBadge from '../components/RankBadge'
 import { enabledWalletsFrom, walletByMethod, displayHandle, walletGuidance, walletSmsBody } from '../lib/wallets'
 import { qrDataUrl } from '../lib/qr'
 import { businessUnitFor, logoUrlFrom, portalUrlFor } from '../lib/invoiceSend'
+import { localDateStr } from '../lib/localDate'
 
 // Stripe card payment form (rendered inside Elements provider)
 function StripeCardForm({ theme, amount, onSuccess, onError }) {
@@ -1565,7 +1566,7 @@ export default function FieldScout() {
           invoice_number: inv.invoice_id || `INV-${inv.id}`,
           payment_amount: amount,
           payment_method: method,
-          payment_date: new Date().toISOString().slice(0, 10),
+          payment_date: localDateStr(new Date()),
           balance_remaining: Math.max(0, (invoiceTotal || 0) - totalPaid),
           invoice_total: invoiceTotal,
           total_paid: totalPaid,
@@ -1716,7 +1717,7 @@ export default function FieldScout() {
           job_id: receiptJobId,
           amount: 0,
           category: 'Materials',
-          date: new Date().toISOString().split('T')[0],
+          date: localDateStr(new Date()),
           description: 'Receipt capture — Field Scout',
           receipt_url: urlData.publicUrl,
           receipt_storage_path: storagePath,

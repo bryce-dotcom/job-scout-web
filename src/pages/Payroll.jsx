@@ -4580,7 +4580,7 @@ export default function Payroll() {
 
 // ── Add Time Entry Modal ─────────────────────────────────
 function AddTimeModal({ show, onClose, onSave, saving, theme, isMobile, jobs = [] }) {
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(localDateStr(new Date()))
   const [startTime, setStartTime] = useState('08:00')
   const [endTime, setEndTime] = useState('17:00')
   const [reason, setReason] = useState('')
@@ -4588,7 +4588,7 @@ function AddTimeModal({ show, onClose, onSave, saving, theme, isMobile, jobs = [
 
   useEffect(() => {
     if (show) {
-      setDate(new Date().toISOString().split('T')[0])
+      setDate(localDateStr(new Date()))
       setStartTime('08:00')
       setEndTime('17:00')
       setReason('')

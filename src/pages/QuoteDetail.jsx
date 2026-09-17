@@ -11,6 +11,7 @@ import { quoteStatusColors as statusColors } from '../lib/statusColors'
 import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
 import { pricePercentOfContractFor } from '../lib/pricingRules'
+import { localDateStr } from '../lib/localDate'
 
 // Light theme fallback
 const defaultTheme = {
@@ -169,7 +170,7 @@ export default function QuoteDetail() {
       const filledBytes = await fillPdfForm(pdfBytes, fieldValues)
       const providerSlug = (provider?.provider_name || 'form').replace(/[^a-zA-Z0-9]/g, '_')
       const customerSlug = (customer?.name || customer?.customer_name || 'customer').replace(/[^a-zA-Z0-9]/g, '_')
-      const date = new Date().toISOString().slice(0, 10)
+      const date = localDateStr(new Date())
       downloadPdf(filledBytes, `${providerSlug}_${form.form_name.replace(/[^a-zA-Z0-9]/g, '_')}_${customerSlug}_${date}.pdf`)
     } catch (err) {
       alert('Error filling form: ' + err.message)
@@ -326,7 +327,7 @@ export default function QuoteDetail() {
       }
 
       let totalIncentive = 0
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localDateStr(new Date())
 
       for (const area of areas) {
         const areaWattsReduced = (area.fixture_count || 0) * ((area.existing_wattage || 0) - (area.led_wattage || 0))

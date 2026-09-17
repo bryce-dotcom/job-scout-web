@@ -24,6 +24,7 @@
 // Import it properly, then re-export for existing consumers.
 // Found by the new undefined-reference guard.
 import { invoiceCustomerTotal } from '../../../lib/arHelpers.js'
+import { parseLocalDate } from '../../../lib/localDate.js'   // the one date rule: a date column means a local day
 export { invoiceCustomerTotal }
 
 // Total a customer still owes on this invoice after applied payments.
@@ -211,10 +212,8 @@ export function arAgingBuckets(invoices = [], paymentsArrOrMap = [], now = new D
 export function revenueInWindow(payments = [], startDate, endDate = new Date()) {
   return (payments || [])
     .filter(p => {
-      const d = paymentDate(p)
-      if (!d) return false
-      const t = new Date(d)
-      return t >= startDate && t <= endDate
+      const t = parseLocalDate(paymentDate(p))
+      return !!t && t >= startDate && t <= endDate
     })
     .reduce((s, p) => s + (Number(p.amount) || 0), 0)
 }
@@ -224,10 +223,8 @@ export function revenueInWindow(payments = [], startDate, endDate = new Date()) 
 export function expensesInWindow(expenses = [], startDate, endDate = new Date()) {
   return (expenses || [])
     .filter(e => {
-      const d = e.expense_date
-      if (!d) return false
-      const t = new Date(d)
-      return t >= startDate && t <= endDate
+      const t = parseLocalDate(e.expense_date || e.date)
+      return !!t && t >= startDate && t <= endDate
     })
     .reduce((s, e) => s + (Number(e.amount) || 0), 0)
 }

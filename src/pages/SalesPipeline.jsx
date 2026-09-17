@@ -46,6 +46,7 @@ const STATUS_MAP = {
 
 // All legacy statuses we need to fetch from DB
 import { shouldShowLeadFallback, leadRendersSomewhere } from '../lib/pipelineVisibility'
+import { localDateStr } from '../lib/localDate'
 
 const LEGACY_STATUSES = ['Assigned', 'Callback', 'Converted', 'Not Qualified']
 
@@ -787,7 +788,7 @@ export default function SalesPipeline() {
       const standaloneJobs = [...(activeRes.data || []), ...(completedRes.data || [])]
 
       if (standaloneJobs.length) {
-        const todayStr = new Date().toISOString().split('T')[0]
+        const todayStr = localDateStr(new Date())
 
         // EVERY fetched job gets its own card, at its OWN status.
         //

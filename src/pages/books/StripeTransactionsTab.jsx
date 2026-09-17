@@ -5,6 +5,7 @@ import { CreditCard, Search, Download } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { PAYMENT_METHODS } from '../../lib/schema'
 import HelpBadge from '../../components/HelpBadge'
+import { localDateStr } from '../../lib/localDate'
 
 // ════════════════════ Stripe Transactions Tab ════════════════════
 // Itemized list of Stripe charges so Tracy can verify individual
@@ -119,7 +120,7 @@ export default function StripeTransactionsTab({ companyId, theme, isMobile }) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `stripe-transactions-${new Date().toISOString().split('T')[0]}.csv`
+    a.download = `stripe-transactions-${localDateStr(new Date())}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }

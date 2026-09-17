@@ -11,6 +11,7 @@ import { readAttachment, attachmentNote, describeAttachments, ACCEPT_ATTR, MAX_A
 import { DougieButton, composerTone } from '../../../components/ai/AiComposerTools'
 import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, ARNIE_VOICES, unlockAudio } from './arnieVoice'
 import { useIsMobile } from '../../../hooks/useIsMobile'
+import { localDateStr } from '../../../lib/localDate'
 
 // Dark Arnie theme
 const dark = {
@@ -536,7 +537,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `arnie-report-${new Date().toISOString().slice(0, 10)}.txt`
+    a.download = `arnie-report-${localDateStr(new Date())}.txt`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)

@@ -11,6 +11,7 @@ import { jsPDF } from 'jspdf'
 import { toast } from '../lib/toast'
 import { splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../lib/materialLaborSplit'
 import { recordUtilityPayment, reopenUtilityPayment, correctUtilityPaidAt } from '../lib/utilitySettlement'
+import { localDateStr } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -74,7 +75,7 @@ export default function UtilityInvoiceDetail() {
   // Record Payment modal — captures the real paid_at date so commission
   // timing isn't keyed off the click date.
   const [showRecordPayment, setShowRecordPayment] = useState(false)
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [paymentDate, setPaymentDate] = useState(() => localDateStr(new Date()))
   const [paymentNote, setPaymentNote] = useState('')
   const [paymentAmount, setPaymentAmount] = useState('')
 
@@ -225,7 +226,7 @@ export default function UtilityInvoiceDetail() {
     if (invoice.paid_at) {
       setPaymentDate(invoice.paid_at.slice(0, 10))
     } else {
-      setPaymentDate(new Date().toISOString().slice(0, 10))
+      setPaymentDate(localDateStr(new Date()))
     }
     setPaymentNote('')
     // Default the amount to whatever was last recorded on the invoice

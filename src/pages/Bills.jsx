@@ -11,6 +11,7 @@ import { Plus, Search, FileText, Building2, AlertCircle } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import PageHeader from '../components/PageHeader'
 import { formatCurrency } from '../lib/poUtils'
+import { localDateStr } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', bgCardHover: '#eef2eb',
@@ -336,7 +337,7 @@ function AddBillModal({ theme, companyId, vendors, onClose, onCreated }) {
     vendor_id: vendors[0]?.id || '',
     bill_number: '',
     amount: '',
-    bill_date: new Date().toISOString().slice(0, 10),
+    bill_date: localDateStr(new Date()),
     due_date: '',
     notes: '',
   })
@@ -355,7 +356,7 @@ function AddBillModal({ theme, companyId, vendors, onClose, onCreated }) {
         bill_number: form.bill_number || null,
         amount: amt,
         balance_due: amt,
-        bill_date: form.bill_date || new Date().toISOString().slice(0, 10),
+        bill_date: form.bill_date || localDateStr(new Date()),
         due_date: form.due_date || null,
         status: 'open',
         notes: form.notes || null,

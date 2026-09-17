@@ -32,3 +32,20 @@ describe('one date rule on every money surface', () => {
     expect(expenses).toMatch(/toLocaleDateString\('en-US', \{ timeZone: 'UTC' \}\)/)
   })
 })
+
+describe('"today" is never the UTC day', () => {
+  it('no page or component defaults a date to new Date().toISOString() — after 6 PM Denver that is tomorrow', () => {
+    const { globSync } = require('node:fs')
+    const files = [...globSync('src/pages/**/*.{js,jsx}', { cwd: resolve(here, '../..') }), ...globSync('src/components/**/*.{js,jsx}', { cwd: resolve(here, '../..') })]
+      .filter((f) => !/\.test\./.test(f))
+    const offenders = files.filter((f) => /new Date\(\)\.toISOString\(\)\.(?:split\('T'\)\[0\]|slice\(0, ?10\))/.test(readFileSync(resolve(here, '../..', f), 'utf8')))
+    expect(offenders).toEqual([])
+  })
+  it('Frankie ranges and groups by the calendar day', () => {
+    const tax = read('../pages/agents/frankie/frankieTaxContext.js'), fields = read('../pages/agents/frankie/frankieFields.js'), ctx = read('../pages/agents/frankie/frankieContext.js')
+    expect(tax).toMatch(/const t = parseLocalDate\(raw\)/)
+    expect(tax).toMatch(/const key = \(raw\) => calendarDay\(raw\)\.slice\(0, 7\)/)
+    expect(fields).toMatch(/const t = parseLocalDate\(paymentDate\(p\)\)/)
+    expect(ctx).toMatch(/parseLocalDate\(paymentDate\(p\)\)/)
+  })
+})

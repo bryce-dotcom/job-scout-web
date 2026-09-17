@@ -9,6 +9,7 @@ import { depositsFields } from '../lib/importExportFields'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import SearchableSelect from '../components/SearchableSelect'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { localDateStr } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -29,7 +30,7 @@ const emptyDeposit = {
   account: '',
   lead_source: '',
   receipt: '',
-  date_created: new Date().toISOString().split('T')[0],
+  date_created: localDateStr(new Date()),
   amount: '',
   payment_id: '',
   payment_status: 'Completed',

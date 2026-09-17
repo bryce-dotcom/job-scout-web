@@ -21,6 +21,7 @@ import { matchAllTokens, buildBlob } from '../lib/searchUtils'
 import { resolveJobStatuses, normalizeStatuses, statusCategory, statusesToSave } from '../lib/jobStatusVocabulary'
 import { fetchUtilityInvoicedJobIds, isUtilityInvoiced } from '../lib/utilityInvoiced'
 import UtilityInvoicedBadge from '../components/UtilityInvoicedBadge'
+import { localDateStr } from '../lib/localDate'
 
 // Default calendar colors for visual distinction
 const calendarColors = [
@@ -945,7 +946,7 @@ export default function PMJobSetter() {
   // Get jobs by status, sorted by start_date (soonest first, unscheduled last)
   // Jobs with start_date today+ that aren't in a terminal status get placed in "Scheduled"
   const getJobsByStatus = (statusId) => {
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = localDateStr(new Date())
     // Find the Scheduled column (case-insensitive)
     const scheduledStatus = jobStatuses.find(s => s.name.toLowerCase() === 'scheduled')
     const scheduledStatusId = scheduledStatus?.id
@@ -2122,7 +2123,7 @@ export default function PMJobSetter() {
 
       pdf.addImage(imgData, 'PNG', 20, 110, canvas.width / 2 - 40, canvas.height / 2 - 20)
 
-      pdf.save(`gantt-chart-${new Date().toISOString().split('T')[0]}.pdf`)
+      pdf.save(`gantt-chart-${localDateStr(new Date())}.pdf`)
     } catch (error) {
       console.error('PDF export failed:', error)
       alert('PDF export failed. Please try again.')

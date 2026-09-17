@@ -25,6 +25,7 @@ import {
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useIsMobile } from '../hooks/useIsMobile'
+import { localDateStr } from '../lib/localDate'
 
 const SEVERITIES = [
   // 'safety' asserts the machine should not be operated, which is a different
@@ -210,7 +211,7 @@ export default function MaintenancePanel({ asset, theme, currentMeter = null, on
     // back to the date clock, which is blunter but honest; a fabricated
     // reading would put the next service somewhere nobody can account for.
     await supabase.from('fleet_pm_schedules').update({
-      last_done_date: new Date().toISOString().slice(0, 10),
+      last_done_date: localDateStr(new Date()),
       last_done_meter: currentMeter == null ? null : Number(currentMeter),
       updated_at: new Date().toISOString(),
     }).eq('id', schedule.schedule_id)

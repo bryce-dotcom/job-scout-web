@@ -11,6 +11,7 @@ import { buildTaxContext } from './frankieTaxContext.js'
 import { TAX_CATEGORIES } from '../../../lib/taxCategories.js'
 import { jobCosting } from '../../../lib/reports.js'
 import { getAccessLevel } from '../../../lib/accessControl.js'
+import { parseLocalDate } from '../../../lib/localDate.js'
 
 // The role Frankie is told about, from the app's one access ladder — the
 // same rule the edge function applies to his tools (auth.ts accessLevel):
@@ -256,12 +257,12 @@ export function buildFinancialContext(data = {}, now = new Date()) {
 
   // Revenue (last 30 days) — uses paymentDate helper for the right column.
   const recentPayments = payments.filter(p => {
-    const d = paymentDate(p); return d && new Date(d) >= thirtyDaysAgo
+    const t = parseLocalDate(paymentDate(p)); return !!t && t >= thirtyDaysAgo
   })
   const revenue30d = recentPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
   const prevPayments = payments.filter(p => {
     const d = paymentDate(p); if (!d) return false
-    const t = new Date(d); return t >= sixtyDaysAgo && t < thirtyDaysAgo
+    const t = parseLocalDate(d); return !!t && t >= sixtyDaysAgo && t < thirtyDaysAgo
   })
   const revenuePrev30d = prevPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
 

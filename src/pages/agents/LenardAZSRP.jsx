@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { orderQty, productPricedPerLamp } from '../../lib/lampQuantity';
 import { getMatchedProducts, findBestProduct, groupNameMap } from '../../lib/lenardProductMatch';
 import { effectiveUnitPrice, linesSubtotal, linePricingPayload, extrasPayload } from '../../lib/retrofitPricing';
+import { localDateStr } from '../../lib/localDate'
 
 // ============================================================
 // LENARD AZ SRP — SRP Lighting Rebate Calculator
@@ -1678,7 +1679,7 @@ export default function LenardAZSRP() {
     // OUTPUT
     // ===================================================================
     const blob = doc.output('blob');
-    const fileName = `Energy_Scout_Audit_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
+    const fileName = `Energy_Scout_Audit_${(projectName || 'Project').replace(/[^a-zA-Z0-9]/g, '_')}_${localDateStr(new Date())}.pdf`;
     const file = new File([blob], fileName, { type: 'application/pdf' });
     if (navigator.share && navigator.canShare?.({ files: [file] })) {
       navigator.share({ files: [file], title: `Energy Scout Audit - ${projectName}` }).catch(() => downloadBlob(blob, fileName));
