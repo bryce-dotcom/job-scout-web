@@ -1201,14 +1201,16 @@ export default function Books() {
       const plaidAdded = plaid?.sync?.total_added || 0
       const plaidCategorized = plaid?.categorized?.categorized || 0
       const stripeImported = stripe?.payouts_imported || 0
-      const stripeBalance = stripe?.total_balance != null ? `, Stripe balance $${stripe.total_balance.toFixed(2)}` : ''
+      const stripeBalance = stripe?.total_balance != null ? `, Stripe balance ${stripe.total_balance.toFixed(2)}` : ''
+      // Payouts tied to the card payments inside them and the bank deposit they became (stripe-sync-books, _shared/stripePayoutLink).
+      const stripeLinked = stripe?.payouts_linked ? `, ${stripe.payouts_linked} payout${stripe.payouts_linked === 1 ? '' : 's'} tied to ${stripe.payments_linked || 0} card payment${stripe.payments_linked === 1 ? '' : 's'}` : ''
 
       if (plaid?.error && stripe?.error && !stripe?.skipped) {
         toast.error(`Both syncs failed: Plaid ${plaid.error}; Stripe ${stripe.error}`)
       } else if (plaid?.error) {
         toast.error('Plaid sync failed: ' + plaid.error + (stripeImported ? ` (Stripe ok — ${stripeImported} payouts)` : ''))
       } else {
-        toast.success(`Synced ${plaidAdded} Plaid txns, ${plaidCategorized} categorized; Stripe ${stripeImported} payouts${stripeBalance}`)
+        toast.success(`Synced ${plaidAdded} Plaid txns, ${plaidCategorized} categorized; Stripe ${stripeImported} payouts${stripeLinked}${stripeBalance}`)
       }
 
       // Refresh the bank_accounts list + merchant summary
