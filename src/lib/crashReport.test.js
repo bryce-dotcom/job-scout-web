@@ -189,3 +189,10 @@ describe('a service worker that could not be UPDATED is not a crash either', () 
     expect(reject(new TypeError("Failed to update a ServiceWorker for scope ('https://jobscout.appsannex.com/') with script ('https://jobscout.appsannex.com/sw.js'): An unknown error occurred when fetching the script."))).toBe(0)
   })
 })
+
+describe('Google Maps failing to fetch one of its own modules is not a crash', () => {
+  it("ignores the loader's wording and nothing broader", () => {
+    expect(reject(new Error('Could not load "infowindow".'))).toBe(0)
+    expect(reject(new Error('Could not load the job list'))).toBe(1)
+  })
+})

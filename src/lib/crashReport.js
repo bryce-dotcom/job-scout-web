@@ -188,6 +188,11 @@ const IGNORED = [
   // nine reports from one local preview, 2026-09-15..17.
   /Failed to update a ServiceWorker/i,
   /ServiceWorker for scope/i,
+  // Google Maps could not fetch one of its own sub-modules ("Could not load
+  // \"infowindow\"." from maps.googleapis.com) — a third-party script on
+  // job-site signal, not our code; the page keeps running without the map
+  // feature. One report from the time clock, 2026-08-21.
+  /^Could not load "[a-z_]+".?$/i,
 ]
 
 /** True for an abort however it arrives — DOMException carries the name even
