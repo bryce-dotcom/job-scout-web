@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase'
 import { Truck, Search, Plus, AlertTriangle, Calendar, Wrench, Settings, Upload, Download, ShieldAlert } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { fleetFields } from '../lib/importExportFields'
+import { parseLocalDate } from '../lib/localDate'
 
 // Light theme fallback
 const defaultTheme = {
@@ -179,9 +180,14 @@ export default function Fleet() {
     }
   }
 
+  // Calendar-day rule: last_pm_date / next_pm_due are days, not instants.
+  // Parsed as an instant a bare '2026-09-17' is UTC midnight, which Denver
+  // renders as Sep 16 — a service recorded today read as yesterday.
   const formatDate = (dateStr) => {
     if (!dateStr) return '-'
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    const d = parseLocalDate(dateStr)
+    if (!d) return '-'
+    return d.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric'

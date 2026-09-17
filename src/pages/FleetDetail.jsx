@@ -13,7 +13,7 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { ArrowLeft, Truck, Wrench, Calendar, Plus, AlertTriangle, ShieldAlert, DollarSign, Clock, Settings, MapPin, Wifi, WifiOff, Fuel, Battery, Gauge, Link2, Unlink, Lock } from 'lucide-react'
-import { localDateStr } from '../lib/localDate'
+import { localDateStr, parseLocalDate } from '../lib/localDate'
 
 // Light theme fallback
 const defaultTheme = {
@@ -209,9 +209,14 @@ export default function FleetDetail() {
   const TypeIcon = typeIcons[asset.type] || Truck
   const statusStyle = statusColors[asset.status] || statusColors['Available']
 
+  // Calendar-day rule: last_pm_date / next_pm_due are days, not instants.
+  // Parsed as an instant a bare '2026-09-17' is UTC midnight, which Denver
+  // renders as Sep 16 — a service recorded today read as yesterday.
   const formatDate = (dateStr) => {
     if (!dateStr) return '-'
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    const d = parseLocalDate(dateStr)
+    if (!d) return '-'
+    return d.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric'
