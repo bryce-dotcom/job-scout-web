@@ -241,6 +241,43 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     applyCustom: applyPayment,
     rollbackCustom: rollbackPayment,
   },
+
+  // "Call the Riverside job 'the gym'." "From now on, brief me by text."
+  // A fact about THIS person that rides into every conversation from now
+  // on (arnie-chat reads arnie_memories for the caller). The card is the
+  // consent: nothing is remembered until they approve it, and it is theirs
+  // to forget from Arnie → Settings. Never a company fact, never another
+  // person's — those belong on the record, not in a head.
+  memory: {
+    label: 'memory',
+    table: 'arnie_memories',
+    minLevel: 0,
+    verb: 'Remember',
+    done: 'Remembered. It rides into every conversation from now on; forget it from Arnie → Settings.',
+    fields: {
+      text: { column: 'text', label: 'Remember', required: true, max: 240 },
+      kind: { column: 'kind', label: 'Kind', max: 12, oneOf: ['preference', 'alias', 'fact'] },
+    },
+    labelOf: (f) => String(f.text || '').slice(0, 120),
+    prepare: async (r, caller, f) => {
+      if (caller.employeeId == null) return { ok: false, error: 'This login has no employee record, so there is nobody to remember it for.' }
+      const text = String(f.text || '').trim().replace(/\s+/g, ' ')
+      if (text.length < 3) return { ok: false, error: 'Tell me what to remember, in a sentence.' }
+      // One line about the person, not a paragraph about the company; and not a
+      // secret — a password or a card number is not something to keep in a head.
+      if (/\b(password|passcode|ssn|social security|card number|cvv|routing number|account number)\b/i.test(text)) {
+        return { ok: false, error: 'I will not keep a password or an account number. Those belong in the app\'s own settings, where they are protected.' }
+      }
+      const mine = await readRecordList(r, `arnie_memories?select=id,text&company_id=eq.${caller.companyId}&employee_id=eq.${caller.employeeId}&limit=100`)
+      if (mine.some((m: any) => String(m.text).trim().toLowerCase() === text.toLowerCase())) return { ok: false, error: `I already have that: "${text}".` }
+      if (mine.length >= 40) return { ok: false, error: `I am holding 40 things for you already — that is the limit. Forget one from Arnie → Settings first.` }
+      return {
+        ok: true,
+        columns: { employee_id: caller.employeeId, created_by: caller.email, source: 'arnie' },
+        display: [{ label: 'Remember', value: text }, { label: 'For', value: 'you — nobody else sees it' }],
+      }
+    },
+  },
 }
 
 export const isCreateTarget = (t: string): boolean => Object.hasOwn(CREATE_TARGETS, t)

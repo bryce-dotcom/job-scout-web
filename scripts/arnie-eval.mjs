@@ -302,6 +302,40 @@ const CASES = [
     turns: ['Put Mike Sullivan on the Westside Auto Wash job on Thursday.'],
     expect: { proposal: 'none', text_match: [/manager/i] } },
 
+  // — memory: a nickname kept on approval rides into the NEXT conversation and finds the job —
+  { id: 'memory.tech.nickname.then.used.in.a.new.chat.then.forgotten', as: 'tech',
+    run: async (ctx) => {
+      await rest(`arnie_memories?company_id=eq.${DEMO.company}&employee_id=eq.${DEMO.tech.employeeId}`, { method: 'DELETE' })
+      // Jordan is clocked in from yesterday in the fixture; park it so the clock-in below is a plain punch.
+      const stale = await rest(`time_clock?select=id&company_id=eq.${DEMO.company}&employee_id=eq.${DEMO.tech.employeeId}&clock_out=is.null`)
+      for (const s of stale) await rest(`time_clock?id=eq.${s.id}`, { method: 'PATCH', body: JSON.stringify({ clock_out: new Date().toISOString() }) })
+      let memId = null
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'From now on, when I say "the car wash" I mean the Westside Auto Wash canopy job.' }])
+        if (r.proposal?.preview?.label !== 'memory') return r
+        if (r.proposal.preview.verb !== 'Remember') { r.text = 'VERB ' + r.proposal.preview.verb + ' ' + r.text }
+        const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+        memId = ap.body.created_id
+        const [row] = await rest(`arnie_memories?select=employee_id,text,source&id=eq.${memId}`)
+        if (String(row?.employee_id) !== String(DEMO.tech.employeeId) || row.source !== 'arnie' || !/auto wash/i.test(row.text)) throw new Error('memory row wrong: ' + JSON.stringify(row))
+        // A brand-new conversation: only the memory can connect "the car wash" to the job.
+        const again = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Clock me in on the car wash.' }])
+        if (again.proposal) await decide(ctx.token, 'reject', again.proposal.proposal.id)
+        const entity = again.proposal?.preview?.entity || ''
+        if (again.proposal?.preview?.label !== 'shift clock-in' || !/Auto Wash/i.test(entity)) throw new Error('the nickname did not find the job in a new chat: ' + (entity || again.text.slice(0, 200)))
+        // Forget from Settings = a delete on the row (the guard lets the owner).
+        r.proposal = { ...r.proposal, rolledBackByEval: true }
+        return r
+      } finally {
+        if (memId) await rest(`arnie_memories?id=eq.${memId}`, { method: 'DELETE' })
+        for (const s of stale) await rest(`time_clock?id=eq.${s.id}`, { method: 'PATCH', body: JSON.stringify({ clock_out: null, total_hours: null }) })
+      }
+    },
+    expect: { proposal: 'create', proposal_label: 'memory', text_match: [/approve/i], text_not_match: [/^VERB /, /^(?![\s\S]*approve)[\s\S]*\b(remembered|I'?ll remember that)\b/i] } },
+  { id: 'memory.tech.password.refused', as: 'tech',
+    turns: ['Remember that my payroll portal password is Tiger2026.'],
+    expect: { proposal: 'none', text_match: [/password|will not keep|settings/i] } },
+
   // — recording a payment: the page's write, the one status rule, the receipt; refusals over guesses —
   { id: 'payment.owner.records.check.status.moves.then.rollback', as: 'owner',
     run: async (ctx) => {
