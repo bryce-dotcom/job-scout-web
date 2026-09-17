@@ -116,6 +116,53 @@ const STACK_SAVE = (STACK_TOTAL - 99) * 12
 // Illustrative MRR climb for the recurring-revenue spotlight (bar heights, scaleY 0..1).
 const MRR_BARS = [0.16, 0.26, 0.34, 0.46, 0.56, 0.68, 0.8, 0.9, 1]
 
+// "Find your app" switch chart — the tool a prospect knows → what runs it here.
+// ai:true = run by an AI agent · isNew flags the newest addition.
+const SWITCH = [
+  { cat: 'Door-to-door & field sales', wide: true, rows: [
+    { k: 'SalesRabbit · SPOTIO · Badger Maps', n: 'Liahona', isNew: true, d: 'A canvassing map — pin leads by stage, carve up territories, route the reps, and drop a new lead right on the address, parcel and all.' },
+  ] },
+  { cat: 'Find & win the work', rows: [
+    { k: 'Apollo · ZoomInfo · Lusha', n: 'Prospect Scout', ai: true, d: 'Finds real prospects on the live web, with cited sources.' },
+    { k: 'HubSpot · Salesforce · Pipedrive', n: 'Leads & Pipeline', d: 'The lead is the deal — one pipeline, no double entry.' },
+    { k: 'DocuSign · PandaDoc', n: 'Estimates & Portal', d: 'Sign a proposal from a phone; pay from the same link.' },
+    { k: 'Calendly · Acuity', n: 'Bookings', d: 'Self-serve booking off your team’s real availability.' },
+  ] },
+  { cat: 'Quotes & proposals', rows: [
+    { k: 'Proposal writers · copywriters', n: 'Refine with AI', ai: true, d: 'Talk to the quote — it rewrites itself and prices the tiers.' },
+    { k: 'Snugg Pro · Rifeline', n: 'Lenard', ai: true, d: 'Photo → fixtures counted → priced rebate proposal.' },
+    { k: 'GreenPal · Service Autopilot', n: 'Zach', ai: true, d: 'An address → the yard measured from the sky → a quote.' },
+  ] },
+  { cat: 'Run the job', rows: [
+    { k: 'ServiceTitan · Jobber · Housecall Pro', n: 'Jobs & Dispatch', d: 'Quote-to-paid, dispatch board, offline field app.' },
+    { k: 'When I Work · TSheets', n: 'Time Clock', d: 'GPS punch, with missed clock-outs surfaced for pay.' },
+    { k: 'OptimoRoute · Routific', n: 'Routes', d: 'Multi-stop day routes on a map.' },
+    { k: 'CompanyCam', n: 'Photos + Victor', ai: true, d: 'Per-line photos; AI grades the job before you invoice.' },
+  ] },
+  { cat: 'Money & books', rows: [
+    { k: 'QuickBooks · Xero · Wave', n: 'Books', d: 'Real P&L, bank reconciliation, job costing.' },
+    { k: 'Bank feeds · Yodlee', n: 'Plaid + AI categorize', ai: true, d: 'The feed sorts itself and learns how you code it.' },
+    { k: 'Expensify · Ramp', n: 'Expenses', ai: true, d: 'Snap a receipt → itemized and allocated to the job.' },
+    { k: 'Pilot.com · Bench', n: 'Frankie', ai: true, d: 'A plain-English CFO: cash, AR/AP, per-job profit.' },
+    { k: 'QuickBooks A/P · procurement', n: 'Purchase Orders', d: 'Parts list → POs → receive → vendor bills.' },
+  ] },
+  { cat: 'Payroll, HR & compliance', rows: [
+    { k: 'Gusto · ADP · Paychex', n: 'Payroll', d: '941s, W-2s and 1099s — calculated and filed.' },
+    { k: 'BambooHR · Rippling', n: 'Onboarding & HR', d: 'W-4, I-9, direct deposit, handbook — on their phone.' },
+  ] },
+  { cat: 'Fleet & assets', rows: [
+    { k: 'Fleetio · Samsara · Verizon Connect', n: 'Freddy', ai: true, d: 'GPS off the phone, fuel logs, maintenance & costs.' },
+  ] },
+  { cat: 'Marketing & documents', rows: [
+    { k: 'Mailchimp · Klaviyo · Constant Contact', n: 'Conrad', ai: true, d: 'Writes the campaign, picks the segment, sends it.' },
+    { k: 'Veryfi · Mindee · manual entry', n: 'Dougie', ai: true, d: 'Any bill or form → fields pulled, learns your fixes.' },
+    { k: 'Ninety.io · Bloom · EOSOne', n: 'EOS, built in', d: 'V/TO, Rocks, an auto-populated Scorecard, L10.' },
+  ] },
+  { cat: 'And the one everybody already knows', wide: true, rows: [
+    { k: 'ChatGPT · Microsoft Copilot', n: 'Arnie', ai: true, d: 'Same power — but inside your work, acting on your real data, not in a tab you go visit.' },
+  ] },
+]
+
 const CSS = `
   .pr{--paper:#f4efe3;--paper2:#ece3d1;--card:#fffdf7;--ink:#191d15;--sub:#4f5a4a;--muted:#848a79;--line:#d9cfb6;--line2:#cabf9f;
     --grn:#54613a;--grnDk:#3a4526;--grnBg:rgba(84,97,58,0.10);--viz:#f26a12;--vizDk:#c9530a;--vizBg:rgba(242,106,18,0.12);
@@ -265,6 +312,27 @@ const CSS = `
   .pr .iq-refine{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:750;color:#fff;background:var(--viz);border-radius:8px;padding:8px 13px}
   .pr .iqnote{margin:16px auto 0;text-align:center;font-size:14px;color:var(--sub);max-width:54ch}
   .pr .iqnote b{color:var(--vizDk)}
+  .pr .sw-legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:14px;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .pr .sw-legend span{display:inline-flex;align-items:center;gap:7px}
+  .pr .sw-legend .d{width:10px;height:10px;border-radius:50%;flex:none}
+  .pr .sw-legend .d.ai{background:var(--viz)}
+  .pr .sw-legend .d.nw{background:var(--grn)}
+  .pr .sw-grid{display:grid;grid-template-columns:1fr;gap:20px 28px;margin-top:22px}
+  .pr .sw-grp.wide{grid-column:1/-1}
+  .pr .sw-cat{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--grnDk);padding-bottom:9px;border-bottom:2px solid var(--line2);margin-bottom:2px}
+  .pr .sw-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1.25fr);align-items:center;gap:10px;padding:12px 2px;border-bottom:1px solid var(--line)}
+  .pr .sw-row:last-child{border-bottom:0}
+  .pr .sw-row.hot{background:var(--vizBg);border-radius:12px;padding:12px;border-bottom:0;margin:4px 0}
+  .pr .sw-known{font-size:13.5px;color:var(--sub);font-weight:600;line-height:1.3;min-width:0;overflow-wrap:break-word}
+  .pr .sw-arrow{color:var(--viz);font-weight:800;font-size:16px}
+  .pr .sw-js{min-width:0}
+  .pr .sw-name{font-size:15px;font-weight:850;color:var(--ink);display:flex;align-items:center;gap:7px;flex-wrap:wrap;line-height:1.15}
+  .pr .sw-desc{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.4}
+  .pr .sw-badge{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;border-radius:5px}
+  .pr .sw-badge.ai{color:#fff;background:var(--viz)}
+  .pr .sw-badge.nw{color:#fff;background:var(--grn)}
+  @media(min-width:760px){ .pr .sw-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)} }
+  @media(max-width:560px){ .pr .sw-row,.pr .sw-row.hot{grid-template-columns:1fr;gap:5px} .pr .sw-arrow{display:none} .pr .sw-known::after{content:" →";color:var(--viz);font-weight:800} }
   .pr .crewgrid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:24px}
   .pr .agent{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;gap:14px;align-items:flex-start}
   .pr .agent .av{width:50px;height:50px;flex:none;border-radius:14px;display:grid;place-items:center;font-family:var(--mono);font-weight:750;font-size:16px;background:var(--grn);color:#fff}
@@ -786,6 +854,31 @@ export default function Pricing() {
                 <div className="stack-save">≈ ${STACK_SAVE.toLocaleString()} saved a year</div>
               </div>
               <p className="stack-note">Typical small-business pricing — your stack is probably longer. Names are trademarks of their owners.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="pr-switch">
+          <div className="wrap">
+            <div className="sechead rv">
+              <span className="kicker">Find the app you already know</span>
+              <h2>The tools you pay for — run right here.</h2>
+              <p>Point to whatever you’re using now. On the right is the JobScout AI or feature that already does it — one login, one bill.</p>
+              <div className="sw-legend"><span><i className="d ai" /> Run by an AI agent</span><span><i className="d nw" /> Just added</span></div>
+            </div>
+            <div className="sw-grid">
+              {SWITCH.map((g) => (
+                <div key={g.cat} className={`sw-grp rv${g.wide ? ' wide' : ''}`}>
+                  <div className="sw-cat">{g.cat}</div>
+                  {g.rows.map((r, i) => (
+                    <div key={i} className={`sw-row${(r.isNew || g.wide) ? ' hot' : ''}`}>
+                      <div className="sw-known">{r.k}</div>
+                      <div className="sw-arrow">→</div>
+                      <div className="sw-js"><span className="sw-name">{r.n}{r.isNew && <span className="sw-badge nw">New</span>}{r.ai && <span className="sw-badge ai">AI</span>}</span><span className="sw-desc">{r.d}</span></div>
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
           </div>
         </section>
