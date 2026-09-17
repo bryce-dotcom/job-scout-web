@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
 
       const to = s.channel === 'sms' ? String(emp.phone || '').trim() : String(emp.email || '').trim()
       const sent = !to ? { sent: false, error: `no ${s.channel === 'sms' ? 'phone' : 'email'} on the employee` }
-        : s.channel === 'sms' ? await sendArnieSms(r, emp.company_id, to, text)
+        : s.channel === 'sms' ? await sendArnieSms(r, emp.company_id, to, text, { trigger: 'arnie_nudge', employee_id: emp.id })
         : await sendArnieEmail(to, `Arnie: ${mine.length === 1 ? mine[0].subject : mine.length + ' things need a look'}`, 'From Arnie', text)
       out.sent = sent.sent; if (sent.error) out.error = sent.error
       // Record every item, sent or not: a failed send is retried next hour

@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
       if (dryRun) { out.text = text; results.push(out); continue }
       const to = s.channel === 'sms' ? String(emp.phone || '').trim() : String(emp.email || '').trim()
       const sent = !to ? { sent: false, error: `no ${s.channel === 'sms' ? 'phone' : 'email'} on the employee` }
-        : s.channel === 'sms' ? await sendArnieSms(r, emp.company_id, to, text)
+        : s.channel === 'sms' ? await sendArnieSms(r, emp.company_id, to, text, { trigger: 'arnie_brief', employee_id: emp.id })
         : await sendArnieEmail(to, `Your morning brief, ${String(emp.name).split(' ')[0]}`, `Morning brief — ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`, text)
       out.sent = sent.sent; if (sent.error) out.error = sent.error
       await fetch(`${SUPABASE_URL}/rest/v1/arnie_brief_subscriptions?id=eq.${s.id}`, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },

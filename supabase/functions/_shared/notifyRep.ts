@@ -46,8 +46,13 @@ export function repEmailShell(heading: string, bodyHtml: string, ctaUrl?: string
   </div>`
 }
 
-// Build a link to a document in the app (uses SITE_URL if configured).
+// Build a link to a page in the app. SITE_URL if configured, else the
+// production app: this returned '' for months because the secret was never
+// set, so every "Ask Arnie" / "open it in the app" button silently vanished
+// from the emails. Five other functions hardcode the same host; a link that
+// cannot be built is worse than a link to the one place the app lives.
+export const APP_URL = 'https://jobscout.appsannex.com'
 export function appLink(path: string): string {
-  const base = (Deno.env.get('SITE_URL') || '').replace(/\/$/, '')
-  return base ? `${base}${path}` : ''
+  const base = (Deno.env.get('SITE_URL') || APP_URL).replace(/\/$/, '')
+  return `${base}${path}`
 }

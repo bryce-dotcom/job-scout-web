@@ -1,0 +1,50 @@
+# Arnie's eval, nightly — so a drift in the model's behaviour shows up in
+# the morning, not in a customer's chat.
+#
+# `npm run arnie:eval` runs ~50 real conversations against the DEPLOYED
+# arnie-chat as the demo owner and a throwaway tech, asserting which tools
+# were called, which were refused, what card was drafted and what the reply
+# must and must not say. vitest cannot see any of that. It seeds and
+# deletes its own rows on the demo tenant and creates/deletes the tech login.
+#
+# Needs three repository secrets — the same values as .env:
+#   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+# Until they exist the job says so and exits green; it never fails for a
+# reason that is not Arnie's.
+
+name: arnie-eval
+
+on:
+  schedule:
+    - cron: '17 11 * * *'   # 11:17 UTC ≈ 5:17 AM Denver, before anyone is in
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Run the eval
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::notice::arnie-eval skipped — repository secrets not configured (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY)."
+            echo "Skipped: secrets not configured." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n' "$VITE_SUPABASE_URL" "$VITE_SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" > .env
+          set +e
+          npm run arnie:eval 2>&1 | tee eval.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          { echo '## Arnie eval'; echo; echo '```'; grep -E '^(PASS|FAIL|[0-9]+/[0-9]+ passed)' eval.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc

@@ -18,7 +18,9 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    const { company_id, to, message, template, template_data } = await req.json();
+    // trigger / customer_id / employee_id: who and why, for the log. log:false
+    // for a caller that writes its own richer row (Arnie's follow-up rail).
+    const { company_id, to, message, template, template_data, trigger, customer_id, employee_id, log } = await req.json();
 
     if (!company_id) {
       return new Response(JSON.stringify({ error: 'company_id is required' }),
@@ -97,22 +99,23 @@ serve(async (req) => {
       }), { status: twilioRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Log to communications_log if table exists
-    try {
-      await supabase.from('communications_log').insert({
+    // The record. This insert used to name columns the table does not have
+    // (direction, to_address, body…) and swallow the error, so no text this
+    // function ever sent was on the communications log. These are the
+    // columns communications_log actually has; a failure is logged, not hidden.
+    if (log !== false) {
+      const { error: logErr } = await supabase.from('communications_log').insert({
         company_id,
         type: 'sms',
-        direction: 'outbound',
-        to_address: cleanTo,
-        from_address: config.from_number,
-        subject: null,
-        body: body,
+        trigger: trigger || 'sms',
+        customer_id: customer_id ?? null,
+        employee_id: employee_id ?? null,
+        recipient: cleanTo,
+        sent_date: new Date().toISOString().slice(0, 10),
         status: 'sent',
-        external_id: twilioData.sid,
-        sent_at: new Date().toISOString(),
+        response: `${String(body).slice(0, 220)} [${twilioData.sid}]`,
       });
-    } catch {
-      // Table might not exist yet — that's okay
+      if (logErr) console.error('[send-sms] communications_log insert failed:', logErr.message);
     }
 
     return new Response(JSON.stringify({
