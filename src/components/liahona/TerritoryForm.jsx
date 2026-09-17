@@ -4,8 +4,11 @@
 import { X } from 'lucide-react'
 import { makeStyles, PALETTE, TERRITORY_SOURCE_LABEL } from './util'
 
-export default function TerritoryForm({ t, form, setForm, employees, user, utilityProviders, saving, onSave, onCancel }) {
+export default function TerritoryForm({ t, form, setForm, employees, user, utilityProviders, saving, onSave, onCancel, canManage = false, handoverCount = 0 }) {
   const { btn, input, label } = makeStyles(t)
+  const ownerChanged = !!form.id && String(form.owner_id || '') !== String(form.prev_owner_id || '')
+  const canHand = ownerChanged && !!form.owner_id && handoverCount > 0 && (canManage || String(form.owner_id) === String(user?.id))
+  const newOwner = employees.find(e => String(e.id) === String(form.owner_id))
   return (
     <div style={{ padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -23,10 +26,17 @@ export default function TerritoryForm({ t, form, setForm, employees, user, utili
       </div>
 
       <label style={label}>Owner</label>
-      <select style={input} value={form.owner_id} onChange={e => setForm({ ...form, owner_id: e.target.value })}>
+      <select style={input} value={form.owner_id} onChange={e => setForm({ ...form, owner_id: e.target.value })} disabled={!canManage && !!form.prev_owner_id && String(form.prev_owner_id) !== String(user?.id)}>
         <option value="">Unassigned</option>
-        {employees.map(e => <option key={e.id} value={e.id}>{e.name}{e.id === user?.id ? ' (Me)' : ''}</option>)}
+        {(canManage ? employees : employees.filter(e => String(e.id) === String(user?.id) || String(e.id) === String(form.owner_id))).map(e => <option key={e.id} value={e.id}>{e.name}{e.id === user?.id ? ' (Me)' : ''}</option>)}
       </select>
+      {canHand && (
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 6, fontSize: 12, color: t.text, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!form.hand_leads} onChange={e => setForm({ ...form, hand_leads: e.target.checked })} style={{ marginTop: 2 }} />
+          <span>Also hand its {handoverCount} lead{handoverCount > 1 ? 's' : ''} to {newOwner?.name || 'the new owner'} <span style={{ color: t.textMuted }}>(the ones the previous owner held here, plus any unowned)</span></span>
+        </label>
+      )}
+      {ownerChanged && !!form.owner_id && handoverCount === 0 && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>No leads to hand over: nothing here is unowned or held by the previous owner.</div>}
 
       <label style={label}>Utility {form.detecting && <span style={{ fontWeight: 400, textTransform: 'none' }}>· detecting…</span>}</label>
       {utilityProviders.length > 0 && (

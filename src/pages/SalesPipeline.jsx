@@ -2290,6 +2290,7 @@ export default function SalesPipeline() {
                   followUpsByLead={followUpRowsByLead}
                   employeeId={currentEmployeeId}
                   onLogged={loadFollowUps}
+                  canManage={canViewAll}
                 />
               </div>
             ) : (
@@ -2882,6 +2883,7 @@ export default function SalesPipeline() {
                 followUpsByLead={followUpRowsByLead}
                 employeeId={currentEmployeeId}
                 onLogged={loadFollowUps}
+                canManage={canViewAll}
               />
             )}
 

@@ -48,7 +48,8 @@ import TerritoryPanel from './TerritoryPanel'
 export default function LiahonaMap({
   leads = [], customers = [], stages = [], hiddenStages, companyId, employees = [], user, theme,
   onSelectLead, onLeadsChanged, compact = false, onToggleStage,
-  onChangeStage, followUpsByLead, employeeId, onLogged
+  onChangeStage, followUpsByLead, employeeId, onLogged,
+  canManage = false   // managers assign leads and territories to any rep; reps only to themselves
 }) {
   const t = themeTokens(theme)
   const { btn } = makeStyles(t)
@@ -149,16 +150,35 @@ export default function LiahonaMap({
     : territoryFilter === 'mine' ? 'My territories'
     : (territories.find(x => String(x.id) === String(territoryFilter))?.name || null)
 
-  // Leads / customers inside each territory.
+  // Leads / customers inside each territory, plus the ids a manager can hand
+  // to the territory's owner (unowned, or owned by someone else).
   const territoryCounts = useMemo(() => {
     const out = {}
     for (const tr of territories) {
       const inside = geocodedLeads.filter(l => pointInGeometry(Number(l.latitude), Number(l.longitude), tr.polygon))
       const cust = customers.filter(l => hasCoords(l) && pointInGeometry(Number(l.latitude), Number(l.longitude), tr.polygon))
-      out[tr.id] = { leads: inside.length, customers: cust.length, unassigned: inside.filter(l => !l.lead_owner_id).length }
+      const unowned = inside.filter(l => !l.lead_owner_id)
+      const notOwners = tr.owner_id ? inside.filter(l => l.lead_owner_id && String(l.lead_owner_id) !== String(tr.owner_id)) : []
+      out[tr.id] = { leads: inside.length, customers: cust.length, unassigned: unowned.length, unassignedIds: unowned.map(l => l.id), othersIds: notOwners.map(l => l.id) }
     }
     return out
   }, [territories, geocodedLeads, customers])
+
+  // Workload per rep: territories owned, pinned leads owned, and how many of
+  // those nobody has touched in two weeks. Managers use it to balance areas.
+  const repStats = useMemo(() => {
+    const stale = Date.now() - 14 * 86400e3
+    const byRep = new Map()
+    const bump = (id, k) => { if (!id) return; const r = byRep.get(String(id)) || { territories: 0, leads: 0, stale: 0 }; r[k]++; byRep.set(String(id), r) }
+    for (const tr of territories) bump(tr.owner_id, 'territories')
+    for (const l of geocodedLeads) {
+      const s = stageById[l.status]
+      if (s?.isWon || s?.isLost) continue
+      bump(l.lead_owner_id, 'leads')
+      if (new Date(l.updated_at || l.created_at || 0).getTime() < stale) bump(l.lead_owner_id, 'stale')
+    }
+    return [...byRep.entries()].map(([id, r]) => ({ id, name: employeeById[id]?.name || 'Former employee', ...r })).sort((a, b) => b.leads - a.leads)
+  }, [territories, geocodedLeads, stageById, employeeById])
 
   useEffect(() => {
     if (compact && (territoryForm || dropForm || route)) setSheetOpen(true)
@@ -770,10 +790,22 @@ export default function LiahonaMap({
   const editTerritory = tr => {
     setTerritoryForm({
       id: tr.id, name: tr.name, color: tr.color, geometry: tr.polygon, source: tr.source,
-      owner_id: tr.owner_id || '', utility_provider_id: tr.utility_provider_id || '', utility_name: tr.utility_name || '',
+      owner_id: tr.owner_id || '', prev_owner_id: tr.owner_id || '', hand_leads: true,
+      utility_provider_id: tr.utility_provider_id || '', utility_name: tr.utility_name || '',
       notes: tr.notes || '', detecting: false
     })
   }
+
+  // Leads a change of territory owner would carry along: the ones the old
+  // owner held inside it, plus any nobody owns.
+  const handoverIds = useMemo(() => {
+    const f = territoryForm
+    if (!f?.geometry || !f.owner_id || String(f.owner_id) === String(f.prev_owner_id || '')) return []
+    return geocodedLeads
+      .filter(l => pointInGeometry(Number(l.latitude), Number(l.longitude), f.geometry))
+      .filter(l => !l.lead_owner_id || (f.prev_owner_id && String(l.lead_owner_id) === String(f.prev_owner_id)))
+      .map(l => l.id)
+  }, [territoryForm, geocodedLeads])
 
   const saveTerritory = async () => {
     const f = territoryForm
@@ -792,10 +824,18 @@ export default function LiahonaMap({
       ? supabase.from('sales_territories').update(row).eq('id', f.id)
       : supabase.from('sales_territories').insert({ ...row, created_by: user?.id || null })
     const { error } = await q
+    if (error) { setSaving(false); notify('Could not save: ' + error.message); return }
+    // A new owner takes the old owner's leads inside the territory with them
+    // (and any unowned ones) when the manager leaves the box ticked.
+    let handed = 0
+    if (f.id && f.hand_leads && handoverIds.length && row.owner_id && (canManage || String(row.owner_id) === String(user?.id))) {
+      const { error: e2 } = await supabase.from('leads').update({ lead_owner_id: row.owner_id, updated_at: new Date().toISOString() }).in('id', handoverIds)
+      if (e2) notify('Territory saved, but its leads were not reassigned: ' + e2.message)
+      else { handed = handoverIds.length; onLeadsChanged?.() }
+    }
     setSaving(false)
-    if (error) { notify('Could not save: ' + error.message); return }
     setTerritoryForm(null)
-    notify(f.id ? 'Territory updated' : 'Territory saved')
+    notify(f.id ? (handed ? `Territory updated · ${handed} lead${handed > 1 ? 's' : ''} handed to ${employeeById[row.owner_id]?.name || 'the new owner'}` : 'Territory updated') : 'Territory saved')
     loadTerritories()
   }
 
@@ -899,17 +939,31 @@ export default function LiahonaMap({
     notify('Geocoding finished')
   }
 
-  // Take ownership of every unowned lead inside the filtered area.
-  const claimUnassigned = async () => {
-    const ids = unassignedInFilter.map(l => l.id)
-    if (!ids.length || !user?.id) return
-    if (!window.confirm(`Assign ${ids.length} unassigned lead${ids.length > 1 ? 's' : ''} in ${filterLabel} to you?`)) return
+  // Hand a set of leads to a rep. Reps may only take unowned leads for
+  // themselves; managers may give any lead in a territory to its owner.
+  const assignLeads = async (ids, ownerId, { where = 'this area', onlyUnowned = true } = {}) => {
+    ownerId = ownerId || user?.id
+    if (!ids.length || !ownerId) return
+    if (!canManage && String(ownerId) !== String(user?.id)) { notify('Only a manager can assign leads to someone else'); return }
+    const who = String(ownerId) === String(user?.id) ? 'you' : (employeeById[ownerId]?.name || 'that rep')
+    if (!window.confirm(`Assign ${ids.length} lead${ids.length > 1 ? 's' : ''} in ${where} to ${who}?`)) return
     setClaiming(true)
-    const { error } = await supabase.from('leads').update({ lead_owner_id: user.id, updated_at: new Date().toISOString() }).in('id', ids).is('lead_owner_id', null)
+    let q = supabase.from('leads').update({ lead_owner_id: Number(ownerId), updated_at: new Date().toISOString() }).in('id', ids)
+    if (onlyUnowned || !canManage) q = q.is('lead_owner_id', null)
+    const { error } = await q
     setClaiming(false)
     if (error) { notify('Could not assign: ' + error.message); return }
-    notify(`${ids.length} lead${ids.length > 1 ? 's' : ''} assigned to you`)
+    notify(`${ids.length} lead${ids.length > 1 ? 's' : ''} assigned to ${who}`)
     onLeadsChanged?.()
+  }
+  const claimUnassigned = (ownerId) => assignLeads(unassignedInFilter.map(l => l.id), ownerId, { where: filterLabel })
+  // "Assign to owner" on a territory row: its unowned leads, and for a
+  // manager also the ones other reps hold inside it.
+  const assignTerritoryLeads = tr => {
+    const c = territoryCounts[tr.id]
+    if (!c || !tr.owner_id) return
+    const ids = canManage ? [...c.unassignedIds, ...c.othersIds] : c.unassignedIds
+    return assignLeads(ids, tr.owner_id, { where: tr.name, onlyUnowned: !canManage })
   }
 
   const planRoute = async () => {
@@ -1000,7 +1054,8 @@ export default function LiahonaMap({
         {(!compact || sheetOpen) && (
           territoryForm ? (
             <TerritoryForm t={t} form={territoryForm} setForm={setTerritoryForm} employees={employees} user={user} utilityProviders={utilityProviders}
-              saving={saving} onSave={saveTerritory} onCancel={() => setTerritoryForm(null)} />
+              saving={saving} onSave={saveTerritory} onCancel={() => setTerritoryForm(null)}
+              canManage={canManage} handoverCount={handoverIds.length} />
           ) : dropForm ? (
             <DropLeadForm t={t} form={dropForm} setForm={setDropForm} saving={saving} onSave={saveDropLead} onCancel={() => { setDropForm(null); setResearchError('') }}
               onPan={(lat, lng) => mapRef.current?.panTo([lat, lng])}
@@ -1029,6 +1084,7 @@ export default function LiahonaMap({
                 territories={territories} territoryCounts={territoryCounts} employeeById={employeeById} selectedTerritoryId={selectedTerritoryId}
                 territoryFilter={territoryFilter} setTerritoryFilter={setTerritoryFilter} filterLabel={filterLabel} filterPolygons={filterPolygons}
                 unassignedInFilter={unassignedInFilter} claiming={claiming} onClaim={claimUnassigned} user={user}
+                canManage={canManage} employees={employees} repStats={repStats} onAssignTerritory={assignTerritoryLeads}
                 onZoom={zoomToTerritory} onEdit={editTerritory} onDelete={deleteTerritory}
               />
             </>
