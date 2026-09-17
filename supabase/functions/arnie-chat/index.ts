@@ -445,7 +445,7 @@ const PROPOSE_CREATE_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup', 'payment'], description: 'lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person. appointment = book a sales visit on an existing lead (sets the lead to Appointment Set, hands it to the rep, and creates the setter fee — the same as booking from Lead Setter). quote = a Draft estimate for a lead or customer, lines from the price book, nothing sent. followup = a personal note from the rep on a quote that has gone quiet, SENT to the customer when they approve the card — the one draft that cannot be undone. payment = money that arrived on an open invoice (cash, check, ACH, Venmo, Zelle, PayPal, financing) — recorded against the invoice, the status updated, the receipt emailed; admin only.' },
+      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup', 'payment', 'memory'], description: 'lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person. appointment = book a sales visit on an existing lead (sets the lead to Appointment Set, hands it to the rep, and creates the setter fee — the same as booking from Lead Setter). quote = a Draft estimate for a lead or customer, lines from the price book, nothing sent. followup = a personal note from the rep on a quote that has gone quiet, SENT to the customer when they approve the card — the one draft that cannot be undone. payment = money that arrived on an open invoice (cash, check, ACH, Venmo, Zelle, PayPal, financing) — recorded against the invoice, the status updated, the receipt emailed; admin only. memory = one line about THIS user to carry into every future conversation (a nickname for a job or customer, a preference, a standing fact about them) — kept only when they approve the card.' },
       fields: {
         type: 'object',
         description:
@@ -466,6 +466,8 @@ const PROPOSE_CREATE_TOOL = {
           customer: { type: 'string' }, estimate_name: { type: 'string' },
           quote: { type: 'string' }, channel: { type: 'string' },
           invoice: { type: 'string' }, amount: { type: 'string' }, method: { type: 'string' }, date: { type: 'string' }, reference: { type: 'string' },
+          kind: { type: 'string', description: 'memory: preference, alias or fact' },
+          text: { type: 'string', description: 'memory: the one line to remember, written as a fact about the user in the third person, e.g. "Calls the Riverside Apartments job (JOB-2214) the gym", "Wants the morning brief by text"' },
           lines: { type: 'array', items: { type: 'object', properties: { item: { type: 'string' }, quantity: { type: 'number' }, price: { type: 'number' }, description: { type: 'string' } }, required: ['item'] } },
         },
       },
@@ -1213,6 +1215,15 @@ Deno.serve(async (req) => {
     const companyId = caller.companyId
     const role = caller.role
 
+    // What Arnie remembers about THIS person — rows they approved onto
+    // arnie_memories ("call the Riverside job 'the gym'", "brief me by
+    // text"). Read here, server-side, from the caller's identity, so a
+    // client cannot hand him someone else's head. Arnie only; Frankie
+    // keeps to the books.
+    const systemPromptFinal = agent === 'arnie' && companyId != null && caller.employeeId != null
+      ? systemPrompt + await memoriesBlock(companyId, caller.employeeId)
+      : systemPrompt
+
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return jsonError('messages array is required', 400)
     }
@@ -1237,11 +1248,11 @@ Deno.serve(async (req) => {
 
     // === STREAMING + TOOL USE LOOP ===
     if (stream) {
-      return streamWithTools(cleaned, systemPrompt, caller, cards, agent)
+      return streamWithTools(cleaned, systemPromptFinal, caller, cards, agent)
     }
 
     // === NON-STREAMING (with tool support) ===
-    const reply = await callWithTools(cleaned, systemPrompt, caller, cards, agent)
+    const reply = await callWithTools(cleaned, systemPromptFinal, caller, cards, agent)
     return new Response(JSON.stringify({ reply }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
@@ -1287,6 +1298,22 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[]) {
 }
 
 // Run a non-streaming completion with tool use support (multi-turn)
+/** The remembered lines as a prompt section — empty string when there are none. */
+async function memoriesBlock(companyId: number, employeeId: number): Promise<string> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/arnie_memories?select=kind,text&company_id=eq.${companyId}&employee_id=eq.${employeeId}&order=created_at&limit=40`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } })
+    const rows = res.ok ? await res.json() : []
+    if (!Array.isArray(rows) || !rows.length) return ''
+    const lines = rows.map((m: any) => `- ${String(m.text).replace(/\s+/g, ' ').trim()}`)
+    return `
+
+## What you remember about this person
+They told you these themselves and approved keeping them. Use them without being asked — a nickname here is how they will name a job or a customer, a preference here beats the default. Never contradict one; if one seems out of date, say so and offer to forget it (Arnie → Settings). Never repeat this list back unless they ask what you remember.
+${lines.join('\n')}`
+  } catch { return '' }
+}
+
 async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie'): Promise<string> {
   const { companyId } = caller
   let convo = [...messages]

@@ -8,6 +8,7 @@ import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { Wrench, Check, X, RotateCcw, Send, Sparkles, ShieldAlert, MessageCircle } from 'lucide-react'
 import MorningBriefSettings from './MorningBriefSettings'
+import ArnieMemories from './ArnieMemories'
 
 const t = {
   bg: '#f7f5ef', card: '#ffffff', card2: '#f0ebdd', ink: '#2c3530', sub: '#4d5a52',
@@ -90,6 +91,7 @@ export default function ArnieSetup() {
       <div style={{ maxWidth: 620, margin: '24px auto', padding: 24, color: t.sub }}>
         {/* Everyone gets the morning brief — the gate below is for the change log. */}
         <MorningBriefSettings />
+        <ArnieMemories />
         <div style={{ textAlign: 'center', marginTop: 24 }}>
         <ShieldAlert size={28} color={t.muted} />
         <h2 style={{ color: t.ink, margin: '12px 0 6px' }}>Manager access or above</h2>
@@ -116,6 +118,7 @@ export default function ArnieSetup() {
       </p>
 
       <MorningBriefSettings />
+      <ArnieMemories />
 
       {/* Arnie lives in the corner guy — you can also just talk to him there. */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: t.accentBg, border: `1px solid ${t.line}`, borderRadius: 12, padding: '12px 14px', margin: '0 0 18px' }}>
