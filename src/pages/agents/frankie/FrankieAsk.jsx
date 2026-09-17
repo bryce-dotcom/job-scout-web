@@ -31,6 +31,8 @@ import {
   rememberLastSession, getLastSessionId, forgetLastSession,
 } from './frankieEngine'
 import { chatFrame } from './chatFrame'
+import { readAttachment, attachmentNote, MAX_ATTACHMENTS } from '../../../lib/chatAttachments'
+import { AttachButton, DougieButton, AttachmentChips, composerTone } from '../../../components/ai/AiComposerTools'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -78,6 +80,25 @@ export default function FrankieAsk() {
   const [loading, setLoading] = useState(false)
   const [sessionId, setSessionId] = useState(location.state?.sessionId || null)
   const [copied, setCopied] = useState(null)
+  // Attachments — the same reader Arnie uses (lib/chatAttachments), the
+  // same limits, the same buttons (components/ai/AiComposerTools).
+  const [attachments, setAttachments] = useState([])
+  const [reading, setReading] = useState(false)
+  const [attachError, setAttachError] = useState('')
+  const fileInputRef = useRef(null)
+  const addFiles = useCallback(async (fileList) => {
+    const files = Array.from(fileList || []).filter(f => f && f.size >= 0)
+    if (!files.length) return
+    setAttachError(''); setReading(true)
+    const added = [], problems = []
+    for (const file of files) {
+      if (attachments.length + added.length >= MAX_ATTACHMENTS) { problems.push(`I can take ${MAX_ATTACHMENTS} at a time — ${file.name} didn't make the cut.`); continue }
+      try { added.push(await readAttachment(file)) } catch (err) { problems.push(err.message) }
+    }
+    if (added.length) setAttachments(prev => [...prev, ...added])
+    setAttachError(problems.join(' ')); setReading(false)
+  }, [attachments.length])
+  const removeAttachment = (id) => setAttachments(prev => prev.filter(a => a.id !== id))
   // True while working out which conversation to show, so the welcome screen
   // does not flash up and then get replaced by yesterday's chat.
   const [resuming, setResuming] = useState(true)
@@ -216,15 +237,17 @@ export default function FrankieAsk() {
   // ── Sending ───────────────────────────────────────────────────────
   const handleSend = useCallback(async (text) => {
     const msg = (text || input).trim()
-    if (!msg || loading || sendingRef.current) return
+    const files = text ? [] : attachments
+    if ((!msg && !files.length) || loading || reading || sendingRef.current) return
     sendingRef.current = true
     if (!text) {
       setInput('')
+      setAttachments([]); setAttachError('')
       if (inputRef.current) inputRef.current.style.height = 'auto'
     }
 
     stickRef.current = true
-    const userMsg = { id: Date.now(), role: 'user', content: msg }
+    const userMsg = { id: Date.now(), role: 'user', content: msg, attachments: files }
     setMessages(prev => [...prev, userMsg])
 
     const assistantId = Date.now() + 1
@@ -240,17 +263,18 @@ export default function FrankieAsk() {
         rememberLastSession(sid)
       }
 
-      await saveMessage(sid, 'user', msg)
+      // The saved transcript names the files; the bytes are not stored.
+      await saveMessage(sid, 'user', msg + attachmentNote(files))
 
       const history = messagesRef.current
         .filter(m => m.id !== assistantId && !m.error)
-        .map(m => ({ role: m.role, content: m.content }))
+        .map(m => ({ role: m.role, content: m.content, attachments: m.attachments }))
 
       const fullResponse = await sendMessageStream(msg, history, (partialText, meta) => {
         setMessages(prev => prev.map(m =>
           m.id === assistantId ? { ...m, content: partialText, status: meta?.status || null } : m
         ))
-      })
+      }, files)
 
       await saveMessage(sid, 'assistant', fullResponse)
     } catch (e) {
@@ -301,7 +325,7 @@ export default function FrankieAsk() {
     stickRef.current = true
   }
 
-  const canSend = input.trim().length > 0 && !loading
+  const canSend = (input.trim().length > 0 || attachments.length > 0) && !loading && !reading
   const showWelcome = messages.length === 0 && !loading && !resuming
 
   // ── Pieces ────────────────────────────────────────────────────────
@@ -476,6 +500,13 @@ export default function FrankieAsk() {
                       background: ACCENT, color: '#fff',
                       fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                     }}>
+                      {msg.attachments?.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: msg.content ? 8 : 0 }}>
+                          {msg.attachments.map(att => att.previewUrl
+                            ? <img key={att.id} src={att.previewUrl} alt={att.name} style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(255,255,255,0.3)' }} />
+                            : <span key={att.id} style={{ fontSize: 12, padding: '4px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.15)' }}>{att.name}</span>)}
+                        </div>
+                      )}
                       {msg.content}
                     </div>
                   </div>
@@ -523,10 +554,15 @@ export default function FrankieAsk() {
               </div>
             )}
 
+            <div style={{ padding: isMobile ? '0 12px' : '0 24px' }}>
+              <AttachmentChips tone={composerTone({ bg: theme.bg, border: theme.border, text: theme.text, muted: theme.textMuted, accent: ACCENT })} attachments={attachments} reading={reading} error={attachError} onRemove={removeAttachment} />
+            </div>
             <div style={{
               display: 'flex', gap: 8, alignItems: 'flex-end',
               padding: isMobile ? '8px 12px' : '10px 24px',
             }}>
+              <AttachButton tone={composerTone({ bg: theme.bg, border: theme.border, text: theme.text, muted: theme.textMuted, accent: ACCENT })} onFiles={addFiles} inputRef={fileInputRef} disabled={loading} />
+              <DougieButton tone={composerTone({ bg: theme.bg, border: theme.border, text: theme.text, muted: theme.textMuted, accent: ACCENT, popBg: theme.bgCard || theme.bg })} onAttach={() => fileInputRef.current?.click()} agentName="Frankie" />
               <div style={{
                 flex: 1, display: 'flex', alignItems: 'flex-end',
                 background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 22,

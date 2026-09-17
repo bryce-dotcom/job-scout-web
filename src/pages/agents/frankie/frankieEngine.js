@@ -2,6 +2,7 @@ import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { createSessionStore } from '../../../lib/agentSessions'
 import { fullSystemPrompt, roleForPrompt } from './frankieContext'
+import { toApiMessages, withCurrentTurn } from '../../../lib/chatAttachments'
 
 // The persona and the data context live in frankieContext.js, pure, so the
 // eval runner (scripts/frankie-eval.mjs) can build exactly what production
@@ -53,10 +54,9 @@ const LOOKUP_HINTS = {
  * ones that propose record changes.
  */
 async function callClaude(conversationHistory, systemPrompt, onChunk) {
-  const messages = conversationHistory.map(msg => ({
-    role: msg.role === 'user' ? 'user' : 'assistant',
-    content: msg.content,
-  }))
+  // Attachments ride as content blocks on the turns that carry them, the
+  // way Arnie's do; older images age out (lib/chatAttachments).
+  const messages = toApiMessages(conversationHistory)
 
   const session = await supabase.auth.getSession()
   const accessToken = session?.data?.session?.access_token
@@ -138,7 +138,7 @@ async function loadExpenseCategories() {
   }
 }
 
-export async function sendMessageStream(message, history = [], onChunk) {
+export async function sendMessageStream(message, history = [], onChunk, attachments = []) {
   const { role } = getUserRole()
   const state = useStore.getState()
   const { user, company } = state
@@ -149,10 +149,7 @@ export async function sendMessageStream(message, history = [], onChunk) {
     data: { ...state, payrollRuns, expenseCategories },
   })
 
-  const conversationHistory = [
-    ...history,
-    { role: 'user', content: message }
-  ]
+  const conversationHistory = withCurrentTurn(history, message, attachments)
 
   return await callClaude(conversationHistory, systemPrompt, onChunk)
 }

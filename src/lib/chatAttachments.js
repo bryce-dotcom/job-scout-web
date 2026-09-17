@@ -146,7 +146,10 @@ export async function readAttachment(file) {
   const mediaType = mediaTypeFor(file, kind)
 
   if (kind === 'sheet') {
-    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true })
+    // dateNF: without it a CSV date is parsed as UTC midnight and DISPLAYED in
+    // local time — every date in the sheet reads a day early west of Greenwich
+    // (Frankie put a 9/12 receipt on 9/11). ISO out, the same in every zone.
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true, dateNF: 'yyyy-mm-dd' })
     const sheets = wb.SheetNames.map(name => ({
       name,
       // raw:false gives the value as DISPLAYED — a date reads as a date and a

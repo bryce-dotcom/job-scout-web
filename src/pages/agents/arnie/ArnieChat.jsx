@@ -8,6 +8,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X, Wrench, Sun } from 'lucide-react'
 import { readAttachment, attachmentNote, describeAttachments, ACCEPT_ATTR, MAX_ATTACHMENTS } from '../../../lib/chatAttachments'
+import { DougieButton, composerTone } from '../../../components/ai/AiComposerTools'
 import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, ARNIE_VOICES, unlockAudio } from './arnieVoice'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 
@@ -1055,6 +1056,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
           >
             <Paperclip size={18} />
           </button>
+          <DougieButton tone={composerTone({ bg: dark.inputBg, border: dark.borderLight, text: dark.text, muted: dark.textSecondary, accent: dark.orange, popBg: dark.bgChat })} onAttach={() => fileInputRef.current?.click()} agentName="Arnie" />
 
           <textarea
             ref={inputRef}
