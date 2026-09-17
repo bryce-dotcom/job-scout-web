@@ -37,10 +37,10 @@ const CREW = [
     rep: ['Pilot.com', 'Bench', 'a fractional CFO'],
     out: { kicker: 'answered the owner', head: '“Why is cash tight this month?”', rows: ['3 customers 60+ days late · $9,100', 'Materials spend up 18% vs last month'], done: 'Queue reminders to all 3?' } },
   { ab: 'FD', name: 'Freddy', role: 'Fleet & equipment',
-    hook: 'The whole fleet, watched by an AI that catches a fuel-card thief and a missed service before they cost you.',
-    hi: ['Fuel-theft & leak detection', 'Predictive service reminders', 'Auto fuel-card reconciliation', 'Insurance-ready driver history'],
+    hook: 'Every truck and machine on live GPS — plus an AI that catalogs a new asset from a photo of its data plate, then drafts its maintenance schedule for you to approve.',
+    hi: ['Live GPS + trip history (Watchdog)', 'Photo a data plate → make, model, year & serial', 'AI drafts the PM schedule — you approve', 'Geofence & speed alerts · fuel & cost logs'],
     rep: ['Fleetio', 'Samsara'],
-    out: { kicker: 'swept the fleet', head: 'This morning’s fleet check', rows: ['⚠ Truck 12 · burning 2× fuel — leak or theft', 'Truck 7 · service due in 568 mi (~2 wks)'], done: 'both pushed to your inbox ✓' } },
+    out: { kicker: 'cataloged a new machine', head: 'Adding a skid steer', rows: ['Plate photo → Bobcat S650 · 2021 · SN A3NL11…', 'PM suggested · 250-hr & 500-hr service'], done: 'approved & saved to the asset ✓' } },
   { ab: 'VI', name: 'Victor', role: 'Quality control',
     hook: 'Before you invoice, Victor grades the job from the photos — and catches the half-done work the customer would’ve caught.',
     hi: ['AI workmanship + completeness scoring', 'Missing-shot detection', 'Before / after pairing', 'Letter-grade report on the job'],
@@ -151,7 +151,8 @@ const SWITCH = [
     { k: 'BambooHR · Rippling', n: 'Onboarding & HR', d: 'W-4, I-9, direct deposit, handbook — on their phone.' },
   ] },
   { cat: 'Fleet & assets', rows: [
-    { k: 'Fleetio · Samsara · Verizon Connect', n: 'Freddy', ai: true, d: 'GPS off the phone, fuel logs, maintenance & costs.' },
+    { k: 'Fleetio · Samsara · Verizon Connect', n: 'Freddy', ai: true, d: 'Live GPS + trips, plate-scan asset intake, AI-drafted maintenance.' },
+    { k: 'Life360 · “where’s the crew?” texts', n: 'Company Map', isNew: true, d: 'Everyone clocked in and every tracked machine on one live map.' },
   ] },
   { cat: 'Marketing & documents', rows: [
     { k: 'Mailchimp · Klaviyo · Constant Contact', n: 'Conrad', ai: true, d: 'Writes the campaign, picks the segment, sends it.' },
@@ -252,6 +253,25 @@ const CSS = `
   .pr .term .row .cited{color:#7fae5c;font-size:10.5px;display:inline-flex;align-items:center;gap:4px}
   .pr .prospect .repl{font-family:var(--mono);font-size:11.5px;color:#9aa08c;margin-top:14px;position:relative}
   .pr .prospect .repl b{color:#ffb27a}
+  .pr .cmap{margin-top:18px;background:#0f130c;border:1px solid rgba(255,255,255,.12);border-radius:14px;overflow:hidden;position:relative}
+  .pr .cmap-map{position:relative;height:184px;background:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px) 0 0/32px 32px,linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px) 0 0/32px 32px,radial-gradient(130% 130% at 26% 16%,#1b2214,#0c1008)}
+  .pr .cmap-map svg{position:absolute;inset:0;width:100%;height:100%}
+  .pr .cmap-map .pin{position:absolute;width:14px;height:14px;transform:translate(-50%,-50%);border:2px solid #0f130c;box-shadow:0 2px 6px rgba(0,0,0,.55)}
+  .pr .cmap-map .pin.person{border-radius:50%;background:#8fb76a}
+  .pr .cmap-map .pin.person.wait{background:#727868}
+  .pr .cmap-map .pin.equip{border-radius:3px;background:#f2913f}
+  .pr .cmap-map .pin.person::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(143,183,106,.55);animation:cmpulse 2.6s ease-out infinite}
+  .pr .cmap-map .pin.person.wait::after{display:none}
+  @keyframes cmpulse{0%{transform:scale(.55);opacity:.7}100%{transform:scale(1.5);opacity:0}}
+  .pr .cmap-roster{display:flex;flex-direction:column}
+  .pr .cmap-roster .cmr{display:flex;align-items:center;gap:9px;padding:9px 14px;font-family:var(--mono);font-size:12px;color:#d8d4c4;background:#12160e;border-top:1px solid rgba(255,255,255,.06)}
+  .pr .cmap-roster .cmr b{color:#fff;font-weight:700}
+  .pr .cmap-roster .cmr .mut{color:#8f9580}
+  .pr .cmap-roster .mk{width:11px;height:11px;flex:none}
+  .pr .cmap-roster .mk.person{border-radius:50%;background:#8fb76a}
+  .pr .cmap-roster .mk.person.wait{background:#727868}
+  .pr .cmap-roster .mk.equip{border-radius:2px;background:#f2913f}
+  @media(prefers-reduced-motion:reduce){ .pr .cmap-map .pin.person::after{animation:none;opacity:0} }
   .pr .recur{margin-top:24px;background:var(--nightGrn);color:#eae6d7;border-radius:22px;padding:26px 22px;position:relative;overflow:hidden}
   .pr .recur::after{content:"";position:absolute;inset:0;opacity:.4;pointer-events:none;background:radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:18px 18px}
   .pr .recur .eb{color:#cbb8ff;background:rgba(139,92,246,.18)}
@@ -588,6 +608,7 @@ export default function Pricing() {
         <symbol id="i-dollar" viewBox="0 0 24 24"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></symbol>
         <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z" /></symbol>
         <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 6h11v9H3zM14 9h4l3 3v3h-7z" /><circle cx="7" cy="18" r="2" /><circle cx="17" cy="18" r="2" /></symbol>
+        <symbol id="i-map" viewBox="0 0 24 24"><path d="M12 21c4-4.4 6-7.6 6-10.5A6 6 0 0 0 6 10.5c0 2.9 2 6.1 6 10.5z" /><circle cx="12" cy="10.5" r="2.2" /></symbol>
         <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2" /><path d="M3 20a6 6 0 0 1 12 0M16 6a3 3 0 0 1 0 6M15 20a6 6 0 0 1 6-2" /></symbol>
         <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></symbol>
         <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 0-2 2z" /><path d="M4 5v14" /></symbol>
@@ -788,6 +809,34 @@ export default function Pricing() {
             <div className="coming rv">
               <span className="lbl">12 more trade specialists rolling out</span>
               <div className="pills">{COMING.map((c) => <span key={c}>{c}</span>)}</div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div className="wrap">
+            <div className="prospect rv">
+              <span className="eb on-dark"><Icon id="i-map" style={{ fontSize: 13 }} /> Company Map</span>
+              <h3>Your whole company on one live map.</h3>
+              <p className="say">Everyone clocked in and every tracked machine, in one view. Crew show live GPS — or their clock-in spot until the first ping. Equipment streams speed, fuel and ignition off Watchdog. Tap a machine to open its record; a shift running too long gets flagged as a missed clock-out.</p>
+              <div className="cmap">
+                <div className="cmap-map">
+                  <svg viewBox="0 0 400 184" preserveAspectRatio="none"><path d="M30 150 Q130 96 210 128 T388 66" fill="none" stroke="rgba(255,255,255,.09)" strokeWidth="2" /><path d="M60 24 Q150 74 250 58 T410 128" fill="none" stroke="rgba(255,255,255,.06)" strokeWidth="2" /></svg>
+                  <span className="pin person" style={{ left: '24%', top: '32%' }} />
+                  <span className="pin equip" style={{ left: '60%', top: '26%' }} />
+                  <span className="pin person" style={{ left: '46%', top: '60%' }} />
+                  <span className="pin equip" style={{ left: '78%', top: '64%' }} />
+                  <span className="pin person wait" style={{ left: '31%', top: '78%' }} />
+                </div>
+                <div className="cmap-roster">
+                  <div className="cmr"><span className="mk person" /><span className="tx"><b>Mike</b> · clocked in <span className="mut">— live, 2m ago</span></span></div>
+                  <div className="cmr"><span className="mk equip" /><span className="tx"><b>Truck 7</b> <span className="mut">— 42 mph · Watchdog GPS</span></span></div>
+                  <div className="cmr"><span className="mk person" /><span className="tx"><b>Dana</b> · clocked in <span className="mut">— live</span></span></div>
+                  <div className="cmr"><span className="mk equip" /><span className="tx"><b>Skid steer</b> <span className="mut">— idle · fuel 61%</span></span></div>
+                  <div className="cmr"><span className="mk person wait" /><span className="tx"><b>Luis</b> <span className="mut">— clock-in spot, no ping yet</span></span></div>
+                </div>
+              </div>
+              <div className="repl">replaces <b>Life360, group texts, “where’s the crew?”</b> — and guessing.</div>
             </div>
           </div>
         </section>
