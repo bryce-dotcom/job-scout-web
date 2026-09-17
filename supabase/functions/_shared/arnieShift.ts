@@ -18,7 +18,7 @@
 import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
 import { readRecordList, patchRow } from './arnieRest.ts'
-import { localToUtc } from './arnieTime.ts'
+import { localToUtc, resolveWhenSaid } from './arnieTime.ts'
 
 const fmt = (iso: string | Date, tz: string) => {
   try { return new Date(iso).toLocaleString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return String(iso) }
@@ -87,9 +87,12 @@ export async function proposeShiftClose(
   }
   if (row.clock_out) return { error: `That shift is already closed at ${fmt(row.clock_out, tz)}.` }
 
-  // The time. "now", or a wall-clock time in the caller's zone.
+  // The time — as SAID, looking BACK: "5:30 yesterday", "Thursday 6pm",
+  // "now". The server does the calendar (see resolveDayWord).
   const v = String(input.value || '').trim().toLowerCase()
-  const out = v === 'now' || v === '' ? new Date() : localToUtc(input.value, tz)
+  const said = v === 'now' || v === '' ? null : resolveWhenSaid(input.value, tz, 'back')
+  if (v && v !== 'now' && (!said || !said.time)) return { error: `When did you actually stop? I can take "5:30 yesterday", "Thursday at 6pm", or YYYY-MM-DD HH:MM — I got "${input.value}".` }
+  const out = said ? localToUtc(`${said.date} ${said.time}`, tz) : new Date()
   if (!out) return { error: `Give me the clock-out as YYYY-MM-DD HH:MM in ${tz}, or "now" — I got "${input.value}".` }
   const inAt = new Date(row.clock_in)
   if (out.getTime() <= inAt.getTime()) return { error: `${fmt(out, tz)} is before the clock-in at ${fmt(inAt, tz)}.` }

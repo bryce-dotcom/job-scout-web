@@ -54,3 +54,71 @@ export function resolveDayWord(said: string, tz: string, now = new Date()): stri
   if (ahead === 0) ahead = 7
   return plus(ahead)
 }
+
+/**
+ * resolveDayWord, with a direction. 'forward' (the default) is for booking:
+ * a weekday is the coming one. 'back' is for a clock-out: "Thursday" said on
+ * Friday is yesterday, "Thursday" said on Thursday is today, "last Monday"
+ * is last Monday whichever way you lean, and "yesterday" is yesterday.
+ */
+export function resolveDayWordDir(said: string, tz: string, direction: 'forward' | 'back', now = new Date()): string | null {
+  const s = String(said ?? '').trim().toLowerCase()
+  if (!s) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  if (/^yesterday$/.test(s)) return plusDays(tz, -1, now)
+  if (/^day before yesterday$/.test(s)) return plusDays(tz, -2, now)
+  const m = s.match(/^(last\s+)?(?:next\s+|this\s+|on\s+)?(sun|mon|tue|tues|wed|thu|thur|thurs|fri|sat)[a-z]*$/)
+  if (!m) return resolveDayWord(s, tz, now)
+  if (!m[1] && direction === 'forward') return resolveDayWord(s, tz, now)
+  const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+  const want = DAYS.findIndex((d) => d.startsWith(m[2].slice(0, 3)))
+  const todayDow = new Date(now.getTime() + tzOffsetMinutes(tz, now) * 60000).getUTCDay()
+  let back = (todayDow - want + 7) % 7
+  if (m[1] && back === 0) back = 7          // "last Thursday" said on a Thursday = a week ago
+  return plusDays(tz, -back, now)
+}
+
+function plusDays(tz: string, n: number, now: Date): string {
+  const base = new Date(now.getTime() + tzOffsetMinutes(tz, now) * 60000)
+  return new Date(base.getTime() + n * 86400000).toISOString().slice(0, 10)
+}
+
+/**
+ * A moment the way a person says it → { date, time } in `tz`, or null.
+ *
+ *   "Thursday at 2"        "tomorrow 9:30am"      "2pm Friday"
+ *   "5:30 yesterday"       "yesterday at 5:30 pm" "noon Monday"
+ *   "2026-09-17 14:00"     "2026-09-17T14:00"     "14:00" (today)
+ *
+ * No am/pm: 1–6 is afternoon, 7–11 is morning, 12 is noon — nobody books
+ * a sales call for 2am, and the card reads the time back so a wrong guess
+ * is caught before it is booked. A day without a time is returned with
+ * time null; the caller decides whether to ask.
+ */
+export function resolveWhenSaid(said: string, tz: string, direction: 'forward' | 'back' = 'forward', now = new Date()): { date: string; time: string | null } | null {
+  let s = String(said ?? '').trim().toLowerCase().replace(/,/g, ' ').replace(/\s+/g, ' ')
+  if (!s) return null
+  const iso = s.match(/^(\d{4}-\d{2}-\d{2})(?:[t ](\d{1,2}):(\d{2}))?$/)
+  if (iso) return { date: iso[1], time: iso[2] ? `${iso[2].padStart(2, '0')}:${iso[3]}` : null }
+
+  // Pull the time out first; whatever is left is the day.
+  let time: string | null = null
+  const t = s.match(/\b(noon|midnight|(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?)\b/)
+  if (t) {
+    if (t[1] === 'noon') time = '12:00'
+    else if (t[1] === 'midnight') time = '00:00'
+    else {
+      let h = Number(t[2]); const mm = t[3] || '00'; const ap = (t[4] || '').replace(/\./g, '')
+      if (h > 24 || Number(mm) > 59) return null
+      if (ap === 'pm' && h < 12) h += 12
+      else if (ap === 'am' && h === 12) h = 0
+      else if (!ap && h >= 1 && h <= 6) h += 12        // "at 2", "5:30" → afternoon
+      time = `${String(h).padStart(2, '0')}:${mm}`
+    }
+    s = (s.slice(0, t.index) + ' ' + s.slice((t.index ?? 0) + t[0].length)).replace(/\bat\b/g, ' ').replace(/\s+/g, ' ').trim()
+  }
+  const dayWords = s.replace(/\b(at|on|for)\b/g, ' ').replace(/\s+/g, ' ').trim()
+  const date = dayWords ? resolveDayWordDir(dayWords, tz, direction, now) : plusDays(tz, 0, now)
+  if (!date) return null
+  return { date, time }
+}

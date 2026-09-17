@@ -60,7 +60,9 @@ describe('the time is checked, never assumed', () => {
   })
 
   it('is read in the caller\'s zone, with "now" as the only shortcut', () => {
-    expect(proposeFn).toMatch(/v === 'now' \|\| v === '' \? new Date\(\) : localToUtc\(input\.value, tz\)/)
+    // As SAID, looking back: "5:30 yesterday", "Thursday at 6pm" — the server does the calendar (resolveWhenSaid).
+    expect(proposeFn).toMatch(/const said = v === 'now' \|\| v === '' \? null : resolveWhenSaid\(input\.value, tz, 'back'\)/)
+    expect(proposeFn).toMatch(/const out = said \? localToUtc\(`\$\{said\.date\} \$\{said\.time\}`, tz\) : new Date\(\)/)
   })
 
   it('more than one open shift is a choice, none is a plain answer', () => {
