@@ -1379,23 +1379,32 @@ export default function SalesPipeline() {
     }
 
     // LEAD CARD being dragged (pre-estimate stages)
-    if (draggedLead.status === targetStageId) return
+    await moveLeadToStage(draggedLead, targetStageId)
+    setDraggedLead(null)
+  }
+
+  // One lead into one stage, from wherever the rep did it: a drag on the
+  // board or a stage chip on the Liahona lead card. Won/Lost open the same
+  // dialogs either way, and a staged quote moves with its lead.
+  const moveLeadToStage = async (lead, targetStageId) => {
+    const stage = stages.find(s => s.id === targetStageId)
+    if (!lead || lead.status === targetStageId || !stage || stage.isDelivery || stage.isClosed) return
 
     // Handle Won/Lost stages for lead cards
     if (stage?.isWon) {
-      setSelectedLead(draggedLead)
+      setSelectedLead(lead)
       setShowWonModal(true)
       return
     }
 
     if (stage?.isLost) {
-      setSelectedLead(draggedLead)
+      setSelectedLead(lead)
       setShowLostModal(true)
       return
     }
 
     // Update lead status
-    await updateLead(draggedLead.id, {
+    await updateLead(lead.id, {
       status: targetStageId,
       updated_at: new Date().toISOString()
     })
@@ -1414,7 +1423,7 @@ export default function SalesPipeline() {
     // to its own lead card, so it still lands in the right column.
     const targetQuoteStatus = QUOTE_STATUS_MAP[targetStageId]
     if (targetQuoteStatus) {
-      const staged = (draggedLead._quotes || [])
+      const staged = (lead._quotes || [])
         .filter(q => STAGED_QUOTE_STATUSES.has(q.status))
         .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
       const active = staged[0]
@@ -1426,7 +1435,6 @@ export default function SalesPipeline() {
       }
     }
 
-    setDraggedLead(null)
     await fetchPipelineLeads()
   }
 
@@ -2278,6 +2286,10 @@ export default function SalesPipeline() {
                   theme={m}
                   onSelectLead={openLeadDetail}
                   onLeadsChanged={() => fetchPipelineLeads(true)}
+                  onChangeStage={moveLeadToStage}
+                  followUpsByLead={followUpRowsByLead}
+                  employeeId={currentEmployeeId}
+                  onLogged={loadFollowUps}
                 />
               </div>
             ) : (
@@ -2866,6 +2878,10 @@ export default function SalesPipeline() {
                 theme={theme}
                 onSelectLead={openLeadDetail}
                 onLeadsChanged={() => fetchPipelineLeads(true)}
+                onChangeStage={moveLeadToStage}
+                followUpsByLead={followUpRowsByLead}
+                employeeId={currentEmployeeId}
+                onLogged={loadFollowUps}
               />
             )}
 

@@ -31,6 +31,7 @@ import { callProspectResearch, takeProspectsHandoff } from '../../lib/prospectRe
 import { parcelAt, parcelsInBounds, parcelSummary, neighborsAround, setParcelCompany } from '../../lib/parcels'
 import { isCompanyName, parcelAddress, parcelNotes, leadRowFromParcel } from './leadRows'
 import NeighborsPanel from './NeighborsPanel'
+import LeadCard from './LeadCard'
 import {
   PALETTE, US_CENTER, themeTokens, makeStyles, ensureLeaflet, hasCoords, dist, initials, minutesAgo, esc, loadView, saveView
 } from './util'
@@ -46,7 +47,8 @@ import TerritoryPanel from './TerritoryPanel'
 // into the map (via onToggleStage), and the side panel becomes a bottom sheet.
 export default function LiahonaMap({
   leads = [], customers = [], stages = [], hiddenStages, companyId, employees = [], user, theme,
-  onSelectLead, onLeadsChanged, compact = false, onToggleStage
+  onSelectLead, onLeadsChanged, compact = false, onToggleStage,
+  onChangeStage, followUpsByLead, employeeId, onLogged
 }) {
   const t = themeTokens(theme)
   const { btn } = makeStyles(t)
@@ -109,6 +111,11 @@ export default function LiahonaMap({
   const [addingNeighbors, setAddingNeighbors] = useState(false)
   const neighborsReqRef = useRef(0)
   const loadNeighborsRef = useRef(null)
+  // The pin the rep tapped: the card in the panel reads the live lead by id
+  // so a stage change or a logged knock shows the moment the list refreshes.
+  const [activeLeadId, setActiveLeadId] = useState(null)
+  const [changingStage, setChangingStage] = useState(null)
+  const openLeadRef = useRef(null)
 
   const setMode = m => { modeRef.current = m; setModeState(m) }
   const setDrawPts = pts => { drawPtsRef.current = pts; setDrawPtsState(pts) }
@@ -260,7 +267,7 @@ export default function LiahonaMap({
       m.bindTooltip(`<b>${esc(lead.customer_name || lead.business_name || 'Lead')}</b><br>${esc(stage?.name || lead.status)}${lead.address ? '<br>' + esc(lead.address) : ''}`, { direction: 'top' })
       m.on('click', () => {
         if (modeRef.current === 'neighbors') loadNeighborsRef.current?.(m.getLatLng(), lead.customer_name || lead.business_name || lead.address)
-        else if (modeRef.current === 'select') onSelectLead?.(lead)
+        else if (modeRef.current === 'select') openLeadRef.current?.(lead)
       })
       m.on('dragend', async e => {
         const p = e.target.getLatLng()
@@ -557,7 +564,7 @@ export default function LiahonaMap({
   const loadNeighbors = async (latlng, label = '', radiusFt = neighbors?.radiusFt || 500) => {
     const lat = latlng.lat, lng = latlng.lng
     const req = ++neighborsReqRef.current
-    setTerritoryForm(null); setDropForm(null); setMode('select'); setSheetOpen(true)
+    setTerritoryForm(null); setDropForm(null); setActiveLeadId(null); setMode('select'); setSheetOpen(true)
     setNeighbors({ lat, lng, label, radiusFt, loading: true, items: [] })
     setNeighborSel(new Set())
     const r = await neighborsAround(lat, lng, radiusFt / 3.28084)
@@ -575,6 +582,20 @@ export default function LiahonaMap({
     if (map && items.length) map.fitBounds(items.map(i => [i.lat, i.lng]).concat([[lat, lng]]), { padding: [30, 30], maxZoom: 18 })
   }
   loadNeighborsRef.current = loadNeighbors
+
+  // ------------------------------------------------------------- lead card
+  const activeLead = useMemo(() => activeLeadId == null ? null : leads.find(l => String(l.id) === String(activeLeadId)) || null, [leads, activeLeadId])
+  const openLeadCard = lead => {
+    setTerritoryForm(null); setDropForm(null)
+    setActiveLeadId(lead.id); setSheetOpen(true)
+  }
+  openLeadRef.current = openLeadCard
+
+  const changeStage = async (lead, stageId) => {
+    if (!onChangeStage) { onSelectLead?.(lead); return }
+    setChangingStage(stageId)
+    try { await onChangeStage(lead, stageId) } finally { setChangingStage(null) }
+  }
 
   const closeNeighbors = () => { neighborsReqRef.current++; setNeighbors(null); setNeighborSel(new Set()); groupsRef.current.neighbors?.clearLayers() }
 
@@ -650,7 +671,7 @@ export default function LiahonaMap({
   // Assessor parcel first (free, instant, exact situs address, owner where
   // the county publishes it); reverse geocode in parallel as the fallback.
   const startDropAt = async (lat, lng, { address = '', parcel: known = null } = {}) => {
-    setTerritoryForm(null)
+    setTerritoryForm(null); setActiveLeadId(null)
     const form = { lat, lng, address, customer_name: '', business_name: '', phone: '', email: '', resolving: !address, parcelLoading: !known, parcel: known }
     setDropForm(form)
     if (known) { applyParcelToForm(known, form); return }
@@ -906,6 +927,7 @@ export default function LiahonaMap({
 
   const sheetTitle = territoryForm ? (territoryForm.id ? 'Edit territory' : 'New territory')
     : dropForm ? 'New lead'
+    : activeLead ? (activeLead.customer_name || activeLead.business_name || 'Lead')
     : neighbors ? (neighbors.loading ? 'Neighbors · looking…' : `Neighbors · ${neighbors.items.length} within ${neighbors.radiusFt} ft`)
     : route ? `Route · ${route.stops.length} stops`
     : filterLabel ? `${filterLabel} · ${unassignedInFilter.length} unassigned`
@@ -968,6 +990,15 @@ export default function LiahonaMap({
             <DropLeadForm t={t} form={dropForm} setForm={setDropForm} saving={saving} onSave={saveDropLead} onCancel={() => { setDropForm(null); setResearchError('') }}
               onPan={(lat, lng) => mapRef.current?.panTo([lat, lng])}
               onResearch={researchAddress} researching={researching} researchError={researchError} />
+          ) : activeLead ? (
+            <LeadCard t={t} lead={activeLead} stages={stages} stageById={stageById} employeeById={employeeById}
+              followUps={followUpsByLead?.get(String(activeLead.id)) || []} companyId={companyId} employeeId={employeeId}
+              changingStage={changingStage} onChangeStage={changeStage}
+              onOpen={() => onSelectLead?.(activeLead)}
+              onNeighbors={() => loadNeighbors({ lat: Number(activeLead.latitude), lng: Number(activeLead.longitude) }, activeLead.customer_name || activeLead.business_name || activeLead.address)}
+              onPan={() => mapRef.current?.panTo([Number(activeLead.latitude), Number(activeLead.longitude)])}
+              onClose={() => setActiveLeadId(null)}
+              onLogged={k => { notify(`Logged: ${k.label}`); onLogged?.() }} onError={notify} />
           ) : (
             <>
               {route && <RoutePanel t={t} route={route} stageById={stageById} onClear={clearRoute} onSelectLead={l => l?.id ? onSelectLead?.(l) : l?._neighbor && focusNeighbor(l._neighbor)} />}
