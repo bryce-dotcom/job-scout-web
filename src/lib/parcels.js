@@ -3,9 +3,9 @@
 // Sources (public ArcGIS REST, queried by point or by map bounds):
 //   Utah      UGRC per-county "Parcels_<County>_LIR" layers: address, built
 //             year, square footage, acres, market value, class. No owner names.
-//   Arizona   Maricopa County Assessor "Parcels" layer: address, owner of
-//             record, mailing address, last sale, living area, lot, full cash
-//             value.
+//   Others    One registry row each in parcelSources.js (Maricopa County AZ
+//             and every county/state added since): owner of record, mailing
+//             address, sale, building and lot facts as the county publishes.
 //   Elsewhere  Regrid, nationwide, through the parcel-lookup edge function
 //             (paid per lookup, cached server-side, token never in the browser).
 //
@@ -14,6 +14,7 @@
 
 import { supabase } from './supabase'
 import { pointInGeometry, geometryCentroid } from './mapOverlays'
+import { sourceFor, num, clean, dateStr } from './parcelSources'
 
 // setParcelCompany(companyId) is called by the map so the edge function can
 // meter paid lookups per company.
@@ -34,7 +35,6 @@ async function regridCall(action, body) {
 
 const TIGER_COUNTY = 'https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1/query'
 const UGRC = 'https://services1.arcgis.com/99lidPhWCzftIe9K/arcgis/rest/services'
-const MARICOPA = 'https://gis.mcassessor.maricopa.gov/arcgis/rest/services/Parcels/MapServer/0/query'
 
 const countyCache = new Map()
 
@@ -100,7 +100,8 @@ export function tidyOwner(raw) {
   let s = String(raw).replace(/\((jt|tc|trs?|te|etal|et al|life estate|le)\)/gi, ' ').replace(/\b(et al|etal|et ux|et vir)\b\.?/gi, ' ').replace(/\s+/g, ' ').trim()
   if (!s || /not identified|unknown|unavailable|^n\/?a$|withheld/i.test(s)) return null
   const parts = s.split(/\s*;\s*/).map(x => x.trim()).filter(Boolean)
-  if (parts.length > 1) {
+  if (parts.length === 1) s = parts[0]
+  else if (parts.length > 1) {
     const last = parts.map(x => x.split(' ').pop().toLowerCase())
     if (last.every(l => l === last[0]) && parts.every(x => x.split(' ').length > 1)) {
       s = `${parts.map(x => x.split(' ').slice(0, -1).join(' ')).join(' & ')} ${parts[0].split(' ').pop()}`
@@ -127,16 +128,12 @@ function providerFor(county) {
     // and ArcGIS rejects a query naming a missing field — so ask for all.
     return { id: 'ugrc', county: county.name, url: `${UGRC}/Parcels_${svc}_LIR/FeatureServer/0/query`, fields: '*' }
   }
-  if (county.state === '04' && /^Maricopa/i.test(county.name)) {
-    return { id: 'maricopa', county: county.name, url: MARICOPA,
-      fields: 'APN,OWNER_NAME,PHYSICAL_ADDRESS,PHYSICAL_CITY,PHYSICAL_ZIP,MAIL_ADDRESS,SALE_DATE,SALE_PRICE,LAND_SIZE,CONST_YEAR,LIVING_SPACE,FCV_CUR,PUC,SUBNAME,LATITUDE,LONGITUDE' }
-  }
+  const src = sourceFor(county)
+  if (src) return { id: src.id, county: county.name, url: src.url + '/query', fields: src.fields || '*', source: src }
   return null
 }
 
-const num = v => { if (v == null || v === '') return null; const n = Number(String(v).replace(/[^0-9.-]/g, '')); return Number.isFinite(n) ? n : null }
 const title = s => s ? String(s).toLowerCase().replace(/\b([a-z])/g, c => c.toUpperCase()) : ''
-const dateStr = ms => ms ? new Date(Number(ms)).toISOString().slice(0, 10) : null
 
 export function normalizeParcel(provider, p, geometry) {
   if (provider.id === 'ugrc') {
@@ -152,21 +149,21 @@ export function normalizeParcel(provider, p, geometry) {
       as_of: dateStr(p.CURRENT_ASOF), geometry
     }
   }
-  // PHYSICAL_ADDRESS arrives as "100 N GILBERT RD   GILBERT  85234": keep the
-  // street part only, city and ZIP have their own fields.
-  let street = (p.PHYSICAL_ADDRESS || '').replace(/\s+/g, ' ').trim()
-  const cityZip = new RegExp(`\\s+${(p.PHYSICAL_CITY || '').trim()}\\s*${(p.PHYSICAL_ZIP || '').trim()}\\s*$`, 'i')
-  if (p.PHYSICAL_CITY) street = street.replace(cityZip, '').trim()
+  // Every other source: the registry entry maps its fields onto our shape.
+  const src = provider.source
+  const r = src.read(p)
+  if (!r) return null
   return {
-    source: 'maricopa', source_label: 'Maricopa County Assessor', county: provider.county,
-    parcel_id: p.APN, address: title(street), city: title(p.PHYSICAL_CITY || ''), zip: p.PHYSICAL_ZIP || '',
-    owner_name: tidyOwner(p.OWNER_NAME), mail_address: title(p.MAIL_ADDRESS),
-    year_built: num(p.CONST_YEAR), sqft: num(p.LIVING_SPACE), lot_acres: p.LAND_SIZE ? +(num(p.LAND_SIZE) / 43560).toFixed(2) : null,
-    market_value: num(p.FCV_CUR), land_value: null,
-    last_sale_date: dateStr(p.SALE_DATE), last_sale_price: num(p.SALE_PRICE),
-    prop_class: null, prop_type: null, primary_res: null,
-    subdivision: title(p.SUBNAME), source_url: `https://mcassessor.maricopa.gov/mcs/?q=${encodeURIComponent(p.APN || '')}`,
-    as_of: null, geometry, lat: p.LATITUDE ?? null, lng: p.LONGITUDE ?? null
+    source: src.id, source_label: src.label, county: provider.county,
+    parcel_id: r.parcel_id != null ? String(r.parcel_id).trim() : null,
+    address: title(clean(r.address)), city: title(clean(r.city)), zip: clean(r.zip),
+    owner_name: tidyOwner(r.owner_name), mail_address: title(clean(r.mail_address)) || null,
+    year_built: num(r.year_built), sqft: num(r.sqft), lot_acres: r.lot_acres ?? (r.lot_sqft ? +(num(r.lot_sqft) / 43560).toFixed(2) : null),
+    market_value: num(r.market_value), land_value: num(r.land_value),
+    last_sale_date: r.last_sale_date || null, last_sale_price: num(r.last_sale_price),
+    prop_class: r.prop_class || null, prop_type: r.prop_type || null, primary_res: r.primary_res ?? null,
+    subdivision: title(clean(r.subdivision)) || null, source_url: r.source_url || src.url,
+    as_of: r.as_of || null, geometry, lat: r.lat ?? null, lng: r.lng ?? null
   }
 }
 
@@ -194,8 +191,18 @@ export async function parcelAt(lat, lng) {
   }
   const params = new URLSearchParams({ geometry: `${lng},${lat}`, geometryType: 'esriGeometryPoint', inSR: '4326', outSR: '4326', spatialRel: 'esriSpatialRelIntersects', outFields: provider.fields, returnGeometry: 'true', geometryPrecision: '6', f: 'geojson' })
   try {
-    const j = await fetch(`${provider.url}?${params}`, { signal: AbortSignal.timeout(12000) }).then(r => r.json())
-    const f = j.features?.[0]
+    let j = await fetch(`${provider.url}?${params}`, { signal: AbortSignal.timeout(12000) }).then(r => r.json())
+    // A tap on the street in front of a house lands in road right-of-way,
+    // which most counties don't map as a parcel. Look 25 m around before
+    // giving up, and take the nearest parcel that is a real record.
+    let f = j.features?.find(x => normalizeParcel(provider, x.properties, null))
+    if (!f) {
+      params.set('distance', '25'); params.set('units', 'esriSRUnit_Meter')
+      j = await fetch(`${provider.url}?${params}`, { signal: AbortSignal.timeout(12000) }).then(r => r.json())
+      const cands = (j.features || []).filter(x => x.geometry && normalizeParcel(provider, x.properties, null))
+      const d = g => { const c = geometryCentroid(g); return c ? Math.hypot(c.lat - lat, (c.lng - lng) * Math.cos(lat * Math.PI / 180)) : Infinity }
+      f = cands.sort((a, b) => d(a.geometry) - d(b.geometry))[0]
+    }
     if (!f) return { parcel: null, reason: 'none', county: county?.name || null }
     let parcel = normalizeParcel(provider, f.properties, f.geometry)
     if (provider.id === 'ugrc' && OWNER_SOURCES[county?.name]) {
@@ -230,8 +237,9 @@ export async function parcelsInBounds(bounds) {
   ])
   const features = (j.features || []).filter(f => f.geometry).map(f => {
     const pc = normalizeParcel(provider, f.properties, null)
+    if (!pc) return null
     return { type: 'Feature', geometry: f.geometry, properties: owners ? mergeOwner(pc, owners.get(String(pc.parcel_id || '').trim())) : pc }
-  })
+  }).filter(Boolean)
   return { features, provider: provider.id, county: county?.name || null }
 }
 

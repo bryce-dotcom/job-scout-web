@@ -6,6 +6,7 @@ import { X, Clover, Loader2, Route, UserPlus, Plus, Crosshair } from 'lucide-rea
 import { makeStyles } from './util'
 import { parcelSummary } from '../../lib/parcels'
 import { parcelAddress } from './leadRows'
+import { coverageLabel } from '../../lib/parcelSources'
 
 const RADIUS_FT = [250, 500, 1000]
 const ft = m => Math.round(m * 3.28084)
@@ -36,8 +37,8 @@ export default function NeighborsPanel({ t, data, selected, setSelected, stageBy
       </div>
 
       {data.loading && <div style={{ fontSize: 12, color: t.textMuted, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 0' }}><Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> Reading the county parcels…</div>}
-      {!data.loading && data.reason === 'no-source' && <div style={{ fontSize: 12, color: t.textMuted, padding: '8px 0' }}>No parcel source covers this area yet. Utah and Maricopa County are free; other states need the nationwide parcel plan.</div>}
-      {!data.loading && data.reason === 'expired' && <div style={{ fontSize: 12, color: '#b45309', padding: '8px 0' }}>The nationwide parcel token has expired. Utah and Maricopa County still work.</div>}
+      {!data.loading && data.reason === 'no-source' && <div style={{ fontSize: 12, color: t.textMuted, padding: '8px 0' }}>No free parcel source covers this area yet. Free today: {coverageLabel()}. Elsewhere needs the nationwide parcel plan.</div>}
+      {!data.loading && data.reason === 'expired' && <div style={{ fontSize: 12, color: '#b45309', padding: '8px 0' }}>The nationwide parcel token has expired. Free sources still work: {coverageLabel()}.</div>}
       {!data.loading && data.reason === 'error' && <div style={{ fontSize: 12, color: '#b91c1c', padding: '8px 0' }}>The county map server did not answer. Try again in a moment.</div>}
       {!data.loading && !data.reason && items.length === 0 && <div style={{ fontSize: 12, color: t.textMuted, padding: '8px 0' }}>No other parcels within {data.radiusFt} ft. Widen the ring.</div>}
 
