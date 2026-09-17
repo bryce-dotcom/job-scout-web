@@ -87,3 +87,32 @@ export function cashExpenses({ expenses = [], plaidTransactions = [] }, inRange)
   const manualUnlinked = (expenses || []).filter(e => !e.plaid_transaction_id && inRange(e.date || e.created_at)).reduce((s, e) => s + num(e.amount), 0)
   return bank + manualUnlinked
 }
+
+// Accrual expenses: what the business INCURRED in the window, paid or not.
+//   • manual expenses by expense_date (incurred), linked to a bank row or not
+//   • vendor bills by bill_date, whatever has been paid on them
+//   • bank outflows that are neither a linked manual expense nor a bill
+//     payment (a bill payment reaching the bank is the bill, already counted;
+//     matched by amount within 3 days of a bill_payments row)
+// Everything else in the feed (fuel, a card swipe at the supply house with no
+// bill) is an expense the moment it happens on either basis.
+export function accrualExpenses({ expenses = [], plaidTransactions = [], bills = [], billPayments = [] }, inRange) {
+  const manual = (expenses || []).filter(e => inRange(e.date || e.expense_date || e.created_at)).reduce((s, e) => s + num(e.amount), 0)
+  const billed = (bills || []).filter(b => inRange(b.bill_date || b.created_at)).reduce((s, b) => s + num(b.amount), 0)
+  const linkedTxnIds = new Set((expenses || []).map(e => e.plaid_transaction_id).filter(Boolean))
+  const paidBills = (billPayments || []).map(p => ({ cents: Math.round(num(p.amount) * 100), at: new Date(p.paid_at || p.created_at).getTime() }))
+  const isBillPayment = (t) => {
+    const cents = Math.round(num(t.amount) * 100)
+    const at = new Date(t.date).getTime()
+    return paidBills.some(p => p.cents === cents && Number.isFinite(p.at) && Math.abs(p.at - at) <= 3 * 86400000)
+  }
+  const bank = (plaidTransactions || [])
+    .filter(t => t.amount > 0 && !t.is_transfer && inRange(t.date) && !linkedTxnIds.has(t.id) && !isBillPayment(t))
+    .reduce((s, t) => s + num(t.amount), 0)
+  return manual + billed + bank
+}
+
+// The one entry point pages should use, mirroring computeRevenue.
+export function computeExpenses(basis, data, inRange) {
+  return basis === BASIS_ACCRUAL ? accrualExpenses(data, inRange) : cashExpenses(data, inRange)
+}

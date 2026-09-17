@@ -9,7 +9,7 @@ import { checkCanClockIn, hoursSince } from '../lib/timeClock'
 import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
-import { computeRevenue, cashExpenses, collectedIncentives } from '../lib/revenueBasis'
+import { computeRevenue, computeExpenses, collectedIncentives } from '../lib/revenueBasis'
 import { inLocalRange } from '../lib/localDate'
 import { toast } from '../lib/toast'
 import {
@@ -151,6 +151,18 @@ export default function Dashboard() {
   const [prefs, setPrefs] = useState(loadPrefs)
   const [drill, setDrill] = useState(null) // metric drill-down: { title, items, total, page }
   const [accountingBasis, setAccountingBasis] = useState('cash') // company revenue basis (set in Books)
+  // Accrual expenses need vendor bills + their payments; only fetched on accrual.
+  const [accrualBills, setAccrualBills] = useState({ bills: [], billPayments: [] })
+  useEffect(() => {
+    if (!companyId || accountingBasis !== 'accrual') return
+    let cancelled = false
+    const since = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10)
+    Promise.all([
+      supabase.from('bills').select('id, amount, bill_date, status').eq('company_id', companyId).gte('bill_date', since),
+      supabase.from('bill_payments').select('id, amount, paid_at').eq('company_id', companyId).gte('paid_at', since),
+    ]).then(([b, p]) => { if (!cancelled) setAccrualBills({ bills: b.data || [], billPayments: p.data || [] }) })
+    return () => { cancelled = true }
+  }, [companyId, accountingBasis])
   const [pendingTimeOff, setPendingTimeOff] = useState([])
   // PO module stats — lazy-loaded so the Dashboard doesn't pay the cost
   // for companies that don't use the PO/Bills modules. Empty defaults
@@ -348,7 +360,7 @@ export default function Dashboard() {
   // twice. manualExpensesMTD/plaidOutMTD kept for the breakdown subtitle.
   const manualExpensesMTD = (expenses || []).filter(e => e.date && isThisMonth(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
   const plaidOutMTD = (plaidTransactions || []).filter(t => t.amount > 0 && isThisMonth(t.date) && !t.is_transfer).reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0)
-  const thisMonthExpenses = cashExpenses({ expenses, plaidTransactions }, isThisMonth)
+  const thisMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills }, isThisMonth)
 
   // Quote amounts by lead (for sales won + pipeline chart)
   const quoteByLead = {}
@@ -395,7 +407,7 @@ export default function Dashboard() {
   // the full previous month is the number people actually judge against.
   //
   // Every figure below is the SAME definition as its MTD counterpart, called
-  // with a different window: computeRevenue / cashExpenses take the date test,
+  // with a different window: computeRevenue / computeExpenses take the date test,
   // and wonJobsInRange / deliveredJobsInRange take the range. Nothing about
   // what counts as revenue, an expense, won or delivered is restated here — if
   // it were, this card would eventually disagree with the one above it.
@@ -408,7 +420,7 @@ export default function Dashboard() {
   const lastMonthLabel = firstOfLastMonth.toLocaleDateString('en-US', { month: 'short' })
 
   const lastMonthRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isLastMonth)
-  const lastMonthExpenses = cashExpenses({ expenses, plaidTransactions }, isLastMonth)
+  const lastMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills }, isLastMonth)
   const lastMonthNetIncome = lastMonthRevenue - lastMonthExpenses
   const lastMonthDeposits = (leadPayments || []).filter(d => isLastMonth(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
   const lastMonthWonJobs = wonJobsInRange(jobs, firstOfLastMonth, firstOfMonth)
@@ -426,7 +438,7 @@ export default function Dashboard() {
   const collectedIncentiveYTD = collectedIncentives(utilityInvoices, isThisYear)
   const ytdRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isThisYear)
 
-  const ytdExpenses = cashExpenses({ expenses, plaidTransactions }, isThisYear)
+  const ytdExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills }, isThisYear)
   const ytdNetIncome = ytdRevenue - ytdExpenses
 
   // YTD — same definitions as MTD, just a wider window.

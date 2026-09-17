@@ -51,6 +51,7 @@ const NON_CLOCKABLE_STATUSES = new Set([
 import RankBadge from '../components/RankBadge'
 import { enabledWalletsFrom, walletByMethod, displayHandle, walletGuidance, walletSmsBody } from '../lib/wallets'
 import { qrDataUrl } from '../lib/qr'
+import { businessUnitFor, logoUrlFrom, portalUrlFor } from '../lib/invoiceSend'
 
 // Stripe card payment form (rendered inside Elements provider)
 function StripeCardForm({ theme, amount, onSuccess, onError }) {
@@ -1534,6 +1535,49 @@ export default function FieldScout() {
   }
 
   // Record cash/check payment (manual, tied to invoice)
+  // Email the customer a receipt for a payment taken on site — the same
+  // send-receipt function the invoice page uses. Never blocks the payment.
+  const sendFieldReceipt = async ({ invoiceId, amount, method, totalPaid, invoiceTotal }) => {
+    try {
+      const { data: inv } = await supabase
+        .from('invoices')
+        .select('id, invoice_id, amount, business_unit, sent_to_email, portal_token, customer:customers!customer_id(name, email)')
+        .eq('id', invoiceId)
+        .maybeSingle()
+      const to = inv?.sent_to_email || inv?.customer?.email || paymentJob?.customer?.email || ''
+      if (!inv || !to) return { skipped: true }
+      const bu = businessUnitFor(settings, inv)
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+      const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-receipt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON_KEY}`, 'apikey': ANON_KEY },
+        body: JSON.stringify({
+          recipient_email: to,
+          customer_name: inv.customer?.name || paymentJob?.customer?.name || '',
+          invoice_number: inv.invoice_id || `INV-${inv.id}`,
+          payment_amount: amount,
+          payment_method: method,
+          payment_date: new Date().toISOString().slice(0, 10),
+          balance_remaining: Math.max(0, (invoiceTotal || 0) - totalPaid),
+          invoice_total: invoiceTotal,
+          total_paid: totalPaid,
+          company_name: company?.company_name || '',
+          business_unit_name: bu?.name || inv.business_unit || '',
+          business_unit_phone: bu?.phone || company?.phone || '',
+          business_unit_email: bu?.email || company?.owner_email || '',
+          business_unit_address: bu?.address || company?.remit_to_address || company?.address || '',
+          logo_url: logoUrlFrom(settings, bu, company),
+          portal_url: portalUrlFor(inv.portal_token),
+        }),
+      })
+      const j = await res.json().catch(() => ({}))
+      return j?.success ? { ok: true, email: to } : { ok: false, error: j?.error || `send failed (${res.status})` }
+    } catch (e) {
+      return { ok: false, error: e.message }
+    }
+  }
+
   const handleRecordPayment = async () => {
     if (!paymentJob || !paymentForm.amount) return
     setPaymentSaving(true)
@@ -1583,6 +1627,12 @@ export default function FieldScout() {
         const totalPaid = (allPayments || []).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
         const newStatus = totalPaid >= invAmt ? 'Paid' : 'Partially Paid'
         await supabase.from('invoices').update({ payment_status: newStatus }).eq('id', paymentInvoice.id)
+        // Receipt to the customer, like the office gets when it records one there.
+        sendFieldReceipt({ invoiceId: paymentInvoice.id, amount: parseFloat(paymentForm.amount) || 0, method: paymentForm.method, totalPaid, invoiceTotal: invAmt })
+          .then(r => {
+            if (r?.ok) toast.success(`Receipt emailed to ${r.email}`)
+            else if (r?.error) toast.error('Receipt not sent: ' + r.error)
+          })
       }
 
       setPaymentSuccess(true)
