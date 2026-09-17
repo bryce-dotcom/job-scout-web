@@ -26,6 +26,7 @@ import { summarizePayroll, payrollJournalRows, isPayrollBankRow } from '../lib/p
 import { buildJournal, journalCsv, journalTotals, qboBankCsvs } from '../lib/journalExport'
 import { suggestExpensesForTransaction } from '../lib/expenseMatch'
 import { computeRevenue, computeExpenses } from '../lib/revenueBasis'
+import { inLocalRange } from '../lib/localDate'
 import { isLegacyNetShape, totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
 import { PAYMENT_METHODS } from '../lib/schema'
 import { isVirtualAccountFilter, matchesAccountFilter, walletForFilter, isWalletTransaction, WALLET_FEED_FILTERS } from '../lib/bankFeedFilters'
@@ -1198,14 +1199,16 @@ export default function Books() {
   const totalStripeBalance = sumBalances(bankAccounts.filter(b => b.provider === 'stripe'))
   const totalCash = Math.max(totalPlaidMirrorBalance, totalConnectedBalance) + totalStripeBalance + totalManualBalance
 
-  const currentMonth = new Date().getMonth()
-  const currentYear = new Date().getFullYear()
-
-  const isThisMonth = (dateStr) => {
-    if (!dateStr) return false
-    const d = new Date(dateStr)
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-  }
+  // By calendar day, not by `new Date(x).getMonth()`: payments.date and
+  // plaid_transactions.date are date columns and expenses.date is a
+  // timestamptz holding a day at UTC midnight — all three parse to the
+  // evening BEFORE in Mountain Time, so everything dated the 1st landed in
+  // last month's Money In and Money Out here. lib/localDate.js is the rule
+  // the Dashboard already uses; this is the same rule, not a second copy.
+  const now = new Date()
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  const firstOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  const isThisMonth = (dateStr) => inLocalRange(dateStr, firstOfMonth, firstOfNextMonth)
 
   // Money In and Money Out both come from the accounting-basis helpers in
   // revenueBasis.js (see moneyIn / moneyOut below). The per-source

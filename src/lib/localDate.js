@@ -61,11 +61,27 @@ export function parseLocalDate(value) {
   if (value === null || value === undefined || value === '') return null
   if (value instanceof Date) return isNaN(value) ? null : value
   if (typeof value !== 'string') return null
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim())
+  // A bare date — OR a timestamp that is exactly UTC midnight with no other
+  // time on it. expenses.date is a timestamptz, not a date column: the
+  // Expenses page and Arnie write 'YYYY-MM-DD' into it, PostgREST hands it
+  // back as '2026-09-01T00:00:00+00:00', and that is a calendar day wearing a
+  // timestamp's clothes. Parsed as an instant it is 6 PM on Aug 31 in
+  // Denver, and this function's whole reason for existing is defeated by a
+  // suffix. (The Expenses page showed every expense a day early because of
+  // this, and 1st-of-month expenses fell into the prior month here.)
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})(?:[T ]00:00:00(?:\.0+)?(?:Z|\+00(?::?00)?))?$/.exec(value.trim())
   const d = dateOnly
     ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
     : new Date(value)
   return isNaN(d) ? null : d
+}
+
+/**
+ * The calendar day `value` means, as 'YYYY-MM-DD' — the string form of
+ * parseLocalDate. Compare these, group by them, never compare the instants.
+ */
+export function calendarDay(value) {
+  return localDateStr(parseLocalDate(value))
 }
 
 /**

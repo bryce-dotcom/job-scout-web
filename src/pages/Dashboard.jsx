@@ -10,7 +10,7 @@ import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
 import { computeRevenue, computeExpenses, collectedIncentives } from '../lib/revenueBasis'
-import { inLocalRange } from '../lib/localDate'
+import { inLocalRange, localDateStr, calendarDay } from '../lib/localDate'
 import { toast } from '../lib/toast'
 import {
   UserPlus,
@@ -320,7 +320,9 @@ export default function Dashboard() {
 
   // ── Calculate all metrics ──
   const today = new Date()
-  const todayStr = today.toISOString().split('T')[0]
+  // Local, not toISOString(): after 6 PM in Denver the UTC day is tomorrow,
+  // and "today's jobs" showed tomorrow's. See lib/localDate.js.
+  const todayStr = localDateStr(today)
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
 
   const activeLeads = leads.filter(l => !['Won', 'Lost', 'Converted', 'Not Qualified'].includes(l.status)).length
@@ -541,7 +543,8 @@ export default function Dashboard() {
     overdueInvoices: { items: invoices.filter(i => { if (i.payment_status !== 'Pending') return false; return Math.floor((today - new Date(i.created_at)) / 86400000) > 30 }), nav: '/invoices' },
     staleEstimates: { items: staleEstimates, nav: '/estimates' },
     pendingTimeOff: { items: pendingTimeOff, nav: '/payroll#time-off-requests' },
-    todaysAppts: { items: appointments.filter(a => a.start_time?.startsWith(todayStr)), nav: '/appointments' },
+    // start_time is a real instant: compare its LOCAL day, not the UTC prefix (a 7 PM appointment is tomorrow in UTC).
+    todaysAppts: { items: appointments.filter(a => calendarDay(a.start_time) === todayStr), nav: '/appointments' },
   }
   const visibleAlerts = ALERT_DEFS.filter(a => prefs.alerts[a.id] && alertData[a.id].items.length > 0)
 
