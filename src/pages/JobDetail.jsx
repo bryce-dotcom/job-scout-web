@@ -35,7 +35,7 @@ import JobCostingModal from '../components/JobCostingModal'
 import { companyNotify } from '../lib/companyNotify'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
 import { computeAllottedHours } from '../lib/allottedHours'
-import { jobTotalPolicy, adoptLinesTotal } from '../lib/jobTotal'
+import { jobTotalPolicy, adoptLinesTotal, jobGross } from '../lib/jobTotal'
 import { fetchJobBonuses, bonusStatusLabel } from '../lib/bonusLedger'
 import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
@@ -1549,7 +1549,9 @@ function JobDetailInner() {
     setSaving(true)
 
     const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
-    const subtotal = lineItems.reduce((sum, line) => sum + (parseFloat(line.total) || 0), 0)
+    // What the job bills for — the same number the footer and Field Scout
+    // use, so a job priced without lines invoices for its price.
+    const subtotal = jobGross(job, lineItems)
     const discount = parseFloat(job.discount) || 0
     // The mirror of the bug in createCustomerInvoice: this path read only the
     // rep's discount and ignored the utility incentive, so a job carrying both
@@ -1604,7 +1606,7 @@ function JobDetailInner() {
       // it used to be hand-copied here and in three other files, which is
       // how FieldScout and Invoices ended up dropping labor_cost and the
       // product-name fallback without anyone noticing.
-      await writeInvoiceLines(supabase, lineItems, { companyId, invoiceId: invoice.id })
+      await writeInvoiceLines(supabase, lineItems, { companyId, invoiceId: invoice.id, summaryFor: { description: job.job_title, total: subtotal, manual: job.job_total_source === 'manual' } })
 
       // The job's invoice_status is no longer set here. It is derived from the
       // invoices table by the sync_job_invoice_status trigger, because writing
@@ -1826,8 +1828,10 @@ function JobDetailInner() {
       //
       // Fall back to the audit only when the job has nothing to offer, which
       // is the case for an invoice raised before any line items exist.
-      const lineTotal = lineItems.reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0)
-      const jobTotal = lineTotal || parseFloat(job.job_total) || 0
+      // lib/jobTotal.jobGross: the lines' sum when they own the total, the
+      // job's own price when a person set it and the lines are additions
+      // inside it, the total when there are no lines at all.
+      const jobTotal = jobGross(job, lineItems)
 
       projectCost = jobTotal > 0 ? jobTotal : (parseFloat(audit?.est_project_cost) || 0)
       const baseIncentive = incentiveAmt > 0 ? incentiveAmt : (parseFloat(audit?.estimated_rebate) || 0)
@@ -1942,7 +1946,7 @@ function JobDetailInner() {
         // critically preserves the in_utility_scope flag on each line so
         // the utility-copy PDF can split items into "in-scope" vs
         // "customer add-ons" without re-querying anything.
-        await writeInvoiceLines(supabase, lineItems, { companyId, invoiceId: invoice.id })
+        await writeInvoiceLines(supabase, lineItems, { companyId, invoiceId: invoice.id, summaryFor: { description: job.job_title, total: jobTotal, manual: job.job_total_source === 'manual' } })
 
         // invoice_status is derived by the sync_job_invoice_status trigger —
         // see the note in createCustomerInvoice above.
@@ -2803,7 +2807,13 @@ function JobDetailInner() {
     )
   }
 
-  const subtotal = lineItems.reduce((sum, line) => sum + (parseFloat(line.total) || 0), 0)
+  // The footer's subtotal is what the job bills for (lib/jobTotal.jobGross):
+  // the lines' sum when they own the total, the job's own price when a
+  // person set it and the lines are only additions inside it. Field Scout's
+  // Collect Payment and both invoice buttons below use the same number.
+  const linesSubtotal = lineItems.reduce((sum, line) => sum + (parseFloat(line.total) || 0), 0)
+  const totalKept = jobTotalPolicy(job, lineItems).action === 'keep'
+  const subtotal = jobGross(job, lineItems)
   const discount = parseFloat(job.discount) || 0
   const incentive = parseFloat(job.utility_incentive) || 0
   const total = subtotal - discount
@@ -5035,8 +5045,14 @@ function JobDetailInner() {
                   </button>
                 </div>
                 <div style={{ padding: '16px 20px', backgroundColor: theme.accentBg }}>
+                  {totalKept && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px', color: theme.textMuted }}>
+                      <span>Line items (inside the price)</span>
+                      <span>{formatCurrency(linesSubtotal)}</span>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ color: theme.textSecondary }}>Subtotal</span>
+                    <span style={{ color: theme.textSecondary }}>{totalKept ? 'Price (set directly)' : 'Subtotal'}</span>
                     <span style={{ fontWeight: '500', color: theme.text }}>{formatCurrency(subtotal)}</span>
                   </div>
                   {discount > 0 && (
@@ -5105,8 +5121,7 @@ function JobDetailInner() {
                     onBlur={async () => {
                       const raw = parseFloat(localDiscount) || 0
                       // Convert percent → flat dollars before saving
-                      const lineSum = (job.line_items || lineItems || []).reduce((s, l) => s + (parseFloat(l.line_total) || 0), 0)
-                      const subtotalForPct = lineSum > 0 ? lineSum : (parseFloat(job.job_total) || 0) + raw  // approximate when no lines
+                      const subtotalForPct = jobGross(job, lineItems) || raw
                       const val = discountMode === '%'
                         ? Math.round(subtotalForPct * (raw / 100) * 100) / 100
                         : raw

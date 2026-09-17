@@ -40,6 +40,22 @@ export function jobTotalPolicy(job, lines) {
   return { action: 'sync', stored, computed, source }
 }
 
+/**
+ * What the job bills for, BEFORE the job-level discount — the number the
+ * Job Lines footer, the job page's invoice buttons and Field Scout's
+ * Collect Payment must all agree on. The lines' sum when the lines own the
+ * total (or agree with it); the total itself when a person set it and the
+ * lines are only additions inside that price. With no lines it is the
+ * total, which is what every invoice path already did.
+ */
+export function jobGross(job, lines) {
+  const stored = r2(job?.job_total)
+  if (!Array.isArray(lines) || lines.length === 0) return stored
+  const policy = jobTotalPolicy(job, lines)
+  if (policy.action === 'keep') return stored
+  return r2((lines || []).reduce((s, l) => s + (parseFloat(l?.total) || 0), 0))
+}
+
 /** The patch that makes the lines the owner of the total, at their sum. */
 export function adoptLinesTotal(computed) {
   return { job_total: r2(computed), job_total_source: 'lines' }

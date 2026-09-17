@@ -601,3 +601,29 @@ describe('the company default does not cross state lines on the invoice', () => 
     expect(deductionLineLabel({ invoice, job: { utility_incentive: 100, job_address: '1234 Industrial Pkwy' }, utilityProviders: providers, defaultUtilityProviderId: 116 })).toBe('Rocky Mountain Power Incentive')
   })
 })
+
+describe('an invoice from a priced job with an add-on still splits into its two pages', () => {
+  // A $21,200 job a person priced (jobs.job_total_source 'manual'), then a
+  // $165 add-on flagged out of the utility scope. lib/invoiceLines writes a
+  // "Project scope" line for the remainder so the lines add up to the
+  // amount; here the sections model must put the scope on page 1 with the
+  // incentive against it and the add-on on page 2 at full price.
+  it('scope on page 1 minus the incentive, the add-on on page 2, and it reconciles', () => {
+    const invoice = { amount: 21200, discount_applied: 5000 }
+    const lines = [
+      line({ description: 'Project scope — Retail Park High Bay Swap', line_total: 21035 }),
+      line({ description: 'Occupancy sensor', line_total: 165, in_utility_scope: false }),
+    ]
+    const s = buildInvoiceSections(invoice, lines)
+    expect(s.applicable).toBe(true)
+    expect(s.inScope.map(l => l.description)).toEqual(['Project scope — Retail Park High Bay Swap'])
+    expect(s.outScope.map(l => l.description)).toEqual(['Occupancy sensor'])
+    expect(s.inScopeSubtotal).toBe(21035)
+    expect(s.projectDiscount).toBe(0)          // the lines cover the billed gross exactly — no bridging line
+    expect(s.incentive).toBe(5000)
+    expect(s.netInScope).toBe(16035)
+    expect(s.outScopeSubtotal).toBe(165)
+    expect(s.customerTotal).toBe(16200)
+    expect(s.reconciles).toBe(true)
+  })
+})

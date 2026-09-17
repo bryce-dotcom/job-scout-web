@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { jobTotalPolicy, linesTotalOf, adoptLinesTotal, manualTotal } from './jobTotal'
+import { jobTotalPolicy, linesTotalOf, adoptLinesTotal, manualTotal, jobGross } from './jobTotal'
 
 // Demo job 23513, 16 Sep 2026: a $21,200 job with no lines got one $165 part
 // and became a $165 job. 6,025 of HHH's priced jobs have no lines. A total no
@@ -37,5 +37,20 @@ describe('the patches', () => {
   })
   it('a typed total is manual', () => {
     expect(manualTotal('4,500'.replace(',', ''))).toEqual({ job_total: 4500, job_total_source: 'manual' })
+  })
+})
+
+describe('what the job bills for (jobGross)', () => {
+  it('a manual price with incidental lines bills the price; line-owned bills the lines', () => {
+    expect(jobGross({ job_total: 1650, job_total_source: 'manual' }, [{ total: 165 }])).toBe(1650)
+    expect(jobGross({ job_total: 165, job_total_source: 'lines' }, [{ total: 165 }])).toBe(165)
+    expect(jobGross({ job_total: 999 }, [{ total: 100 }, { total: 65 }])).toBe(165)   // legacy: the lines
+  })
+  it('with no lines it is the total, which is what every invoice path already did', () => {
+    expect(jobGross({ job_total: 1650, job_total_source: 'manual' }, [])).toBe(1650)
+    expect(jobGross({ job_total: 1650 }, null)).toBe(1650)
+  })
+  it('is before the job-level discount — the footer and the invoice take the discount off it', () => {
+    expect(jobGross({ job_total: 1650, job_total_source: 'manual', discount: 100 }, [{ total: 165 }])).toBe(1650)
   })
 })
