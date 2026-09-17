@@ -317,6 +317,7 @@ const CSS = `
   .pr .sw-legend .d{width:10px;height:10px;border-radius:50%;flex:none}
   .pr .sw-legend .d.ai{background:var(--viz)}
   .pr .sw-legend .d.nw{background:var(--grn)}
+  .pr .sw-scout{width:74px;height:74px;border-radius:16px;display:block;margin:0 0 18px;box-shadow:0 6px 18px rgba(31,26,15,.14),inset 0 0 0 1px rgba(0,0,0,.06)}
   .pr .sw-grid{display:grid;grid-template-columns:1fr;gap:20px 28px;margin-top:22px}
   .pr .sw-grp.wide{grid-column:1/-1}
   .pr .sw-cat{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--grnDk);padding-bottom:9px;border-bottom:2px solid var(--line2);margin-bottom:2px}
@@ -861,6 +862,7 @@ export default function Pricing() {
         <section id="pr-switch">
           <div className="wrap">
             <div className="sechead rv">
+              <img className="sw-scout" src="/scout-walk.gif" alt="JobScout" width="74" height="74" />
               <span className="kicker">Find the app you already know</span>
               <h2>The tools you pay for — run right here.</h2>
               <p>Point to whatever you’re using now. On the right is the JobScout AI or feature that already does it — one login, one bill.</p>
