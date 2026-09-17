@@ -13,6 +13,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isDevReport } from "../_shared/crashIntake.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,6 +32,15 @@ serve(async (req) => {
     if (!message) {
       return new Response(JSON.stringify({ error: "message required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // A developer machine is not a customer (see _shared/crashIntake.ts). The
+    // app's own reporter already drops these, but an older local build does
+    // not, and this is the one door every build comes through.
+    if (isDevReport({ origin: req.headers.get("origin"), referer: req.headers.get("referer"), message, stack: body?.stack })) {
+      return new Response(JSON.stringify({ ok: true, dropped: "dev" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 

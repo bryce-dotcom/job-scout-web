@@ -182,6 +182,12 @@ const IGNORED = [
   /sw\.js load failed/i,
   /Failed to register a ServiceWorker/i,
   /ServiceWorker script/i,
+  // The same failure on the UPDATE path, which register() also takes on every
+  // load: "Failed to update a ServiceWorker for scope ('…') with script
+  // ('…/sw.js'): The script has an unsupported MIME type ('text/html')" —
+  // nine reports from one local preview, 2026-09-15..17.
+  /Failed to update a ServiceWorker/i,
+  /ServiceWorker for scope/i,
 ]
 
 /** True for an abort however it arrives — DOMException carries the name even

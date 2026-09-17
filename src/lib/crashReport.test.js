@@ -182,3 +182,10 @@ describe('a stale-deploy self-heal is not a crash', () => {
     expect(chunkReloadPending()).toBe(false)
   })
 })
+
+describe('a service worker that could not be UPDATED is not a crash either', () => {
+  it("ignores Chrome's update wording, MIME type and unknown-error variants", () => {
+    expect(reject(new TypeError("Failed to update a ServiceWorker for scope ('http://localhost:5190/') with script ('http://localhost:5190/sw.js'): The script has an unsupported MIME type ('text/html')."))).toBe(0)
+    expect(reject(new TypeError("Failed to update a ServiceWorker for scope ('https://jobscout.appsannex.com/') with script ('https://jobscout.appsannex.com/sw.js'): An unknown error occurred when fetching the script."))).toBe(0)
+  })
+})
