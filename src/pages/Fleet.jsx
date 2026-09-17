@@ -61,8 +61,6 @@ export default function Fleet() {
     type: 'Vehicle',
     status: 'Available',
     mileage_hours: 0,
-    last_pm_date: '',
-    next_pm_due: '',
     maintenance_alert: ''
   })
   const [showImportExport, setShowImportExport] = useState(false)
@@ -147,8 +145,6 @@ export default function Fleet() {
       type: formData.type,
       status: formData.status,
       mileage_hours: parseInt(formData.mileage_hours) || 0,
-      last_pm_date: formData.last_pm_date || null,
-      next_pm_due: formData.next_pm_due || null,
       maintenance_alert: formData.maintenance_alert || null
     }
 
@@ -164,8 +160,6 @@ export default function Fleet() {
         type: 'Vehicle',
         status: 'Available',
         mileage_hours: 0,
-        last_pm_date: '',
-        next_pm_due: '',
         maintenance_alert: ''
       })
       fetchFleet()
@@ -865,60 +859,6 @@ export default function Fleet() {
                       min="0"
                       value={formData.mileage_hours}
                       onChange={(e) => setFormData({ ...formData, mileage_hours: e.target.value })}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        border: `1px solid ${theme.border}`,
-                        backgroundColor: theme.bg,
-                        color: theme.text,
-                        fontSize: '14px'
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={{
-                      display: 'block',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: theme.textSecondary,
-                      marginBottom: '6px'
-                    }}>
-                      Last PM Date
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.last_pm_date}
-                      onChange={(e) => setFormData({ ...formData, last_pm_date: e.target.value })}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        border: `1px solid ${theme.border}`,
-                        backgroundColor: theme.bg,
-                        color: theme.text,
-                        fontSize: '14px'
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{
-                      display: 'block',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: theme.textSecondary,
-                      marginBottom: '6px'
-                    }}>
-                      Next PM Due
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.next_pm_due}
-                      onChange={(e) => setFormData({ ...formData, next_pm_due: e.target.value })}
                       style={{
                         width: '100%',
                         padding: '10px 12px',

@@ -41,16 +41,6 @@ const rentalStatusColors = {
   'Cancelled': { bg: 'rgba(125,138,127,0.15)', text: '#7d8a7f' }
 }
 
-const maintenanceTypes = [
-  'Oil Change',
-  'Tire Rotation',
-  'Brake Service',
-  'Inspection',
-  'Repair',
-  'Scheduled PM',
-  'Other'
-]
-
 const typeIcons = {
   'Vehicle': Truck,
   'Trailer': Truck,
@@ -70,17 +60,8 @@ export default function FleetDetail() {
   const fetchFleetRentals = useStore((state) => state.fetchFleetRentals)
 
   const [activeTab, setActiveTab] = useState('maintenance')
-  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false)
   const [showRentalModal, setShowRentalModal] = useState(false)
   const [showMileageModal, setShowMileageModal] = useState(false)
-
-  const [maintenanceForm, setMaintenanceForm] = useState({
-    type: 'Oil Change',
-    date: localDateStr(new Date()),
-    mileage_hours: '',
-    description: '',
-    cost: ''
-  })
 
   const [rentalForm, setRentalForm] = useState({
     rental_customer: '',
@@ -228,17 +209,6 @@ export default function FleetDetail() {
   const TypeIcon = typeIcons[asset.type] || Truck
   const statusStyle = statusColors[asset.status] || statusColors['Available']
 
-  const isPMOverdue = () => {
-    if (!asset.next_pm_due) return false
-    return new Date(asset.next_pm_due) < new Date()
-  }
-
-  const getDaysUntilPM = () => {
-    if (!asset.next_pm_due) return null
-    const diff = new Date(asset.next_pm_due) - new Date()
-    return Math.ceil(diff / (1000 * 60 * 60 * 24))
-  }
-
   const formatDate = (dateStr) => {
     if (!dateStr) return '-'
     return new Date(dateStr).toLocaleDateString('en-US', {
@@ -251,51 +221,6 @@ export default function FleetDetail() {
   const formatCurrency = (amount) => {
     if (!amount) return '$0.00'
     return '$' + parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })
-  }
-
-  const handleAddMaintenance = async (e) => {
-    e.preventDefault()
-
-    const insertData = {
-      company_id: companyId,
-      asset_id: parseInt(id),
-      type: maintenanceForm.type,
-      date: maintenanceForm.date,
-      mileage_hours: parseInt(maintenanceForm.mileage_hours) || asset.mileage_hours,
-      description: maintenanceForm.description || null,
-      cost: parseFloat(maintenanceForm.cost) || 0
-    }
-
-    const { error } = await supabase.from('fleet_maintenance').insert(insertData)
-
-    if (error) {
-      alert('Error adding maintenance: ' + error.message)
-      return
-    }
-
-    // Update asset with new mileage and PM dates
-    const updateData = {
-      mileage_hours: parseInt(maintenanceForm.mileage_hours) || asset.mileage_hours,
-      last_pm_date: maintenanceForm.date
-    }
-
-    // Calculate next PM due (90 days from now as default)
-    const nextPM = new Date(maintenanceForm.date)
-    nextPM.setDate(nextPM.getDate() + 90)
-    updateData.next_pm_due = nextPM.toISOString().split('T')[0]
-
-    await supabase.from('fleet').update(updateData).eq('id', parseInt(id))
-
-    setShowMaintenanceModal(false)
-    setMaintenanceForm({
-      type: 'Oil Change',
-      date: localDateStr(new Date()),
-      mileage_hours: '',
-      description: '',
-      cost: ''
-    })
-    fetchFleet()
-    fetchFleetMaintenance()
   }
 
   const handleAddRental = async (e) => {
@@ -368,10 +293,11 @@ export default function FleetDetail() {
   const flags = asset ? attention.byAsset.get(asset.id) : null
   const hasSchedule = asset ? attention.scheduled.has(asset.id) : false
   const unsafe = (flags?.unsafe || 0) > 0
-  const overdue = hasSchedule ? (flags?.overdue || 0) > 0 : isPMOverdue()
-  const daysUntil = hasSchedule ? null : getDaysUntilPM()
+  // next_pm_due on the row is now a cache the schedule maintains, so the
+  // schedule is the only thing to ask.
+  const overdue = (flags?.overdue || 0) > 0
 
-  const refreshAll = () => { fetchFleet(); attention.refresh() }
+  const refreshAll = () => { fetchFleet(); fetchFleetMaintenance(); attention.refresh() }
 
   // Calculate total maintenance cost
   const totalMaintenanceCost = assetMaintenance.reduce((sum, m) => sum + (m.cost || 0), 0)
@@ -439,28 +365,6 @@ export default function FleetDetail() {
 
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
-            onClick={() => {
-              setMaintenanceForm({ ...maintenanceForm, mileage_hours: asset.mileage_hours || '' })
-              setShowMaintenanceModal(true)
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '10px 16px',
-              backgroundColor: theme.accent,
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '500',
-              cursor: 'pointer'
-            }}
-          >
-            <Wrench size={16} />
-            Log Maintenance
-          </button>
-          <button
             onClick={() => setShowRentalModal(true)}
             style={{
               display: 'flex',
@@ -518,10 +422,10 @@ export default function FleetDetail() {
           <AlertTriangle size={24} style={{ color: '#c25a5a' }} />
           <div>
             <div style={{ fontSize: '16px', fontWeight: '600', color: '#c25a5a' }}>
-              {hasSchedule ? `${flags.overdue} service${flags.overdue === 1 ? '' : 's'} overdue` : 'Preventive Maintenance Overdue'}
+              {`${flags?.overdue || 0} service${flags?.overdue === 1 ? '' : 's'} overdue`}
             </div>
             <div style={{ fontSize: '14px', color: '#c25a5a' }}>
-              {hasSchedule ? 'See the service schedule below.' : `PM was due on ${formatDate(asset.next_pm_due)}`}
+              See the service schedule below.
             </div>
           </div>
         </div>
@@ -578,7 +482,7 @@ export default function FleetDetail() {
           border: `1px solid ${theme.border}`
         }}>
           <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>
-            Last PM
+            Last service
           </div>
           <div style={{ fontSize: '24px', fontWeight: '600', color: theme.text }}>
             {formatDate(asset.last_pm_date)}
@@ -592,29 +496,25 @@ export default function FleetDetail() {
           border: `1px solid ${overdue ? '#c25a5a' : theme.border}`
         }}>
           <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '4px' }}>
-            {hasSchedule ? 'Service schedule' : 'Next PM Due'}
+            Service schedule
           </div>
           <div style={{
             fontSize: '24px',
             fontWeight: '600',
             color: overdue ? '#c25a5a' : theme.text
           }}>
-            {hasSchedule
-              ? (overdue ? `${flags.overdue} overdue`
-                : flags?.dueSoon ? `${flags.dueSoon} due soon`
-                // A schedule nobody has logged against is not "on track";
-                // it has not started. Saying so is what gets the first
-                // service recorded.
-                : flags?.neverDone ? `${flags.neverDone} not yet logged`
-                : 'On track')
-              : formatDate(asset.next_pm_due)}
+            {!hasSchedule ? 'None yet'
+              : overdue ? `${flags.overdue} overdue`
+              : flags?.dueSoon ? `${flags.dueSoon} due soon`
+              // A schedule nobody has logged against is not "on track";
+              // it has not started. Saying so is what gets the first
+              // service recorded.
+              : flags?.neverDone ? `${flags.neverDone} not yet logged`
+              : 'On track'}
           </div>
-          {daysUntil !== null && (
-            <div style={{
-              fontSize: '13px',
-              color: overdue ? '#c25a5a' : (daysUntil <= 14 ? '#c28b38' : theme.textMuted)
-            }}>
-              {overdue ? 'Overdue' : `${daysUntil} days remaining`}
+          {asset.next_pm_due && (
+            <div style={{ fontSize: '13px', color: overdue ? '#c25a5a' : theme.textMuted }}>
+              next {formatDate(asset.next_pm_due)}
             </div>
           )}
         </div>
@@ -908,7 +808,7 @@ export default function FleetDetail() {
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Wrench size={16} />
-            Maintenance History ({assetMaintenance.length})
+            Service history ({assetMaintenance.length})
           </div>
         </button>
         <button
@@ -1147,228 +1047,6 @@ export default function FleetDetail() {
         </div>
       )}
 
-      {/* Add Maintenance Modal */}
-      {showMaintenanceModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: theme.bgCard,
-            borderRadius: '16px',
-            padding: '24px',
-            width: '100%',
-            maxWidth: isMobile ? 'calc(100vw - 32px)' : '500px',
-            maxHeight: '90vh',
-            overflow: 'auto'
-          }}>
-            <h2 style={{
-              fontSize: '20px',
-              fontWeight: '700',
-              color: theme.text,
-              marginBottom: '20px'
-            }}>
-              Log Maintenance
-            </h2>
-
-            <form onSubmit={handleAddMaintenance}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={{
-                      display: 'block',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: theme.textSecondary,
-                      marginBottom: '6px'
-                    }}>
-                      Type *
-                    </label>
-                    <select
-                      value={maintenanceForm.type}
-                      onChange={(e) => setMaintenanceForm({ ...maintenanceForm, type: e.target.value })}
-                      required
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        border: `1px solid ${theme.border}`,
-                        backgroundColor: theme.bg,
-                        color: theme.text,
-                        fontSize: '14px'
-                      }}
-                    >
-                      {maintenanceTypes.map(type => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={{
-                      display: 'block',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: theme.textSecondary,
-                      marginBottom: '6px'
-                    }}>
-                      Date *
-                    </label>
-                    <input
-                      type="date"
-                      value={maintenanceForm.date}
-                      onChange={(e) => setMaintenanceForm({ ...maintenanceForm, date: e.target.value })}
-                      required
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        border: `1px solid ${theme.border}`,
-                        backgroundColor: theme.bg,
-                        color: theme.text,
-                        fontSize: '14px'
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={{
-                      display: 'block',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: theme.textSecondary,
-                      marginBottom: '6px'
-                    }}>
-                      {asset.type === 'Vehicle' ? 'Mileage' : 'Hours'}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={maintenanceForm.mileage_hours}
-                      onChange={(e) => setMaintenanceForm({ ...maintenanceForm, mileage_hours: e.target.value })}
-                      placeholder={asset.mileage_hours?.toString() || '0'}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        border: `1px solid ${theme.border}`,
-                        backgroundColor: theme.bg,
-                        color: theme.text,
-                        fontSize: '14px'
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{
-                      display: 'block',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: theme.textSecondary,
-                      marginBottom: '6px'
-                    }}>
-                      Cost
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={maintenanceForm.cost}
-                      onChange={(e) => setMaintenanceForm({ ...maintenanceForm, cost: e.target.value })}
-                      placeholder="0.00"
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        border: `1px solid ${theme.border}`,
-                        backgroundColor: theme.bg,
-                        color: theme.text,
-                        fontSize: '14px'
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{
-                    display: 'block',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    color: theme.textSecondary,
-                    marginBottom: '6px'
-                  }}>
-                    Description
-                  </label>
-                  <textarea
-                    value={maintenanceForm.description}
-                    onChange={(e) => setMaintenanceForm({ ...maintenanceForm, description: e.target.value })}
-                    rows={3}
-                    placeholder="Details about the maintenance performed..."
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: `1px solid ${theme.border}`,
-                      backgroundColor: theme.bg,
-                      color: theme.text,
-                      fontSize: '14px',
-                      resize: 'vertical'
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{
-                display: 'flex',
-                gap: '12px',
-                marginTop: '24px',
-                justifyContent: 'flex-end'
-              }}>
-                <button
-                  type="button"
-                  onClick={() => setShowMaintenanceModal(false)}
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: theme.bg,
-                    color: theme.text,
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  style={{
-                    padding: '10px 20px',
-                    backgroundColor: theme.accent,
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Log Maintenance
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Add Rental Modal */}
       {showRentalModal && (

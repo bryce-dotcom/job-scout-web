@@ -25,6 +25,8 @@ import {
   Camera, Calendar as CalendarIcon, ArrowRight
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
+import MyNotifications from '../components/MyNotifications'
+import MyVehicleCard from '../components/MyVehicleCard'
 import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours, bonusRowAmount } from '../lib/bonusCalc'
 import { computeAllottedHours } from '../lib/allottedHours'
 import { verificationRequiredFor, anyUnitRequiresVerification, exemptUnitsFromPayrollConfig } from '../lib/verificationPolicy'
@@ -2044,6 +2046,14 @@ export default function FieldScout() {
           {currentTime.toLocaleTimeString()}
         </div>
       </div>
+
+      {/* ===== SECTION 1.1: FOR YOU =====
+          Things addressed to this person that waited for them — a service
+          due on their truck, a repair report that got seen — and the truck
+          itself, one tap away. Above the clock-in warning because that one
+          needs no action and these do. */}
+      <MyNotifications theme={theme} />
+      <MyVehicleCard theme={theme} />
 
       {/* ===== SECTION 1.2: UNFINISHED CLOCK-IN WARNING =====
           A clock-in from a previous day that never got a clock-out. Without

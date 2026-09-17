@@ -85,7 +85,7 @@ export default {
       "The fleet surface for trucks, trailers and equipment. Per machine: what it cost and is worth (lifecycle / depreciation), what it costs to run (repairs, tires, fuel, insurance, drivers), a preventive-maintenance schedule with two clocks (miles-or-hours AND days, whichever first), service requests anyone can file, live GPS where a tracker is fitted, and who is assigned to run it with a licence check. Freddy is the AI layer: he drafts PM schedules from make/model and reads plates; he does not write to the schedule or move money on his own.",
 
     howItWorks:
-      "Tables: fleet (the asset, incl. purchase_price, purchase_date, miles_at_purchase/hours_at_purchase, asset_class, meter_basis, assigned_to, mileage_hours), fleet_meter_readings → fleet_current_meters view (MAX per column; a typed odometer and telematics both land here — triggers keep fleet.mileage_hours and the readings in step), fleet_pm_schedules + fleet_pm_status view (overdue / due_soon / never_done / ok), fleet_service_requests (severity safety|urgent|normal|minor; safety = do not operate; status open→acknowledged→scheduled→resolved|declined), fleet_repairs (repairs and tires), fleet_fuel_logs (typed in on Freddy → Costs), fleet_recurring_costs (insurance and driver cost, fleet-wide split by value/even/usage or per unit), fleet_maintenance (the older maintenance log — still present). GPS: Moto Watchdog partner API, one JobScout platform account; fleet.gps_device_id is the only link between a tracker and a tenant. Lifecycle maths lives in lib/fleetLifecycle.js (per-class curves, equivalent-annual-cost, two clocks: wear vs age). PM proposals come from the fleet-pm-suggest edge function, which returns proposals only. The Fleet list's pills (unsafe / requests / overdue / due soon) come from useFleetAttention and filter the list in place.",
+      "Tables: fleet (the asset, incl. purchase_price, purchase_date, miles_at_purchase/hours_at_purchase, asset_class, meter_basis, assigned_to, mileage_hours; next_pm_due/last_pm_date are derived from the schedule), employee_notifications (per-person, read_at, dedupe_key; fed by triggers on fleet_service_requests and the fleet-pm-due cron; read by MyNotifications in Field Scout), fleet_meter_readings → fleet_current_meters view (MAX per column; a typed odometer and telematics both land here — triggers keep fleet.mileage_hours and the readings in step), fleet_pm_schedules + fleet_pm_status view (overdue / due_soon / never_done / ok), fleet_service_requests (severity safety|urgent|normal|minor; safety = do not operate; status open→acknowledged→scheduled→resolved|declined), fleet_repairs (repairs and tires), fleet_fuel_logs (typed in on Freddy → Costs), fleet_recurring_costs (insurance and driver cost, fleet-wide split by value/even/usage or per unit), fleet_maintenance (service history; rows carry schedule_id when they complete a scheduled service). GPS: Moto Watchdog partner API, one JobScout platform account; fleet.gps_device_id is the only link between a tracker and a tenant. Lifecycle maths lives in lib/fleetLifecycle.js (per-class curves, equivalent-annual-cost, two clocks: wear vs age). PM proposals come from the fleet-pm-suggest edge function, which returns proposals only. The Fleet list's pills (unsafe / requests / overdue / due soon) come from useFleetAttention and filter the list in place.",
 
     examples: [
       '2025 Ram RHO bought new at $83,000, 3,898 miles → worth ~$68,600, $6.00/mile ($5.57 of it depreciation), limited by age not wear → "sell or rent" verdict; driven 25,000 mi/yr the same truck is $2.61/mile',
@@ -96,11 +96,11 @@ export default {
 
     gotchas: [
       'Telematics miles are NOT an odometer. A tracker installed last month on an old truck reports a few hundred miles; the lifecycle needs a dash reading (typed odometer or the meter-when-bought) or it says "wear unknown" instead of pricing per mile.',
-      'Two PM surfaces coexist: the older Log Maintenance / next PM date on the asset, and the schedule. Once an asset has a schedule, the schedule is what the card, tile and banner report; the old date is ignored for that asset. Logging in the old Maintenance History does not advance the schedule.',
+      'fleet.next_pm_due and last_pm_date are a CACHE the schedule maintains by trigger — never write them by hand. A typed date on an asset with no schedule is converted into a "Preventive maintenance" schedule row automatically. Recording a service done (the tick on a schedule row) writes fleet_maintenance with a schedule_id and the trigger resets the clocks; there is no separate Log Maintenance button any more.',
       'A schedule with no history reads "never done" / "not yet logged", not overdue. The miles clock only runs once a service has a last_done_meter; until then only the days clock can make it due.',
       'Idle hours come from tracker breadcrumbs and are withheld (blank) when the ignition record is incomplete rather than shown as 0%.',
       'Fuel is typed in, not imported. There is no bank/fuel-card feed and no anomaly detection — do not promise either.',
-      'Not built yet: alerts to the driver (push / SMS / Field Scout banner) when a PM comes due or their request is acknowledged — the counts live on the Fleet page only.',
+      'Alerts are in-app only (no SMS or push). employee_notifications rows are addressed to one person and wait until read: managers get "reported UNSAFE TO RUN" / repair requests when filed; the reporter gets "was seen / is scheduled / is fixed"; the assigned operator gets "is overdue / is due soon" from the daily fleet-pm-due cron (7am Mountain, once per schedule per state per week). They surface in Field Scout under "For you", alongside a "Your vehicle" card that opens their assigned machine. A machine with nobody assigned notifies no driver — assign one.',
       'Not built yet: fuel-card or Plaid import of fuel purchases, and any fuel anomaly / theft detection.',
       'Not built yet: automatic market comps for resale value (fleet-valuation exists but is not wired to a live source).',
     ],
@@ -112,11 +112,11 @@ export default {
       },
       {
         q: 'Where do I request a repair on my truck?',
-        a: 'Open the truck from Fleet, tap Report a problem, pick how bad it is, say what is wrong. "Unsafe to run" flags it everywhere until someone clears it.',
+        a: 'Field Scout shows a "Your vehicle" card if you are the assigned operator — tap it, then Report a problem. Otherwise open the truck from Fleet. Pick how bad it is, say what is wrong. "Unsafe to run" flags it everywhere and tells the managers immediately; you are told when it is seen and when it is fixed.',
       },
       {
         q: 'How do I set up a maintenance schedule?',
-        a: 'On the asset, Maintenance → Build one with Freddy. He proposes intervals from the make and model; you edit and save. Mark a service done from the same list and both clocks reset from today\'s meter.',
+        a: 'On the asset, Maintenance → Build one with Freddy. He proposes intervals from the make and model; you edit and save. When a service is done, tap the tick on its row and record the date, meter and cost — that goes into service history and resets the schedule. The assigned driver is told when something comes due.',
       },
       {
         q: 'When should I sell a truck?',

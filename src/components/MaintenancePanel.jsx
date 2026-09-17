@@ -201,20 +201,45 @@ export default function MaintenancePanel({ asset, theme, currentMeter = null, on
     onChanged?.()
   }
 
-  const markDone = async (schedule) => {
-    // Both clocks reset together, from the meter as it reads NOW. Advancing
-    // the stored reading by one interval instead would be wrong the moment a
-    // service happens early or late — which is most of the time — and the
-    // error compounds at every service after it.
-    //
-    // An unknown meter is left null rather than guessed. The view then falls
-    // back to the date clock, which is blunter but honest; a fabricated
-    // reading would put the next service somewhere nobody can account for.
-    await supabase.from('fleet_pm_schedules').update({
-      last_done_date: localDateStr(new Date()),
-      last_done_meter: currentMeter == null ? null : Number(currentMeter),
-      updated_at: new Date().toISOString(),
-    }).eq('id', schedule.schedule_id)
+  // Completing a service is a history row, not a clock reset. The row carries
+  // the date, the meter that day, what it cost and who did it; a database
+  // trigger resets the schedule from it, so history and schedule can never
+  // disagree about when something was last done. This replaced a separate
+  // "Log Maintenance" button that wrote the same table with no link to any
+  // schedule and set the next due date to ninety days out whatever was logged.
+  const [completing, setCompleting] = useState(null)
+  const [doneForm, setDoneForm] = useState({ date: '', meter: '', cost: '', notes: '' })
+
+  const startComplete = (schedule) => {
+    setDoneForm({
+      // The calendar-day rule: a service done at 9pm Mountain was done today,
+      // not on tomorrow's UTC date.
+      date: localDateStr(new Date()),
+      // Prefilled from the live meter, editable: the reading on the invoice
+      // beats the reading the tracker had that morning.
+      meter: currentMeter == null ? '' : String(Math.round(currentMeter)),
+      cost: '', notes: '',
+    })
+    setCompleting(schedule)
+  }
+
+  const submitComplete = async () => {
+    if (!completing) return
+    setSaving(true)
+    setError(null)
+    const { error: err } = await supabase.from('fleet_maintenance').insert({
+      company_id: companyId,
+      asset_id: assetId,
+      schedule_id: completing.schedule_id,
+      type: completing.name,
+      date: doneForm.date,
+      mileage_hours: doneForm.meter === '' ? null : Number(doneForm.meter),
+      cost: doneForm.cost === '' ? 0 : Number(doneForm.cost),
+      description: doneForm.notes.trim() || null,
+    })
+    setSaving(false)
+    if (err) { setError(err.message); return }
+    setCompleting(null)
     await load()
     onChanged?.()
   }
@@ -330,7 +355,7 @@ export default function MaintenancePanel({ asset, theme, currentMeter = null, on
                   </div>
                 </div>
                 <span style={{ fontSize: 10, fontWeight: 700, color: tone.fg, whiteSpace: 'nowrap' }}>{tone.label}</span>
-                <button onClick={() => markDone(s)} title="Mark done today"
+                <button onClick={() => startComplete(s)} title="Record this service as done"
                   style={{ width: 44, height: 44, border: `1px solid ${theme.border}`, background: 'transparent', borderRadius: 8, cursor: 'pointer', color: theme.textSecondary, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <CheckCircle2 size={15} />
                 </button>
@@ -385,6 +410,57 @@ export default function MaintenancePanel({ asset, theme, currentMeter = null, on
             <button onClick={acceptProposal} disabled={saving}
               style={{ width: '100%', minHeight: 48, marginTop: 14, borderRadius: 10, border: 'none', background: theme.accent, color: '#fff', fontSize: 15, fontWeight: 700, cursor: saving ? 'wait' : 'pointer' }}>
               {saving ? 'Saving…' : `Save these ${proposal.schedules.length}`}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ---- Record a service as done ---- */}
+      {completing && (
+        <>
+          <div onClick={() => setCompleting(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 90 }} />
+          <div style={{
+            position: 'fixed', zIndex: 91, background: theme.bgCard, overflowY: 'auto', padding: 20,
+            ...(isMobile
+              ? { left: 0, right: 0, bottom: 0, borderRadius: '16px 16px 0 0', maxHeight: '90vh', paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))' }
+              : { top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 480, maxWidth: '92vw', borderRadius: 12, maxHeight: '86vh' }),
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: theme.text }}>{completing.name}</h3>
+              <button onClick={() => setCompleting(null)} style={{ width: 44, height: 44, border: 'none', background: 'transparent', cursor: 'pointer', color: theme.textMuted }}><X size={20} /></button>
+            </div>
+            <p style={{ margin: '0 0 14px', fontSize: 12, color: theme.textMuted }}>
+              Goes into this machine's service history and resets the schedule from what you enter here.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, color: theme.textMuted, display: 'block', marginBottom: 4 }}>Done on</label>
+                <input type="date" value={doneForm.date} onChange={e => setDoneForm(f => ({ ...f, date: e.target.value }))} style={field} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: theme.textMuted, display: 'block', marginBottom: 4 }}>
+                  {asset?.meter_basis === 'hours' ? 'Hours' : 'Odometer'}
+                </label>
+                <input type="number" inputMode="numeric" value={doneForm.meter}
+                  onChange={e => setDoneForm(f => ({ ...f, meter: e.target.value }))} placeholder="off the dash" style={field} />
+              </div>
+            </div>
+
+            <label style={{ fontSize: 11, color: theme.textMuted, display: 'block', margin: '12px 0 4px' }}>Cost (optional)</label>
+            <input type="number" inputMode="decimal" step="0.01" value={doneForm.cost}
+              onChange={e => setDoneForm(f => ({ ...f, cost: e.target.value }))} placeholder="0.00" style={field} />
+
+            <label style={{ fontSize: 11, color: theme.textMuted, display: 'block', margin: '12px 0 4px' }}>Notes (optional)</label>
+            <textarea value={doneForm.notes} onChange={e => setDoneForm(f => ({ ...f, notes: e.target.value }))}
+              placeholder="Shop, parts, anything the next person should know" rows={2}
+              style={{ ...field, minHeight: 64, resize: 'vertical' }} />
+
+            {error && <div style={{ marginTop: 10, fontSize: 12, color: '#b91c1c' }}>{error}</div>}
+
+            <button onClick={submitComplete} disabled={saving || !doneForm.date}
+              style={{ width: '100%', minHeight: 48, marginTop: 16, borderRadius: 10, border: 'none', background: theme.accent, color: '#fff', fontSize: 15, fontWeight: 700, cursor: saving ? 'wait' : 'pointer' }}>
+              {saving ? 'Saving…' : 'Record as done'}
             </button>
           </div>
         </>
