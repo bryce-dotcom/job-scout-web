@@ -12,6 +12,10 @@ import StripeTransactionsTab from './books/StripeTransactionsTab'
 import APSummaryCard from './books/APSummaryCard'
 import UpcomingServicesAlert from './books/UpcomingServicesAlert'
 import WalletReceiptsCard from './books/WalletReceiptsCard'
+import CategoryRulesPanel from './books/CategoryRulesPanel'
+import BudgetCard from './books/BudgetCard'
+import { buildJournal, journalCsv, journalTotals, qboBankCsvs } from '../lib/journalExport'
+import { suggestExpensesForTransaction } from '../lib/expenseMatch'
 import { computeRevenue, computeExpenses } from '../lib/revenueBasis'
 import { isLegacyNetShape } from '../lib/arHelpers'
 import { PAYMENT_METHODS } from '../lib/schema'
@@ -80,7 +84,7 @@ const TXN_PAGE = 150
 // an accountant typically asks for so the user doesn't have to assemble
 // it themselves. Plain-English filenames inside the ZIP so the accountant
 // can find what they need without guessing.
-async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency }) {
+async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency, payments = [], storeExpenses = [], connectedAccounts = [], bankAccounts = [] }) {
   const [{ default: JSZip }, { saveAs }] = await Promise.all([
     import('jszip'),
     import('file-saver'),
@@ -194,7 +198,17 @@ async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTrans
     ]))
   }
 
-  // 6. P&L summary (plain text)
+  // 6. General journal — every money event as a debit and a credit, so the
+  //    CPA can post the period instead of rebuilding it from screenshots.
+  const journal = buildJournal({ payments, manualExpenses: expenses, splitsByExpense, expenses: storeExpenses, plaidTransactions, connectedAccounts, bankAccounts, from, to })
+  const jt = journalTotals(journal)
+  zip.file('6-general-journal.csv', journalCsv(journal))
+
+  // 7. QuickBooks Online bank upload files (3-column: Date, Description, Amount), one per account.
+  const qbo = qboBankCsvs({ plaidTransactions, connectedAccounts, from, to })
+  for (const f of qbo) zip.file(`7-quickbooks/${f.filename}`, f.csv)
+
+  // 8. P&L summary (plain text)
   const income = taxTxns.filter(t => parseFloat(t.amount) < 0).reduce((s, t) => s + Math.abs(parseFloat(t.amount) || 0), 0)
   const expensesTotal = taxTxns.filter(t => parseFloat(t.amount) > 0).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0)
   const customerAR = (invoices || []).filter(i => i.payment_status !== 'Paid').reduce((s, i) => s + customerBalance(i), 0)
@@ -225,6 +239,8 @@ async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTrans
     `  3-payroll-by-employee.csv       — payroll-category expenses by employee`,
     `  4-tax-category-summary.csv      — total per tax category`,
     (entityType === 'Partnership' || entityType === 'LLC') ? `  5-form-1065-line-summary.csv    — totals per Form 1065 line (AI-assigned)` : null,
+    `  6-general-journal.csv           — double-entry journal for the period (${journal.length} lines, debits ${fmt(jt.debit)} / credits ${fmt(jt.credit)}${jt.balanced ? ', balanced' : ' — NOT balanced, tell us'})`,
+    qbo.length ? `  7-quickbooks/                   — QuickBooks Online bank-upload CSVs, one per account (${qbo.map(f => `${f.account}: ${f.count}`).join('; ')})` : null,
     `  README.txt                      — this file`,
   ].filter(Boolean).join('\n')
   zip.file('README.txt', pl)
@@ -381,6 +397,8 @@ export default function Books() {
 
   // Stripe merchant summary (volume + balance + payouts)
   const [merchantSummary, setMerchantSummary] = useState(null)
+  const [showRules, setShowRules] = useState(false)
+  const reconcileTransaction = useStore((state) => state.reconcileTransaction)
 
   // Accrual basis needs what was BILLED, not just what was paid: vendor bills
   // and their payments (so a bill's bank payment is not counted twice).
@@ -2288,6 +2306,8 @@ export default function Books() {
             </div>
           )}
 
+          <BudgetCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} manualExpenses={expenses} plaidTransactions={plaidTransactions} expenseCategories={expenseCategories} formatCurrency={formatCurrency} />
+
           {/* Accounts mini-list: connected banks first, then manual / wallet
               accounts (Venmo, Cash App, cash on hand) so the Money tab shows
               everywhere money lives, not just what Plaid can see. */}
@@ -2527,6 +2547,10 @@ export default function Books() {
                 {WALLET_FEED_FILTERS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             )}
+            <button onClick={() => setShowRules(true)} title="See and edit the merchant → category rules learned from your confirmations"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.accent, fontSize: '13px', fontWeight: '500', cursor: 'pointer', minHeight: '44px' }}>
+              <Filter size={14} /> Rules
+            </button>
           </div>
 
           {/* Transaction list */}
@@ -3031,6 +3055,37 @@ export default function Books() {
                             </div>
                           )}
                         </div>
+
+                        {/* Same money as an expense already on the Expenses page? Link
+                            them so the receipt travels with the bank row and the spend
+                            stops counting twice. */}
+                        {!txn.expense_id && (() => {
+                          const matches = suggestExpensesForTransaction(txn, storeExpenses)
+                          if (matches.length === 0) return null
+                          return (
+                            <div style={{ marginTop: '12px', padding: '10px 12px', backgroundColor: theme.accentBg, border: `1px solid ${theme.border}`, borderRadius: '8px' }}>
+                              <div style={{ fontSize: '12px', fontWeight: '600', color: theme.text, marginBottom: '6px' }}>Looks like a recorded expense</div>
+                              {matches.map(({ expense: ex }) => (
+                                <div key={ex.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '4px 0', fontSize: '12px', color: theme.textSecondary }}>
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {ex.merchant || ex.description || 'Expense'} · {formatCurrency(ex.amount)} · {formatDate(ex.date)}{ex.receipt_url || ex.receipt_storage_path ? ' · has receipt' : ''}
+                                  </span>
+                                  <button onClick={async () => {
+                                    const r = await reconcileTransaction(txn.id, ex.id)
+                                    if (r?.error) { toast.error('Could not link: ' + (r.error.message || r.error)); return }
+                                    toast.success('Linked to the expense — it now counts once')
+                                    await fetchPlaidTransactions?.()
+                                  }} style={{ flexShrink: 0, padding: '6px 10px', borderRadius: 6, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 32 }}>
+                                    Same expense
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        })()}
+                        {txn.expense_id && (
+                          <div style={{ marginTop: '12px', fontSize: '12px', color: '#16a34a' }}>Linked to a recorded expense — counted once.</div>
+                        )}
 
                         {/* Notes */}
                         <div style={{ marginTop: '12px' }}>
@@ -3581,7 +3636,7 @@ export default function Books() {
             }} title="Export the confirmed-transaction list as a single CSV for the date range above.">
               <Download size={14} /> Transactions CSV
             </button>
-            <button onClick={() => buildCpaPackage({ from: taxDateFrom, to: taxDateTo, companyId, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency })} style={{
+            <button onClick={() => buildCpaPackage({ from: taxDateFrom, to: taxDateTo, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency, payments, storeExpenses, connectedAccounts, bankAccounts })} style={{
               display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 16px',
               backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px',
               fontSize: '13px', fontWeight: '600', cursor: 'pointer', minHeight: '44px'
@@ -4289,6 +4344,10 @@ export default function Books() {
             </div>
           </div>
         </>
+      )}
+
+      {showRules && (
+        <CategoryRulesPanel companyId={companyId} theme={theme} isMobile={isMobile} expenseCategories={expenseCategories} onClose={() => setShowRules(false)} />
       )}
 
       {/* LIABILITY MODAL */}

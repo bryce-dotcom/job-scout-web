@@ -221,6 +221,31 @@ export default function Expenses() {
       setEditingExpense({ ...editingExpense, receipt_url: urlData.publicUrl, receipt_storage_path: storagePath })
     } else {
       setFormData(prev => ({ ...prev, _receipt_url: urlData.publicUrl, _receipt_storage_path: storagePath }))
+      // Read the receipt and fill whatever is still blank — the same
+      // scan-receipt function the deposit form uses. Silent on failure;
+      // the upload already succeeded.
+      if (file.type?.startsWith('image/')) {
+        try {
+          const base64 = await new Promise((resolve, reject) => {
+            const r = new FileReader()
+            r.onload = () => resolve(String(r.result).split(',')[1] || '')
+            r.onerror = reject
+            r.readAsDataURL(file)
+          })
+          const { data: scan } = await supabase.functions.invoke('scan-receipt', { body: { image: { base64, mediaType: file.type } } })
+          const ex = scan?.extracted
+          if (ex) {
+            setFormData(prev => ({
+              ...prev,
+              amount: prev.amount || (ex.amount != null ? String(ex.amount) : prev.amount),
+              date: ex.date || prev.date,
+              merchant: prev.merchant || ex.business_name || prev.merchant,
+              description: prev.description || ex.description || prev.description,
+              receipt: prev.receipt || ex.receipt_number || prev.receipt,
+            }))
+          }
+        } catch { /* the receipt is attached either way */ }
+      }
     }
 
     setReceiptUploading(false)
