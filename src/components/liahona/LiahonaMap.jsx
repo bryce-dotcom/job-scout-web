@@ -1083,9 +1083,11 @@ export default function LiahonaMap({
         </div>
       </div>
 
-      {/* ----------------------------------------------------- side panel / bottom sheet */}
+      {/* ----------------------------------------------------- side panel / bottom sheet.
+          On a phone the app's Arnie button and chat bubble float over the bottom-right;
+          the sheet's bottom padding lets every row and button scroll clear of them. */}
       <div style={compact
-        ? { position: 'relative', width: '100%', flexShrink: 0, height: sheetOpen ? '55%' : 'auto', borderTop: `1px solid ${t.border}`, backgroundColor: t.bgCard, overflowY: sheetOpen ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 -4px 12px rgba(0,0,0,.08)' }
+        ? { position: 'relative', width: '100%', flexShrink: 0, height: sheetOpen ? '55%' : 'auto', borderTop: `1px solid ${t.border}`, backgroundColor: t.bgCard, overflowY: sheetOpen ? 'auto' : 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 -4px 12px rgba(0,0,0,.08)', paddingBottom: sheetOpen ? 130 : 0 }
         : { width: 300, flexShrink: 0, borderLeft: `1px solid ${t.border}`, backgroundColor: t.bgCard, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         {compact && (
           <div onClick={() => setSheetOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
