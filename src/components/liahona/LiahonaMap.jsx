@@ -1111,7 +1111,8 @@ export default function LiahonaMap({
               onNeighbors={() => loadNeighbors({ lat: Number(activeLead.latitude), lng: Number(activeLead.longitude) }, activeLead.customer_name || activeLead.business_name || activeLead.address)}
               onPan={() => mapRef.current?.panTo([Number(activeLead.latitude), Number(activeLead.longitude)])}
               onClose={() => setActiveLeadId(null)}
-              onLogged={k => { notify(`Logged: ${k.label}`); onLogged?.() }} onError={notify} />
+              onLogged={k => { notify(`Logged: ${k.label}`); onLogged?.() }} onError={notify}
+              employees={employees} onBooked={() => { notify('Appointment booked'); onLeadsChanged?.(); if (window.refreshAppointmentsCalendar) window.refreshAppointmentsCalendar() }} />
           ) : (
             <>
               {route && <RoutePanel t={t} route={route} stageById={stageById} onClear={clearRoute} onSelectLead={l => l?.id ? onSelectLead?.(l) : l?._neighbor && focusNeighbor(l._neighbor)} />}

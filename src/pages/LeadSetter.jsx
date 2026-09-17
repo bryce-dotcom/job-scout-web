@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { leadOwners } from '../lib/leadOwnerRoles'
 import { useStore } from '../lib/store'
 import { fromZonedInput, toZonedInput, zonedDayKey, zonedHour, DEFAULT_TZ } from '../lib/dateTz'
+import { bookAppointment } from '../lib/bookAppointment'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import {
@@ -633,7 +634,6 @@ export default function LeadSetter() {
     // The form holds a Mountain wall-clock string; convert to the real UTC
     // instant so the appointment lands on the same day/time for everyone.
     const startTime = new Date(fromZonedInput(appointmentForm.start_time, MT))
-    const endTime = new Date(startTime.getTime() + appointmentForm.duration_minutes * 60000)
 
     // Resolve salesperson list. Primary id (salesperson_id) is the first in
     // the array — kept for backward compat with everything that reads only
@@ -642,140 +642,21 @@ export default function LeadSetter() {
     if (appointmentForm.salesperson_id && !ids.includes(appointmentForm.salesperson_id)) {
       ids.unshift(appointmentForm.salesperson_id)
     }
-    const primaryId = ids[0] || appointmentForm.salesperson_id || null
 
-    // Create appointment with all required fields
-    const appointmentPayload = {
-      company_id: companyId,
-      lead_id: selectedLead.id,
-      title: `${selectedLead.customer_name} - ${selectedLead.service_type || 'Consultation'}`,
-      start_time: startTime.toISOString(),
-      end_time: endTime.toISOString(),
-      duration_minutes: appointmentForm.duration_minutes,
-      location: appointmentForm.location || selectedLead.address || null,
-      salesperson_id: primaryId,
-      salesperson_ids: ids,
-      setter_id: user?.id || null,
-      lead_owner_id: selectedLead.lead_owner_id || null,
-      status: 'Scheduled',
-      notes: appointmentForm.notes || null
-    }
-
-    console.log('Creating appointment:', appointmentPayload)
-
-    const { data: apt, error } = await supabase
-      .from('appointments')
-      .insert(appointmentPayload)
-      .select()
-      .single()
+    // The whole sequence (appointment, lead link, setter + source commissions,
+    // legacy row) lives in lib/bookAppointment so the Liahona lead card books
+    // the same way. Behaviour here is unchanged.
+    const { error } = await bookAppointment({
+      companyId, company, lead: selectedLead, setterId: user?.id || null,
+      startTime, durationMinutes: appointmentForm.duration_minutes,
+      salespersonIds: ids, location: appointmentForm.location || null, notes: appointmentForm.notes || null
+    })
 
     if (error) {
       console.error('Error creating appointment:', error)
       setAppointmentError(error.message)
       setSaving(false)
       return
-    }
-
-    console.log('Appointment created:', apt)
-
-    // Update lead status and link appointment
-    const { error: leadError } = await supabase
-      .from('leads')
-      .update({
-        status: 'Appointment Set',
-        appointment_time: startTime.toISOString(),
-        appointment_id: apt.id,
-        salesperson_id: primaryId,
-        salesperson_ids: ids,
-        // Transfer ownership to the rep so this lead appears in their
-        // "My Projects" list in Lenard. Without this, Cole opens Lenard
-        // and can't see the leads Tracy scheduled for him, so he ends
-        // up creating a duplicate lead which orphans Tracy's setter
-        // commission.
-        lead_owner_id: primaryId,
-      })
-      .eq('id', selectedLead.id)
-
-    if (leadError) {
-      console.error('Error updating lead:', leadError)
-    }
-
-    // Create SETTER commission in lead_commissions table
-    try {
-      // Get setter's commission rate from employee profile
-      const { data: setterEmployee } = await supabase
-        .from('employees')
-        .select('commission_setter_rate, commission_setter_type')
-        .eq('id', user?.id)
-        .single()
-
-      const setterRate = setterEmployee?.commission_setter_rate || company?.setter_pay_per_appointment || 25
-
-      if (setterRate > 0) {
-        await supabase
-          .from('lead_commissions')
-          .insert({
-            company_id: companyId,
-            lead_id: selectedLead.id,
-            appointment_id: apt.id,
-            commission_type: 'appointment_set',
-            employee_id: user?.id,
-            amount: setterRate,
-            rate_type: setterEmployee?.commission_setter_type || 'flat',
-            payment_status: 'pending'
-          })
-        console.log('Setter commission created:', setterRate)
-      }
-    } catch (err) {
-      console.log('Setter commission not created:', err)
-    }
-
-    // Create LEAD SOURCE commission (when a source employee is set)
-    try {
-      if (selectedLead.lead_source_employee_id) {
-        const { data: sourceEmployee } = await supabase
-          .from('employees')
-          .select('commission_leads_rate, commission_leads_type')
-          .eq('id', selectedLead.lead_source_employee_id)
-          .single()
-
-        const sourceRate = sourceEmployee?.commission_leads_rate || company?.source_pay_per_lead || 0
-        if (sourceRate > 0) {
-          await supabase
-            .from('lead_commissions')
-            .insert({
-              company_id: companyId,
-              lead_id: selectedLead.id,
-              appointment_id: apt.id,
-              commission_type: 'lead_source',
-              employee_id: selectedLead.lead_source_employee_id,
-              amount: sourceRate,
-              rate_type: sourceEmployee?.commission_leads_type || 'flat',
-              payment_status: 'pending'
-            })
-          console.log('Lead source commission created:', sourceRate)
-        }
-      }
-    } catch (err) {
-      console.log('Lead source commission not created:', err)
-    }
-
-    // Also try legacy setter_commissions table for backwards compatibility
-    try {
-      if (company?.setter_pay_per_appointment > 0) {
-        await supabase
-          .from('setter_commissions')
-          .insert({
-            company_id: companyId,
-            lead_id: selectedLead.id,
-            appointment_id: apt.id,
-            setter_id: user?.id,
-            setter_amount: company?.setter_pay_per_appointment || 25,
-            payment_status: 'pending'
-          })
-      }
-    } catch (err) {
-      // Legacy table may not exist
     }
 
     console.log('Appointment saved successfully, refreshing...')
