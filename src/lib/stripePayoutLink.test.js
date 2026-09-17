@@ -185,3 +185,15 @@ describe('a charge JobScout never recorded still names its invoice', () => {
     expect(plan.actions.stampPayments).toEqual([])
   })
 })
+
+describe('a payout waiting for its deposit does not rewrite the same payments every run', () => {
+  it('payments already stamped with this payout are skipped until there is a deposit to tie them to', () => {
+    const stamped = [pay(101, 'pi_a', 501, { stripe_payout_id: 'po_1' }), pay(102, 'pi_b', 502, { stripe_payout_id: 'po_1' }), pay(103, 'pi_c', 503)]
+    const waiting = planPayoutLink({ payout, balanceTxns: exact, payments: stamped, bankRows: [] })
+    expect(waiting.actions.stampPayments).toEqual([103])
+    // Once the deposit lands, the stamped ones are written again — this time with the link.
+    const landed = planPayoutLink({ payout, balanceTxns: exact, payments: stamped, bankRows: [bank(9, -2114.87, '2026-09-14')] })
+    expect(landed.actions.stampPayments).toEqual([101, 102, 103])
+    expect(landed.actions.linkPayments).toEqual([101, 102, 103])
+  })
+})

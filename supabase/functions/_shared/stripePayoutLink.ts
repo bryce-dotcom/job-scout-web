@@ -258,7 +258,10 @@ export function planPayoutLink(
 
   // Stamping (payout id + fee) is a fact about the payment whatever the bank
   // side says; linking waits for a twin nobody has claimed for something else.
-  const stampPayments = mapped.map((m) => m.paymentId)
+  // A payment already stamped with this payout is left untouched, so a payout
+  // that is waiting for its deposit does not rewrite the same rows every run.
+  const stamped = new Set((payments || []).filter((r) => r?.stripe_payout_id === payout.id).map((r) => r.id))
+  const stampPayments = mapped.filter((m) => !stamped.has(m.paymentId) || (twinRow && !twinConflict && m.linkedTo == null)).map((m) => m.paymentId)
   const linkPayments = twinRow && !twinConflict
     ? mapped.filter((m) => m.linkedTo == null || m.linkedTo === twinRow.id).map((m) => m.paymentId)
     : []
