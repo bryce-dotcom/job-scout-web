@@ -246,9 +246,9 @@ export default function FrankieAsk() {
         .filter(m => m.id !== assistantId && !m.error)
         .map(m => ({ role: m.role, content: m.content }))
 
-      const fullResponse = await sendMessageStream(msg, history, (partialText) => {
+      const fullResponse = await sendMessageStream(msg, history, (partialText, meta) => {
         setMessages(prev => prev.map(m =>
-          m.id === assistantId ? { ...m, content: partialText } : m
+          m.id === assistantId ? { ...m, content: partialText, status: meta?.status || null } : m
         ))
       })
 
@@ -388,13 +388,20 @@ export default function FrankieAsk() {
           {thinking ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: theme.textMuted, padding: '4px 0' }}>
               <span className="frankie-dots"><i /><i /><i /></span>
-              Analyzing your financials…
+              {msg.status || 'Analyzing your financials…'}
             </div>
           ) : (
             <div className="frankie-markdown">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {msg.content}
               </ReactMarkdown>
+            </div>
+          )}
+          {/* A lookup that starts after some text has streamed shows under it. */}
+          {!thinking && msg.status && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: theme.textMuted, fontSize: 13, marginTop: 8 }}>
+              <span className="frankie-dots"><i /><i /><i /></span>
+              {msg.status}
             </div>
           )}
         </div>

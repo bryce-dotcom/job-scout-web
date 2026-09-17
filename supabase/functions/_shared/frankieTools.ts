@@ -376,15 +376,26 @@ async function jobProfitability(r: Rest, co: string, input: any) {
   const jobIds = jobs.map((j: any) => j.id)
   const idList = (ids: number[]) => `in.(${ids.join(',')})`
   const lines: any[] = [], pays: any[] = [], plaid: any[] = [], manual: any[] = []
+  const seenPayment = new Set<number>()
   for (let i = 0; i < jobIds.length; i += 200) {
     const chunk = jobIds.slice(i, i + 200)
-    const [l, p, t, m] = await Promise.all([
+    // A payment recorded on an invoice usually carries no job_id of its own;
+    // the invoice knows the job. Same rule as lib/reports.js jobCosting.
+    const invs = await readAll(r, `invoices?${co}&select=id,job_id&job_id=${idList(chunk)}`)
+    const invoiceJob = new Map<number, number>(invs.map((x: any) => [x.id, x.job_id]))
+    const [l, pDirect, pViaInvoice, t, m] = await Promise.all([
       readAll(r, `job_lines?${co}&select=job_id,item_id,quantity,labor_cost&job_id=${idList(chunk)}`),
-      readAll(r, `payments?${co}&select=job_id,amount&job_id=${idList(chunk)}`),
+      readAll(r, `payments?${co}&select=id,job_id,invoice_id,amount&job_id=${idList(chunk)}`),
+      invs.length ? readAll(r, `payments?${co}&select=id,job_id,invoice_id,amount&invoice_id=${idList([...invoiceJob.keys()])}`) : Promise.resolve([]),
       readAll(r, `plaid_transactions?${co}&select=job_id,ai_job_id,amount,is_transfer&or=(job_id.${idList(chunk)},ai_job_id.${idList(chunk)})`),
       readAll(r, `expenses?${co}&select=job_id,amount&job_id=${idList(chunk)}`),
     ])
-    lines.push(...l); pays.push(...p); plaid.push(...t); manual.push(...m)
+    for (const p of [...pDirect, ...pViaInvoice]) {
+      if (seenPayment.has(p.id)) continue
+      seenPayment.add(p.id)
+      pays.push({ ...p, job_id: p.job_id || invoiceJob.get(p.invoice_id) || null })
+    }
+    lines.push(...l); plaid.push(...t); manual.push(...m)
   }
   const [products, components] = await Promise.all([
     readAll(r, `products_services?${co}&select=id,cost,material_or_labor`, 10000),
@@ -450,7 +461,7 @@ async function jobProfitability(r: Rest, co: string, input: any) {
     totals: { revenue: money(rows.reduce((s, x) => s + x.revenue, 0)), cost: money(withCost.reduce((s, x) => s + (x.total_cost || 0), 0)), profit: money(withCost.reduce((s, x) => s + (x.profit || 0), 0)) },
     by_team: Object.fromEntries(Object.entries(teams).map(([k, v]) => [k, { jobs: v.jobs, revenue: money(v.revenue), cost: money(v.cost), profit: money(v.revenue - v.cost), margin_pct: v.revenue > 0 ? Math.round((v.revenue - v.cost) / v.revenue * 1000) / 10 : null }])),
     jobs: rows.slice(0, limit),
-    scope: `${rows.length} job(s), ${withCost.length} with cost captured. The same math as the Job Costing report: revenue is payments tagged to the job, cost is job lines (bundle components walked) plus expenses tagged to the job. null cost = nothing captured, not zero. Totals for profit cover only jobs with cost data.`,
+    scope: `${rows.length} job(s), ${withCost.length} with cost captured. The same math as the Job Costing report: revenue is payments tagged to the job or to one of its invoices, cost is job lines (bundle components walked) plus expenses tagged to the job. null cost = nothing captured, not zero. Totals for profit cover only jobs with cost data.`,
   }
 }
 

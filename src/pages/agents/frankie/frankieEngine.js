@@ -31,47 +31,84 @@ async function loadPayrollRuns(role) {
   }
 }
 
+// What Frankie says he is doing while a tool runs. The reader sees this
+// under the answer-in-progress instead of a spinner for thirty seconds.
+const LOOKUP_HINTS = {
+  query_bank_transactions: 'Pulling the bank rows…',
+  query_pnl: 'Running the P&L for that period…',
+  query_invoices: 'Pulling the open invoices…',
+  query_payments: 'Pulling the payments…',
+  query_job_profitability: 'Costing the jobs…',
+  query_payroll_runs: 'Pulling the payroll runs…',
+  query_bank_balances: 'Checking the bank balances…',
+}
+
+/**
+ * Stream the answer. Text arrives as it is written; each tool call arrives
+ * as a status line. `onChunk(text, meta)` gets the cumulative text, and
+ * `meta.status` when a lookup starts (null again when text resumes).
+ *
+ * `agent: 'frankie'` tells the shared edge function whose tools and model
+ * to use. Without it Frankie was offered Arnie's toolset, including the
+ * ones that propose record changes.
+ */
 async function callClaude(conversationHistory, systemPrompt, onChunk) {
   const messages = conversationHistory.map(msg => ({
     role: msg.role === 'user' ? 'user' : 'assistant',
     content: msg.content,
   }))
 
-  // `agent` tells the shared edge function whose tools and model to use.
-  // Without it Frankie was offered Arnie's toolset, including the ones that
-  // propose record changes.
-  const { data, error } = await supabase.functions.invoke('arnie-chat', {
-    body: {
-      agent: 'frankie',
-      messages,
-      systemPrompt,
-      sessionId: null,
+  const session = await supabase.auth.getSession()
+  const accessToken = session?.data?.session?.access_token
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/arnie-chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
     },
+    body: JSON.stringify({ agent: 'frankie', messages, systemPrompt, stream: true }),
   })
 
-  if (error) {
-    let detail = error.message || 'Failed to call AI'
-    if (error.context?.body) {
-      try {
-        const reader = error.context.body.getReader()
-        const { value } = await reader.read()
-        const text = new TextDecoder().decode(value)
-        const parsed = JSON.parse(text)
-        detail = parsed.error || parsed.details || text
-      } catch {}
-    }
+  if (!res.ok || !res.body) {
+    let detail = `Frankie is unavailable (${res.status}).`
+    try { const j = await res.json(); detail = j.error || j.details || detail } catch {}
     console.error('[Frankie Engine] Edge function error:', detail)
     throw new Error(detail)
   }
 
-  if (data?.error) {
-    console.error('[Frankie Engine] AI error:', data.error, data.details)
-    throw new Error(data.error)
+  const reader = res.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  let full = ''
+  let currentEvent = ''
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    const lines = buf.split('\n')
+    buf = lines.pop() || ''
+    for (const line of lines) {
+      if (line.startsWith('event: ')) { currentEvent = line.slice(7).trim(); continue }
+      if (!line.startsWith('data: ')) continue
+      let payload
+      try { payload = JSON.parse(line.slice(6)) } catch { continue }
+      if (currentEvent === 'text' && payload.delta) {
+        full += payload.delta
+        onChunk(full, { status: null })
+      } else if (currentEvent === 'tool_call') {
+        // Text written before a lookup and text written after it are separate
+        // paragraphs; without this they ran together ("…overdue list.Gym Interior…").
+        if (full && !/\n\s*$/.test(full)) full += '\n\n'
+        onChunk(full, { status: LOOKUP_HINTS[payload.name] || 'Looking that up…', tool: payload.name })
+      } else if (currentEvent === 'error') {
+        throw new Error(payload.message || 'Frankie could not finish that answer.')
+      }
+    }
   }
 
-  const reply = data?.reply || ''
-  onChunk(reply)
-  return reply
+  onChunk(full, { status: null })
+  return full
 }
 
 // The store's `user` IS the signed-in employee row (App.jsx setUser(employee)).

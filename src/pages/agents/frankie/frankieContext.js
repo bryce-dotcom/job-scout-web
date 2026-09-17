@@ -114,7 +114,7 @@ const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFract
 export function jobProfitabilitySection({ jobs = [], completedJobs = [], data = {}, now = new Date() }) {
   if (!jobs.length) return ''
   const report = jobCosting({
-    jobs, jobLines: data.jobLines || [], payments: data.payments || [],
+    jobs, jobLines: data.jobLines || [], payments: data.payments || [], invoices: data.invoices || [],
     products: data.products || [], productComponents: data.productComponents || [],
     plaidTransactions: data.plaidTransactions || [], manualExpenses: data.expenses || [],
     from: null, to: now,

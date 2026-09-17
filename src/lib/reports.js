@@ -333,7 +333,7 @@ export function expenseByVendor({ manualExpenses = [], plaidTransactions = [], f
 // products_services.cost × quantity directly. labor_cost on the line
 // row is added on top if recorded.
 export function jobCosting({
-  jobs = [], jobLines = [], payments = [],
+  jobs = [], jobLines = [], payments = [], invoices = [],
   products = [], productComponents = [],
   plaidTransactions = [], manualExpenses = [],
   from, to,
@@ -341,12 +341,22 @@ export function jobCosting({
   const fromD = from instanceof Date ? from : new Date(from)
   const toD = to instanceof Date ? to : new Date(to)
 
-  // Index payments by job_id (job → total paid for the period).
+  // Index payments by job (job → total paid for the period).
+  //
+  // A payment recorded against an invoice usually carries no job_id of its
+  // own — the invoice knows the job. Reading job_id off the payment alone
+  // left most revenue unattributed: HHH had $537k collected and only $440k
+  // of it reaching a job, and every job paid through an invoice read as
+  // zero revenue against real costs. Follow the invoice when the payment
+  // does not say.
+  const invoiceJob = new Map()
+  for (const inv of invoices || []) if (inv?.id != null && inv.job_id) invoiceJob.set(inv.id, inv.job_id)
   const paymentsByJob = new Map()
   for (const p of payments || []) {
-    if (!p.job_id) continue
+    const jid = p.job_id || (p.invoice_id != null ? invoiceJob.get(p.invoice_id) : null)
+    if (!jid) continue
     if (from && !inRange(p.date, fromD, toD)) continue
-    paymentsByJob.set(p.job_id, (paymentsByJob.get(p.job_id) || 0) + (Number(p.amount) || 0))
+    paymentsByJob.set(jid, (paymentsByJob.get(jid) || 0) + (Number(p.amount) || 0))
   }
 
   // Index lines by job_id.

@@ -1398,6 +1398,14 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                     send('text', { delta: evt.delta.text })
                   } else if (evt.delta.type === 'input_json_delta') {
                     b.input_buf = (b.input_buf || '') + evt.delta.partial_json
+                  } else if (evt.delta.type === 'thinking_delta') {
+                    // Frankie runs on a model that thinks. Its thinking blocks
+                    // go back to the API unchanged on the next tool round, so
+                    // they have to be reassembled here, signature included, or
+                    // the round after a lookup is rejected.
+                    b.thinking = (b.thinking || '') + evt.delta.thinking
+                  } else if (evt.delta.type === 'signature_delta') {
+                    b.signature = evt.delta.signature
                   }
                 } else if (evt.type === 'content_block_stop') {
                   const b = blocks[evt.index]
