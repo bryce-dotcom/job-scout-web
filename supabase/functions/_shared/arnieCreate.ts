@@ -24,6 +24,7 @@ import { applyQuote, prepareQuote, rollbackQuote } from './arnieQuote.ts'
 import { applyFollowup, prepareFollowup, rollbackFollowup } from './arnieFollowup.ts'
 import { applyPayment, preparePayment, rollbackPayment } from './arniePayment.ts'
 import { prepareExpense } from './arnieExpense.ts'
+import { applyCompanySetup, prepareCompanySetup, rollbackCompanySetup } from './companySetup.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -265,6 +266,37 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     },
     labelOf: (f) => `${f.merchant || 'expense'} ${f.amount || ''}`.trim().slice(0, 120),
     prepare: prepareExpense,
+  },
+
+  // "Set up the company." Name, address, trade, entity — and the address
+  // does the rest: time zone, state income tax, sales-tax floor, SUI wage
+  // base and new-employer rate, deposit schedules, the first business
+  // unit, service types, NAICS, the AI crew. Owner/admin. Every derived
+  // figure is on the card with where it came from. See companySetup.ts.
+  company_setup: {
+    label: 'company',
+    table: 'companies',
+    minLevel: 3,
+    verb: 'Set up',
+    done: 'Set up. Everything on the card is in Settings → Company now; the "still yours" items are waiting there too.',
+    fields: {
+      name:                { column: null, label: 'Company',     required: true, max: 120 },
+      address:             { column: null, label: 'Address',     required: true, max: 200 },
+      trade:               { column: null, label: 'Trade',       max: 120 },
+      entity:              { column: null, label: 'Entity',      max: 40 },
+      legal_name:          { column: null, label: 'Legal name',  max: 120 },
+      phone:               { column: null, label: 'Phone',       max: 30 },
+      email:               { column: null, label: 'Email',       max: 120 },
+      website:             { column: null, label: 'Website',     max: 120 },
+      ein:                 { column: null, label: 'EIN',         max: 12 },
+      pay_frequency:       { column: null, label: 'Payroll',     max: 40 },
+      charges_sales_tax:   { column: null, label: 'Sales tax',   max: 5 },
+      local_sales_tax_pct: { column: null, label: 'Local rate',  max: 8 },
+    },
+    labelOf: (f) => `Set up ${f.name}`.slice(0, 120),
+    prepare: prepareCompanySetup,
+    applyCustom: applyCompanySetup,
+    rollbackCustom: rollbackCompanySetup,
   },
 
   // "Call the Riverside job 'the gym'." "From now on, brief me by text."

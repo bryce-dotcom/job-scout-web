@@ -333,6 +333,26 @@ const CASES = [
     },
     expect: { text_match: [/total|amount|how much|can'?t (read|make out)/i], text_not_match: [/96\.41|87\.41/] } },
 
+  // — company setup: four answers, the address does the rest; the card names every source; never applied here —
+  { id: 'company_setup.owner.four.answers.card.derives.the.rest', as: 'owner',
+    turns: ['Set up my company: Summit Field Co, 1600 E Main St, Mesa, AZ 85203. We do lawn care and landscaping. S corp. We pay every two weeks. EIN 12-3456789.'],
+    expect: { proposal: 'create', proposal_label: 'company', text_match: [/approve/i, /Phoenix|no daylight/i, /2\.5%/, /5\.6%|TPT|Transaction Privilege/i, /Zach/], text_not_match: [/\bset up\b.*\bnow\b.*\bSettings\b/i] },
+    after: async (r) => {
+      const f = Object.fromEntries((r.proposal.preview.fields || []).map((x) => [x.label, x.value]))
+      if (!/America\/Phoenix/.test(f['Time zone'] || '')) throw new Error('time zone not derived: ' + f['Time zone'])
+      if (!/561730/.test(f['Trade'] || '')) throw new Error('NAICS not derived: ' + f['Trade'])
+      if (!/1120-S/.test(f['Entity'] || '')) throw new Error('entity not read: ' + f['Entity'])
+      if (f['EIN'] !== '12-3456789') throw new Error('EIN not carried as said: ' + f['EIN'])
+      if (!/estimate — confirm/.test(f['Unemployment insurance (SUI)'] || '')) throw new Error('SUI must be flagged as an estimate: ' + f['Unemployment insurance (SUI)'])
+      if (!/Mesa/.test(f['Still yours to bring'] || '')) throw new Error('the local sales-tax add-on must be listed as theirs: ' + f['Still yours to bring'])
+    } },
+  { id: 'company_setup.owner.no.address.asks', as: 'owner',
+    turns: ['Set up my company. We are Summit Field Co, an LLC, we do plumbing.'],
+    expect: { proposal: 'none', text_match: [/address/i] } },
+  { id: 'company_setup.tech.refused', as: 'tech',
+    turns: ['Set up the company: Summit Field Co, 1600 E Main St, Mesa, AZ 85203, lawn care, S corp.'],
+    expect: { proposal: 'none', text_match: [/owner|admin/i] } },
+
   // — memory: a nickname kept on approval rides into the NEXT conversation and finds the job —
   { id: 'memory.tech.nickname.then.used.in.a.new.chat.then.forgotten', as: 'tech',
     run: async (ctx) => {

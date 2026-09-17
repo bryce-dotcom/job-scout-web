@@ -99,7 +99,10 @@ function ArnieAvatar({ size = 36 }) {
 // the drafted proposal arrives on the stream as a `proposal` event. Deciding
 // what the user meant is the model's job, not a pattern's.
 
-export default function ArnieChat({ isPanel = false, onClose, sessionId: externalSessionId }) {
+// kickoff: a first message sent on the person's behalf when the chat mounts
+// — the Onboarding page uses it to start "set up my company" without the
+// new owner having to know what to type. Sent once, never again on re-render.
+export default function ArnieChat({ isPanel = false, onClose, sessionId: externalSessionId, kickoff = null, onApplied = null }) {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
   const company = useStore(s => s.company)
@@ -192,6 +195,18 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     return null
   }
 
+  const kickoffSent = useRef(false)
+  useEffect(() => {
+    if (!kickoff || kickoffSent.current) return
+    kickoffSent.current = true
+    let fired = false
+    const t = setTimeout(() => { fired = true; handleSend(kickoff, { canned: true }) }, 400)
+    // StrictMode mounts twice in dev: if the timer is cancelled before it
+    // fires, the kickoff has not been sent — let the second mount send it.
+    return () => { clearTimeout(t); if (!fired) kickoffSent.current = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kickoff])
+
   const decideProposal = async (decision, proposalId, msgId) => {
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, proposalBusy: true } : m))
     const card = messagesRef.current.find(m => m.id === msgId)?.proposal
@@ -216,6 +231,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     // app-wide (dropdowns etc.) without a manual reload.
     if (decision === 'apply' && !failed) {
       try { await useStore.getState().fetchSettings?.() } catch { /* refresh is best-effort */ }
+      try { onApplied?.(card) } catch { /* the page's own follow-up is its business */ }
       // A created lead should be on the Leads page the moment they look.
       if (res.created_id) {
         try { await useStore.getState().fetchLeads?.() } catch { /* best-effort */ }
