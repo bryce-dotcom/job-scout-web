@@ -165,9 +165,37 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     }
   }
 
+  // The receipt behind an expense card: the last photo the person sent
+  // before the card. It never went through the model's tool call or the
+  // proposal row — it is uploaded HERE, on approve, to the same place the
+  // Expenses page puts receipts, and the URL is handed to arnie-config.
+  const receiptForCard = async (msgId) => {
+    const list = messagesRef.current
+    const at = list.findIndex(m => m.id === msgId)
+    for (let i = (at < 0 ? list.length : at) - 1; i >= 0; i--) {
+      const m = list[i]
+      if (m.role !== 'user') continue
+      const img = (m.attachments || []).find(a => a.kind === 'image' && a.data && a.mediaType)
+      if (!img) continue
+      try {
+        const bytes = Uint8Array.from(atob(img.data), c => c.charCodeAt(0))
+        const ext = (img.mediaType.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+        const safe = String(img.name || 'receipt').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^.]+$/, '')
+        const path = `expenses/receipts/arnie_${Date.now()}_${safe}.${ext}`
+        const { error } = await supabase.storage.from('project-documents').upload(path, new Blob([bytes], { type: img.mediaType }), { contentType: img.mediaType })
+        if (error) return null
+        const { data } = supabase.storage.from('project-documents').getPublicUrl(path)
+        return { receipt_url: data.publicUrl, receipt_storage_path: path }
+      } catch { return null }
+    }
+    return null
+  }
+
   const decideProposal = async (decision, proposalId, msgId) => {
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, proposalBusy: true } : m))
-    const res = await cfgInvoke({ action: decision, proposal_id: proposalId })
+    const card = messagesRef.current.find(m => m.id === msgId)?.proposal
+    const attachment = decision === 'apply' && card?.preview?.label === 'expense' ? await receiptForCard(msgId) : null
+    const res = await cfgInvoke({ action: decision, proposal_id: proposalId, ...(attachment ? { attachment } : {}) })
     const failed = !res || res.error
     setMessages(prev => prev.map(m => {
       if (m.id !== msgId) return m

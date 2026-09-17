@@ -23,6 +23,7 @@ import { applyAppointment, prepareAppointment, rollbackAppointment } from './arn
 import { applyQuote, prepareQuote, rollbackQuote } from './arnieQuote.ts'
 import { applyFollowup, prepareFollowup, rollbackFollowup } from './arnieFollowup.ts'
 import { applyPayment, preparePayment, rollbackPayment } from './arniePayment.ts'
+import { prepareExpense } from './arnieExpense.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -240,6 +241,30 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     prepare: preparePayment,
     applyCustom: applyPayment,
     rollbackCustom: rollbackPayment,
+  },
+
+  // "Log this receipt." The photo is read by the model; the card shows what
+  // it read; the file is attached by the client on approve. Anyone. See
+  // arnieExpense.ts.
+  expense: {
+    label: 'expense',
+    table: 'expenses',
+    minLevel: 0,
+    verb: 'Log',
+    done: 'Logged. It is on Expenses as Pending, receipt attached if there was one.',
+    fields: {
+      amount:      { column: null, label: 'Amount',      required: true, max: 20 },
+      merchant:    { column: null, label: 'Merchant',    required: true, max: 80 },
+      date:        { column: null, label: 'Date',        max: 20 },
+      category:    { column: null, label: 'Category',   max: 40 },
+      description: { column: null, label: 'What for',   max: 200 },
+      job:         { column: null, label: 'Job',         max: 160 },
+      notes:       { column: null, label: 'Notes',       max: 200 },
+      receipt:     { column: null, label: 'Receipt',     max: 8 },
+      timezone:    { column: null, label: 'Timezone',    max: 60 },
+    },
+    labelOf: (f) => `${f.merchant || 'expense'} ${f.amount || ''}`.trim().slice(0, 120),
+    prepare: prepareExpense,
   },
 
   // "Call the Riverside job 'the gym'." "From now on, brief me by text."

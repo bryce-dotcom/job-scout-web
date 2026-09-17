@@ -52,10 +52,24 @@ function daysOverdue(inv, now) {
   return Math.max(0, Math.floor((now - d30) / 86400000))
 }
 
+// The calendar day a stored value MEANS. A date column ('2026-09-01') and a
+// timestamptz holding a date ('2026-09-01 00:00:00+00' — what the Expenses
+// page and Arnie write) both mean the first of September; parsed as an
+// instant they become 6 PM on August 31st in Denver, and the row falls into
+// the wrong month in every report below. A real instant keeps its local day.
+export function calendarDay(v) {
+  if (v instanceof Date) return v.toLocaleDateString('en-CA')
+  const s = String(v || '')
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})(?:[T ]00:00:00(?:\.0+)?(?:Z|\+00(?::?00)?))?$/)
+  if (m) return m[1]
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA')
+}
+
 function inRange(dateStr, from, to) {
   if (!dateStr) return false
-  const t = new Date(dateStr)
-  return t >= from && t <= to
+  const day = calendarDay(dateStr)
+  return !!day && day >= calendarDay(from) && day <= calendarDay(to)
 }
 
 // Unified expense list — combines manual_expenses + plaid_transactions
@@ -579,10 +593,7 @@ export function jobCosting({
 export function monthlyTrend({ payments = [], manualExpenses = [], plaidTransactions = [], from, to } = {}) {
   const fromD = from instanceof Date ? from : new Date(from)
   const toD = to instanceof Date ? to : new Date(to)
-  const monthKey = (d) => {
-    const x = new Date(d)
-    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`
-  }
+  const monthKey = (d) => calendarDay(d).slice(0, 7)
   const byMonth = new Map()
   const ensure = (k) => {
     if (!byMonth.has(k)) byMonth.set(k, { month: k, revenue: 0, expenses: 0 })

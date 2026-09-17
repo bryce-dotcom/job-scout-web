@@ -110,6 +110,20 @@ serve(async (req) => {
     const isBulk = isBulkTarget(prop.target);
     const isCreate = isCreateTarget(prop.target);
 
+    // The receipt photo for an expense arrives HERE, at approve time: the
+    // client uploaded the file it already held and hands over the URL. Only
+    // this target, only these two keys, only a URL on our own storage — the
+    // body is the user's, and a URL is not a thing to write into a row
+    // unchecked. Persisted onto the proposal before apply so the audit and
+    // the rollback see what was attached.
+    if (action === 'apply' && prop.target === 'expense' && body.attachment && typeof body.attachment === 'object') {
+      const url = String(body.attachment.receipt_url || ''), path = String(body.attachment.receipt_storage_path || '');
+      if (url.startsWith(`${SUPABASE_URL}/storage/v1/object/`) && /^expenses\/receipts\/[A-Za-z0-9._-]+$/.test(path)) {
+        prop.payload = { ...(prop.payload || {}), columns: { ...(prop.payload?.columns || {}), receipt_url: url, receipt_storage_path: path } };
+        await sb.from('arnie_proposals').update({ payload: prop.payload }).eq('id', proposalId);
+      }
+    }
+
     if (action === 'reject') {
       if (prop.status !== 'pending') return json({ error: `Can't reject a ${prop.status} change.` }, 400);
       await sb.from('arnie_proposals').update({ status: 'rejected', decided_by: caller.email, decided_at: new Date().toISOString() }).eq('id', proposalId);
