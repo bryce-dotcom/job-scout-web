@@ -120,8 +120,11 @@ function getUserRole() {
   return { role: roleForPrompt(user), userId: user?.id }
 }
 
-// The company's own Expense Category names. Books loads these on its own
-// page rather than through the store, so Frankie asks for them here.
+// The Expense Category names Books offers: the shared catalogue (no
+// company_id) plus any this company added. Books loads these on its own
+// page rather than through the store, so Frankie asks for them here. He
+// used to read only the company's own rows, saw none, and told HHH's owner
+// they had no category list set up.
 async function loadExpenseCategories() {
   const { companyId } = useStore.getState()
   if (!companyId) return []
@@ -129,8 +132,9 @@ async function loadExpenseCategories() {
     const { data, error } = await supabase
       .from('expense_categories')
       .select('name, type')
-      .eq('company_id', companyId)
+      .or(`company_id.is.null,company_id.eq.${companyId}`)
       .order('sort_order')
+      .order('name')
     if (error) throw error
     return data || []
   } catch (e) {
