@@ -13,7 +13,7 @@ const CENTS = (n) => Math.round((parseFloat(n) || 0) * 100)
 // Depth-first subset search over amounts in cents, largest first, with a
 // node budget so a pathological list cannot hang the UI. Returns the
 // indices of the first subset found, or null.
-function findSubset(cents, targetCents, tolerance = 1, budget = 200000) {
+export function findSubset(cents, targetCents, tolerance = 1, budget = 200000) {
   const order = cents.map((c, i) => [c, i]).sort((a, b) => b[0] - a[0])
   const vals = order.map(o => o[0])
   const idx = order.map(o => o[1])

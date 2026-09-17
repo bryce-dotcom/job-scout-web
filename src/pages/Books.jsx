@@ -14,6 +14,8 @@ import { PAYMENT_METHODS } from '../lib/schema'
 import { isVirtualAccountFilter, matchesAccountFilter, walletForFilter, isWalletTransaction, WALLET_FEED_FILTERS } from '../lib/bankFeedFilters'
 import { WALLETS, walletForAccountName } from '../lib/wallets'
 import { findWalletPayout } from '../lib/walletReconcile'
+import { recordedEntries, findRecordedSet, nearestRecordedSet, utilityTargets, splitPlan, bankRowPointer, depositIsMatched } from '../lib/depositReconcile'
+import { recordUtilityPayment, BORNE_BY_CUSTOMER, BORNE_BY_COMPANY } from '../lib/utilitySettlement'
 import { chooseAutoLink, paymentsInWindow } from '../lib/walletAutoLink'
 import { zelleSenderName, matchCustomerName } from '../lib/zelleSender'
 import {
@@ -548,7 +550,15 @@ export default function Books() {
   //      backfill a payment dated to the invoice's updated_at.
   const [paymentsByInvoiceId, setPaymentsByInvoiceId] = useState(new Map())
   const [paymentsLoaded, setPaymentsLoaded] = useState(false)
-  const [matchModal, setMatchModal] = useState({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })
+  // The match modal. A deposit is matched to a SET of things already
+  // recorded (customer payments, utility settlements, or both), or split into
+  // several new ones — one cheque paying three invoices, a utility's cheque
+  // covering two jobs, the utility's ACH with no customer invoice at all
+  // (Tracy, 2026-09-16). Targets are customer invoices with a customer
+  // balance AND invoices the utility still owes on; picks are keyed and
+  // ordered, with per-pick amounts when the deposit is split.
+  const EMPTY_MATCH = { open: false, deposit: null, invoices: [], utility: [], recordedSet: null, nearSet: null, walletPayout: null, loading: false, query: '', picks: [], amounts: {}, split: false, borne: {}, saving: false }
+  const [matchModal, setMatchModal] = useState(EMPTY_MATCH)
   const [backfilling, setBackfillingInvoiceId] = useState(null)
 
   const fetchPaymentsLifetime = async () => {
@@ -580,7 +590,7 @@ export default function Books() {
   //   2) close amount match (within 5%)
   //   3) customer-name fuzzy match on the deposit's merchant_name/name
   const openMatchModal = async (deposit) => {
-    setMatchModal({ open: true, deposit, invoices: [], loading: true, query: '', selectedId: null, saving: false })
+    setMatchModal({ ...EMPTY_MATCH, open: true, deposit, loading: true })
     const depAmount = Math.abs(parseFloat(deposit.amount) || 0)
     const depName = ((deposit.merchant_name || deposit.name || '') + '').toLowerCase()
     const { data, error } = await supabase
@@ -614,26 +624,64 @@ export default function Books() {
       return { ...inv, _open: open, _score: score }
     }).filter(inv => inv._open > 0.01)
       .sort((a, b) => (b._score - a._score) || (b.created_at < a.created_at ? 1 : -1))
-    // A deposit is often the bank side of a payment someone already entered
-    // by hand. Those invoices are Paid, so they were filtered out of the list
-    // entirely — leaving the closest OPEN invoice as the only choice. That is
-    // how Tracy's $14,537 Seven Skies check landed on Ryan Kimball's invoice,
-    // $10.03 away. Offer the recorded payment instead of forcing a wrong pick.
-    const { data: already } = await supabase
-      .from('payments')
-      .select('id, invoice_id, amount, date, method, source_transaction_id, invoice:invoices(invoice_id, customer:customers(name))')
-      .eq('company_id', companyId)
-      .is('source_transaction_id', null)
-      .gte('amount', depAmount - 0.01)
-      .lte('amount', depAmount + 0.01)
-      .limit(20)
-    // Within a fortnight either side — a check is banked days after it is
-    // entered, but two months apart is a different payment of the same size.
+    // A deposit is often the bank side of money someone already entered by
+    // hand — a cheque recorded when it arrived, a utility settlement recorded
+    // on the utility record. Those are Paid, so they were filtered out of the
+    // list entirely, leaving the closest OPEN invoice as the only choice.
+    // That is how Tracy's $14,537 Seven Skies check landed on Ryan Kimball's
+    // invoice, $10.03 away. Offer what is recorded instead — and not only one
+    // row of it: a cheque pays several invoices, a utility's cheque settles
+    // several jobs. Within a fortnight either side; two months apart is a
+    // different payment of the same size.
     const depTime = new Date(deposit.date).getTime()
-    const recorded = (already || []).filter(p => {
-      const d = new Date(p.date).getTime()
-      return Number.isFinite(d) && Math.abs(d - depTime) <= 14 * 86400000
-    })
+    const winFrom = new Date(depTime - 14 * 86400000).toISOString().slice(0, 10)
+    const winTo = new Date(depTime + 14 * 86400000).toISOString().slice(0, 10)
+    const [{ data: recentPays }, { data: recentSettled }, { data: utilCarriers }, { data: utilOrphans }] = await Promise.all([
+      supabase
+        .from('payments')
+        .select('id, invoice_id, amount, date, method, notes, source_transaction_id, invoice:invoices(invoice_id, customer:customers(name))')
+        .eq('company_id', companyId)
+        .is('source_transaction_id', null)
+        .gte('date', winFrom).lte('date', winTo)
+        .limit(300),
+      supabase
+        .from('utility_invoices')
+        .select('id, invoice_id, utility_name, amount, paid_at, payment_status, source_transaction_id, invoice:invoices(invoice_id, customer:customers(name))')
+        .eq('company_id', companyId)
+        .eq('payment_status', 'Paid')
+        .is('source_transaction_id', null)
+        .gte('paid_at', winFrom).lte('paid_at', winTo + 'T23:59:59')
+        .limit(200),
+      // Invoices the UTILITY still owes on — the other party's balance.
+      supabase
+        .from('invoices')
+        .select('id, invoice_id, amount, discount_applied, payment_status, created_at, customer_id, job_id, utility_owes, utility_paid_at, utility_billed, utility_shortfall, shortfall_borne_by, customer:customers(name)')
+        .eq('company_id', companyId)
+        .gt('utility_owes', 0)
+        .is('utility_paid_at', null)
+        .order('created_at', { ascending: false })
+        .limit(300),
+      supabase
+        .from('utility_invoices')
+        .select('id, invoice_id, utility_name, customer_name, amount, incentive_amount, project_cost, net_cost, notes, payment_status, paid_at')
+        .eq('company_id', companyId)
+        .is('invoice_id', null)
+        .not('payment_status', 'in', '("Paid","Void")')
+        .limit(100),
+    ])
+    const entries = recordedEntries({ payments: recentPays || [], settlements: recentSettled || [], depositDate: deposit.date })
+    const recordedSet = findRecordedSet(entries, depAmount, deposit.date)
+    const nearSet = recordedSet ? null : nearestRecordedSet(entries, depAmount, deposit.date)
+    // The utility records behind the carriers, so a settlement can be
+    // recorded through the one write path (lib/utilitySettlement).
+    const carrierIds = (utilCarriers || []).map(i => i.id)
+    const { data: carrierRows } = carrierIds.length
+      ? await supabase.from('utility_invoices').select('id, invoice_id, utility_name, amount, incentive_amount, project_cost, net_cost, notes, payment_status, paid_at').eq('company_id', companyId).in('invoice_id', carrierIds)
+      : { data: [] }
+    const utility = utilityTargets({ invoices: utilCarriers || [], rows: carrierRows || [], orphans: utilOrphans || [] })
+      .filter(t => t.row) // no record to settle through → nothing to write
+      .map(t => ({ ...t, _score: Math.abs(t.expected - depAmount) < 0.01 ? 100 : (t.open > 0 && Math.abs(t.open - depAmount) / t.open < 0.05 ? 50 : 0) }))
+      .sort((a, b) => b._score - a._score)
     // A wallet payout (Venmo cash-out, Cash App payout, Zelle) is usually
     // several customers' payments in one lump, or one payment net of the
     // wallet's fee. Look for the unlinked wallet payments that add up to it.
@@ -665,14 +713,60 @@ export default function Books() {
       // only surface this when it adds something (a lump, or a fee-adjusted match).
       if (found && (found.payments.length > 1 || found.basis === 'net')) walletPayout = { wallet, profile, ...found }
     }
-    // Do not pre-select an invoice when the deposit looks like a payment we
-    // already have — the recorded one is almost certainly the right answer,
-    // and a pre-ticked invoice is what gets confirmed without reading.
+    // Do not pre-select a target when the deposit looks like money we already
+    // have — the recorded set is almost certainly the right answer, and a
+    // pre-ticked invoice is what gets confirmed without reading.
+    const exactCustomer = ranked[0]?._score >= 100 ? `invoice:${ranked[0].id}` : null
+    const exactUtility = utility[0]?._score >= 100 ? utility[0].key : null
+    const preselect = !recordedSet && !nearSet && !walletPayout ? (exactCustomer && !exactUtility ? exactCustomer : (!exactCustomer && exactUtility ? exactUtility : null)) : null
     setMatchModal(m => ({
-      ...m, invoices: ranked, recorded, walletPayout, loading: false,
-      selectedId: recorded.length === 0 && !walletPayout && ranked[0]?._score >= 100 ? ranked[0].id : null,
+      ...m, invoices: ranked, utility, recordedSet, nearSet, walletPayout, loading: false,
+      picks: preselect ? [preselect] : [],
     }))
   }
+
+  // Link the deposit to the recorded money it is the bank side of — one or
+  // several customer payments, one or several utility settlements, or a mix.
+  // No new payment is created, so nothing is paid twice. The bank row points
+  // at the first entry; every entry points back at the bank row, which is
+  // what keeps it out of future matching.
+  const linkRecordedEntries = async (entries, { gap = 0 } = {}) => {
+    const { deposit } = matchModal
+    if (!deposit || !entries?.length) return
+    setMatchModal(m => ({ ...m, saving: true }))
+    const first = entries[0]
+    const { error } = await supabase.from('plaid_transactions').update({
+      ...bankRowPointer(first),
+      matched_at: new Date().toISOString(),
+      ...(Math.abs(gap) > 0.005 ? { notes: `${deposit.notes ? deposit.notes + '\n' : ''}Linked to recorded money totalling ${formatCurrency(Math.abs(parseFloat(deposit.amount) || 0) - gap)} — ${formatCurrency(Math.abs(gap))} ${gap > 0 ? 'of this deposit is not on any record' : 'more was recorded than arrived'}.` } : {}),
+    }).eq('id', deposit.id)
+    if (error) {
+      toast.error('Could not link the deposit: ' + error.message)
+      setMatchModal(m => ({ ...m, saving: false }))
+      return
+    }
+    const payIds = entries.filter(e => e.kind === 'payment').map(e => e.id)
+    const setIds = entries.filter(e => e.kind === 'settlement').map(e => e.id)
+    const errs = []
+    if (payIds.length) { const { error: e1 } = await supabase.from('payments').update({ source_transaction_id: deposit.id }).in('id', payIds); if (e1) errs.push(e1.message) }
+    if (setIds.length) { const { error: e2 } = await supabase.from('utility_invoices').update({ source_transaction_id: deposit.id }).in('id', setIds); if (e2) errs.push(e2.message) }
+    if (errs.length) toast.error('Deposit linked, but marking what it paid failed: ' + errs.join('; '))
+    else toast.success(`Linked to ${entries.length} recorded ${entries.length === 1 ? 'entry' : 'entries'}. No new payment created.${Math.abs(gap) > 0.005 ? ` ${formatCurrency(Math.abs(gap))} is noted on the deposit as unexplained.` : ''}`)
+    setMatchModal(EMPTY_MATCH)
+    await fetchPlaidTransactions?.()
+  }
+
+  // What the current picks would record, in pick order.
+  const matchTargets = () => {
+    const byKey = new Map()
+    for (const inv of matchModal.invoices || []) byKey.set(`invoice:${inv.id}`, { kind: 'customer', key: `invoice:${inv.id}`, open: inv._open, inv })
+    for (const t of matchModal.utility || []) byKey.set(t.key, t)
+    return (matchModal.picks || []).map(k => byKey.get(k)).filter(Boolean)
+  }
+  const togglePick = (key) => setMatchModal(m => {
+    if (!m.split) return { ...m, picks: m.picks[0] === key ? [] : [key] }
+    return { ...m, picks: m.picks.includes(key) ? m.picks.filter(k => k !== key) : [...m.picks, key] }
+  })
 
   // Silently link wallet payouts to the recorded payments inside them, but
   // only when there is exactly one way to read the deposit (chooseAutoLink).
@@ -680,7 +774,7 @@ export default function Books() {
   const autoLinkWalletPayouts = async () => {
     const cutoff = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10)
     const walletDeposits = (plaidTransactions || [])
-      .filter(t => t.amount < 0 && !t.is_transfer && !t.matched_invoice_id && !t.matched_payment_id && String(t.date || '') >= cutoff)
+      .filter(t => t.amount < 0 && !t.is_transfer && !depositIsMatched(t) && String(t.date || '') >= cutoff)
       .map(t => ({ t, wallet: WALLETS.find(w => isWalletTransaction(w, t)) }))
       .filter(x => x.wallet)
       .sort((a, b) => (a.t.date || '').localeCompare(b.t.date || ''))
@@ -751,33 +845,7 @@ export default function Books() {
     const { error: e2 } = await supabase.from('payments').update({ source_transaction_id: deposit.id }).in('id', ids)
     if (e2) toast.error('Deposit linked, but marking the payments failed: ' + e2.message)
     else toast.success(`Linked this ${walletPayout.wallet.label} payout to ${ids.length} recorded payment${ids.length === 1 ? '' : 's'}. No new payment created.`)
-    setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })
-    await fetchPlaidTransactions?.()
-  }
-
-  // Link the deposit to a payment that is ALREADY recorded, instead of
-  // creating a second one. This is the case the matcher had no answer for:
-  // the money is already on the right invoice, the bank row just needs to
-  // stop looking unmatched. No payment is created, so nothing double-counts.
-  const linkToRecordedPayment = async (payment) => {
-    const { deposit } = matchModal
-    if (!deposit || !payment) return
-    setMatchModal(m => ({ ...m, saving: true }))
-    const { error } = await supabase.from('plaid_transactions').update({
-      matched_invoice_id: payment.invoice_id,
-      matched_payment_id: payment.id,
-      matched_at: new Date().toISOString(),
-    }).eq('id', deposit.id)
-    if (error) {
-      toast.error('Could not link the deposit: ' + error.message)
-      setMatchModal(m => ({ ...m, saving: false }))
-      return
-    }
-    // Point the payment back at the bank row too, so this deposit can never
-    // be offered as "already recorded" for something else.
-    await supabase.from('payments').update({ source_transaction_id: deposit.id }).eq('id', payment.id)
-    toast.success(`Linked to the payment already on ${payment.invoice?.invoice_id || `invoice ${payment.invoice_id}`}. No new payment created.`)
-    setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })
+    setMatchModal(EMPTY_MATCH)
     await fetchPlaidTransactions?.()
   }
 
@@ -786,68 +854,91 @@ export default function Books() {
   // the existing addPayment uses, just with source='bank_match' and a
   // back-reference to the txn for audit.
   const confirmMatch = async () => {
-    const { deposit, selectedId, invoices } = matchModal
-    const inv = invoices.find(i => i.id === selectedId)
-    if (!inv) { toast.error('Pick an invoice first'); return }
+    const { deposit } = matchModal
+    const targets = matchTargets()
+    if (!targets.length) { toast.error('Pick an invoice first'); return }
     const depAmount = Math.abs(parseFloat(deposit.amount) || 0)
-    const payAmount = Math.min(depAmount, inv._open)
+    const plan = splitPlan(targets, depAmount, matchModal.amounts)
+    const rows = plan.rows.map((r, i) => ({ ...r, target: targets[i] })).filter(r => r.amount > 0.005)
+    if (!rows.length) { toast.error('Nothing to record — every amount is zero'); return }
+    if (plan.leftover < -0.005) { toast.error(`The amounts add up to more than the deposit by ${formatCurrency(-plan.leftover)}`); return }
 
-    // Guard against wrong-invoice matches. A deposit that's LARGER than the
-    // invoice's remaining balance is the classic mismatch (a $615 deposit
-    // landing on a $489 invoice, matched only by a loose name overlap between
-    // two different properties). Only the balance would apply and the invoice
-    // would flip to Paid — so make the user confirm the amount gap on purpose.
-    if (depAmount - inv._open > 0.01) {
+    // Guard against wrong-invoice matches. A deposit that's LARGER than what
+    // the picks are owed is the classic mismatch (a $615 deposit landing on a
+    // $489 invoice, matched only by a loose name overlap between two different
+    // properties). Only the balance would apply and the invoice would flip to
+    // Paid — so make the user confirm the leftover on purpose.
+    if (plan.leftover > 0.01) {
+      const first = rows[0].target
       const ok = window.confirm(
-        `Heads up: this deposit is $${depAmount.toFixed(2)} but ${inv.invoice_id || `invoice ${inv.id}`} only has $${inv._open.toFixed(2)} owing` +
-        `${inv.customer?.name ? ` (${inv.customer.name})` : ''}.\n\n` +
-        `Only $${payAmount.toFixed(2)} will be applied and the invoice will be marked Paid. ` +
-        `If this deposit is actually for a different customer/invoice, cancel and pick the right one.\n\nMatch anyway?`
+        `Heads up: this deposit is ${depAmount.toFixed(2)} but ${rows.length === 1 ? `${first.kind === 'customer' ? (first.inv.invoice_id || `invoice ${first.inv.id}`) : first.label} only has ${rows[0].open.toFixed(2)} owing` : `the ${rows.length} picks only have ${(depAmount - plan.leftover).toFixed(2)} owing`}.\n\n` +
+        `${plan.leftover.toFixed(2)} of it will be left unapplied. If this deposit is actually for a different customer or invoice, cancel and pick the right one.\n\nMatch anyway?`
       )
       if (!ok) return
     }
+    // A utility paying short of what was billed has to say who covers the
+    // difference, exactly as the invoice page asks.
+    for (const r of rows) {
+      if (r.target.kind === 'utility' && r.target.invoice && r.target.expected - r.amount > 0.005) {
+        const b = matchModal.borne[r.target.key]
+        if (b !== BORNE_BY_CUSTOMER && b !== BORNE_BY_COMPANY) { toast.error(`${r.target.label}: the utility is paying ${formatCurrency(r.target.expected - r.amount)} short — choose who covers it`); return }
+      }
+    }
     setMatchModal(m => ({ ...m, saving: true }))
-    const { data: payRow, error: payErr } = await supabase.from('payments').insert([{
-      company_id: companyId,
-      invoice_id: inv.id,
-      customer_id: inv.customer_id || null,
-      job_id: inv.job_id || null,
-      amount: Math.round(payAmount * 100) / 100,
-      date: deposit.date,
-      method: 'Bank Deposit',
-      status: 'Completed',
-      source: 'bank_match',
-      source_transaction_id: deposit.id,
-      notes: `Matched bank deposit (${deposit.merchant_name || deposit.name || 'unnamed'})`
-    }]).select('id').single()
-    if (payErr) {
-      toast.error('Failed to create payment: ' + payErr.message)
-      setMatchModal(m => ({ ...m, saving: false }))
-      return
+    let pointer = null
+    const done = []
+    for (const r of rows) {
+      const t = r.target
+      if (t.kind === 'customer') {
+        const inv = t.inv
+        const { data: payRow, error: payErr } = await supabase.from('payments').insert([{
+          company_id: companyId,
+          invoice_id: inv.id,
+          customer_id: inv.customer_id || null,
+          job_id: inv.job_id || null,
+          amount: Math.round(r.amount * 100) / 100,
+          date: deposit.date,
+          method: 'Bank Deposit',
+          status: 'Completed',
+          source: 'bank_match',
+          source_transaction_id: deposit.id,
+          notes: `Matched bank deposit (${deposit.merchant_name || deposit.name || 'unnamed'})${rows.length > 1 ? ` — ${formatCurrency(r.amount)} of ${formatCurrency(depAmount)}` : ''}`
+        }]).select('id').single()
+        if (payErr) { toast.error(`Failed to create payment on ${inv.invoice_id || inv.id}: ` + payErr.message); break }
+        pointer = pointer || { matched_invoice_id: inv.id, matched_payment_id: payRow.id, matched_utility_invoice_id: null }
+        // If this payment closes out the invoice, flip status to Paid.
+        // Compare to customer balance (amount - discount_applied), not gross —
+        // utility incentive + deposit credit are netted out of what the
+        // customer actually owes. Without this, paying the real balance leaves
+        // the invoice stuck as "Partially Paid".
+        const grossAmt = parseFloat(inv.amount) || 0
+        const discApplied = parseFloat(inv.discount_applied) || 0
+        const customerBalance = isLegacyNetShape(grossAmt, discApplied) ? grossAmt : Math.max(0, grossAmt - discApplied)
+        const totalPaidAfter = r.amount + (paymentsByInvoiceId.get(inv.id) || 0)
+        await supabase.from('invoices').update({ payment_status: totalPaidAfter >= customerBalance - 0.01 ? 'Paid' : 'Partially Paid', updated_at: new Date().toISOString() }).eq('id', inv.id)
+        done.push(`${formatCurrency(r.amount)} → ${inv.invoice_id || inv.id}`)
+      } else {
+        // The utility's money: recorded on the utility record through the one
+        // write path — it settles the record, mirrors onto the invoice, and
+        // marks a fully-covered invoice Paid — then tagged with this deposit.
+        const res = await recordUtilityPayment(supabase, t.row, {
+          paidOn: String(deposit.date).slice(0, 10), amount: r.amount,
+          note: `Bank deposit (${deposit.merchant_name || deposit.name || 'unnamed'})`,
+          borneBy: matchModal.borne[t.key],
+        }, t.invoice)
+        if (res?.error) { toast.error(`${t.label}: ` + res.error); break }
+        await supabase.from('utility_invoices').update({ source_transaction_id: deposit.id }).eq('id', t.row.id)
+        pointer = pointer || { matched_invoice_id: t.invoice?.id ?? null, matched_payment_id: null, matched_utility_invoice_id: t.row.id }
+        done.push(`${formatCurrency(r.amount)} → ${t.label}`)
+      }
     }
+    if (!done.length) { setMatchModal(m => ({ ...m, saving: false })); return }
     // Tag the plaid txn so it stops appearing in the unmatched list.
-    const { error: txnErr } = await supabase.from('plaid_transactions').update({
-      matched_invoice_id: inv.id,
-      matched_payment_id: payRow.id,
-      matched_at: new Date().toISOString(),
-    }).eq('id', deposit.id)
+    const { error: txnErr } = await supabase.from('plaid_transactions').update({ ...pointer, matched_at: new Date().toISOString() }).eq('id', deposit.id)
     if (txnErr) console.warn('Match tag failed (non-fatal):', txnErr)
-    // If this payment closes out the invoice, flip status to Paid.
-    // Compare to customer balance (amount - discount_applied), not gross —
-    // utility incentive + deposit credit are netted out of what the
-    // customer actually owes. Without this, paying the real balance leaves
-    // the invoice stuck as "Partially Paid".
-    const grossAmt = parseFloat(inv.amount) || 0
-    const discApplied = parseFloat(inv.discount_applied) || 0
-    const customerBalance = isLegacyNetShape(grossAmt, discApplied) ? grossAmt : Math.max(0, grossAmt - discApplied)
-    const totalPaidAfter = payAmount + (paymentsByInvoiceId.get(inv.id) || 0)
-    if (totalPaidAfter >= customerBalance - 0.01) {
-      await supabase.from('invoices').update({ payment_status: 'Paid', updated_at: new Date().toISOString() }).eq('id', inv.id)
-    } else {
-      await supabase.from('invoices').update({ payment_status: 'Partially Paid', updated_at: new Date().toISOString() }).eq('id', inv.id)
-    }
-    toast.success(`Matched $${payAmount.toFixed(2)} to invoice ${inv.invoice_id || inv.id}`)
-    setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })
+    if (done.length < rows.length) toast.error(`Recorded ${done.length} of ${rows.length}; the rest was not written — fix the error and match the remainder by hand.`)
+    toast.success(rows.length === 1 ? `Matched ${done[0]}` : `Split the deposit: ${done.join(' · ')}`)
+    setMatchModal(EMPTY_MATCH)
     await Promise.all([fetchPaymentsLifetime(), fetchPlaidTransactions()])
   }
 
@@ -935,7 +1026,7 @@ export default function Books() {
 
   // Lists derived from the raw store + payments map.
   const unmatchedDeposits = (plaidTransactions || [])
-    .filter(t => t.amount < 0 && !t.is_transfer && !t.matched_invoice_id)
+    .filter(t => t.amount < 0 && !t.is_transfer && !depositIsMatched(t))
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
     .slice(0, 50) // cap UI; admin clears the queue from the top
 
@@ -1482,7 +1573,7 @@ export default function Books() {
     .filter(i => !['Paid', 'Cancelled'].includes(i.payment_status) && i.customer?.name)
     .map(i => ({ name: i.customer.name, invoiceId: i.invoice_id || `INV-${i.id}` }))
   const depositHint = (t) => {
-    if (!t || !(parseFloat(t.amount) < 0) || t.matched_invoice_id) return null
+    if (!t || !(parseFloat(t.amount) < 0) || depositIsMatched(t)) return null
     const sender = zelleSenderName(t)
     if (sender) {
       const m = matchCustomerName(sender, openInvoiceCandidates)
@@ -2135,8 +2226,8 @@ export default function Books() {
                 source: 'Bank',
                 description: t.merchant_name || t.name || 'Bank transaction',
                 amount: t.amount < 0 ? Math.abs(parseFloat(t.amount) || 0) : -(parseFloat(t.amount) || 0),
-                status: t.matched_invoice_id ? 'Matched' : (t.confirmed ? 'Reviewed' : 'Needs review'),
-                statusColor: t.matched_invoice_id ? '#16a34a' : (t.confirmed ? theme.textMuted : '#eab308'),
+                status: depositIsMatched(t) ? 'Matched' : (t.confirmed ? 'Reviewed' : 'Needs review'),
+                statusColor: depositIsMatched(t) ? '#16a34a' : (t.confirmed ? theme.textMuted : '#eab308'),
               })
             }
             // Customer / lead deposits (the only raw payment list in
@@ -4274,13 +4365,13 @@ export default function Books() {
           amount-similarity + customer-name fuzzy match, with the deposit's
           context up top so the user can confirm visually. */}
       {matchModal.open && matchModal.deposit && (
-        <div onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })}
+        <div onClick={() => !matchModal.saving && setMatchModal(EMPTY_MATCH)}
              style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div onClick={e => e.stopPropagation()}
                style={{ backgroundColor: theme.bgCard, borderRadius: '10px', maxWidth: '700px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '16px 24px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0 }}>Match deposit to invoice</h3>
-              <button onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })}
+              <h3 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0 }}>Match deposit</h3>
+              <button onClick={() => !matchModal.saving && setMatchModal(EMPTY_MATCH)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted }}>
                 <X size={18} />
               </button>
@@ -4304,7 +4395,7 @@ export default function Books() {
             <div style={{ padding: '12px 24px', borderBottom: `1px solid ${theme.border}` }}>
               <input
                 type="text"
-                placeholder="Filter open invoices by customer or invoice #…"
+                placeholder="Filter by customer, invoice # or utility…"
                 value={matchModal.query}
                 onChange={e => setMatchModal(m => ({ ...m, query: e.target.value }))}
                 style={{ width: '100%', padding: '8px 12px', border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '13px', backgroundColor: theme.bgCard, color: theme.text, boxSizing: 'border-box' }}
@@ -4349,113 +4440,206 @@ export default function Books() {
                 )
               })()}
 
-              {/* A payment already on the books for this exact amount. Shown
-                  FIRST because it is almost always the answer: the check was
-                  entered when it arrived, and this is the same money reaching
-                  the bank days later. Matching it to an open invoice instead
-                  is what put Tracy's $14,537 on the wrong customer. */}
-              {!matchModal.loading && (matchModal.recorded || []).length > 0 && (
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '4px 2px' }}>
-                    Already recorded — this is probably the same money
-                  </div>
-                  {(matchModal.recorded || []).map(pmt => (
-                    <div key={`rec-${pmt.id}`} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-                      padding: '10px 12px', marginTop: 6, borderRadius: 10,
-                      border: `1px solid ${theme.accent}`, backgroundColor: theme.accentBg,
-                    }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {pmt.invoice?.invoice_id || `Invoice ${pmt.invoice_id}`}
-                          {pmt.invoice?.customer?.name ? ` — ${pmt.invoice.customer.name}` : ''}
-                        </div>
-                        <div style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
-                          {formatCurrency(Number(pmt.amount) || 0)} recorded {formatDate(pmt.date)}
-                          {pmt.method ? ` · ${pmt.method}` : ''} · no bank deposit linked yet
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => linkToRecordedPayment(pmt)}
-                        disabled={matchModal.saving}
-                        style={{
-                          flexShrink: 0, padding: '8px 12px', borderRadius: 8, border: 'none',
-                          backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600,
-                          cursor: matchModal.saving ? 'default' : 'pointer', minHeight: 36,
-                        }}
-                      >
-                        This is that payment
-                      </button>
+              {/* Money already on the books that this deposit is the bank side
+                  of: one payment, or several that add up to it, customer
+                  payments and utility settlements alike. Shown FIRST because
+                  it is almost always the answer — the cheque was entered when
+                  it arrived, and this is the same money reaching the bank days
+                  later. Matching it to an open invoice instead is what put
+                  Tracy's $14,537 on the wrong customer. */}
+              {!matchModal.loading && (matchModal.recordedSet || matchModal.nearSet) && (() => {
+                const set = matchModal.recordedSet || matchModal.nearSet
+                const gap = matchModal.recordedSet ? 0 : matchModal.nearSet.gap
+                const n = set.entries.length
+                return (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '4px 2px' }}>
+                      {gap ? `Recorded the same day — ${formatCurrency(Math.abs(gap))} ${gap > 0 ? 'less than' : 'more than'} this deposit` : n === 1 ? 'Already recorded — this is probably the same money' : `Already recorded — these ${n} add up to this deposit`}
                     </div>
-                  ))}
-                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 8, lineHeight: 1.5 }}>
-                    Linking marks the deposit as reconciled without creating a second payment,
-                    so the invoice is not paid twice. Only pick an invoice below if this deposit is different money.
+                    <div style={{ padding: '10px 12px', marginTop: 6, borderRadius: 10, border: `1px solid ${gap ? '#eab308' : theme.accent}`, backgroundColor: gap ? 'rgba(234,179,8,0.10)' : theme.accentBg }}>
+                      {set.entries.map(e => (
+                        <div key={e.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12, color: theme.text, padding: '3px 0' }}>
+                          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {e.label} · {formatDate(e.date)}{e.detail ? ` · ${e.detail}` : ''}
+                          </span>
+                          <span style={{ fontWeight: 600, flexShrink: 0 }}>{formatCurrency(e.amount)}</span>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${theme.border}` }}>
+                        <div style={{ fontSize: 11, color: theme.textSecondary, lineHeight: 1.5 }}>
+                          {formatCurrency(set.total)} recorded, no bank deposit linked yet.
+                          {gap ? <><br />Linking notes the {formatCurrency(Math.abs(gap))} as unexplained on the deposit; correct the recorded amount on its invoice if one of these is wrong.</> : ' Linking creates no new payment, so nothing is paid twice.'}
+                        </div>
+                        <button
+                          onClick={() => linkRecordedEntries(set.entries, { gap })}
+                          disabled={matchModal.saving}
+                          style={{ flexShrink: 0, padding: '8px 12px', borderRadius: 8, border: 'none', backgroundColor: gap ? '#a16207' : theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: matchModal.saving ? 'default' : 'pointer', minHeight: 36 }}
+                        >
+                          {gap ? `Link anyway (${formatCurrency(Math.abs(gap))} gap)` : n === 1 ? 'This is that payment' : `Link all ${n}`}
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 8, lineHeight: 1.5 }}>
+                      Only pick from the list below if this deposit is different money.
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
-              {!matchModal.loading && matchModal.invoices.length === 0 && (
+              {!matchModal.loading && matchModal.invoices.length === 0 && matchModal.utility.length === 0 && (
                 <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
                   No open invoices to match against. Create the invoice first, then come back and match this deposit.
                 </div>
               )}
-              {!matchModal.loading && matchModal.invoices
-                .filter(inv => {
-                  const q = matchModal.query.toLowerCase().trim()
-                  if (!q) return true
-                  return (inv.invoice_id || '').toLowerCase().includes(q) ||
-                         (inv.customer?.name || '').toLowerCase().includes(q)
+              {/* Targets: what the customer owes, then what the utility owes.
+                  One pick records one payment; "Split" lets one deposit be
+                  several — three invoices on one cheque, two jobs on one
+                  utility cheque. */}
+              {!matchModal.loading && (matchModal.invoices.length > 0 || matchModal.utility.length > 0) && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: theme.textSecondary, padding: '2px 2px 8px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!matchModal.split} onChange={e => setMatchModal(m => ({ ...m, split: e.target.checked, picks: e.target.checked ? m.picks : m.picks.slice(0, 1), amounts: {} }))} />
+                  Split this deposit across several invoices
+                </label>
+              )}
+              {!matchModal.loading && (() => {
+                const q = matchModal.query.toLowerCase().trim()
+                const hit = (...parts) => !q || parts.some(x => String(x || '').toLowerCase().includes(q))
+                const custRows = (matchModal.invoices || []).filter(inv => hit(inv.invoice_id, inv.customer?.name)).slice(0, 40)
+                const utilRows = (matchModal.utility || []).filter(t => hit(t.invoice?.invoice_id, t.invoice?.customer?.name, t.row?.utility_name, t.label)).slice(0, 40)
+                const rowStyle = (selected) => ({
+                  display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', marginBottom: '4px',
+                  cursor: 'pointer', borderRadius: '6px',
+                  backgroundColor: selected ? theme.accentBg : 'transparent',
+                  border: `1px solid ${selected ? theme.accent : 'transparent'}`,
                 })
-                .slice(0, 40)
-                .map(inv => {
-                  const selected = matchModal.selectedId === inv.id
-                  const exact = inv._score >= 100
-                  return (
-                    <div key={inv.id}
-                         onClick={() => setMatchModal(m => ({ ...m, selectedId: inv.id }))}
-                         style={{
-                           display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', marginBottom: '4px',
-                           cursor: 'pointer', borderRadius: '6px',
-                           backgroundColor: selected ? theme.accentBg : 'transparent',
-                           border: `1px solid ${selected ? theme.accent : 'transparent'}`,
-                         }}>
-                      <input type="radio" checked={selected} onChange={() => setMatchModal(m => ({ ...m, selectedId: inv.id }))} style={{ cursor: 'pointer' }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
-                          {inv.invoice_id || `Invoice #${inv.id}`}
-                          {inv.customer?.name && ` — ${inv.customer?.name}`}
-                          {exact && <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: '700', color: '#22c55e', backgroundColor: 'rgba(34,197,94,0.12)', padding: '1px 6px', borderRadius: '8px' }}>EXACT MATCH</span>}
+                return (
+                  <>
+                    {custRows.map(inv => {
+                      const key = `invoice:${inv.id}`
+                      const selected = matchModal.picks.includes(key)
+                      const exact = inv._score >= 100
+                      return (
+                        <div key={key} onClick={() => togglePick(key)} style={rowStyle(selected)}>
+                          <input type={matchModal.split ? 'checkbox' : 'radio'} checked={selected} onChange={() => togglePick(key)} style={{ cursor: 'pointer' }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
+                              {inv.invoice_id || `Invoice #${inv.id}`}
+                              {inv.customer?.name && ` — ${inv.customer?.name}`}
+                              {exact && <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: '700', color: '#22c55e', backgroundColor: 'rgba(34,197,94,0.12)', padding: '1px 6px', borderRadius: '8px' }}>EXACT MATCH</span>}
+                            </div>
+                            <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                              {inv.payment_status} · created {formatDate(inv.created_at)}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{formatCurrency(inv._open)}</div>
+                            <div style={{ fontSize: '10px', color: theme.textMuted }}>customer owes</div>
+                          </div>
                         </div>
-                        <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                          {inv.payment_status} · created {formatDate(inv.created_at)}
+                      )
+                    })}
+                    {utilRows.length > 0 && (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '10px 2px 4px' }}>
+                        The utility owes — an incentive cheque or ACH settles one of these
+                      </div>
+                    )}
+                    {utilRows.map(t => {
+                      const selected = matchModal.picks.includes(t.key)
+                      const exact = t._score >= 100
+                      return (
+                        <div key={t.key} onClick={() => togglePick(t.key)} style={rowStyle(selected)}>
+                          <input type={matchModal.split ? 'checkbox' : 'radio'} checked={selected} onChange={() => togglePick(t.key)} style={{ cursor: 'pointer' }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>
+                              {t.label}
+                              {exact && <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: '700', color: '#22c55e', backgroundColor: 'rgba(34,197,94,0.12)', padding: '1px 6px', borderRadius: '8px' }}>EXACT MATCH</span>}
+                            </div>
+                            <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                              utility incentive{t.invoice?.created_at ? ` · invoice created ${formatDate(t.invoice.created_at)}` : ''}{Math.abs(t.expected - t.open) > 0.005 ? ` · billed ${formatCurrency(t.expected)}` : ''}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#3d5a6c' }}>{formatCurrency(t.open)}</div>
+                            <div style={{ fontSize: '10px', color: theme.textMuted }}>utility owes</div>
+                          </div>
                         </div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{formatCurrency(inv._open)}</div>
-                        <div style={{ fontSize: '10px', color: theme.textMuted }}>open balance</div>
-                      </div>
-                    </div>
-                  )
-                })}
+                      )
+                    })}
+                  </>
+                )
+              })()}
             </div>
+
+            {/* What will be recorded. With one pick, the amount is the
+                deposit up to what is owed. Split, each pick shows its amount
+                (editable) and the leftover is named. A utility paying short
+                asks who covers the difference, as the invoice page does. */}
+            {!matchModal.loading && matchModal.picks.length > 0 && (() => {
+              const targets = matchTargets()
+              const depAmt = Math.abs(parseFloat(matchModal.deposit?.amount) || 0)
+              const plan = splitPlan(targets, depAmt, matchModal.amounts)
+              return (
+                <div style={{ padding: '10px 24px', borderTop: `1px solid ${theme.border}`, backgroundColor: theme.bg, maxHeight: '32vh', overflowY: 'auto' }}>
+                  {plan.rows.map((r, i) => {
+                    const t = targets[i]
+                    const short = t.kind === 'utility' && t.invoice && t.expected - r.amount > 0.005
+                    return (
+                      <div key={t.key} style={{ padding: '6px 0', borderBottom: i < plan.rows.length - 1 ? `1px dashed ${theme.border}` : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <div style={{ fontSize: 12, color: theme.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {t.kind === 'customer' ? `${t.inv.invoice_id || `Invoice #${t.inv.id}`}${t.inv.customer?.name ? ` — ${t.inv.customer.name}` : ''}` : t.label}
+                            <span style={{ color: theme.textMuted }}> · owed {formatCurrency(t.open)}</span>
+                          </div>
+                          {matchModal.split ? (
+                            <input type="number" step="0.01" min="0" value={matchModal.amounts[t.key] ?? r.amount}
+                              onChange={e => setMatchModal(m => ({ ...m, amounts: { ...m.amounts, [t.key]: e.target.value } }))}
+                              style={{ width: 110, padding: '5px 8px', textAlign: 'right', border: `1px solid ${theme.border}`, borderRadius: 6, fontSize: 13, backgroundColor: theme.bgCard, color: theme.text }} />
+                          ) : (
+                            <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>{formatCurrency(r.amount)}</div>
+                          )}
+                        </div>
+                        {short && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 11, color: '#a16207' }}>Short by {formatCurrency(t.expected - r.amount)} — who covers it?</span>
+                            {[[BORNE_BY_CUSTOMER, 'Bill the customer'], [BORNE_BY_COMPANY, 'We absorb it']].map(([v, lbl]) => (
+                              <button key={v} type="button" onClick={() => setMatchModal(m => ({ ...m, borne: { ...m.borne, [t.key]: v } }))}
+                                style={{ padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600, minHeight: 28, cursor: 'pointer', border: `1px solid ${matchModal.borne[t.key] === v ? theme.accent : theme.border}`, backgroundColor: matchModal.borne[t.key] === v ? theme.accent : 'transparent', color: matchModal.borne[t.key] === v ? '#fff' : theme.textSecondary }}>
+                                {lbl}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {matchModal.split && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 8, color: plan.leftover < -0.005 ? '#dc2626' : theme.textSecondary }}>
+                      <span>{formatCurrency(plan.allocated)} of {formatCurrency(depAmt)} allocated</span>
+                      <span style={{ fontWeight: 600 }}>{plan.leftover < -0.005 ? `${formatCurrency(-plan.leftover)} over` : plan.leftover > 0.005 ? `${formatCurrency(plan.leftover)} left unapplied` : 'fully allocated'}</span>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
 
             <div style={{ padding: '12px 24px', borderTop: `1px solid ${theme.border}`, backgroundColor: theme.bg, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
               <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                {matchModal.selectedId
-                  ? `Will create a payment row dated ${formatDate(matchModal.deposit.date)} on the selected invoice. Commission flows to the rep on the next Payroll load.`
+                {matchModal.picks.length
+                  ? (matchTargets().some(t => t.kind === 'utility')
+                      ? `Records the utility's payment dated ${formatDate(matchModal.deposit.date)} on its record and the invoice it mirrors to. No customer payment is created.`
+                      : `Will create a payment row dated ${formatDate(matchModal.deposit.date)} on ${matchModal.picks.length === 1 ? 'the selected invoice' : `each of the ${matchModal.picks.length} invoices`}. Commission flows to the rep on the next Payroll load.`)
                   : 'Select an invoice to enable Match.'}
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={() => !matchModal.saving && setMatchModal({ open: false, deposit: null, invoices: [], recorded: [], loading: false, query: '', selectedId: null, saving: false })}
+                <button onClick={() => !matchModal.saving && setMatchModal(EMPTY_MATCH)}
                         disabled={matchModal.saving}
                         style={{ padding: '8px 14px', backgroundColor: 'transparent', color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '6px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>
                   Cancel
                 </button>
                 <button onClick={confirmMatch}
-                        disabled={!matchModal.selectedId || matchModal.saving}
-                        style={{ padding: '8px 14px', backgroundColor: matchModal.selectedId ? theme.accent : theme.border, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: matchModal.selectedId && !matchModal.saving ? 'pointer' : 'not-allowed', opacity: matchModal.saving ? 0.5 : 1 }}>
-                  {matchModal.saving ? 'Matching…' : 'Match & create payment'}
+                        disabled={!matchModal.picks.length || matchModal.saving}
+                        style={{ padding: '8px 14px', backgroundColor: matchModal.picks.length ? theme.accent : theme.border, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: matchModal.picks.length && !matchModal.saving ? 'pointer' : 'not-allowed', opacity: matchModal.saving ? 0.5 : 1 }}>
+                  {matchModal.saving ? 'Matching…' : matchModal.picks.length > 1 ? `Match & record ${matchModal.picks.length}` : 'Match & record'}
                 </button>
               </div>
             </div>
