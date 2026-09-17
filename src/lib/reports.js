@@ -21,6 +21,7 @@
 // still used the `disc >= gross` legacy-net test after arHelpers was corrected
 // to `>`, so a fully-covered invoice reported its whole gross as owed. Import
 // the one definition instead of keeping a private twin.
+import { calendarDay } from './localDate.js'
 import { invoiceCustomerTotal } from './arHelpers.js'   // explicit extension: plain Node (the Frankie eval runner) needs it
 
 import { timeClockToJobHours } from './bonusCalc'
@@ -54,19 +55,11 @@ function daysOverdue(inv, now) {
   return Math.max(0, Math.floor((now - d30) / 86400000))
 }
 
-// The calendar day a stored value MEANS. A date column ('2026-09-01') and a
-// timestamptz holding a date ('2026-09-01 00:00:00+00' — what the Expenses
-// page and Arnie write) both mean the first of September; parsed as an
-// instant they become 6 PM on August 31st in Denver, and the row falls into
-// the wrong month in every report below. A real instant keeps its local day.
-export function calendarDay(v) {
-  if (v instanceof Date) return v.toLocaleDateString('en-CA')
-  const s = String(v || '')
-  const m = s.match(/^(\d{4}-\d{2}-\d{2})(?:[T ]00:00:00(?:\.0+)?(?:Z|\+00(?::?00)?))?$/)
-  if (m) return m[1]
-  const d = new Date(s)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA')
-}
+// The calendar day a stored value MEANS — lib/localDate.js is the one rule
+// (a date column, or a timestamptz holding a day at UTC midnight, is that
+// day; a real instant keeps its local day). Re-exported so the reports and
+// their tests keep reading it from here.
+export { calendarDay }
 
 function inRange(dateStr, from, to) {
   if (!dateStr) return false

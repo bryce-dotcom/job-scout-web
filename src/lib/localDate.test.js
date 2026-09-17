@@ -126,3 +126,21 @@ describe('inLocalRange', () => {
     expect(inLocalRange('', aug, sep)).toBe(false)
   })
 })
+
+describe('a timestamptz holding a calendar day is that day', () => {
+  it('expenses.date as PostgREST returns it — UTC midnight with a suffix — is the day, not the evening before', async () => {
+    const { parseLocalDate, calendarDay } = await import('./localDate.js')
+    for (const v of ['2026-09-01T00:00:00+00:00', '2026-09-01 00:00:00+00', '2026-09-01T00:00:00Z', '2026-09-01T00:00:00.000+00:00']) {
+      const d = parseLocalDate(v)
+      expect(d.getFullYear()).toBe(2026); expect(d.getMonth()).toBe(8); expect(d.getDate()).toBe(1)
+      expect(calendarDay(v)).toBe('2026-09-01')
+    }
+  })
+  it('a real instant is left alone', async () => {
+    const { parseLocalDate, calendarDay } = await import('./localDate.js')
+    const local = new Date(2026, 8, 15, 23, 30)
+    expect(parseLocalDate(local.toISOString()).getTime()).toBe(local.getTime())
+    expect(calendarDay(local.toISOString())).toBe('2026-09-15')
+    expect(parseLocalDate('2026-09-01T00:30:00+00:00').getTime()).toBe(Date.UTC(2026, 8, 1, 0, 30))   // not midnight → an instant
+  })
+})
