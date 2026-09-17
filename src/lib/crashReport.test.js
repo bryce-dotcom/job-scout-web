@@ -129,3 +129,56 @@ describe('a dev server is not a customer', () => {
     expect(rejectFrom('jobscout.appsannex.com', realBug(4))).toBe(1)
   })
 })
+
+describe('a stale-deploy self-heal is not a crash', () => {
+  // Doug, 2026-09-17: an estimate's portal link opened on a build a deploy had
+  // just replaced. The tab reloaded itself correctly — and still flashed the
+  // error screen and filed "Cannot read properties of undefined (reading
+  // 'default')" for the moment before the reload landed.
+  const storage = new Map()
+  beforeEach(() => {
+    storage.clear()
+    vi.stubGlobal('sessionStorage', {
+      getItem: (k) => (storage.has(k) ? storage.get(k) : null),
+      setItem: (k, v) => storage.set(k, String(v)),
+      removeItem: (k) => storage.delete(k),
+    })
+  })
+
+  it('the first stale chunk reloads the tab once, and the reload window is open', async () => {
+    const { chunkReloadDecision, chunkReloadPending, CHUNK_RELOAD_KEY } = await import('./crashReport')
+    expect(chunkReloadDecision(1000)).toBe('reload')
+    expect(storage.get(CHUNK_RELOAD_KEY)).toBe('1000')
+    expect(chunkReloadPending(1200)).toBe(true)
+    expect(chunkReloadPending(1000 + 15000)).toBe(false)
+  })
+
+  it('a second failure within 30s gives up, and the window closes so the real error shows', async () => {
+    const { chunkReloadDecision, chunkReloadPending } = await import('./crashReport')
+    chunkReloadDecision(1000)
+    expect(chunkReloadDecision(5000)).toBe('give_up')
+    expect(chunkReloadPending(5100)).toBe(false)
+    // Much later it is allowed to try again.
+    expect(chunkReloadDecision(5000 + 31000)).toBe('reload')
+    expect(chunkReloadPending(5000 + 31500)).toBe(true)
+  })
+
+  it('nothing is reported while the reload is in flight; the same error is reported once it is over', async () => {
+    const { chunkReloadDecision, reportCrash } = await import('./crashReport')
+    captured.length = 0
+    vi.stubGlobal('window', { addEventListener: () => {}, location: { pathname: '/portal/abc', hostname: 'jobscout.appsannex.com' } })
+    chunkReloadDecision(Date.now())
+    await reportCrash(new TypeError("Cannot read properties of undefined (reading 'default')"), { companyId: 3 })
+    expect(captured.length).toBe(0)
+    storage.clear()
+    await reportCrash(new TypeError("Cannot read properties of undefined (reading 'default')"), { companyId: 3 })
+    expect(captured.length).toBe(1)
+  })
+
+  it('with no storage at all it still reloads once and never claims a pending reload', async () => {
+    vi.stubGlobal('sessionStorage', undefined)
+    const { chunkReloadDecision, chunkReloadPending } = await import('./crashReport')
+    expect(chunkReloadDecision()).toBe('reload')
+    expect(chunkReloadPending()).toBe(false)
+  })
+})

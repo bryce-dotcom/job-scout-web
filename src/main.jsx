@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.jsx'
-import { reportCrash, installGlobalCrashHandlers, installBreadcrumbs, addCrumb } from './lib/crashReport'
+import { reportCrash, installGlobalCrashHandlers, installBreadcrumbs, addCrumb, chunkReloadPending, chunkReloadDecision } from './lib/crashReport'
 import { installOverflowWatch } from './lib/overflowWatch'
 import { useStore } from './lib/store'
 
@@ -23,6 +23,19 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 
 // Error Boundary Fallback
 function ErrorFallback({ error }) {
+  // The route's chunk was gone because a deploy replaced it, and the tab is
+  // already reloading onto the new build (see the vite:preloadError handler
+  // below). Say that, not "Something went wrong".
+  if (chunkReloadPending()) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-center p-8">
+          <h1 className="text-xl font-semibold text-gray-700 mb-2">Loading the latest version of JobScout…</h1>
+          <p className="text-gray-500">A new version was just released. This page is reloading.</p>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="text-center p-8">
@@ -46,14 +59,17 @@ function ErrorFallback({ error }) {
 // Statement died silently for days (the jspdf dynamic import failed
 // before any PDF code ran). Vite fires vite:preloadError for exactly
 // this; reload once to pick up the fresh build (guarded against loops).
-window.addEventListener('vite:preloadError', (event) => {
-  const key = 'chunk_reload_at'
-  const last = sessionStorage.getItem(key)
-  if (!last || Date.now() - Number(last) > 30000) {
-    event.preventDefault()
-    sessionStorage.setItem(key, String(Date.now()))
-    window.location.reload()
-  }
+//
+// The event is NOT preventDefault-ed. Preventing it makes Vite resolve the
+// failed import() with undefined, and React.lazy then renders
+// `undefined.default` — a TypeError that reached the error screen and the
+// crash table as its own bug ("Cannot read properties of undefined (reading
+// 'default')", Doug, 2026-09-17). Left alone, the import rejects with the
+// honest "Failed to fetch dynamically imported module", which the reporter
+// already knows to ignore, and the fallback shows "loading the latest
+// version" while the reload lands (chunkReloadPending).
+window.addEventListener('vite:preloadError', () => {
+  if (chunkReloadDecision() === 'reload') window.location.reload()
 })
 
 // Service worker management

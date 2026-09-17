@@ -44,6 +44,47 @@ export function crashKey(message, route) {
   return `${String(message || 'Unknown error').slice(0, 300)}|${route || ''}`
 }
 
+// ── Stale-deploy self-heal ───────────────────────────────────────────────
+//
+// We ship several times a day. A tab opened before a deploy holds an
+// index.html whose hashed chunk URLs no longer exist, so its next lazy
+// import fails; main.jsx listens for vite:preloadError and reloads the tab
+// once. For the moment between that failure and the reload landing, React
+// is still rendering the route whose chunk never came — so the error screen
+// flashed and a crash was filed, "Cannot read properties of undefined
+// (reading 'default')", against a page that worked on the next paint (Doug,
+// 2026-09-17, an estimate's portal link, build CkRXVXB_ replaced minutes
+// before). While that reload is in flight nothing is a crash and the
+// fallback says what is actually happening.
+export const CHUNK_RELOAD_KEY = 'chunk_reload_at'
+export const CHUNK_RELOAD_GAVE_UP_KEY = 'chunk_reload_gave_up'
+const CHUNK_RELOAD_WINDOW_MS = 15000
+
+/** Was a stale-chunk reload started in the last few seconds, and not abandoned? */
+export function chunkReloadPending(now = Date.now()) {
+  try {
+    if (sessionStorage.getItem(CHUNK_RELOAD_GAVE_UP_KEY)) return false
+    const at = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY))
+    return Number.isFinite(at) && at > 0 && now - at >= 0 && now - at < CHUNK_RELOAD_WINDOW_MS
+  } catch { return false }
+}
+
+/**
+ * The vite:preloadError handler's one decision: reload this tab once for a
+ * stale chunk, and if the fresh build fails the same way within 30s, stop
+ * and let the real error show — a reload loop is worse than an error screen.
+ */
+export function chunkReloadDecision(now = Date.now()) {
+  let last = null
+  try { last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY)) } catch { /* no storage: reload once and hope */ }
+  if (!last || !Number.isFinite(last) || now - last > 30000) {
+    try { sessionStorage.setItem(CHUNK_RELOAD_KEY, String(now)); sessionStorage.removeItem(CHUNK_RELOAD_GAVE_UP_KEY) } catch { /* ignore */ }
+    return 'reload'
+  }
+  try { sessionStorage.setItem(CHUNK_RELOAD_GAVE_UP_KEY, '1') } catch { /* ignore */ }
+  return 'give_up'
+}
+
 export async function reportCrash(error, { componentStack = null, companyId = null, employeeId = null } = {}) {
   // A developer machine is not a customer. The one crash that ever reached
   // 8 occurrences came from localhost:5176 with a dev React build in the
@@ -54,6 +95,8 @@ export async function reportCrash(error, { componentStack = null, companyId = nu
     const host = window.location?.hostname || ''
     if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.local')) return
   }
+  // A tab that is reloading itself onto the current build is not crashing.
+  if (chunkReloadPending()) return
   try {
     const message = String(error?.message || error || 'Unknown error').slice(0, 500)
     const route = typeof window !== 'undefined'
