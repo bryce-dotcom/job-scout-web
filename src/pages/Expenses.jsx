@@ -287,9 +287,12 @@ export default function Expenses() {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
   }
 
+  // The stored value is a calendar day at UTC midnight (that is what this
+  // form writes: 'YYYY-MM-DD' into a timestamptz). Shown in local time it
+  // read a day early for every expense ever entered here — 8/12 as 8/11.
   const formatDate = (date) => {
     if (!date) return '-'
-    return new Date(date).toLocaleDateString()
+    return new Date(date).toLocaleDateString('en-US', { timeZone: 'UTC' })
   }
 
   const getLinkedEntity = (expense) => {
