@@ -305,7 +305,12 @@ async function invoices(r: Rest, co: string, input: any) {
   for (let i = 0; i < cids.length; i += 300) for (const c of await readAll(r, `customers?${co}&select=id,name,business_name&id=in.(${cids.slice(i, i + 300).join(',')})`)) names[c.id] = c.business_name || c.name
   const now = Date.now()
   let out = rows.map((i: any) => {
-    const total = Math.max(0, num(i.amount) - num(i.discount_applied))
+    // Same rule as lib/arHelpers invoiceCustomerTotal: an old invoice whose
+    // discount is larger than its amount already stores the net, so the
+    // amount IS the total. Without this the tool zeroed three of HHH's open
+    // invoices and told the owner $78k was overdue while Invoices showed $90k.
+    const gross = num(i.amount), disc = num(i.discount_applied)
+    const total = disc > 0 && disc > gross ? gross : Math.max(0, gross - disc)
     const balance = Math.max(0, money(total - (paid[i.id] || 0)))
     const due = i.due_date ? new Date(i.due_date) : new Date(new Date(i.created_at).getTime() + 30 * 86400000)
     const days = Math.max(0, Math.floor((now - due.getTime()) / 86400000))

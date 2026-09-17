@@ -404,6 +404,12 @@ export function buildTaxContext({ company = {}, payments = [], plaidTransactions
   s += `- Revenue collected: ${money(fyRev)}\n`
   s += `- Deductible expenses: ${money(fyTax.deductible)}\n`
   s += `- Net profit before tax: ${money(fyNet)}\n`
+  // Said twice on purpose. One answer in the HHH eval read "Revenue collected"
+  // as profit and the uncategorized line as total deductions, then priced a
+  // Section 179 election against a profit that was really a $575k loss.
+  s += fyNet < 0
+    ? `- TAX BOTTOM LINE: a LOSS of ${money(-fyNet)} so far this tax year. There is no taxable profit, so a deduction, depreciation or Section 179 election saves $0 of tax this year unless the books change. Revenue is not profit; never quote the revenue figure as profit.\n`
+    : `- TAX BOTTOM LINE: taxable profit of ${money(fyNet)} so far this tax year (revenue minus deductible expenses). Revenue is not profit; never quote the revenue figure as profit.\n`
   s += `- Annualized run-rate profit (net ÷ months elapsed × 12): ${money(annualized)}\n`
   if (fyTax.meals > 0) s += `- Of the deductible total, meals: ${money(fyTax.meals)} — only 50% of this is deductible, so taxable profit is about ${money(fyTax.meals / 2)} higher than the net above\n`
   if (fyTax.uncategorized > 0) s += `- Uncategorized spend counted as deductible: ${money(fyTax.uncategorized)} — the one number worth cleaning up in Books\n`
@@ -459,9 +465,13 @@ export function buildTaxContext({ company = {}, payments = [], plaidTransactions
     }
   }
 
-  const due = nextEstimatedTaxDate(fy, now)
+  // A pass-through's profit is taxed on the owners' personal returns, and
+  // people file on the calendar year whatever the company's fiscal year is,
+  // so their estimates fall on the calendar schedule (Apr/Jun/Sep/Jan 15).
+  // Only the entity's own tax follows the fiscal year.
+  const due = nextEstimatedTaxDate(profile.passThrough ? cal : fy, now)
   s += `### Estimated tax — how to answer\n`
-  s += `- Next federal estimated-tax due date: ${dateStr(due)}\n`
+  s += `- Next federal estimated-tax due date: ${dateStr(due)}${profile.passThrough ? ' (the owners pay estimates on their personal calendar-year schedule, even though the company\'s tax year differs)' : ''}\n`
   if (profile.passThrough) {
     s += `- Taxable profit flows to the owners. Estimate the total tax bill as: ${profile.seTax ? 'self-employment tax = 15.3% × 92.35% × profit; then ' : ''}federal income tax on the profit${profile.seTax ? ' (less half the SE tax)' : ''} at an assumed marginal bracket of 22–24% unless they tell you otherwise; plus state income tax at ${profile.state ? `${profile.state}'s rate` : 'their state rate'}. State the bracket assumption in one clause. Give the number, then the range.\n`
     s += `- Safe harbor: no underpayment penalty if this year's estimated payments cover 100% of last year's total tax (110% if income was over $150k), or 90% of this year's.\n`

@@ -102,6 +102,7 @@ async function callClaude(conversationHistory, systemPrompt, onChunk) {
         if (full && !/\n\s*$/.test(full)) full += '\n\n'
         onChunk(full, { status: LOOKUP_HINTS[payload.name] || 'Looking that up…', tool: payload.name })
       } else if (currentEvent === 'error') {
+        if (payload.detail) console.error('[Frankie Engine] model request rejected:', payload.status, payload.detail)
         throw new Error(payload.message || 'Frankie could not finish that answer.')
       }
     }

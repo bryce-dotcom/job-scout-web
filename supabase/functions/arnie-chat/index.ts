@@ -1386,8 +1386,11 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             }),
           })
           if (!res.ok || !res.body) {
-            const failure = await reportAnthropicFailure(aiMeta, res.status, await res.text())
-            send('error', { message: failure.friendly, ai_unavailable: failure.unavailable === true })
+            const errText = await res.text()
+            const failure = await reportAnthropicFailure(aiMeta, res.status, errText)
+            // The API's own words, trimmed, so a rejected request can be read
+            // from the browser console instead of guessed at from a 400.
+            send('error', { message: failure.friendly, ai_unavailable: failure.unavailable === true, status: res.status, detail: errText.slice(0, 600) })
             controller.close()
             return
           }
@@ -1461,8 +1464,9 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             return
           }
 
-          // Push assistant turn + tool results, loop
-          convo.push({ role: 'assistant', content: blocks })
+          // Push assistant turn + tool results, loop. Indices from the stream
+          // are contiguous, but a hole would serialise as null and be rejected.
+          convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
           const toolResults = []
           for (const tu of toolUses) {
             const result = await setup.exec(tu.name, tu.input)

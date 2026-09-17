@@ -210,6 +210,30 @@ describe('the context Frankie is handed', () => {
     expect(ctx).toMatch(/Real estate does NOT work that way/)
   })
 
+  it('states the tax bottom line, and calls a loss a loss', () => {
+    // In the HHH eval one answer priced a Section 179 election against
+    // "profit of $538,657" — the revenue line — in a year the books show a
+    // $575k loss. The bottom line now says which it is, in those words.
+    const profit = buildTaxContext({ company, payments, plaidTransactions: plaid, now: sept15 })
+    expect(profit).toMatch(/TAX BOTTOM LINE: taxable profit of \$109,600\.00/)
+    const heavy = [...plaid, { amount: 200000, date: '2026-03-01', is_transfer: false, ai_form_1065_line: 'Line 9 - Salaries and wages' }]
+    const loss = buildTaxContext({ company, payments, plaidTransactions: heavy, now: sept15 })
+    expect(loss).toMatch(/Net profit before tax: \$-90,400\.00/)
+    expect(loss).toMatch(/TAX BOTTOM LINE: a LOSS of \$90,400\.00/)
+    expect(loss).toMatch(/Section 179 election saves \$0/)
+    expect(loss).toMatch(/Revenue is not profit/)
+  })
+
+  it('puts a pass-through owner\'s estimated-tax date on the calendar schedule, not the fiscal year', () => {
+    // HHH's fiscal year ends in November, but the partners file on the
+    // calendar year: from mid-September the next estimate is January 15,
+    // not the December 15 the fiscal schedule would give a corporation.
+    const partnership = buildTaxContext({ company, payments, plaidTransactions: plaid, now: sept15 })
+    expect(partnership).toMatch(/Next federal estimated-tax due date: 2027-01-15 \(the owners pay estimates on their personal calendar-year schedule/)
+    const corp = buildTaxContext({ company: { ...company, entity_type: 'C Corporation' }, payments, plaidTransactions: plaid, now: sept15 })
+    expect(corp).toMatch(/Next federal estimated-tax due date: 2026-12-15\n/)
+  })
+
   it('flags wages that are really unexplained checks, and bank money that is not revenue', () => {
     // HHH: $569k tagged "wages" on the bank feed against $311k of payroll
     // runs, most of it checks and drafts the categoriser guessed at; and
