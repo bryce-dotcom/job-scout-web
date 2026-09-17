@@ -10,7 +10,7 @@ export default function TerritoryPanel({
   territories, territoryCounts, employeeById, selectedTerritoryId,
   territoryFilter, setTerritoryFilter, filterLabel, filterPolygons, unassignedInFilter, claiming, onClaim, user,
   onZoom, onEdit, onDelete,
-  canManage = false, employees = [], repStats = [], onAssignTerritory
+  canManage = false, employees = [], repStats = [], today = null, onAssignTerritory
 }) {
   const { btn, input } = makeStyles(t)
   const isOnly = tr => String(territoryFilter) === String(tr.id)
@@ -19,6 +19,11 @@ export default function TerritoryPanel({
   return (
     <>
       {/* Manager's view of who carries what. Reps see it too: it's only counts. */}
+      {today && (today.knocks > 0 || today.added > 0) && (
+        <div style={{ margin: '10px 12px 0', padding: '8px 10px', borderRadius: 8, background: 'rgba(22,163,74,0.08)', border: '1px solid #bbf7d0', fontSize: 12, color: t.text }}>
+          <strong>Today</strong> · {today.knocks} knock{today.knocks === 1 ? '' : 's'} · {today.talked} talked · {today.added} lead{today.added === 1 ? '' : 's'} added
+        </div>
+      )}
       {repStats.length > 0 && (
         <div style={{ padding: '10px 12px 0' }}>
           <div onClick={() => setShowReps(v => !v)} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: t.textSecondary }}>
@@ -29,7 +34,7 @@ export default function TerritoryPanel({
               {repStats.map(r => (
                 <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '3px 0', color: t.text }}>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}{String(r.id) === String(user?.id) ? ' (Me)' : ''}</span>
-                  <span style={{ color: t.textMuted, whiteSpace: 'nowrap' }}>{r.territories} terr · {r.leads} open{r.stale > 0 && <span style={{ color: '#b45309' }}> · {r.stale} idle 14d+</span>}</span>
+                  <span style={{ color: t.textMuted, whiteSpace: 'nowrap' }}>{r.knocks > 0 && <span style={{ color: '#15803d', fontWeight: 600 }}>{r.knocks} knock{r.knocks === 1 ? '' : 's'} today · </span>}{r.territories} terr · {r.leads} open{r.stale > 0 && <span style={{ color: '#b45309' }}> · {r.stale} idle 14d+</span>}</span>
                 </div>
               ))}
             </div>

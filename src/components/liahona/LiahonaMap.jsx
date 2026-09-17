@@ -33,7 +33,8 @@ import { isCompanyName, parcelAddress, parcelNotes, leadRowFromParcel } from './
 import NeighborsPanel from './NeighborsPanel'
 import LeadCard from './LeadCard'
 import {
-  PALETTE, US_CENTER, themeTokens, makeStyles, ensureLeaflet, hasCoords, dist, initials, minutesAgo, esc, loadView, saveView
+  PALETTE, US_CENTER, themeTokens, makeStyles, ensureLeaflet, hasCoords, dist, initials, minutesAgo, esc, loadView, saveView,
+  knockOutcome, isToday
 } from './util'
 import { getStartPoint, buildRoute, drawRoute } from './routing'
 import LiahonaToolbar from './LiahonaToolbar'
@@ -174,6 +175,34 @@ export default function LiahonaMap({
 
   // Workload per rep: territories owned, pinned leads owned, and how many of
   // those nobody has touched in two weeks. Managers use it to balance areas.
+  // Today's door work: the latest knock per lead (for the pin badge) and the
+  // day's tally per rep and for the team (knocks, conversations, leads added).
+  const { knockedToday, today, knocksByRep } = useMemo(() => {
+    const knockedToday = new Map()
+    const knocksByRep = new Map()
+    const today = { knocks: 0, talked: 0, added: 0 }
+    for (const rows of followUpsByLead?.values?.() || []) {
+      for (const r of rows) {
+        if (r.method !== 'visit' || !isToday(r.contacted_at)) continue
+        const o = knockOutcome(r)
+        today.knocks++
+        if (o?.id === 'talked') today.talked++
+        const rep = knocksByRep.get(String(r.employee_id)) || { knocks: 0, talked: 0, added: 0 }
+        rep.knocks++; if (o?.id === 'talked') rep.talked++
+        knocksByRep.set(String(r.employee_id), rep)
+        const prev = knockedToday.get(String(r.lead_id))
+        if (!prev || r.contacted_at > prev.at) knockedToday.set(String(r.lead_id), { at: r.contacted_at, ...o })
+      }
+    }
+    for (const l of leads) {
+      if (!isToday(l.created_at)) continue
+      today.added++
+      const rep = knocksByRep.get(String(l.lead_owner_id)) || { knocks: 0, talked: 0, added: 0 }
+      rep.added++; knocksByRep.set(String(l.lead_owner_id), rep)
+    }
+    return { knockedToday, today, knocksByRep }
+  }, [followUpsByLead, leads])
+
   const repStats = useMemo(() => {
     const stale = Date.now() - 14 * 86400e3
     const byRep = new Map()
@@ -185,8 +214,10 @@ export default function LiahonaMap({
       bump(l.lead_owner_id, 'leads')
       if (new Date(l.updated_at || l.created_at || 0).getTime() < stale) bump(l.lead_owner_id, 'stale')
     }
-    return [...byRep.entries()].map(([id, r]) => ({ id, name: employeeById[id]?.name || 'Former employee', ...r })).sort((a, b) => b.leads - a.leads)
-  }, [territories, geocodedLeads, stageById, employeeById])
+    for (const id of knocksByRep.keys()) if (id && id !== 'null' && id !== 'undefined' && !byRep.has(id)) byRep.set(id, { territories: 0, leads: 0, stale: 0 })
+    return [...byRep.entries()].map(([id, r]) => ({ id, name: employeeById[id]?.name || 'Former employee', ...r, ...(knocksByRep.get(id) || { knocks: 0, talked: 0, added: 0 }) }))
+      .sort((a, b) => (b.knocks - a.knocks) || (b.leads - a.leads))
+  }, [territories, geocodedLeads, stageById, employeeById, knocksByRep])
 
   useEffect(() => {
     if (compact && (territoryForm || dropForm || route)) setSheetOpen(true)
@@ -301,13 +332,16 @@ export default function LiahonaMap({
         const r = Math.min(40, 14 + Math.max(0, n - 8) * 1.5), a = (2 * Math.PI * i) / n - Math.PI / 2
         dx = Math.round(r * Math.cos(a)); dy = Math.round(r * Math.sin(a))
       }
+      // A knock logged today wears a small badge in the outcome's colour.
+      const knock = knockedToday.get(String(lead.id))
+      const badge = knock ? `<div style="position:absolute;right:-5px;top:-5px;width:9px;height:9px;border-radius:50%;background:${knock.color};border:2px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,.4)"></div>` : ''
       const icon = L.divIcon({
         className: '',
-        html: `<div style="width:16px;height:16px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45)"></div>`,
+        html: `<div style="position:relative;width:16px;height:16px"><div style="width:16px;height:16px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45)"></div>${badge}</div>`,
         iconSize: [16, 16], iconAnchor: [8 - dx, 16 - dy], tooltipAnchor: [0, -14]
       })
       const m = L.marker([Number(lead.latitude), Number(lead.longitude)], { icon, draggable: true })
-      m.bindTooltip(`<b>${esc(lead.customer_name || lead.business_name || 'Lead')}</b><br>${esc(stage?.name || lead.status)}${lead.address ? '<br>' + esc(lead.address) : ''}`, { direction: 'top' })
+      m.bindTooltip(`<b>${esc(lead.customer_name || lead.business_name || 'Lead')}</b><br>${esc(stage?.name || lead.status)}${lead.address ? '<br>' + esc(lead.address) : ''}${knock ? `<br><span style="color:${knock.color};font-weight:700">● ${esc(knock.label)}</span> today` : ''}`, { direction: 'top' })
       m.on('click', () => {
         if (modeRef.current === 'neighbors') loadNeighborsRef.current?.(m.getLatLng(), lead.customer_name || lead.business_name || lead.address)
         else if (modeRef.current === 'select') openLeadRef.current?.(lead)
@@ -321,7 +355,7 @@ export default function LiahonaMap({
       })
       m.addTo(g)
     }
-  }, [ready, visibleLeads, stageById, onSelectLead, onLeadsChanged, notify])
+  }, [ready, visibleLeads, stageById, onSelectLead, onLeadsChanged, notify, knockedToday])
 
   // ------------------------------------------------------------- territories
   useEffect(() => {
@@ -1093,7 +1127,7 @@ export default function LiahonaMap({
                 territories={territories} territoryCounts={territoryCounts} employeeById={employeeById} selectedTerritoryId={selectedTerritoryId}
                 territoryFilter={territoryFilter} setTerritoryFilter={setTerritoryFilter} filterLabel={filterLabel} filterPolygons={filterPolygons}
                 unassignedInFilter={unassignedInFilter} claiming={claiming} onClaim={claimUnassigned} user={user}
-                canManage={canManage} employees={employees} repStats={repStats} onAssignTerritory={assignTerritoryLeads}
+                canManage={canManage} employees={employees} repStats={repStats} today={today} onAssignTerritory={assignTerritoryLeads}
                 onZoom={zoomToTerritory} onEdit={editTerritory} onDelete={deleteTerritory}
               />
             </>

@@ -90,3 +90,24 @@ export const saveView = (companyId, map) => {
 export const TERRITORY_SOURCE_LABEL = {
   drawn: 'Drawn by hand', county: 'From county boundary', city: 'From city boundary', zip: 'From ZIP code', utility: 'From utility territory'
 }
+
+// A knock logged from the lead card is a lead_follow_ups row with method
+// 'visit' and a note that starts "Knocked: …". The outcome drives the badge
+// on the pin and the day's tally per rep.
+export const KNOCK_OUTCOMES = {
+  not_home: { label: 'Not home', color: '#9ca3af', re: /not home/i },
+  talked: { label: 'Talked', color: '#16a34a', re: /talked/i },
+  left_card: { label: 'Left card', color: '#3b82f6', re: /left a card|left card/i },
+  callback: { label: 'Callback', color: '#f59e0b', re: /callback/i }
+}
+export function knockOutcome(row) {
+  if (!row || row.method !== 'visit') return null
+  const note = row.note || ''
+  for (const [id, o] of Object.entries(KNOCK_OUTCOMES)) if (o.re.test(note)) return { id, ...o }
+  return { id: 'visit', label: 'Visited', color: '#6b7280' }
+}
+export const isToday = iso => {
+  if (!iso) return false
+  const d = new Date(iso), n = new Date()
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()
+}
