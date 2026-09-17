@@ -67,8 +67,13 @@ export function buildInvoiceLineRows(lines, { companyId, invoiceId }) {
 // portal and the email — which is the bare invoice reps kept reporting,
 // and exactly what a service visit created by hand looks like (every demo
 // job, for one). One line, named for the job, for the job's total.
-export function summaryLineRows({ description, total }, { companyId, invoiceId }) {
-  const amount = parseFloat(total)
+//
+// `covered` is what the job's own lines already add up to. For a job whose
+// total a person set (jobs.job_total_source 'manual'), lines added later are
+// additions inside the price, not the price — so the scope line is for the
+// remainder, and the invoice's lines sum to its amount.
+export function summaryLineRows({ description, total, covered = 0 }, { companyId, invoiceId }) {
+  const amount = Math.round(((parseFloat(total) || 0) - (parseFloat(covered) || 0)) * 100) / 100
   if (!invoiceId || !Number.isFinite(amount) || amount <= 0) return []
   return buildInvoiceLineRows([{ description: String(description || '').trim() || 'Services', quantity: 1, price: amount, total: amount }], { companyId, invoiceId })
 }
@@ -76,11 +81,20 @@ export function summaryLineRows({ description, total }, { companyId, invoiceId }
 // Write the rows for an invoice. Returns the rows written (empty when there
 // was nothing to copy). Never throws — a failure to copy lines must not roll
 // back an invoice that was already created, but it must be visible.
-// `summaryFor` = { description, total }: written as the one line when the
-// job has no lines of its own.
+// `summaryFor` = { description, total, manual }: the job's priced total.
+// Written as the one line when the job has no lines of its own; when the
+// job's total was set by a person (manual) and its lines cover less than
+// the price, written for the remainder so the invoice adds up to its amount.
 export async function writeInvoiceLines(supabase, lines, { companyId, invoiceId, summaryFor = null }) {
   let rows = buildInvoiceLineRows(lines, { companyId, invoiceId })
-  if (rows.length === 0 && summaryFor) rows = summaryLineRows(summaryFor, { companyId, invoiceId })
+  if (summaryFor) {
+    const covered = rows.reduce((s, r) => s + (Number(r.line_total) || 0), 0)
+    if (rows.length === 0) rows = summaryLineRows(summaryFor, { companyId, invoiceId })
+    else if (summaryFor.manual && covered < (parseFloat(summaryFor.total) || 0) - 0.005) {
+      const scope = summaryLineRows({ ...summaryFor, description: `Project scope — ${String(summaryFor.description || '').trim() || 'Services'}`, covered }, { companyId, invoiceId })
+      rows = [...scope.map((r) => ({ ...r, line_number: 1, sort_order: 0 })), ...rows.map((r) => ({ ...r, line_number: r.line_number + scope.length, sort_order: r.sort_order + scope.length }))]
+    }
+  }
   if (rows.length === 0) return []
   const { error } = await supabase.from('invoice_lines').insert(rows)
   if (error) {

@@ -35,6 +35,7 @@ import JobCostingModal from '../components/JobCostingModal'
 import { companyNotify } from '../lib/companyNotify'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
 import { computeAllottedHours } from '../lib/allottedHours'
+import { jobTotalPolicy, adoptLinesTotal } from '../lib/jobTotal'
 import { fetchJobBonuses, bonusStatusLabel } from '../lib/bonusLedger'
 import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
@@ -517,14 +518,15 @@ function JobDetailInner() {
         }
       }
 
-      // Sync job_total from line items so pipeline/reports stay accurate
-      const linesTotal = (lines || []).reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0)
-      const discount = parseFloat(jobData.discount) || 0
-      const computedJobTotal = Math.round((linesTotal - discount) * 100) / 100
-      const storedJobTotal = Math.round((parseFloat(jobData.job_total) || 0) * 100) / 100
-      if ((lines || []).length > 0 && computedJobTotal !== storedJobTotal) {
-        await supabase.from('jobs').update({ job_total: computedJobTotal }).eq('id', id)
-        setJob(prev => ({ ...prev, job_total: computedJobTotal }))
+      // Keep job_total in step with the lines — when the lines own it. A total
+      // a person, an import or an estimate summary set (job_total_source
+      // 'manual') is kept, and the Job Lines card says so with a one-click
+      // way to adopt the lines total instead (lib/jobTotal).
+      const policy = jobTotalPolicy(jobData, lines || [])
+      if (policy.action === 'sync') {
+        const patch = adoptLinesTotal(policy.computed)
+        await supabase.from('jobs').update(patch).eq('id', id)
+        setJob(prev => ({ ...prev, ...patch }))
       }
 
       // Fetch sections
@@ -1089,13 +1091,26 @@ function JobDetailInner() {
     await updateJobTotalFromLines(updatedLines)
   }
 
-  // Compute job_total from local line items (avoids race condition from full refetch during rapid edits)
+  // Compute job_total from local line items (avoids race condition from full
+  // refetch during rapid edits). Same rule as the load: a total the lines own
+  // follows them; a total a person set is kept until they adopt the lines total.
   const updateJobTotalFromLines = async (lines) => {
-    const linesTotal = lines.reduce((sum, l) => sum + (parseFloat(l.total) || 0), 0)
-    const discount = parseFloat(job?.discount) || 0
-    const computedJobTotal = Math.round((linesTotal - discount) * 100) / 100
-    setJob(prev => prev ? { ...prev, job_total: computedJobTotal } : prev)
-    await supabase.from('jobs').update({ job_total: computedJobTotal }).eq('id', id)
+    const policy = jobTotalPolicy(job, lines)
+    if (policy.action !== 'sync') return
+    const patch = adoptLinesTotal(policy.computed)
+    setJob(prev => prev ? { ...prev, ...patch } : prev)
+    await supabase.from('jobs').update(patch).eq('id', id)
+  }
+
+  // "Use the line items total": the person decides the lines own it now.
+  const adoptLinesTotalNow = async () => {
+    const policy = jobTotalPolicy(job, lineItems)
+    const patch = adoptLinesTotal(policy.computed)
+    setSaving(true)
+    const { error } = await supabase.from('jobs').update(patch).eq('id', id)
+    setSaving(false)
+    if (error) { const { toast } = await import('../lib/toast'); toast.error('Could not update the job total: ' + error.message); return }
+    setJob(prev => prev ? { ...prev, ...patch } : prev)
   }
 
   // Mark/unmark a customer callback (rework/warranty) on this job. When the
@@ -4576,6 +4591,23 @@ function JobDetailInner() {
                 </button>
               </div>
             </div>
+            {(() => {
+              // A total no line produced is kept when lines disagree with it —
+              // this is where the person is told, and can adopt the lines total.
+              const policy = jobTotalPolicy(job, lineItems)
+              if (policy.action !== 'keep') return null
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', padding: '10px 20px', backgroundColor: 'rgba(234,179,8,0.10)', borderBottom: `1px solid rgba(234,179,8,0.35)`, fontSize: '13px', color: theme.textSecondary }}>
+                  <span>
+                    These lines add up to <b style={{ color: theme.text }}>{formatCurrency(policy.computed)}</b>. The job total,{' '}
+                    <b style={{ color: theme.text }}>{formatCurrency(policy.stored)}</b>, was set directly and is kept — lines added to a priced job do not replace its price.
+                  </span>
+                  <button onClick={adoptLinesTotalNow} disabled={saving} style={{ padding: '6px 12px', minHeight: '36px', backgroundColor: 'transparent', color: '#a16207', border: '1px solid rgba(234,179,8,0.6)', borderRadius: '6px', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    Use the line items total ({formatCurrency(policy.computed)})
+                  </button>
+                </div>
+              )
+            })()}
             {/* The job and its estimate no longer say the same thing. Shown,
                 not silently reconciled — a job often carries out-of-scope work
                 the estimate never had, and syncing would delete it. */}

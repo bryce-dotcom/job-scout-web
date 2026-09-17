@@ -163,3 +163,29 @@ describe('a job with no lines still bills for something', () => {
     expect(inserted.map(r => [r.description, r.line_total])).toEqual([['Job', 999]])
   })
 })
+
+describe('a priced job with incidental lines invoices for its price', () => {
+  // jobs.job_total_source 'manual': a $21,200 job a person priced, then a $165
+  // part added to it. The invoice is $21,200 and its lines must add up to that —
+  // the part, and a scope line for the rest. A line-owned job never gets one.
+  const supabase = { from: () => ({ insert: async (rows) => { supabase.rows = rows; return { error: null } } }) }
+  const part = [{ description: 'Occupancy sensor', quantity: 1, price: 165, total: 165 }]
+
+  it('writes a scope line for the remainder ahead of the lines', async () => {
+    await writeInvoiceLines(supabase, part, { companyId: 25, invoiceId: 9, summaryFor: { description: 'Retail Park High Bay Swap', total: 21200, manual: true } })
+    expect(supabase.rows.map(r => [r.line_number, r.description, r.line_total])).toEqual([[1, 'Project scope — Retail Park High Bay Swap', 21035], [2, 'Occupancy sensor', 165]])
+    expect(supabase.rows.reduce((s, r) => s + r.line_total, 0)).toBe(21200)
+  })
+
+  it('does nothing extra when the lines own the total, or already cover it', async () => {
+    await writeInvoiceLines(supabase, part, { companyId: 25, invoiceId: 9, summaryFor: { description: 'Job', total: 21200, manual: false } })
+    expect(supabase.rows).toHaveLength(1)
+    await writeInvoiceLines(supabase, part, { companyId: 25, invoiceId: 9, summaryFor: { description: 'Job', total: 165, manual: true } })
+    expect(supabase.rows).toHaveLength(1)
+  })
+
+  it('a no-lines job still gets its single summary line', async () => {
+    await writeInvoiceLines(supabase, [], { companyId: 25, invoiceId: 9, summaryFor: { description: 'Job', total: 500, manual: true } })
+    expect(supabase.rows.map(r => [r.description, r.line_total])).toEqual([['Job', 500]])
+  })
+})

@@ -254,6 +254,8 @@ await run('jobs', async () => {
     // Won (created) a few days before the work starts. All eighteen used to
     // carry the seed's run date, so the dashboard read one month of sales.
     created_at: tstr(off - 4),
+    // The scope line written below produces this total, so the lines own it.
+    job_total_source: 'lines',
     service_type: 'Lighting Retrofit', business_unit: 'Commercial', salesperson_id: jordan,
     allotted_time_hours: Math.max(1, Math.round(total / 900)), time_tracked: status === 'Completed' ? Math.max(1, Math.round(total / 1000)) : 0,
   })));
