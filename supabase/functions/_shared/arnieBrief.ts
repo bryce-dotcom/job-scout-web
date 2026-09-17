@@ -122,14 +122,14 @@ export async function dailyBrief(r: Rest, caller: Caller, input: { date?: string
 
   // ── the money ─────────────────────────────────────────────────────────
   if (admin) {
-    const inv = await readRecordList(r, `invoices?select=id,invoice_id,amount,discount_applied,payment_status,due_date,customer_id&company_id=eq.${companyId}&amount=gt.0&due_date=lt.${date}&payment_status=not.in.(Paid,Void,Cancelled)&order=due_date&limit=300`)
+    const inv = await readRecordList(r, `invoices?select=id,invoice_id,amount,discount_applied,tax_amount,payment_status,due_date,customer_id&company_id=eq.${companyId}&amount=gt.0&due_date=lt.${date}&payment_status=not.in.(Paid,Void,Cancelled)&order=due_date&limit=300`)
     const overdue = inv.filter((i: any) => !isSettledStatus(i.payment_status))
     let paid: Record<number, number> = {}
     for (let i = 0; i < overdue.length; i += 150) {
       const ids = overdue.slice(i, i + 150).map((x: any) => x.id)
       for (const p of await readRecordList(r, `payments?select=invoice_id,amount&company_id=eq.${companyId}&invoice_id=in.(${ids.join(',')})&limit=1000`)) paid[p.invoice_id] = (paid[p.invoice_id] || 0) + num(p.amount)
     }
-    const owed = overdue.map((i: any) => ({ i, bal: Math.max(0, invoiceCustomerTotal(i.amount, i.discount_applied) - (paid[i.id] || 0)) })).filter((x) => x.bal > 0)
+    const owed = overdue.map((i: any) => ({ i, bal: Math.max(0, invoiceCustomerTotal(i.amount, i.discount_applied, i.tax_amount) - (paid[i.id] || 0)) })).filter((x) => x.bal > 0)
     out.money = {
       overdue_invoices: owed.length,
       overdue_owed: money(owed.reduce((s, x) => s + x.bal, 0)),

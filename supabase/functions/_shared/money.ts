@@ -26,10 +26,13 @@ export function isLegacyNetShape(gross: number, disc: number): boolean {
 }
 
 /** What the customer actually owes after the incentive / discount / deposit. */
-export function invoiceCustomerTotal(amount: unknown, discountApplied: unknown): number {
+export function invoiceCustomerTotal(amount: unknown, discountApplied: unknown, taxAmount: unknown = 0): number {
   const gross = Number(amount) || 0;
   const disc = Number(discountApplied) || 0;
-  return isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc);
+  // Sales tax rides on top of the pre-tax gross (invoices.tax_amount, since
+  // 2026-09-17). Mirrors lib/arHelpers.invoiceCustomerTotal exactly.
+  const tax = Number(taxAmount) || 0;
+  return (isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)) + tax;
 }
 
 /**
@@ -84,8 +87,9 @@ export function invoiceOutstanding(
   amount: unknown,
   discountApplied: unknown,
   paidToDate: unknown,
+  taxAmount: unknown = 0,
 ): number {
-  const owed = invoiceCustomerTotal(amount, discountApplied) - (Number(paidToDate) || 0);
+  const owed = invoiceCustomerTotal(amount, discountApplied, taxAmount) - (Number(paidToDate) || 0);
   return Math.max(0, owed);
 }
 

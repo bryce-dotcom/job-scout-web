@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { invoiceCustomerTotal } from '../_shared/money.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,7 +34,7 @@ serve(async (req) => {
     // Fetch invoice
     const { data: invoice, error: invErr } = await supabase
       .from('invoices')
-      .select('id, amount, customer_id, payment_status, credit_card_fee')
+      .select('id, amount, discount_applied, tax_amount, customer_id, payment_status, credit_card_fee')
       .eq('id', invoice_id)
       .eq('company_id', company_id)
       .single();
@@ -90,8 +91,11 @@ serve(async (req) => {
       .eq('invoice_id', invoice.id);
 
     const totalPaid = (existingPayments || []).reduce((s: number, p: { amount: number }) => s + (parseFloat(String(p.amount)) || 0), 0);
-    const invoiceAmount = parseFloat(String(invoice.amount)) || 0;
-    const balanceDue = invoiceAmount - totalPaid;
+    // What the customer owes: gross net of the incentive / discount, plus
+    // sales tax — the same rule as the invoice page, the portal and the
+    // webhook. This used to charge the raw gross, ignoring any credit.
+    const invoiceAmount = invoiceCustomerTotal(invoice.amount, invoice.discount_applied, invoice.tax_amount);
+    const balanceDue = Math.round((invoiceAmount - totalPaid) * 100) / 100;
 
     if (balanceDue <= 0) return jsonResponse({ error: 'No balance due' }, 400);
 

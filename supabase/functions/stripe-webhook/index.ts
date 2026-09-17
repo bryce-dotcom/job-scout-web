@@ -343,7 +343,7 @@ serve(async (req) => {
         // collected, stuck on Partially Paid because the webhook thought $595
         // was owed. Two Energy Scout invoices were stuck the same way, where
         // the "discount" is the utility incentive and the gap is thousands.
-        .select('id, amount, discount_applied, customer_id, job_id, credit_card_fee')
+        .select('id, amount, discount_applied, tax_amount, customer_id, job_id, credit_card_fee')
         .eq('id', documentId)
         .single();
 
@@ -430,7 +430,7 @@ serve(async (req) => {
         // invoice's balance as the whole gross and so could never mark it Paid.
         // The customer owes their net total PLUS any card fee they agreed to
         // — the same comparison InvoiceDetail's invoicePaymentStatus makes.
-        const customerBalance = invoiceCustomerTotal(gross, discount) + feeTotal;
+        const customerBalance = invoiceCustomerTotal(gross, discount, invoice.tax_amount) + feeTotal;
         const newStatus = totalPaid >= customerBalance - 0.01 ? 'Paid' : 'Partially Paid';
 
         await supabase

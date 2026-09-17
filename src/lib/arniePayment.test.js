@@ -36,7 +36,7 @@ describe('the status is the one rule, not a second copy', () => {
   ]
   it.each(cases)('agrees with arHelpers for %j', (c) => {
     const gross = Number(c.amount) || 0, disc = Number(c.discount_applied) || 0
-    const customer_owes = disc > 0 && disc > gross ? gross : Math.max(0, gross - disc)   // the generated column
+    const customer_owes = (disc > 0 && disc > gross ? gross : Math.max(0, gross - disc)) + (Number(c.tax_amount) || 0)   // the generated column (incl. sales tax)
     const inv = { ...c, customer_owes }
     expect(denoStatus(inv, c.paid)).toBe(invoicePaymentStatus(inv, c.paid, c.credit_card_fee))
   })

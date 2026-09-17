@@ -279,7 +279,7 @@ async function pnl(r: Rest, co: string, input: any) {
 
 async function invoices(r: Rest, co: string, input: any) {
   const status = input?.status || 'open'
-  const p = new URLSearchParams({ select: 'id,invoice_id,amount,discount_applied,credit_card_fee,payment_status,due_date,invoice_date,created_at,customer_id,job_id', order: 'created_at.desc' })
+  const p = new URLSearchParams({ select: 'id,invoice_id,amount,discount_applied,tax_amount,credit_card_fee,payment_status,due_date,invoice_date,created_at,customer_id,job_id', order: 'created_at.desc' })
   if (status === 'paid') p.append('payment_status', 'eq.Paid')
   else if (status !== 'all') p.append('payment_status', 'not.in.(Paid,Void,Cancelled)')
   if (input?.start_date) p.append('created_at', `gte.${clean(input.start_date)}`)
@@ -310,7 +310,7 @@ async function invoices(r: Rest, co: string, input: any) {
     // amount IS the total. Without this the tool zeroed three of HHH's open
     // invoices and told the owner $78k was overdue while Invoices showed $90k.
     const gross = num(i.amount), disc = num(i.discount_applied)
-    const total = disc > 0 && disc > gross ? gross : Math.max(0, gross - disc)
+    const total = (disc > 0 && disc > gross ? gross : Math.max(0, gross - disc)) + num(i.tax_amount)
     const balance = Math.max(0, money(total - (paid[i.id] || 0)))
     const due = i.due_date ? new Date(i.due_date) : new Date(new Date(i.created_at).getTime() + 30 * 86400000)
     const days = Math.max(0, Math.floor((now - due.getTime()) / 86400000))

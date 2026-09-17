@@ -116,7 +116,7 @@ serve(async (req) => {
 
       // Open customer invoices (exclude deposits — those have their own flow)
       const { data: invoices } = await supabase.from('invoices')
-        .select('id, invoice_id, amount, discount_applied, payment_status, due_date, created_at, customer_id, sent_to_email, portal_token, invoice_type')
+        .select('id, invoice_id, amount, discount_applied, tax_amount, payment_status, due_date, created_at, customer_id, sent_to_email, portal_token, invoice_type')
         .eq('company_id', companyId)
         .not('payment_status', 'in', '("Paid","Void","Cancelled")')
         .neq('invoice_type', 'deposit');
@@ -168,7 +168,7 @@ serve(async (req) => {
         // have this autopilot dunning a customer for money they don't owe.
         const gross = Number(inv.amount) || 0;
         const disc = Number(inv.discount_applied) || 0;
-        const base = disc > 0 && disc > gross ? gross : Math.max(0, gross - disc);
+        const base = (disc > 0 && disc > gross ? gross : Math.max(0, gross - disc)) + (Number(inv.tax_amount) || 0);
         const balance = base - (payByInv.get(inv.id) || 0);
         if (balance <= 0.01) continue;
         // Due date: explicit, else Net-30 from created_at

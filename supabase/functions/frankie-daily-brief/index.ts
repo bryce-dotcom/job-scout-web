@@ -74,7 +74,7 @@ serve(async (req) => {
 
       // ── AR snapshot ──
       const { data: openInv } = await supabase.from('invoices')
-        .select('id, amount, discount_applied, due_date, created_at')
+        .select('id, amount, discount_applied, tax_amount, due_date, created_at')
         .eq('company_id', companyId)
         .not('payment_status', 'in', '("Paid","Void","Cancelled")')
         .neq('invoice_type', 'deposit');
@@ -84,7 +84,7 @@ serve(async (req) => {
         const gross = Number(i.amount) || 0, disc = Number(i.discount_applied) || 0;
         // Shared predicate — a `>=` copy here counted a fully-covered invoice's
         // whole gross as receivable in the brief.
-        const bal = invoiceCustomerTotal(gross, disc);
+        const bal = invoiceCustomerTotal(gross, disc, i.tax_amount);
         ar += bal;
         const due = i.due_date ? new Date(i.due_date).getTime() : new Date(i.created_at).getTime() + 30 * 86400000;
         if (now > due && bal > 0.01) { overdueCount++; overdueTotal += bal; }

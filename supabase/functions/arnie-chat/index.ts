@@ -615,7 +615,7 @@ async function execTool(name: string, input: any, caller: Caller) {
       // what the aggregate and the answer are made of; the columns left out
       // (conversation_log, pdf_url, portal_token …) only crowd the context.
       params.set('select', 'id,invoice_id,invoice_date,created_at,due_date,customer_id,job_id,'
-        + 'amount,discount_applied,down_payment_applied,payment_status,payment_method,'
+        + 'amount,discount_applied,tax_amount,down_payment_applied,payment_status,payment_method,'
         + 'business_unit,invoice_type,job_description')
       const asOf = new Date().toISOString().slice(0, 10)
       const askedOverdue = String(input.status || '').toLowerCase() === 'overdue'
@@ -710,7 +710,7 @@ async function execTool(name: string, input: any, caller: Caller) {
       }
       for (const r of overdue) {
         r.balance = invoiceOutstanding(r.amount, r.discount_applied,
-          balancesApplied ? paidByInvoice.get(r.id) || 0 : 0).toFixed(2)
+          balancesApplied ? paidByInvoice.get(r.id) || 0 : 0, r.tax_amount).toFixed(2)
       }
       if (overdue.length && !balancesApplied) {
         notes.push('Payments could not be applied, so `balance` and overdue_total_owed are an UPPER BOUND — money already collected on these invoices is still counted in them. Say so rather than quoting the figure flat.')
