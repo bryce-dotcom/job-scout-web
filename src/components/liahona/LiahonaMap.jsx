@@ -125,7 +125,15 @@ export default function LiahonaMap({
   // ----------------------------------------------------------- derived data
   const stageById = useMemo(() => Object.fromEntries(stages.map(s => [s.id, s])), [stages])
   const employeeById = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
-  const geocodedLeads = useMemo(() => leads.filter(hasCoords), [leads])
+  // Owners the map just changed, shown at once while the pipeline refetches.
+  // Cleared the moment a fresh lead list arrives, so the truth always wins.
+  const [ownerPatch, setOwnerPatch] = useState({})
+  useEffect(() => { setOwnerPatch({}) }, [leads])
+  const geocodedLeads = useMemo(
+    () => leads.filter(hasCoords).map(l => ownerPatch[l.id] !== undefined ? { ...l, lead_owner_id: ownerPatch[l.id] } : l),
+    [leads, ownerPatch]
+  )
+  const patchOwners = (ids, ownerId) => setOwnerPatch(p => { const n = { ...p }; for (const id of ids) n[id] = ownerId; return n })
   const unmappedCount = useMemo(() => leads.filter(l => l.address && !hasCoords(l)).length, [leads])
   // Polygons the current filter selects; null = no territory filtering.
   const filterPolygons = useMemo(() => {
@@ -831,7 +839,7 @@ export default function LiahonaMap({
     if (f.id && f.hand_leads && handoverIds.length && row.owner_id && (canManage || String(row.owner_id) === String(user?.id))) {
       const { error: e2 } = await supabase.from('leads').update({ lead_owner_id: row.owner_id, updated_at: new Date().toISOString() }).in('id', handoverIds)
       if (e2) notify('Territory saved, but its leads were not reassigned: ' + e2.message)
-      else { handed = handoverIds.length; onLeadsChanged?.() }
+      else { handed = handoverIds.length; patchOwners(handoverIds, row.owner_id); onLeadsChanged?.() }
     }
     setSaving(false)
     setTerritoryForm(null)
@@ -953,6 +961,7 @@ export default function LiahonaMap({
     const { error } = await q
     setClaiming(false)
     if (error) { notify('Could not assign: ' + error.message); return }
+    patchOwners(ids, Number(ownerId))
     notify(`${ids.length} lead${ids.length > 1 ? 's' : ''} assigned to ${who}`)
     onLeadsChanged?.()
   }

@@ -99,6 +99,14 @@ export function tidyOwner(raw) {
   if (!raw) return null
   let s = String(raw).replace(/\((jt|tc|trs?|te|etal|et al|life estate|le)\)/gi, ' ').replace(/\b(et al|etal|et ux|et vir)\b\.?/gi, ' ').replace(/\s+/g, ' ').trim()
   if (!s || /not identified|unknown|unavailable|^n\/?a$|withheld/i.test(s)) return null
+  // "Wood,Roy E & Wood,Maria A" (Portland and others file surname first):
+  // flip each "Last,First" piece so the same-surname join below can merge
+  // them into "Roy E & Maria A Wood". Only a lone word before the comma is
+  // treated as a surname; "Smith Family Trust, The" is left alone.
+  const flipped = s.split(/\s*[;&]\s*/).map(x => x.trim()).filter(Boolean)
+  if (flipped.length && flipped.every(x => /^[A-Za-z'-]+,\s*[A-Za-z][A-Za-z .'-]*$/.test(x))) {
+    s = flipped.map(x => { const [last, first] = x.split(/\s*,\s*/); return `${first.trim()} ${last.trim()}` }).join('; ')
+  }
   const parts = s.split(/\s*;\s*/).map(x => x.trim()).filter(Boolean)
   if (parts.length === 1) s = parts[0]
   else if (parts.length > 1) {
