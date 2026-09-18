@@ -1700,7 +1700,11 @@ export default function Payroll() {
   // company all in. The header, the bottom of the table and the Run Payroll
   // modal all read this one summary. totalPayroll above stays the GROSS —
   // it is what payroll_runs.total_gross records.
-  const runTotals = useMemo(() => summarizePayrollRun(employeePayData), [employeePayData])
+  // Plain call, not useMemo: this sits after the non-admin early return, and
+  // the file carries 19 grandfathered conditional hooks — a 20th is the
+  // white screen the ship guard exists to stop. One pass over a few dozen
+  // employees is nothing next to what this page does per render.
+  const runTotals = summarizePayrollRun(employeePayData)
 
   const totalCommissions = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.commissionPay, 0),
