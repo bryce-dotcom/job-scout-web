@@ -4,7 +4,7 @@ import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { supabase } from '../lib/supabase'
 import { fieldJobHeading } from '../lib/jobHeading'
-import { checkCanClockIn, hoursSince } from '../lib/timeClock'
+import { checkCanClockIn } from '../lib/timeClock'
 import { writeInvoiceLines } from '../lib/invoiceLines'
 import { invoiceBalance, invoicePaymentStatus } from '../lib/arHelpers'
 import { completionOptions, verificationPassed, completionJobPatch, SEND_BLOCKED_TEXT } from '../lib/fieldCompletion'
@@ -25,6 +25,7 @@ import {
   Camera, Calendar as CalendarIcon, ArrowRight
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
+import MissedShiftSheet from '../components/MissedShiftSheet'
 import MyNotifications from '../components/MyNotifications'
 import MyVehicleCard from '../components/MyVehicleCard'
 import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours, bonusRowAmount } from '../lib/bonusCalc'
@@ -157,6 +158,10 @@ export default function FieldScout() {
   // today-only fetch below can't see these, so a forgotten clock-out was
   // invisible on the tech's phone and silently dropped from pay. Surface them.
   const [staleOpens, setStaleOpens] = useState([])
+  // "You never clocked out yesterday — when did you finish?" The sheet that
+  // closes a forgotten shift and then resumes the clock-in it interrupted.
+  // { entry, jobId } — jobId null when opened from the banner (close only).
+  const [missedShift, setMissedShift] = useState(null)
   // Week-to-date entries (Sun 00:00 → end of Sat) for the current employee.
   // Used by the "This Week" hours card so field techs can see their
   // running weekly total without leaving FieldScout.
@@ -943,16 +948,12 @@ export default function FieldScout() {
       const gate = await checkCanClockIn(companyId, currentEmployee?.id)
       if (!gate.ok) {
         if (gate.reason === 'stale_open') {
-          // Only they know when they actually stopped working, so send them
-          // to fix it rather than inventing a clock_out on their behalf.
-          const days = Math.floor(hoursSince(gate.openShift.clock_in) / 24)
-          alert(
-            `You still have a shift open from ${days} day(s) ago.
-
-` +
-            `Close it out first so the hours land on the right day — open it ` +
-            `from Today's Shifts below, or ask an admin to fix it in Payroll.`
-          )
+          // Only they know when they actually stopped working. This used to
+          // say "close it out first — open it from Today's Shifts below", but
+          // yesterday's shift is not in today's list and the banner said "no
+          // action needed": Christopher spent five minutes looking for a
+          // button that did not exist (02e30d0c). Ask, close it, clock in.
+          setMissedShift({ entry: gate.openShift, jobId })
         }
         // 'already_open' needs no message: that's a double-tap or a second
         // tab, and the user already appears clocked in.
@@ -1008,6 +1009,11 @@ export default function FieldScout() {
       // Say what happened in words a tech can act on, not a constraint name.
       if (err?.code === '23505' || /idx_time_clock_one_open_per_employee|duplicate key/i.test(err?.message || '')) {
         await fetchEntries()
+        // The open punch may be yesterday's, not a double-tap — same sheet.
+        try {
+          const again = await checkCanClockIn(companyId, currentEmployee?.id)
+          if (!again.ok && again.reason === 'stale_open') { setMissedShift({ entry: again.openShift, jobId }); return }
+        } catch { /* fall through to the message */ }
         alert(
           "You're already clocked in.\n\n" +
           "Your earlier shift is still running — it's on screen now. Clock out " +
@@ -2071,9 +2077,33 @@ export default function FieldScout() {
             </span>
           </div>
           <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: staleOpens.length ? '8px' : 0 }}>
-            You clocked in but never clocked out on {staleOpens.map(e => new Date(e.clock_in).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })).join(', ')}. Your manager has been notified to fix {staleOpens.length === 1 ? 'it' : 'them'} so you get paid — no action needed.
+            You clocked in but never clocked out on {staleOpens.map(e => new Date(e.clock_in).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })).join(', ')}. You won't be able to clock in until {staleOpens.length === 1 ? 'it is' : 'they are'} closed — tell us when you finished and payroll will confirm the hours.
           </div>
+          <button
+            type="button"
+            onClick={() => setMissedShift({ entry: staleOpens[0], jobId: null })}
+            style={{ minHeight: '44px', padding: '10px 16px', borderRadius: '10px', border: 'none', backgroundColor: '#f97316', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            Close {staleOpens.length === 1 ? 'that shift' : 'the oldest one'} now
+          </button>
         </div>
+      )}
+
+      {missedShift && (
+        <MissedShiftSheet
+          entry={missedShift.entry}
+          employee={currentEmployee}
+          companyId={companyId}
+          continueLabel={missedShift.jobId ? 'Close it and clock in' : 'Close that shift'}
+          onDismiss={() => setMissedShift(null)}
+          onDone={async () => {
+            const jobId = missedShift.jobId
+            setMissedShift(null)
+            await fetchEntries()
+            if (jobId) handleClockIn(jobId)
+            else toast.success('Shift closed — payroll will confirm the hours.')
+          }}
+        />
       )}
 
       {/* ===== SECTION 1.5: WEEK-TO-DATE HOURS CARD =====

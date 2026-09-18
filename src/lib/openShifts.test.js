@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitOpenPunches, isAbandoned, hoursOpen, MAX_SHIFT_HOURS, shouldQueueClockOut } from './openShifts'
+import { splitOpenPunches, isAbandoned, hoursOpen, MAX_SHIFT_HOURS, shouldQueueClockOut, defaultMissedShiftEnd, missedShiftEndProblem, closeMissedShiftPatch } from './openShifts'
 
 // The case that broke the night crew: clocked in yesterday evening, still
 // working after midnight. The old calendar-day rule dropped this punch.
@@ -108,5 +108,46 @@ describe('junk', () => {
   it('survives no rows', () => {
     expect(splitOpenPunches(undefined).active).toBeNull()
     expect(splitOpenPunches([]).abandoned).toEqual([])
+  })
+})
+
+describe('closing a forgotten shift the next morning', () => {
+  // Christopher (02e30d0c): "Says I'm still clocked in from yesterday. Asked me
+  // to clock out first. I spent five minutes trying to figure out how to do
+  // that." London the day before (b25b596a). The button did not exist.
+  const entry = { id: 1631, clock_in: '2026-09-15T13:38:00.000Z', clock_out: null, notes: null, job_id: 23448 }
+  const nextMorning = new Date('2026-09-16T13:04:00.000Z')
+
+  it('suggests eight hours after the clock-in, never a time that has not happened yet', () => {
+    const d = new Date(entry.clock_in); d.setHours(d.getHours() + 8)
+    expect(defaultMissedShiftEnd(entry, nextMorning)).toBe(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
+    const soon = new Date('2026-09-15T15:00:00.000Z')
+    expect(new Date(defaultMissedShiftEnd(entry, soon)).getTime()).toBeLessThanOrEqual(soon.getTime())
+  })
+
+  it('refuses an end before the start, in the future, or longer than any real shift', () => {
+    expect(missedShiftEndProblem(entry, new Date('2026-09-15T13:00:00.000Z'), nextMorning)).toMatch(/before you clocked in/)
+    expect(missedShiftEndProblem(entry, new Date('2026-09-16T14:00:00.000Z'), nextMorning)).toMatch(/in the future/)
+    expect(missedShiftEndProblem(entry, new Date('2026-09-16T12:00:00.000Z'), nextMorning)).toMatch(/22-hour shift/)
+    expect(missedShiftEndProblem(entry, 'nonsense', nextMorning)).toMatch(/Enter the time/)
+    expect(missedShiftEndProblem(entry, new Date('2026-09-15T23:30:00.000Z'), nextMorning)).toBeNull()
+  })
+
+  it('writes the Payroll-page shape: clock_out, hours net of lunch, the adjustment trail, flagged for payroll, originals kept', () => {
+    const withLunch = { ...entry, lunch_start: '2026-09-15T18:00:00.000Z', lunch_end: '2026-09-15T18:30:00.000Z', notes: 'gate code 1234' }
+    const patch = closeMissedShiftPatch(withLunch, new Date('2026-09-15T23:30:00.000Z'), { byEmployeeId: 9, byName: 'Christopher Lyman', now: nextMorning })
+    expect(patch.clock_out).toBe('2026-09-15T23:30:00.000Z')
+    expect(patch.total_hours).toBe(9.37) // 9h52m minus 30 min lunch
+    expect(patch).toMatchObject({ adjusted_by: 9, adjusted_at: nextMorning.toISOString(), flagged_for_review: true, original_clock_in: entry.clock_in, original_clock_out: null, original_total_hours: null })
+    expect(patch.adjustment_reason).toMatch(/Missed clock-out/)
+    expect(patch.review_reason).toMatch(/from memory/)
+    expect(patch.notes).toBe(`gate code 1234
+[MISSED CLOCK-OUT closed ${nextMorning.toISOString()} by Christopher Lyman — end time entered from memory at next clock-in]`)
+  })
+
+  it('does not overwrite originals payroll already kept', () => {
+    const patch = closeMissedShiftPatch({ ...entry, original_clock_in: '2026-09-15T13:00:00.000Z' }, new Date('2026-09-15T21:00:00.000Z'), { now: nextMorning })
+    expect(patch).not.toHaveProperty('original_clock_in')
+    expect(patch.total_hours).toBe(7.37)
   })
 })

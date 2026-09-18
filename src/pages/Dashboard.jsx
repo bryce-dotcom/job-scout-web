@@ -5,7 +5,8 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import WhosWorking from '../components/WhosWorking'
-import { checkCanClockIn, hoursSince } from '../lib/timeClock'
+import MissedShiftSheet from '../components/MissedShiftSheet'
+import { checkCanClockIn } from '../lib/timeClock'
 import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
@@ -151,6 +152,9 @@ export default function Dashboard() {
 
   const [clockedIn, setClockedIn] = useState(false)
   const [activeTimeLog, setActiveTimeLog] = useState(null)
+  // A forgotten shift from another day, to close before this clock-in (see
+  // components/MissedShiftSheet).
+  const [missedShift, setMissedShift] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [prefs, setPrefs] = useState(loadPrefs)
   const [drill, setDrill] = useState(null) // metric drill-down: { title, items, total, page }
@@ -313,8 +317,9 @@ export default function Dashboard() {
       const gate = await checkCanClockIn(companyId, currentEmployee?.id)
       if (!gate.ok) {
         if (gate.reason === 'stale_open') {
-          const days = Math.floor(hoursSince(gate.openShift.clock_in) / 24)
-          alert(`You still have a shift open from ${days} day(s) ago. Close it out in Payroll so the hours land on the right day.`)
+          // Ask when it ended and close it here — Payroll is not the
+          // tech's page, and telling them to go there left them stuck.
+          setMissedShift(gate.openShift)
         } else {
           // Already clocked in elsewhere — reflect reality rather than
           // silently doing nothing.
@@ -1072,6 +1077,16 @@ export default function Dashboard() {
           (Tracy) don't see this; managers with HR access (Alayda, owners) do. */}
       {prefs.sections.whosWorking && canViewHR(currentEmployee) && (
         <WhosWorking theme={theme} />
+      )}
+
+      {missedShift && (
+        <MissedShiftSheet
+          entry={missedShift}
+          employee={currentEmployee}
+          companyId={companyId}
+          onDismiss={() => setMissedShift(null)}
+          onDone={() => { setMissedShift(null); handleClockToggle() }}
+        />
       )}
 
       {/* ═══ Row 3: Today's Schedule & Recent Activity ═══ */}
