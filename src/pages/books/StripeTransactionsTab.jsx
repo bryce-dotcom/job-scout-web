@@ -186,7 +186,9 @@ export default function StripeTransactionsTab({ companyId, theme, isMobile }) {
             </h3>
             <p style={{ margin: '0 auto 14px', fontSize: '13px', color: theme.textSecondary, maxWidth: '480px', lineHeight: 1.5 }}>
               Stripe is the only auto-synced processor today. If you use Square, Helcim, PayPal, or another processor,
-              <strong> log each payment manually</strong> from the invoice page. We're tracking demand for direct integrations
+              <strong> log each payment manually</strong> from the invoice page. Venmo, Cash App and Zelle are set up under
+              <strong> Settings → My Money</strong> (your handle goes on invoices, the portal and FieldScout); record those
+              payments on the invoice too and they show up here. We're tracking demand for direct integrations
               with other processors — let us know what you use.
             </p>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>

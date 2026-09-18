@@ -3507,10 +3507,25 @@ export default function Books() {
                   <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Wallet size={18} style={{ color: theme.accent }} /> Manual &amp; Wallet Accounts
                   </h3>
-                  <button onClick={openAddAccount}
-                    style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.accent, fontSize: '12px', cursor: 'pointer', minHeight: '44px' }}>
-                    <Plus size={12} /> Add account
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button onClick={() => navigate('/settings?tab=mymoney')} title="Where your Venmo / Cash App / Zelle handles live"
+                      style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.accent, fontSize: '12px', cursor: 'pointer', minHeight: '44px' }}>
+                      <SettingsIcon size={12} /> Set up Venmo &amp; wallets
+                    </button>
+                    <button onClick={openAddAccount}
+                      style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.accent, fontSize: '12px', cursor: 'pointer', minHeight: '44px' }}>
+                      <Plus size={12} /> Add account
+                    </button>
+                  </div>
+                </div>
+                {/* The question this card kept getting: "how do I connect my Venmo?"
+                    There is no connection. Taking Venmo is a handle in Settings;
+                    this card only tracks the balance. Say both, every time. */}
+                <div style={{ fontSize: '12px', color: theme.textMuted, lineHeight: 1.5, marginBottom: '10px', padding: '8px 12px', backgroundColor: theme.bg, borderRadius: '8px' }}>
+                  Venmo, Cash App and Zelle don't connect like a bank. <strong>To take payments</strong>, enter your handle under{' '}
+                  <button onClick={() => navigate('/settings?tab=mymoney')} style={{ color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontSize: '12px', padding: 0 }}>Settings → My Money</button>
+                  {' '}— it then shows on invoices, the portal and FieldScout, and you record each payment on the invoice.
+                  {' '}<strong>To track the wallet's balance</strong>, add it here; cash-outs are matched from the bank feed when they land.
                 </div>
                 {manualAccounts.length === 0 ? (
                   <div style={{ fontSize: '13px', color: theme.textMuted, lineHeight: 1.5 }}>
