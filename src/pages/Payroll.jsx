@@ -2206,7 +2206,13 @@ export default function Payroll() {
     ])
     const stubs = (stubsRes.data || []).filter(s => (Number(s.gross_pay) || 0) > 0)
     if (!stubs.length) { alert('No finalized paystub for this employee yet.'); return }
-    const target = stubs[stubs.length - 1]
+    // "Latest" is the most recent PERIOD, not just the latest pay date. HHH
+    // ran four catch-up periods on one payday, so pay_date alone was a tie
+    // and Mike Thompson's button opened July 1–15 instead of July 16–31.
+    const target = [...stubs].sort((a, b) =>
+      String(a.pay_date || '').localeCompare(String(b.pay_date || ''))
+      || String(a.period_end || '').localeCompare(String(b.period_end || ''))
+      || (Number(a.id) || 0) - (Number(b.id) || 0)).pop()
     const ytd = mod.computePaystubYtd(stubs, target)
     const blob = await mod.generatePaystubPdf({ paystub: target, employee: empRes.data || emp, company, ytd })
     const url = URL.createObjectURL(blob)
@@ -5197,7 +5203,6 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
               <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                 <th style={{ padding: '8px 0', fontSize: '12px', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'left' }}>Description</th>
                 <th style={{ padding: '8px 0', fontSize: '12px', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'center' }}>Hours/Qty</th>
-                <th style={{ padding: '8px 0', fontSize: '12px', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'center' }}>Rate</th>
                 <th style={{ padding: '8px 0', fontSize: '12px', color: theme.textMuted, textTransform: 'uppercase', textAlign: 'right' }}>Amount</th>
               </tr>
             </thead>
@@ -5206,7 +5211,6 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
                 <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                   <td style={{ padding: '8px 0', color: theme.text }}>Regular Hours</td>
                   <td style={{ padding: '8px 0', textAlign: 'center', color: theme.text }}>{data.regularHours.toFixed(2)}</td>
-                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.text }}>{fmt(data.hourlyRate)}</td>
                   <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.regularHours * data.hourlyRate)}</td>
                 </tr>
               )}
@@ -5214,14 +5218,12 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
                 <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                   <td style={{ padding: '8px 0', color: theme.text }}>Overtime Hours</td>
                   <td style={{ padding: '8px 0', textAlign: 'center', color: theme.text }}>{data.overtimeHours.toFixed(2)}</td>
-                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.text }}>{fmt(data.hourlyRate * (payrollConfig.overtime_multiplier || 1.5))}</td>
                   <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.overtimeHours * data.hourlyRate * (payrollConfig.overtime_multiplier || 1.5))}</td>
                 </tr>
               )}
               {emp.is_salary && data.salaryPay > 0 && (
                 <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                   <td style={{ padding: '8px 0', color: theme.text }}>Salary</td>
-                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
                   <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
                   <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.salaryPay)}</td>
                 </tr>
@@ -5230,7 +5232,6 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
                 <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                   <td style={{ padding: '8px 0', color: theme.text }}>Commissions</td>
                   <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
-                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
                   <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.commissionPay)}</td>
                 </tr>
               )}
@@ -5238,14 +5239,12 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
                 <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                   <td style={{ padding: '8px 0', color: theme.text }}>Paid Time Off{data.ptoPay > 0 ? '' : ' (in salary)'}</td>
                   <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>{data.ptoHours}</td>
-                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>{data.ptoPay > 0 ? fmt(data.hourlyRate) : '—'}</td>
                   <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{data.ptoPay > 0 ? fmt(data.ptoPay) : '—'}</td>
                 </tr>
               )}
               {data.bonusOwed > 0 && (
                 <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                   <td style={{ padding: '8px 0', color: theme.text }}>Efficiency Bonus</td>
-                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
                   <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
                   <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.bonusOwed)}</td>
                 </tr>
@@ -5255,12 +5254,11 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
                 <tr key={adj.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
                   <td style={{ padding: '8px 0', color: '#22c55e' }}>{adj.reason || 'Addition'}</td>
                   <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
-                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
                   <td style={{ padding: '8px 0', textAlign: 'right', color: '#22c55e' }}>+{fmt(adj.amount)}</td>
                 </tr>
               ))}
               <tr style={{ borderTop: `2px solid ${theme.text}` }}>
-                <td colSpan={3} style={{ padding: '10px 0', fontWeight: '700', color: theme.text }}>Gross Earnings</td>
+                <td colSpan={2} style={{ padding: '10px 0', fontWeight: '700', color: theme.text }}>Gross Earnings</td>
                 <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: '700', color: theme.text }}>{fmt(data.grossPay + data.totalAdditions)}</td>
               </tr>
             </tbody>
