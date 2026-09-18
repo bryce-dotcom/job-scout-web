@@ -24,6 +24,7 @@ import { syncJobBonuses, bonusJobLabel } from '../lib/bonusLedger'
 import { toast } from '../lib/toast'
 import { splitPendingRequests, daysOverdue } from '../lib/timeOffRequests'
 import { previewTypedHourImpact, mergeJobHourSources, splitTypedHours, newestTypedRowId, TYPED_HOURS_COUNTED_KEY } from '../lib/jobHours'
+import { summarizePayrollRun } from '../lib/payrollRunTotals'
 import TypedHoursReview from '../components/TypedHoursReview'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
@@ -1693,6 +1694,13 @@ export default function Payroll() {
     Object.values(employeePayData).reduce((sum, d) => sum + d.grossPay, 0),
     [employeePayData]
   )
+
+  // Who the money goes to: employee checks, the federal deposit, state
+  // withholding, the quarterly employer taxes, and what the run costs the
+  // company all in. The header, the bottom of the table and the Run Payroll
+  // modal all read this one summary. totalPayroll above stays the GROSS —
+  // it is what payroll_runs.total_gross records.
+  const runTotals = useMemo(() => summarizePayrollRun(employeePayData), [employeePayData])
 
   const totalCommissions = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.commissionPay, 0),
@@ -3404,7 +3412,13 @@ export default function Payroll() {
               <DollarSign size={20} style={{ color: '#22c55e' }} />
               <span style={{ color: theme.textMuted, fontSize: '13px' }}>Total Payroll</span>
             </div>
-            <div style={{ fontSize: '22px', fontWeight: '700', color: '#22c55e' }}>{fmt(totalPayroll)}</div>
+            {/* All in: gross plus the employer's own payroll taxes. Gross alone
+                is what the checks and deposits are computed FROM, not what
+                leaves the bank. */}
+            <div style={{ fontSize: '22px', fontWeight: '700', color: '#22c55e' }}>{fmt(runTotals.totalCost)}</div>
+            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+              {fmt(runTotals.gross + runTotals.additions)} gross + {fmt(runTotals.employerTaxes)} employer tax
+            </div>
           </div>
         )}
 
@@ -3989,10 +4003,12 @@ export default function Payroll() {
                   </div>
                 </div>
 
-                {/* Net Pay */}
+                {/* Net Pay — take-home after tax, the same number the check
+                    stub shows. data.netPay is the pre-tax figure and read
+                    gross here for every W-2 employee. */}
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '16px', fontWeight: '700', color: '#22c55e' }}>
-                    {fmt(data.netPay)}
+                    {fmt(data.tax?.netPay ?? data.netPay)}
                   </div>
                 </div>
               </div>
@@ -4022,7 +4038,44 @@ export default function Payroll() {
             <span />
             <div style={{ textAlign: 'center', fontWeight: '600', color: theme.textSecondary }}>{fmt(totalPayroll)}</div>
             <div style={{ textAlign: 'right', fontSize: '20px', fontWeight: '700', color: '#22c55e' }}>
-              {fmt(Object.values(employeePayData).reduce((sum, d) => sum + d.netPay, 0))}
+              {fmt(runTotals.checks)}
+            </div>
+          </div>
+        )}
+
+        {/* Where the money goes. Checks to employees, the federal deposit,
+            state withholding, the employer-only quarterly taxes — and the
+            total, which is what this payroll costs the company. The buckets
+            are the ones the run writes to the Payroll Inbox, so these are the
+            deposits owed after pressing Run Payroll. */}
+        {isAdmin && runTotals.totalCost > 0 && (
+          <div style={{ padding: '16px 20px', borderTop: `1px solid ${theme.border}`, minWidth: isMobile ? '700px' : 'auto' }}>
+            <div style={{ fontSize: '11px', fontWeight: '700', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+              This payroll, out the door
+            </div>
+            {[
+              ['Employee checks', runTotals.checks, 'take-home after withholding; contractors at gross'],
+              ['Federal deposit (IRS)', runTotals.federal, 'income tax withheld + Social Security and Medicare, both halves'],
+              ['State withholding', runTotals.state, 'state income tax withheld'],
+              ['FUTA + state unemployment', runTotals.quarterly, 'employer only, deposited by quarter, not with this run'],
+              ...(runTotals.deductions > 0 ? [['Deductions held from checks', runTotals.deductions, 'advances, garnishments and the like']] : []),
+            ].map(([label, amount, note]) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', padding: '5px 0', fontSize: '13px', color: theme.textSecondary }}>
+                <div style={{ minWidth: 0 }}>
+                  <span style={{ color: theme.text, fontWeight: '600' }}>{label}</span>
+                  <span style={{ color: theme.textMuted, fontSize: '11px', marginLeft: '8px' }}>{note}</span>
+                </div>
+                <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: '600', color: theme.text, flexShrink: 0 }}>{fmt(amount)}</span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', padding: '10px 0 0', marginTop: '6px', borderTop: `1px dashed ${theme.border}` }}>
+              <div>
+                <span style={{ fontWeight: '700', color: theme.text, fontSize: '14px' }}>Total cost of this payroll</span>
+                <span style={{ color: theme.textMuted, fontSize: '11px', marginLeft: '8px' }}>
+                  {fmt(runTotals.gross + runTotals.additions)} gross + {fmt(runTotals.employerTaxes)} employer tax
+                </span>
+              </div>
+              <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: '20px', fontWeight: '700', color: '#22c55e', flexShrink: 0 }}>{fmt(runTotals.totalCost)}</span>
             </div>
           </div>
         )}
@@ -4599,13 +4652,30 @@ export default function Payroll() {
                 <div style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '4px' }}>
                   {activeEmployees.length} Employees
                 </div>
-                <div style={{ fontSize: '32px', fontWeight: '700', color: '#22c55e' }}>{fmt(totalPayroll)}</div>
-                <div style={{ fontSize: '13px', color: theme.textMuted }}>Estimated Gross</div>
+                <div style={{ fontSize: '32px', fontWeight: '700', color: '#22c55e' }}>{fmt(runTotals.totalCost)}</div>
+                <div style={{ fontSize: '13px', color: theme.textMuted }}>Total cost, including employer payroll tax</div>
                 {totalBonuses > 0 && (
                   <div style={{ fontSize: '13px', color: '#8b5cf6', marginTop: '4px' }}>
                     Includes {fmt(totalBonuses)} efficiency bonuses
                   </div>
                 )}
+                {/* The same lines as the bottom of the table, so the number
+                    being confirmed is the number the checks are written for. */}
+                <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: `1px dashed ${theme.border}`, textAlign: 'left', fontSize: '13px', color: theme.textSecondary }}>
+                  {[
+                    ['Gross pay', runTotals.gross + runTotals.additions],
+                    ['Employee checks', runTotals.checks],
+                    ['Federal deposit (IRS)', runTotals.federal],
+                    ['State withholding', runTotals.state],
+                    ['FUTA + state unemployment (quarterly)', runTotals.quarterly],
+                    ...(runTotals.deductions > 0 ? [['Deductions held from checks', runTotals.deductions]] : []),
+                  ].map(([label, amount]) => (
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                      <span>{label}</span>
+                      <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: '600', color: theme.text }}>{fmt(amount)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: '12px' }}>
