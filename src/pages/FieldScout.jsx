@@ -160,7 +160,7 @@ export default function FieldScout() {
   const [staleOpens, setStaleOpens] = useState([])
   // "You never clocked out yesterday — when did you finish?" The sheet that
   // closes a forgotten shift and then resumes the clock-in it interrupted.
-  // { entry, jobId } — jobId null when opened from the banner (close only).
+  // { entry, clockIn, jobId } — clockIn false when opened from the banner (close only); jobId null is a General clock-in.
   const [missedShift, setMissedShift] = useState(null)
   // Week-to-date entries (Sun 00:00 → end of Sat) for the current employee.
   // Used by the "This Week" hours card so field techs can see their
@@ -953,7 +953,7 @@ export default function FieldScout() {
           // yesterday's shift is not in today's list and the banner said "no
           // action needed": Christopher spent five minutes looking for a
           // button that did not exist (02e30d0c). Ask, close it, clock in.
-          setMissedShift({ entry: gate.openShift, jobId })
+          setMissedShift({ entry: gate.openShift, clockIn: true, jobId: jobId || null })
         }
         // 'already_open' needs no message: that's a double-tap or a second
         // tab, and the user already appears clocked in.
@@ -1012,7 +1012,7 @@ export default function FieldScout() {
         // The open punch may be yesterday's, not a double-tap — same sheet.
         try {
           const again = await checkCanClockIn(companyId, currentEmployee?.id)
-          if (!again.ok && again.reason === 'stale_open') { setMissedShift({ entry: again.openShift, jobId }); return }
+          if (!again.ok && again.reason === 'stale_open') { setMissedShift({ entry: again.openShift, clockIn: true, jobId: jobId || null }); return }
         } catch { /* fall through to the message */ }
         alert(
           "You're already clocked in.\n\n" +
@@ -2081,7 +2081,7 @@ export default function FieldScout() {
           </div>
           <button
             type="button"
-            onClick={() => setMissedShift({ entry: staleOpens[0], jobId: null })}
+            onClick={() => setMissedShift({ entry: staleOpens[0], clockIn: false, jobId: null })}
             style={{ minHeight: '44px', padding: '10px 16px', borderRadius: '10px', border: 'none', backgroundColor: '#f97316', color: '#fff', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
           >
             Close {staleOpens.length === 1 ? 'that shift' : 'the oldest one'} now
@@ -2094,13 +2094,13 @@ export default function FieldScout() {
           entry={missedShift.entry}
           employee={currentEmployee}
           companyId={companyId}
-          continueLabel={missedShift.jobId ? 'Close it and clock in' : 'Close that shift'}
+          continueLabel={missedShift.clockIn ? 'Close it and clock in' : 'Close that shift'}
           onDismiss={() => setMissedShift(null)}
           onDone={async () => {
-            const jobId = missedShift.jobId
+            const { clockIn, jobId } = missedShift
             setMissedShift(null)
             await fetchEntries()
-            if (jobId) handleClockIn(jobId)
+            if (clockIn) handleClockIn(jobId)
             else toast.success('Shift closed — payroll will confirm the hours.')
           }}
         />
