@@ -1729,7 +1729,16 @@ export default function Payroll() {
     // the memo could cache a result computed before those two finished
     // loading, so commissions stayed at $0 until something else re-triggered
     // a recompute.
-  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports, utilityInvoicesState, bonusOverrides, accruedByEmployee, company, suiRateHistory, periodTimeOff])
+    //
+    // repCommissions was never in this list. The rep ledger loads LAST — it
+    // syncs before it reads — so whenever it landed after the final recompute
+    // the page showed pay WITHOUT queued rep commissions until something else
+    // happened to change. Cole read $6,038 instead of $10,873.88 on 18 Sep
+    // with his $4,835.88 sitting queued in the table the whole time; the
+    // "temperamental" commission column was this race. bonusesByEmployee and
+    // periodOffset are read in here too and belong on the list for the same
+    // reason, even though other deps happened to cover them.
+  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, repCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports, utilityInvoicesState, bonusOverrides, accruedByEmployee, bonusesByEmployee, company, suiRateHistory, periodTimeOff, periodOffset])
 
   const totalPayroll = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.grossPay, 0),
