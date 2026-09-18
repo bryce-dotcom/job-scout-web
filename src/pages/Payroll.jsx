@@ -4174,6 +4174,8 @@ export default function Payroll() {
                     </div>
                     <div style={{ fontSize: '12px', color: theme.textMuted, display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <span>{emp.role}</span>
+                      {/* 1099 paid through a business: say who the check goes to. */}
+                      {emp.tax_classification === '1099' && emp.w9_business_name && <span>· {emp.w9_business_name}</span>}
                       {emp.skill_level && <RankBadge rank={emp.skill_level} weight={(() => { const sl = skillLevelSettings.find(s => (s.name || s) === emp.skill_level); return sl?.weight })() } theme={theme} />}
                       {emp.is_hourly && <span>${emp.hourly_rate}/hr</span>}
                       {emp.is_salary && <span>Salary</span>}
@@ -5309,8 +5311,13 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
             <div>
-              <div style={{ fontSize: '12px', color: theme.textMuted }}>Employee</div>
-              <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{emp.name}</div>
+              <div style={{ fontSize: '12px', color: theme.textMuted }}>{data.is1099 ? 'Paid to' : 'Employee'}</div>
+              {/* A contractor paid through a business is paid to the business:
+                  the W-9 DBA name from the employee card, person beneath. */}
+              <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>{(data.is1099 && emp.w9_business_name) ? emp.w9_business_name : emp.name}</div>
+              {data.is1099 && emp.w9_business_name && (
+                <div style={{ fontSize: '12px', color: theme.textMuted }}>{emp.w9_legal_name || emp.name}</div>
+              )}
               <div style={{ fontSize: '13px', color: theme.textMuted }}>{emp.role}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
