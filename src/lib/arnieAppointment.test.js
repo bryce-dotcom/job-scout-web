@@ -18,6 +18,22 @@ const rollbackFn = appt.slice(appt.indexOf('export async function rollbackAppoin
 const prepareFn = appt.slice(appt.indexOf('export async function prepareAppointment'), appt.indexOf('export async function applyAppointment'))
 const pageBooking = booking.slice(booking.indexOf('export async function bookAppointment'))
 
+const setter = read('../pages/LeadSetter.jsx')
+const leadCard = read('../components/liahona/LeadCard.jsx')
+
+describe('every door a person books through uses the one booking function', () => {
+  it('the Lead Setter page calls bookAppointment with the setter, and writes none of the pay rows itself', () => {
+    expect(setter).toMatch(/await bookAppointment\(\{[\s\S]*setterId: user\?\.id/)
+    expect(setter).not.toMatch(/from\('lead_commissions'\)/)
+    expect(setter).not.toMatch(/commission_type: 'appointment_set'/)
+  })
+  it('the Liahona lead card calls bookAppointment with the setter, and writes none of the rows itself', () => {
+    expect(leadCard).toMatch(/await bookAppointment\(\{[\s\S]*setterId: employeeId/)
+    expect(leadCard).not.toMatch(/from\('appointments'\)/)
+    expect(leadCard).not.toMatch(/lead_commissions/)
+  })
+})
+
 describe('the five writes the page makes, the rail makes too', () => {
   it('1. the appointment, Scheduled, with the setter recorded', () => {
     expect(applyFn).toMatch(/ins\(r, 'appointments', \{[\s\S]*setter_id: setterId[\s\S]*status: 'Scheduled'/)
