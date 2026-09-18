@@ -227,3 +227,41 @@ export function previewTypedHourImpact({ jobs = [], timeClock = [], timeLog = []
   }
   return out.sort((a, b) => b.typedHours - a.typedHours)
 }
+
+/**
+ * Which typed rows the bonus ledger counts.
+ *
+ * "Count these hours and recalculate" used to be a one-off write. Payroll
+ * then re-synced the ledger on every load with typed hours OFF — the default
+ * — and put the punch-only numbers straight back. So the button hid the
+ * banner for one visit and changed nothing anyone could keep: the same 15
+ * jobs were waiting on the next visit, with the same bonuses.
+ *
+ * The decision has to outlive the page. Pressing the button now records the
+ * highest time_log id it counted, in payroll_config under this key. Every
+ * sync afterwards counts typed rows up to that id, so the ledger stays where
+ * the person put it. Rows typed later are `pending`: the banner lists them
+ * — and only them — until somebody presses the button again, which is the
+ * review-before-it-moves rule this screen was built on.
+ */
+export const TYPED_HOURS_COUNTED_KEY = 'typed_hours_counted_through'
+
+export function splitTypedHours(timeLog = [], countedThroughId = null) {
+  const through = Number(countedThroughId)
+  const counted = [], pending = []
+  for (const row of (timeLog || [])) {
+    if (!row) continue
+    const id = Number(row.id)
+    if (Number.isFinite(through) && Number.isFinite(id) && id <= through) counted.push(row)
+    else pending.push(row)
+  }
+  return { counted, pending }
+}
+
+/** The watermark pressing the button should record: the newest typed row seen. */
+export function newestTypedRowId(timeLog = []) {
+  return (timeLog || []).reduce((m, r) => {
+    const id = Number(r?.id)
+    return Number.isFinite(id) && id > m ? id : m
+  }, 0)
+}

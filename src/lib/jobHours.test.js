@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mergeJobHourSources, hoursForJob, isDuplicateOfPunch, legacyRowHours, previewTypedHourImpact } from './jobHours'
+import { mergeJobHourSources, hoursForJob, isDuplicateOfPunch, legacyRowHours, previewTypedHourImpact, splitTypedHours, newestTypedRowId } from './jobHours'
 import { timeClockToJobHours } from './bonusCalc'
 
 // Peter & Robin Berger, job 21026 — the real rows, as they sit in the database.
@@ -243,5 +243,37 @@ describe('the typed-hours review only lists work that is still outstanding', () 
     expect(previewTypedHourImpact(settled)).toHaveLength(0)
     const more = { ...settled, timeLog: [typed, { job_id: 7, employee_id: 2, hours: 5, date: '2026-08-03' }] }
     expect(previewTypedHourImpact(more)).toHaveLength(1)
+  })
+})
+
+// The button's decision has to outlive the page. Payroll re-syncs the ledger
+// on every load; before the watermark it did so with typed hours off and
+// quietly undid the press — 15 jobs, back on the next visit.
+describe('the typed-hours decision persists through a watermark', () => {
+  const rows = [
+    { id: 3, job_id: 7, employee_id: 1, hours: 2 },
+    { id: 8, job_id: 7, employee_id: 1, hours: 1 },
+    { id: 12, job_id: 9, employee_id: 2, hours: 4 },
+  ]
+
+  it('counts nothing until the button has been pressed', () => {
+    const { counted, pending } = splitTypedHours(rows, null)
+    expect(counted).toHaveLength(0)
+    expect(pending).toHaveLength(3)
+  })
+
+  it('keeps counting everything up to the pressed watermark, and only that', () => {
+    const { counted, pending } = splitTypedHours(rows, 8)
+    expect(counted.map(r => r.id)).toEqual([3, 8])
+    expect(pending.map(r => r.id)).toEqual([12])
+  })
+
+  it('records the newest typed row as the watermark', () => {
+    expect(newestTypedRowId(rows)).toBe(12)
+    expect(newestTypedRowId([])).toBe(0)
+  })
+
+  it('survives the watermark coming back from JSON as a string', () => {
+    expect(splitTypedHours(rows, '12').pending).toHaveLength(0)
   })
 })

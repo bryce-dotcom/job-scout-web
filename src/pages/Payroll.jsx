@@ -23,7 +23,7 @@ import {
 import { syncJobBonuses, bonusJobLabel } from '../lib/bonusLedger'
 import { toast } from '../lib/toast'
 import { splitPendingRequests, daysOverdue } from '../lib/timeOffRequests'
-import { previewTypedHourImpact } from '../lib/jobHours'
+import { previewTypedHourImpact, mergeJobHourSources, splitTypedHours, newestTypedRowId, TYPED_HOURS_COUNTED_KEY } from '../lib/jobHours'
 import TypedHoursReview from '../components/TypedHoursReview'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
@@ -146,6 +146,10 @@ function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodE
 
 // Was toISOString(), which rolled a late-evening local time into tomorrow.
 const toDateStr = localDateStr
+
+// The bonus ledger as this page reads it, in one place: the sync effect and
+// the typed-hours apply both re-read it and must see the same columns.
+const LEDGER_SELECT = 'id, job_id, employee_id, amount, status, needs_verification, saved_hours, allotted_hours, actual_hours, crew_size, paid_at, queued_for_payroll, jobs(job_title, job_id, customer:customers!customer_id(name, business_name))'
 
 // Federal deposit due date by schedule. Approximations — the IRS
 // semi-weekly rule has Wed/Fri shipping windows; v1 uses next Wednesday
@@ -279,7 +283,6 @@ export default function Payroll() {
   // time_log fetch below is for pay; a bonus is per-job-lifetime.
   const [bonusTimeLogs, setBonusTimeLogs] = useState([])
   const [applyingTypedHours, setApplyingTypedHours] = useState(false)
-  const [typedHoursApplied, setTypedHoursApplied] = useState(false)
   // Open/dangling clock-ins (missed clock-out) — fetched separately from the
   // pay-calc entries so a forgotten clock-out surfaces for correction instead
   // of silently counting as zero hours (London lost her whole AZ week this way).
@@ -1355,26 +1358,55 @@ export default function Payroll() {
   // conditional hooks and a 20th is one white screen away. previewTypedHourImpact
   // is pure and reads a few thousand rows — cheap next to what this page
   // already does per render.
+  //
+  // Typed rows split by the watermark the button last recorded. `counted`
+  // rows are part of the ledger's own hours now, so they sit on the punch
+  // side of the comparison; only `pending` rows are still a proposal.
+  const { counted: countedTypedLogs, pending: pendingTypedLogs } =
+    splitTypedHours(bonusTimeLogs, payrollConfig?.[TYPED_HOURS_COUNTED_KEY])
   const typedHourImpact = previewTypedHourImpact({
-    jobs, timeClock: bonusTimeEntries, timeLog: bonusTimeLogs, bonuses: ledgerBonuses || [],
+    jobs,
+    timeClock: mergeJobHourSources({ timeClock: bonusTimeEntries, timeLog: countedTypedLogs }),
+    timeLog: pendingTypedLogs,
+    bonuses: ledgerBonuses || [],
   })
 
   // Recalculate WITH the typed hours counted. Paid rows are frozen inside
   // syncJobBonuses, so this can only move what is still owed.
+  //
+  // This used to be a one-off write. The ledger sync below then ran again on
+  // the refetch — and on every later visit — with typed hours OFF, and put
+  // the punch-only bonuses straight back. The banner was hidden by a local
+  // flag, so it looked applied until the page was opened again. Now the
+  // decision is saved with the payroll config as a watermark, and the sync
+  // honours it from here on.
   const applyTypedHours = async () => {
     setApplyingTypedHours(true)
     try {
+      const through = Math.max(newestTypedRowId(bonusTimeLogs), Number(payrollConfig?.[TYPED_HOURS_COUNTED_KEY]) || 0)
+      const updatedConfig = { ...payrollConfig, [TYPED_HOURS_COUNTED_KEY]: through }
+      const { error: saveError } = await supabase
+        .from('settings')
+        .upsert({ company_id: companyId, key: 'payroll_config', value: JSON.stringify(updatedConfig), updated_at: new Date().toISOString() }, { onConflict: 'company_id,key' })
+      if (saveError) throw saveError
       await syncJobBonuses({
         supabase, companyId, jobs,
         timeClockRows: bonusTimeEntries,
         timeLogRows: bonusTimeLogs,
         countTypedHours: true,
-        employees, skillLevels: skillLevelSettings, payrollConfig,
+        employees, skillLevels: skillLevelSettings, payrollConfig: updatedConfig,
         verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides,
+        verificationExemptUnits: updatedConfig?.[VERIFICATION_EXEMPT_KEY],
       })
-      setTypedHoursApplied(true)
+      // Show the settled ledger and the saved decision together, so the
+      // banner clears because the data says so — not because a flag hid it.
+      const { data } = await supabase
+        .from('job_bonuses')
+        .select(LEDGER_SELECT)
+        .eq('company_id', companyId)
+      setLedgerBonuses(data || [])
+      setPayrollConfig(updatedConfig)
       toast.success('Bonuses recalculated with the typed hours counted.')
-      await fetchData()
     } catch (e) {
       toast.error('Could not recalculate: ' + (e?.message || e))
     } finally {
@@ -1402,7 +1434,12 @@ export default function Payroll() {
         jobs,
         // Whole-job hours, not the pay period's. See the bonus fetch above.
         timeClockRows: bonusTimeEntries,
-        timeLogRows: bonusTimeLogs,
+        // Only the typed rows a person has already agreed to count. Before the
+        // watermark this passed every row with countTypedHours left at its
+        // default (off), so each sync undid the button. With nothing counted
+        // yet the merge returns the punches untouched — exactly as before.
+        timeLogRows: countedTypedLogs,
+        countTypedHours: true,
         employees,
         skillLevels: skillLevelSettings,
         payrollConfig,
@@ -1415,7 +1452,7 @@ export default function Payroll() {
       // Re-read the ledger so the page shows exactly what techs are owed.
       const { data } = await supabase
         .from('job_bonuses')
-        .select('id, job_id, employee_id, amount, status, needs_verification, saved_hours, allotted_hours, actual_hours, crew_size, paid_at, queued_for_payroll, jobs(job_title, job_id, customer:customers!customer_id(name, business_name))')
+        .select(LEDGER_SELECT)
         .eq('company_id', companyId)
       if (!cancelled) setLedgerBonuses(data || [])
     })()
@@ -3180,14 +3217,12 @@ export default function Payroll() {
       {/* Hours typed on a job that bonuses never counted. Shown before any
           number moves — the same reason the commission warning above exists:
           a figure that quietly changed is a figure nobody trusts again. */}
-      {!typedHoursApplied && (
-        <TypedHoursReview
-          rows={typedHourImpact}
-          theme={theme}
-          applying={applyingTypedHours}
-          onApply={applyTypedHours}
-        />
-      )}
+      <TypedHoursReview
+        rows={typedHourImpact}
+        theme={theme}
+        applying={applyingTypedHours}
+        onApply={applyTypedHours}
+      />
 
       {/* Commission misconfiguration — someone set to earn commission whose
           every rate is zero, on jobs that have already collected money. This
