@@ -305,7 +305,8 @@ export default function MyPay() {
           for (let from = 0; ; from += pageSize) {
             const { data, error } = await supabase
               .from('invoices')
-              .select('id, invoice_id, job_id, amount, payment_status, created_at, updated_at, job_description, invoice_type')
+              // discount_applied + tax_amount feed invoiceCustomerTotal, the commission basis (see Payroll).
+              .select('id, invoice_id, job_id, amount, discount_applied, tax_amount, payment_status, created_at, updated_at, job_description, invoice_type')
               .eq('company_id', companyId)
               // unpaid (need pending bucket) OR touched in period (for the
               // synthetic-payment fallback — Paid invoices with no payment

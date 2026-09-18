@@ -63,7 +63,7 @@ const [employees, jobs, leads, invoices, payments, utilityInvoices] = await Prom
   all('employees', '*'),
   all('jobs', 'id, salesperson_id, lead_id, job_total, status'),
   all('leads', 'id, salesperson_id, lead_owner_id'),
-  all('invoices', 'id, job_id, amount, payment_status, created_at, updated_at'),
+  all('invoices', 'id, job_id, amount, discount_applied, tax_amount, payment_status, created_at, updated_at'), // the basis reads discount_applied + tax_amount; the sync refuses without them
   all('payments', 'id, invoice_id, amount, date'),
   all('utility_invoices', 'id, job_id, amount, incentive_amount, payment_status, paid_at, processor_id'),
 ])

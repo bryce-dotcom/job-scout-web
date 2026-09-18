@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeRepRows, earnedRepInPeriod, liveInvoiceAvailable, syncRepCommissions } from './repCommissions'
+import { computeRepRows, earnedRepInPeriod, liveInvoiceAvailable, syncRepCommissions, missingBasisColumns } from './repCommissions'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Sales commission. Untested until now, and the source comments call the
@@ -202,7 +202,8 @@ describe('never produces junk pay rows', () => {
 // commissioned as a `utility` row, so the rep was paid on it twice. The overage
 // matched the utility row to the cent on three of the four.
 describe('the ledger must not be written from half-loaded data', () => {
-  const paidInvoice = { id: 1, job_id: 10, amount: 7113.77, payment_status: 'Paid', discount_applied: 5335.33 }
+  // Shaped as Payroll selects it now: the columns the basis reads are present (tax_amount null = none).
+  const paidInvoice = { id: 1, job_id: 10, amount: 7113.77, payment_status: 'Paid', discount_applied: 5335.33, tax_amount: null }
   const rep = { id: 72, company_id: 3, is_commission: true, commission_services_rate: 8.5, commission_services_type: 'percent' }
   const job = { id: 10, salesperson_id: 72 }
 
@@ -244,6 +245,31 @@ describe('the ledger must not be written from half-loaded data', () => {
     expect(out.skipped).toBe('partial-data')
     expect(out.inserted).toBe(0)
     expect(calls).not.toContain('INSERT')
+  })
+
+  // The SMC test above passes with discount_applied on the row. Payroll's
+  // select did not include it, so the page handed this function invoices
+  // WITHOUT the column — undefined, not zero — and froze $2,732.16 for Cole
+  // on a $0 customer share beside the $2,550 utility row (Alayda 0a833aa3).
+  it('refuses to write from invoices selected without the columns the basis reads', async () => {
+    const calls = []
+    const fakeSupabase = {
+      from(table) { calls.push(table); return this },
+      select() { return this }, eq() { return this }, in() { return this },
+      insert() { calls.push('INSERT'); return Promise.resolve({ error: null }) },
+      delete() { calls.push('DELETE'); return this },
+      then(res) { return Promise.resolve({ data: [], error: null }).then(res) },
+    }
+    const smcAsPayrollLoadedIt = { id: 32661, job_id: 10, amount: 32143.06, payment_status: 'Paid' } // no discount_applied key at all
+    const out = await syncRepCommissions(fakeSupabase, 3, {
+      employees: [rep], jobs: [job], leads: [], invoices: [smcAsPayrollLoadedIt],
+      payments: [{ id: 5, invoice_id: 999, amount: 10, date: '2026-07-13' }],
+    })
+    expect(out.skipped).toBe('invoice-columns')
+    expect(calls).not.toContain('INSERT')
+    expect(missingBasisColumns([smcAsPayrollLoadedIt])).toEqual(['discount_applied', 'tax_amount'])
+    expect(missingBasisColumns([{ amount: 1, discount_applied: null, tax_amount: null }])).toEqual([])
+    expect(missingBasisColumns([])).toEqual([])
   })
 
   it('writes normally once the payments have arrived', async () => {

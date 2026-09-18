@@ -691,7 +691,11 @@ export default function Payroll() {
         // wiping every commission to $0. Removed.
         fetchAllPages(() => supabase
           .from('invoices')
-          .select('id, company_id, job_id, invoice_id, amount, payment_status, created_at, updated_at, last_sent_at, job_description, invoice_type')
+          // discount_applied + tax_amount: invoiceCustomerTotal (the commission
+          // basis since 9/15) reads them; without them the customer's share reads
+          // as the gross and a fully-incentivized invoice paid the rep twice
+          // (Alayda 0a833aa3, SMC Auto / Drive 999).
+          .select('id, company_id, job_id, invoice_id, amount, discount_applied, tax_amount, payment_status, created_at, updated_at, last_sent_at, job_description, invoice_type')
           .eq('company_id', companyId)
           // Paid invoices outside the period can still matter for the
           // synthetic-payment fallback if their updated_at lands in

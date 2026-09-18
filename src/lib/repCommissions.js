@@ -112,6 +112,14 @@ export function computeRepRows({ employees = [], jobs = [], leads = [], invoices
   return rows
 }
 
+/** The invoice columns invoiceCustomerTotal reads; a row lacking any of them was selected without them. */
+export const BASIS_COLUMNS = ['amount', 'discount_applied', 'tax_amount']
+export function missingBasisColumns(invoices = []) {
+  const first = (invoices || []).find(Boolean)
+  if (!first) return []
+  return BASIS_COLUMNS.filter(col => !(col in first))
+}
+
 // Insert-only sync (freeze): create any missing frozen rows for new payments;
 // NEVER touch existing rows. Idempotent. Payroll and My Pay call this on load
 // so the ledger keeps up with new payments without a cron or per-callsite hook.
@@ -124,6 +132,17 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
     if ((data?.invoices?.length || 0) > 0 && (data?.payments?.length || 0) === 0) {
       console.warn('[syncRepCommissions] invoices loaded but no payments — refusing to write from partial data')
       return { inserted: 0, deleted: 0, skipped: 'partial-data' }
+    }
+    // An invoice that arrived without the columns the basis reads is not an
+    // invoice with no discount — PostgREST leaves an unselected column out
+    // entirely, and undefined reads as $0 here. Payroll's select omitted
+    // discount_applied, so every fully-incentivized invoice froze a commission
+    // on its GROSS beside the utility row (Cole, SMC Auto: $2,732.16 on a $0
+    // customer share; Alayda 0a833aa3). Refuse rather than freeze it wrong.
+    const missingCols = missingBasisColumns(data?.invoices)
+    if (missingCols.length) {
+      console.warn(`[syncRepCommissions] invoices loaded without ${missingCols.join(', ')} — refusing to write from partial data`)
+      return { inserted: 0, deleted: 0, skipped: 'invoice-columns' }
     }
     const expected = computeRepRows(data, onlyEmployeeId).map(r => ({ ...r, company_id: companyId }))
     // RECONCILE (freeze-on-PAY, like the bonus ledger): an UNPAID row follows
