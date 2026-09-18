@@ -25,6 +25,7 @@ import { toast } from '../lib/toast'
 import { splitPendingRequests, daysOverdue } from '../lib/timeOffRequests'
 import { previewTypedHourImpact, mergeJobHourSources, splitTypedHours, newestTypedRowId, TYPED_HOURS_COUNTED_KEY } from '../lib/jobHours'
 import { summarizePayrollRun } from '../lib/payrollRunTotals'
+import { ptoDaysInPeriod } from '../lib/ptoThisPeriod'
 import TypedHoursReview from '../components/TypedHoursReview'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
@@ -147,6 +148,12 @@ function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodE
 
 // Was toISOString(), which rolled a late-evening local time into tomorrow.
 const toDateStr = localDateStr
+
+// The employee table's columns, shared by its header, every row and the
+// totals row so they cannot drift apart:
+//   Employee | Hours | Accrued PTO | Using this period | Commissions | Bonus/Adj | Gross | Net Pay
+const PAYROLL_GRID = '2fr 0.8fr 0.9fr 0.9fr 1fr 0.9fr 1fr 1fr'
+const PAYROLL_GRID_MIN = '920px'
 
 // The bonus ledger as this page reads it, in one place: the sync effect and
 // the typed-hours apply both re-read it and must see the same columns.
@@ -394,6 +401,31 @@ export default function Payroll() {
     const el = document.getElementById(id)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [loading])
+
+  // Approved time off that touches the period being paid, for the "Using this
+  // period" PTO column. Its own fetch: the requests list above is pending +
+  // last 30 days, which misses an approval made months ago for a day in this
+  // period. Re-runs when a request is approved or denied on this page.
+  // Sits above the access early-return below on purpose — a hook after it is
+  // the conditional-hook white screen the ship guard refuses.
+  const [periodTimeOff, setPeriodTimeOff] = useState([])
+  useEffect(() => {
+    if (!companyId) return
+    const { periodStart: ps, periodEnd: pe } = getCurrentPeriod()
+    let cancelled = false
+    supabase
+      .from('time_off_requests')
+      .select('id, employee_id, start_date, end_date, request_type, status')
+      .eq('company_id', companyId)
+      .eq('status', 'approved')
+      .lte('start_date', localDateStr(pe))
+      .gte('end_date', localDateStr(ps))
+      .then(({ data, error }) => {
+        if (error) console.warn('[Payroll] period time off:', error.message)
+        if (!cancelled) setPeriodTimeOff(data || [])
+      })
+    return () => { cancelled = true }
+  }, [companyId, periodOffset, timeOffRequests])
 
   // Payroll requires BOTH Admin+ access AND the HR permission for the
   // full roster view. Non-HR users get redirected to /my-pay where they
@@ -3901,7 +3933,7 @@ export default function Payroll() {
         {/* Table Header */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr',
+          gridTemplateColumns: PAYROLL_GRID,
           padding: '10px 20px',
           fontSize: '12px',
           color: theme.textMuted,
@@ -3909,10 +3941,12 @@ export default function Payroll() {
           letterSpacing: '0.5px',
           borderBottom: `1px solid ${theme.border}`,
           backgroundColor: theme.bg,
-          minWidth: isMobile ? '700px' : 'auto',
+          minWidth: isMobile ? PAYROLL_GRID_MIN : 'auto',
         }}>
           <span>Employee</span>
           <span style={{ textAlign: 'center' }}>Hours</span>
+          <span style={{ textAlign: 'center' }}>Accrued PTO</span>
+          <span style={{ textAlign: 'center' }}>Using this period</span>
           <span style={{ textAlign: 'center' }}>Commissions</span>
           {payrollConfig.efficiency_bonus_enabled && <span style={{ textAlign: 'center' }}>Bonus</span>}
           {!payrollConfig.efficiency_bonus_enabled && <span style={{ textAlign: 'center' }}>Adj</span>}
@@ -3924,6 +3958,7 @@ export default function Payroll() {
           const data = employeePayData[emp.id]
           if (!data) return null
           const ptoBalance = (emp.pto_accrued || 0) - (emp.pto_used || 0)
+          const ptoUsing = ptoDaysInPeriod(periodTimeOff, emp.id, periodStart, periodEnd)
           const isExpanded = expandedEmployee === emp.id
 
           return (
@@ -3932,13 +3967,13 @@ export default function Payroll() {
                 onClick={() => setSelectedEmployee(emp)}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr',
+                  gridTemplateColumns: PAYROLL_GRID,
                   padding: '14px 20px',
                   borderBottom: `1px solid ${theme.border}`,
                   alignItems: 'center',
                   cursor: 'pointer',
                   transition: 'background-color 0.15s',
-                  minWidth: isMobile ? '700px' : 'auto',
+                  minWidth: isMobile ? PAYROLL_GRID_MIN : 'auto',
                 }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bgCardHover || theme.bg}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -3975,6 +4010,25 @@ export default function Payroll() {
                   </div>
                   {data.overtimeHours > 0 && (
                     <div style={{ fontSize: '11px', color: '#f97316', fontWeight: '500' }}>+{data.overtimeHours.toFixed(1)} OT</div>
+                  )}
+                </div>
+
+                {/* Accrued PTO — what is in the bank, in days, as the
+                    employee card keeps it (accrued minus used). */}
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontWeight: '600', color: ptoBalance > 0 ? '#8b5cf6' : theme.textMuted, fontSize: '14px' }}>
+                    {ptoBalance !== 0 ? `${ptoBalance.toFixed(1)} d` : '-'}
+                  </div>
+                </div>
+
+                {/* Using this period — approved PTO days that fall inside the
+                    period being paid. Flagged when it is more than they have. */}
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontWeight: '600', color: ptoUsing > 0 ? '#8b5cf6' : theme.textMuted, fontSize: '14px' }}>
+                    {ptoUsing > 0 ? `${ptoUsing.toFixed(1)} d` : '-'}
+                  </div>
+                  {ptoUsing > ptoBalance && ptoUsing > 0 && (
+                    <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: '500' }}>over balance</div>
                   )}
                 </div>
 
@@ -4030,14 +4084,18 @@ export default function Payroll() {
         {isAdmin && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr',
+            gridTemplateColumns: PAYROLL_GRID,
             padding: '16px 20px',
             backgroundColor: theme.bg,
             alignItems: 'center',
-            minWidth: isMobile ? '700px' : 'auto',
+            minWidth: isMobile ? PAYROLL_GRID_MIN : 'auto',
           }}>
             <span style={{ fontWeight: '600', color: theme.text }}>Total</span>
             <span />
+            <span />
+            <div style={{ textAlign: 'center', fontWeight: '600', color: '#8b5cf6' }}>
+              {(() => { const d = filteredEmployees.reduce((s, e) => s + ptoDaysInPeriod(periodTimeOff, e.id, periodStart, periodEnd), 0); return d > 0 ? `${d.toFixed(1)} d` : '' })()}
+            </div>
             <div style={{ textAlign: 'center', fontWeight: '600', color: '#f59e0b' }}>{fmt(totalCommissions)}</div>
             <span />
             <div style={{ textAlign: 'center', fontWeight: '600', color: theme.textSecondary }}>{fmt(totalPayroll)}</div>
