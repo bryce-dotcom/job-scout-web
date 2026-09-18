@@ -1990,6 +1990,12 @@ export default function Payroll() {
       //    stamp the date, and clear the queue flag so they drop off "owed".
       //    Only queued + eligible rows are touched — exactly the amount that
       //    fed each gross above. Un-queued owed items stay owed for a later run.
+      //
+      //    If any of this fails, the run has still happened: the paystubs say
+      //    the money went out while the ledger still says it is owed. That
+      //    used to be a console warning nobody reads. Now it is said out loud
+      //    at the end, naming what to mark paid by hand.
+      const notMarkedPaid = []
       try {
         const adminEmp = employees.find(e => e.email === user?.email)
         const paidEmpIds = activeEmployees.map(e => e.id)
@@ -1999,20 +2005,24 @@ export default function Payroll() {
           updated_at: new Date().toISOString(),
         }
         if (paidEmpIds.length) {
-          // Bonuses: queued + accrued -> paid.
+          // Bonuses: queued + accrued + verified -> paid. The verified test is
+          // the same one bonusOwed applies to the gross above. Without it, a
+          // bonus queued while clear and re-flagged for review by a later
+          // ledger sync was stamped paid with nothing on the paystub.
+          const bonusPaid = (b) => paidEmpIds.includes(b.employee_id) && b.status === 'accrued' && b.queued_for_payroll && !b.needs_verification
           const { error: bonusErr } = await supabase.from('job_bonuses')
             .update({ status: 'paid', paid_at: payDate.toISOString(), paid_by: adminEmp?.id || null, queued_for_payroll: false, ...stamp })
             .eq('company_id', companyId).in('employee_id', paidEmpIds)
-            .eq('status', 'accrued').eq('queued_for_payroll', true)
-          if (bonusErr) console.warn('[runPayroll] bonus mark-paid failed:', bonusErr)
-          else setLedgerBonuses(prev => prev.map(b => (paidEmpIds.includes(b.employee_id) && b.status === 'accrued' && b.queued_for_payroll) ? { ...b, status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : b))
+            .eq('status', 'accrued').eq('queued_for_payroll', true).eq('needs_verification', false)
+          if (bonusErr) { console.warn('[runPayroll] bonus mark-paid failed:', bonusErr); notMarkedPaid.push(`efficiency bonuses (${bonusErr.message})`) }
+          else setLedgerBonuses(prev => prev.map(b => bonusPaid(b) ? { ...b, status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : b))
 
           // Setter/lead commissions: queued -> paid.
           const { error: commErr } = await supabase.from('lead_commissions')
             .update({ payment_status: 'paid', queued_for_payroll: false })
             .eq('company_id', companyId).in('employee_id', paidEmpIds)
             .eq('queued_for_payroll', true).neq('payment_status', 'paid')
-          if (commErr) console.warn('[runPayroll] setter commission mark-paid failed:', commErr)
+          if (commErr) { console.warn('[runPayroll] setter commission mark-paid failed:', commErr); notMarkedPaid.push(`setter commissions (${commErr.message})`) }
           else setLeadCommissions(prev => prev.map(c => (paidEmpIds.includes(c.employee_id) && c.queued_for_payroll) ? { ...c, payment_status: 'paid', queued_for_payroll: false } : c))
 
           // Rep (%) commissions: queued -> paid.
@@ -2020,11 +2030,12 @@ export default function Payroll() {
             .update({ payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false })
             .eq('company_id', companyId).in('employee_id', paidEmpIds)
             .eq('queued_for_payroll', true).neq('payment_status', 'paid')
-          if (repErr) console.warn('[runPayroll] rep commission mark-paid failed:', repErr)
+          if (repErr) { console.warn('[runPayroll] rep commission mark-paid failed:', repErr); notMarkedPaid.push(`rep commissions (${repErr.message})`) }
           else setRepCommissions(prev => prev.map(r => (paidEmpIds.includes(r.employee_id) && r.queued_for_payroll) ? { ...r, payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : r))
         }
       } catch (payErr) {
         console.warn('[runPayroll] earnings mark-paid crashed:', payErr)
+        notMarkedPaid.push(`earnings (${payErr?.message || payErr})`)
       }
 
       // ── Write payroll_tax_liabilities so the Payroll Inbox knows
@@ -2050,7 +2061,18 @@ export default function Payroll() {
       }
 
       setShowRunPayrollModal(false)
-      alert('Payroll processed successfully!')
+      if (notMarkedPaid.length) {
+        // The paystubs are written and the money is going out. What did not
+        // happen is the ledger update, so these will still show as owed and
+        // would be paid AGAIN on the next run unless someone marks them paid.
+        alert(
+          'Payroll processed, but these could not be marked paid and still show as owed:\n\n' +
+          notMarkedPaid.map(s => '  • ' + s).join('\n') +
+          '\n\nThe paystubs already include them. Use "Mark paid" on each one on this page so they are not paid twice next run.'
+        )
+      } else {
+        alert('Payroll processed successfully!')
+      }
     } catch (err) {
       alert('Error: ' + err.message)
     } finally {
