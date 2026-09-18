@@ -36,6 +36,7 @@ import {
   ToggleRight
 } from 'lucide-react'
 import { summarizePayroll } from '../lib/payrollBooks'
+import { buildForecast } from '../lib/cashForecast'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -83,6 +84,7 @@ const METRIC_DEFS = [
   { id: 'needsOrder', label: 'Jobs Needing Parts', icon: Package, color: '#ea580c', nav: '/procurement', hint: 'Jobs with parts_status=needs_order. Batch these into vendor POs on the Procurement Queue page.' },
   { id: 'openPOs', label: 'Open Purchase Orders', icon: FileText, color: '#3b82f6', nav: '/purchase-orders', hint: 'POs in Draft / Sent / Partial-Received status. Total $ on order to vendors.' },
   { id: 'billsDueWeek', label: 'Bills Due This Week', icon: DollarSign, color: '#c28b38', nav: '/bills', hint: 'Vendor bills with due_date inside the next 7 days. Cash you need on hand.' },
+  { id: 'cashOutlook', label: 'Cash in 90 Days', icon: TrendingUp, color: '#5a6349', nav: '/books', hint: 'Where cash lands in 90 days: today\'s balances plus open invoices on their due dates, minus bills, payroll on upcoming pay dates, tax deposits and everyday spend. The subtitle names the low point. Same forecast as the Books Money tab.' },
 ]
 
 // Alert type definitions
@@ -97,7 +99,7 @@ const ALERT_DEFS = [
 
 // Default preferences
 const DEFAULT_PREFS = {
-  metrics: ['mtdSalesWon', 'mtdDelivered', 'activeLeads', 'openJobs', 'pendingInvoices', 'mtdRevenue', 'mtdDeposits', 'mtdExpenses'],
+  metrics: ['mtdSalesWon', 'mtdDelivered', 'activeLeads', 'openJobs', 'pendingInvoices', 'mtdRevenue', 'mtdDeposits', 'mtdExpenses', 'cashOutlook'],
   pipelineDisplay: 'count', // 'count' | 'dollars' | 'both'
   rollingDays: 90,
   showRolling: true,
@@ -141,6 +143,7 @@ export default function Dashboard() {
   const leadPayments = useStore((state) => state.leadPayments)
   const plaidTransactions = useStore((state) => state.plaidTransactions)
   const utilityInvoices = useStore((state) => state.utilityInvoices)
+  const connectedAccounts = useStore((state) => state.connectedAccounts)
   const syncPlaidTransactions = useStore((state) => state.syncPlaidTransactions)
 
   const currentEmployee = employees.find(e => e.email === user?.email)
@@ -157,7 +160,7 @@ export default function Dashboard() {
   // Payroll runs + stubs so Money Out counts wages the way Books does
   // (accrual: gross + employer tax; cash: from the bank feed, runs only
   // when the feed shows no payroll).
-  const [payrollData, setPayrollData] = useState({ payrollRuns: [], paystubs: [] })
+  const [payrollData, setPayrollData] = useState({ payrollRuns: [], paystubs: [], payrollConfig: null })
   useEffect(() => {
     if (!companyId) return
     let cancelled = false
@@ -165,11 +168,18 @@ export default function Dashboard() {
     Promise.all([
       supabase.from('payroll_runs').select('id, pay_date, total_gross').eq('company_id', companyId).gte('pay_date', since),
       supabase.from('paystubs').select('payroll_run_id, employee_id, gross_pay, net_pay, federal_income_tax, state_income_tax, social_security_employee, social_security_employer, medicare_employee, medicare_employer, additional_medicare, futa, sui').eq('company_id', companyId).gte('pay_date', since),
-    ]).then(([r, s]) => { if (!cancelled) setPayrollData({ payrollRuns: r.data || [], paystubs: s.data || [] }) })
+      supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payroll_config').maybeSingle(),
+    ]).then(([r, s, c]) => {
+      if (cancelled) return
+      let payrollConfig = null
+      try { payrollConfig = c.data?.value ? (typeof c.data.value === 'string' ? JSON.parse(c.data.value) : c.data.value) : null } catch { payrollConfig = null }
+      setPayrollData({ payrollRuns: r.data || [], paystubs: s.data || [], payrollConfig })
+    })
     return () => { cancelled = true }
   }, [companyId])
   useEffect(() => {
-    if (!companyId || accountingBasis !== 'accrual') return
+    // Bills feed accrual expenses AND the cash outlook, so load them on either basis.
+    if (!companyId) return
     let cancelled = false
     const since = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10)
     Promise.all([
@@ -479,6 +489,10 @@ export default function Dashboard() {
   const expenseParts = []
   if (plaidOutMTD > 0) expenseParts.push(`${formatCurrency(plaidOutMTD)} bank`)
   if (unmatchedManualMTD > 0) expenseParts.push(`${formatCurrency(unmatchedManualMTD)} manual`)
+  // Payroll is in the number (accrual, or cash with no payroll in the feed);
+  // say so, or the tile reads "$11,883 · No expenses this month".
+  const payrollMTD = summarizePayroll(payrollData, isThisMonth)
+  if (payrollMTD.totalCost > 0 && thisMonthExpenses >= payrollMTD.totalCost - 0.01 && (accountingBasis === 'accrual' || plaidOutMTD === 0)) expenseParts.push(`${formatCurrency(payrollMTD.totalCost)} payroll`)
   const expenseSubtitle = expenseParts.length > 0 ? expenseParts.join(' + ') : 'No expenses this month'
 
   // Metric values map — subtitles explain exactly where each number comes from
@@ -505,6 +519,15 @@ export default function Dashboard() {
     needsOrder: { value: poStats.needsOrder, subtitle: poStats.needsOrder > 0 ? 'Click to batch into vendor POs' : 'No jobs waiting on parts' },
     openPOs: { value: poStats.openPOs, subtitle: `${formatCurrency(poStats.openPOTotal)} on order to vendors` },
     billsDueWeek: { value: formatCurrency(poStats.billsDueWeek), subtitle: `${poStats.billsDueWeekCount} bill${poStats.billsDueWeekCount === 1 ? '' : 's'} due in the next 7 days` },
+    cashOutlook: (() => {
+      const openingCash = (connectedAccounts || []).filter(a => a.status === 'active' && a.account_type === 'depository').reduce((s, a) => s + (parseFloat(a.current_balance) || 0), 0)
+      const fc = buildForecast({
+        openingCash, invoices, payments, utilityInvoices, plaidTransactions,
+        bills: accrualBills.bills, payrollRuns: payrollData.payrollRuns, paystubs: payrollData.paystubs, payrollConfig: payrollData.payrollConfig,
+      })
+      const lowDate = new Date(fc.low.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      return { value: formatCurrency(fc.closing), subtitle: `Low point ${formatCurrency(fc.low.balance)} on ${lowDate} · from ${formatCurrency(fc.opening)} today` }
+    })(),
   }
 
   // Pipeline

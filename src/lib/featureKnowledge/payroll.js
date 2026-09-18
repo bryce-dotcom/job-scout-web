@@ -25,7 +25,7 @@ export default {
       { id: 'period',   baseDur: 4500, narration: 'Pick the pay period. Hours pull straight from the time clock.' },
       { id: 'compute',  baseDur: 6500, narration: 'Regular hours, overtime, PTO, bonus, commission. Federal withholding via IRS Pub fifteen tee percentage method. State, FICA, Medicare.' },
       { id: 'review',   baseDur: 6500, narration: 'Per-employee preview. Gross to net, with every deduction itemized. Adjust before posting.' },
-      { id: 'pay',      baseDur: 6500, narration: 'Approve. Direct deposits queue up, paystubs publish to My Pay, journal entries hit Books.' },
+      { id: 'pay',      baseDur: 6500, narration: 'Approve. Direct deposits queue up, paystubs publish to My Pay, and the run shows on Books as payroll cost and taxes owed.' },
       { id: 'tax',      baseDur: 5500, narration: 'Tax deposit deadlines auto-land in the payroll inbox. Nine forty one and W-twos generate themselves at quarter and year end.' },
     ],
   },
