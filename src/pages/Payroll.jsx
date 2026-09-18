@@ -409,13 +409,18 @@ export default function Payroll() {
   // Sits above the access early-return below on purpose — a hook after it is
   // the conditional-hook white screen the ship guard refuses.
   const [periodTimeOff, setPeriodTimeOff] = useState([])
+  // Bumped by the Add / Remove PTO controls on the employee card so this
+  // list re-reads without a full page refetch.
+  const [ptoVersion, setPtoVersion] = useState(0)
+  // The "Add PTO" form on the employee card: a date range inside the period.
+  const [ptoAdd, setPtoAdd] = useState({ start: '', end: '', saving: false })
   useEffect(() => {
     if (!companyId) return
     const { periodStart: ps, periodEnd: pe } = getCurrentPeriod()
     let cancelled = false
     supabase
       .from('time_off_requests')
-      .select('id, employee_id, start_date, end_date, request_type, status')
+      .select('id, employee_id, start_date, end_date, request_type, status, reason')
       .eq('company_id', companyId)
       .eq('status', 'approved')
       .lte('start_date', localDateStr(pe))
@@ -425,7 +430,7 @@ export default function Payroll() {
         if (!cancelled) setPeriodTimeOff(data || [])
       })
     return () => { cancelled = true }
-  }, [companyId, periodOffset, timeOffRequests])
+  }, [companyId, periodOffset, timeOffRequests, ptoVersion])
 
   // Payroll requires BOTH Admin+ access AND the HR permission for the
   // full roster view. Non-HR users get redirected to /my-pay where they
@@ -1820,6 +1825,57 @@ export default function Payroll() {
     } catch (err) { alert('Error: ' + err.message) }
   }
 
+  // ── PTO on THIS payroll, from the employee card ────────────────────────
+  // Bryce: "it's confusing how to add PTO to a payroll, it's confusing how to
+  // take PTO out of a payroll." Until now the only way in was a request the
+  // employee filed from their Time Clock and an admin approved; the only way
+  // out was to deny it. These two do the same thing from the payroll side and
+  // say so in the request's reason, so the trail stays honest.
+  //
+  // Add    records an approved PTO request for the dates — the same row an
+  //        employee's own request becomes when approved — so it counts here,
+  //        draws on the bank at the run, and shows in their My Pay history.
+  // Remove puts the request back to pending. It stops counting on this
+  //        payroll but is not denied: it sits in Time Off Requests to be
+  //        approved again (or denied) when the time is right.
+  const addPtoAtPayroll = async (emp) => {
+    const { start, end } = ptoAdd
+    if (!start) { alert('Pick the first day of PTO.'); return }
+    const last = end || start
+    if (last < start) { alert('The last day is before the first day.'); return }
+    const ps = localDateStr(periodStart), pe = localDateStr(periodEnd)
+    if (last < ps || start > pe) { alert(`Those dates are outside this pay period (${ps} to ${pe}), so they would not count on this payroll. Step to the right period first.`); return }
+    setPtoAdd(f => ({ ...f, saving: true }))
+    try {
+      const { error } = await supabase.from('time_off_requests').insert([{
+        company_id: companyId, employee_id: emp.id,
+        start_date: start, end_date: last, request_type: 'pto', status: 'approved',
+        approved_by: user?.id, approved_at: new Date().toISOString(),
+        reason: 'Added at payroll',
+      }])
+      if (error) throw error
+      setPtoAdd({ start: '', end: '', saving: false })
+      setPtoVersion(v => v + 1)
+      toast.success('PTO added to this payroll.')
+    } catch (err) {
+      setPtoAdd(f => ({ ...f, saving: false }))
+      alert('Could not add PTO: ' + (err?.message || err))
+    }
+  }
+
+  const removePtoFromPayroll = async (req) => {
+    if (!confirm('Take this PTO off the payroll? It goes back to pending in Time Off Requests, not denied, so it can be approved again later.')) return
+    try {
+      const { error } = await supabase.from('time_off_requests')
+        .update({ status: 'pending', approved_by: null, approved_at: null, reason: [req.reason, 'Removed from payroll'].filter(Boolean).join(' · ') })
+        .eq('id', req.id)
+      if (error) throw error
+      setPtoVersion(v => v + 1)
+      await fetchData()   // the Time Off Requests list below shows it as pending again
+      toast.success('PTO taken off this payroll.')
+    } catch (err) { alert('Could not remove PTO: ' + (err?.message || err)) }
+  }
+
   // Add manual time entry
   const handleAddTimeEntry = async (formData) => {
     setSavingModal(true)
@@ -2295,6 +2351,64 @@ export default function Payroll() {
             </button>
           </div>
         </div>
+
+        {/* Paid time off on THIS payroll. What is counted, a way to take a
+            day off it, and a way to add one — the two things that were only
+            possible through the request queue before. Contractors are not
+            paid PTO, so they get nothing here. */}
+        {!data.is1099 && (() => {
+          const mine = periodTimeOff.filter(r => r.employee_id === emp.id && r.status === 'approved' && String(r.request_type || 'pto').toLowerCase() === 'pto')
+          const fmtDay = (s) => new Date(String(s).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          const psStr = localDateStr(periodStart), peStr = localDateStr(periodEnd)
+          return (
+            <div style={{ ...cardStyle, marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, margin: 0 }}>Paid time off on this payroll</h3>
+                <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                  <strong style={{ color: '#8b5cf6' }}>{ptoBalance.toFixed(1)} d</strong> in the bank
+                  {data.ptoDays > 0 && <> · using <strong style={{ color: '#8b5cf6' }}>{data.ptoDays.toFixed(1)} d</strong>{data.ptoPay > 0 && <> · {fmt(data.ptoPay)}</>}</>}
+                </span>
+              </div>
+              {mine.length === 0 ? (
+                <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '12px' }}>No PTO on this payroll.</div>
+              ) : mine.map(r => {
+                const days = ptoDaysInPeriod([r], emp.id, periodStart, periodEnd)
+                return (
+                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '8px 0', borderTop: `1px solid ${theme.border}`, fontSize: '13px' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ color: theme.text, fontWeight: 600 }}>{fmtDay(r.start_date)}{r.end_date && r.end_date !== r.start_date ? ` – ${fmtDay(r.end_date)}` : ''}</span>
+                      <span style={{ color: theme.textMuted, marginLeft: 8 }}>{days.toFixed(1)} d this period{emp.is_hourly ? ` · ${fmt(days * 8 * (Number(emp.hourly_rate) || 0))}` : ' · in salary'}</span>
+                      {r.reason && <span style={{ color: theme.textMuted, marginLeft: 8, fontSize: '11px' }}>“{r.reason}”</span>}
+                    </div>
+                    {isAdmin && (
+                      <button onClick={() => removePtoFromPayroll(r)} style={{ flexShrink: 0, padding: '5px 10px', background: 'none', border: `1px solid ${theme.border}`, color: theme.textSecondary, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 32 }}>
+                        Remove from this payroll
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+              {isAdmin && (
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }}>
+                  <label style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    First day
+                    <input type="date" min={psStr} max={peStr} value={ptoAdd.start} onChange={(e) => setPtoAdd(f => ({ ...f, start: e.target.value, end: f.end && f.end < e.target.value ? e.target.value : f.end }))} style={{ padding: '7px 10px', border: `1px solid ${theme.border}`, borderRadius: 8, backgroundColor: theme.bg, color: theme.text, fontSize: 13, minHeight: 36 }} />
+                  </label>
+                  <label style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    Last day (optional)
+                    <input type="date" min={ptoAdd.start || psStr} max={peStr} value={ptoAdd.end} onChange={(e) => setPtoAdd(f => ({ ...f, end: e.target.value }))} style={{ padding: '7px 10px', border: `1px solid ${theme.border}`, borderRadius: 8, backgroundColor: theme.bg, color: theme.text, fontSize: 13, minHeight: 36 }} />
+                  </label>
+                  <button onClick={() => addPtoAtPayroll(emp)} disabled={ptoAdd.saving || !ptoAdd.start} style={{ padding: '8px 14px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: ptoAdd.saving || !ptoAdd.start ? 'default' : 'pointer', opacity: ptoAdd.saving || !ptoAdd.start ? 0.6 : 1, minHeight: 36 }}>
+                    {ptoAdd.saving ? 'Adding…' : 'Add PTO to this payroll'}
+                  </button>
+                  <span style={{ fontSize: '11px', color: theme.textMuted, flexBasis: '100%' }}>
+                    Weekdays only, 8 hours a day{emp.is_hourly ? ` at $${Number(emp.hourly_rate) || 0}/hr` : ', already in the salary'}. Recorded as an approved request, so it draws on the bank when payroll runs and shows in their pay history.
+                  </span>
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Earnings rollup — Ready to pay vs Waiting on, across bonuses + setter
             + rep commissions. One glance at what's owed and what's still gated. */}
