@@ -36,9 +36,10 @@ describe('what a payroll run costs and who gets the money', () => {
     expect(s.totalCost).toBeCloseTo(2833.76, 2)
   })
 
-  it('the lines add up to the total, so nothing is hiding', () => {
+  it('the lines add up to the cash out, so nothing is hiding', () => {
     const s = summarizePayrollRun({ 1: sarah, 2: contractor })
-    expect(s.checks + s.federal + s.state + s.quarterly + s.deductions).toBeCloseTo(s.totalCost, 2)
+    expect(s.checks + s.federal + s.state + s.quarterly).toBeCloseTo(s.cashOut, 2)
+    expect(s.cashOut).toBe(s.totalCost)   // no deductions, so nothing kept
   })
 
   it('a contractor is a check for the gross and no tax anywhere', () => {
@@ -49,13 +50,16 @@ describe('what a payroll run costs and who gets the money', () => {
     expect(s.totalCost).toBe(1200)
   })
 
-  it('a post-tax deduction lowers the check but not the cost', () => {
-    const withDeduction = { ...sarah, totalDeductions: 100, tax: { ...sarah.tax, netPay: 1961.85 } }
+  it('a post-tax deduction lowers the check and the cash out, not the cost', () => {
+    // Doug on HHH: 275.25 personal truck use held back every period. The
+    // business keeps it, so it is not money leaving the account.
+    const withDeduction = { ...sarah, totalDeductions: 275.25, tax: { ...sarah.tax, netPay: 1786.60 } }
     const s = summarizePayrollRun({ 1: withDeduction })
-    expect(s.checks).toBeCloseTo(1961.85, 2)
-    expect(s.deductions).toBe(100)
+    expect(s.checks).toBeCloseTo(1786.60, 2)
+    expect(s.deductions).toBe(275.25)
     expect(s.totalCost).toBeCloseTo(2833.76, 2)
-    expect(s.checks + s.federal + s.state + s.quarterly + s.deductions).toBeCloseTo(s.totalCost, 2)
+    expect(s.cashOut).toBeCloseTo(2833.76 - 275.25, 2)
+    expect(s.checks + s.federal + s.state + s.quarterly).toBeCloseTo(s.cashOut, 2)
   })
 
   it('an empty run is all zeros', () => {

@@ -61,3 +61,53 @@ export function ptoDaysInPeriod(requests, employeeId, periodStart, periodEnd) {
 export function ptoBalanceDays(employee) {
   return (Number(employee?.pto_accrued) || 0) - (Number(employee?.pto_used) || 0)
 }
+
+// ── Tying it together ──────────────────────────────────────────────────
+//
+// Bryce: "tie it all together, the employee card should dictate the rate."
+// Three things the card already holds decide everything below:
+//
+//   pto_days_per_year   how much accrues, spread evenly over the year's pay
+//                       periods (26 for bi-weekly, and so on)
+//   hourly_rate         what a PTO day pays an hourly employee, at eight
+//                       hours a day. A salaried employee is paid the same
+//                       either way, so PTO costs them nothing extra and is
+//                       simply drawn from the bank
+//   pto_accrued/used    the bank, moved on every payroll run: plus this
+//                       period's accrual, plus the PTO days it paid
+//
+// Contractors (1099) accrue nothing and are paid for nothing here.
+
+import { PERIODS_PER_YEAR } from './bonusCalc'
+
+export const PTO_HOURS_PER_DAY = 8
+
+const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100
+const isContractor = (e) => e?.tax_classification === '1099'
+
+/** Days added to the bank by one pay period, from the card's days-per-year. */
+export function ptoAccrualPerPeriod(employee, payFrequency) {
+  if (!employee || isContractor(employee)) return 0
+  const perYear = Number(employee.pto_days_per_year) || 0
+  if (perYear <= 0) return 0
+  const periods = PERIODS_PER_YEAR[payFrequency] || 26
+  return r2(perYear / periods)
+}
+
+/** What PTO days in a period pay, and the hours the paystub records. */
+export function ptoPayForPeriod(employee, days) {
+  const d = Number(days) || 0
+  if (!employee || isContractor(employee) || d <= 0) return { hours: 0, pay: 0 }
+  const hours = r2(d * PTO_HOURS_PER_DAY)
+  // Hourly: paid at the card's rate. Salary: already in the salary.
+  const pay = employee.is_hourly ? r2(hours * (Number(employee.hourly_rate) || 0)) : 0
+  return { hours, pay }
+}
+
+/** The bank after a run that accrued `accrue` days and paid `use` days. */
+export function ptoBankAfterRun(employee, { accrue = 0, use = 0 } = {}) {
+  return {
+    pto_accrued: r2((Number(employee?.pto_accrued) || 0) + (Number(accrue) || 0)),
+    pto_used: r2((Number(employee?.pto_used) || 0) + (Number(use) || 0)),
+  }
+}

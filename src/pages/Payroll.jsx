@@ -25,7 +25,7 @@ import { toast } from '../lib/toast'
 import { splitPendingRequests, daysOverdue } from '../lib/timeOffRequests'
 import { previewTypedHourImpact, mergeJobHourSources, splitTypedHours, newestTypedRowId, TYPED_HOURS_COUNTED_KEY } from '../lib/jobHours'
 import { summarizePayrollRun } from '../lib/payrollRunTotals'
-import { ptoDaysInPeriod } from '../lib/ptoThisPeriod'
+import { ptoDaysInPeriod, ptoAccrualPerPeriod, ptoPayForPeriod, ptoBankAfterRun } from '../lib/ptoThisPeriod'
 import TypedHoursReview from '../components/TypedHoursReview'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
@@ -1615,7 +1615,13 @@ export default function Payroll() {
       .filter(b => b.status === 'accrued' && !b.needs_verification && b.queued_for_payroll)
       .reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
 
-    const grossPay = hourlyPay + salaryPay + commissionPay + bonusOwed
+    // PTO this period, from approved requests inside it. The employee card
+    // dictates the rate: an hourly PTO day pays eight hours at hourly_rate;
+    // a salaried one is already in the salary and only draws on the bank.
+    const ptoDays = ptoDaysInPeriod(periodTimeOff, employee.id, cfpStart, cfpEnd)
+    const { hours: ptoHours, pay: ptoPay } = ptoPayForPeriod(employee, ptoDays)
+
+    const grossPay = hourlyPay + salaryPay + ptoPay + commissionPay + bonusOwed
 
     // Payroll adjustments. Exclude legacy 'bonus_override' additions — those
     // were the old way to release a blocked bonus, but bonuses now pay in full
@@ -1662,6 +1668,9 @@ export default function Payroll() {
       regularHours,
       overtimeHours,
       hourlyRate,
+      ptoDays,
+      ptoHours,
+      ptoPay,
       commissionPay,
       invoiceCommissions: invoiceComm,
       leadCommissions: leadComm,
@@ -1720,7 +1729,7 @@ export default function Payroll() {
     // the memo could cache a result computed before those two finished
     // loading, so commissions stayed at $0 until something else re-triggered
     // a recompute.
-  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports, utilityInvoicesState, bonusOverrides, accruedByEmployee, company, suiRateHistory])
+  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports, utilityInvoicesState, bonusOverrides, accruedByEmployee, company, suiRateHistory, periodTimeOff])
 
   const totalPayroll = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.grossPay, 0),
@@ -2004,6 +2013,9 @@ export default function Payroll() {
           pay_date: localDateStr(payDate),
           regular_hours: data.regularHours,
           overtime_hours: data.overtimeHours,
+          // The stub PDF already prices PTO as pto_hours × hourly_rate, so an
+          // hourly employee's PTO shows as its own earnings line from here.
+          pto_hours: data.ptoHours || 0,
           hourly_rate: data.hourlyRate,
           salary_amount: data.salaryPay,
           gross_pay: data.grossPay,
@@ -2029,6 +2041,38 @@ export default function Payroll() {
 
       const { error: stubsError } = await supabase.from('paystubs').insert(paystubs)
       if (stubsError) throw stubsError
+
+      // ── Move the PTO bank on the employee card: this period's accrual in,
+      //    the PTO days this run paid out. Guarded against a second run of
+      //    the same period — accruing and deducting twice would be wrong, and
+      //    the stubs above are the record either way. Failures are said out
+      //    loud at the end, like the mark-paid step below.
+      let ptoNote = ''
+      try {
+        const { data: priorRuns } = await supabase.from('payroll_runs')
+          .select('id').eq('company_id', companyId)
+          .eq('period_start', localDateStr(periodStart)).eq('period_end', localDateStr(periodEnd))
+          .neq('id', payrollRun.id).limit(1)
+        if (priorRuns?.length) {
+          ptoNote = 'PTO balances were left alone: this period had already been run once, and accruing or deducting it twice would be wrong.'
+        } else {
+          const moves = activeEmployees.map(emp => ({
+            emp,
+            accrue: ptoAccrualPerPeriod(emp, payrollConfig.pay_frequency),
+            use: employeePayData[emp.id]?.ptoDays || 0,
+          })).filter(m => m.accrue > 0 || m.use > 0)
+          const failed = []
+          for (const m of moves) {
+            const { error } = await supabase.from('employees').update(ptoBankAfterRun(m.emp, m)).eq('id', m.emp.id)
+            if (error) failed.push(`${m.emp.name} (${error.message})`)
+          }
+          if (failed.length) ptoNote = 'PTO balances could not be updated for ' + failed.join(', ') + '. Adjust them on the employee card.'
+          if (moves.length && fetchEmployees) fetchEmployees().catch(() => {})
+        }
+      } catch (ptoErr) {
+        console.warn('[runPayroll] PTO bank update crashed:', ptoErr)
+        ptoNote = 'PTO balances could not be updated (' + (ptoErr?.message || ptoErr) + '). Adjust them on the employee card.'
+      }
 
       // ── Pay the earnings ADDED to this payroll (queued): mark them paid,
       //    stamp the date, and clear the queue flag so they drop off "owed".
@@ -2105,14 +2149,18 @@ export default function Payroll() {
       }
 
       setShowRunPayrollModal(false)
-      if (notMarkedPaid.length) {
+      if (notMarkedPaid.length || ptoNote) {
         // The paystubs are written and the money is going out. What did not
         // happen is the ledger update, so these will still show as owed and
         // would be paid AGAIN on the next run unless someone marks them paid.
         alert(
-          'Payroll processed, but these could not be marked paid and still show as owed:\n\n' +
-          notMarkedPaid.map(s => '  • ' + s).join('\n') +
-          '\n\nThe paystubs already include them. Use "Mark paid" on each one on this page so they are not paid twice next run.'
+          'Payroll processed' +
+          (notMarkedPaid.length
+            ? ', but these could not be marked paid and still show as owed:\n\n' +
+              notMarkedPaid.map(s => '  • ' + s).join('\n') +
+              '\n\nThe paystubs already include them. Use "Mark paid" on each one on this page so they are not paid twice next run.'
+            : '.') +
+          (ptoNote ? '\n\n' + ptoNote : '')
         )
       } else {
         alert('Payroll processed successfully!')
@@ -3958,7 +4006,8 @@ export default function Payroll() {
           const data = employeePayData[emp.id]
           if (!data) return null
           const ptoBalance = (emp.pto_accrued || 0) - (emp.pto_used || 0)
-          const ptoUsing = ptoDaysInPeriod(periodTimeOff, emp.id, periodStart, periodEnd)
+          const ptoUsing = data.ptoDays || 0
+          const ptoAccruing = ptoAccrualPerPeriod(emp, payrollConfig.pay_frequency)
           const isExpanded = expandedEmployee === emp.id
 
           return (
@@ -4019,6 +4068,9 @@ export default function Payroll() {
                   <div style={{ fontWeight: '600', color: ptoBalance > 0 ? '#8b5cf6' : theme.textMuted, fontSize: '14px' }}>
                     {ptoBalance !== 0 ? `${ptoBalance.toFixed(1)} d` : '-'}
                   </div>
+                  {ptoAccruing > 0 && (
+                    <div style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '500' }}>+{ptoAccruing.toFixed(2)} this run</div>
+                  )}
                 </div>
 
                 {/* Using this period — approved PTO days that fall inside the
@@ -4027,6 +4079,9 @@ export default function Payroll() {
                   <div style={{ fontWeight: '600', color: ptoUsing > 0 ? '#8b5cf6' : theme.textMuted, fontSize: '14px' }}>
                     {ptoUsing > 0 ? `${ptoUsing.toFixed(1)} d` : '-'}
                   </div>
+                  {data.ptoPay > 0 && (
+                    <div style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '500' }}>{fmt(data.ptoPay)} · {data.ptoHours}h × ${data.hourlyRate}</div>
+                  )}
                   {ptoUsing > ptoBalance && ptoUsing > 0 && (
                     <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: '500' }}>over balance</div>
                   )}
@@ -4094,7 +4149,7 @@ export default function Payroll() {
             <span />
             <span />
             <div style={{ textAlign: 'center', fontWeight: '600', color: '#8b5cf6' }}>
-              {(() => { const d = filteredEmployees.reduce((s, e) => s + ptoDaysInPeriod(periodTimeOff, e.id, periodStart, periodEnd), 0); return d > 0 ? `${d.toFixed(1)} d` : '' })()}
+              {(() => { const d = filteredEmployees.reduce((s, e) => s + (employeePayData[e.id]?.ptoDays || 0), 0); return d > 0 ? `${d.toFixed(1)} d` : '' })()}
             </div>
             <div style={{ textAlign: 'center', fontWeight: '600', color: '#f59e0b' }}>{fmt(totalCommissions)}</div>
             <span />
@@ -4120,7 +4175,6 @@ export default function Payroll() {
               ['Federal deposit (IRS)', runTotals.federal, 'income tax withheld + Social Security and Medicare, both halves'],
               ['State withholding', runTotals.state, 'state income tax withheld'],
               ['FUTA + state unemployment', runTotals.quarterly, 'employer only, deposited by quarter, not with this run'],
-              ...(runTotals.deductions > 0 ? [['Deductions held from checks', runTotals.deductions, 'advances, garnishments and the like']] : []),
             ].map(([label, amount, note]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', padding: '5px 0', fontSize: '13px', color: theme.textSecondary }}>
                 <div style={{ minWidth: 0 }}>
@@ -4132,13 +4186,24 @@ export default function Payroll() {
             ))}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', padding: '10px 0 0', marginTop: '6px', borderTop: `1px dashed ${theme.border}` }}>
               <div>
-                <span style={{ fontWeight: '700', color: theme.text, fontSize: '14px' }}>Total cost of this payroll</span>
+                <span style={{ fontWeight: '700', color: theme.text, fontSize: '14px' }}>{runTotals.deductions > 0 ? 'Cash out the door' : 'Total cost of this payroll'}</span>
                 <span style={{ color: theme.textMuted, fontSize: '11px', marginLeft: '8px' }}>
                   {fmt(runTotals.gross + runTotals.additions)} gross + {fmt(runTotals.employerTaxes)} employer tax
+                  {runTotals.deductions > 0 && <> − {fmt(runTotals.deductions)} deductions the business keeps</>}
                 </span>
               </div>
-              <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: '20px', fontWeight: '700', color: '#22c55e', flexShrink: 0 }}>{fmt(runTotals.totalCost)}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: '20px', fontWeight: '700', color: '#22c55e', flexShrink: 0 }}>{fmt(runTotals.cashOut)}</span>
             </div>
+            {/* Deductions are held back from checks, and on HHH every one is
+                money that stays with the business — personal truck use, an
+                advance being repaid, a salary offset. They are not a cost, so
+                the cash figure above is net of them; the payroll's full cost
+                is still the header card. */}
+            {runTotals.deductions > 0 && (
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '6px' }}>
+                Total cost of this payroll before those deductions: {fmt(runTotals.totalCost)}, the figure on the Total Payroll card.
+              </div>
+            )}
           </div>
         )}
         </div>
@@ -4730,7 +4795,7 @@ export default function Payroll() {
                     ['Federal deposit (IRS)', runTotals.federal],
                     ['State withholding', runTotals.state],
                     ['FUTA + state unemployment (quarterly)', runTotals.quarterly],
-                    ...(runTotals.deductions > 0 ? [['Deductions held from checks', runTotals.deductions]] : []),
+                    ...(runTotals.deductions > 0 ? [['Deductions the business keeps', -runTotals.deductions], ['Cash out the door', runTotals.cashOut]] : []),
                   ].map(([label, amount]) => (
                     <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
                       <span>{label}</span>
@@ -5027,7 +5092,7 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
         period_end: localKey(periodEnd),
         regular_hours: data.regularHours || 0,
         overtime_hours: data.overtimeHours || 0,
-        pto_hours: 0,
+        pto_hours: data.ptoHours || 0,
         hourly_rate: data.hourlyRate || 0,
         salary_amount: data.salaryPay || 0,
         gross_pay: (data.grossPay || 0) + (data.totalAdditions || 0),
@@ -5167,6 +5232,14 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
                   <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
                   <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>—</td>
                   <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{fmt(data.commissionPay)}</td>
+                </tr>
+              )}
+              {data.ptoHours > 0 && (
+                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '8px 0', color: theme.text }}>Paid Time Off{data.ptoPay > 0 ? '' : ' (in salary)'}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>{data.ptoHours}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'center', color: theme.textMuted }}>{data.ptoPay > 0 ? fmt(data.hourlyRate) : '—'}</td>
+                  <td style={{ padding: '8px 0', textAlign: 'right', color: theme.text }}>{data.ptoPay > 0 ? fmt(data.ptoPay) : '—'}</td>
                 </tr>
               )}
               {data.bonusOwed > 0 && (

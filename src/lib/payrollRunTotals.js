@@ -18,12 +18,14 @@
 //   quarterly   FUTA + state unemployment. Employer-only, due by quarter,
 //               not per run — shown on its own line so it is not mistaken
 //               for a check written today
-//   deductions  post-tax deductions held back from checks (advances,
-//               garnishments). Not a tax, but it is money that came out of
-//               gross and went somewhere, so the total only ties with it
+//   deductions  post-tax deductions held back from checks. On HHH these are
+//               all money that STAYS with the business — personal truck
+//               use, an advance being repaid, a salary offset — not an
+//               expense. So they come off what leaves the bank:
 //
-//   totalCost = checks + federal + state + quarterly + deductions
-//             = gross (with additions) + employer taxes
+//   totalCost = gross (with additions) + employer taxes
+//             = checks + federal + state + quarterly + deductions
+//   cashOut   = totalCost − deductions = what actually leaves the account
 //
 // Pure. Takes the per-employee pay data the page already builds.
 
@@ -42,6 +44,7 @@ export function summarizePayrollRun(employeePayData = {}) {
     quarterly: 0,
     employerTaxes: 0,  // SS + Medicare employer halves + FUTA + SUI
     totalCost: 0,
+    cashOut: 0,        // totalCost less the deductions the business keeps
   }
   for (const d of Object.values(employeePayData || {})) {
     if (!d) continue
@@ -75,6 +78,7 @@ export function summarizePayrollRun(employeePayData = {}) {
     }
   }
   out.totalCost = out.gross + out.additions + out.employerTaxes
+  out.cashOut = out.totalCost - out.deductions
   for (const k of Object.keys(out)) if (k !== 'employees') out[k] = r2(out[k])
   return out
 }

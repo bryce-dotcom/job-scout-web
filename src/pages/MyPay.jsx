@@ -17,6 +17,7 @@ import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '..
 import { setterCommissionSummary } from '../lib/setterCommissions'
 import { canViewHR } from '../lib/accessControl'
 import { localDateStr } from '../lib/localDate'
+import { ptoDaysInPeriod, ptoPayForPeriod } from '../lib/ptoThisPeriod'
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const BENEFIT_LABELS = { health: 'Health', dental: 'Dental', vision: 'Vision', life: 'Life', disability: 'Disability', retirement_401k: '401(k)', hsa: 'HSA', fsa: 'FSA', other: 'Other' }
@@ -488,6 +489,12 @@ export default function MyPay() {
   const me = empRow || user || {}
   const hourlyPay = (me.is_hourly && me.hourly_rate) ? totalHours * parseFloat(me.hourly_rate) : 0
   const salaryPay = (me.is_salary && me.annual_salary) ? parseFloat(me.annual_salary) / periodsPerYear : 0
+  // Approved PTO inside this period, priced the same way Payroll prices it
+  // (lib/ptoThisPeriod: eight hours a day at the card's hourly rate; salary
+  // already covers it). The own-view fetch has no employee_id column, so it
+  // is stamped on before counting.
+  const ptoDays = ptoDaysInPeriod(myPtoRequests.map(r => ({ ...r, employee_id: effectiveUserId })), effectiveUserId, periodStart, periodEnd)
+  const { hours: ptoHours, pay: ptoPay } = ptoPayForPeriod(me, ptoDays)
   // ── Bonus ledger groupings (persistent, not period-scoped) ───────────
   // accrued = money came in, OWED now (counts toward this paycheck's gross).
   // pending = earned by saved hours but the job's money hasn't landed yet.
@@ -503,7 +510,7 @@ export default function MyPay() {
   // Owed bonuses (money already collected) count toward gross pay, and so do
   // setter commissions — leaving them out is what made this page disagree
   // with Payroll for anyone who books appointments.
-  const grossPay = hourlyPay + salaryPay + commAvailable + setterComm.total + accruedBonusTotal
+  const grossPay = hourlyPay + salaryPay + ptoPay + commAvailable + setterComm.total + accruedBonusTotal
 
   // What's been STAGED into the next payroll run (an admin added it) — so the
   // tech sees what's actually coming next run vs what's owed but not yet added.
@@ -706,6 +713,13 @@ export default function MyPay() {
               <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Salary</div>
               <div style={{ fontSize: '18px', fontWeight: '600', color: '#3b82f6', marginTop: '2px' }}>{fmt(salaryPay)}</div>
               <div style={{ fontSize: '11px', color: theme.textMuted }}>${(parseFloat(me.annual_salary) || 0).toLocaleString()}/yr ÷ {periodsPerYear}</div>
+            </div>
+          )}
+          {ptoDays > 0 && (
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>PTO</div>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#8b5cf6', marginTop: '2px' }}>{ptoPay > 0 ? fmt(ptoPay) : `${ptoDays} day${ptoDays === 1 ? '' : 's'}`}</div>
+              <div style={{ fontSize: '11px', color: theme.textMuted }}>{ptoPay > 0 ? `${ptoHours}h × $${parseFloat(me.hourly_rate).toFixed(2)}` : 'in salary'}</div>
             </div>
           )}
           <div>
