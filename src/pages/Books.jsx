@@ -2182,7 +2182,15 @@ export default function Books() {
 
           <PayrollCard theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency}
             payrollRuns={booksExtra.payrollRuns} paystubs={booksExtra.paystubs} taxLiabilities={booksExtra.taxLiabilities}
-            isThisMonth={isThisMonth} accountingBasis={accountingBasis} feedHasPayroll={feedHasPayrollThisMonth} navigate={navigate} />
+            isThisMonth={isThisMonth} accountingBasis={accountingBasis} feedHasPayroll={feedHasPayrollThisMonth} navigate={navigate}
+            onVoidRun={async (run) => {
+              // A duplicate run: mark it void so Books, the forecast and the
+              // journal stop counting it. Paystubs and tax rows stay put.
+              const { error } = await supabase.from('payroll_runs').update({ status: 'void' }).eq('id', run.id).eq('company_id', companyId)
+              if (error) { toast.error('Could not void the run: ' + error.message); return }
+              toast.success(`Run #${run.id} voided — no longer counted`)
+              await fetchBooksExtra()
+            }} />
 
           {(unmatchedDeposits.length > 0 || paidWithoutPayment.length > 0) && (
             <div style={{

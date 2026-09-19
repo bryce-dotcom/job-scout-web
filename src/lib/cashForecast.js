@@ -103,7 +103,12 @@ export function buildForecast({
     push(maxDate(due, start), -amt, `Payroll tax deposit — ${l.agency || l.kind || 'agency'}`, 'tax', due < start ? 'overdue' : 'likely', { ref: l.id })
   }
   // Payroll: recent run size, grossed up for employer taxes, on each upcoming pay date.
-  const recentRuns = [...(payrollRuns || [])].sort((a, b) => String(b.pay_date).localeCompare(String(a.pay_date))).slice(0, 3)
+  // Size the estimate from runs that were actually paid: not voided, pay date
+  // already here. A future-dated or duplicate run would skew every payday.
+  const todayKey = key(start)
+  const recentRuns = [...(payrollRuns || [])]
+    .filter(r => String(r.status || '').toLowerCase() !== 'void' && String(r.pay_date || '').slice(0, 10) <= todayKey)
+    .sort((a, b) => String(b.pay_date).localeCompare(String(a.pay_date))).slice(0, 3)
   if (payrollConfig && recentRuns.length > 0) {
     const stubsByRun = new Map()
     for (const s of paystubs || []) stubsByRun.set(s.payroll_run_id, [...(stubsByRun.get(s.payroll_run_id) || []), s])
