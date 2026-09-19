@@ -414,6 +414,25 @@ export default function Payroll() {
   const [ptoVersion, setPtoVersion] = useState(0)
   // The "Add PTO" form on the employee card: a date range inside the period.
   const [ptoAdd, setPtoAdd] = useState({ start: '', end: '', saving: false })
+  // How this run will be paid. Bryce: "we got no option to choose how to
+  // pay, so we wrote checks to all the employees." JobScout still moves no
+  // money either way; choosing direct deposit points at the ACH file the
+  // Payroll Inbox builds for the bank after the run. ddOnFile is who has a
+  // signed direct-deposit authorization, so the choice says how many that
+  // file would cover.
+  const [payMethod, setPayMethod] = useState('check')
+  const [ddOnFile, setDdOnFile] = useState(null)
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    supabase.from('signed_documents').select('employee_id')
+      .eq('company_id', companyId).eq('document_kind', 'direct_deposit_auth').eq('status', 'signed')
+      .then(({ data, error }) => {
+        if (error) { console.warn('[Payroll] dd on file:', error.message); return }
+        if (!cancelled) setDdOnFile(new Set((data || []).map(r => r.employee_id)))
+      })
+    return () => { cancelled = true }
+  }, [companyId])
   useEffect(() => {
     if (!companyId) return
     const { periodStart: ps, periodEnd: pe } = getCurrentPeriod()
@@ -2214,7 +2233,10 @@ export default function Payroll() {
       }
 
       setShowRunPayrollModal(false)
-      if (notMarkedPaid.length || ptoNote) {
+      const ddNext = payMethod === 'dd'
+        ? '\n\nNext: open the Payroll Inbox, download the ACH file for this run, and upload it to your bank. Employees without direct deposit on file are marked pay by check in that file.'
+        : ''
+      if (notMarkedPaid.length || ptoNote || ddNext) {
         // The paystubs are written and the money is going out. What did not
         // happen is the ledger update, so these will still show as owed and
         // would be paid AGAIN on the next run unless someone marks them paid.
@@ -2225,7 +2247,7 @@ export default function Payroll() {
               notMarkedPaid.map(s => '  • ' + s).join('\n') +
               '\n\nThe paystubs already include them. Use "Mark paid" on each one on this page so they are not paid twice next run.'
             : '.') +
-          (ptoNote ? '\n\n' + ptoNote : '')
+          (ptoNote ? '\n\n' + ptoNote : '') + ddNext
         )
       } else {
         alert('Payroll processed successfully!')
@@ -4536,6 +4558,66 @@ export default function Payroll() {
                 </div>
               )}
 
+              {/* Direct deposit — the ACH file the bank's upload wants. JobScout
+                  builds it from the run; the bank sends the money. What goes
+                  here is what the bank gives you when you enroll in ACH
+                  origination. Saved inside payroll_config as `ach`. */}
+              <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: '20px 0 6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <DollarSign size={16} style={{ color: theme.accent }} />
+                Direct deposit (ACH file for your bank)
+              </h4>
+              <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px', lineHeight: '1.5' }}>
+                After a run, the Payroll Inbox can build a NACHA file to upload to your business bank's ACH service, one file instead of a stack of checks.
+                Your bank gives you these when you enroll in ACH origination. Leave them blank to keep paying by check.
+              </div>
+              {(() => {
+                const ach = payrollConfig.ach || {}
+                const setAch = (patch) => setPayrollConfig({ ...payrollConfig, ach: { ...ach, ...patch } })
+                const einDigits = String(company?.ein || '').replace(/\D/g, '')
+                return (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                      <div>
+                        <label style={labelStyle}>Bank name</label>
+                        <input type="text" value={ach.destinationName || ''} onChange={(e) => setAch({ destinationName: e.target.value })} placeholder="Zions Bank" style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Bank routing number (ODFI)</label>
+                        <input type="text" inputMode="numeric" value={ach.odfiRouting || ''} onChange={(e) => setAch({ odfiRouting: e.target.value.replace(/\D/g, '').slice(0, 9) })} placeholder="9 digits" style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Immediate origin / company ID</label>
+                        <input type="text" value={ach.immediateOrigin || ''} onChange={(e) => setAch({ immediateOrigin: e.target.value.replace(/\D/g, '').slice(0, 10), companyId: e.target.value.replace(/\D/g, '').slice(0, 10) })} placeholder={einDigits ? `1${einDigits}` : '10 digits, usually 1 + your EIN'} style={inputStyle} />
+                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>Blank uses 1 + your EIN{einDigits ? ` (1${einDigits})` : ''}. Some banks assign their own.</div>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Company name on the file (16 characters)</label>
+                        <input type="text" maxLength={16} value={ach.companyName || ''} onChange={(e) => setAch({ companyName: e.target.value })} placeholder={(company?.company_name || '').slice(0, 16)} style={inputStyle} />
+                      </div>
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: theme.text, marginBottom: '8px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!ach.balanced} onChange={(e) => setAch({ balanced: e.target.checked })} />
+                      Balanced file (adds a debit to our account so the batch nets to zero). Only if your bank asks for it.
+                    </label>
+                    {ach.balanced && (
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                        <div>
+                          <label style={labelStyle}>Company account number (for the offset)</label>
+                          <input type="text" value={ach.offsetAccount || ''} onChange={(e) => setAch({ offsetAccount: e.target.value })} style={inputStyle} />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Account type</label>
+                          <select value={ach.offsetAccountType || 'checking'} onChange={(e) => setAch({ offsetAccountType: e.target.value })} style={inputStyle}>
+                            <option value="checking">Checking</option>
+                            <option value="savings">Savings</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+
               {/* Overtime */}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                 <div>
@@ -4935,6 +5017,37 @@ export default function Payroll() {
                   ))}
                 </div>
               </div>
+
+              {/* How will you pay? Neither option moves money from here: checks
+                  are written by hand; direct deposit is the ACH file the Inbox
+                  builds for the bank. Saying it here is what was missing. */}
+              {(() => {
+                const w2 = activeEmployees.filter(e => e.tax_classification !== '1099')
+                const covered = ddOnFile ? w2.filter(e => ddOnFile.has(e.id)).length : null
+                const achReady = !!(payrollConfig.ach && payrollConfig.ach.odfiRouting)
+                const opt = (value, title, sub) => (
+                  <label key={value} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '10px 12px', border: `1px solid ${payMethod === value ? theme.accent : theme.border}`, borderRadius: '10px', cursor: 'pointer', backgroundColor: payMethod === value ? theme.accentBg || 'rgba(90,99,73,0.08)' : 'transparent' }}>
+                    <input type="radio" name="payMethod" value={value} checked={payMethod === value} onChange={() => setPayMethod(value)} style={{ marginTop: 3 }} />
+                    <span>
+                      <span style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: theme.text }}>{title}</span>
+                      <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted, lineHeight: 1.4 }}>{sub}</span>
+                    </span>
+                  </label>
+                )
+                return (
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>How will you pay?</div>
+                    <div style={{ display: 'grid', gap: '8px' }}>
+                      {opt('check', 'Checks', 'You write the checks. JobScout records the run and the stubs.')}
+                      {opt('dd', 'Direct deposit file for your bank',
+                        (covered == null ? 'Checking who has bank details on file…'
+                          : `${covered} of ${w2.length} employees have a signed direct-deposit authorization; the rest are marked pay by check.`)
+                        + (achReady ? ' After the run, download the ACH file from the Payroll Inbox and upload it to your bank.' : ' Your bank\'s ACH details are not set yet — Settings → Direct deposit.'))}
+                    </div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '6px' }}>JobScout does not send money or taxes itself. Either way, tax deposits are yours to make from the Payroll Inbox.</div>
+                  </div>
+                )
+              })()}
 
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button onClick={() => setShowRunPayrollModal(false)} style={{

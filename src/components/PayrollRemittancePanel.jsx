@@ -95,6 +95,45 @@ export default function PayrollRemittancePanel({ liabilities = [], theme, onChan
     } catch (err) { alert('Direct-deposit export failed: ' + err.message) } finally { setBusy(null) }
   }
 
+  // The NACHA file the bank's ACH upload wants, built from the same export
+  // as the CSV plus the company's ACH settings (Payroll → Settings → Direct
+  // deposit). JobScout does not originate the ACH; the bank does, from this
+  // file. See lib/nacha.js for the layout.
+  const downloadACH = async (g) => {
+    setBusy('ach-' + g.key)
+    try {
+      const [{ data: { session } }, cfgRes, nacha] = await Promise.all([
+        supabase.auth.getSession(),
+        supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payroll_config').maybeSingle(),
+        import('../lib/nacha'),
+      ])
+      let ach = {}
+      try { ach = JSON.parse(cfgRes.data?.value || '{}').ach || {} } catch { ach = {} }
+      if (!ach.odfiRouting) { alert('Your bank\'s ACH details are not set yet.\n\nPayroll → Settings → Direct deposit (ACH file for your bank): the routing number and company ID your bank gave you when you enrolled in ACH origination.'); return }
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/payroll-dd-export`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token || ''}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payroll_run_id: Number(g.key) }),
+      })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); alert('Could not read the run\'s bank details: ' + (e.error || res.status)); return }
+      const { entries, skipped } = nacha.entriesFromDdCsv(await res.text())
+      const file = nacha.buildNachaFile({
+        settings: { ...ach, ein: company?.ein, companyName: ach.companyName || company?.company_name },
+        effectiveDate: g.run?.pay_date,
+        entries,
+      })
+      const stamp = String(g.run?.pay_date || g.key).slice(0, 10)
+      const url = URL.createObjectURL(new Blob([file.text], { type: 'text/plain' }))
+      const a = document.createElement('a')
+      a.href = url; a.download = `payroll-${stamp}.ach`; a.click()
+      URL.revokeObjectURL(url)
+      const money = (c) => (c / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+      alert(`ACH file downloaded: ${file.entryCount} direct deposit${file.entryCount === 1 ? '' : 's'} totalling ${money(file.totalCents)}, effective ${stamp}.\n\n`
+        + 'Upload it to your bank\'s ACH service. The bank sends the money; JobScout does not.'
+        + (skipped.length ? `\n\nNot in the file, pay by check:\n${skipped.map(s => `  • ${s.name} — ${money(s.amountCents)} (${s.reason})`).join('\n')}` : ''))
+    } catch (err) { alert('Could not build the ACH file: ' + err.message) } finally { setBusy(null) }
+  }
+
   const markPaid = async (bucket) => {
     setBusy(bucket.liabilityIds.join(','))
     const { error } = await supabase.from('payroll_tax_liabilities')
@@ -139,6 +178,14 @@ export default function PayrollRemittancePanel({ liabilities = [], theme, onChan
                   style={{ background: 'transparent', color: t.accent || '#55613c', border: `1px solid ${t.accent || '#55613c'}`,
                     borderRadius: 9, padding: '9px 14px', fontSize: 13, fontWeight: 650, cursor: 'pointer', minHeight: 40, whiteSpace: 'nowrap' }}>
                   {busy === 'dd-' + g.key ? '…' : 'Direct-deposit file (CSV)'}
+                </button>
+              )}
+              {g.key !== 'unassigned' && (
+                <button onClick={() => downloadACH(g)} disabled={busy === 'ach-' + g.key}
+                  title="NACHA file to upload to your bank's ACH service"
+                  style={{ background: 'transparent', color: t.accent || '#55613c', border: `1px solid ${t.accent || '#55613c'}`,
+                    borderRadius: 9, padding: '9px 14px', fontSize: 13, fontWeight: 650, cursor: 'pointer', minHeight: 40, whiteSpace: 'nowrap' }}>
+                  {busy === 'ach-' + g.key ? '…' : 'ACH file for the bank'}
                 </button>
               )}
               <button onClick={() => printWorksheet(g)} style={{ background: t.accent || '#55613c', color: '#fff', border: 0,
