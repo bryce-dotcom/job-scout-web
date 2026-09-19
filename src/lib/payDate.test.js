@@ -29,9 +29,17 @@ describe('payDateForPeriod — semi-monthly', () => {
     expect(payDateForPeriod('2026-05-20', HHH)).toBe('2026-06-05')
   })
 
-  it('clamps a day-of-month that overflows a short month', () => {
+  it('clamps a day-of-month that overflows a short month (then rolls the Saturday to Friday)', () => {
     expect(payDateForPeriod('2026-02-26', { pay_frequency: 'semi-monthly', pay_day_1: '31', pay_day_2: '28' }))
-      .toBe('2026-02-28')
+      .toBe('2026-02-27')
+  })
+
+  it('a weekend payday is paid the Friday before (Sep 20, 2026 is a Sunday)', () => {
+    expect(payDateForPeriod('2026-09-15', HHH)).toBe('2026-09-18')
+    expect(payDateForPeriod('2026-11-30', HHH)).toBe('2026-12-04')   // Dec 5, 2026 is a Saturday
+    expect(payDateForPeriod('2026-05-15', { pay_frequency: 'weekly' })).toBe('2026-05-20')   // Wednesday stays
+    expect(payDateForPeriod('2026-05-17', { pay_frequency: 'weekly' })).toBe('2026-05-22')   // +5 = Fri
+    expect(payDateForPeriod('2026-05-18', { pay_frequency: 'weekly' })).toBe('2026-05-22')   // +5 = Sat → Fri
   })
 })
 

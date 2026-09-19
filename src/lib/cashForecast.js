@@ -8,9 +8,9 @@
 // can say "likely" vs "if they pay on time".
 import { invoiceBalance, isInvoiceOpen } from './arHelpers'
 import { getCurrentPayPeriod } from './bonusCalc'
-import { payDateForPeriod } from './payDate'
+import { payDateForPeriod, businessDayOnOrBefore } from './payDate'
 import { annualByType } from './fleetRecurringCosts'
-import { isPayrollBankRow } from './payrollBooks'
+import { isPayrollBankRow, paidRuns } from './payrollBooks'
 
 const DAY = 86400000
 const num = (v) => parseFloat(v) || 0
@@ -102,25 +102,35 @@ export function buildForecast({
     if (!(amt > 0) || !due) continue
     push(maxDate(due, start), -amt, `Payroll tax deposit — ${l.agency || l.kind || 'agency'}`, 'tax', due < start ? 'overdue' : 'likely', { ref: l.id })
   }
-  // Payroll: recent run size, grossed up for employer taxes, on each upcoming pay date.
-  // Size the estimate from runs that were actually paid: not voided, pay date
-  // already here. A future-dated or duplicate run would skew every payday.
-  const todayKey = key(start)
-  const recentRuns = [...(payrollRuns || [])]
-    .filter(r => String(r.status || '').toLowerCase() !== 'void' && String(r.pay_date || '').slice(0, 10) <= todayKey)
-    .sort((a, b) => String(b.pay_date).localeCompare(String(a.pay_date))).slice(0, 3)
+  // Payroll. A run that has been made (not void, not pending) is real money:
+  // it leaves on its pay_date, which can still be ahead when payroll was run
+  // early for a weekend payday. Those go in at their actual cost. Beyond
+  // them, each upcoming pay date gets an estimate sized from the last runs
+  // (a duplicate run would skew every payday — void it on the Books card).
+  const stubsByRun = new Map()
+  for (const s of paystubs || []) stubsByRun.set(s.payroll_run_id, [...(stubsByRun.get(s.payroll_run_id) || []), s])
+  const runCost = (r) => {
+    const st = stubsByRun.get(r.id) || []
+    const g = st.length ? st.reduce((s, x) => s + num(x.gross_pay), 0) : num(r.total_gross)
+    const e = st.reduce((s, x) => s + num(x.social_security_employer) + num(x.medicare_employer) + num(x.futa) + num(x.sui), 0)
+    return g + e
+  }
+  const madeRuns = paidRuns(payrollRuns)
+  const seen = new Set()
+  for (const r of madeRuns) {
+    const raw = parseLocal(r.pay_date)
+    if (!raw) continue
+    // Stored pay dates can be the calendar payday (a Sunday); the money
+    // leaves on the business day before, which is also the date the estimate
+    // loop below would pick for that period — mark both so it is not pushed twice.
+    const d = businessDayOnOrBefore(raw)
+    seen.add(key(raw)); seen.add(key(d))
+    if (d < start) continue
+    push(d, -runCost(r), `Payroll ${String(r.period_start || '').slice(0, 10)} – ${String(r.period_end || '').slice(0, 10)} (run #${r.id})`, 'payroll', 'likely', { ref: r.id })
+  }
+  const recentRuns = [...madeRuns].sort((a, b) => String(b.pay_date).localeCompare(String(a.pay_date))).slice(0, 3)
   if (payrollConfig && recentRuns.length > 0) {
-    const stubsByRun = new Map()
-    for (const s of paystubs || []) stubsByRun.set(s.payroll_run_id, [...(stubsByRun.get(s.payroll_run_id) || []), s])
-    let grossSum = 0, empSum = 0
-    for (const r of recentRuns) {
-      const st = stubsByRun.get(r.id) || []
-      const g = st.length ? st.reduce((s, x) => s + num(x.gross_pay), 0) : num(r.total_gross)
-      grossSum += g
-      empSum += st.reduce((s, x) => s + num(x.social_security_employer) + num(x.medicare_employer) + num(x.futa) + num(x.sui), 0)
-    }
-    const avgCost = (grossSum + empSum) / recentRuns.length
-    const seen = new Set()
+    const avgCost = recentRuns.reduce((s, r) => s + runCost(r), 0) / recentRuns.length
     for (let k = 0; k < 8; k++) {
       const period = getCurrentPayPeriod(payrollConfig, k)
       const pay = payDateForPeriod(period.periodEnd, payrollConfig)

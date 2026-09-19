@@ -1,8 +1,10 @@
 // Payroll as a cost, on the Money tab. Runs and paystubs already exist;
-// Books just never read them. Shows what payroll cost this month (runs whose
-// pay date has arrived), what is queued for a coming pay date, what is owed
-// to the agencies, whether Money Out already carries it — and calls out two
-// runs on the same period, which is nearly always a duplicate to void.
+// Books just never read them. Shows what payroll cost this month (a run
+// counts the day it is run — Run Payroll pays the stubs on the spot, and its
+// pay date can sit a couple of days ahead for a weekend payday), what is
+// parked as a draft, what is owed to the agencies, whether Money Out already
+// carries it — and calls out two runs on the same period, which is nearly
+// always a duplicate to void.
 import { useState } from 'react'
 import { Users, AlertCircle, AlertTriangle } from 'lucide-react'
 import HelpBadge from '../../components/HelpBadge'
@@ -44,7 +46,7 @@ export default function PayrollCard({ theme, statCardStyle, formatCurrency, payr
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
         <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: theme.text, display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Users size={16} style={{ color: theme.accent }} /> Payroll
-          <HelpBadge text={`Wages and employer taxes from the payroll runs whose pay date has arrived this month, what is queued for a coming pay date, and what is still owed to the IRS and state. ${howCounted}`} />
+          <HelpBadge text={`Wages and employer taxes from the payroll runs made this month. A run counts the day you run it, on the pay date it covers — running Friday for a Sunday payday still lands in this month. Drafts are shown separately, and what is still owed to the IRS and state is below. ${howCounted}`} />
         </h3>
         <button onClick={() => navigate('/payroll')} style={{ padding: '6px 12px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px', color: theme.accent, fontSize: '12px', cursor: 'pointer', minHeight: '36px' }}>
           Open Payroll
@@ -58,7 +60,7 @@ export default function PayrollCard({ theme, statCardStyle, formatCurrency, payr
       </div>
       {month.upcoming.runs > 0 && (
         <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textSecondary }}>
-          Queued: {formatCurrency(month.upcoming.totalCost)} across {month.upcoming.runs} run{month.upcoming.runs === 1 ? '' : 's'}, next pay date {fmtDate(month.upcoming.nextPayDate)} — not counted until it is paid.
+          Draft: {formatCurrency(month.upcoming.totalCost)} across {month.upcoming.runs} run{month.upcoming.runs === 1 ? '' : 's'}, next pay date {fmtDate(month.upcoming.nextPayDate)} — not counted until it is run.
         </div>
       )}
       {dupes.length > 0 && (

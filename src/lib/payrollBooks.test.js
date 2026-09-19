@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { summarizePayroll, taxLiabilitySummary, isPayrollBankRow, payrollJournalRows, duplicatePeriods } from './payrollBooks'
+import { summarizePayroll, taxLiabilitySummary, isPayrollBankRow, payrollJournalRows, duplicatePeriods, isPendingRun } from './payrollBooks'
 
 const inSep = (d) => String(d || '').startsWith('2026-09')
-const today = new Date('2026-09-25T12:00:00')
 const runs = [
   { id: 1, pay_date: '2026-09-05', period_start: '2026-08-18', period_end: '2026-08-31', total_gross: 5000, employee_count: 2 },
   { id: 2, pay_date: '2026-09-19', period_start: '2026-09-01', period_end: '2026-09-14', total_gross: 4000, employee_count: 2 },
@@ -16,7 +15,7 @@ const stubs = [
 
 describe('summarizePayroll', () => {
   it('sums the runs paid in range from their stubs', () => {
-    const s = summarizePayroll({ payrollRuns: runs, paystubs: stubs }, inSep, { today })
+    const s = summarizePayroll({ payrollRuns: runs, paystubs: stubs }, inSep)
     expect(s.runs).toBe(2)
     expect(s.gross).toBe(9000)
     expect(s.employerTaxes).toBe(186 + 43.5 + 18 + 60 + 124 + 29 + 12 + 40 + 248 + 58 + 0 + 80)
@@ -25,19 +24,30 @@ describe('summarizePayroll', () => {
     expect(s.employees).toBe(2)
     expect(s.upcoming.runs).toBe(0)
   })
-  it('a run whose pay date has not arrived is queued, not paid', () => {
-    const s = summarizePayroll({ payrollRuns: runs, paystubs: stubs }, inSep, { today: new Date('2026-09-10T12:00:00') })
+  it('a completed run counts the day it is run, even when its payday is still ahead', () => {
+    // HHH ran the Sep 1–15 period on Friday the 18th for a Sunday-the-20th payday.
+    const early = [{ id: 9, pay_date: '2026-09-20', period_start: '2026-09-01', period_end: '2026-09-15', total_gross: 7000, status: 'completed', created_at: '2026-09-18T22:58:00Z' }]
+    const s = summarizePayroll({ payrollRuns: early, paystubs: [] }, inSep)
+    expect(s.runs).toBe(1)
+    expect(s.gross).toBe(7000)
+    expect(s.upcoming.runs).toBe(0)
+  })
+  it('a run parked as draft or scheduled is queued, not paid', () => {
+    const s = summarizePayroll({ payrollRuns: [runs[0], { ...runs[1], status: 'draft' }], paystubs: stubs }, inSep)
     expect(s.runs).toBe(1)
     expect(s.gross).toBe(5000)
     expect(s.upcoming).toMatchObject({ runs: 1, gross: 4000, nextPayDate: '2026-09-19' })
+    expect(isPendingRun({ status: 'completed' })).toBe(false)
+    expect(isPendingRun({})).toBe(false)
+    expect(isPendingRun({ status: 'Scheduled' })).toBe(true)
   })
   it('ignores voided runs', () => {
-    const s = summarizePayroll({ payrollRuns: [...runs, { id: 4, pay_date: '2026-09-06', status: 'void', total_gross: 77777 }], paystubs: stubs }, inSep, { today })
+    const s = summarizePayroll({ payrollRuns: [...runs, { id: 4, pay_date: '2026-09-06', status: 'void', total_gross: 77777 }], paystubs: stubs }, inSep)
     expect(s.runs).toBe(2)
     expect(s.gross).toBe(9000)
   })
   it('falls back to total_gross when a run has no stubs', () => {
-    const s = summarizePayroll({ payrollRuns: [runs[2]], paystubs: [] }, (d) => String(d).startsWith('2026-08'), { today })
+    const s = summarizePayroll({ payrollRuns: [runs[2]], paystubs: [] }, (d) => String(d).startsWith('2026-08'))
     expect(s.gross).toBe(9999)
     expect(s.netPay).toBe(9999)
   })
@@ -77,8 +87,8 @@ describe('isPayrollBankRow', () => {
 })
 
 describe('payrollJournalRows', () => {
-  it('balances per run: wages + employer tax = net pay + liabilities; future and void runs left out', () => {
-    const rows = payrollJournalRows({ payrollRuns: [...runs, { id: 5, pay_date: '2026-09-07', status: 'void', total_gross: 1234 }], paystubs: stubs }, inSep, { today })
+  it('balances per run: wages + employer tax = net pay + liabilities; pending and void runs left out', () => {
+    const rows = payrollJournalRows({ payrollRuns: [...runs, { id: 5, pay_date: '2026-09-07', status: 'void', total_gross: 1234 }], paystubs: stubs }, inSep)
     const byRun = (id) => rows.filter(r => r.ref === id)
     for (const id of [1, 2]) {
       const d = byRun(id).reduce((s, r) => s + r.debit, 0)
@@ -89,6 +99,6 @@ describe('payrollJournalRows', () => {
     expect(byRun(1).find(r => r.account === 'Bank: payroll').credit).toBe(4050)
     expect(rows.some(r => r.ref === 3)).toBe(false)
     expect(rows.some(r => r.ref === 5)).toBe(false)
-    expect(payrollJournalRows({ payrollRuns: runs, paystubs: stubs }, inSep, { today: new Date('2026-09-10T12:00:00') }).some(r => r.ref === 2)).toBe(false)
+    expect(payrollJournalRows({ payrollRuns: [runs[0], { ...runs[1], status: 'draft' }], paystubs: stubs }, inSep).some(r => r.ref === 2)).toBe(false)
   })
 })

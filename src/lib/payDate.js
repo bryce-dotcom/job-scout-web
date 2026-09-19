@@ -28,6 +28,15 @@ function dayInMonth(year, monthIndex, day) {
   return new Date(year, monthIndex, Math.min(day, last))
 }
 
+// A payday that lands on a weekend is paid the Friday before — the rule
+// every processor follows, and what HHH actually does (Sep 20, 2026 is a
+// Sunday; payroll was run on the 18th). Bank holidays are not modelled.
+export function businessDayOnOrBefore(d) {
+  const out = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  while (out.getDay() === 0 || out.getDay() === 6) out.setDate(out.getDate() - 1)
+  return out
+}
+
 /**
  * The first scheduled payday strictly AFTER the period ends.
  * @param {string|Date} periodEnd
@@ -50,7 +59,7 @@ export function payDateForPeriod(periodEnd, config = {}) {
       candidates.push(dayInMonth(yy, mm, d1))
       if (d2) candidates.push(dayInMonth(yy, mm, d2))
     }
-    const next = candidates.filter((c) => c > end).sort((a, b) => a - b)[0]
+    const next = candidates.map(businessDayOnOrBefore).filter((c) => c > end).sort((a, b) => a - b)[0]
     return next ? localKey(next) : null
   }
 
@@ -59,5 +68,5 @@ export function payDateForPeriod(periodEnd, config = {}) {
   // Friday-pay gap.
   const d = new Date(end)
   d.setDate(d.getDate() + 5)
-  return localKey(d)
+  return localKey(businessDayOnOrBefore(d))
 }

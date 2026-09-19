@@ -30,6 +30,13 @@ export function paystubWithheld(stub) {
 
 export const isVoidRun = (r) => String(r?.status || '').toLowerCase() === 'void'
 export const liveRuns = (runs) => (runs || []).filter(r => !isVoidRun(r))
+// Run Payroll inserts the run as 'completed' and marks the stubs paid in the
+// same breath: running it IS paying it. The pay_date on the run is the payday
+// it covers, which can sit ahead of the day it was run (HHH runs a Sunday
+// payday on the Friday). So a run counts as soon as it exists; only a run
+// parked in a pending state is still ahead.
+export const isPendingRun = (r) => /^(draft|pending|scheduled|queued)$/.test(String(r?.status || '').toLowerCase())
+export const paidRuns = (runs) => liveRuns(runs).filter(r => !isPendingRun(r))
 
 function totalsFor(runs, paystubs) {
   const runIds = new Set(runs.map(r => r.id))
@@ -45,15 +52,14 @@ function totalsFor(runs, paystubs) {
 }
 
 /**
- * Totals for the runs whose pay_date is in range AND has arrived (pay_date
- * ≤ today). Runs in range but still ahead come back under `upcoming`.
- * Void runs are ignored everywhere.
+ * Totals for the runs whose pay_date is in range and that have been run
+ * (see paidRuns). Runs in range but still pending come back under
+ * `upcoming`. Void runs are ignored everywhere.
  */
-export function summarizePayroll({ payrollRuns = [], paystubs = [] } = {}, inRange = () => true, { today = new Date() } = {}) {
-  const todayKey = dayKey(today)
+export function summarizePayroll({ payrollRuns = [], paystubs = [] } = {}, inRange = () => true) {
   const inWindow = liveRuns(payrollRuns).filter(r => inRange(r.pay_date))
-  const paid = inWindow.filter(r => String(r.pay_date || '').slice(0, 10) <= todayKey)
-  const ahead = inWindow.filter(r => String(r.pay_date || '').slice(0, 10) > todayKey).sort((a, b) => String(a.pay_date).localeCompare(String(b.pay_date)))
+  const paid = inWindow.filter(r => !isPendingRun(r))
+  const ahead = inWindow.filter(isPendingRun).sort((a, b) => String(a.pay_date).localeCompare(String(b.pay_date)))
   const out = totalsFor(paid, paystubs)
   out.upcoming = { ...totalsFor(ahead, paystubs), nextPayDate: ahead[0]?.pay_date || null }
   return out
@@ -93,20 +99,19 @@ export function isPayrollBankRow(t) {
 /**
  * Journal lines for the runs paid in range (see journalExport): wages and
  * employer taxes are expenses; net pay leaves the bank; withholding and
- * employer taxes sit as a liability until remitted. Void and future runs
+ * employer taxes sit as a liability until remitted. Void and pending runs
  * are left out.
  */
-export function payrollJournalRows({ payrollRuns = [], paystubs = [] } = {}, inRange = () => true, { today = new Date() } = {}) {
+export function payrollJournalRows({ payrollRuns = [], paystubs = [] } = {}, inRange = () => true) {
   const rows = []
-  const todayKey = dayKey(today)
   const byRun = new Map()
   for (const s of paystubs || []) {
     const arr = byRun.get(s.payroll_run_id) || []
     arr.push(s)
     byRun.set(s.payroll_run_id, arr)
   }
-  for (const run of liveRuns(payrollRuns)) {
-    if (!inRange(run.pay_date) || String(run.pay_date || '').slice(0, 10) > todayKey) continue
+  for (const run of paidRuns(payrollRuns)) {
+    if (!inRange(run.pay_date)) continue
     const stubs = byRun.get(run.id) || []
     const gross = stubs.length ? stubs.reduce((s, x) => s + num(x.gross_pay), 0) : num(run.total_gross)
     const employer = stubs.reduce((s, x) => s + paystubEmployerTax(x), 0)

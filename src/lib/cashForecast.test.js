@@ -40,6 +40,26 @@ describe('buildForecast', () => {
     expect(new Set(pay.map(e => e.date)).size).toBe(pay.length)
   })
 
+  it('a run already made for a payday still ahead lands at its real cost, not as an estimate', () => {
+    const f = buildForecast({
+      today, openingCash: 50000,
+      payrollConfig: { pay_frequency: 'semi-monthly', pay_day_1: 20, pay_day_2: 5 },
+      payrollRuns: [
+        { id: 1, pay_date: '2026-09-05', total_gross: 8000, status: 'completed' },
+        { id: 3, pay_date: '2026-09-20', period_start: '2026-09-01', period_end: '2026-09-15', total_gross: 9000, status: 'completed' },
+        { id: 4, pay_date: '2026-10-05', total_gross: 55555, status: 'void' },
+      ],
+      paystubs: [{ payroll_run_id: 3, gross_pay: 9000, social_security_employer: 558, medicare_employer: 130.5 }],
+    })
+    const pay = f.events.filter(e => e.kind === 'payroll')
+    const made = pay.filter(e => e.confidence === 'likely')
+    expect(made).toHaveLength(1)
+    expect(made[0].amount).toBe(-9688.5)
+    expect(made[0].date).toBe('2026-09-18')   // Sep 20 is a Sunday: paid the Friday before
+    expect(pay.filter(e => e.date === '2026-09-18' || e.date === '2026-09-20')).toHaveLength(1)
+    expect(pay.some(e => e.amount === -55555)).toBe(false)
+  })
+
   it('uses trailing bank spend as a daily baseline, ignoring transfers, payroll and bill-sized rows', () => {
     const plaid = [
       { amount: 900, date: '2026-09-01', name: 'HOME DEPOT' },
