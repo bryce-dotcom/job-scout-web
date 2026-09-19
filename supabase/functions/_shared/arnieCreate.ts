@@ -25,6 +25,8 @@ import { applyFollowup, prepareFollowup, rollbackFollowup } from './arnieFollowu
 import { applyPayment, preparePayment, rollbackPayment } from './arniePayment.ts'
 import { prepareExpense } from './arnieExpense.ts'
 import { applyCompanySetup, prepareCompanySetup, rollbackCompanySetup } from './companySetup.ts'
+import { applyEmployee, prepareEmployee, rollbackEmployee } from './arnieEmployee.ts'
+import { applyPriceBook, preparePriceBook, rollbackPriceBook } from './arniePriceBook.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -297,6 +299,50 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     prepare: prepareCompanySetup,
     applyCustom: applyCompanySetup,
     rollbackCustom: rollbackCompanySetup,
+  },
+
+  // "Add Jordan Reyes, field tech, jordan@…, $28 an hour, starts Monday."
+  // Pay lands only when the caller could see it on the Employees page.
+  employee: {
+    label: 'employee',
+    table: 'employees',
+    minLevel: 3,
+    verb: 'Add',
+    done: 'Added. They are on the Employees page now; the invite (if any) is on its way.',
+    fields: {
+      name:               { column: null, label: 'Name',          required: true, max: 120 },
+      role:               { column: null, label: 'Job title',     max: 40 },
+      email:              { column: null, label: 'Email',         max: 120, shape: 'email' },
+      phone:              { column: null, label: 'Phone',         max: 30, shape: 'phone' },
+      user_role:          { column: null, label: 'Access',        max: 20, oneOf: ['User', 'Team Lead', 'Manager', 'Admin'] },
+      hourly_rate:        { column: null, label: 'Hourly rate',   max: 20 },
+      annual_salary:      { column: null, label: 'Salary',        max: 20 },
+      hire_date:          { column: null, label: 'Start date',    max: 40 },
+      tax_classification: { column: null, label: 'Tax',           max: 20 },
+      business_unit:      { column: null, label: 'Business unit', max: 80 },
+      invite:             { column: null, label: 'Invite',        max: 5 },
+    },
+    labelOf: (f) => String(f.name || '').slice(0, 120),
+    prepare: prepareEmployee,
+    applyCustom: applyEmployee,
+    rollbackCustom: rollbackEmployee,
+  },
+
+  // "Here's my price list" + a photo, PDF or sheet → the rows, checked, deduped, as one card.
+  price_book: {
+    label: 'price book',
+    table: 'products_services',
+    minLevel: 2,
+    verb: 'Add to price book',
+    done: 'Added. They are on Products & Services, ungrouped — drag them into sections there.',
+    fields: {
+      items:  { column: null, label: 'Items',  required: true, max: 60000, raw: true },
+      source: { column: null, label: 'Source', max: 120 },
+    },
+    labelOf: (f) => { try { const n = JSON.parse(f.items || '[]').length; return `${n} item${n === 1 ? '' : 's'}${f.source ? ' from ' + f.source : ''}` } catch { return 'price list' } },
+    prepare: preparePriceBook,
+    applyCustom: applyPriceBook,
+    rollbackCustom: rollbackPriceBook,
   },
 
   // "Call the Riverside job 'the gym'." "From now on, brief me by text."

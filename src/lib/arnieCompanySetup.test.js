@@ -160,7 +160,7 @@ describe('what the rail writes is what the app writes', () => {
 
 describe('the tool, the prompt and the page agree', () => {
   it('propose_create knows company_setup; every field is column:null; name and address required', () => {
-    expect(chat).toMatch(/enum: \['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup', 'payment', 'memory', 'expense', 'company_setup'\]/)
+    expect(chat).toMatch(/enum: \['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup', 'payment', 'memory', 'expense', 'company_setup', 'employee', 'price_book']/)
     const start = create.indexOf('  company_setup: {')
     const entry = create.slice(start, create.indexOf('\n  },\n', start))
     const cols = [...entry.matchAll(/\{ column: (null|'[^']*')/g)].map((m) => m[1])

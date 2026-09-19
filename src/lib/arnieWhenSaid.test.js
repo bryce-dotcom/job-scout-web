@@ -61,3 +61,33 @@ describe('the rails take the words, the model is told not to count', () => {
     expect(engine).toMatch(/value is the time EXACTLY as they said it/)
   })
 })
+
+describe('a month and a day, said without a year — "October 1", "Oct 1st", "10/1", "the 15th"', () => {
+  // now = Tue Sep 15 2026 in Denver.
+  it('forward is the next such day on or after today; back is the most recent', () => {
+    expect(mod.resolveDayWordDir('October 1', tz, 'forward', now)).toBe('2026-10-01')
+    expect(mod.resolveDayWordDir('Oct 1st', tz, 'forward', now)).toBe('2026-10-01')
+    expect(mod.resolveDayWordDir('1st of October', tz, 'forward', now)).toBe('2026-10-01')
+    expect(mod.resolveDayWordDir('10/1', tz, 'forward', now)).toBe('2026-10-01')
+    expect(mod.resolveDayWordDir('September 1', tz, 'forward', now)).toBe('2027-09-01')   // already past this year
+    expect(mod.resolveDayWordDir('September 1', tz, 'back', now)).toBe('2026-09-01')
+    expect(mod.resolveDayWordDir('September 15', tz, 'forward', now)).toBe('2026-09-15')  // today counts both ways
+    expect(mod.resolveDayWordDir('September 15', tz, 'back', now)).toBe('2026-09-15')
+    expect(mod.resolveDayWordDir('the 15th', tz, 'forward', now)).toBe('2026-09-15')
+    expect(mod.resolveDayWordDir('the 3rd', tz, 'forward', now)).toBe('2026-10-03')
+    expect(mod.resolveDayWordDir('the 3rd', tz, 'back', now)).toBe('2026-09-03')
+  })
+  it('a year given is kept; an impossible day is refused, not rolled over', () => {
+    expect(mod.resolveDayWordDir('oct 1, 2027', tz, 'forward', now)).toBe('2027-10-01')
+    expect(mod.resolveDayWordDir('10/1/27', tz, 'back', now)).toBe('2027-10-01')
+    expect(mod.resolveDayWordDir('Feb 30', tz, 'forward', now)).toBeNull()
+    expect(mod.resolveDayWordDir('the 32nd', tz, 'forward', now)).toBeNull()
+  })
+  it('with a time: the day number is never read as one o\'clock', () => {
+    expect(mod.resolveWhenSaid('October 1 at 2pm', tz, 'forward', now)).toEqual({ date: '2026-10-01', time: '14:00' })
+    expect(mod.resolveWhenSaid('2pm on Oct 1st', tz, 'forward', now)).toEqual({ date: '2026-10-01', time: '14:00' })
+    expect(mod.resolveWhenSaid('the 15th at 9:30', tz, 'forward', now)).toEqual({ date: '2026-09-15', time: '09:30' })
+    expect(mod.resolveWhenSaid('October 1', tz, 'forward', now)).toEqual({ date: '2026-10-01', time: null })
+    expect(mod.resolveWhenSaid('October 1 Thursday', tz, 'forward', now)).toBeNull()   // two days named
+  })
+})

@@ -353,6 +353,65 @@ const CASES = [
     turns: ['Set up the company: Summit Field Co, 1600 E Main St, Mesa, AZ 85203, lawn care, S corp.'],
     expect: { proposal: 'none', text_match: [/owner|admin/i] } },
 
+  // — the first employee by voice: the page's row, pay only for who may see pay, the invite; then gone —
+  { id: 'employee.owner.adds.tech.with.pay.invite.then.rollback', as: 'owner',
+    run: async (ctx) => {
+      const email = 'casey.morgan@example.invalid'
+      const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: `Add Casey Morgan to the team — field tech, ${email}, 801-555-0199, $28 an hour, starts Monday.` }])
+      if (r.proposal?.preview?.label === 'employee') {
+        const f = Object.fromEntries((r.proposal.preview.fields || []).map((x) => [x.label, x.value]))
+        if (f['Pay'] !== '$28.00 an hour') throw new Error('owner pay line wrong: ' + f['Pay'])
+        if (f['Job title'] !== 'Field Tech') throw new Error('title not filed as the page spells it: ' + f['Job title'])
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(f['Starts'] || '')) throw new Error('start day not resolved: ' + f['Starts'])
+        if (!/login link/.test(f['Invite'] || '')) throw new Error('invite line wrong: ' + f['Invite'])
+        const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+        const [e] = await rest(`employees?select=name,role,user_role,hourly_rate,is_hourly,active,tax_classification&id=eq.${ap.body.created_id}`)
+        if (!e || e.role !== 'Field Tech' || e.user_role !== 'User' || Number(e.hourly_rate) !== 28 || !e.is_hourly || !e.active || e.tax_classification !== 'W2') throw new Error('employee row wrong: ' + JSON.stringify(e))
+        const inv = await rest(`employee_invitations?select=id&company_id=eq.${DEMO.company}&email=eq.${encodeURIComponent(email)}`)
+        if (!inv.length) throw new Error('no invitation row')
+        const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+        const gone = await rest(`employees?select=id&id=eq.${ap.body.created_id}`); const inv2 = await rest(`employee_invitations?select=id&company_id=eq.${DEMO.company}&email=eq.${encodeURIComponent(email)}`)
+        const users = ((await (await fetch(`${U}/auth/v1/admin/users?filter=${encodeURIComponent(email)}&per_page=10`, { headers: SRH })).json())?.users || []).filter((u) => u.email === email)
+        if (gone.length || inv2.length || users.length) throw new Error('rollback left something: ' + JSON.stringify({ gone, inv2, users: users.length }))
+        r.proposal = { ...r.proposal, rolledBackByEval: true }
+      }
+      return r
+    },
+    expect: { proposal: 'create', proposal_label: 'employee', text_match: [/approve/i, /invite|login/i], text_not_match: [/^VERB /] } },
+  { id: 'employee.tech.refused', as: 'tech',
+    turns: ['Add Casey Morgan to the team, field tech, $28 an hour.'],
+    expect: { proposal: 'none', text_match: [/admin/i] } },
+
+  // — the price book from a drawn sheet: priced rows in, the blank price skipped, never priced at cost; then gone —
+  { id: 'price_book.owner.sheet.photo.blank.price.skipped.then.rollback', as: 'owner',
+    run: async (ctx) => {
+      const png = await priceSheetPng()
+      const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png } },
+        { type: 'text', text: 'Load my price book from this sheet.' },
+      ] }])
+      if (r.proposal?.preview?.label === 'price book') {
+        const f = Object.fromEntries((r.proposal.preview.fields || []).map((x) => [x.label, x.value]))
+        if (!/\$9\.50 \(cost \$3\.10\) · Product · RB-1804/.test(f['Rain Bird 1804 4in Spray Head'] || '')) throw new Error('spray head line wrong: ' + f['Rain Bird 1804 4in Spray Head'])
+        if (!/\$185\.00 · Service/.test(f['Spring Cleanup (per visit)'] || '')) throw new Error('cleanup line wrong: ' + f['Spring Cleanup (per visit)'])
+        if (f['Sod - fescue, per pallet']) throw new Error('the blank-price sod line was priced at cost: ' + f['Sod - fescue, per pallet'])
+        const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+        const [p] = await rest(`arnie_proposals?select=payload&id=eq.${r.proposal.proposal.id}`)
+        const ids = p.payload?.created?.product_ids || []
+        const rows = await rest(`products_services?select=name,type,unit_price,cost,taxable,vendor_sku,group_id,active&id=in.(${ids.join(',')})`)
+        const head = rows.find((x) => x.name === 'Rain Bird 1804 4in Spray Head')
+        if (rows.length < 5 || !head || Number(head.unit_price) !== 9.5 || Number(head.cost) !== 3.1 || head.type !== 'Product' || head.vendor_sku !== 'RB-1804' || head.group_id != null || !head.active) throw new Error('rows wrong: ' + JSON.stringify(rows))
+        const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+        const left = await rest(`products_services?select=id&id=in.(${ids.join(',')})`); if (left.length) throw new Error('rollback left rows: ' + left.length)
+        r.proposal = { ...r.proposal, rolledBackByEval: true }
+      }
+      return r
+    },
+    expect: { proposal: 'create', proposal_label: 'price book', text_match: [/approve/i], text_not_match: [/sod[^.]*\$165\.00/i] } },
+  { id: 'price_book.tech.refused', as: 'tech',
+    turns: ['Add a 2x4 LED troffer to the price book at $89, cost $52.'],
+    expect: { proposal: 'none', text_match: [/manager|Products/i] } },
+
   // — memory: a nickname kept on approval rides into the NEXT conversation and finds the job —
   { id: 'memory.tech.nickname.then.used.in.a.new.chat.then.forgotten', as: 'tech',
     run: async (ctx) => {
@@ -615,6 +674,25 @@ ${line(480, 'VISA ****4471   APPROVED')}<text x='210' y='560' text-anchor='middl
   return (await sharp(Buffer.from(svg)).png().toBuffer()).toString('base64')
 }
 
+// A price sheet, drawn: six priced lines, a header, one line whose PRICE cell is blank (cost only) — the trap.
+async function priceSheetPng() {
+  const { default: sharp } = await import('sharp')
+  const ROWS = [
+    ['ITEM', 'SKU', 'COST', 'PRICE'],
+    ['Spring Cleanup (per visit)', 'SVC-101', '', '$185.00'],
+    ['Weekly Mowing - up to 1/4 acre', 'SVC-102', '', '$55.00'],
+    ['Fertilizer 24-0-6 50lb bag', 'FRT-240', '$38.50', '$72.00'],
+    ['Rain Bird 1804 4in Spray Head', 'RB-1804', '$3.10', '$9.50'],
+    ['Mulch - hardwood, per yard', 'MLC-HW', '$28.00', '$65.00'],
+    ['Aeration (per visit)', 'SVC-103', '', '$95.00'],
+    ['Sod - fescue, per pallet', 'SOD-F', '$165.00', ''],
+  ]
+  const y0 = 120, rh = 44
+  const rows = ROWS.map((r, i) => `<text x='30' y='${y0 + i * rh}' font-size='19'${i === 0 ? " font-weight='bold'" : ''}>${r[0]}</text><text x='470' y='${y0 + i * rh}' font-size='17'>${r[1]}</text><text x='640' y='${y0 + i * rh}' font-size='19' text-anchor='end'>${r[2]}</text><text x='780' y='${y0 + i * rh}' font-size='19' text-anchor='end'${i === 0 ? " font-weight='bold'" : ''}>${r[3]}</text>`).join('')
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='820' height='520'><rect width='820' height='520' fill='#fff'/><g font-family='Arial, sans-serif' fill='#111'><text x='30' y='50' font-size='28' font-weight='bold'>SUMMIT FIELD CO — 2026 PRICE SHEET</text><text x='30' y='80' font-size='16'>Lawn &amp; landscaping · prices per unit · cost column is ours</text><line x1='30' y1='95' x2='790' y2='95' stroke='#111'/>${rows}</g></svg>`
+  return (await sharp(Buffer.from(svg)).png().toBuffer()).toString('base64')
+}
+
 // ─── fixtures: rows that make the money maths and the brief non-trivial ────
 const seeded = []
 async function seed() {
@@ -700,7 +778,7 @@ try {
     console.log(`${tag.padEnd(12)} ${c.id}`)
     if (!outcome.ok) for (const f of outcome.fails) console.log(`             - ${f}`)
     // A pass on retry is still a tendency worth seeing: show what the first attempt did wrong.
-    if (outcome.ok && attempts.length > 1) { const first = attempts[0]; for (const f of first.fails) console.log(`             first attempt: ${f}`); console.log(`             first attempt said: ${(first.reply?.text || '').replace(/s+/g, ' ').slice(0, 300)}`) }
+    if (outcome.ok && attempts.length > 1) { const first = attempts[0]; for (const f of first.fails) console.log(`             first attempt: ${f}`); console.log(`             first attempt said: ${(first.reply?.text || '').replace(/\s+/g, ' ').slice(0, 300)}`) }
     if (VERBOSE || !outcome.ok) console.log(`             tools: [${outcome.reply?.tools.join(', ') || ''}]\n             ${(outcome.reply?.text || '').replace(/\s+/g, ' ').slice(0, 300)}\n`)
   }
 } finally {
