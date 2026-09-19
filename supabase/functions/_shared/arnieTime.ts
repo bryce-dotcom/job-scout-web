@@ -67,6 +67,8 @@ export function resolveDayWordDir(said: string, tz: string, direction: 'forward'
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
   if (/^yesterday$/.test(s)) return plusDays(tz, -1, now)
   if (/^day before yesterday$/.test(s)) return plusDays(tz, -2, now)
+  const md = monthDay(s, tz, direction, now)
+  if (md) return md
   const m = s.match(/^(last\s+)?(?:next\s+|this\s+|on\s+)?(sun|mon|tue|tues|wed|thu|thur|thurs|fri|sat)[a-z]*$/)
   if (!m) return resolveDayWord(s, tz, now)
   if (!m[1] && direction === 'forward') return resolveDayWord(s, tz, now)
@@ -76,6 +78,41 @@ export function resolveDayWordDir(said: string, tz: string, direction: 'forward'
   let back = (todayDow - want + 7) % 7
   if (m[1] && back === 0) back = 7          // "last Thursday" said on a Thursday = a week ago
   return plusDays(tz, -back, now)
+}
+
+/**
+ * A calendar day said by month and day — "October 1", "Oct 1st", "10/1",
+ * "the 15th" — with no year. Forward means the next such day on or after
+ * today (a start date, a booking); back means the most recent one (a
+ * clock-out). A year given is kept. Returns null for anything else so the
+ * weekday parser gets its turn.
+ */
+function monthDay(s: string, tz: string, direction: 'forward' | 'back', now: Date): string | null {
+  const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+  let month = -1, day = -1, year: number | null = null
+  let m = s.match(/^(?:on\s+|the\s+)?([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$/) || s.match(/^(?:on\s+|the\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]{3,9})\.?(?:,?\s+(\d{4}))?$/)
+  if (m && MONTHS.some((x) => (/^\d/.test(m![1]) ? m![2] : m![1]).startsWith(x))) {
+    const [a, b] = /^\d/.test(m[1]) ? [m[2], m[1]] : [m[1], m[2]]
+    month = MONTHS.findIndex((x) => a.startsWith(x)); day = Number(b); year = m[3] ? Number(m[3]) : null
+  } else if ((m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/))) {
+    month = Number(m[1]) - 1; day = Number(m[2]); year = m[3] ? Number(m[3].length === 2 ? '20' + m[3] : m[3]) : null
+  } else if ((m = s.match(/^(?:on\s+)?the\s+(\d{1,2})(?:st|nd|rd|th)$/))) {
+    day = Number(m[1])
+  } else return null
+  if (day < 1 || day > 31) return null
+  const today = plusDays(tz, 0, now)
+  const [ty, tm] = today.split('-').map(Number)
+  const iso = (y: number, mo: number, d: number) => { const dt = new Date(Date.UTC(y, mo, d)); return dt.getUTCMonth() === mo ? dt.toISOString().slice(0, 10) : null }
+  if (month < 0) {
+    // "the 15th": this month if it fits the direction, else the next/previous month.
+    const cur = iso(ty, tm - 1, day)
+    if (cur && (direction === 'forward' ? cur >= today : cur <= today)) return cur
+    return iso(ty, tm - 1 + (direction === 'forward' ? 1 : -1), day)
+  }
+  if (year != null) return iso(year, month, day)
+  const cur = iso(ty, month, day)
+  if (cur && (direction === 'forward' ? cur >= today : cur <= today)) return cur
+  return iso(ty + (direction === 'forward' ? 1 : -1), month, day)
 }
 
 function plusDays(tz: string, n: number, now: Date): string {
@@ -101,6 +138,21 @@ export function resolveWhenSaid(said: string, tz: string, direction: 'forward' |
   const iso = s.match(/^(\d{4}-\d{2}-\d{2})(?:[t ](\d{1,2}):(\d{2}))?$/)
   if (iso) return { date: iso[1], time: iso[2] ? `${iso[2].padStart(2, '0')}:${iso[3]}` : null }
 
+  // A month-and-day at either end ("October 1 at 2pm", "2pm on Oct 1st")
+  // is lifted out before the time is looked for — its bare day number
+  // would otherwise read as one o'clock.
+  let fixedDate: string | null = null
+  {
+    const words = s.split(' ')
+    outer: for (const len of [4, 3, 2, 1]) {
+      for (const [from, to] of [[0, len], [words.length - len, words.length]]) {
+        if (from < 0 || to > words.length || from >= to) continue
+        const d = monthDay(words.slice(from, to).join(' '), tz, direction, now)
+        if (d) { fixedDate = d; s = [...words.slice(0, from), ...words.slice(to)].join(' ').trim(); break outer }
+      }
+    }
+  }
+
   // Pull the time out first; whatever is left is the day.
   let time: string | null = null
   const t = s.match(/\b(noon|midnight|(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?)\b/)
@@ -118,7 +170,8 @@ export function resolveWhenSaid(said: string, tz: string, direction: 'forward' |
     s = (s.slice(0, t.index) + ' ' + s.slice((t.index ?? 0) + t[0].length)).replace(/\bat\b/g, ' ').replace(/\s+/g, ' ').trim()
   }
   const dayWords = s.replace(/\b(at|on|for)\b/g, ' ').replace(/\s+/g, ' ').trim()
-  const date = dayWords ? resolveDayWordDir(dayWords, tz, direction, now) : plusDays(tz, 0, now)
+  if (fixedDate && dayWords) return null            // "October 1 Thursday" — two days, no answer
+  const date = fixedDate || (dayWords ? resolveDayWordDir(dayWords, tz, direction, now) : plusDays(tz, 0, now))
   if (!date) return null
   return { date, time }
 }
