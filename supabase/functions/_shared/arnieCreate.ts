@@ -28,6 +28,7 @@ import { applyCompanySetup, prepareCompanySetup, rollbackCompanySetup } from './
 import { applyEmployee, prepareEmployee, rollbackEmployee } from './arnieEmployee.ts'
 import { applyPriceBook, preparePriceBook, rollbackPriceBook } from './arniePriceBook.ts'
 import { applyWon, prepareWon, rollbackWon } from './arnieWon.ts'
+import { applySchedule, prepareSchedule, rollbackSchedule } from './arnieSchedule.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -345,6 +346,25 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     prepare: prepareWon,
     applyCustom: applyWon,
     rollbackCustom: rollbackWon,
+  },
+
+  // "Schedule the Halifax job Thursday at 8 with Jordan and Mike." — the Job Board's Schedule modal, by voice. Manager+.
+  schedule: {
+    label: 'schedule',
+    table: 'jobs',
+    minLevel: 2,
+    verb: 'Schedule',
+    done: 'Scheduled. It is on the Job Board and on each crew member\'s calendar.',
+    fields: {
+      job:      { column: null, label: 'Job',      required: true, max: 160 },
+      when:     { column: null, label: 'When',     required: true, max: 80 },
+      duration: { column: null, label: 'How long', max: 20 },
+      crew:     { column: null, label: 'Crew',     max: 200 },
+    },
+    labelOf: (f) => `Schedule ${f.job} — ${f.when}`.slice(0, 120),
+    prepare: prepareSchedule,
+    applyCustom: applySchedule,
+    rollbackCustom: rollbackSchedule,
   },
 
   // "Here's my price list" + a photo, PDF or sheet → the rows, checked, deduped, as one card.

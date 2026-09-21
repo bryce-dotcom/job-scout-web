@@ -141,7 +141,7 @@ describe('one conversion, three callers', () => {
     expect(wonSrc).toMatch(/if \(q\.salesperson_id && String\(q\.salesperson_id\) !== String\(caller\.employeeId\) && caller\.level < 2\)/)
     expect(wonSrc).toMatch(/const WINNABLE = `status=in\.\(Sent,Draft,Pending,Approved\)&rejected_date=is\.null&job_id=is\.null`/)
     expect(create).toMatch(/won: \{\n\s+label: 'won estimate',\n\s+table: 'jobs',\n\s+minLevel: 0,\n\s+verb: 'Mark won',/)
-    expect(chat).toMatch(/'company_setup', 'employee', 'price_book', 'won'\]/)
+    expect(chat).toMatch(/'company_setup', 'employee', 'price_book', 'won', 'schedule'\]/)
     expect(engine).toMatch(/## An estimate is won/)
     expect(engine).toMatch(/Approving is not scheduling/)
   })

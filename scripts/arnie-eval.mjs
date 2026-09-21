@@ -392,6 +392,36 @@ const CASES = [
     },
     expect: { proposal: 'none', text_match: [/manager|another rep|someone else/i] } },
 
+  // — "schedule it Thursday at 8 with Jordan and Carlos": the Job Board's write, the clash shown, then undone —
+  { id: 'schedule.owner.thursday.crew.clash.shown.then.rollback', as: 'owner',
+    run: async (ctx) => {
+      const fx = await scheduleFixture()
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Schedule the Halifax Flooring shop lighting job for Thursday at 8 with Jordan and Carlos, about 6 hours.' }])
+        if (r.proposal?.preview?.label === 'schedule') {
+          const f = Object.fromEntries((r.proposal.preview.fields || []).map((x) => [x.label, x.value]))
+          if (!/Thursday, .* at 8:00 AM · 6 hours, to 2:00 PM/.test(f['When'] || '')) throw new Error('when line wrong: ' + f['When'])
+          if (!/^Jordan Lee, Carlos Rivera — /.test(f['Crew'] || '')) throw new Error('crew line wrong: ' + f['Crew'])
+          if (!/^Jordan Lee: .*Eval clash visit/.test(f['Already that day'] || '')) throw new Error('the clash must be on the card: ' + f['Already that day'])
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const [job] = await rest(`jobs?select=status,start_date,end_date,assigned_team,job_lead_id&id=eq.${fx.jobId}`)
+          const appts = await rest(`appointments?select=employee_id,job_id,status,appointment_type&job_id=eq.${fx.jobId}&order=id`)
+          if (job.status !== 'Scheduled' || !job.start_date || job.assigned_team !== 'Jordan Lee, Carlos Rivera' || job.job_lead_id !== DEMO.tech.employeeId) throw new Error('job wrong: ' + JSON.stringify(job))
+          if (new Date(job.end_date) - new Date(job.start_date) !== 6 * 3600000) throw new Error('duration wrong: ' + JSON.stringify(job))
+          if (appts.length !== 2 || !appts.every((a) => a.job_id === fx.jobId && a.status === 'Scheduled' && a.appointment_type === 'Job')) throw new Error('appointments wrong: ' + JSON.stringify(appts))
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+          const [j2] = await rest(`jobs?select=status,start_date,assigned_team,job_lead_id&id=eq.${fx.jobId}`); const a2 = await rest(`appointments?select=id&job_id=eq.${fx.jobId}`)
+          if (j2.status !== 'Chillin' || j2.start_date || j2.assigned_team || j2.job_lead_id || a2.length) throw new Error('rollback left: ' + JSON.stringify({ j2, a2 }))
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally { await fx.cleanup() }
+    },
+    expect: { proposal: 'create', proposal_label: 'schedule', text_match: [/approve/i, /Jordan/, /Carlos/, /clash visit|already|that day/i], text_not_match: [/^VERB /] } },
+  { id: 'schedule.tech.refused', as: 'tech',
+    run: async (ctx) => { const fx = await scheduleFixture(); try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Schedule the Halifax Flooring shop lighting job for Thursday at 8.' }]) } finally { await fx.cleanup() } },
+    expect: { proposal: 'none', text_match: [/manager/i] } },
+
   // — the first employee by voice: the page's row, pay only for who may see pay, the invite; then gone —
   { id: 'employee.owner.adds.tech.with.pay.invite.then.rollback', as: 'owner',
     run: async (ctx) => {
@@ -735,6 +765,25 @@ async function wonFixture(number, salespersonId) {
     { company_id: C, quote_id: quote.id, item_id: null, item_name: 'Extended warranty', quantity: 1, price: 500, line_total: 500, labor_cost: 0, in_utility_scope: false, sort_order: 3 },
   ]) })
   return { quoteId: quote.id, leadId: lead.id, cleanup: wipe }
+}
+
+// A Chillin job on a fresh lead, and an appointment for Jordan on the coming Thursday — the clash the card must show.
+async function scheduleFixture() {
+  const C = DEMO.company, email = 'ben@halifaxflooring.example'
+  const wipe = async () => {
+    for (const j of await rest(`jobs?select=id&company_id=eq.${C}&job_id=eq.JOB-EVAL-SCHED`)) { await rest(`appointments?job_id=eq.${j.id}`, { method: 'DELETE' }); await rest(`jobs?id=eq.${j.id}`, { method: 'DELETE' }) }
+    await rest(`appointments?company_id=eq.${C}&title=eq.Eval clash visit`, { method: 'DELETE' })
+    for (const l of await rest(`leads?select=id&company_id=eq.${C}&email=eq.${email}`)) await rest(`leads?id=eq.${l.id}`, { method: 'DELETE' })
+  }
+  await wipe()
+  const [lead] = await rest('leads', { method: 'POST', body: JSON.stringify({ company_id: C, customer_name: 'Ben Rowe', business_name: 'Halifax Flooring', email, phone: '801-555-0177', status: 'Job Scheduled' }) })
+  const [job] = await rest('jobs', { method: 'POST', body: JSON.stringify({ company_id: C, job_id: 'JOB-EVAL-SCHED', job_title: 'Halifax Flooring — shop lighting', customer_name: 'Ben Rowe', business_name: 'Halifax Flooring', status: 'Chillin', lead_id: String(lead.id), job_address: '12 Mill St, Murray, UT', job_total: 3300 }) })
+  // The coming Thursday (after today) in Denver, 1 PM — the same day the case asks for.
+  const now = new Date(); const dow = Number(new Date(now.toLocaleString('en-US', { timeZone: DEMO.tz })).getDay())
+  const ahead = ((4 - dow + 7) % 7) || 7
+  const thursday = new Date(now.getTime() + ahead * 86400000).toLocaleDateString('en-CA', { timeZone: DEMO.tz })
+  await rest('appointments', { method: 'POST', body: JSON.stringify({ company_id: C, title: 'Eval clash visit', start_time: `${thursday}T19:00:00Z`, end_time: `${thursday}T20:00:00Z`, status: 'Scheduled', employee_id: DEMO.tech.employeeId, appointment_type: 'Appointment', created_at: new Date().toISOString() }) })
+  return { jobId: job.id, leadId: lead.id, cleanup: wipe }
 }
 
 // A price sheet, drawn: six priced lines, a header, one line whose PRICE cell is blank (cost only) — the trap.
