@@ -3,7 +3,11 @@ import { usePlaidLink } from 'react-plaid-link'
 import { supabase } from '../lib/supabase'
 import { Landmark } from 'lucide-react'
 
-export default function PlaidLink({ companyId, onSuccess, onError, theme, style }) {
+// updateItemId: reopen an existing bank link in Plaid's update mode to add
+// the Auth product (routing + account numbers) — no public-token exchange
+// afterwards, the item already has its access token. Used by Payroll's ACH
+// settings when a bank was linked for Books before Auth was asked for.
+export default function PlaidLink({ companyId, onSuccess, onError, theme, style, updateItemId = null, label = null }) {
   const [linkToken, setLinkToken] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -15,7 +19,7 @@ export default function PlaidLink({ companyId, onSuccess, onError, theme, style 
       setLoading(true)
       try {
         const { data, error } = await supabase.functions.invoke('plaid-link', {
-          body: { action: 'create_link_token', company_id: companyId }
+          body: { action: 'create_link_token', company_id: companyId, ...(updateItemId ? { update_item_id: updateItemId } : {}) }
         })
         if (!cancelled) {
           if (error || data?.error) {
@@ -32,9 +36,12 @@ export default function PlaidLink({ companyId, onSuccess, onError, theme, style 
 
     createToken()
     return () => { cancelled = true }
-  }, [companyId])
+  }, [companyId, updateItemId])
 
   const onPlaidSuccess = useCallback(async (publicToken, metadata) => {
+    // Update mode: the item is already linked; Plaid has just added Auth to
+    // it. Nothing to exchange — tell the caller to re-read.
+    if (updateItemId) { onSuccess?.({ updated_item_id: updateItemId, institution: metadata?.institution || null }); return }
     setLoading(true)
     try {
       const { data, error } = await supabase.functions.invoke('plaid-link', {
@@ -54,7 +61,7 @@ export default function PlaidLink({ companyId, onSuccess, onError, theme, style 
       onError?.(e.message)
     }
     setLoading(false)
-  }, [companyId, onSuccess, onError])
+  }, [companyId, onSuccess, onError, updateItemId])
 
   const { open, ready } = usePlaidLink({
     token: linkToken,
@@ -93,7 +100,7 @@ export default function PlaidLink({ companyId, onSuccess, onError, theme, style 
       }}
     >
       <Landmark size={14} />
-      {loading ? 'Connecting...' : 'Connect Bank Account'}
+      {loading ? 'Connecting...' : (label || (updateItemId ? 'Reconnect bank for payroll' : 'Connect Bank Account'))}
     </button>
   )
 }

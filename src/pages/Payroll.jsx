@@ -25,6 +25,8 @@ import { toast } from '../lib/toast'
 import { splitPendingRequests, daysOverdue } from '../lib/timeOffRequests'
 import { previewTypedHourImpact, mergeJobHourSources, splitTypedHours, newestTypedRowId, TYPED_HOURS_COUNTED_KEY } from '../lib/jobHours'
 import { summarizePayrollRun } from '../lib/payrollRunTotals'
+import { pickAchAccount, achSettingsFromPlaidAccount, describeAchAccount } from '../lib/achFromPlaid'
+import PlaidLink from '../components/PlaidLink'
 import { ptoDaysInPeriod, ptoAccrualPerPeriod, ptoPayForPeriod, ptoBankAfterRun } from '../lib/ptoThisPeriod'
 import TypedHoursReview from '../components/TypedHoursReview'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
@@ -420,6 +422,11 @@ export default function Payroll() {
   // Payroll Inbox builds for the bank after the run. ddOnFile is who has a
   // signed direct-deposit authorization, so the choice says how many that
   // file would cover.
+  // "Use my linked bank": what Plaid Auth returned for the company's linked
+  // accounts, so the ACH settings fill from the bank linked for Books.
+  //   loading · accounts (with routing/account) · needsRelink (items linked
+  //   before Auth was asked for) · linkedItems · error
+  const [bankPick, setBankPick] = useState({ loading: false, accounts: null, needsRelink: [], linkedItems: 0, error: null })
   const [payMethod, setPayMethod] = useState('check')
   const [ddOnFile, setDdOnFile] = useState(null)
   useEffect(() => {
@@ -4574,8 +4581,61 @@ export default function Payroll() {
                 const ach = payrollConfig.ach || {}
                 const setAch = (patch) => setPayrollConfig({ ...payrollConfig, ach: { ...ach, ...patch } })
                 const einDigits = String(company?.ein || '').replace(/\D/g, '')
+                // Bryce: "you have the bank info when it was set up through Plaid —
+                // the user should only have to set up the bank once." Ask the
+                // plaid-link function (admin-only) for routing + account numbers
+                // of the linked accounts and fill from them.
+                const loadLinkedBank = async () => {
+                  setBankPick(b => ({ ...b, loading: true, error: null }))
+                  try {
+                    const { data, error } = await supabase.functions.invoke('plaid-link', { body: { action: 'ach_details', company_id: companyId } })
+                    if (error || data?.error) throw new Error(data?.error || error?.message || 'Could not read the linked bank')
+                    const accounts = data?.accounts || []
+                    setBankPick({ loading: false, accounts, needsRelink: data?.needs_relink || [], linkedItems: data?.linked_items || 0, error: null })
+                    if (accounts.length === 1) applyLinkedAccount(accounts[0])
+                    else if (accounts.length > 1) { const best = pickAchAccount(accounts); if (best) applyLinkedAccount(best) }
+                  } catch (e) {
+                    setBankPick(b => ({ ...b, loading: false, error: e.message }))
+                  }
+                }
+                const applyLinkedAccount = (acct) => {
+                  const fields = achSettingsFromPlaidAccount(acct)
+                  setAch({ ...fields, companyName: ach.companyName || (company?.company_name || '').slice(0, 16) })
+                  toast.success(`Filled from ${describeAchAccount(acct)}. Save settings to keep it.`)
+                }
                 return (
                   <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                      <button type="button" onClick={loadLinkedBank} disabled={bankPick.loading}
+                        style={{ padding: '8px 14px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: bankPick.loading ? 'default' : 'pointer', opacity: bankPick.loading ? 0.6 : 1, minHeight: 36 }}>
+                        {bankPick.loading ? 'Reading your bank…' : 'Use my linked bank'}
+                      </button>
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>Fills the bank, routing and account from the bank you linked for Books. Nothing to type twice.</span>
+                    </div>
+                    {bankPick.error && <div style={{ fontSize: '12px', color: '#b91c1c', marginBottom: '10px' }}>{bankPick.error}</div>}
+                    {bankPick.accounts && bankPick.accounts.length === 0 && bankPick.linkedItems === 0 && !bankPick.needsRelink.length && (
+                      <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '10px' }}>No bank is linked yet. Link it once in Books → Connect Bank Account, and it fills here too.</div>
+                    )}
+                    {bankPick.accounts && bankPick.accounts.length > 1 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                        {bankPick.accounts.map(a => (
+                          <button key={a.account_id} type="button" onClick={() => applyLinkedAccount(a)}
+                            style={{ padding: '6px 10px', background: 'none', border: `1px solid ${ach.linkedAccountId === a.account_id ? theme.accent : theme.border}`, color: theme.text, borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>
+                            {describeAchAccount(a)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {bankPick.needsRelink.map(r => (
+                      <div key={r.item_id} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px', fontSize: '12px', color: theme.textMuted }}>
+                        <span>{r.institution_name} was linked before payroll access was asked for{r.error_message ? ` (${r.error_message})` : ''}. Reconnect it once and the numbers fill.</span>
+                        <PlaidLink companyId={companyId} updateItemId={r.item_id} label={`Reconnect ${r.institution_name}`} theme={theme}
+                          onSuccess={loadLinkedBank} onError={(m) => setBankPick(b => ({ ...b, error: m }))} />
+                      </div>
+                    ))}
+                    {ach.linkedMask && (
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '10px' }}>Filled from the linked account ending {ach.linkedMask}.</div>
+                    )}
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                       <div>
                         <label style={labelStyle}>Bank name</label>

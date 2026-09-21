@@ -11,7 +11,35 @@ const corsHeaders = {
 };
 
 // Plaid Link + Transaction Sync
-// Actions: create_link_token, exchange_public_token, sync_transactions, get_accounts, disconnect, sync_all
+// Actions: create_link_token, exchange_public_token, sync_transactions, get_accounts, disconnect, sync_all,
+//          ach_details (admin-only: routing + account numbers via Plaid Auth, for payroll's ACH file)
+// ach_details and update-mode link tokens return or use bank secrets, so the
+// caller must be an admin OF THE COMPANY IN THE BODY — from the JWT, never
+// from the body. Same shape as payroll-dd-export.
+function jwtEmail(req: Request): string | null {
+  try {
+    const token = (req.headers.get('Authorization') || '').replace(/^Bearers+/i, '').trim();
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)));
+    return (payload?.email || '').toLowerCase() || null;
+  } catch { return null; }
+}
+
+async function callerIsAdminOf(sb: any, req: Request, companyId: number): Promise<boolean> {
+  const email = jwtEmail(req);
+  if (!email) return false;
+  const { data } = await sb.from('employees')
+    .select('company_id, role, user_role, is_admin, is_developer')
+    .ilike('email', email).eq('active', true).eq('company_id', companyId).limit(1);
+  const e = data?.[0];
+  if (!e) return false;
+  return e.is_developer === true || e.is_admin === true
+    || ['Admin', 'admin', 'Owner', 'owner'].includes(e.user_role)
+    || ['Admin', 'Owner'].includes(e.role);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -54,6 +82,20 @@ serve(async (req) => {
         return jsonResponse({ error: 'Plaid Client ID and Secret are required. Configure them in Settings > Integrations or as edge function secrets.' }, 400);
       }
 
+      // Bryce: "you have the bank info when it was set up through Plaid —
+      // make onboarding simple so the user only sets up the bank once." Auth
+      // is what returns routing + account numbers. Optional on a new link so a
+      // bank without Auth still links for Books; in update mode it is added to
+      // the existing item so payroll can read the numbers without a re-link.
+      const updateItemId = body.update_item_id ? String(body.update_item_id) : null;
+      let updateAccessToken: string | null = null;
+      if (updateItemId) {
+        if (!(await callerIsAdminOf(supabase, req, Number(company_id)))) {
+          return jsonResponse({ error: 'Only a company admin can update a bank link.' }, 403);
+        }
+        updateAccessToken = config.items?.[updateItemId]?.access_token || null;
+        if (!updateAccessToken) return jsonResponse({ error: 'That bank link was not found.' }, 404);
+      }
       const res = await fetch(`${plaidBase}/link/token/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -62,7 +104,9 @@ serve(async (req) => {
           secret,
           user: { client_user_id: String(company_id) },
           client_name: 'JobScout',
-          products: ['transactions'],
+          ...(updateAccessToken
+            ? { access_token: updateAccessToken, products: ['auth'] }
+            : { products: ['transactions'], optional_products: ['auth'] }),
           country_codes: ['US'],
           language: 'en',
         }),
@@ -255,6 +299,50 @@ serve(async (req) => {
     }
 
     // ─── GET ACCOUNTS (refresh balances) ───
+    // ─── ACH DETAILS (admin only) ───
+    // Routing + account numbers for every linked depository account, via
+    // Plaid Auth, so Payroll's ACH settings fill from the bank the company
+    // already linked. Items linked before Auth was requested come back under
+    // needs_relink with Plaid's reason; the client offers update mode.
+    if (action === 'ach_details') {
+      if (!(await callerIsAdminOf(supabase, req, Number(company_id)))) {
+        return jsonResponse({ error: 'Only a company admin can read bank account numbers.' }, 403);
+      }
+      const items = (config.items || {}) as Record<string, any>;
+      const accounts: Array<Record<string, unknown>> = [];
+      const needsRelink: Array<Record<string, unknown>> = [];
+      for (const [itemId, item] of Object.entries(items)) {
+        if (!item?.access_token) continue;
+        const r = await fetch(`${plaidBase}/auth/get`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_id: clientId, secret, access_token: item.access_token }),
+        });
+        const d = await r.json();
+        if (!r.ok) {
+          needsRelink.push({ item_id: itemId, institution_name: item.institution_name || 'Bank', error_code: d.error_code || null, error_message: d.error_message || d.display_message || null });
+          continue;
+        }
+        const byId: Record<string, any> = {};
+        for (const a of d.accounts || []) byId[a.account_id] = a;
+        for (const n of d.numbers?.ach || []) {
+          const a = byId[n.account_id] || {};
+          if (a.type && a.type !== 'depository') continue;
+          accounts.push({
+            item_id: itemId,
+            account_id: n.account_id,
+            institution_name: item.institution_name || 'Bank',
+            name: a.name || a.official_name || 'Account',
+            mask: a.mask || null,
+            subtype: a.subtype || null,
+            routing: n.routing,
+            account: n.account,
+          });
+        }
+      }
+      return jsonResponse({ accounts, needs_relink: needsRelink, linked_items: Object.keys(items).length });
+    }
+
     if (action === 'get_accounts') {
       const results: Array<Record<string, unknown>> = [];
 
