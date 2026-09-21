@@ -9,6 +9,7 @@ import { useStore } from '../../../lib/store'
 import { Wrench, Check, X, RotateCcw, Send, Sparkles, ShieldAlert, MessageCircle } from 'lucide-react'
 import MorningBriefSettings from './MorningBriefSettings'
 import ArnieMemories from './ArnieMemories'
+import ArnieAtWork from './ArnieAtWork'
 
 const t = {
   bg: '#f7f5ef', card: '#ffffff', card2: '#f0ebdd', ink: '#2c3530', sub: '#4d5a52',
@@ -117,6 +118,7 @@ export default function ArnieSetup() {
           : 'Every change Arnie makes for you lands here — what it was, what it became, and a way to put it back.'}
       </p>
 
+      {isAdmin && <ArnieAtWork />}
       <MorningBriefSettings />
       <ArnieMemories />
 
