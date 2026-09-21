@@ -27,6 +27,7 @@ import { prepareExpense } from './arnieExpense.ts'
 import { applyCompanySetup, prepareCompanySetup, rollbackCompanySetup } from './companySetup.ts'
 import { applyEmployee, prepareEmployee, rollbackEmployee } from './arnieEmployee.ts'
 import { applyPriceBook, preparePriceBook, rollbackPriceBook } from './arniePriceBook.ts'
+import { applyWon, prepareWon, rollbackWon } from './arnieWon.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -326,6 +327,24 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     prepare: prepareEmployee,
     applyCustom: applyEmployee,
     rollbackCustom: rollbackEmployee,
+  },
+
+  // "Halifax signed." — the estimate is won: Approved, the job made, the lead moved. The rep's or a manager's.
+  won: {
+    label: 'won estimate',
+    table: 'jobs',
+    minLevel: 0,
+    verb: 'Mark won',
+    done: 'Won. The job is on the Job Board waiting to be scheduled; the estimate reads Approved; the company has been told.',
+    fields: {
+      quote:          { column: null, label: 'Estimate', required: true, max: 160 },
+      deposit_amount: { column: null, label: 'Deposit',  max: 20 },
+      deposit_method: { column: null, label: 'Method',   max: 30 },
+    },
+    labelOf: (f) => `Won: ${f.quote}`.slice(0, 120),
+    prepare: prepareWon,
+    applyCustom: applyWon,
+    rollbackCustom: rollbackWon,
   },
 
   // "Here's my price list" + a photo, PDF or sheet → the rows, checked, deduped, as one card.

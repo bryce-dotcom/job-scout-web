@@ -22,7 +22,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const ALL = ['arnie-chat', 'arnie-config', 'arnie-brief-push', 'arnie-nudge']
+const ALL = ['arnie-chat', 'arnie-config', 'arnie-brief-push', 'arnie-nudge', 'convert-estimate', 'approve-document']
 const PROJECT = 'tzrhfhisdeahrrmeksif'
 const wanted = process.argv.slice(2).filter((a) => !a.startsWith('-'))
 const fns = wanted.length ? wanted : ALL

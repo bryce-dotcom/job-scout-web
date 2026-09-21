@@ -41,7 +41,7 @@ const ONLY = args.includes('--only') ? args[args.indexOf('--only') + 1] : null
 const VERBOSE = args.includes('--verbose')
 
 // ─── the tenant this runs against ───────────────────────────────────────────
-const DEMO = { company: 25, owner: { email: 'demo@jobscout.app', password: 'Demo1234!' },
+const DEMO = { company: 25, owner: { email: 'demo@jobscout.app', password: 'Demo1234!', employeeId: 133 },
   tech: { email: 'jordan@summitfieldco.com', password: 'Eval-Temp-' + Math.random().toString(36).slice(2, 10) + '!', employeeId: 137 },
   jobA: 23510, jobB: 23506, tz: 'America/Denver' }
 const today = new Date().toLocaleDateString('en-CA', { timeZone: DEMO.tz })
@@ -352,6 +352,45 @@ const CASES = [
   { id: 'company_setup.tech.refused', as: 'tech',
     turns: ['Set up the company: Summit Field Co, 1600 E Main St, Mesa, AZ 85203, lawn care, S corp.'],
     expect: { proposal: 'none', text_match: [/owner|admin/i] } },
+
+  // — "Halifax signed": the estimate page's approve + convert, by voice; the job, its lines, the deposit; then undone —
+  { id: 'won.owner.estimate.signed.with.deposit.job.made.then.rollback', as: 'owner',
+    run: async (ctx) => {
+      const fx = await wonFixture('EST-EVAL-WON', DEMO.owner.employeeId)
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Halifax Flooring signed the shop lighting estimate — they handed us a $330 check for the deposit.' }])
+        if (r.proposal?.preview?.label === 'won estimate') {
+          const f = Object.fromEntries((r.proposal.preview.fields || []).map((x) => [x.label, x.value]))
+          if (!/3 from the estimate \(1 out of utility scope\)/.test(f['Lines'] || '')) throw new Error('lines line wrong: ' + f['Lines'])
+          if (!/Deposit \$330\.00 — per the proposal; \$330\.00 check today applied to it/.test(f['Deposit invoice'] || '')) throw new Error('deposit line wrong: ' + f['Deposit invoice'])
+          if (!/Quote Sent → Job Scheduled/.test(f['Lead'] || '')) throw new Error('lead line wrong: ' + f['Lead'])
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const [q] = await rest(`quotes?select=status,job_id&id=eq.${fx.quoteId}`)
+          const [job] = await rest(`jobs?select=status,job_total,job_total_source,discount,customer_id,business_unit&id=eq.${ap.body.created_id}`)
+          const lines = await rest(`job_lines?select=in_utility_scope,labor_cost&job_id=eq.${ap.body.created_id}&order=id`)
+          const [inv] = await rest(`invoices?select=amount,payment_status,invoice_type&job_id=eq.${ap.body.created_id}`)
+          const [lead] = await rest(`leads?select=status,converted_customer_id&id=eq.${fx.leadId}`)
+          if (q.status !== 'Approved' || q.job_id !== ap.body.created_id) throw new Error('quote not approved/linked: ' + JSON.stringify(q))
+          if (!job || job.status !== 'Chillin' || Number(job.job_total) !== 3300 || job.job_total_source !== 'lines' || Number(job.discount) !== 200 || !job.customer_id || job.business_unit !== 'Energy Scout') throw new Error('job wrong: ' + JSON.stringify(job))
+          if (lines.length !== 3 || lines[2].in_utility_scope !== false || Number(lines[1].labor_cost) !== 400) throw new Error('lines wrong: ' + JSON.stringify(lines))
+          if (!inv || Number(inv.amount) !== 330 || inv.payment_status !== 'Paid' || inv.invoice_type !== 'deposit') throw new Error('deposit invoice wrong: ' + JSON.stringify(inv))
+          if (lead.status !== 'Job Scheduled' || lead.converted_customer_id !== job.customer_id) throw new Error('lead wrong: ' + JSON.stringify(lead))
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+          const [q2] = await rest(`quotes?select=status,job_id&id=eq.${fx.quoteId}`); const jobs = await rest(`jobs?select=id&id=eq.${ap.body.created_id}`); const [l2] = await rest(`leads?select=status&id=eq.${fx.leadId}`)
+          const pays = await rest(`payments?select=id&quote_id=eq.${fx.quoteId}`); const custs = await rest(`customers?select=id&company_id=eq.${DEMO.company}&email=eq.ben@halifaxflooring.example`)
+          if (q2.status !== 'Sent' || q2.job_id || jobs.length || l2.status !== 'Quote Sent' || pays.length || custs.length) throw new Error('rollback left: ' + JSON.stringify({ q2, jobs, l2, pays, custs }))
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally { await fx.cleanup() }
+    },
+    expect: { proposal: 'create', proposal_label: 'won estimate', text_match: [/approve/i, /3,300/], text_not_match: [/^VERB /] } },
+  { id: 'won.tech.another.reps.estimate.refused', as: 'tech',
+    run: async (ctx) => {
+      const fx = await wonFixture('EST-EVAL-WON', DEMO.owner.employeeId)
+      try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Halifax Flooring signed the shop lighting estimate.' }]) } finally { await fx.cleanup() }
+    },
+    expect: { proposal: 'none', text_match: [/manager|another rep|someone else/i] } },
 
   // — the first employee by voice: the page's row, pay only for who may see pay, the invite; then gone —
   { id: 'employee.owner.adds.tech.with.pay.invite.then.rollback', as: 'owner',
@@ -672,6 +711,30 @@ ${line(140, '09/16/2026   07:42 AM')}${line(190, 'PUMP 04  UNLEADED')}${line(220
 ${money ? line(270, 'FUEL TOTAL        87.41') + line(300, 'CAR WASH BASIC     9.00') + line(350, 'SUBTOTAL          96.41') + line(380, 'TAX                0.00') + line(430, `TOTAL            ${total}`, 26, true) : line(270, 'FUEL TOTAL        ▒▒▒▒▒') + line(300, 'CAR WASH BASIC     ▒▒▒▒') + line(430, 'TOTAL            ▒▒▒▒▒▒', 26, true)}
 ${line(480, 'VISA ****4471   APPROVED')}<text x='210' y='560' text-anchor='middle' font-size='16'>THANK YOU - DRIVE SAFE</text></g></svg>`
   return (await sharp(Buffer.from(svg)).png().toBuffer()).toString('base64')
+}
+
+// A Sent estimate on a fresh lead: three lines (one out of utility scope), a $200 discount, a 10% deposit in the proposal.
+async function wonFixture(number, salespersonId) {
+  const C = DEMO.company
+  const email = 'ben@halifaxflooring.example'
+  const wipe = async () => {
+    for (const q of await rest(`quotes?select=id&company_id=eq.${C}&quote_id=eq.${number}`)) {
+      for (const j of await rest(`jobs?select=id&company_id=eq.${C}&quote_id=eq.${q.id}`)) { await rest(`job_lines?job_id=eq.${j.id}`, { method: 'DELETE' }); await rest(`invoices?job_id=eq.${j.id}`, { method: 'DELETE' }); await rest(`payments?job_id=eq.${j.id}`, { method: 'DELETE' }); await rest(`jobs?id=eq.${j.id}`, { method: 'DELETE' }) }
+      await rest(`payments?quote_id=eq.${q.id}`, { method: 'DELETE' }); await rest(`quote_lines?quote_id=eq.${q.id}`, { method: 'DELETE' }); await rest(`quotes?id=eq.${q.id}`, { method: 'DELETE' })
+    }
+    for (const l of await rest(`leads?select=id&company_id=eq.${C}&email=eq.${email}`)) await rest(`leads?id=eq.${l.id}`, { method: 'DELETE' })
+    for (const c of await rest(`customers?select=id&company_id=eq.${C}&email=eq.${email}`)) await rest(`customers?id=eq.${c.id}`, { method: 'DELETE' })
+  }
+  await wipe()
+  const [lead] = await rest('leads', { method: 'POST', body: JSON.stringify({ company_id: C, customer_name: 'Ben Rowe', business_name: 'Halifax Flooring', email, phone: '801-555-0177', address: '12 Mill St, Murray, UT 84107', status: 'Quote Sent' }) })
+  const prods = await rest(`products_services?select=id&company_id=eq.${C}&active=eq.true&order=id&limit=2`)
+  const [quote] = await rest('quotes', { method: 'POST', body: JSON.stringify({ company_id: C, quote_id: number, estimate_name: 'Halifax Flooring — shop lighting', lead_id: lead.id, status: 'Sent', sent_date: new Date().toISOString(), quote_amount: 3300, discount: 200, service_type: 'Lighting Retrofit', salesperson_id: salespersonId, summary: 'Twelve highbays and a warranty.', settings_overrides: { formal_proposal: { down_payment_amount: 10, down_payment_is_percent: true, down_payment_label: 'Deposit' } } }) })
+  await rest('quote_lines', { method: 'POST', body: JSON.stringify([
+    { company_id: C, quote_id: quote.id, item_id: prods[0]?.id || null, item_name: 'LED Highbay 150W', quantity: 12, price: 200, line_total: 2400, labor_cost: 0, in_utility_scope: true, sort_order: 1 },
+    { company_id: C, quote_id: quote.id, item_id: prods[1]?.id || null, item_name: 'Install labor', quantity: 1, price: 600, line_total: 600, labor_cost: 400, in_utility_scope: true, sort_order: 2 },
+    { company_id: C, quote_id: quote.id, item_id: null, item_name: 'Extended warranty', quantity: 1, price: 500, line_total: 500, labor_cost: 0, in_utility_scope: false, sort_order: 3 },
+  ]) })
+  return { quoteId: quote.id, leadId: lead.id, cleanup: wipe }
 }
 
 // A price sheet, drawn: six priced lines, a header, one line whose PRICE cell is blank (cost only) — the trap.

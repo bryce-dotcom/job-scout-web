@@ -25,11 +25,11 @@ const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '')
 const OPEN = ['Sent', 'Draft', 'Pending']
 
 /** Find the quote the user means: a number, an estimate name, or the customer/lead it is for. */
-async function findQuote(r: Rest, companyId: number, said: string) {
+export async function findQuote(r: Rest, companyId: number, said: string, filter?: string) {
   const term = String(said || '').replace(/[*,()]/g, ' ').trim()
   if (term.length < 3) return { error: 'Tell me which quote — a number, the estimate name, or who it is for.' }
   const sel = 'id,quote_id,estimate_name,quote_amount,status,sent_date,last_sent_at,sent_to_email,salesperson_id,lead_id,customer_id,portal_token,followup_count,service_type,job_title'
-  const open = `status=in.(${OPEN.join(',')})&approved_date=is.null&rejected_date=is.null`
+  const open = filter || `status=in.(${OPEN.join(',')})&approved_date=is.null&rejected_date=is.null`
   // One pass per distinctive word, on the quote itself and on who it is for,
   // ranked by how many words hit. Whole-phrase matching failed the first
   // live run: the model said "Halifax Flooring LED retrofit estimate" and
@@ -53,7 +53,7 @@ async function findQuote(r: Rest, companyId: number, said: string) {
   return { rows }
 }
 
-async function forWhom(r: Rest, companyId: number, q: any) {
+export async function forWhom(r: Rest, companyId: number, q: any) {
   const lead = q.lead_id ? (await readRecordList(r, `leads?select=id,customer_name,business_name,email,phone&company_id=eq.${companyId}&id=eq.${q.lead_id}&limit=1`))[0] : null
   const cust = q.customer_id ? (await readRecordList(r, `customers?select=id,name,business_name,email,phone&company_id=eq.${companyId}&id=eq.${q.customer_id}&limit=1`))[0] : null
   const name = lead?.business_name || lead?.customer_name || cust?.business_name || cust?.name || 'the customer'
@@ -62,7 +62,7 @@ async function forWhom(r: Rest, companyId: number, q: any) {
   return { name, email, phone, customerId: cust?.id ?? null, contact: lead?.customer_name || cust?.name || null }
 }
 
-const quoteLabel = (q: any, who: string) => `${q.quote_id || q.estimate_name || '#' + q.id} — ${who}${q.quote_amount ? ' — ' + usd(Number(q.quote_amount)) : ''}`
+export const quoteLabel = (q: any, who: string) => `${q.quote_id || q.estimate_name || '#' + q.id} — ${who}${q.quote_amount ? ' — ' + usd(Number(q.quote_amount)) : ''}`
 const daysAgo = (iso: string | null) => iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null
 
 export async function prepareFollowup(r: Rest, caller: Caller, f: Record<string, string>): Promise<Prepared> {
