@@ -152,7 +152,7 @@ describe('the price book from a document: rows checked, never invented', () => {
 
 describe('the tool and the prompt agree with the rails', () => {
   it('propose_create knows both; items is the one structured field; every employee field is column:null', () => {
-    expect(chat).toMatch(/enum: \['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup', 'payment', 'memory', 'expense', 'company_setup', 'employee', 'price_book'\]/)
+    expect(chat).toMatch(/enum: \['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup', 'payment', 'memory', 'expense', 'company_setup', 'employee', 'price_book', 'won']/)
     expect(chat).toMatch(/items: \{ type: 'array', description: 'price_book: one row per item/)
     const start = create.indexOf('  employee: {')
     const entry = create.slice(start, create.indexOf('\n  },\n', start))

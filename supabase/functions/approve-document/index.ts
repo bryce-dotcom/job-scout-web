@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 import { emailRep, repEmailShell, appLink } from "../_shared/notifyRep.ts";
+import { convertEstimate } from "../_shared/estimateConvert.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -347,182 +348,20 @@ serve(async (req) => {
         .eq('id', estimate.lead_id);
     }
 
-    // Auto-create a job if one doesn't already exist. Without this the
-    // estimate sits in "Approved" forever and never appears on the Sales
-    // Won metric (which counts jobs, not approved quotes). Mirror what
-    // EstimateDetail.handleConvertToJob does, simplified — line items + a
-    // deposit invoice can be added later from the UI.
+    // The job — from the one conversion every path shares (the estimate
+    // page, Arnie, and this portal). This function used to carry its own
+    // "simplified" copy that had drifted: it dropped in_utility_scope on
+    // every line, made no deposit invoice, never linked the audit and left
+    // the lead at Won instead of the delivery column.
     let createdJobId: number | null = null
     try {
       if (!estimate.job_id) {
-        // Resolve a real customer to attach to the job. Estimates that came
-        // from a lead frequently have customer_id = null with all the
-        // contact info living on the LEAD — approving then created a job
-        // with no customer and blank name/phone/address (Doug: "customer
-        // info not pulling through estimate -> job"). Find-or-create a
-        // customer (identity-safe: email -> phone -> non-conflicting name,
-        // mirroring src/lib/customerMatch.js) and stamp the contact fields.
-        const digits = (v: unknown) => String(v ?? '').replace(/\D/g, '').slice(-10)
-        let resolvedCustomerId: number | null = estimate.customer_id || null
-        let contactName = estimate.customer_name || ''
-        let contactBusiness = ''
-        let contactPhone = ''
-        let contactAddress = ''
-
-        let lead: { id: number; customer_name?: string; business_name?: string; email?: string; phone?: string; address?: string; customer_id?: number | null } | null = null
-        if (estimate.lead_id) {
-          const { data: leadRow } = await supabase
-            .from('leads')
-            .select('id, customer_name, business_name, email, phone, address, customer_id, converted_customer_id')
-            .eq('id', estimate.lead_id)
-            .maybeSingle()
-          lead = leadRow || null
-        }
-        // The lead usually knows its customer already (party_lead_before links
-        // by email/phone at insert); conversion is a lookup before it is a match.
-        if (!resolvedCustomerId && lead) {
-          resolvedCustomerId = (lead as { converted_customer_id?: number | null }).converted_customer_id || lead.customer_id || null
-        }
-
-        if (resolvedCustomerId) {
-          const { data: c } = await supabase
-            .from('customers').select('name, business_name, phone, address')
-            .eq('id', resolvedCustomerId).maybeSingle()
-          if (c) { contactName = c.name || contactName; contactBusiness = c.business_name || ''; contactPhone = c.phone || ''; contactAddress = c.address || '' }
-        } else if (lead) {
-          const e = String(lead.email || '').trim().toLowerCase()
-          const p = digits(lead.phone)
-          const nm = String(lead.customer_name || '').trim()
-          let matchId: number | null = null
-          if (e) {
-            const { data } = await supabase.from('customers').select('id').eq('company_id', tokenRow.company_id).ilike('email', e).limit(1)
-            if (data && data.length) matchId = data[0].id
-          }
-          if (!matchId && p.length >= 7) {
-            const { data } = await supabase.from('customers').select('id, phone').eq('company_id', tokenRow.company_id).ilike('phone', `%${p.slice(-4)}%`).limit(25)
-            const hit = (data || []).find((c: { phone?: string }) => digits(c.phone) === p)
-            if (hit) matchId = hit.id
-          }
-          if (!matchId && nm) {
-            const { data } = await supabase.from('customers').select('id, email, phone').eq('company_id', tokenRow.company_id).ilike('name', nm).limit(5)
-            const safe = (data || []).find((c: { email?: string; phone?: string }) =>
-              !(c.email && e && String(c.email).trim().toLowerCase() !== e) &&
-              !(digits(c.phone) && p && digits(c.phone) !== p))
-            if (safe) matchId = safe.id
-          }
-          if (matchId) {
-            resolvedCustomerId = matchId
-          } else {
-            const { data: nc } = await supabase.from('customers').insert({
-              company_id: tokenRow.company_id,
-              name: nm || lead.business_name || 'Customer',
-              business_name: lead.business_name || null,
-              email: lead.email || null,
-              phone: lead.phone || null,
-              address: lead.address || null,
-            }).select('id').single()
-            if (nc) resolvedCustomerId = nc.id
-          }
-          contactName = nm; contactBusiness = lead.business_name || ''; contactPhone = lead.phone || ''; contactAddress = lead.address || ''
-          // Link the lead to the customer so the rest of the system agrees.
-          if (resolvedCustomerId && !lead.customer_id) {
-            await supabase.from('leads').update({ customer_id: resolvedCustomerId }).eq('id', lead.id)
-          }
-        }
-
-        const customerName = contactBusiness || contactName || 'Customer'
-        const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`
-        const { data: newJob, error: jobErr } = await supabase
-          .from('jobs')
-          .insert([{
-            company_id: tokenRow.company_id,
-            job_id: jobNumber,
-            // Who, then what — never the bare service type (see EstimateDetail).
-            job_title: estimate.estimate_name || estimate.job_title
-              || (estimate.service_type ? `${customerName} - ${estimate.service_type}` : `${customerName} - Job`),
-            customer_id: resolvedCustomerId,
-            customer_name: contactName || customerName || null,
-            job_address: contactAddress || null,
-            phone: contactPhone || null,
-            // Carry the estimate's business unit so the job is visible under
-            // the right Job Board calendar — a null business_unit hides the
-            // job whenever a calendar/BU filter is active (Alayda's "NPT").
-            business_unit: estimate.business_unit || null,
-            lead_id: estimate.lead_id ? parseInt(String(estimate.lead_id)) : null,
-            salesperson_id: estimate.salesperson_id || null,
-            quote_id: estimate.id,
-            status: 'Chillin',
-            // A 'Chillin' (unscheduled/backlog) job must NOT carry a
-            // start_date, or the Job Board reroutes it into the Scheduled
-            // column while the Jobs list still shows Chillin — the two
-            // disagree (Doug). Only set a date if the estimate actually had
-            // a service date; otherwise leave it null until someone
-            // schedules it. Matches EstimateDetail.handleConvertToJob.
-            start_date: estimate.service_date || null,
-            job_total: parseFloat(String(estimate.quote_amount || 0)) || 0,
-            // Carry the rep's whole-project discount, or the invoice later has
-            // nothing to deduct and bills the customer for money that was
-            // discounted away. Matches EstimateDetail.handleConvertToJob.
-            discount: parseFloat(String(estimate.discount || 0)) || 0,
-            utility_incentive: parseFloat(String(estimate.utility_incentive || 0)) || 0,
-            // Combine estimate summary + notes + message so the job
-            // page shows what was promised. Doug + Alayda's bug.
-            details: [estimate.summary, estimate.notes, estimate.estimate_message].filter(Boolean).join('\n\n') || null,
-            notes: [estimate.notes, estimate.summary].filter(Boolean).join('\n\n') || null,
-            updated_at: new Date().toISOString(),
-          }])
-          .select('id')
-          .single()
-        if (jobErr) {
-          console.error('[approve-document] job auto-create failed', jobErr)
-        } else if (newJob?.id) {
-          createdJobId = newJob.id
-          // Link the new job back onto the quote so subsequent edits
-          // (deposit photo, line items) find it.
-          await supabase.from('quotes').update({ job_id: newJob.id }).eq('id', estimate.id)
-
-          // Copy quote_lines → job_lines so the job shows the same line
-          // items the customer accepted. Doug's Capital Lumber bug:
-          // approved $54K quote with 2 line items, job_lines was empty.
-          try {
-            const { data: qLines } = await supabase
-              .from('quote_lines')
-              .select('company_id, item_id, item_name, description, quantity, price, line_total, total, discount, labor_cost, photos, notes, kind, taxable, unit_of_measure, sort_order, image_url')
-              .eq('quote_id', estimate.id)
-              .order('sort_order', { ascending: true, nullsFirst: false })
-
-            if (qLines && qLines.length > 0) {
-              const jobLineRows = qLines.map((ql: any, i: number) => ({
-                company_id: ql.company_id || tokenRow.company_id,
-                job_id: newJob.id,
-                item_id: ql.item_id,
-                item_name: ql.item_name,
-                description: ql.description,
-                quantity: ql.quantity,
-                price: ql.price,
-                total: ql.line_total ?? ql.total,
-                totals: ql.line_total ?? ql.total,
-                discount: ql.discount || 0,
-                labor_cost: ql.labor_cost || 0,
-                photos: ql.photos,
-                notes: ql.notes,
-                kind: ql.kind,
-                taxable: ql.taxable,
-                unit_of_measure: ql.unit_of_measure,
-                // Preserve order — fall back to insertion index if sort_order missing
-                job_line_id: `JL-${newJob.id}-${i + 1}`,
-              }))
-              const { error: lineErr } = await supabase.from('job_lines').insert(jobLineRows)
-              if (lineErr) console.error('[approve-document] job_lines copy failed', lineErr)
-              else console.log(`[approve-document] copied ${jobLineRows.length} quote_lines → job_lines for job ${newJob.id}`)
-            }
-          } catch (e) {
-            console.error('[approve-document] job_lines copy exception', e)
-          }
-        }
+        const conv = await convertEstimate({ url: SUPABASE_URL, key: SERVICE_ROLE_KEY }, tokenRow.company_id, estimate.id, { createdBy: 'customer-portal' })
+        if (conv.ok) { createdJobId = conv.result.jobId; for (const w of conv.result.warnings) console.warn('[approve-document] convert:', w) }
+        else console.error('[approve-document] convert failed', conv.error)
       }
     } catch (e) {
-      console.error('[approve-document] job auto-create exception', e)
+      console.error('[approve-document] convert exception', e)
     }
 
     // Broadcast an "Estimate Approved" notification to the whole company

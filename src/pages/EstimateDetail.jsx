@@ -8,11 +8,8 @@ import { publicSheet } from '../lib/specScrub'
 import { buildSpecSheetPdf, imageToDataUrl, specCoverage } from '../lib/specSheetPdf'
 import { proposalMode, sendButtonLabel, proposalModeOptions } from '../lib/proposalModes'
 import PresentationOptions from '../components/estimate/PresentationOptions'
-import { findMatchingCustomer, contactGapPatch } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
-import { leadStatusForJob } from '../lib/leadDeliveryStatus'
 import { RecordHistoryButton } from '../components/RecordHistory'
-import { deriveBusinessUnit } from '../lib/businessUnitForWork'
 import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
@@ -25,7 +22,6 @@ import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { generateEstimatePdf, showsSavingsOnPdf } from '../lib/estimatePdf'
 import { toast } from '../lib/toast'
-import { companyNotify } from '../lib/companyNotify'
 import SignedProposalCard from '../components/SignedProposalCard'
 import EmailDeliveryBadge from '../components/EmailDeliveryBadge'
 import EstimateConversation from '../components/EstimateConversation'
@@ -170,10 +166,7 @@ function EstimateDetailInner() {
   // product whose manufacturer field says MES did.
   const [knownManufacturers, setKnownManufacturers] = useState([])
   const currentEmployee = useStore((state) => state.currentEmployee)
-  const products = useStore((state) => state.products)
   const employees = useStore((state) => state.employees)
-  const defaultLaborWarrantyMonths = useStore((state) => state.defaultLaborWarrantyMonths)
-  const defaultPartsWarrantyMonths = useStore((state) => state.defaultPartsWarrantyMonths)
   const prescriptiveMeasures = useStore((state) => state.prescriptiveMeasures)
   const leads = useStore((state) => state.leads)
   const customers = useStore((state) => state.customers)
@@ -184,8 +177,6 @@ function EstimateDetailInner() {
   const deleteQuoteLine = useStore((state) => state.deleteQuoteLine)
   const updateQuote = useStore((state) => state.updateQuote)
   const deleteQuote = useStore((state) => state.deleteQuote)
-  const updateLead = useStore((state) => state.updateLead)
-  const storeJobStatuses = useStore((state) => state.jobStatuses)
   const settings = useStore((state) => state.settings)
   const businessUnits = useStore((state) => state.businessUnits)
 
@@ -1223,12 +1214,36 @@ function EstimateDetailInner() {
   }
 
   // Approval + Deposit flow (approval only - no auto job creation)
+  // Approve — and convert — on the server (convert-estimate → _shared/
+  // estimateConvert.ts), the same code the customer portal and Arnie run.
+  // This page used to carry its own 300-line copy of the conversion and the
+  // portal a "simplified" one that had already drifted (it dropped
+  // in_utility_scope on every line). One place now. The deposit photo is
+  // the only thing that stays here: it is a file on this device.
+  const approveOnServer = async (deposit) => {
+    const { data, error } = await supabase.functions.invoke('convert-estimate', { body: { quote_id: parseInt(id), approve: true, deposit, convert: !estimate.job_id } })
+    if (error) throw new Error(error.message || 'Could not approve')
+    if (data?.error) throw new Error(data.error)
+    return data
+  }
+
+  const afterConvert = async (data) => {
+    if (data?.job?.depositInvoice) {
+      const d = data.job.depositInvoice
+      toast.success(`${d.label} invoice ${d.number} created: ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(d.amount)}`)
+    }
+    for (const w of data?.job?.warnings || []) toast.error(w)
+    if (data?.job?.jobNumber) toast.success(`Job ${data.job.jobNumber} created!`)
+    await fetchJobs()
+    await fetchEstimateData()
+    await fetchQuotes()
+    if (estimate.lead_id) await fetchLeads()
+  }
+
   const handleApproveWithDeposit = async () => {
     setSaving(true)
     try {
       let photoUrl = null
-
-      // Upload deposit photo if captured
       if (depositPhoto?.file) {
         const ext = depositPhoto.file.name.split('.').pop()
         const path = `estimates/${id}/deposit/${Date.now()}.${ext}`
@@ -1240,69 +1255,12 @@ function EstimateDetailInner() {
           photoUrl = urlData.publicUrl
         }
       }
-
       const depositAmount = parseFloat(depositForm.deposit_amount) || 0
-
-      const updates = {
-        status: 'Approved',
-        deposit_amount: depositAmount,
-        deposit_method: depositForm.deposit_method || null,
-        deposit_date: depositForm.deposit_date || null,
-        deposit_notes: depositForm.deposit_notes || null,
-        deposit_photo: photoUrl,
-        updated_at: new Date().toISOString()
-      }
-      await updateQuote(id, updates)
-
-      // Create a payment record linked to the estimate so it can be applied to invoice/job later
-      if (depositAmount > 0) {
-        const paymentId = `DEP-${Date.now().toString(36).toUpperCase()}`
-        await supabase.from('payments').insert([{
-          company_id: companyId,
-          payment_id: paymentId,
-          amount: depositAmount,
-          date: depositForm.deposit_date || localDateStr(new Date()),
-          method: depositForm.deposit_method || null,
-          status: 'Completed',
-          notes: `Deposit for estimate ${estimate.quote_id}${depositForm.deposit_notes ? ' — ' + depositForm.deposit_notes : ''}`,
-          is_deposit: true,
-          quote_id: parseInt(id),
-          receipt_photo: photoUrl
-        }])
-      }
-
-      // Update linked lead status if exists
-      if (estimate.lead_id) {
-        await updateLead(estimate.lead_id, { status: 'Won', updated_at: new Date().toISOString() })
-      }
-
-      toast.success('Estimate approved! Ready to convert to a Job.', { duration: 5000 })
-
-      const customerName = estimate.customer?.name || estimate.lead?.customer_name || 'Unknown'
-      const amount = parseFloat(estimate.total) || 0
-      const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
-      companyNotify({
-        companyId,
-        type: 'estimate_won',
-        title: 'Estimate Won!',
-        message: `${customerName}${amountStr} (${estimate.quote_id})`,
-        metadata: { quote_id: id, customer_name: customerName, amount },
-        createdBy: user?.id
-      })
-
+      const data = await approveOnServer(depositAmount > 0 ? { amount: depositAmount, method: depositForm.deposit_method || null, date: depositForm.deposit_date || null, notes: depositForm.deposit_notes || null, photo_url: photoUrl } : null)
+      toast.success('Estimate approved!', { duration: 5000 })
       setShowDepositModal(false)
       setDepositPhoto(null)
-      await fetchEstimateData()
-      await fetchQuotes()
-
-      // Auto-create the job — Doug expected one click, not three
-      // (approve -> "Ready to convert" banner -> Convert to Job button).
-      // The job lands in Chillin so the PM can decide when to schedule it.
-      if (!estimate.job_id) {
-        try { await handleConvertToJob({ silent: true }) } catch (e) {
-          console.warn('[EstimateDetail] auto-convert after approve failed:', e?.message)
-        }
-      }
+      await afterConvert(data)
     } catch (err) {
       toast.error('Error: ' + err.message)
     }
@@ -1312,41 +1270,10 @@ function EstimateDetailInner() {
   const handleSkipDeposit = async () => {
     setSaving(true)
     try {
-      const updates = {
-        status: 'Approved',
-        deposit_amount: 0,
-        updated_at: new Date().toISOString()
-      }
-      await updateQuote(id, updates)
-
-      if (estimate.lead_id) {
-        await updateLead(estimate.lead_id, { status: 'Won', updated_at: new Date().toISOString() })
-      }
-
-      toast.success('Estimate approved! Ready to convert to a Job.', { duration: 5000 })
-
-      const customerName = estimate.customer?.name || estimate.lead?.customer_name || 'Unknown'
-      const amount = parseFloat(estimate.total) || 0
-      const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
-      companyNotify({
-        companyId,
-        type: 'estimate_won',
-        title: 'Estimate Won!',
-        message: `${customerName}${amountStr} (${estimate.quote_id})`,
-        metadata: { quote_id: id, customer_name: customerName, amount },
-        createdBy: user?.id
-      })
-
+      const data = await approveOnServer(null)
+      toast.success('Estimate approved!', { duration: 5000 })
       setShowDepositModal(false)
-      await fetchEstimateData()
-      await fetchQuotes()
-
-      // Same auto-convert as the deposit path
-      if (!estimate.job_id) {
-        try { await handleConvertToJob({ silent: true }) } catch (e) {
-          console.warn('[EstimateDetail] auto-convert after approve (skip deposit) failed:', e?.message)
-        }
-      }
+      await afterConvert(data)
     } catch (err) {
       toast.error('Error: ' + err.message)
     }
@@ -1558,482 +1485,16 @@ function EstimateDetailInner() {
     setReceiptUploading(false)
   }
 
-  // Convert approved estimate to a Job. When called from the Approve
-  // flow (auto-convert) we skip the confirm dialog and the success toast
-  // so it feels like one action instead of three.
+  // Convert an approved estimate to a Job — on the server, see above.
   const handleConvertToJob = async (opts = {}) => {
     const { silent = false } = opts
     if (!silent && !confirm('Convert this estimate to a Job?')) return
     setConvertingToJob(true)
     try {
-      // Refetch the estimate fresh so we never trust a stale closure
-      // when this runs auto-after-approve. (React state updates after
-      // fetchEstimateData() are not visible inside this same async tick.)
-      const { data: freshEstimate } = await supabase
-        .from('quotes')
-        .select('*, lead:leads(id, customer_name, business_name, phone, email, address, customer_id, converted_customer_id), customer:customers(id, name, email, phone, address, business_name, secondary_contact_name, secondary_contact_phone, secondary_contact_email)')
-        .eq('id', id)
-        .single()
-      const estimateRow = freshEstimate || estimate
-
-      // 1. Find or create customer
-      // Doug + Christopher feedback: contact name/phone wasn't pulling
-      // through from Lead → Estimate → Job (Capital Lumber, Evergreen).
-      // Two failure modes were happening here:
-      //   a) Customer create only carried name/phone/email/address —
-      //      business_name was dropped, so commercial leads landed as
-      //      bare-name records with no business context.
-      //   b) When a customer was already linked but was missing phone
-      //      (e.g. created from a stub lead), we never back-filled from
-      //      the lead, so installers couldn't reach the contact.
-      // The lead usually knows its customer already: the database links a
-      // lead to an existing customer by email/phone the moment it is created
-      // (party_lead_before), so conversion is a lookup, not a re-match.
-      let customerId = estimateRow.customer_id || estimateRow.lead?.converted_customer_id || estimateRow.lead?.customer_id || null
-      const customerInfo = estimateRow.customer || estimateRow.lead
-      const leadInfo    = estimateRow.lead || null
-      const customerName = customerInfo?.name || customerInfo?.customer_name || ''
-      const businessName = customerInfo?.business_name || leadInfo?.business_name || null
-
-      if (!customerId && customerName) {
-        // Identity-safe match (email → phone → non-conflicting name). A bare
-        // name match used to attach the wrong person's record — Doug's
-        // estimate 4458 got Curley Construction's email (ticket 5406ff71).
-        const matchedId = await findMatchingCustomer(supabase, companyId, {
-          name: customerName,
-          email: customerInfo?.email || leadInfo?.email,
-          phone: customerInfo?.phone || leadInfo?.phone,
-        })
-
-        if (matchedId) {
-          customerId = matchedId
-          // Same gap as the lead conversion: matching an existing customer left
-          // the phone and email we had just been given stranded, so the job read
-          // a customer with no way to contact anyone. Fill blanks only.
-          const { data: matched } = await supabase
-            .from('customers').select('phone, email, address').eq('id', matchedId).maybeSingle()
-          const patch = contactGapPatch(matched, {
-            phone: customerInfo?.phone || leadInfo?.phone,
-            email: customerInfo?.email || leadInfo?.email,
-            address: customerInfo?.address || leadInfo?.address,
-          })
-          if (patch) await supabase.from('customers').update(patch).eq('id', matchedId)
-        } else {
-          const { data: newCust, error: custErr } = await supabase
-            .from('customers')
-            .insert({
-              company_id: companyId,
-              name: customerName.trim(),
-              business_name: businessName || null,
-              phone: customerInfo?.phone || leadInfo?.phone || null,
-              email: customerInfo?.email || leadInfo?.email || null,
-              address: customerInfo?.address || leadInfo?.address || null,
-            })
-            .select()
-            .single()
-          if (custErr) throw custErr
-          customerId = newCust.id
-        }
-      }
-
-      // Back-fill the linked customer when fields the lead has would
-      // otherwise stay blank on the job's contact card. Never overwrite
-      // existing data — only fills NULL slots.
-      if (customerId && leadInfo) {
-        const cust = estimateRow.customer || null
-        const patch = {}
-        if (cust && !cust.phone         && leadInfo.phone)         patch.phone = leadInfo.phone
-        if (cust && !cust.email         && leadInfo.email)         patch.email = leadInfo.email
-        if (cust && !cust.address       && leadInfo.address)       patch.address = leadInfo.address
-        if (cust && !cust.business_name && leadInfo.business_name) patch.business_name = leadInfo.business_name
-        if (Object.keys(patch).length > 0) {
-          patch.updated_at = new Date().toISOString()
-          const { error: patchErr } = await supabase
-            .from('customers').update(patch).eq('id', customerId)
-          if (patchErr) console.warn('[convertToJob] customer back-fill failed', patchErr)
-        }
-      }
-
-      // Defensive: if we still couldn't resolve a customer, log loudly
-      // so we can catch the next Capital Lumber-style orphan before
-      // installers find out in the field. The job insert is allowed to
-      // proceed (legacy behavior preserved) but the issue is visible.
-      if (!customerId) {
-        console.error('[convertToJob] WARNING: creating job with no customer link', {
-          estimate_id: estimateRow.id,
-          quote_id: estimateRow.quote_id,
-          lead_id: estimateRow.lead_id,
-          customer_name_seen: customerName || null,
-        })
-      }
-
-      // 2. Create the job
-      const jobNumber = `JOB-${Date.now().toString(36).toUpperCase()}`
-      const { data: newJob, error: jobError } = await supabase
-        .from('jobs')
-        .insert([{
-          company_id: companyId,
-          job_id: jobNumber,
-          // Prefer the BUSINESS name for the fallback title — a commercial
-          // lead with a split contact/business (e.g. contact "Casey",
-          // business "Electric 51 Speedshop") was landing as "Casey - Job"
-          // and flowing through to the job board + POs. Business name first,
-          // contact name only when there's no business.
-          // ...and never the bare service type. A Lenard estimate has no
-          // estimate_name, so JOB-MTDMUYP4 (AZ Camping Nation RV) came out
-          // titled "Energy Efficiency" — which is what every Lenard job would
-          // be called, and exactly what Cameron cannot tell apart in the
-          // field. Who, then what.
-          job_title: estimateRow.estimate_name
-            || ((businessName || customerName) && estimateRow.service_type ? `${businessName || customerName} - ${estimateRow.service_type}` : null)
-            || `${businessName || customerName} - Job`,
-          customer_id: customerId,
-          lead_id: estimateRow.lead_id ? parseInt(estimateRow.lead_id) : null,
-          salesperson_id: estimateRow.salesperson_id || null,
-          quote_id: estimateRow.id,
-          // Carry the estimate's business unit so the job shows under the
-          // right Job Board calendar. A null business_unit makes the job
-          // invisible whenever a calendar/BU filter is active (Alayda's
-          // "NPT" job vanished for this reason). When the estimate has none,
-          // derive it from the TYPE OF WORK on the line items (lighting ->
-          // Energy Scout, cleaning -> HHH Building Services).
-          business_unit: estimateRow.business_unit
-            || deriveBusinessUnit({ products: (lineItems || []).map(l => l.item).filter(Boolean), text: estimateRow.estimate_name || estimateRow.service_type })
-            || null,
-          job_address: customerInfo?.address || null,
-          // Default to Chillin (the triage / new-jobs column) — matches
-          // Jobs.jsx default and what Doug expects when an estimate is
-          // approved. Schedule modal flips it to Scheduled when a date
-          // is set.
-          status: 'Chillin',
-          // Only carry start_date through if the estimate actually had
-          // a service_date. Auto-filling NOW pushed every approved job
-          // into the Scheduled column (PMJobSetter derives the column
-          // from start_date when it's today-or-later), even though the
-          // tech hadn't actually committed to a date — which is what
-          // Doug reported as "jobs show up in Scheduled when approved."
-          start_date: estimateRow.service_date || null,
-          job_total: parseFloat(estimateRow.quote_amount) || (subtotal - discount),
-          // Carry the rep's whole-project discount onto the job. Without this
-          // it died at the estimate→job boundary (0 of 2 real conversions kept
-          // it), so the invoice had no discount to apply and the customer got
-          // billed for money the rep had discounted away.
-          // Safe against double-subtracting: quote_amount (→ job_total) is the
-          // NET, while the copied lines are GROSS — jobs consistently satisfy
-          // lines == job_total + discount, and the invoice math subtracts the
-          // discount from the GROSS line sum, not from job_total.
-          discount: parseFloat(estimateRow.discount) || 0,
-          utility_incentive: parseFloat(estimateRow.utility_incentive) || 0,
-          // Carry the estimate's notes / summary onto the job so the
-          // installers see what was promised. Doug + Alayda flagged that
-          // notes weren't transferring estimate→job. Combine summary
-          // + notes (and the customer-facing message if set) so nothing
-          // is lost. Pulled from the FRESH estimate row, not the closure,
-          // because auto-convert runs before React state catches up.
-          details: [estimateRow.summary, estimateRow.notes, estimateRow.estimate_message].filter(Boolean).join('\n\n') || null,
-          notes: [estimateRow.notes, estimateRow.summary].filter(Boolean).join('\n\n') || null,
-          updated_at: new Date().toISOString()
-        }])
-        .select()
-        .single()
-
-      if (jobError) throw jobError
-
-      // 2b. Create a Deposit Invoice if the formal proposal has a
-      //     down payment configured. Standard construction practice:
-      //     deposit gets its own invoice so the bookkeeper has somewhere
-      //     to apply the customer's check. The invoice is created in the
-      //     regular `invoices` table with `invoice_type='deposit'`.
-      //     Utility invoices (separate table) are untouched.
-      try {
-        const formalCfg = estimate.settings_overrides?.formal_proposal || {}
-        const dpLabel = formalCfg.down_payment_label || 'Deposit'
-        const dpRaw = parseFloat(formalCfg.down_payment_amount) || 0
-        const dpIsPercent = !!formalCfg.down_payment_is_percent
-        const contractTotal = subtotal - (parseFloat(estimate.discount) || 0)
-        const dpAmount = dpIsPercent
-          ? Math.round(contractTotal * (dpRaw / 100) * 100) / 100
-          : dpRaw
-
-        if (dpAmount > 0) {
-          const invNumber = `INV-DEP-${Date.now().toString(36).toUpperCase()}`
-          const { data: depositInvoice, error: depInvErr } = await supabase
-            .from('invoices')
-            .insert([{
-              company_id: companyId,
-              job_id: newJob.id,
-              customer_id: customerId,
-              invoice_id: invNumber,
-              amount: dpAmount,
-              payment_status: 'Draft',
-              invoice_type: 'deposit',
-              business_unit: estimate.business_unit || null,
-              job_description: `${dpLabel} for ${estimate.estimate_name || estimate.quote_id || 'project'}`,
-              notes: `Auto-generated deposit invoice from ${estimate.quote_id || `EST-${estimate.id}`}. ${dpLabel} due upon acceptance per formal proposal.`,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            }])
-            .select()
-            .single()
-
-          if (depInvErr) {
-            console.error('[convertToJob] deposit invoice insert failed', depInvErr)
-          } else if (depositInvoice) {
-            // If the rep already captured a deposit payment on the
-            // estimate via the existing Deposit Modal, the payments row
-            // will have is_deposit=true and quote_id=estimate.id. Link
-            // it to the new invoice and mark the invoice Paid/Partial.
-            const { data: existingPayment } = await supabase
-              .from('payments')
-              .select('id, amount')
-              .eq('company_id', companyId)
-              .eq('quote_id', estimate.id)
-              .eq('is_deposit', true)
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle()
-
-            if (existingPayment?.id) {
-              const paidAmount = parseFloat(existingPayment.amount) || 0
-              await supabase
-                .from('payments')
-                .update({ invoice_id: depositInvoice.id, job_id: newJob.id })
-                .eq('id', existingPayment.id)
-
-              if (paidAmount >= dpAmount - 0.01) {
-                await supabase
-                  .from('invoices')
-                  .update({ payment_status: 'Paid', updated_at: new Date().toISOString() })
-                  .eq('id', depositInvoice.id)
-              } else if (paidAmount > 0) {
-                await supabase
-                  .from('invoices')
-                  .update({ payment_status: 'Partial', updated_at: new Date().toISOString() })
-                  .eq('id', depositInvoice.id)
-              }
-            }
-
-            toast.success(`${dpLabel} invoice ${invNumber} created: ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(dpAmount)}`)
-          }
-        }
-      } catch (depErr) {
-        console.error('[convertToJob] deposit invoice step failed', depErr)
-      }
-
-      // 3. Copy quote lines to job lines.
-      //
-      // CRITICAL: refetch quote_lines from the DB instead of relying on the
-      // `lineItems` React state. When this handler is auto-invoked right
-      // after `await fetchEstimateData()` (the approve/skip-deposit auto-
-      // convert path), `lineItems` from the closure is still stale because
-      // React hasn't re-rendered yet. That bug silently produced jobs with
-      // a $ total but ZERO job_lines (Pacific Steel, bitter creek, etc.).
-      const { data: freshQuoteLines, error: qlErr } = await supabase
-        .from('quote_lines')
-        .select('id, item_id, quantity, price, line_total, notes, photos, in_utility_scope, description, item_name, labor_cost')
-        .eq('quote_id', estimateRow.id)
-      if (qlErr) {
-        console.error('[convertToJob] failed to fetch quote_lines for copy:', qlErr)
-      }
-      const linesToCopy = freshQuoteLines || []
-
-      // Coverage dates — sum the labor/parts coverage months added by any
-      // Extended Service Coverage upsells on the quote, plus the company
-      // default (1 yr labor / 5 yr parts), and stamp the resulting "until"
-      // dates on the new job. Service-visit dispatch later reads these to
-      // pre-fill parts_coverage / labor_coverage on each warranty call so
-      // nobody has to remember "we sold them Tier B in 2024."
-      try {
-        const itemIds = [...new Set(linesToCopy.map(l => l.item_id).filter(Boolean))]
-        let laborMonthsAdded = 0
-        let partsMonthsAdded = 0
-        if (itemIds.length) {
-          const { data: upsells } = await supabase
-            .from('products_services')
-            .select('id, labor_coverage_months_added, parts_coverage_months_added')
-            .in('id', itemIds)
-          for (const l of linesToCopy) {
-            const p = (upsells || []).find(u => u.id === l.item_id)
-            if (!p) continue
-            const qty = Number(l.quantity) || 1
-            laborMonthsAdded += (Number(p.labor_coverage_months_added) || 0) * qty
-            partsMonthsAdded += (Number(p.parts_coverage_months_added) || 0) * qty
-          }
-        }
-        // Company-level defaults come from the settings table per-tenant
-        // (keys: default_labor_warranty_months, default_parts_warranty_months).
-        // Falls back to 12/12 if the settings row was never seeded —
-        // a half-onboarded tenant still gets a sane conversion. Change
-        // the defaults from Settings → Warranty defaults, not from code.
-        const baseLaborMonths = Number(defaultLaborWarrantyMonths) || 12
-        const basePartsMonths = Number(defaultPartsWarrantyMonths) || 12
-        const totalLaborMonths = baseLaborMonths + laborMonthsAdded
-        const totalPartsMonths = basePartsMonths + partsMonthsAdded
-        const addMonths = (months) => {
-          const d = new Date()
-          d.setMonth(d.getMonth() + months)
-          return d.toISOString().slice(0, 10) // YYYY-MM-DD for the date column
-        }
-        await supabase.from('jobs').update({
-          labor_coverage_until_date: addMonths(totalLaborMonths),
-          parts_coverage_until_date: addMonths(totalPartsMonths),
-        }).eq('id', newJob.id)
-      } catch (covErr) {
-        console.warn('[convertToJob] coverage date stamp failed:', covErr?.message || covErr)
-      }
-
-      if (linesToCopy.length > 0) {
-        const jobLines = linesToCopy.map(line => ({
-          company_id: companyId,
-          job_id: newJob.id,
-          item_id: line.item_id || null,
-          quantity: line.quantity || 1,
-          price: line.price || 0,
-          total: line.line_total || 0,
-          notes: line.notes || null,
-          photos: line.photos || [],
-          // Carry forward in_utility_scope so out-of-scope items tagged
-          // at the estimate stage stay tagged when they reach the job
-          // and then the invoice. Without this, all add-on services
-          // (warranties, M&V, processing fees) silently default back to
-          // in-scope when an estimate is accepted.
-          in_utility_scope: line.in_utility_scope !== false,
-          // Carry description + labor_cost too — without these the
-          // customer invoice falls back to "Item" or $0 labor.
-          description: line.description || line.item_name || null,
-          labor_cost: line.labor_cost || 0,
-        }))
-        const { data: createdJobLines, error: jlErr } = await supabase
-          .from('job_lines')
-          .insert(jobLines)
-          .select('id')
-        if (jlErr) {
-          // Surface loudly so we never silently lose lines again.
-          console.error('[convertToJob] job_lines insert failed:', jlErr)
-          toast.error(`Job created but line items failed to copy: ${jlErr.message}`)
-        } else if (createdJobLines?.length) {
-          // Map quote_line_id → job_line_id for photo carry-forward
-          for (let i = 0; i < linesToCopy.length; i++) {
-            const quoteLineId = linesToCopy[i].id
-            const jobLineId = createdJobLines[i]?.id
-            if (quoteLineId && jobLineId) {
-              await supabase
-                .from('file_attachments')
-                .update({ job_id: newJob.id, job_line_id: jobLineId })
-                .eq('quote_line_id', quoteLineId)
-                .eq('company_id', companyId)
-            }
-          }
-        }
-      }
-
-      // 4. Link document attachments to the new job
-      if (attachments.length > 0) {
-        for (const att of attachments) {
-          await supabase
-            .from('file_attachments')
-            .update({ job_id: newJob.id })
-            .eq('id', att.id)
-        }
-      }
-
-      // 4a2. Point the lighting audit at the job it became.
-      //
-      // FieldScout's job briefing looks up the audit by lighting_audits.job_id
-      // to show the crew the per-area breakdown — locations, fixture counts,
-      // mounting heights and the surveyor's notes and photos. Nothing ever set
-      // that column: it was null on all 125 audits, so that whole panel was
-      // dead code and the installer arrived with none of the survey detail.
-      if (estimate.audit_id) {
-        const { error: auditLinkErr } = await supabase
-          .from('lighting_audits')
-          .update({ job_id: newJob.id })
-          .eq('id', estimate.audit_id)
-          .eq('company_id', companyId)
-        if (auditLinkErr) console.warn('[convertToJob] audit -> job link failed:', auditLinkErr.message)
-      }
-
-      // 4b. Carry the signed formal proposal to the new job
-      if (estimate.signed_proposal_attachment_id) {
-        await supabase
-          .from('file_attachments')
-          .update({ job_id: newJob.id })
-          .eq('id', estimate.signed_proposal_attachment_id)
-        await supabase
-          .from('jobs')
-          .update({ signed_proposal_attachment_id: estimate.signed_proposal_attachment_id })
-          .eq('id', newJob.id)
-      }
-
-      // 4c. Carry canonical customer signature from the lead to the job
-      //     so any signable document generated on the job auto-stamps it.
-      if (estimate.lead_id) {
-        try {
-          const { data: leadSig } = await supabase
-            .from('leads')
-            .select('customer_signature_path, customer_signature_typed, customer_signature_method, customer_signature_captured_at')
-            .eq('id', estimate.lead_id)
-            .maybeSingle()
-          if (leadSig && (leadSig.customer_signature_path || leadSig.customer_signature_typed)) {
-            await supabase
-              .from('jobs')
-              .update({
-                customer_signature_path: leadSig.customer_signature_path || null,
-                customer_signature_typed: leadSig.customer_signature_typed || null,
-                customer_signature_method: leadSig.customer_signature_method || null,
-                customer_signature_captured_at: leadSig.customer_signature_captured_at || null,
-              })
-              .eq('id', newJob.id)
-          }
-        } catch (sigErr) {
-          console.warn('[convertToJob] signature carry-over failed', sigErr)
-        }
-      }
-
-      // Also carry notes photos forward
-      if (notesPhotos.length > 0) {
-        for (const p of notesPhotos) {
-          await supabase
-            .from('file_attachments')
-            .update({ job_id: newJob.id })
-            .eq('id', p.id)
-        }
-      }
-
-      // 5. Carry quote expenses forward to the new job
-      await supabase
-        .from('expenses')
-        .update({ job_id: newJob.id })
-        .eq('quote_id', estimate.id)
-        .eq('company_id', companyId)
-
-      // Also carry lead expenses forward (ones not already on a job)
-      if (estimate.lead_id) {
-        await supabase
-          .from('expenses')
-          .update({ job_id: newJob.id })
-          .eq('lead_id', estimate.lead_id)
-          .is('job_id', null)
-          .eq('company_id', companyId)
-      }
-
-      // 6. Link job back to estimate
-      await updateQuote(id, { job_id: newJob.id, customer_id: customerId, updated_at: new Date().toISOString() })
-
-      // 7. Update lead status if linked
-      if (estimate.lead_id) {
-        await updateLead(estimate.lead_id, {
-          status: leadStatusForJob(newJob.status || 'Chillin', storeJobStatuses),
-          converted_customer_id: customerId,
-          updated_at: new Date().toISOString()
-        })
-        await fetchLeads()
-      }
-
-      toast.success(`Job ${jobNumber} created!`)
-      await fetchJobs()
-      await fetchEstimateData()
-      await fetchQuotes()
+      const { data, error } = await supabase.functions.invoke('convert-estimate', { body: { quote_id: parseInt(id), convert: true } })
+      if (error) throw new Error(error.message || 'Could not convert')
+      if (data?.error) throw new Error(data.error)
+      await afterConvert(data)
     } catch (err) {
       toast.error('Failed to convert: ' + err.message)
     }

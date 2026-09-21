@@ -104,6 +104,6 @@ describe('one sender for the brief and the nudge, one cron pattern', () => {
     const entry = vercel.crons.find((c) => c.path === '/api/cron/arnie-nudge')
     expect(entry?.schedule).toBe('35 * * * *')
     expect(vercel.crons.find((c) => c.path === '/api/cron/arnie-brief-push')?.schedule).toBe('5 * * * *')
-    expect(deploy).toMatch(/'arnie-brief-push', 'arnie-nudge'\]/)
+    expect(deploy).toMatch(/'arnie-brief-push', 'arnie-nudge', 'convert-estimate', 'approve-document'\]/)
   })
 })
