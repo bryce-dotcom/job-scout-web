@@ -30,7 +30,7 @@ import { taxLiabilitySummary } from '../lib/payrollBooks'
 import { summarizePayroll, payrollJournalRows, isPayrollBankRow } from '../lib/payrollBooks'
 import { buildJournal, journalCsv, journalTotals, qboBankCsvs } from '../lib/journalExport'
 import { suggestExpensesForTransaction } from '../lib/expenseMatch'
-import { computeRevenue, computeExpenses } from '../lib/revenueBasis'
+import { computeRevenue, computeExpenses, collectedIncentives as incentivesCollectedIn } from '../lib/revenueBasis'
 import { inLocalRange, localDateStr } from '../lib/localDate'
 import { isLegacyNetShape, totalCustomerAR, totalUtilityAR, invoiceBalance, isInvoiceOpen, paymentsByInvoiceIndex } from '../lib/arHelpers'
 import { PAYMENT_METHODS } from '../lib/schema'
@@ -316,17 +316,16 @@ export default function Books() {
 
   const [activeTab, setActiveTab] = useState('overview')
 
-  // Business-unit filter — persists in localStorage so refresh / back-button
-  // doesn't reset. 'all' = aggregate every unit (default, matches legacy
-  // behavior). A specific name = filter invoice/employee-driven views to
-  // that unit. Things without a business_unit column (manual expenses,
-  // Plaid bank txns) stay company-wide and get labeled "(all units)".
-  const [selectedBu, setSelectedBu] = useState(() => {
-    try { return localStorage.getItem('books_selected_bu') || 'all' } catch { return 'all' }
-  })
+  // Business-unit filter. Books ALWAYS opens on every unit: a pick used to
+  // be remembered in localStorage for good, so the page quietly opened on
+  // one unit weeks later and Money In read short with nothing saying why.
+  // A specific name filters the invoice/employee-driven views to that unit
+  // for this visit only. Things without a business_unit column (manual
+  // expenses, Plaid bank txns) stay company-wide and get labeled "(all units)".
+  const [selectedBu, setSelectedBu] = useState('all')
   useEffect(() => {
-    try { localStorage.setItem('books_selected_bu', selectedBu) } catch { /* ignore */ }
-  }, [selectedBu])
+    try { localStorage.removeItem('books_selected_bu') } catch { /* ignore */ }
+  }, [])
 
   // Pull configured business units from settings so the dropdown reflects
   // whatever the company has set up.
@@ -1136,7 +1135,9 @@ export default function Books() {
         if (typeof arr === 'string') {
           try { arr = JSON.parse(arr) } catch { arr = [] }
         }
-        if (Array.isArray(arr)) setBusinessUnits(arr)
+        // The setting holds objects ({ name, logo_url, … }) for HHH but plain
+        // strings on tenants set up by Arnie / the seed — both are business units.
+        if (Array.isArray(arr)) setBusinessUnits(arr.map(b => typeof b === 'string' ? { name: b } : b).filter(b => b && b.name))
       }
       if (basisRow?.value) {
         let b = basisRow.value
@@ -1253,6 +1254,9 @@ export default function Books() {
   const buInvoicesForBasis = (invoices || []).filter(inv => matchesBu(inv.business_unit))
   const buUtilityForBasis = (utilityInvoices || []).filter(i => utilityMatchesBu(i))
   const moneyIn = computeRevenue(accountingBasis, { payments: buPayments, leadPayments, utilityInvoices: buUtilityForBasis, invoices: buInvoicesForBasis }, isThisMonth)
+  // Utility incentives sit on their own card, so a Money In that includes
+  // them reads "too high" against the Payments tab. Say how much is which.
+  const incentivesInMonth = accountingBasis === 'accrual' ? 0 : incentivesCollectedIn(buUtilityForBasis, isThisMonth)
 
   const netMonth = moneyIn - moneyOut
 
@@ -2128,9 +2132,21 @@ export default function Books() {
                   <TrendingUp size={20} style={{ color: '#3b82f6' }} />
                 </div>
                 <span style={{ fontSize: '13px', color: theme.textMuted }}>Money In (MTD)</span>
-                <HelpBadge text="All money received this month: paid invoices, deposits, and bank deposits detected by Plaid." />
+                <HelpBadge text={accountingBasis === 'accrual'
+                  ? 'Accrual basis: invoices and utility incentive claims dated this month, whether or not the money has arrived.'
+                  : 'Cash basis: money that actually arrived this month — customer payments recorded on invoices, job deposits, and utility incentives marked paid. Bank deposits are not added on top (that would count the same money twice), and transfers between your own accounts are ignored.'} />
               </div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#3b82f6' }}>{formatCurrency(moneyIn)}</div>
+              {incentivesInMonth > 0 && (
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px' }}>
+                  Customer payments {formatCurrency(moneyIn - incentivesInMonth)} · Utility incentives {formatCurrency(incentivesInMonth)}
+                </div>
+              )}
+              {isFilteredByBu && (
+                <div style={{ fontSize: '12px', color: '#b45309', marginTop: '4px' }}>
+                  {selectedBu} only — pick “All business units” above for the whole company.
+                </div>
+              )}
             </div>
 
             <div style={statCardStyle}>
