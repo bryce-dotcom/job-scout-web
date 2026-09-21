@@ -476,7 +476,8 @@ const CASES = [
       }
       return r
     },
-    expect: { proposal: 'create', proposal_label: 'price book', text_match: [/approve/i], text_not_match: [/sod[^.]*\$165\.00/i] } },
+    // The card (checked above) is the truth on the sod line; the reply may say why it was skipped.
+    expect: { proposal: 'create', proposal_label: 'price book', text_match: [/approve/i] } },
   { id: 'price_book.tech.refused', as: 'tech',
     turns: ['Add a 2x4 LED troffer to the price book at $89, cost $52.'],
     expect: { proposal: 'none', text_match: [/manager|Products/i] } },
