@@ -214,6 +214,14 @@ export default function InvoiceDetail() {
   const ccFeePercent = getInvoiceSetting('invoice_cc_fee_percent', 1.9)
   const showPreferredNote = getInvoiceSetting('invoice_show_preferred_payment_note', true)
   const preferredPaymentNote = (getInvoiceSetting('invoice_preferred_payment_note', 'We accept ACH transfers, checks, and cash at no additional fee. Credit card payments include a {cc_fee_percent}% processing fee.') || '').replace('{cc_fee_percent}', ccFeePercent)
+  // Wallets the company takes (Settings → My Money). The PDF and the portal
+  // list them under "Ways to pay"; the on-screen note should say so too.
+  const screenWallets = (() => {
+    try {
+      const row = (settings || []).find(x => x.key === 'payment_config')
+      return enabledWalletsFrom(row?.value ? JSON.parse(row.value) : null)
+    } catch { return [] }
+  })()
 
   useEffect(() => {
     if (!companyId) {
@@ -3513,6 +3521,11 @@ Add it anyway?`,
                   lineHeight: '1.5'
                 }}>
                   {preferredPaymentNote}
+                  {screenWallets.length > 0 && (
+                    <div style={{ marginTop: '4px' }}>
+                      Also {screenWallets.map(w => `${w.label} (${displayHandle(w, w.handle)})`).join(', ')} — listed under “Ways to pay” on the PDF and in the customer portal.
+                    </div>
+                  )}
                 </div>
               )}
 

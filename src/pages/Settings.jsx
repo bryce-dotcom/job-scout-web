@@ -2667,6 +2667,17 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
   }
 
   const [form, setForm] = useState(defaults)
+  // On a cold load the settings row can arrive AFTER this section mounts, so
+  // the form sat at defaults (every method off) — and Save would have written
+  // those defaults over the real config. Re-hydrate whenever the stored value
+  // changes; a refetch of the same value never clobbers unsaved edits.
+  const hydratedValueRef = useRef(existing?.value ?? null)
+  useEffect(() => {
+    const v = existing?.value
+    if (!v || hydratedValueRef.current === v) return
+    hydratedValueRef.current = v
+    try { setForm(prev => ({ ...prev, ...JSON.parse(v) })) } catch { /* keep what we have */ }
+  }, [existing?.value])
   const [saving, setSaving] = useState(false)
   const [expandedSection, setExpandedSection] = useState(null)
   // Stripe Account health check — hits stripe-account-status edge fn to
@@ -2809,6 +2820,8 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
   const completedSteps = [
     form.stripe_enabled && form.stripe_secret_key,
     form.paypal_enabled && form.paypal_client_id,
+    // Wallets are payment methods too: a handle is all it takes.
+    ...WALLETS.map(w => form[w.keys.enabled] && String(form[w.keys.handle] || '').trim()),
     form.bank_enabled && form.bank_name,
     form.wisetack_enabled && form.wisetack_api_key,
     form.greensky_enabled && form.greensky_merchant_id,

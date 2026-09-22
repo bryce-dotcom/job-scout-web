@@ -101,7 +101,7 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
       productComponents,
       timeClock,
       jobBonuses,
-      from: new Date(from),
+      from: new Date(from + 'T00:00:00'),
       to: new Date(to + 'T23:59:59'),
       now: new Date(),
     })
@@ -240,9 +240,9 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
                   </p>
                   <p style={{ margin: 0, fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Calendar size={11} />
-                    {activeReport.period.from ? new Date(activeReport.period.from).toLocaleDateString() : '—'}
+                    {activeReport.period.from ? activeReport.period.from.toLocaleDateString() : '—'}
                     {' → '}
-                    {activeReport.period.to ? new Date(activeReport.period.to).toLocaleDateString() : '—'}
+                    {activeReport.period.to ? activeReport.period.to.toLocaleDateString() : '—'}
                   </p>
                 </div>
                 <button
