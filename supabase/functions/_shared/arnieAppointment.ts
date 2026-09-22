@@ -146,12 +146,13 @@ export async function applyAppointment(r: Rest, companyId: number, prop: any): P
   // 3–5. the fees. Same rates, same fallbacks, same tables as the page.
   const [co] = await readRecordList(r, `companies?select=setter_pay_per_appointment,source_pay_per_lead&id=eq.${companyId}&limit=1`)
   if (setterId) {
-    const [setter] = await readRecordList(r, `employees?select=commission_setter_rate,commission_setter_type&company_id=eq.${companyId}&id=eq.${setterId}&limit=1`)
-    const rate = Number(setter?.commission_setter_rate) || Number(co?.setter_pay_per_appointment) || 25
-    if (rate > 0) {
-      const row = await ins(r, 'lead_commissions', { company_id: companyId, lead_id: c.lead_id, appointment_id: apt.id, commission_type: 'appointment_set', employee_id: setterId, amount: rate, rate_type: setter?.commission_setter_type || 'flat', payment_status: 'pending' })
-      ;(created.commission_ids as number[]).push(row.id)
-    }
+    // The setter's fee is the DB's to write (trigger appointments_setter_fee,
+    // migration 20260922170000) — it fired the moment the appointment above
+    // landed, with the same rate ladder this used to apply. Read it back so
+    // an unbook still finds it: deleting the appointment only SETs its
+    // appointment_id NULL, which would leave a fee nobody can see.
+    const [fee] = await readRecordList(r, `lead_commissions?select=id&company_id=eq.${companyId}&appointment_id=eq.${apt.id}&commission_type=eq.appointment_set&limit=1`)
+    if (fee?.id) (created.commission_ids as number[]).push(fee.id)
     if (Number(co?.setter_pay_per_appointment) > 0) {
       try {
         const legacy = await ins(r, 'setter_commissions', { company_id: companyId, lead_id: c.lead_id, appointment_id: apt.id, setter_id: setterId, setter_amount: Number(co.setter_pay_per_appointment), payment_status: 'pending' })

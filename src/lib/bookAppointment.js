@@ -54,21 +54,12 @@ export async function bookAppointment({
     .eq('id', lead.id)
   if (leadError) console.error('Error updating lead after booking:', leadError)
 
-  // Setter commission, from the setter's configured rate.
-  try {
-    if (setterId) {
-      const { data: setterEmployee } = await supabase
-        .from('employees').select('commission_setter_rate, commission_setter_type').eq('id', setterId).single()
-      const setterRate = setterEmployee?.commission_setter_rate || company?.setter_pay_per_appointment || 25
-      if (setterRate > 0) {
-        await supabase.from('lead_commissions').insert({
-          company_id: companyId, lead_id: lead.id, appointment_id: apt.id,
-          commission_type: 'appointment_set', employee_id: setterId,
-          amount: setterRate, rate_type: setterEmployee?.commission_setter_type || 'flat', payment_status: 'pending'
-        })
-      }
-    }
-  } catch (err) { console.log('Setter commission not created:', err) }
+  // The setter's fee is written by the DB (trigger appointments_setter_fee,
+  // migration 20260922170000) the moment the appointment above lands. It used
+  // to be an insert right here, inside a try/catch that only logged: when it
+  // did not land there was no trace, and 31 appointments across three setters
+  // were left with no pay row at all (Tracy, 0d53fc00). A fee that depends on
+  // the page holding the appointment is a fee that goes missing.
 
   // Lead-source commission, when someone sourced the lead.
   try {

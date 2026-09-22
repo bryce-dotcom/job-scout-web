@@ -47,11 +47,22 @@ describe('the five writes the page makes, the rail makes too', () => {
     expect(pageBooking).toMatch(/lead_owner_id: primaryId/)
   })
 
-  it("3. the setter's fee — same rate, same fallbacks, pending", () => {
-    expect(applyFn).toMatch(/Number\(setter\?\.commission_setter_rate\) \|\| Number\(co\?\.setter_pay_per_appointment\) \|\| 25/)
-    expect(applyFn).toMatch(/commission_type: 'appointment_set'[^}]*payment_status: 'pending'/)
-    expect(pageBooking).toMatch(/setterEmployee\?\.commission_setter_rate \|\| company\?\.setter_pay_per_appointment \|\| 25/)
-    expect(pageBooking).toMatch(/commission_type: 'appointment_set'/)
+  // 3. The setter's fee is no longer either path's to write: the DB writes it
+  // when the appointment lands (trigger appointments_setter_fee). Both paths
+  // wrote it by hand before, inside a swallow-everything try/catch, and 31
+  // appointments ended up with no fee row at all (Tracy, 0d53fc00).
+  it('3. neither path writes the setter fee by hand any more', () => {
+    expect(applyFn).not.toMatch(/commission_type: 'appointment_set'/)
+    expect(pageBooking).not.toMatch(/commission_type: 'appointment_set'/)
+    expect(applyFn).not.toMatch(/commission_setter_rate/)
+    expect(pageBooking).not.toMatch(/commission_setter_rate/)
+  })
+
+  it('3b. the rail reads the fee back so an unbook can still find it', () => {
+    // Deleting the appointment only SETs lead_commissions.appointment_id NULL,
+    // so a rollback that does not delete the fee leaves one nobody can see.
+    expect(applyFn).toMatch(/lead_commissions\?select=id[^`]*appointment_id=eq\.\$\{apt\.id\}[^`]*commission_type=eq\.appointment_set/)
+    expect(applyFn).toMatch(/if \(fee\?\.id\) \(created\.commission_ids as number\[\]\)\.push\(fee\.id\)/)
   })
 
   it('4. the lead-source fee when the lead has a source employee', () => {
