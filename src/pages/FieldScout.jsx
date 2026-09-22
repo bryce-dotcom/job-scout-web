@@ -1037,7 +1037,13 @@ export default function FieldScout() {
   // Same write as JobDetail.updateSectionStatus.
   const toggleSection = async (jobId, sec) => {
     if (sectionSaving) return
-    const next = sec.status === 'Completed' ? 'In Progress' : 'Completed'
+    // job_sections_status_check allows exactly Not Started / In Progress /
+    // Complete / Verified. The old read-only list compared against a spelling
+    // with a D on the end, so a finished section never looked finished — and
+    // writing that spelling would have been refused outright (23514).
+    // A verified section stays verified; the crew does not undo that here.
+    const done = sec.status === 'Complete' || sec.status === 'Verified'
+    const next = done ? 'In Progress' : 'Complete'
     setSectionSaving(sec.id)
     // Optimistic — a crew on job-site signal should see the tick at once.
     setJobSections(prev => ({
@@ -3496,7 +3502,7 @@ export default function FieldScout() {
                             Job Sections
                           </div>
                           {sections.map(sec => {
-                            const done = sec.status === 'Completed'
+                            const done = sec.status === 'Complete' || sec.status === 'Verified'
                             return (
                             <button
                               key={sec.id}
@@ -3537,7 +3543,7 @@ export default function FieldScout() {
                                 backgroundColor: done ? 'rgba(34,197,94,0.15)' : 'rgba(90,155,213,0.15)',
                                 color: done ? '#22c55e' : '#5a9bd5'
                               }}>
-                                {sectionSaving === sec.id ? 'Saving…' : (sec.status || 'Pending')}
+                                {sectionSaving === sec.id ? 'Saving…' : (sec.status || 'Not Started')}
                               </span>
                             </button>
                             )
