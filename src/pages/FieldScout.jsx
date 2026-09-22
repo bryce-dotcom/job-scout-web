@@ -22,7 +22,7 @@ import {
   CheckCircle, Timer, Briefcase, DollarSign, Star,
   AlertTriangle, Send, X, CreditCard, Banknote, Smartphone,
   Loader2, ShieldCheck, Shield, Search, FileText,
-  Camera, Calendar as CalendarIcon, ArrowRight
+  Camera, Calendar as CalendarIcon, ArrowRight, Circle
 } from 'lucide-react'
 import VictorVerify from './agents/victor/VictorVerify'
 import MissedShiftSheet from '../components/MissedShiftSheet'
@@ -172,6 +172,7 @@ export default function FieldScout() {
   const [gpsStatus, setGpsStatus] = useState(null) // null | 'capturing' | 'done' | 'failed'
   const [selectedJobId, setSelectedJobId] = useState('')
   const [jobSections, setJobSections] = useState({})
+  const [sectionSaving, setSectionSaving] = useState(null)
   const [mapLoaded, setMapLoaded] = useState(false)
   const [mapError, setMapError] = useState(false)
   const [jobCoords, setJobCoords] = useState({})
@@ -1026,6 +1027,33 @@ export default function FieldScout() {
     } finally {
       setClockingIn(false)
       setGpsStatus(null)
+    }
+  }
+
+  // Tick off a piece of the job where the work is — "mow, edge, trim and
+  // blow a 16 acre property ... hard to keep track" (Antonino Lawn Care,
+  // 5d1d5bc1). Sections were read-only here: the crew could see the list
+  // but only an office user on the job page could say a piece was done.
+  // Same write as JobDetail.updateSectionStatus.
+  const toggleSection = async (jobId, sec) => {
+    if (sectionSaving) return
+    const next = sec.status === 'Completed' ? 'In Progress' : 'Completed'
+    setSectionSaving(sec.id)
+    // Optimistic — a crew on job-site signal should see the tick at once.
+    setJobSections(prev => ({
+      ...prev,
+      [jobId]: (prev[jobId] || []).map(x => x.id === sec.id ? { ...x, status: next } : x),
+    }))
+    const { error } = await supabase.from('job_sections')
+      .update({ status: next, updated_at: new Date().toISOString() })
+      .eq('id', sec.id).eq('company_id', companyId)
+    setSectionSaving(null)
+    if (error) {
+      setJobSections(prev => ({
+        ...prev,
+        [jobId]: (prev[jobId] || []).map(x => x.id === sec.id ? { ...x, status: sec.status } : x),
+      }))
+      toast.error('Could not save that: ' + error.message)
     }
   }
 
@@ -3467,29 +3495,53 @@ export default function FieldScout() {
                           <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginBottom: '6px' }}>
                             Job Sections
                           </div>
-                          {sections.map(sec => (
-                            <div key={sec.id} style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              padding: '6px 10px',
-                              backgroundColor: theme.bg,
-                              borderRadius: '6px',
-                              marginBottom: '4px',
-                              fontSize: '13px'
-                            }}>
-                              <span style={{ color: theme.text }}>{sec.section_name}</span>
+                          {sections.map(sec => {
+                            const done = sec.status === 'Completed'
+                            return (
+                            <button
+                              key={sec.id}
+                              type="button"
+                              onClick={() => toggleSection(job.id, sec)}
+                              disabled={sectionSaving === sec.id}
+                              style={{
+                                width: '100%',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: '10px',
+                                padding: '10px',
+                                minHeight: '44px',
+                                backgroundColor: theme.bg,
+                                border: `1px solid ${done ? 'rgba(34,197,94,0.35)' : theme.border}`,
+                                borderRadius: '6px',
+                                marginBottom: '4px',
+                                fontSize: '13px',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                                {done
+                                  ? <CheckCircle size={16} style={{ color: '#22c55e', flexShrink: 0 }} />
+                                  : <Circle size={16} style={{ color: theme.textMuted, flexShrink: 0 }} />}
+                                <span style={{ color: theme.text, textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {sec.name || `Section ${sec.sort_order ?? ''}`.trim()}
+                                  {sec.assigned_employee?.name ? <span style={{ color: theme.textMuted }}> · {sec.assigned_employee.name}</span> : null}
+                                </span>
+                              </span>
                               <span style={{
                                 fontSize: '11px',
                                 padding: '2px 8px',
                                 borderRadius: '10px',
-                                backgroundColor: sec.status === 'Completed' ? 'rgba(34,197,94,0.15)' : 'rgba(90,155,213,0.15)',
-                                color: sec.status === 'Completed' ? '#22c55e' : '#5a9bd5'
+                                flexShrink: 0,
+                                backgroundColor: done ? 'rgba(34,197,94,0.15)' : 'rgba(90,155,213,0.15)',
+                                color: done ? '#22c55e' : '#5a9bd5'
                               }}>
-                                {sec.status || 'Pending'}
+                                {sectionSaving === sec.id ? 'Saving…' : (sec.status || 'Pending')}
                               </span>
-                            </div>
-                          ))}
+                            </button>
+                            )
+                          })}
                         </div>
                       )}
 
