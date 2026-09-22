@@ -21,7 +21,7 @@ export const statusLabel = (s) => STATUS[s] || s
 
 /**
  * @param {object} rows
- * @param {any[]} rows.proposals   arnie_proposals: created_by, target, status, created_at, decided_at, request_text
+ * @param {any[]} rows.proposals   arnie_proposals: created_by, target, status, created_at, decided_at, request_text, source (rows with source 'eval' are the nightly harness and are left out)
  * @param {any[]} rows.sessions    ai_sessions (module arnie): session_id (text — what ai_messages joins on), user_email, started
  * @param {any[]} rows.messages    ai_messages: session_id, role
  * @param {any[]} rows.usage       ai_usage (feature arnie-chat): est_cost_usd, success
@@ -44,7 +44,10 @@ export function summarizeArnie({ proposals = [], sessions = [], messages = [], u
   const people = new Map()
   for (const s of ses) { const k = nameOf(s.user_email); people.set(k, (people.get(k) || 0) + 1) }
 
-  const props = proposals.filter((p) => inWindow(p.created_at))
+  // A draft the nightly harness made is not a person using Arnie: the eval
+  // rejects or rolls back every card it draws, and counting those put the
+  // demo's approval rate at 6% on the screen a prospect is shown.
+  const props = proposals.filter((p) => inWindow(p.created_at) && p.source !== 'eval')
   const byStatus = { applied: 0, rolled_back: 0, rejected: 0, pending: 0 }
   const byKind = new Map()
   const byPerson = new Map()

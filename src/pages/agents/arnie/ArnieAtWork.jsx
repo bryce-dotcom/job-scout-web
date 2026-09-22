@@ -41,7 +41,7 @@ export default function ArnieAtWork() {
     ;(async () => {
       const since = new Date(Date.now() - 90 * 86400000).toISOString()
       const [p, s, u] = await Promise.all([
-        supabase.from('arnie_proposals').select('id,created_by,target,status,created_at,request_text,summary').eq('company_id', companyId).gte('created_at', since).order('created_at', { ascending: false }).limit(2000),
+        supabase.from('arnie_proposals').select('id,created_by,target,status,created_at,request_text,summary,source').eq('company_id', companyId).gte('created_at', since).is('source', null).order('created_at', { ascending: false }).limit(2000),
         supabase.from('ai_sessions').select('id,session_id,user_email,started').eq('company_id', companyId).eq('current_module', 'arnie').gte('started', since).limit(2000),
         pageAll((from, to) => supabase.from('ai_usage').select('est_cost_usd,success,created_at').eq('company_id', companyId).eq('feature', 'arnie-chat').gte('created_at', since).order('id').range(from, to)),
       ])

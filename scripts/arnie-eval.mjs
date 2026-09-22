@@ -44,6 +44,9 @@ const VERBOSE = args.includes('--verbose')
 const DEMO = { company: 25, owner: { email: 'demo@jobscout.app', password: 'Demo1234!', employeeId: 133 },
   tech: { email: 'jordan@summitfieldco.com', password: 'Eval-Temp-' + Math.random().toString(36).slice(2, 10) + '!', employeeId: 137 },
   jobA: 23510, jobB: 23506, tz: 'America/Denver' }
+// Everything this run drafts is stamped source='eval' at the end, so the
+// owner's "Arnie at work" screen counts people, not the harness.
+const RUN_STARTED = new Date().toISOString()
 const today = new Date().toLocaleDateString('en-CA', { timeZone: DEMO.tz })
 const todayWeekday = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: DEMO.tz })
 const weekAhead = Array.from({ length: 7 }, (_, i) => { const d = new Date(Date.now() + (i + 1) * 86400000); return `${d.toLocaleDateString('en-US', { weekday: 'short', timeZone: DEMO.tz })} ${d.toLocaleDateString('en-CA', { timeZone: DEMO.tz })}` }).join(', ')
@@ -391,6 +394,21 @@ const CASES = [
       try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Halifax Flooring signed the shop lighting estimate.' }]) } finally { await fx.cleanup() }
     },
     expect: { proposal: 'none', text_match: [/manager|another rep|someone else/i] } },
+
+  // — one customer, one read: the work for everyone, the money for an admin —
+  { id: 'account.owner.history.jobs.balance.last.contact', as: 'owner',
+    run: async (ctx) => {
+      const fx = await accountFixture()
+      try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: "What's the history with Halifax Flooring? Do they owe us anything?" }]) } finally { await fx.cleanup() }
+    },
+    expect: { tools_include: ['query_account'], tools_exclude: ['query_invoices', 'query_payments'], proposal: 'none',
+      text_match: [/\$800(\.00)?/, /overdue|past due|late/i, /Quarterly service|open|scheduled/i], text_not_match: [/\$12,?800/, /\$5,?000/] } },
+  { id: 'account.tech.money.withheld', as: 'tech',
+    run: async (ctx) => {
+      const fx = await accountFixture()
+      try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: "What's the history with Halifax Flooring? Do they owe us anything?" }]) } finally { await fx.cleanup() }
+    },
+    expect: { tools_include: ['query_account'], no_dollars: true, text_match: [/admin/i] } },
 
   // — "schedule it Thursday at 8 with Jordan and Carlos": the Job Board's write, the clash shown, then undone —
   { id: 'schedule.owner.thursday.crew.clash.shown.then.rollback', as: 'owner',
@@ -768,6 +786,42 @@ async function wonFixture(number, salespersonId) {
   return { quoteId: quote.id, leadId: lead.id, cleanup: wipe }
 }
 
+// A customer with a history: one finished job paid in full, one scheduled, an open
+// estimate, and an $800 invoice that went past due — plus a utility-settled invoice
+// the customer never owed a cent on, which must not read as a balance.
+async function accountFixture() {
+  const C = DEMO.company, email = 'ben@halifaxflooring.example'
+  const wipe = async () => {
+    for (const c of await rest(`customers?select=id&company_id=eq.${C}&email=eq.${email}`)) {
+      for (const i of await rest(`invoices?select=id&company_id=eq.${C}&customer_id=eq.${c.id}`)) { await rest(`payments?invoice_id=eq.${i.id}`, { method: 'DELETE' }); await rest(`invoices?id=eq.${i.id}`, { method: 'DELETE' }) }
+      for (const j of await rest(`jobs?select=id&company_id=eq.${C}&customer_id=eq.${c.id}`)) await rest(`jobs?id=eq.${j.id}`, { method: 'DELETE' })
+      for (const q of await rest(`quotes?select=id&company_id=eq.${C}&customer_id=eq.${c.id}`)) await rest(`quotes?id=eq.${q.id}`, { method: 'DELETE' })
+      await rest(`customers?id=eq.${c.id}`, { method: 'DELETE' })
+    }
+  }
+  await wipe()
+  const [cust] = await rest('customers', { method: 'POST', body: JSON.stringify({ company_id: C, name: 'Ben Rowe', business_name: 'Halifax Flooring', email, phone: '801-555-0177', address: '12 Mill St, Murray, UT' }) })
+  const d = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10)
+  await rest('jobs', { method: 'POST', body: JSON.stringify([
+    { company_id: C, job_id: 'JOB-EVAL-ACCT-1', job_title: 'Shop lighting', customer_id: cust.id, status: 'Completed', start_date: d(60), completed_at: d(52), job_total: 12000 },
+    { company_id: C, job_id: 'JOB-EVAL-ACCT-2', job_title: 'Quarterly service', customer_id: cust.id, status: 'Scheduled', start_date: d(-10), completed_at: null, job_total: 800 },
+  ]) })
+  await rest('quotes', { method: 'POST', body: JSON.stringify({ company_id: C, quote_id: 'EST-EVAL-ACCT', estimate_name: 'Parking lot lighting', customer_id: cust.id, status: 'Sent', sent_date: new Date(Date.now() - 6 * 86400000).toISOString(), quote_amount: 4000 }) })
+  const invs = await rest('invoices', { method: 'POST', body: JSON.stringify([
+    // Uniform keys: PostgREST refuses a batch whose rows differ ("All object keys must match").
+    // And the utility's share reaches customer_owes through discount_applied (the incentive
+    // deduction line), NOT utility_owes — customer_owes is GENERATED as amount - discount + tax.
+    { company_id: C, invoice_id: 'INV-EVAL-ACCT-1', customer_id: cust.id, amount: 12000, discount_applied: 0, utility_owes: 0, utility_paid_at: null, payment_status: 'Paid', invoice_type: 'standard', due_date: d(45) },
+    { company_id: C, invoice_id: 'INV-EVAL-ACCT-2', customer_id: cust.id, amount: 800, discount_applied: 0, utility_owes: 0, utility_paid_at: null, payment_status: 'Pending', invoice_type: 'standard', due_date: d(9) },
+    { company_id: C, invoice_id: 'INV-EVAL-ACCT-3', customer_id: cust.id, amount: 5000, discount_applied: 5000, utility_owes: 5000, utility_paid_at: new Date(Date.now() - 20 * 86400000).toISOString(), payment_status: 'Paid', invoice_type: 'standard', due_date: d(30) },
+  ]) })
+  await rest('payments', { method: 'POST', body: JSON.stringify([
+    { company_id: C, payment_id: 'PAY-EVAL-ACCT-1', invoice_id: invs[0].id, amount: 12000, date: d(47), method: 'ACH', status: 'Completed', paid_by: 'customer' },
+    { company_id: C, payment_id: 'PAY-EVAL-ACCT-2', invoice_id: invs[2].id, amount: 5000, date: d(20), method: 'Check', status: 'Completed', paid_by: 'utility' },
+  ]) })
+  return { customerId: cust.id, cleanup: wipe }
+}
+
 // A Chillin job on a fresh lead, and an appointment for Jordan on the coming Thursday — the clash the card must show.
 async function scheduleFixture() {
   const C = DEMO.company, email = 'ben@halifaxflooring.example'
@@ -832,6 +886,19 @@ async function seed() {
   const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: DEMO.tz })
   await add('time_clock', [{ company_id: C, employee_id: E, clock_in: new Date(`${yesterday}T13:00:00Z`).toISOString(), clock_out: null, job_id: DEMO.jobB }])
 }
+/** Mark every draft this run made, so it never counts as a person using Arnie. */
+async function stampEvalProposals() {
+  const who = [DEMO.owner.email, DEMO.tech.email].map((e) => `"${e}"`).join(',')
+  try {
+    // A case that threw before it could decide leaves a card sitting in the
+    // tenant forever. Close those out as this run's, then stamp everything.
+    await rest(`arnie_proposals?company_id=eq.${DEMO.company}&created_at=gte.${RUN_STARTED}&created_by=in.(${who})&status=eq.pending`, { method: 'PATCH', body: JSON.stringify({ status: 'rejected', error: 'left pending by the eval harness' }) })
+    const rows = await rest(`arnie_proposals?company_id=eq.${DEMO.company}&created_at=gte.${RUN_STARTED}&created_by=in.(${who})&source=is.null`, { method: 'PATCH', body: JSON.stringify({ source: 'eval' }) })
+    if (rows.length) console.log(`
+  stamped ${rows.length} draft(s) source='eval'`)
+  } catch (e) { console.error('  could not stamp eval drafts:', e.message) }
+}
+
 async function unseed() {
   for (const [t, id] of seeded.reverse()) { try { await rest(`${t}?id=eq.${id}`, { method: 'DELETE' }) } catch (e) { console.error('  cleanup failed:', t, id, e.message) } }
 }
@@ -896,6 +963,7 @@ try {
   }
 } finally {
   await unseed()
+  await stampEvalProposals()
   if (techUserId) await fetch(`${U}/auth/v1/admin/users/${techUserId}`, { method: 'DELETE', headers: SRH })
 }
 
