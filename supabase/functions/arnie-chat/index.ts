@@ -8,6 +8,7 @@ import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arn
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_shared/arnieMoney.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
+import { accountSummary } from "../_shared/arnieAccount.ts";
 import { crewDay } from '../_shared/arnieDispatch.ts'
 import { FRANKIE_MODEL, FRANKIE_MAX_TOKENS, frankieToolsFor, execFrankieTool } from '../_shared/frankieTools.ts'
 
@@ -220,6 +221,17 @@ const TOOLS = [
         search: { type: 'string', description: 'Search customer name, business name, or email' },
         limit: { type: 'integer', description: 'Max results (default 20, max 100)' },
       },
+    },
+  },
+  {
+    name: 'query_account',
+    description: "Everything about ONE customer in one read: who they are, their jobs (open and last), open estimates, next appointment, when we last spoke — and for an admin the money: what they owe now, what is overdue, open invoices, lifetime paid, last payment. Use this for \"what's the history with Halifax\", \"catch me up on this customer\", \"do they owe us anything\", \"when did we last do work for them\". For a LEAD (not yet a customer) use query_leads.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        customer: { type: 'string', description: 'The customer as the user named them — a business or a person ("Halifax Flooring", "Ben Rowe").' },
+      },
+      required: ['customer'],
     },
   },
   {
@@ -817,6 +829,11 @@ async function execTool(name: string, input: any, caller: Caller) {
         customers: got.rows,
         ...(got.truncated ? { note: `Showing ${got.rows.length} of ${got.total} matches.` } : {}),
       }
+    }
+
+    if (name === 'query_account') {
+      // A tech gets the work; the money needs an admin, the same line every other read draws.
+      return await accountSummary({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, input, isAdmin)
     }
 
     if (name === 'query_employees') {
