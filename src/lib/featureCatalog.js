@@ -65,6 +65,14 @@ export const FEATURE_CATALOG = [
         walkthrough: 'sales-pipeline',
       },
       {
+        name: 'Liahona',
+        icon: 'MapPin',
+        summary: 'The canvassing map inside the Pipeline: pins by stage, territories, overlays, a lead card that logs the knock and books the appointment, the county record on any house, and cloverleaf around a finished job.',
+        replaces: ['SalesRabbit', 'SPOTIO', 'Badger Maps'],
+        highlights: ['Owner of record on tap (22 free sources)', 'Cloverleaf neighbours', 'Territories + By rep', 'Route the day'],
+        route: '/pipeline',
+      },
+      {
         name: 'Estimates & Quotes',
         icon: 'FileText',
         summary: 'Build a multi-line quote (materials, labor, taxable flags, photos, notes, line-item discounts) and send a portal link the customer signs with a finger from their phone.',

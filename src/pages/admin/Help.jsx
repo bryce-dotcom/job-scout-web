@@ -1138,6 +1138,32 @@ const HELP_SECTIONS = [
         <InfoBox title="When to skip the pipeline" color="#22c55e" theme={theme}>
           If a customer calls and says "I need you to come fix my lights next week" — there's no sales process. Create the Job directly from the Jobs page. A tracking lead is auto-created in the background so your pipeline numbers stay accurate.
         </InfoBox>
+
+        <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: '20px 0 8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <MapPin size={16} /> Liahona — the canvassing map
+        </h4>
+        <p style={{ fontSize: '14px', color: theme.text, lineHeight: 1.7, marginBottom: '12px' }}>
+          The Pipeline has a second face. Flip <strong>Board</strong> to <strong>Liahona</strong> in the Sales Pipeline header (<strong>List | Map</strong> on a phone) and every lead becomes a pin coloured by its stage. It is built for the rep on the street, so the phone comes first.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+          {[
+            { icon: MapPin, label: 'Tap a pin', desc: 'The lead card: tap to call, every stage as a chip, and four knock buttons (Not home, Talked, Left card, Callback) that log the visit and set when to come back. The pin wears a badge for the rest of the day. Set appointment books it exactly like the Lead Setter does.', color: '#3b82f6' },
+            { icon: Compass, label: 'Tap a house', desc: 'Drop lead mode. The county record comes back in a second — owner of record, year built, square feet, value — and "Add lead here" arrives with the name and address filled in. Free in Utah, Arizona and 20 more counties and states; elsewhere it needs the nationwide parcel plan.', color: '#0e7490' },
+            { icon: Navigation, label: 'Cloverleaf', desc: 'Neighbors mode, or the Neighbors button on any lead card: every parcel within 250, 500 or 1000 ft, nearest first, owners included. Tick the ones worth a knock, add them all as leads, or route them from where you stand.', color: '#15803d' },
+            { icon: GitBranch, label: 'Territories and routes', desc: 'Draw a territory, or click a county, city, ZIP or utility area on an overlay and make it one. Give it a rep. Plan route orders the open leads on screen from your phone\'s GPS and opens the drive in Google Maps.', color: '#f59e0b' },
+          ].map((row, i) => (
+            <div key={i} style={{ display: 'flex', gap: '12px', padding: '10px 12px', borderRadius: '8px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}` }}>
+              <row.icon size={18} color={row.color} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div><div style={{ fontSize: '13px', fontWeight: '600', color: theme.text }}>{row.label}</div><div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: 1.6 }}>{row.desc}</div></div>
+            </div>
+          ))}
+        </div>
+        <InfoBox title="For managers" color="#5a6349" theme={theme}>
+          The panel shows the load per rep (territories, open leads, how many sat idle two weeks, knocks today). A territory row offers <strong>Assign N to &lt;owner&gt;</strong>; changing a territory's owner offers to hand its leads to the new rep. Field techs cannot assign to others — the same rule as the board's owner filter.
+        </InfoBox>
+        <InfoBox title="Why is a lead not on the map?" color="#b45309" theme={theme}>
+          It has no coordinates yet (tap <strong>Map N unpinned</strong> in the toolbar), its stage chip is hidden, or the Pipeline's owner or date filter excludes it — the map inherits the board's filters. Drag any pin to correct a wrong spot.
+        </InfoBox>
       </div>
     )
   },

@@ -21,6 +21,7 @@ import customers          from './customers.js'
 import leads              from './leads.js'
 import salesPipeline      from './sales-pipeline.js'
 import leadSetter         from './lead-setter.js'
+import liahona            from './liahona.js'
 import estimates          from './estimates.js'
 import quoteFollowups     from './quote-followups.js'
 import customerPortal     from './customer-portal.js'
@@ -78,6 +79,7 @@ const CARDS = [
   leads,
   salesPipeline,
   leadSetter,
+  liahona,
   estimates,
   quoteFollowups,
   customerPortal,

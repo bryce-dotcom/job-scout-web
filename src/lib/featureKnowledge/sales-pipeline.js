@@ -19,6 +19,7 @@ export default {
     'Stats strip: Sales Won $ · Active · Won · Pipeline $ with date range',
     'Drop on Won → notes → job auto-created in Delivery',
     'Quote Sent stage shows individual estimate cards (not lead cards)',
+    'Board | Liahona toggle: the same leads as pins on a canvassing map (see the Liahona card)',
   ],
 
   marketing: {
@@ -90,6 +91,7 @@ export default {
       "List View button (top-right) navigates to /leads — same data, grid layout.",
       "Delivery Pipeline is read-only from the pipeline — Operations moves cards from within the Jobs pages.",
       "Field techs are auto-scoped to their own pipeline (canViewAll=false); cannot see other reps' deals.",
+      "The Board | Liahona toggle in the Sales Pipeline header (List | Map on a phone) swaps the columns for the canvassing map; the owner, BU and date filters apply to both.",
     ],
 
     faqs: [
@@ -113,6 +115,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-06-04',
+  lastVerified: '2026-09-22',
   freshUntil: 90,
 }
