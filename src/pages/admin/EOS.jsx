@@ -8,6 +8,12 @@ import HelpBadge from '../../components/HelpBadge'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR, paymentsByInvoiceIndex } from '../../lib/arHelpers'
 import { getWeekRange } from '../../lib/eosWeek'
+import { mergeJobHourSources } from '../../lib/jobHours'
+import { DEFAULT_TZ } from '../../lib/dateTz'
+import {
+  inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity,
+  isSetMeeting, isAttendedMeeting, filterAppointmentsByEntity, filterPaymentsByEntity,
+} from '../../lib/eosMetrics'
 import {
   Target, Eye, TrendingUp, Shield, Heart, Star, Zap,
   Users, CheckCircle, XCircle, Clock, Calendar, Plus, X,
@@ -74,11 +80,13 @@ function filterByEntity(arr, entity) {
   )
 }
 
-// Filter time logs by entity via their linked job
-function filterTimeLogsByEntity(timeLogs, jobs, entity) {
-  if (!entity) return timeLogs
-  const jobIds = new Set(filterByEntity(jobs, entity).map(j => j.id))
-  return timeLogs.filter(t => t.job_id && jobIds.has(t.job_id))
+// Hours worked in a Mon–Sun window. Source: the time clock (real punches)
+// with legacy typed time_log rows merged in once — the same merge Payroll
+// and the bonus ledger use (jobHours.js). The scorecard used to read
+// time_log ALONE: 85 rows for HHH, newest 9/4, so Total Man Hours and
+// Dollars / Hour read 0 while crews clocked 591 hours in the same week.
+function hoursIn(d, sd, ed, entity) {
+  return hoursInWindow(filterHoursByEntity(d.hourEntries, d.jobs, entity), sd, ed, d.tz)
 }
 
 // Filter invoices/payments by entity via their linked job
@@ -88,7 +96,7 @@ function filterInvoicesByEntity(invoices, jobs, entity) {
   return invoices.filter(i => i.job_id && jobIds.has(i.job_id))
 }
 
-const AUTO_SOURCES = {
+export const AUTO_SOURCES = {
   sales_won: {
     label: 'Dollar Amount Sold',
     category: 'Sales',
@@ -97,20 +105,34 @@ const AUTO_SOURCES = {
     // (estimate-approval OR fresh job). Sums job_total in the window.
     compute: (d, s, e, sd, ed, ent) => {
       const inRange = wonJobsInRange(filterByEntity(d.jobs, ent), s, e)
-      return sumJobTotal(inRange)
+      // A job converted before it was priced has a blank job_total; value
+      // it by its estimate rather than counting the sale as $0.
+      return sumJobTotal(inRange, d.quoteAmountById)
     },
   },
-  meetings_created: {
-    label: 'Meetings Created',
+  leads_created: {
+    label: 'New Leads',
     category: 'Sales',
     format: 'number',
-    compute: (d, s, e, sd, ed, ent) => filterByEntity(d.appointments, ent).filter(a => a.created_at >= s && a.created_at <= e).length,
+    compute: (d, s, e, sd, ed, ent) => filterByEntity(d.leads, ent).filter(l => inInstantWindow(l.created_at, s, e)).length,
+  },
+  meetings_created: {
+    label: 'Meetings Set',
+    category: 'Sales',
+    format: 'number',
+    // appointments carry no business_unit column — an entity filter on the
+    // row itself matched nothing. Scope through the linked lead instead.
+    // Job / Recurring Job / Block calendar entries are crew scheduling, not
+    // a meeting anyone set.
+    compute: (d, s, e, sd, ed, ent) => filterAppointmentsByEntity(d.appointments, d.leads, ent).filter(a => isSetMeeting(a) && inInstantWindow(a.created_at, s, e)).length,
   },
   meetings_attended: {
     label: 'Meetings Attended',
     category: 'Sales',
     format: 'number',
-    compute: (d, s, e, sd, ed, ent) => filterByEntity(d.appointments, ent).filter(a => a.status === 'Completed' && a.start_time >= s && a.start_time <= e).length,
+    // Nothing in the app sets an appointment's status to Completed; the lead
+    // page records an outcome. Either one counts, a no-show does not.
+    compute: (d, s, e, sd, ed, ent) => filterAppointmentsByEntity(d.appointments, d.leads, ent).filter(a => isAttendedMeeting(a) && inInstantWindow(a.start_time, s, e)).length,
   },
   jobs_completed: {
     label: 'Jobs Completed',
@@ -133,7 +155,7 @@ const AUTO_SOURCES = {
     format: 'currency',
     compute: (d, s, e, sd, ed, ent) => {
       const rev = sumJobTotal(deliveredJobsInRange(filterByEntity(d.jobs, ent), d.jobStatuses, s, e))
-      const hrs = filterTimeLogsByEntity(d.timeLogs, d.jobs, ent).filter(t => t.date >= sd && t.date <= ed).reduce((sum, t) => sum + (parseFloat(t.hours) || 0), 0)
+      const hrs = hoursIn(d, sd, ed, ent)
       return hrs > 0 ? Math.round(rev / hrs) : 0
     },
   },
@@ -141,26 +163,34 @@ const AUTO_SOURCES = {
     label: 'Total Man Hours',
     category: 'Operations',
     format: 'number',
-    compute: (d, s, e, sd, ed, ent) => Math.round(filterTimeLogsByEntity(d.timeLogs, d.jobs, ent).filter(t => t.date >= sd && t.date <= ed).reduce((sum, t) => sum + (parseFloat(t.hours) || 0), 0) * 10) / 10,
+    compute: (d, s, e, sd, ed, ent) => hoursIn(d, sd, ed, ent),
   },
   callbacks: {
-    label: 'Callbacks',
+    label: 'Lead Callbacks Due',
     category: 'Operations',
     format: 'number',
-    compute: (d, s, e, sd, ed, ent) => filterByEntity(d.leads, ent).filter(l => l.callback_date && l.callback_date >= sd && l.callback_date <= ed).length,
+    // Counts leads whose callback_date lands in the week — a follow-up call
+    // owed to a lead, not a warranty callback on a finished job. (Jobs have
+    // a has_callback flag but no date for it, so those can't be put on a
+    // weekly scorecard yet.) Labelled honestly so nobody reads it as the
+    // other thing.
+    compute: (d, s, e, sd, ed, ent) => filterByEntity(d.leads, ent).filter(l => inDayWindow(l.callback_date, sd, ed, d.tz)).length,
   },
   cash_collected: {
     label: 'Cash Collected',
     category: 'Finance',
     format: 'currency',
     compute: (d, s, e, sd, ed, ent) => {
-      const p = filterInvoicesByEntity(d.payments || [], d.jobs, ent).filter(p => p.date >= sd && p.date <= ed).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+      // Payments carry an invoice_id far more often than a job_id (5,729 of
+      // HHH's 5,980 have no job_id), so an entity filter that only followed
+      // job_id threw nearly all of them away. Resolve through the invoice.
+      const p = filterPaymentsByEntity(d.payments || [], d.invoices, d.jobs, ent).filter(p => inDayWindow(p.date, sd, ed, d.tz)).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
       const lp = (d.leadPayments || []).filter(p => {
         if (ent) {
           const lead = d.leads.find(l => String(l.id) === String(p.lead_id))
           if (!lead || lead.business_unit?.toLowerCase() !== ent.toLowerCase()) return false
         }
-        return p.date_created >= s && p.date_created <= e && p.payment_status === 'Paid'
+        return inInstantWindow(p.date_created, s, e) && p.payment_status === 'Paid'
       }).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
       return p + lp
     },
@@ -193,8 +223,8 @@ const AUTO_SOURCES = {
         exps = exps.filter(x => x.job_id && jobIds.has(x.job_id))
         plaid = plaid.filter(x => x.job_id && jobIds.has(x.job_id))
       }
-      const manualSum = exps.filter(x => x.date >= sd && x.date <= ed).reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0)
-      const plaidSum = plaid.filter(x => x.date >= sd && x.date <= ed).reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0)
+      const manualSum = exps.filter(x => inDayWindow(x.date, sd, ed, d.tz)).reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0)
+      const plaidSum = plaid.filter(x => inDayWindow(x.date, sd, ed, d.tz)).reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0)
       return manualSum + plaidSum
     },
   },
@@ -208,7 +238,7 @@ const AUTO_SOURCES = {
         const jobIds = new Set(filterByEntity(d.jobs, ent).map(j => j.id))
         subs = subs.filter(x => x.job_id && jobIds.has(x.job_id))
       }
-      return subs.filter(x => x.created_at >= s && x.created_at <= e).length
+      return subs.filter(x => inInstantWindow(x.created_at, s, e)).length
     },
   },
 }
@@ -2754,6 +2784,8 @@ export default function EOS() {
   const leadPayments = useStore(s => s.leadPayments) || []
   const businessUnits = useStore(s => s.businessUnits) || []
   const jobStatuses = useStore(s => s.jobStatuses) || []
+  const company = useStore(s => s.company)
+  const tz = company?.timezone || DEFAULT_TZ
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
 
@@ -2768,9 +2800,42 @@ export default function EOS() {
       .then(({ data }) => setSubmittals(data || []))
   }, [companyId])
 
+  // Real clock punches for the hours metrics. The store doesn't hold
+  // time_clock, so pull the 14 weeks the dashboard can show, paginated
+  // past Supabase's 1,000-row cap (HHH alone has 1,400+ punches).
+  const [timeClock, setTimeClock] = useState([])
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      const since = getWeekRange(14).start
+      let rows = []
+      let from = 0
+      while (true) {
+        const { data, error } = await supabase.from('time_clock')
+          .select('id, employee_id, job_id, clock_in, clock_out, total_hours')
+          .eq('company_id', companyId)
+          .gte('clock_in', since)
+          .order('id', { ascending: true })
+          .range(from, from + 999)
+        if (error || !data) break
+        rows = rows.concat(data)
+        if (data.length < 1000) break
+        from += 1000
+      }
+      if (!cancelled) setTimeClock(rows)
+    })()
+    return () => { cancelled = true }
+  }, [companyId])
+
+  // Punches plus legacy typed rows, each hour counted once (see jobHours.js).
+  const hourEntries = useMemo(() => mergeJobHourSources({ timeClock, timeLog: timeLogs }), [timeClock, timeLogs])
+  // Estimate value by quote id, so an unpriced converted job isn't a $0 sale.
+  const quoteAmountById = useMemo(() => new Map(quotes.map(q => [q.id, q.quote_amount])), [quotes])
+
   const storeData = useMemo(() => ({
-    jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses,
-  }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses])
+    jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, quoteAmountById, leadPayments, submittals, jobStatuses, tz,
+  }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, quoteAmountById, leadPayments, submittals, jobStatuses, tz])
 
   // Build entity list from service types + business units (deduplicated)
   const entities = useMemo(() => {

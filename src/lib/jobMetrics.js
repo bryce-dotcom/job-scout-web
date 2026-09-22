@@ -88,15 +88,22 @@ export function wonJobsInRange(jobs, startDate, endDate) {
 }
 
 /**
- * "Jobs Delivered in this window" — jobs currently in a delivered status
- * whose `last_status_change_at` falls in [start, end).
+ * "Jobs Delivered in this window" — jobs currently in a delivered status,
+ * dated by when they were DELIVERED: `completed_at` first, then
+ * `last_status_change_at`, then `updated_at`.
+ *
+ * Why completed_at first: last_status_change_at moves on EVERY status
+ * change, and Completed → Invoiced → Paid → Closed are all delivered
+ * statuses. Dating by it meant a job counted in whichever week it was last
+ * touched and fell out of the week it was actually finished — HHH job
+ * JOB-MQZLCITN was completed 24 Aug and was being reported as delivered the
+ * week of 14 Sep, when it moved to Post Inspection. "Last week" changed
+ * every time someone invoiced. completed_at is stamped once, when the job
+ * is marked Completed; jobs that skip straight to Invoiced still fall back
+ * to the status-change stamp.
  *
  * Pass the company's `jobStatuses` settings array so the delivered set is
  * resolved at call time (custom pipelines just work).
- *
- * Falls back to `updated_at` for jobs that don't yet have
- * `last_status_change_at` (the trigger backfill set that for existing rows,
- * but defensive coding helps if you query a stale store snapshot).
  */
 export function deliveredJobsInRange(jobs, jobStatuses, startDate, endDate) {
   const delivered = getDeliveredStatusIds(jobStatuses)
@@ -105,7 +112,7 @@ export function deliveredJobsInRange(jobs, jobStatuses, startDate, endDate) {
   const endMs = ms(endDate)
   return jobs.filter(j => {
     if (!delivered.has(j.status)) return false
-    const t = ms(j.last_status_change_at) ?? ms(j.updated_at)
+    const t = ms(j.completed_at) ?? ms(j.last_status_change_at) ?? ms(j.updated_at)
     if (t == null) return false
     if (startMs != null && t < startMs) return false
     if (endMs != null && t >= endMs) return false

@@ -1,0 +1,131 @@
+// EOS scorecard data plumbing — the parts that were silently reading zero.
+//
+// Bryce (HHH, 2026-09-21): "it's not picking up the metrics correctly...
+// the numbers seem off." Recomputing every live metric for HHH server-side
+// against the raw tables showed which ones, and why:
+//
+//   Total Man Hours / Dollars per Hour read 0. Crews clock in to `time_clock`
+//     (1,430 punches for HHH, 46 last week alone — 591 hours). The scorecard
+//     read `time_log`, the legacy typed-hours table: 85 rows, newest 9/4.
+//   Meetings metrics read 0 the moment an entity was set. `appointments`
+//     has no business_unit column, so filterByEntity dropped every row.
+//   Meetings Attended read 0 always. Nothing in the app ever sets an
+//     appointment's status to Completed; the lead page records `outcome`.
+//   Cash Collected, entity-scoped, dropped 5,729 of 5,980 payments. They
+//     carry an invoice_id, not a job_id, and the filter only followed job_id.
+//   time_log.date is a timestamp ('2026-09-04T00:00:00+00:00'), compared as
+//     a string against a bare 'YYYY-MM-DD' window end — so Sunday never
+//     matched. Any timestamp column compared that way has the same hole.
+//
+// Everything here is pure so it can be unit-tested (eosMetrics.test.js).
+
+import { zonedDayKey, DEFAULT_TZ } from './dateTz'
+import { entryHours } from './dailyHours'
+
+const BARE_DATE = /^\d{4}-\d{2}-\d{2}$/
+// A date column that was stored as a timestamp comes back as UTC midnight
+// ('2026-09-04T00:00:00+00:00' — every time_log.date row looks like this).
+// It means the calendar day it names, not 6pm the evening before in Denver.
+const UTC_MIDNIGHT = /^(\d{4}-\d{2}-\d{2})T00:00:00(\.0+)?(Z|\+00:00)$/
+
+/** Local calendar day for a date-ish value. A bare YYYY-MM-DD is already a
+ *  local day; a timestamp is bucketed in the company's timezone. */
+export function dayKeyOf(value, tz = DEFAULT_TZ) {
+  if (!value) return null
+  const s = String(value)
+  if (BARE_DATE.test(s)) return s
+  const m = UTC_MIDNIGHT.exec(s)
+  if (m) return m[1]
+  const key = zonedDayKey(s, tz)
+  return key || null
+}
+
+/** Is this date-ish value inside the inclusive local-day window [sd, ed]? */
+export function inDayWindow(value, sd, ed, tz = DEFAULT_TZ) {
+  const k = dayKeyOf(value, tz)
+  return !!k && k >= sd && k <= ed
+}
+
+/** Is this timestamp inside the inclusive instant window [start, end]?
+ *  Parsed, not string-compared — '+00:00' and 'Z' suffixes don't sort. */
+export function inInstantWindow(value, start, end) {
+  if (!value) return false
+  const t = new Date(value).getTime()
+  if (!Number.isFinite(t)) return false
+  return t >= new Date(start).getTime() && t <= new Date(end).getTime()
+}
+
+/** Hours worked inside a local-day window, from entries in time_clock's
+ *  shape (real punches, or legacy rows merged via mergeJobHourSources).
+ *  A shift belongs to the day it was clocked IN, in the company's timezone. */
+export function hoursInWindow(entries, sd, ed, tz = DEFAULT_TZ) {
+  let total = 0
+  for (const e of entries || []) {
+    if (!e) continue
+    const stamp = e.clock_in || e.date
+    if (!inDayWindow(stamp, sd, ed, tz)) continue
+    total += entryHours(e)
+  }
+  return Math.round(total * 10) / 10
+}
+
+export function sameEntity(a, b) {
+  return !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase()
+}
+
+/** Keep only entries whose job sits in the entity. Entries not clocked to a
+ *  job have no business unit and are left out of an entity-scoped total. */
+export function filterHoursByEntity(entries, jobs, entity) {
+  if (!entity) return entries || []
+  const ids = new Set((jobs || []).filter(j => sameEntity(j.business_unit, entity)).map(j => String(j.id)))
+  return (entries || []).filter(e => e?.job_id != null && ids.has(String(e.job_id)))
+}
+
+// ── Meetings ────────────────────────────────────────────────────────────
+
+// Calendar entries that are crew scheduling, not a meeting anyone set.
+const NOT_A_MEETING = new Set(['job', 'recurring job', 'block'])
+
+/** A meeting someone SET: a sales call, consultation, site visit, follow-up —
+ *  anything on the calendar that isn't a job block. */
+export function isSetMeeting(appt) {
+  if (!appt) return false
+  const type = String(appt.appointment_type || '').trim().toLowerCase()
+  return !NOT_A_MEETING.has(type)
+}
+
+const DID_NOT_HAPPEN = /no[\s-]?show|cancel|resched|missed/i
+
+/** A meeting that happened: status Completed, or an outcome was recorded
+ *  that isn't a no-show / cancellation. */
+export function isAttendedMeeting(appt) {
+  if (!appt || !isSetMeeting(appt)) return false
+  if (String(appt.status || '').toLowerCase() === 'completed') return true
+  const outcome = String(appt.outcome || '').trim()
+  return !!outcome && !DID_NOT_HAPPEN.test(outcome)
+}
+
+/** Appointments have no business unit of their own; they take the linked
+ *  lead's. With no entity asked for, everything passes. */
+export function filterAppointmentsByEntity(appointments, leads, entity) {
+  if (!entity) return appointments || []
+  const leadBu = new Map((leads || []).map(l => [String(l.id), l.business_unit]))
+  return (appointments || []).filter(a => {
+    const bu = a?.lead?.business_unit ?? (a?.lead_id != null ? leadBu.get(String(a.lead_id)) : null)
+    return sameEntity(bu, entity)
+  })
+}
+
+// ── Money ───────────────────────────────────────────────────────────────
+
+/** Payments in an entity, resolved through the payment's own job_id OR its
+ *  invoice's job_id — almost every payment only carries the invoice. */
+export function filterPaymentsByEntity(payments, invoices, jobs, entity) {
+  if (!entity) return payments || []
+  const jobIds = new Set((jobs || []).filter(j => sameEntity(j.business_unit, entity)).map(j => String(j.id)))
+  const invoiceJob = new Map((invoices || []).map(i => [String(i.id), i.job_id]))
+  return (payments || []).filter(p => {
+    const jobId = p?.job_id ?? (p?.invoice_id != null ? invoiceJob.get(String(p.invoice_id)) : null)
+    return jobId != null && jobIds.has(String(jobId))
+  })
+}
