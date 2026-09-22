@@ -32,7 +32,7 @@ export default function NeighborsPanel({ t, data, selected, setSelected, stageBy
 
       <div style={{ display: 'flex', gap: 4, margin: '8px 0' }}>
         {RADIUS_FT.map(r => (
-          <button key={r} onClick={() => onRadius(r)} disabled={data.loading} style={btn(data.radiusFt === r, { padding: '4px 8px', flex: 1, justifyContent: 'center' })}>{r} ft</button>
+          <button key={r} onClick={() => onRadius(r)} disabled={data.loading} style={btn(data.radiusFt === r, { padding: '4px 8px', flex: 1, justifyContent: 'center', minHeight: 44 })}>{r} ft</button>
         ))}
       </div>
 
@@ -52,10 +52,10 @@ export default function NeighborsPanel({ t, data, selected, setSelected, stageBy
             <span style={{ color: t.textMuted }}>{items.length - open.length > 0 ? `${items.length - open.length} already leads` : `${items.length} parcels`}</span>
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-            <button onClick={onAddAll} disabled={!picked.length || adding} style={btn(true, { flex: 1, justifyContent: 'center' })}>
+            <button onClick={onAddAll} disabled={!picked.length || adding} style={btn(true, { flex: 1, justifyContent: 'center', minHeight: 44 })}>
               {adding ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <UserPlus size={13} />} Add {picked.length || ''} as leads
             </button>
-            <button onClick={onRoute} disabled={!picked.length || routing} style={btn(false, { flex: 1, justifyContent: 'center' })}>
+            <button onClick={onRoute} disabled={!picked.length || routing} style={btn(false, { flex: 1, justifyContent: 'center', minHeight: 44 })}>
               {routing ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Route size={13} />} Route
             </button>
           </div>
@@ -76,7 +76,7 @@ export default function NeighborsPanel({ t, data, selected, setSelected, stageBy
                       {it.lead && <span style={{ color: stage?.color || t.textMuted, fontWeight: 600 }}> · already a lead ({stage?.name || it.lead.status})</span>}
                     </div>
                   </div>
-                  {!it.lead && <button onClick={() => onAdd(it)} style={btn(false, { padding: '4px 6px', flexShrink: 0 })} title="Open as a new lead with the details filled in"><Plus size={12} /></button>}
+                  {!it.lead && <button onClick={() => onAdd(it)} style={btn(false, { padding: 0, width: 44, minHeight: 44, justifyContent: 'center', flexShrink: 0 })} title="Open as a new lead with the details filled in"><Plus size={12} /></button>}
                 </li>
               )
             })}

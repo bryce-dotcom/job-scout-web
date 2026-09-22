@@ -95,7 +95,7 @@ export default function LeadCard({ t, lead, stages, stageById, followUps = [], e
           const on = s.id === lead.status
           return (
             <button key={s.id} disabled={!!changingStage} onClick={() => !on && onChangeStage?.(lead, s.id)}
-              style={btn(on, { padding: '5px 9px', minHeight: 32, ...(on ? { backgroundColor: s.color, borderColor: s.color } : { color: s.color, borderColor: s.color + '66' }) })}>
+              style={btn(on, { padding: '5px 9px', minHeight: 44, ...(on ? { backgroundColor: s.color, borderColor: s.color } : { color: s.color, borderColor: s.color + '66' }) })}>
               {changingStage === s.id ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : null}{s.name}
             </button>
           )
@@ -130,28 +130,28 @@ export default function LeadCard({ t, lead, stages, stageById, followUps = [], e
           </div>
           <label style={label}>Notes</label>
           <input value={apt.notes} onChange={e => setApt(a => ({ ...a, notes: e.target.value }))} placeholder="Gate code, who to ask for…" style={input} />
-          <button onClick={book} disabled={saving} style={btn(true, { marginTop: 8, width: '100%', justifyContent: 'center', boxSizing: 'border-box', minHeight: 36 })}>
+          <button onClick={book} disabled={saving} style={btn(true, { marginTop: 8, width: '100%', justifyContent: 'center', boxSizing: 'border-box', minHeight: 44 })}>
             {saving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <CalendarPlus size={13} />} Book it
           </button>
         </div>
       ) : (
-        <button onClick={() => setBooking(true)} style={btn(false, { marginTop: 10, width: '100%', justifyContent: 'center', boxSizing: 'border-box', minHeight: 36 })}><CalendarPlus size={13} /> Set appointment</button>
+        <button onClick={() => setBooking(true)} style={btn(false, { marginTop: 10, width: '100%', justifyContent: 'center', boxSizing: 'border-box', minHeight: 44 })}><CalendarPlus size={13} /> Set appointment</button>
       )}
 
       <div style={{ fontSize: 11, fontWeight: 600, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em', margin: '12px 0 4px' }}>Log a knock</div>
       <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note (optional): who answered, what they said…" style={{ ...input, marginBottom: 6 }} />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
         {KNOCKS.map(k => (
-          <button key={k.id} disabled={!!busy} onClick={() => log(k)} style={btn(false, { justifyContent: 'center', minHeight: 36 })} title={k.days ? `Logs the visit and asks you to come back in ${k.days} day${k.days > 1 ? 's' : ''}` : 'Logs the visit'}>
+          <button key={k.id} disabled={!!busy} onClick={() => log(k)} style={btn(false, { justifyContent: 'center', minHeight: 44 })} title={k.days ? `Logs the visit and asks you to come back in ${k.days} day${k.days > 1 ? 's' : ''}` : 'Logs the visit'}>
             {busy === k.id ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <k.icon size={13} />} {k.label}
           </button>
         ))}
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-        <button onClick={onOpen} style={btn(true, { flex: 1, justifyContent: 'center', minHeight: 36 })}><ExternalLink size={13} /> Open lead</button>
-        <button onClick={onNeighbors} style={btn(false, { justifyContent: 'center', minHeight: 36, color: '#15803d', borderColor: '#15803d' })} title="The parcels around this pin"><Clover size={13} /> Neighbors</button>
-        <a href={directions} target="_blank" rel="noreferrer" style={btn(false, { justifyContent: 'center', minHeight: 36, textDecoration: 'none' })} title="Directions in Google Maps"><Navigation size={13} /></a>
+        <button onClick={onOpen} style={btn(true, { flex: 1, justifyContent: 'center', minHeight: 44 })}><ExternalLink size={13} /> Open lead</button>
+        <button onClick={onNeighbors} style={btn(false, { justifyContent: 'center', minHeight: 44, color: '#15803d', borderColor: '#15803d' })} title="The parcels around this pin"><Clover size={13} /> Neighbors</button>
+        <a href={directions} target="_blank" rel="noreferrer" style={btn(false, { justifyContent: 'center', minHeight: 44, textDecoration: 'none' })} title="Directions in Google Maps"><Navigation size={13} /></a>
       </div>
     </div>
   )

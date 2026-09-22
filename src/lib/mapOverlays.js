@@ -42,7 +42,7 @@ export const OVERLAYS = [
     normalize: p => ({ name: `ZIP ${p.ZCTA5}`, sub: p.HU100 ? `${Number(p.HU100).toLocaleString()} homes` : 'ZIP code', key: `zip-${p.GEOID}` })
   },
   { id: 'parcels',     group: 'Boundaries',  label: 'Parcels (county assessor)',    kind: 'parcels', color: '#0e7490', minZoom: 16,
-    hint: 'Utah counties and Maricopa County AZ · tap a lot to add it as a lead' },
+    hint: 'Free in Utah, Arizona and 20 more counties and states · tap a lot to add it as a lead' },
   { id: 'radar',       group: 'Conditions',  label: 'Weather radar',               kind: 'raster' },
 ]
 
