@@ -239,3 +239,45 @@ export function jobARSnapshot(jobId, invoices = [], utilityInvoices = [], paymen
     utilityInvoices: jobUtility,
   }
 }
+
+/**
+ * Where a job stands on getting paid, for a list view.
+ *
+ * Alayda (0776c1db): the Jobs card showed jobs.invoice_status, which only
+ * ever holds Not Invoiced / Invoiced / Paid — there is no value in it for
+ * "some of it has come in", so a job with half its money collected looked
+ * exactly like one with none. This reads the invoices themselves through the
+ * one status rule (invoicePaymentStatus), so the card agrees with the invoice
+ * page instead of guessing.
+ *
+ * Void and Cancelled invoices are not money anybody expects.
+ *
+ * @returns { state: 'none'|'unpaid'|'partial'|'paid', billed, paid, count }
+ *          'none' = nothing invoiced yet, so the card says nothing extra.
+ */
+export function jobPaymentProgress(jobId, invoices = [], paymentsArrOrMap = []) {
+  const idx = paymentsArrOrMap instanceof Map
+    ? paymentsArrOrMap
+    : paymentsByInvoiceIndex(paymentsArrOrMap)
+  const mine = (invoices || []).filter(i =>
+    i && i.job_id === jobId && i.payment_status !== 'Void' && i.payment_status !== 'Cancelled')
+  if (mine.length === 0) return { state: 'none', billed: 0, paid: 0, count: 0 }
+
+  let billed = 0
+  let paid = 0
+  let everyPaid = true
+  let anyMoney = false
+  for (const inv of mine) {
+    const got = idx.get(inv.id) || 0
+    billed += invoiceCustomerTotal(inv)
+    paid += got
+    const st = invoicePaymentStatus(inv, got)
+    if (st === 'Paid') anyMoney = true
+    else {
+      everyPaid = false
+      if (st === 'Partially Paid') anyMoney = true
+    }
+  }
+  const state = everyPaid ? 'paid' : anyMoney ? 'partial' : 'unpaid'
+  return { state, billed: Math.round(billed * 100) / 100, paid: Math.round(paid * 100) / 100, count: mine.length }
+}

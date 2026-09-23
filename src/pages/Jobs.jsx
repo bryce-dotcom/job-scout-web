@@ -25,6 +25,7 @@ import { fetchUtilityInvoicedJobIds, isUtilityInvoiced } from '../lib/utilityInv
 import UtilityInvoicedBadge from '../components/UtilityInvoicedBadge'
 import { matchesJobSearch, jobSearchRank } from '../lib/jobSearch'
 import { jobYear, availableJobYears } from '../lib/jobYear'
+import { jobPaymentProgress, paymentsByInvoiceIndex } from '../lib/arHelpers'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
 
@@ -277,6 +278,12 @@ export default function Jobs() {
   const fetchCustomers = useStore((state) => state.fetchCustomers)
   const fetchProducts = useStore((state) => state.fetchProducts)
 
+  // What each job has actually collected, for the card badge. The page
+  // had no invoice data at all: the card showed jobs.invoice_status, which
+  // has no value meaning "part of it has come in" (Alayda, 0776c1db).
+  const [invoiceRows, setInvoiceRows] = useState([])
+  const [paymentIndex, setPaymentIndex] = useState(() => new Map())
+
   const [showModal, setShowModal] = useState(false)
   const [editingJob, setEditingJob] = useState(null)
   const [formData, setFormData] = useState(emptyJob)
@@ -345,12 +352,19 @@ export default function Jobs() {
     if (!storeJobStatuses || storeJobStatuses.length === 0) return defaultCols
     // Use DB order — apply known colors/icons for core statuses
     const coreMap = Object.fromEntries(defaultCols.map(c => [c.id, c]))
+    // A status has an id (what jobs.status holds) and a name (what the
+    // board calls it). This derived the id FROM the name, so renaming a
+    // column in Settings quietly emptied it — every job still carried the
+    // old status and no column matched it any more. Alayda asked for Paid
+    // to read "Payments" (0776c1db); the id stays Paid, which is also what
+    // getDeliveredStatusIds and every revenue metric read.
     const cols = storeJobStatuses.map(s => {
       const name = typeof s === 'string' ? s : s.name
-      const core = coreMap[name]
-      if (core) return core
+      const id = typeof s === 'string' ? s : (s.id || s.name)
+      const core = coreMap[id]
+      if (core) return { ...core, name }
       const color = typeof s === 'string' ? '#94a3b8' : (s.color || '#94a3b8')
-      return { id: name, name, color, icon: Briefcase }
+      return { id, name, color, icon: Briefcase }
     })
     // Always ensure Completed column exists so jobs don't vanish
     if (!cols.some(c => c.id === 'Completed')) {
@@ -432,6 +446,41 @@ export default function Jobs() {
     fetchUtilityInvoicedJobIds(supabase, companyId).then((ids) => {
       if (live) setUtilityInvoicedIds(ids)
     })
+    return () => { live = false }
+  }, [companyId])
+
+  // How much of each job has actually been collected. Its own effect for
+  // the same reason as the one above: the job list must render whether or
+  // not this lands. Only invoices attached to a job, and only the columns
+  // the AR rule reads — discount_applied and tax_amount decide what the
+  // CUSTOMER owes, and leaving either out of a select makes a fully
+  // incentivised invoice look unpaid (it did exactly that on Payroll).
+  useEffect(() => {
+    if (!companyId) return
+    let live = true
+    ;(async () => {
+      const { data: invs } = await supabase
+        .from('invoices')
+        .select('id, job_id, amount, discount_applied, tax_amount, payment_status, utility_owes, utility_paid_at')
+        .eq('company_id', companyId)
+        .not('job_id', 'is', null)
+      if (!live || !invs) return
+      setInvoiceRows(invs)
+      const ids = invs.map(i => i.id)
+      if (ids.length === 0) { setPaymentIndex(new Map()); return }
+      // Chunked so a long id list cannot blow the URL length.
+      const all = []
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data: pays } = await supabase
+          .from('payments')
+          .select('invoice_id, amount, paid_by')
+          .eq('company_id', companyId)
+          .in('invoice_id', ids.slice(i, i + 200))
+        if (!live) return
+        if (pays) all.push(...pays)
+      }
+      if (live) setPaymentIndex(paymentsByInvoiceIndex(all))
+    })()
     return () => { live = false }
   }, [companyId])
 
@@ -1385,6 +1434,32 @@ export default function Jobs() {
                             {job.invoice_status}
                           </span>
                         )}
+                        {/* How much of it has actually come in. invoice_status
+                            only ever says Not Invoiced / Invoiced / Paid, so a job
+                            with half its money collected looked exactly like one
+                            with none (Alayda, 0776c1db). lib/arHelpers is the rule. */}
+                        {(() => {
+                          const money = jobPaymentProgress(job.id, invoiceRows, paymentIndex)
+                          if (money.state === 'none' || money.state === 'unpaid') return null
+                          const paidInFull = money.state === 'paid'
+                          return (
+                            <span
+                              title={paidInFull
+                                ? `Paid in full — ${formatCurrency(money.paid)} across ${money.count} invoice${money.count === 1 ? '' : 's'}`
+                                : `${formatCurrency(money.paid)} of ${formatCurrency(money.billed)} collected across ${money.count} invoice${money.count === 1 ? '' : 's'}`}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600,
+                                backgroundColor: paidInFull ? 'rgba(74,124,89,0.14)' : 'rgba(59,130,246,0.14)',
+                                color: paidInFull ? '#4a7c59' : '#2563eb',
+                              }}
+                            >
+                              {paidInFull
+                                ? <><CheckCircle size={10} /> Paid in full</>
+                                : <>Part paid · {formatCurrency(money.paid)} of {formatCurrency(money.billed)}</>}
+                            </span>
+                          )
+                        })()}
                         {isUtilityInvoiced(utilityInvoicedIds, job) && <UtilityInvoicedBadge />}
                         {job.job_total > 0 && (
                           <span style={{ fontSize: '13px', fontWeight: '600', color: theme.accent }}>
