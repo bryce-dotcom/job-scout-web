@@ -274,7 +274,10 @@ const CASES = [
     expect: { proposal_kind: 'record', proposal_label: 'shift clock-in', text_match: [/switch/i, /approve/i] } },
   { id: 'shift.tech.cannot.clock.in.someone.else', as: 'tech',
     turns: ['Clock Mike Sullivan in on the Westside Auto Wash job.'],
-    expect: { proposal: 'none', text_match: [/Mike/, /own|themselves|Field Scout|Payroll|only you/i] } },
+    // However he words it, the refusal has to say whose shift it can be: the person
+    // asking, or Mike doing it himself. "I can only clock **you** in" is a pass.
+    expect: { proposal: 'none', tools_exclude: ['propose_record_change'],
+      text_match: [/Mike/, /\bown\b|him ?self|her ?self|them ?selves|your ?self|only\W*you\b|someone else|another person|their behalf|Field Scout|Payroll/i] } },
 
   // — dispatch: the roster for a day, and a person put on a section — the job page's write, clashes shown not decided —
   { id: 'crew.owner.who.is.free.tomorrow', as: 'owner',
@@ -402,7 +405,9 @@ const CASES = [
       try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: "What's the history with Halifax Flooring? Do they owe us anything?" }]) } finally { await fx.cleanup() }
     },
     expect: { tools_include: ['query_account'], tools_exclude: ['query_invoices', 'query_payments'], proposal: 'none',
-      text_match: [/\$800(\.00)?/, /overdue|past due|late/i, /Quarterly service|open|scheduled/i], text_not_match: [/\$12,?800/, /\$5,?000/] } },
+      // $12,800 is the legitimate all-time job value (12,000 + 800). What must never
+      // appear is the utility's $5,000 — the customer never owed it and never paid it.
+      text_match: [/\$800(\.00)?/, /overdue|past due|late/i, /Quarterly service|open|scheduled/i], text_not_match: [/\$5,?000/] } },
   { id: 'account.tech.money.withheld', as: 'tech',
     run: async (ctx) => {
       const fx = await accountFixture()
