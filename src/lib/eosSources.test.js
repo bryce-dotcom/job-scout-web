@@ -72,6 +72,28 @@ describe('hours come from the time clock, not the legacy typed table', () => {
     expect(compute('man_hours', data, 'Energy Scout')).toBe(12)
     expect(compute('man_hours', data, 'HHH Building Services')).toBe(0)
   })
+
+  it('Man Hours — No Unit catches the time no unit can claim', () => {
+    // More than half of HHH's clocked hours had no job picked, so every
+    // unit-scoped row dropped them and the week did not add up.
+    const withStray = {
+      ...data,
+      hourEntries: [
+        ...data.hourEntries,
+        { job_id: null, clock_in: '2026-09-17T13:00:00Z', clock_out: '2026-09-17T20:00:00Z', total_hours: 7 },
+      ],
+    }
+    expect(compute('man_hours_no_unit', withStray)).toBe(7)
+    // unit total + no-unit total = every hour clocked
+    expect(compute('man_hours', withStray, 'Energy Scout') + compute('man_hours_no_unit', withStray))
+      .toBe(compute('man_hours', withStray))
+  })
+
+  it('Man Hours — No Unit ignores a business unit rather than lying about one', () => {
+    const withStray = { ...data, hourEntries: [{ job_id: null, clock_in: '2026-09-17T13:00:00Z', clock_out: '2026-09-17T20:00:00Z', total_hours: 7 }] }
+    expect(compute('man_hours_no_unit', withStray, 'Energy Scout')).toBe(7)
+    expect(compute('man_hours_no_unit', withStray, 'HHH Building Services')).toBe(7)
+  })
 })
 
 describe('meetings', () => {

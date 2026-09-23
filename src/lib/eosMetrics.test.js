@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  dayKeyOf, inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity,
+  dayKeyOf, inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity, filterHoursWithNoUnit,
   isSetMeeting, isAttendedMeeting, filterAppointmentsByEntity, filterPaymentsByEntity,
 } from './eosMetrics'
 
@@ -72,6 +72,47 @@ describe('hoursInWindow — from real punches', () => {
     expect(filterHoursByEntity(punches, jobs, 'energy scout').map(p => p.id)).toEqual([3])
     expect(filterHoursByEntity([{ id: 9, job_id: null }], jobs, 'Energy Scout')).toEqual([])
     expect(filterHoursByEntity(punches, jobs, null)).toHaveLength(4)
+  })
+})
+
+describe('filterHoursWithNoUnit — the hours that fall between the columns', () => {
+  const jobs = [
+    { id: 10, business_unit: 'HHH Building Services' },
+    { id: 11, business_unit: 'Energy Scout' },
+    { id: 12, business_unit: null },
+    { id: 13, business_unit: '   ' },
+  ]
+  const entries = [
+    { id: 'a', job_id: 10, clock_in: '2026-09-15T13:00:00Z', clock_out: '2026-09-15T21:00:00Z', total_hours: 8 },
+    { id: 'b', job_id: null, clock_in: '2026-09-15T13:00:00Z', clock_out: '2026-09-15T18:00:00Z', total_hours: 5 },
+    { id: 'c', job_id: 12, clock_in: '2026-09-16T13:00:00Z', clock_out: '2026-09-16T16:00:00Z', total_hours: 3 },
+    { id: 'd', job_id: 13, clock_in: '2026-09-16T13:00:00Z', clock_out: '2026-09-16T15:00:00Z', total_hours: 2 },
+    { id: 'e', job_id: 99, clock_in: '2026-09-17T13:00:00Z', clock_out: '2026-09-17T14:00:00Z', total_hours: 1 },
+    { id: 'f', job_id: 11, clock_in: '2026-09-17T13:00:00Z', clock_out: '2026-09-17T17:00:00Z', total_hours: 4 },
+  ]
+
+  it('catches a punch with no job, a job with no unit, and a blank unit', () => {
+    expect(filterHoursWithNoUnit(entries, jobs).map(e => e.id)).toEqual(['b', 'c', 'd', 'e'])
+  })
+
+  it('counts a punch on a job the page cannot see, rather than losing it', () => {
+    // Job 99 is archived or past the row cap. We cannot name its unit, so we
+    // must not pretend we can — but the hours were still worked.
+    expect(filterHoursWithNoUnit(entries, jobs).some(e => e.id === 'e')).toBe(true)
+  })
+
+  it('the week adds up: unit A + unit B + no-unit = every hour clocked', () => {
+    const all = hoursInWindow(entries, SD, ED)
+    const hhh = hoursInWindow(filterHoursByEntity(entries, jobs, 'HHH Building Services'), SD, ED)
+    const es = hoursInWindow(filterHoursByEntity(entries, jobs, 'Energy Scout'), SD, ED)
+    const none = hoursInWindow(filterHoursWithNoUnit(entries, jobs), SD, ED)
+    expect(hhh + es + none).toBe(all)
+    expect(all).toBe(23)
+  })
+
+  it('returns nothing for an empty or null list', () => {
+    expect(filterHoursWithNoUnit([], jobs)).toEqual([])
+    expect(filterHoursWithNoUnit(null, jobs)).toEqual([])
   })
 })
 

@@ -81,6 +81,27 @@ export function filterHoursByEntity(entries, jobs, entity) {
   return (entries || []).filter(e => e?.job_id != null && ids.has(String(e.job_id)))
 }
 
+/**
+ * The leftover: entries whose hours NO business unit can claim — clocked in
+ * without picking a job, or onto a job that carries no business unit.
+ *
+ * These hours are real and they are paid, but every unit-scoped row has to
+ * drop them, so they fall between the columns and nobody sees them. On HHH
+ * that was 314 of 591 hours in one week — more than half the crew's time.
+ *
+ * Counting them makes the week add up: unit A + unit B + this = every hour
+ * clocked. A job the page cannot see (archived) lands here too, which is
+ * honest — if we cannot name its unit we must not pretend we can.
+ */
+export function filterHoursWithNoUnit(entries, jobs) {
+  const unitOf = new Map((jobs || []).map(j => [String(j.id), j.business_unit]))
+  return (entries || []).filter(e => {
+    if (e?.job_id == null) return true
+    const unit = unitOf.get(String(e.job_id))
+    return !unit || !String(unit).trim()
+  })
+}
+
 // ── Meetings ────────────────────────────────────────────────────────────
 
 // Calendar entries that are crew scheduling, not a meeting anyone set.

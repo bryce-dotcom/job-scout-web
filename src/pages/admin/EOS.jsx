@@ -11,7 +11,7 @@ import { getWeekRange } from '../../lib/eosWeek'
 import { mergeJobHourSources } from '../../lib/jobHours'
 import { DEFAULT_TZ } from '../../lib/dateTz'
 import {
-  inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity,
+  inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity, filterHoursWithNoUnit,
   isSetMeeting, isAttendedMeeting, filterAppointmentsByEntity, filterPaymentsByEntity,
 } from '../../lib/eosMetrics'
 import {
@@ -164,6 +164,20 @@ export const AUTO_SOURCES = {
     category: 'Operations',
     format: 'number',
     compute: (d, s, e, sd, ed, ent) => hoursIn(d, sd, ed, ent),
+  },
+  man_hours_no_unit: {
+    label: 'Man Hours — No Unit',
+    category: 'Operations',
+    format: 'number',
+    // Hours clocked with no job picked, so no business unit can claim them.
+    // Every unit-scoped row drops these, which is why the unit totals came
+    // to 277 in a week the crews clocked 591. With this row the week adds
+    // up, and the number is the one to drive down: it goes to zero when
+    // everyone picks a job at clock-in.
+    //
+    // Deliberately ignores the entity argument — this IS the bucket that
+    // belongs to no entity, so the Business Unit picker is hidden for it.
+    compute: (d, s, e, sd, ed) => hoursInWindow(filterHoursWithNoUnit(d.hourEntries, d.jobs), sd, ed, d.tz),
   },
   callbacks: {
     label: 'Lead Callbacks Due',
@@ -979,6 +993,9 @@ function ScorecardTab({ data, save, theme, employees, storeData, entities, isMob
                   ...p,
                   source: src,
                   metric: src !== 'manual' ? (AUTO_SOURCES[src]?.label || '') : p.metric,
+                  // Picking a unit and THEN switching to the no-unit bucket
+                  // would tag the row with a unit it does not read.
+                  entity: src === 'man_hours_no_unit' ? '' : p.entity,
                 }))
               }} style={{
                 width: '100%', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${theme.border}`,
@@ -1002,7 +1019,10 @@ function ScorecardTab({ data, save, theme, employees, storeData, entities, isMob
                 </optgroup>
               </select>
             </div>
-            {newMetric.source !== 'manual' && entities.length > 0 && (
+            {/* "Man Hours — No Unit" is the bucket that belongs to no unit,
+                so offering a unit picker for it would promise a filter that
+                the number cannot honour. */}
+            {newMetric.source !== 'manual' && newMetric.source !== 'man_hours_no_unit' && entities.length > 0 && (
               <div>
                 <label style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Business Unit (optional)</label>
                 <select value={newMetric.entity} onChange={e => setNewMetric(p => ({ ...p, entity: e.target.value }))} style={{
