@@ -20,24 +20,28 @@
 // Everything here is pure so it can be unit-tested (eosMetrics.test.js).
 
 import { zonedDayKey, DEFAULT_TZ } from './dateTz'
+import { calendarDay } from './localDate'
 import { entryHours } from './dailyHours'
 
-const BARE_DATE = /^\d{4}-\d{2}-\d{2}$/
-// A date column that was stored as a timestamp comes back as UTC midnight
-// ('2026-09-04T00:00:00+00:00' — every time_log.date row looks like this).
-// It means the calendar day it names, not 6pm the evening before in Denver.
-const UTC_MIDNIGHT = /^(\d{4}-\d{2}-\d{2})T00:00:00(\.0+)?(Z|\+00:00)$/
+// A date COLUMN carries no zone: a bare 'YYYY-MM-DD', or the same day wearing
+// a timestamp's clothes ('2026-09-04T00:00:00+00:00' — every time_log.date row
+// looks like this). lib/localDate is already the one rule for those and knows
+// both shapes; this must not become a second copy of it.
+const DATE_COLUMN = /^\d{4}-\d{2}-\d{2}(?:[T ]00:00:00(?:\.0+)?(?:Z|\+00(?::?00)?))?$/
 
-/** Local calendar day for a date-ish value. A bare YYYY-MM-DD is already a
- *  local day; a timestamp is bucketed in the company's timezone. */
+/**
+ * The calendar day a value belongs to.
+ *
+ * A date column means the day it names — ask localDate. A real instant (a
+ * clock-in) belongs to the day it happened in the COMPANY's timezone, which
+ * is not always the viewer's: an admin in Arizona must not push a Utah crew's
+ * Sunday evening shift onto Monday.
+ */
 export function dayKeyOf(value, tz = DEFAULT_TZ) {
   if (!value) return null
-  const s = String(value)
-  if (BARE_DATE.test(s)) return s
-  const m = UTC_MIDNIGHT.exec(s)
-  if (m) return m[1]
-  const key = zonedDayKey(s, tz)
-  return key || null
+  const s = String(value).trim()
+  if (DATE_COLUMN.test(s)) return calendarDay(s) || null
+  return zonedDayKey(s, tz) || null
 }
 
 /** Is this date-ish value inside the inclusive local-day window [sd, ed]? */

@@ -6,7 +6,7 @@ import { useIsMobile } from '../../hooks/useIsMobile'
 import { toast } from '../../lib/toast'
 import HelpBadge from '../../components/HelpBadge'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../../lib/jobMetrics'
-import { totalCustomerAR, totalUtilityAR, paymentsByInvoiceIndex } from '../../lib/arHelpers'
+import { arAsOf } from '../../lib/arHelpers'
 import { getWeekRange } from '../../lib/eosWeek'
 import { mergeJobHourSources } from '../../lib/jobHours'
 import { DEFAULT_TZ } from '../../lib/dateTz'
@@ -210,17 +210,20 @@ export const AUTO_SOURCES = {
     },
   },
   receivables: {
-    label: 'Accounts Receivable',
+    label: 'Accounts Receivable (week end)',
     category: 'Finance',
     format: 'currency',
-    compute: (d, s, e, sd, ed, ent) => {
-      // Customer AR uses customer balance (gross − discount − applied
-      // payments), not gross. Plus utility AR (rebates owed). Mirrors
-      // Books / Dashboard / Frankie / Arnie / JobDetail — see arHelpers.
-      const filteredInvs = filterInvoicesByEntity(d.invoices || [], d.jobs, ent)
-      const filteredUtil = filterInvoicesByEntity(d.utilityInvoices || [], d.jobs, ent)
-      return totalCustomerAR(filteredInvs, d.payments || []) + totalUtilityAR(filteredUtil, filteredInvs)
-    },
+    // A balance, not a flow — so it is taken at the END of the week being
+    // graded. Read as a snapshot of "right now" it printed the same figure in
+    // both columns every week, which looks broken and hides whether the pile
+    // is growing. Customer AR is the customer's balance (gross − discount −
+    // payments), never gross, plus the rebates utilities still owe.
+    // See arHelpers: one definition, shared with Books / Dashboard / Frankie.
+    compute: (d, s, e, sd, ed, ent) => arAsOf(ed, {
+      invoices: filterInvoicesByEntity(d.invoices || [], d.jobs, ent),
+      utilityInvoices: filterInvoicesByEntity(d.utilityInvoices || [], d.jobs, ent),
+      payments: d.payments || [],
+    }).total,
   },
   expenses_total: {
     label: 'Total Expenses',

@@ -27,6 +27,11 @@
 // informational discount is strictly larger; equality only happens on the
 // modern fully-covered shape.
 
+// Extension is REQUIRED here: scripts/check-payer-split.mjs imports this file
+// under plain Node, which does not resolve extensionless specifiers the way
+// Vite does. arHelpers had no imports at all until now, so nothing caught it.
+import { calendarDay } from './localDate.js'
+
 // ────────────────────────────── invoices ──────────────────────────────
 
 /**
@@ -213,6 +218,106 @@ export function totalUtilityAR(utilityInvoices = [], invoices = []) {
 // unless it's explicitly labeling one or the other.
 export function totalAR(invoices = [], utilityInvoices = [], paymentsArrOrMap = []) {
   return totalCustomerAR(invoices, paymentsArrOrMap) + totalUtilityAR(utilityInvoices, invoices)
+}
+
+// ───────────────────────── AR as it stood back then ─────────────────────────
+//
+// AR is a BALANCE, not a flow. "What is owed to us" has nothing to do with
+// which week you are looking at, so on a weekly scorecard it printed the same
+// figure in both columns for ever — which reads as a broken number, and hides
+// the one thing worth knowing: whether the pile is growing.
+//
+// Same arithmetic, dated. Every invoice that existed by the end of that day,
+// valued at its current terms, less the money that had actually arrived by
+// then. Payments and utility settlements carry their own dates, so the
+// collection side is exact.
+//
+// The one thing it cannot do is un-edit an invoice: if someone changed an
+// amount last Tuesday, the new amount is used for every week. Those edits are
+// rare and small next to the money moving, and the alternative is an audit-log
+// replay for a number read once a week.
+//
+// Deliberately NOT filtered by the current payment_status — an invoice that
+// reads Paid today was open last month, and filtering on today's status would
+// erase every week of history it spent outstanding.
+
+const day0 = (value) => calendarDay(value) || ''
+
+/** Did this record exist by the end of `day`? invoice_date is null on all but
+ *  3 of HHH's 6,542 invoices, so created_at is the real answer; invoice_date
+ *  wins when someone set it. A record we cannot date at all is counted —
+ *  under-reporting money owed is the failure nobody notices. */
+function existedBy(rec, day) {
+  const d = day0(rec?.invoice_date ?? rec?.created_at)
+  return !d || d <= day
+}
+
+function isVoided(rec) {
+  return rec?.payment_status === 'Void' || rec?.payment_status === 'Cancelled'
+}
+
+/** Per invoice: customer money in by `day`, and whether any arrived after it. */
+function customerPaymentsAround(payments, day) {
+  const map = new Map()
+  for (const p of payments || []) {
+    if (!p?.invoice_id) continue
+    if (!isCustomerPayment(p)) continue
+    const d = day0(p.date)
+    if (!d) continue
+    const row = map.get(p.invoice_id) || { upTo: 0, later: false }
+    if (d <= day) row.upTo += Number(p.amount) || 0
+    else row.later = true
+    map.set(p.invoice_id, row)
+  }
+  return map
+}
+
+/**
+ * AR at the END of one calendar day.
+ * @param {string} day 'YYYY-MM-DD'
+ * @returns {{customer: number, utility: number, total: number}}
+ */
+export function arAsOf(day, { invoices = [], utilityInvoices = [], payments = [] } = {}) {
+  if (!day) return { customer: 0, utility: 0, total: 0 }
+  const around = customerPaymentsAround(payments, day)
+  const live = (invoices || []).filter(i => !isVoided(i) && existedBy(i, day))
+
+  const customer = live.reduce((sum, inv) => {
+    const owed = invoiceCustomerTotal(inv)
+    if (owed <= 0) return sum
+    const seen = around.get(inv.id) || { upTo: 0, later: false }
+    const balance = Math.max(0, owed - seen.upTo)
+    if (balance <= 0) return sum
+    // Settled by something we cannot date — marked paid by hand, or covered
+    // off-ledger. With no later payment to explain it, carrying it through
+    // history would disagree with the AR every other screen shows today.
+    if (inv.payment_status === 'Paid' && !seen.later) return sum
+    return sum + balance
+  }, 0)
+
+  // Same two-source stitch as totalUtilityAR: a row whose invoice carries the
+  // debt must not be counted twice.
+  const carrierIds = new Set(live.filter(carriesUtilityDebt).map(i => i.id))
+  const fromInvoices = live.reduce((sum, inv) => {
+    if (!carriesUtilityDebt(inv)) return sum
+    const settled = day0(inv.utility_paid_at)
+    if (settled && settled <= day) return sum
+    return sum + (Number(inv.utility_owes) || 0)
+  }, 0)
+  const fromRows = (utilityInvoices || [])
+    .filter(u => !(u?.invoice_id != null && carrierIds.has(u.invoice_id)))
+    .filter(u => u?.payment_status !== 'Void' && existedBy(u, day))
+    .filter(u => {
+      const settled = day0(u.paid_at)
+      // Dated settlement: it was still owed on any day before it arrived.
+      if (settled) return settled > day
+      // No date to go on — fall back to where it stands today.
+      return u?.payment_status !== 'Paid'
+    })
+    .reduce((sum, u) => sum + (Number(u.amount || u.incentive_amount) || 0), 0)
+
+  const utility = fromInvoices + fromRows
+  return { customer, utility, total: customer + utility }
 }
 
 // ────────────────────────────── per-job ──────────────────────────────
