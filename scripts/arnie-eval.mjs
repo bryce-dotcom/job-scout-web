@@ -274,7 +274,10 @@ const CASES = [
     expect: { proposal_kind: 'record', proposal_label: 'shift clock-in', text_match: [/switch/i, /approve/i] } },
   { id: 'shift.tech.cannot.clock.in.someone.else', as: 'tech',
     turns: ['Clock Mike Sullivan in on the Westside Auto Wash job.'],
-    expect: { proposal: 'none', text_match: [/Mike/, /own|themselves|Field Scout|Payroll|only you/i] } },
+    // However he words it, the refusal has to say whose shift it can be: the person
+    // asking, or Mike doing it himself. "I can only clock **you** in" is a pass.
+    expect: { proposal: 'none', tools_exclude: ['propose_record_change'],
+      text_match: [/Mike/, /\bown\b|him ?self|her ?self|them ?selves|your ?self|only\W*you\b|someone else|another person|their behalf|Field Scout|Payroll/i] } },
 
   // — dispatch: the roster for a day, and a person put on a section — the job page's write, clashes shown not decided —
   { id: 'crew.owner.who.is.free.tomorrow', as: 'owner',
@@ -402,7 +405,9 @@ const CASES = [
       try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: "What's the history with Halifax Flooring? Do they owe us anything?" }]) } finally { await fx.cleanup() }
     },
     expect: { tools_include: ['query_account'], tools_exclude: ['query_invoices', 'query_payments'], proposal: 'none',
-      text_match: [/\$800(\.00)?/, /overdue|past due|late/i, /Quarterly service|open|scheduled/i], text_not_match: [/\$12,?800/, /\$5,?000/] } },
+      // $12,800 is the legitimate all-time job value (12,000 + 800). What must never
+      // appear is the utility's $5,000 — the customer never owed it and never paid it.
+      text_match: [/\$800(\.00)?/, /overdue|past due|late/i, /Quarterly service|open|scheduled/i], text_not_match: [/\$5,?000/] } },
   { id: 'account.tech.money.withheld', as: 'tech',
     run: async (ctx) => {
       const fx = await accountFixture()
@@ -628,37 +633,48 @@ const CASES = [
       ctx.pendingRollback = r.proposal.proposal.id
     } },
   { id: 'create.appointment.five.effects.then.unbook', as: 'tech',
-    turns: ['Book the Parkside Office Tower lead for tomorrow at 2pm with Jordan Lee.'],
-    expect: { proposal: 'create', proposal_label: 'appointment', text_match: [/2:00|2 ?pm/i] },
-    after: async (r, ctx) => {
-      const [before] = await rest(`leads?select=id,status,appointment_id,lead_owner_id&company_id=eq.${DEMO.company}&customer_name=ilike.*Parkside*`)
-      const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
-      ctx.pendingRollback = r.proposal.proposal.id
-      const [lead] = await rest(`leads?select=status,appointment_id,lead_owner_id&id=eq.${before.id}`)
-      if (lead.status !== 'Appointment Set' || String(lead.appointment_id) !== String(ap.body.created_id) || String(lead.lead_owner_id) !== String(DEMO.tech.employeeId)) throw new Error('lead not set/handed to the rep: ' + JSON.stringify(lead))
-      const fees = await rest(`lead_commissions?select=commission_type,employee_id,payment_status&appointment_id=eq.${ap.body.created_id}`)
-      if (!fees.some(f => f.commission_type === 'appointment_set' && String(f.employee_id) === String(DEMO.tech.employeeId) && f.payment_status === 'pending')) throw new Error("setter's fee not created: " + JSON.stringify(fees))
-      // and the same lead is now refused
-      const again = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Book Parkside Office Tower for Friday at 10am with Jordan Lee.' }])
-      if (again.proposal) { await decide(ctx.token, 'reject', again.proposal.proposal.id); throw new Error('a second booking on a booked lead was drafted') }
-      ctx.verifyAfterRollback = async () => {
-        const [l] = await rest(`leads?select=status,appointment_id,lead_owner_id&id=eq.${before.id}`)
-        if (l.status !== before.status || l.appointment_id !== before.appointment_id || l.lead_owner_id !== before.lead_owner_id) throw new Error('lead not restored: ' + JSON.stringify(l))
-        if ((await rest(`lead_commissions?select=id&appointment_id=eq.${ap.body.created_id}`)).length) throw new Error('fee left behind after unbook')
-      }
-    } },
+    run: async (ctx) => {
+      const fx = await apptFixture()
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: `Book the ${fx.name} lead for tomorrow at 2pm with Jordan Lee.` }])
+        if (r.proposal?.preview?.label === 'appointment') {
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const [lead] = await rest(`leads?select=status,appointment_id,lead_owner_id&id=eq.${fx.leadId}`)
+          if (lead.status !== 'Appointment Set' || String(lead.appointment_id) !== String(ap.body.created_id) || String(lead.lead_owner_id) !== String(DEMO.tech.employeeId)) throw new Error('lead not set/handed to the rep: ' + JSON.stringify(lead))
+          const fees = await rest(`lead_commissions?select=commission_type,employee_id,payment_status&appointment_id=eq.${ap.body.created_id}`)
+          if (!fees.some(f => f.commission_type === 'appointment_set' && String(f.employee_id) === String(DEMO.tech.employeeId) && f.payment_status === 'pending')) throw new Error("setter's fee not created: " + JSON.stringify(fees))
+          // and the same lead is now refused
+          const again = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: `Book ${fx.name} for Friday at 10am with Jordan Lee.` }])
+          if (again.proposal) { await decide(ctx.token, 'reject', again.proposal.proposal.id); throw new Error('a second booking on a booked lead was drafted') }
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+          const [l] = await rest(`leads?select=status,appointment_id,lead_owner_id&id=eq.${fx.leadId}`)
+          if (l.status !== fx.before.status || l.appointment_id !== fx.before.appointment_id || l.lead_owner_id !== fx.before.lead_owner_id) throw new Error('lead not restored: ' + JSON.stringify(l))
+          if ((await rest(`lead_commissions?select=id&appointment_id=eq.${ap.body.created_id}`)).length) throw new Error('fee left behind after unbook')
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally { await fx.cleanup() }
+    },
+    expect: { proposal: 'create', proposal_label: 'appointment', text_match: [/2:00|2 ?pm/i] } },
   // The weekday trap, on the two rails that book a moment: the model passes "Thursday at 2" / "5:30 yesterday"
   // AS SAID and the server does the calendar (resolveWhenSaid). "Thursday" must be the coming Thursday.
   { id: 'create.appointment.thursday.is.the.coming.thursday', as: 'tech',
-    turns: ['Book the Parkside Office Tower lead for Thursday at 2 with Jordan Lee.'],
-    expect: { proposal: 'create', proposal_label: 'appointment', text_match: [/Thu/i, /2:00|2 ?pm/i] },
-    after: async (r) => {
-      const when = (r.proposal.preview.fields || []).find((f) => f.label === 'When')?.value || ''
-      const iso = r.proposal.proposal.payload?.columns?.appointment_time || r.proposal.proposal.payload?.columns?.start_time
-      const local = new Date(iso).toLocaleString('en-US', { timeZone: DEMO.tz, weekday: 'short', hour: 'numeric', minute: '2-digit' })
-      const ahead = (new Date(new Date(iso).toLocaleDateString('en-CA', { timeZone: DEMO.tz })) - new Date(today)) / 86400000
-      if (!/^Thu/.test(local) || !/2:00 PM/.test(local) || ahead < 1 || ahead > 7) throw new Error(`booked ${local} (${ahead} days out) — card said "${when}"`)
-    } },
+    run: async (ctx) => {
+      const fx = await apptFixture()
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: `Book the ${fx.name} lead for Thursday at 2 with Jordan Lee.` }])
+        if (r.proposal) {
+          const when = (r.proposal.preview.fields || []).find((f) => f.label === 'When')?.value || ''
+          const iso = r.proposal.proposal.payload?.columns?.appointment_time || r.proposal.proposal.payload?.columns?.start_time
+          const local = new Date(iso).toLocaleString('en-US', { timeZone: DEMO.tz, weekday: 'short', hour: 'numeric', minute: '2-digit' })
+          const ahead = (new Date(new Date(iso).toLocaleDateString('en-CA', { timeZone: DEMO.tz })) - new Date(today)) / 86400000
+          await decide(ctx.token, 'reject', r.proposal.proposal.id)
+          if (!/^Thu/.test(local) || !/2:00 PM/.test(local) || ahead < 1 || ahead > 7) throw new Error(`booked ${local} (${ahead} days out) — card said "${when}"`)
+        }
+        return r
+      } finally { await fx.cleanup() }
+    },
+    expect: { proposal: 'create', proposal_label: 'appointment', text_match: [/Thu/i, /2:00|2 ?pm/i] } },
   { id: 'shift.tech.close.thursday.6pm.looks.back', as: 'tech',
     run: async (ctx) => {
       // Open since last Thursday 8am Denver; "Thursday at 6pm" must close it THAT Thursday, not the coming one.
@@ -784,6 +800,36 @@ async function wonFixture(number, salespersonId) {
     { company_id: C, quote_id: quote.id, item_id: null, item_name: 'Extended warranty', quantity: 1, price: 500, line_total: 500, labor_cost: 0, in_utility_scope: false, sort_order: 3 },
   ]) })
   return { quoteId: quote.id, leadId: lead.id, cleanup: wipe }
+}
+
+// A lead of this run's own, unbooked, for the two cases that need one.
+//
+// These used to book the seeded "Parkside Office Tower" lead. The demo tenant is
+// shared — several sessions test against it at once — and on 2026-09-22 a peer's
+// fixture had Parkside booked while this suite ran: the rail correctly refused to
+// double-book and both cases failed for a reason that was nothing to do with the
+// code. A case that needs a lead in a particular STATE has to bring its own.
+async function apptFixture() {
+  const C = DEMO.company
+  const name = 'Bellview Tower', email = 'dana@bellviewtower.example'
+  const wipe = async () => {
+    for (const l of await rest(`leads?select=id&company_id=eq.${C}&email=eq.${email}`)) {
+      const appts = await rest(`appointments?select=id&company_id=eq.${C}&lead_id=eq.${l.id}`)
+      for (const a of appts) {
+        await rest(`lead_commissions?appointment_id=eq.${a.id}`, { method: 'DELETE' }).catch(() => {})
+        await rest(`setter_commissions?appointment_id=eq.${a.id}`, { method: 'DELETE' }).catch(() => {})
+        await rest(`appointments?id=eq.${a.id}`, { method: 'DELETE' })
+      }
+      await rest(`lead_commissions?lead_id=eq.${l.id}`, { method: 'DELETE' }).catch(() => {})
+      await rest(`setter_commissions?lead_id=eq.${l.id}`, { method: 'DELETE' }).catch(() => {})
+      await rest(`leads?id=eq.${l.id}`, { method: 'DELETE' })
+    }
+    // party_lead_before may have minted a customer from the lead's email.
+    for (const c of await rest(`customers?select=id&company_id=eq.${C}&email=eq.${email}`)) await rest(`customers?id=eq.${c.id}`, { method: 'DELETE' }).catch(() => {})
+  }
+  await wipe()
+  const [lead] = await rest('leads', { method: 'POST', body: JSON.stringify({ company_id: C, customer_name: 'Dana Reed', business_name: name, email, phone: '801-555-0164', address: '88 Bellview Way, Murray, UT 84107', status: 'New', service_type: 'Lighting Retrofit' }) })
+  return { name, leadId: lead.id, before: { status: lead.status, appointment_id: lead.appointment_id, lead_owner_id: lead.lead_owner_id }, cleanup: wipe }
 }
 
 // A customer with a history: one finished job paid in full, one scheduled, an open
