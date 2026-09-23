@@ -340,6 +340,21 @@ export default function LeadDetail() {
         return
       }
 
+      // Lenard refuses to auto-create a second estimate for an audit it has
+      // already quoted; this button had no such guard, so Noah pressing it
+      // three times left three estimates on one audit. Ask rather than
+      // refuse — a deliberate re-quote is legitimate.
+      const { data: already } = await supabase
+        .from('quotes')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('audit_id', audit.id)
+        .limit(1)
+      if (already && already.length > 0) {
+        const go = window.confirm(`This audit already has estimate #${already[0].id}. Create a second one?`)
+        if (!go) { navigate(`/estimates/${already[0].id}`); return }
+      }
+
       const quoteAmount = audit.est_project_cost || 0
       const customerLabel = lead.business_name || lead.customer_name || 'Project'
       const { quote } = await createEstimateFromIntake(supabase, {

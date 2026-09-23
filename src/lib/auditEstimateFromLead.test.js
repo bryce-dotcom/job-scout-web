@@ -49,3 +49,13 @@ describe('creating an estimate from an audit on the lead page', () => {
     expect(handler).not.toMatch(/quoteTempId/)
   })
 })
+
+describe('pressing Create Estimate twice', () => {
+  it('asks before making a second estimate for an audit, and offers the first', () => {
+    // Noah pressed it three times and got three estimates on one audit.
+    // Lenard refuses outright; here a deliberate re-quote is legitimate, so
+    // it asks — and a No takes you to the estimate that already exists.
+    expect(handler).toMatch(/already has estimate #\$\{already\[0\]\.id\}/)
+    expect(handler).toMatch(/navigate\(`\/estimates\/\$\{already\[0\]\.id\}`\); return/)
+  })
+})
