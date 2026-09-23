@@ -26,6 +26,7 @@ import ProductPickerModal from '../components/ProductPickerModal'
 import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
 import { auditAreasToIntakeLines } from '../lib/auditAreaLine'
+import { createEstimateFromIntake } from '../lib/estimateIntake'
 import { localDateStr } from '../lib/localDate'
 
 const defaultTheme = {
@@ -69,6 +70,7 @@ export default function LeadDetail() {
   const leadSources = useStore((state) => state.leadSources)
 
   const [lead, setLead] = useState(null)
+  const [creatingAuditQuote, setCreatingAuditQuote] = useState(null)
   const [audits, setAudits] = useState([])
   const [quotes, setQuotes] = useState([])
   const [appointment, setAppointment] = useState(null)
@@ -307,42 +309,66 @@ export default function LeadDetail() {
     if (receiptInputRef.current) receiptInputRef.current.value = ''
   }
 
-  // Create estimate from audit
+  // Create estimate from audit.
+  //
+  // The areas come from the DATABASE. This read them out of the Zustand
+  // store — a slice nothing on this page ever fetches — so unless the user
+  // happened to have opened the audits list first, `areas` was empty, the
+  // line loop was skipped, and the estimate was born with a headline total
+  // and nothing under it. Noah hit it three times in an hour on one audit
+  // that has four areas sitting in the table (58022884: "it has the product
+  // lines in the audit but won't transfer over to the estimate").
+  //
+  // And the write goes through the shared intake contract, like Zach and
+  // Don and Lenard: the header and its lines land together or not at all,
+  // and it names the estimate the way Lenard does instead of leaving it
+  // blank. The old path also created the header through the offline queue,
+  // which returns a TEMP id — the lines were hung off that temp id and the
+  // page then navigated to /estimates/temp_<uuid>.
   const handleCreateQuoteFromAudit = async (audit) => {
-    const quoteTempId = await createQuote({
-      company_id: companyId,
-      lead_id: lead.id,
-      audit_id: audit.id,
-      audit_type: 'lighting',
-      quote_amount: audit.est_project_cost || 0,
-      utility_incentive: audit.estimated_rebate || 0,
-      salesperson_id: lead.salesperson_id || lead.lead_owner_id || null,
-      status: 'Draft'
-    })
-
-    // Update lead with quote and amount, advance to Qualified since quote was created
-    await updateLead(lead.id, {
-      quote_id: quoteTempId,
-      quote_amount: audit.est_project_cost || 0,
-      status: 'Qualified'
-    })
-
-    // Use audit areas from store instead of fetching from supabase
-    const storeAuditAreas = useStore.getState().auditAreas
-    const areas = storeAuditAreas.filter(a => String(a.audit_id) === String(audit.id))
-
-    if (areas.length > 0) {
-      // One rule for what an area is worth — lib/auditAreaLine. This path
-      // priced purely from cost-per-watt (negative whenever the existing
-      // wattage was zero), ignored the catalogue, and carried the area's photos
-      // but not the tech's notes. All three are fixed by using the shared rule.
-      const lines = auditAreasToIntakeLines(areas, { quoteAmount: audit.est_project_cost || 0 })
-      for (let i = 0; i < lines.length; i++) {
-        await createQuoteLine({ quote_id: quoteTempId, ...lines[i], sort_order: i })
+    if (creatingAuditQuote) return
+    setCreatingAuditQuote(audit.id)
+    try {
+      const { data: areas, error: areaErr } = await supabase
+        .from('audit_areas')
+        .select('*')
+        .eq('audit_id', audit.id)
+        .order('id')
+      if (areaErr) { alert(`Could not read the audit's areas: ${areaErr.message}`); return }
+      if (!areas || areas.length === 0) {
+        alert('That audit has no areas recorded yet, so there is nothing to put on an estimate. Open the audit and add the areas first.')
+        return
       }
-    }
 
-    navigate(`/estimates/${quoteTempId}`)
+      const quoteAmount = audit.est_project_cost || 0
+      const customerLabel = lead.business_name || lead.customer_name || 'Project'
+      const { quote } = await createEstimateFromIntake(supabase, {
+        source: 'audit',
+        company_id: companyId,
+        lead_id: lead.id,
+        customer_id: lead.customer_id || lead.converted_customer_id || null,
+        salesperson_id: lead.salesperson_id || lead.lead_owner_id || null,
+        audit_id: audit.id,
+        audit_type: 'lighting',
+        service_type: 'Lighting',
+        estimate_name: `Lighting — ${customerLabel}`,
+        quote_amount: quoteAmount,
+        utility_incentive: audit.estimated_rebate || 0,
+        status: 'Draft',
+        // One rule for what an area is worth — lib/auditAreaLine.
+        lines: auditAreasToIntakeLines(areas, { quoteAmount }),
+      // Qualified is where this button has always left the lead; the
+      // shared writer's default of Estimate Sent would overstate it,
+      // since nothing has been sent to anyone yet.
+      }, { advanceLeadTo: 'Qualified' })
+
+      await updateLead(lead.id, { quote_amount: quoteAmount })
+      navigate(`/estimates/${quote.id}`)
+    } catch (err) {
+      alert(`Could not create the estimate: ${err.message}`)
+    } finally {
+      setCreatingAuditQuote(null)
+    }
   }
 
   // Open estimate creation modal
@@ -1765,6 +1791,7 @@ export default function LeadDetail() {
                       <Tooltip text="Generate an estimate with line items from this audit">
                         <button
                           onClick={() => handleCreateQuoteFromAudit(audit)}
+                          disabled={creatingAuditQuote === audit.id}
                           style={{
                             padding: isMobile ? '10px 14px' : '8px 14px',
                             minHeight: isMobile ? '44px' : 'auto',
@@ -1778,7 +1805,7 @@ export default function LeadDetail() {
                             flex: isMobile ? 1 : 'none'
                           }}
                         >
-                          Create Estimate
+                          {creatingAuditQuote === audit.id ? 'Creating…' : 'Create Estimate'}
                         </button>
                       </Tooltip>
                     </div>
