@@ -129,3 +129,46 @@ describe('the escalation trigger guards what actually confers privilege', () => 
     expect(sql).toMatch(/drop trigger if exists employees_no_privilege_escalation/i)
   })
 })
+
+describe('Developer is a platform role, not a tenant role', () => {
+  // 20260924180000: an employee of company 9 carried user_role = 'Developer'
+  // and could open the platform's Data Console. The guard now refuses
+  // Developer (either column) outside the platform company, requires a
+  // platform developer to grant or revoke it, and fires on INSERT too so it
+  // cannot be bypassed by creating the employee already promoted.
+  const dev = read('supabase/migrations/20260924180000_developer_role_platform_only.sql')
+
+  it('ties the role to companies.is_platform, not a hard-coded id', () => {
+    expect(dev).toMatch(/add column if not exists is_platform boolean/)
+    expect(dev).toMatch(/if wants_developer and not public\.is_platform_company\(new\.company_id\)/)
+  })
+
+  it('checks the platform company BEFORE the service-role exemption', () => {
+    const platformCheck = dev.indexOf('not public.is_platform_company(new.company_id)')
+    const serviceExempt = dev.indexOf('if jwt_email is null then')
+    expect(platformCheck).toBeGreaterThan(0)
+    expect(platformCheck).toBeLessThan(serviceExempt)
+  })
+
+  it('only a platform developer may grant or revoke it', () => {
+    expect(dev).toMatch(/\(wants_developer <> had_developer\) and not public\.is_platform_developer\(\)/)
+  })
+
+  it('covers INSERT as well as UPDATE', () => {
+    expect(dev).toMatch(/create trigger employees_no_privilege_escalation_insert\s*\n\s*before insert on public\.employees/)
+    expect(dev).toMatch(/if tg_op = 'INSERT' then\s*\n\s*return new;/)
+  })
+
+  it('keeps every column the original guard covered', () => {
+    for (const col of ['user_role', 'is_admin', 'is_developer', 'has_hr_access', 'active', 'hourly_rate', 'salary', 'commission_setter_rate']) {
+      expect(dev, `${col} must still be guarded`).toMatch(new RegExp(`new\\.${col}\\s+is distinct from old\\.${col}`))
+    }
+    expect(dev).toMatch(/current_user_access_level\(\) >= 3/)
+    expect(dev).toMatch(/errcode = '42501'/)
+  })
+
+  it('downgrades a stray tenant Developer to Super Admin rather than deleting access', () => {
+    expect(dev).toMatch(/set user_role = 'Super Admin',\s*\n\s*is_developer = false/)
+    expect(dev).toMatch(/and not public\.is_platform_company\(e\.company_id\)/)
+  })
+})

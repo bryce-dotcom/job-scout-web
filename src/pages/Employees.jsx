@@ -133,6 +133,11 @@ const emptyEmployee = {
 export default function Employees() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  const company = useStore((state) => state.company)
+  // Developer is a PLATFORM role (Data Console, every tenant's rows). Only
+  // the platform company's own staff may hold it — the database refuses it
+  // anywhere else (employees_block_privilege_escalation), so don't offer it.
+  const isPlatformCompany = company?.is_platform === true
   const currentUser = useStore((state) => state.user)
   const fetchEmployees = useStore((state) => state.fetchEmployees)
   const storeEmployeeRoles = useStore((state) => state.employeeRoles)
@@ -357,7 +362,8 @@ export default function Employees() {
 
   // Use settings-driven values or defaults
   const ROLES = jobTitles.length > 0 ? jobTitles : DEFAULT_JOB_TITLES
-  const USER_ROLES = accessLevels.length > 0 ? accessLevels.map(l => l.name) : DEFAULT_ACCESS_LEVELS.map(l => l.name)
+  const USER_ROLES = (accessLevels.length > 0 ? accessLevels.map(l => l.name) : DEFAULT_ACCESS_LEVELS.map(l => l.name))
+    .filter(r => r !== 'Developer' || isPlatformCompany)
   const SKILL_LEVELS = skillLevels.map(s => typeof s === 'string' ? s : s.name)
 
   const loadEmployees = async () => {
@@ -2082,8 +2088,8 @@ export default function Employees() {
                   </div>
                 )}
 
-                {/* Developer Access - Only visible to developers */}
-                {isDeveloper && (
+                {/* Developer Access - Only visible to developers, only on the platform company */}
+                {isDeveloper && isPlatformCompany && (
                   <div style={{
                     marginBottom: '16px',
                     padding: '12px',
