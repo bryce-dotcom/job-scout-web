@@ -41,3 +41,7 @@ deno.lock
 
 # Frankie eval runs — reports with real answers; local only
 scripts/frankie-eval/runs/
+
+# one-off geocode backfill outputs
+scripts/geocode-misses.json
+scripts/geocode-job-misses.json
