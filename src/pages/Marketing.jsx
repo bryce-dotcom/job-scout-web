@@ -13,7 +13,7 @@ import {
 import {
   Megaphone, Inbox, ListChecks, Palette, Link2, Mail, Sparkles, Upload, Camera, Check, X,
   Send, Clock, ExternalLink, RefreshCw, ChevronRight, CircleCheck, Circle, Trash2, Pencil,
-  Image as ImageIcon, AlertTriangle, Archive, CalendarClock,
+  Image as ImageIcon, AlertTriangle, Archive, CalendarClock, Hand, Copy, Download,
 } from 'lucide-react'
 
 // Marketing — step 1 of the Sales Flow. Everything a company does to be found
@@ -85,6 +85,7 @@ export default function Marketing() {
   const [posts, setPosts] = useState([])
   const [captures, setCaptures] = useState([])
   const [composer, setComposer] = useState(null)      // { post?, captureIds[] }
+  const [handPost, setHandPost] = useState(null)      // post being posted by hand
   const [walkthroughHidden, setWalkthroughHidden] = useState(() => {
     try { return localStorage.getItem('mkt_walkthrough_hidden') === '1' } catch { return false }
   })
@@ -263,7 +264,8 @@ export default function Marketing() {
         <QueueTab theme={theme} isMobile={isMobile} posts={posts} isManager={isManager}
           onEdit={(p) => setComposer({ post: p, captureIds: p.capture_ids || [] })}
           onApprove={(p) => setPostStatus(p, 'approved')} onPublish={publishPost} onUnschedule={unschedulePost}
-          onArchive={(p) => setPostStatus(p, 'archived')} onNew={() => setComposer({ captureIds: [] })} />
+          onArchive={(p) => setPostStatus(p, 'archived')} onNew={() => setComposer({ captureIds: [] })}
+          onHandPost={(p) => setHandPost(p)} />
       ) : tab === 'inbox' ? (
         <InboxTab theme={theme} isMobile={isMobile} captures={captures} uploading={uploading}
           onUploadClick={() => uploadRef.current?.click()} onDismiss={dismissCapture}
@@ -276,6 +278,27 @@ export default function Marketing() {
 
       <input ref={uploadRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} onChange={handleUpload} />
 
+      {handPost && (
+        <HandPostSheet
+          theme={theme} isMobile={isMobile} post={handPost}
+          onClose={() => setHandPost(null)}
+          onMarked={async (note) => {
+            // Posted with no ayrshare_id = posted by hand. No new column needed;
+            // the card reads that combination as "Posted by hand".
+            const { error } = await supabase.from('marketing_posts').update({
+              status: 'posted', posted_at: new Date().toISOString(), ayrshare_id: null, post_urls: [], error: note || null,
+              approved_by: handPost.approved_by || currentEmployee?.id || null, approved_at: handPost.approved_at || new Date().toISOString(),
+            }).eq('id', handPost.id).eq('company_id', companyId)
+            if (error) { toast.error(error.message); return }
+            if (handPost.capture_ids?.length) {
+              await supabase.from('marketing_captures').update({ status: 'used', post_id: handPost.id }).eq('company_id', companyId).in('id', handPost.capture_ids)
+            }
+            toast.success('Marked as posted')
+            setHandPost(null)
+            load()
+          }}
+        />
+      )}
       {composer && (
         <Composer
           theme={theme} isMobile={isMobile} companyId={companyId} currentEmployee={currentEmployee} isManager={isManager}
@@ -331,7 +354,7 @@ function SetupWalkthrough({ theme, isMobile, progress, isManager, onBrand, onCha
 }
 
 // ── Queue ────────────────────────────────────────────────────────────
-function QueueTab({ theme, isMobile, posts, isManager, onEdit, onApprove, onPublish, onUnschedule, onArchive, onNew }) {
+function QueueTab({ theme, isMobile, posts, isManager, onEdit, onApprove, onPublish, onUnschedule, onArchive, onNew, onHandPost }) {
   const [filter, setFilter] = useState('open')
   const filtered = posts.filter((p) => {
     if (filter === 'open') return ['draft', 'approved', 'failed'].includes(p.status)
@@ -368,11 +391,13 @@ function QueueTab({ theme, isMobile, posts, isManager, onEdit, onApprove, onPubl
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: st.color, background: st.color + '18', borderRadius: 999, padding: '2px 8px' }}>{st.label}</span>
                     {p.status === 'scheduled' && p.scheduled_for && <span style={{ fontSize: 11, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}><Clock size={12} /> {fmtWhen(p.scheduled_for)}</span>}
-                    {p.status === 'posted' && p.posted_at && <span style={{ fontSize: 11, color: theme.textMuted }}>{fmtWhen(p.posted_at)}</span>}
+                    {p.status === 'posted' && p.posted_at && <span style={{ fontSize: 11, color: theme.textMuted }}>{fmtWhen(p.posted_at)}{!p.ayrshare_id ? ' · by hand' : ''}</span>}
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: theme.textMuted }}>{(p.platforms || []).map((id) => PLATFORM_BY_ID[id]?.label || id).join(' · ')}</span>
                   </div>
                   <div style={{ fontSize: 13, color: theme.text, lineHeight: 1.45, whiteSpace: 'pre-wrap', maxHeight: 96, overflow: 'hidden' }}>{composeCaption(p.caption, p.hashtags) || <span style={{ color: theme.textMuted }}>No caption yet</span>}</div>
-                  {p.error && <div style={{ fontSize: 12, color: '#ef4444', display: 'flex', gap: 6, alignItems: 'flex-start' }}><AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> {p.error}</div>}
+                  {p.error && p.status === 'posted' && !p.ayrshare_id
+                    ? <div style={{ fontSize: 12, color: theme.textMuted }}>{p.error}</div>
+                    : p.error && <div style={{ fontSize: 12, color: '#ef4444', display: 'flex', gap: 6, alignItems: 'flex-start' }}><AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> {p.error}</div>}
                   {urls.length > 0 && (
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {urls.map((u) => <a key={u.platform + u.id} href={u.postUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#3b82f6', display: 'flex', alignItems: 'center', gap: 4 }}><ExternalLink size={12} /> {PLATFORM_BY_ID[u.platform]?.label || u.platform}</a>)}
@@ -384,6 +409,11 @@ function QueueTab({ theme, isMobile, posts, isManager, onEdit, onApprove, onPubl
                     {['approved', 'failed'].includes(p.status) && isManager && (
                       <button type="button" disabled={busy === p.id} onClick={() => run(p.id, () => onPublish(p))} style={primaryBtn(MKT)}>
                         {p.scheduled_for && new Date(p.scheduled_for) > new Date() ? <><CalendarClock size={14} /> Schedule</> : <><Send size={14} /> Publish now</>}
+                      </button>
+                    )}
+                    {['approved', 'failed'].includes(p.status) && (
+                      <button type="button" onClick={() => onHandPost(p)} style={ghostBtn(theme)} title="Copy the caption, save the photo, post it yourself, then mark it done here">
+                        <Hand size={14} /> Post by hand
                       </button>
                     )}
                     {p.status === 'scheduled' && isManager && <button type="button" disabled={busy === p.id} onClick={() => run(p.id, () => onUnschedule(p))} style={ghostBtn(theme)}><X size={14} /> Unschedule</button>}
@@ -849,6 +879,97 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
               {inFuture ? <><CalendarClock size={15} /> Schedule</> : <><Send size={15} /> Publish now</>}
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Post by hand ─────────────────────────────────────────────────────
+// The last mile when no publisher is connected yet (or a network is not):
+// copy the caption, save the photo, post it in the network's own app, then
+// mark it done so the queue, the learning loop and reporting stay true.
+function HandPostSheet({ theme, isMobile, post, onClose, onMarked }) {
+  const text = composeCaption(post.caption, post.hashtags)
+  const [copied, setCopied] = useState(false)
+  const [where, setWhere] = useState(() => (post.platforms || []).map((id) => PLATFORM_BY_ID[id]?.label || id).join(', '))
+  const [saving, setSaving] = useState(false)
+  const media = (post.media_urls || []).filter(Boolean)
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast.error('Could not copy. Select the text and copy it.')
+    }
+  }
+  // Public bucket objects come with CORS, so a fetch → blob → object URL
+  // gives a real download; a plain <a download> is ignored cross-origin.
+  const download = async (url, i) => {
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `post-${post.id}-${i + 1}.${(blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')}`
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+    } catch {
+      window.open(url, '_blank')
+    }
+  }
+  const mark = async () => {
+    setSaving(true)
+    await onMarked(where.trim() ? `Posted by hand to ${where.trim()}` : 'Posted by hand')
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center' }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: theme.bgCard, width: isMobile ? '100%' : 560, maxHeight: '92vh', overflowY: 'auto', borderRadius: isMobile ? '14px 14px 0 0' : 14, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.border}` }}>
+          <Hand size={18} color={MKT} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>Post it yourself</div>
+            <div style={{ fontSize: 12, color: theme.textMuted }}>Copy, save the photo, post from the network's app, then mark it done.</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ ...ghostBtn(theme), padding: 8 }}><X size={18} /></button>
+        </div>
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ ...sectionLabel(theme), marginBottom: 0, flex: 1 }}>1. Caption</div>
+              <button type="button" onClick={copy} style={{ ...ghostBtn(theme), minHeight: 36, padding: '6px 10px' }}>{copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}</button>
+            </div>
+            <textarea readOnly value={text} rows={6} onFocus={(e) => e.target.select()} style={{ ...inputStyle(theme), minHeight: 120, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.45 }} />
+          </div>
+          <div>
+            <div style={sectionLabel(theme)}>2. Photo{media.length === 1 ? '' : 's'}</div>
+            {media.length === 0 ? (
+              <div style={{ fontSize: 13, color: theme.textMuted }}>No photo on this post.</div>
+            ) : (
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {media.map((u, i) => (
+                  <div key={u} style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+                    <img src={u} alt="" style={{ width: 110, height: 110, objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.border}` }} />
+                    <button type="button" onClick={() => download(u, i)} style={{ ...ghostBtn(theme), minHeight: 36, padding: '6px 10px' }}><Download size={14} /> Save</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 6 }}>On a phone, press and hold the photo to save it to your camera roll.</div>
+          </div>
+          <div>
+            <div style={sectionLabel(theme)}>3. Where did it go?</div>
+            <input value={where} onChange={(e) => setWhere(e.target.value)} placeholder="Facebook, Instagram, Google Business" style={inputStyle(theme)} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${theme.border}` }}>
+          <button type="button" onClick={onClose} style={ghostBtn(theme)}>Not yet</button>
+          <div style={{ flex: 1 }} />
+          <button type="button" disabled={saving} onClick={mark} style={primaryBtn(MKT)}><Check size={15} /> Mark as posted</button>
         </div>
       </div>
     </div>

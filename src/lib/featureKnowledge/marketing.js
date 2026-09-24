@@ -84,6 +84,7 @@ export default {
       "The brand kit is derived from EOS but lives in its own settings key (marketing_brand_kit). Editing EOS later does not change it; press Fill blanks from EOS to pull new answers into empty fields only.",
       "Style learning is example-based, not fine-tuning: the drafter reads approved captions and ai_draft-vs-caption edit pairs. Archive a bad post and it stops being an example.",
       "marketing-media is a PUBLIC bucket because Ayrshare fetches media by URL. A capture is a copy the tech chose to share; private job photos stay in project-documents.",
+      "Post by hand: on an approved or failed post, copies the caption + hashtags, saves the photo, and after the person posts it in the network's own app, Mark as posted flips it to posted with no ayrshare_id (that combination reads 'by hand' on the card). It keeps the queue and the learning examples true when no publisher is connected yet.",
       "Google Ads, website analytics and inbound MMS are NOT built (phase 2+). The Email tab is a link to Conrad Connect.",
     ],
 
