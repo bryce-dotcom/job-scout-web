@@ -26,8 +26,14 @@ export const OVERLAYS = [
     fields: 'NAME,TYPE,STATE,HOLDING_CO,CUSTOMERS,ID',
     // Skip the tiny irrigation/water districts and wholesale-only entries that
     // blanket whole regions; keep anything a homeowner could actually be billed by.
-    where: "CUSTOMERS >= 500 AND TYPE <> 'FEDERAL'",
-    normalize: p => ({ name: titleCase(p.NAME), sub: [titleCase(p.TYPE), p.CUSTOMERS > 0 ? `${Number(p.CUSTOMERS).toLocaleString()} customers` : null].filter(Boolean).join(' · '), key: `util-${p.ID}` })
+    where: "CUSTOMERS >= 500 AND TYPE <> 'FEDERAL' AND TYPE <> 'NOT AVAILABLE'",
+    normalize: p => ({ name: titleCase(p.NAME), sub: [titleCase(p.TYPE), p.CUSTOMERS > 0 ? `${Number(p.CUSTOMERS).toLocaleString()} customers` : null].filter(Boolean).join(' · '), key: `util-${p.ID}`, customers: Number(p.CUSTOMERS) || 0 }),
+    // HIFLD polygons overlap heavily: around Phoenix a valley-wide tribal
+    // cooperative with 3,000 customers sits in the same stack as SRP and APS
+    // with a million each. Whatever is drawn last takes the hover and the
+    // click, so the retail giants must draw last — sort by customers, small
+    // first. Same rule utilityAtPoint uses to name the utility for a point.
+    stack: (a, b) => (a.properties.customers || 0) - (b.properties.customers || 0)
   },
   { id: 'counties',    group: 'Boundaries',  label: 'Counties',                    kind: 'boundary', color: '#7c3aed', minZoom: 6,
     urls: [`${TIGER}/State_County/MapServer/1`], fields: 'NAME,GEOID,STATE',
@@ -93,6 +99,9 @@ export async function fetchBoundary(overlay, bounds, zoom) {
         ...f,
         properties: { ...f.properties, ...overlay.normalize(f.properties), overlayId: overlay.id }
       }))
+      // Draw order = array order in Leaflet; an overlay that knows which of
+      // its overlapping shapes should be on top says so with `stack`.
+      if (overlay.stack) features.sort(overlay.stack)
       const fc = { type: 'FeatureCollection', features }
       boundaryCache.set(cacheKey, fc)
       return fc

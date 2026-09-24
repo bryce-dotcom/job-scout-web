@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { UserPlus, ChevronDown, ChevronRight, AlertCircle, Check } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { toast } from '../lib/toast'
+import { buildLeadIndex, isUnattributed } from '../lib/jobOwnership'
 
 // Sold work nobody is credited for.
 //
@@ -30,18 +31,35 @@ export default function UnassignedSalesPanel({ theme, companyId, employees = [],
   const load = useCallback(async () => {
     if (!companyId) return
     setLoading(true)
+    // Two things this used to get wrong (2026-09-24, HHH: "$2.49M of sold
+    // work has no salesperson"): archived and cancelled jobs were counted —
+    // 2,013 of the 2,246 rows, $1.96M — and a job whose LEAD carries the rep
+    // was listed as nobody's, against lib/jobOwnership, the one rule for
+    // who a job belongs to. Now: live jobs only, and the lead is consulted.
     let q = supabase
       .from('jobs')
-      .select('id, job_id, job_title, job_total, business_unit, created_at')
+      .select('id, job_id, job_title, job_total, business_unit, created_at, lead_id, salesperson_id')
       .eq('company_id', companyId)
       .is('salesperson_id', null)
       .gt('job_total', 0)
+      .not('status', 'in', '("Archived","Cancelled")')
       .order('job_total', { ascending: false })
       .limit(500)
     if (cutoff) q = q.gte('created_at', cutoff)
     const { data, error } = await q
     if (error) console.error('UnassignedSalesPanel:', error.message)
-    setJobs(data || [])
+    let rows = data || []
+    const leadIds = [...new Set(rows.map(j => j.lead_id).filter(Boolean))].map(Number).filter(Number.isFinite)
+    if (leadIds.length) {
+      const { data: leads } = await supabase
+        .from('leads')
+        .select('id, salesperson_id, salesperson_ids')
+        .eq('company_id', companyId)
+        .in('id', leadIds.slice(0, 500))
+      const idx = buildLeadIndex(leads || [])
+      rows = rows.filter(j => isUnattributed(j, idx))
+    }
+    setJobs(rows)
     setLoading(false)
   }, [companyId, cutoff])
 

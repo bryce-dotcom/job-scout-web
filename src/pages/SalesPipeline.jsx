@@ -17,7 +17,7 @@ import {
 import EntityCard, { MALE_NAMES, FEMALE_NAMES } from '../components/EntityCard'
 import UnassignedSalesPanel from '../components/UnassignedSalesPanel'
 import FollowUpStrip from '../components/FollowUpStrip'
-import { buildLeadIndex, primaryOwnerId, leadForJob } from '../lib/jobOwnership'
+import { buildLeadIndex, primaryOwnerId, leadForJob, isUnattributed, jobOwnedBy } from '../lib/jobOwnership'
 import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipelineScroll, takePipelineScroll } from '../lib/pipelinePrefs'
 import { soldTotal, periodBounds } from '../lib/soldTotals'
 import { countDueFromRows, dueKeysFromRows } from '../lib/followUpDue'
@@ -1295,12 +1295,15 @@ export default function SalesPipeline() {
   // grand-total Sales Won (jobs created in the date window), but ALSO
   // honor the active owner filter so the Won column shows only THIS
   // rep's wins when filtering to a specific person.
+  // Job ownership goes through lib/jobOwnership (the job's salesperson, else
+  // the lead's) — a raw salesperson_id check filed every lead-owned job as
+  // nobody's, the same trap the orphan check fell into.
   const ownerFilteredJobs = (() => {
     const effOwner = (!canViewAll && user?.id) ? String(user.id) : ownerFilter
     if (!effOwner || effOwner === 'all') return storeJobs || []
-    if (effOwner === 'unassigned') return (storeJobs || []).filter(j => !j.salesperson_id)
-    const ownerId = parseInt(effOwner)
-    return (storeJobs || []).filter(j => j.salesperson_id === ownerId)
+    const idx = buildLeadIndex(pipelineLeads)
+    if (effOwner === 'unassigned') return (storeJobs || []).filter(j => isUnattributed(j, idx))
+    return (storeJobs || []).filter(j => jobOwnedBy(j, effOwner, idx, 'credit'))
   })()
   const wonInRangeJobs = (() => {
     const cutoff = getDateCutoff(dateRange)
