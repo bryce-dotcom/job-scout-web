@@ -244,7 +244,9 @@ await run('jobs', async () => {
   ];
   jobs = await ins('jobs', J.map(([job_title, ci, status, off, total, invoice_status, tech], i) => ({
     company_id: cid, job_title, customer_id: cust(ci), customer_name: customers[ci]?.name,
-    address: customers[ci]?.address, status, start_date: dstr(off),
+    // job_address is what the geocode cron and the Liahona "Finished jobs"
+    // overlay read; `address` alone left every demo job off the map.
+    address: customers[ci]?.address, job_address: customers[ci]?.address, status, start_date: dstr(off),
     end_date: status === 'Completed' ? dstr(off + 1) : null,
     completed_at: status === 'Completed' ? tstr(off + 1) : null,
     // assigned_team carries NAMES — Field Scout matches "Your Jobs" by the

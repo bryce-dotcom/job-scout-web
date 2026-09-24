@@ -1892,7 +1892,7 @@ export default function SalesPipeline() {
   }, [filteredPipelineLeads, stages, dateRange, soldStat])
 
   // Liahona inputs. Sales-stage leads get pins; won/delivery leads become the
-  // "Customers & jobs" overlay. Both respect the page filters above.
+  // "Won customers" overlay. Both respect the page filters above.
   // filteredPipelineLeads is rebuilt every render, so memoize on a fingerprint
   // of what the map actually draws (id, stage, coords) — otherwise every
   // parent re-render would rebuild a thousand markers.
