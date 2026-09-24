@@ -101,7 +101,9 @@ export async function callResearchPhase(body) {
 export async function researchUtilityState({ state, fetchPdfs = false, onProgress = () => {}, call = callResearchPhase, concurrency = 2 }) {
   if (!state) throw new Error('State is required')
 
-  onProgress('Finding utilities, programs, rates and forms…')
+  // onProgress(label, detail): label is short enough for a button; detail
+  // (the program just finished) is for a tooltip.
+  onProgress('Finding programs…', `Utilities, programs, rates and forms in ${state}`)
   const discover = await call({ state, phase: 'discover' })
   if (!discover?.success) throw new Error(discover?.error || 'Research failed')
   const results = normalizeResearchResults(discover.results)
@@ -109,7 +111,7 @@ export async function researchUtilityState({ state, fetchPdfs = false, onProgres
   const programs = results.programs.filter(p => p && p.program_name)
   const failures = []
   let done = 0
-  onProgress(programs.length ? `Measures 0/${programs.length}` : 'No programs found')
+  onProgress(programs.length ? `Measures 0/${programs.length}` : 'No programs found', '')
   await runWithConcurrency(programs, concurrency, async (program) => {
     let r
     try {
@@ -120,12 +122,12 @@ export async function researchUtilityState({ state, fetchPdfs = false, onProgres
     done++
     if (r?.success) mergeResearchResults(results, r.results)
     else failures.push({ program_name: program.program_name, provider_name: program.provider_name, error: r?.error || 'Unknown error' })
-    onProgress(`Measures ${done}/${programs.length}: ${program.program_name}`)
+    onProgress(`Measures ${done}/${programs.length}`, program.program_name)
   })
 
   let discovered_pdfs = []
   if (fetchPdfs && programs.length) {
-    onProgress('Looking for PDFs on program pages…')
+    onProgress('Finding PDFs…', 'Scanning program pages for PDF links')
     try {
       const r = await call({ phase: 'pdfs', programs })
       discovered_pdfs = Array.isArray(r?.discovered_pdfs) ? r.discovered_pdfs : []

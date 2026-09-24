@@ -116,6 +116,7 @@ export default function DataConsoleUtilities() {
   const [researchResults, setResearchResults] = useState(null)
   const [showResearchModal, setShowResearchModal] = useState(false)
   const [researchProgress, setResearchProgress] = useState('')
+  const [researchDetail, setResearchDetail] = useState('')
   const [checkedProviders, setCheckedProviders] = useState({})
   const [checkedPrograms, setCheckedPrograms] = useState({})
   const [checkedIncentives, setCheckedIncentives] = useState({})
@@ -1030,7 +1031,7 @@ export default function DataConsoleUtilities() {
       const { results, failures } = await researchUtilityState({
         state: researchState === 'ALL' ? 'all US states' : researchState,
         fetchPdfs,
-        onProgress: setResearchProgress,
+        onProgress: (label, detail) => { setResearchProgress(label); setResearchDetail(detail || '') },
       })
 
       setResearchResults(results)
@@ -1052,6 +1053,7 @@ export default function DataConsoleUtilities() {
     }
     setResearching(false)
     setResearchProgress('')
+    setResearchDetail('')
   }
 
   const handleImportSelected = async () => {
@@ -1634,6 +1636,7 @@ export default function DataConsoleUtilities() {
           <button
             onClick={handleAIResearch}
             disabled={researching || !researchState}
+            title={researching ? researchDetail : 'Research this state’s utilities, programs, incentives, rate schedules and forms'}
             style={{
               padding: '8px 16px',
               backgroundColor: (researching || !researchState) ? adminTheme.border : adminTheme.accentBg,
