@@ -37,46 +37,63 @@ module.exports = async function handler(req, res) {
   try {
     const sb = createClient(url, key, { auth: { persistSession: false } })
     const retryBefore = new Date(Date.now() - RETRY_AFTER_DAYS * 86400e3).toISOString()
-
-    const { data: pending, error } = await sb
-      .from('leads')
-      .select('id, company_id, address')
-      .is('latitude', null)
-      .not('address', 'is', null)
-      .neq('address', '')
-      .or(`geocode_failed_at.is.null,geocode_failed_at.lt.${retryBefore}`)
-      .order('updated_at', { ascending: false, nullsFirst: false })
-      .limit(BATCH)
-    if (error) return res.status(500).json({ error: error.message })
-
     const now = new Date().toISOString()
-    let pinned = 0, failed = 0, skipped = 0, nominatimUsed = 0
-    const failures = []
+    let nominatimUsed = 0
 
-    for (const lead of pending || []) {
-      if (!looksGeocodable(lead.address)) {
-        skipped += 1
-        await sb.from('leads').update({ geocode_failed_at: now }).eq('id', lead.id).is('latitude', null)
-        continue
+    // Leads and jobs share the run: jobs got coordinates too (migration
+    // 20260924120000) so the map can show finished work. Same rules, the
+    // address column differs. Leads first, then jobs with what is left.
+    const TABLES = [
+      { table: 'leads', column: 'address' },
+      { table: 'jobs', column: 'job_address' },
+    ]
+    const report = {}
+    let budget = BATCH
+    for (const { table, column } of TABLES) {
+      if (budget <= 0) { report[table] = { considered: 0, note: 'no budget left this run' }; continue }
+      const { data: pending, error } = await sb
+        .from(table)
+        .select(`id, company_id, ${column}`)
+        .is('latitude', null)
+        .not(column, 'is', null)
+        .neq(column, '')
+        .or(`geocode_failed_at.is.null,geocode_failed_at.lt.${retryBefore}`)
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .limit(budget)
+      if (error) return res.status(500).json({ error: `${table}: ${error.message}` })
+
+      let pinned = 0, failed = 0, skipped = 0
+      const failures = []
+      for (const row of pending || []) {
+        const address = row[column]
+        if (!looksGeocodable(address)) {
+          skipped += 1
+          await sb.from(table).update({ geocode_failed_at: now }).eq('id', row.id).is('latitude', null)
+          continue
+        }
+        const hit = await geocodeAddress(address, { allowNominatim: nominatimUsed < NOMINATIM_CAP })
+        if (hit?.source === 'nominatim') nominatimUsed += 1
+        if (hit) {
+          const { error: uerr } = await sb.from(table)
+            .update({ latitude: hit.lat, longitude: hit.lng, geocoded_at: now, geocode_failed_at: null })
+            .eq('id', row.id).is('latitude', null)   // don't overwrite a pin placed meanwhile
+          if (uerr) failures.push({ id: row.id, error: uerr.message }); else pinned += 1
+        } else {
+          failed += 1
+          await sb.from(table).update({ geocode_failed_at: now }).eq('id', row.id).is('latitude', null)
+        }
       }
-      const hit = await geocodeAddress(lead.address, { allowNominatim: nominatimUsed < NOMINATIM_CAP })
-      if (hit?.source === 'nominatim') nominatimUsed += 1
-      if (hit) {
-        const { error: uerr } = await sb.from('leads')
-          .update({ latitude: hit.lat, longitude: hit.lng, geocoded_at: now, geocode_failed_at: null })
-          .eq('id', lead.id).is('latitude', null)   // don't overwrite a pin placed meanwhile
-        if (uerr) failures.push({ id: lead.id, error: uerr.message }); else pinned += 1
-      } else {
-        failed += 1
-        await sb.from('leads').update({ geocode_failed_at: now }).eq('id', lead.id).is('latitude', null)
+      const limitUsed = budget
+      budget -= (pending || []).length
+      report[table] = {
+        considered: (pending || []).length, pinned, failed, skipped,
+        remaining: (pending || []).length === limitUsed ? 'likely more — next run continues' : 0,
+        failures,
       }
     }
 
-    return res.status(failures.length ? 500 : 200).json({
-      considered: (pending || []).length, pinned, failed, skipped, nominatimUsed,
-      remaining: (pending || []).length === BATCH ? 'likely more — next run continues' : 0,
-      failures,
-    })
+    const anyFailure = Object.values(report).some(r => r.failures?.length)
+    return res.status(anyFailure ? 500 : 200).json({ nominatimUsed, ...report })
   } catch (e) {
     return res.status(500).json({ error: e.message })
   }

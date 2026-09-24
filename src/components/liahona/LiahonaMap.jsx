@@ -50,7 +50,8 @@ export default function LiahonaMap({
   leads = [], customers = [], stages = [], hiddenStages, companyId, employees = [], user, theme,
   onSelectLead, onLeadsChanged, compact = false, onToggleStage,
   onChangeStage, followUpsByLead, employeeId, onLogged,
-  canManage = false   // managers assign leads and territories to any rep; reps only to themselves
+  canManage = false,  // managers assign leads and territories to any rep; reps only to themselves
+  jobs = [], onOpenJob  // every geocoded job (the "Finished jobs" overlay), and how to open one
 }) {
   const t = themeTokens(theme)
   const { btn } = makeStyles(t)
@@ -242,7 +243,8 @@ export default function LiahonaMap({
         draw: L.layerGroup().addTo(map),
         search: L.layerGroup().addTo(map),
         prospects: L.layerGroup().addTo(map),
-        neighbors: L.layerGroup().addTo(map)
+        neighbors: L.layerGroup().addTo(map),
+        jobs: L.layerGroup().addTo(map)
       }
       map.on('moveend zoomend', () => { setMoveTick(x => x + 1); saveView(companyId, map) })
       map.on('click', e => handleMapClick(e.latlng))
@@ -408,6 +410,46 @@ export default function LiahonaMap({
               .addTo(g)
           })
         }
+        if (ov.id === 'jobs') {
+          // Every job with an address, lead or not (HHH's HousecallPro history
+          // has thousands with no lead). Drawn on a canvas: a few thousand
+          // SVG paths would stall the map. Tap one to cloverleaf its street
+          // or open the job.
+          const g = groupsRef.current.jobs; g.clearLayers()
+          if (on && jobs.length) {
+            const canvas = L.canvas({ padding: 0.5 })
+            const doneRe = /complete|verified|invoiced|paid|closed|archived/i
+            for (const j of jobs) {
+              if (!hasCoords(j)) continue
+              const done = doneRe.test(j.status || '')
+              const m = L.circleMarker([Number(j.latitude), Number(j.longitude)], { renderer: canvas, radius: 4, color: '#fff', weight: 1, fillColor: done ? '#0f766e' : '#0284c7', fillOpacity: 0.9 })
+              const who = j.customer_name || j.job_title || j.job_id || 'Job'
+              m.bindTooltip(`<b>${esc(who)}</b><br>${esc(j.status || '')}${j.job_total > 0 ? ' · $' + Math.round(Number(j.job_total)).toLocaleString() : ''}${j.job_address ? '<br>' + esc(j.job_address) : ''}`)
+              m.on('click', () => {
+                if (modeRef.current === 'neighbors') { loadNeighborsRef.current?.(m.getLatLng(), who); return }
+                if (modeRef.current !== 'select') return
+                const el = document.createElement('div')
+                el.style.font = '13px system-ui'
+                el.innerHTML = `<div style="font-weight:700">${esc(who)}</div><div style="color:#666">${esc(j.status || '')}${j.job_total > 0 ? ' · $' + Math.round(Number(j.job_total)).toLocaleString() : ''}</div>${j.job_address ? `<div style="color:#666;margin-bottom:8px">${esc(j.job_address)}</div>` : ''}`
+                const nb = document.createElement('button')
+                nb.textContent = 'Neighbors'
+                nb.style.cssText = `background:#15803d;color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;font:600 12px system-ui;margin-right:6px`
+                nb.onclick = () => { mapRef.current?.closePopup(); loadNeighborsRef.current?.(m.getLatLng(), who) }
+                el.appendChild(nb)
+                if (onOpenJob) {
+                  const ob = document.createElement('button')
+                  ob.textContent = 'Open job'
+                  ob.style.cssText = `background:#fff;color:${t.accent};border:1px solid ${t.accent};border-radius:6px;padding:6px 10px;cursor:pointer;font:600 12px system-ui`
+                  ob.onclick = () => { mapRef.current?.closePopup(); onOpenJob(j) }
+                  el.appendChild(ob)
+                }
+                L.popup({ autoPan: true }).setLatLng(m.getLatLng()).setContent(el).openOn(mapRef.current)
+              })
+              m.addTo(g)
+            }
+          }
+          setOverlayStatus(s => ({ ...s, jobs: on ? (jobs.length ? 'ok' : 'empty') : undefined }))
+        }
         if (ov.id === 'reps') {
           const g = groupsRef.current.reps; g.clearLayers()
           if (on && companyId) {
@@ -534,7 +576,7 @@ export default function LiahonaMap({
       }).catch(() => setOverlayStatus(s => ({ ...s, [ov.id]: 'error' })))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, activeOverlays, moveTick, customers, companyId, employeeById, stageById])
+  }, [ready, activeOverlays, moveTick, customers, jobs, companyId, employeeById, stageById])
 
   // ------------------------------------------------- Find Prospects on the map
   // Search results that carry a street address become purple prospect pins.

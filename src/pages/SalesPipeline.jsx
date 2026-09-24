@@ -570,6 +570,33 @@ export default function SalesPipeline() {
   // them; their deals still render as job cards. Loaded here for the map
   // only, so the won-customers layer (and cloverleaf around a finished job)
   // sees every converted deal. The board itself is untouched.
+  // Every geocoded job for the map's "Finished jobs" overlay: lead or not,
+  // archived or not (HousecallPro history is where the cloverleaf value is).
+  // The store's job list excludes Archived and carries no coordinates, so
+  // this is its own light query, loaded once per company.
+  const [mapJobs, setMapJobs] = useState([])
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      const all = []
+      for (let from = 0; from < 20000; from += 1000) {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('id, job_id, job_title, status, job_total, job_address, latitude, longitude, salesperson_id, customer:customers!customer_id(name)')
+          .eq('company_id', companyId)
+          .not('latitude', 'is', null)
+          .order('id')
+          .range(from, from + 999)
+        if (error || !data?.length) break
+        all.push(...data.map(j => ({ ...j, customer_name: j.customer?.name || null })))
+        if (data.length < 1000) break
+      }
+      if (!cancelled) setMapJobs(all)
+    })()
+    return () => { cancelled = true }
+  }, [companyId])
+
   const [orphanCustomers, setOrphanCustomers] = useState([])
   const loadOrphanCustomers = async () => {
     if (!companyId) return
@@ -2328,6 +2355,8 @@ export default function SalesPipeline() {
                   employeeId={currentEmployeeId}
                   onLogged={loadFollowUps}
                   canManage={canViewAll}
+                  jobs={mapJobs}
+                  onOpenJob={j => openRecord(`/jobs/${j.id}`)}
                 />
               </div>
             ) : (
@@ -2921,6 +2950,8 @@ export default function SalesPipeline() {
                 employeeId={currentEmployeeId}
                 onLogged={loadFollowUps}
                 canManage={canViewAll}
+                jobs={mapJobs}
+                onOpenJob={j => openRecord(`/jobs/${j.id}`)}
               />
             )}
 

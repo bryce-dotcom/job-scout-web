@@ -17,6 +17,7 @@ const TIGER = 'https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb'
 export const OVERLAYS = [
   { id: 'territories', group: 'JobScout',    label: 'Sales territories',           kind: 'internal', defaultOn: true },
   { id: 'customers',   group: 'JobScout',    label: 'Customers & jobs',            kind: 'internal', hint: 'Won and in-delivery leads' },
+  { id: 'jobs',        group: 'JobScout',    label: 'Finished jobs',               kind: 'internal', hint: 'Every job with an address, lead or not · tap one to cloverleaf its street' },
   { id: 'reps',        group: 'JobScout',    label: 'Reps on the clock',           kind: 'internal', hint: 'Last location ping, past 12 hours' },
   { id: 'utilities',   group: 'Boundaries',  label: 'Electric utility territories', kind: 'boundary', color: '#b45309', minZoom: 8,
     urls: [
