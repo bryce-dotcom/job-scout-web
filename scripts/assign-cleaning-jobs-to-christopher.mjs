@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// HHH data cleanup (Bryce, 2026-09-24): every HHH (company 3) job in the
-// cleaning business unit ("HHH Building Services") with no salesperson on
-// the job and none on its lead belongs to Christopher Lyman (employee 14).
-// Energy Scout (lighting/electrical) and jobs with no business unit are left
-// alone. updated_at is NOT bumped, so nothing moves into the current
-// pipeline or pay window because of this.
+// HHH data cleanup (Bryce, 2026-09-24). Two rules, both "no salesperson on
+// the job and none on its lead → Christopher Lyman (employee 14)":
+//   1. every job in the cleaning business unit ("HHH Building Services")
+//   2. every HousecallPro import (job_id starts with JOB-HCP-), any unit
+// Other Energy Scout / no-unit jobs are left alone. updated_at is NOT
+// bumped, so nothing moves into the current pipeline or pay window.
 //
 //   node scripts/assign-cleaning-jobs-to-christopher.mjs           # dry run
 //   node scripts/assign-cleaning-jobs-to-christopher.mjs --apply   # write, and save the ids for a revert
@@ -33,7 +33,7 @@ const { data: emp } = await sb.from('employees').select('id, name').eq('id', CHR
 if (!emp) throw new Error('employee 14 is not Christopher at HHH')
 let jobs = []
 for (let f = 0; ; f += 1000) {
-  const { data, error } = await sb.from('jobs').select('id, job_id, job_title, status, job_total, lead_id, created_at').eq('company_id', COMPANY).eq('business_unit', UNIT).is('salesperson_id', null).range(f, f + 999)
+  const { data, error } = await sb.from('jobs').select('id, job_id, job_title, status, job_total, lead_id, business_unit, created_at').eq('company_id', COMPANY).is('salesperson_id', null).or(`business_unit.eq.${UNIT},job_id.like.JOB-HCP-%`).range(f, f + 999)
   if (error) throw error
   if (!data?.length) break
   jobs.push(...data); if (data.length < 1000) break
@@ -45,7 +45,10 @@ const idx = buildLeadIndex(leads)
 const targets = jobs.filter(j => isUnattributed(j, idx))
 const sum = a => '$' + Math.round(a.reduce((s, j) => s + (Number(j.job_total) || 0), 0)).toLocaleString()
 const live = targets.filter(j => !['Archived', 'Cancelled'].includes(j.status))
-console.log(`${emp.name}: ${targets.length} unowned "${UNIT}" jobs, ${sum(targets)} — live ${live.length} (${sum(live)}), archived/cancelled ${targets.length - live.length} (${sum(targets.filter(j => !live.includes(j)))})`)
+const hcp = targets.filter(j => /^JOB-HCP-/.test(j.job_id || ''))
+console.log(`${emp.name}: ${targets.length} unowned jobs (cleaning unit or HousecallPro import), ${sum(targets)} — live ${live.length} (${sum(live)}), archived/cancelled ${targets.length - live.length} (${sum(targets.filter(j => !live.includes(j)))}); HCP imports ${hcp.length} (${sum(hcp)})`)
+const byUnit = {}; for (const j of targets) { const k = j.business_unit || '(none)'; byUnit[k] = (byUnit[k] || 0) + 1 }
+console.log('by unit:', JSON.stringify(byUnit))
 console.log('skipped because the lead already names a rep:', jobs.length - targets.length)
 if (!argv.includes('--apply')) { console.log('dry run — add --apply'); process.exit(0) }
 const ids = targets.map(j => j.id)
