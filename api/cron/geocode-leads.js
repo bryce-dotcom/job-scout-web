@@ -15,7 +15,7 @@
 // that route. A big backlog drains over a few runs instead of one long one.
 
 const { createClient } = require('@supabase/supabase-js')
-const { geocodeAddress, looksGeocodable } = require('../_lib/geocodeAddress')
+const { geocodeAddress, homeFor, looksGeocodable } = require('../_lib/geocodeAddress')
 
 const BATCH = 60
 const NOMINATIM_CAP = 25
@@ -48,6 +48,16 @@ module.exports = async function handler(req, res) {
       { table: 'jobs', column: 'job_address' },
     ]
     const report = {}
+    // A city-less address is read as near the tenant's home (companies row,
+    // resolved once per company per run). See geocodeAddress.js.
+    const homes = new Map()
+    const homeOf = async (companyId) => {
+      if (!homes.has(companyId)) {
+        const { data: co } = await sb.from('companies').select('id, address, city, state, zip').eq('id', companyId).maybeSingle()
+        homes.set(companyId, await homeFor(co))
+      }
+      return homes.get(companyId)
+    }
     let budget = BATCH
     for (const { table, column } of TABLES) {
       if (budget <= 0) { report[table] = { considered: 0, note: 'no budget left this run' }; continue }
@@ -71,7 +81,8 @@ module.exports = async function handler(req, res) {
           await sb.from(table).update({ geocode_failed_at: now }).eq('id', row.id).is('latitude', null)
           continue
         }
-        const hit = await geocodeAddress(address, { allowNominatim: nominatimUsed < NOMINATIM_CAP })
+        const home = await homeOf(row.company_id)
+        const hit = await geocodeAddress(address, { allowNominatim: nominatimUsed < NOMINATIM_CAP, home })
         if (hit?.source === 'nominatim') nominatimUsed += 1
         if (hit) {
           const { error: uerr } = await sb.from(table)
@@ -93,6 +104,7 @@ module.exports = async function handler(req, res) {
     }
 
     const anyFailure = Object.values(report).some(r => r.failures?.length)
+    report.homes = Object.fromEntries([...homes].map(([id, h]) => [id, h ? `${h.city}, ${h.state}` : null]))
     return res.status(anyFailure ? 500 : 200).json({ nominatimUsed, ...report })
   } catch (e) {
     return res.status(500).json({ error: e.message })
