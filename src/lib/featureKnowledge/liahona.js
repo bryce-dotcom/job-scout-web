@@ -18,6 +18,7 @@ export default {
     'Lead card: stage chips, one-tap knock log, Set appointment, Directions',
     'County record on any house: owner of record, built, sq ft, value — free in 22 counties and states',
     'Cloverleaf: the neighbours around a finished job, add them all as leads or route them',
+    'Finished jobs overlay: every job with an address, lead or not (imports included), cloverleaf from any of them',
     'Managers: By rep load, assign a territory\'s leads to its owner, hand-over on owner change',
   ],
 
@@ -74,11 +75,12 @@ export default {
       "A Leaflet map view of the leads table inside the Sales Pipeline page (salesView 'liahona' on desktop, mobileMap on a phone). Pins are leads with latitude/longitude, coloured by pipeline stage; won and in-delivery leads are green dots on the Customers overlay. Side panel (bottom sheet on a phone) holds the lead card, the drop-lead form, the neighbours list, the route, territories and the By rep summary.",
 
     howItWorks:
-      "Coordinates: leads.latitude/longitude, filled on save (client geocode) and by the geocode-leads cron every 10 minutes (Census, then Nominatim); the DB clears them when the address changes. Pins: stage colour from the company's pipeline stages; same-spot pins fan out in a ring. Lead card: stage chips call the board's own stage mover (Won/Lost open the same dialogs); knock buttons insert lead_follow_ups rows (method 'visit', note 'Knocked: …') and set next_follow_up_at; Set appointment goes through lib/bookAppointment exactly like the Lead Setter (appointment, lead status Appointment Set, setter and lead-source commissions). Parcels: county detected from a Census point query; Utah via UGRC with Salt Lake and Utah County owner names merged in; 22 other county/state services in lib/parcelSources.js; elsewhere the parcel-lookup edge function calls Regrid (metered, cached, sandbox token expires 2026-10-16). Territories: sales_territories rows (GeoJSON polygon, owner, utility); point-in-polygon decides which leads are inside. Routes: greedy nearest-neighbour order from the phone's GPS, then Google Directions (optimised) or OSRM for road geometry, opened in Google Maps. Overlays: Census TIGERweb (counties, places, ZCTAs), HIFLD utility territories, RainViewer radar, employee last-known locations.",
+      "Coordinates: leads.latitude/longitude, filled on save (client geocode) and by the geocode-leads cron every 10 minutes (Census, then Nominatim); the DB clears them when the address changes. Pins: stage colour from the company's pipeline stages; same-spot pins fan out in a ring. Lead card: stage chips call the board's own stage mover (Won/Lost open the same dialogs); knock buttons insert lead_follow_ups rows (method 'visit', note 'Knocked: …') and set next_follow_up_at; Set appointment goes through lib/bookAppointment exactly like the Lead Setter (appointment, lead status Appointment Set, setter and lead-source commissions). Parcels: county detected from a Census point query; Utah via UGRC with Salt Lake and Utah County owner names merged in; 22 other county/state services in lib/parcelSources.js; elsewhere the parcel-lookup edge function calls Regrid (metered, cached, sandbox token expires 2026-10-16). Territories: sales_territories rows (GeoJSON polygon, owner, utility); point-in-polygon decides which leads are inside. Finished jobs: jobs.latitude/longitude, geocoded by the same cron (migration 20260924120000) and drawn on a canvas as teal (done) or blue (open) dots; tap one for Neighbors or Open job — this is how HousecallPro-era work with no lead reaches the map. Routes: greedy nearest-neighbour order from the phone's GPS, then Google Directions (optimised) or OSRM for road geometry, opened in Google Maps. Overlays: Census TIGERweb (counties, places, ZCTAs), HIFLD utility territories, RainViewer radar, employee last-known locations.",
 
     examples: [
       "Rep on a phone: List | Map → tap a pin → Not home → the pin gets a grey badge and the follow-up is due in 2 days",
       "Rep finishes a job: tap the pin → Neighbors → 27 parcels within 500 ft with owners → Add 27 as leads → they appear as New pins, source Cloverleaf",
+      "Manager turns on Finished jobs: 6,000 dots of past cleaning and lighting work, lead or not → tap one → Neighbors → the street around a job done years ago",
       "Rep taps a house in drop mode in Holladay: 'Owner of record: Mikhail Sergachev · Built 1955 · 1,350 sq ft · $1.13M' → Add lead here",
       "Manager: territory Sandy East shows 'Assign 14 to Tyler' → one tap, the 14 unowned leads inside it are Tyler's",
       "Manager edits a territory's owner from Cole to Jordan → 'Also hand its 9 leads to Jordan' ticked → saved → 9 leads reassigned",
@@ -122,6 +124,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-09-22',
+  lastVerified: '2026-09-24',
   freshUntil: 90,
 }
