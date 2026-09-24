@@ -7,13 +7,20 @@
 // shorthand expanded, state inferred from ZIP or city, and a city-less hit is
 // only trusted on the Wasatch Front because Utah grid numbers repeat per town.
 
-const STATE_RE = /\b(UT|AZ|ID|CA|CO|WY|NV|NM|TX|OR|WA|MT|Utah|Arizona|Idaho|California|Colorado|Wyoming|Nevada|Texas)\b/i
+// A state is a two-letter code sitting where a state sits — before the ZIP or
+// at the end — or a spelled-out name. Any US state: JobScout is not a Utah app.
+const STATE_RE = /(?:,|\s)\s*(A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY])\b(?=\s*\d{5}(?:-\d{4})?\s*$|\s*$)|\b(Utah|Arizona|Idaho|California|Colorado|Wyoming|Nevada|New Mexico|Texas|Oregon|Washington|Montana|Florida|Georgia|Tennessee|Ohio|Massachusetts|North Carolina|Arkansas)\b/i
 const AZ_CITY_RE = /\b(tempe|mesa|phoenix|gilbert|chandler|scottsdale|apache junction|queen creek|peoria|glendale|goodyear|avondale|surprise|buckeye|san tan valley|maricopa|casa grande|tucson)\b/i
 const UT_CITY_RE = /\b(salt lake|west valley|ogden|provo|orem|lehi|draper|sandy|murray|holladay|riverton|bluffdale|farmington|vernal|richfield|cedar city|south jordan|west jordan|layton|bountiful|magna|taylorsville|midvale|kearns|herriman|american fork|pleasant grove|spanish fork|springville|logan|st\.? george|tooele|park city|heber|roy|clearfield|syracuse|kaysville|centerville|west haven|alpine|eagle mountain|saratoga springs|millcreek|cottonwood|lindon|payson|nephi|price|moab)\b/i
 
 const hasState = a => STATE_RE.test(a)
-const hasCity = a => UT_CITY_RE.test(a) || AZ_CITY_RE.test(a) || /\b\d{5}\b/.test(a)
+const hasZip = a => /\b\d{5}(?:-\d{4})?\b/.test(a)
+const hasCity = a => UT_CITY_RE.test(a) || AZ_CITY_RE.test(a) || hasZip(a)
+// The Mountain West box only applies to addresses whose ONLY evidence is a
+// Utah/Arizona city name; anything with a state or ZIP is trusted wherever
+// the geocoder puts it (both sources are already limited to the US).
 const inRegion = r => !!r && r.lat >= 31 && r.lat <= 45.5 && r.lng >= -120.5 && r.lng <= -104
+const inUS = r => !!r && r.lat >= 17 && r.lat <= 72 && r.lng >= -180 && r.lng <= -64
 // City-less addresses are only trusted inside Salt Lake County (the company's
 // home turf). Ogden and Provo have the same grid numbers, and a pin 60 km off
 // is worse than no pin.
@@ -23,21 +30,26 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 // Anything a geocoder could place needs a street number.
 const looksGeocodable = a => !!a && a.trim().length >= 8 && /\d/.test(a) && !/^\s*p\.?o\.? box/i.test(a)
 
+// Only when the address itself says so: a known Utah or Arizona city. A ZIP
+// already pins the state for the geocoders, and an address with neither is
+// left alone — it used to be stamped ', UT', which sent every other state's
+// addresses to Utah ("Tampa, FL 33606" became "Tampa, UT").
 function inferState(a) {
-  const zip = a.match(/\b(\d{5})\b/)?.[1]
-  if (zip) {
-    if (/^8[56]/.test(zip)) return 'AZ'
-    if (/^84/.test(zip)) return 'UT'
-    if (/^83/.test(zip)) return 'ID'
-    if (/^89/.test(zip)) return 'NV'
-  }
   if (AZ_CITY_RE.test(a)) return 'AZ'
-  return 'UT'
+  if (UT_CITY_RE.test(a)) return 'UT'
+  return null
 }
+
+// ", FL 33606" / " NC" at the end of an address is the state, not a floor or
+// a unit. Set it aside before the fragment stripping below and put it back.
+const TAIL_RE = /(?:,|\s)\s*((?:A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY])\b(?:\s*\d{5}(?:-\d{4})?)?)\s*$/i
 
 function normalize(a) {
   let s = String(a).replace(/\s+/g, ' ').trim()
   s = s.replace(/\bUnited States\b/gi, '')
+  let tail = ''
+  const tm = s.match(TAIL_RE)
+  if (tm) { tail = tm[1].toUpperCase().replace(/^([A-Z]{2})\s*(\d)/, '$1 $2'); s = s.slice(0, tm.index).replace(/[,\s]+$/, '') }
   s = s.replace(/[,\s-]*\b(bldg|building)\b\.?\s*[A-Za-z0-9-]+/gi, '')
   s = s.replace(/[,\s-]*\b(ste|suite|unit|apt|apartment|office|rm|room|floor|fl)\b\.?\s*#?\s*[A-Za-z0-9-]+/gi, '')
   s = s.replace(/\s*#\s*[A-Za-z0-9-]+/g, '')
@@ -46,7 +58,8 @@ function normalize(a) {
     .replace(/\bWV\b/g, 'West Valley City').replace(/\bPHX\b/gi, 'Phoenix').replace(/\bAJ\b/g, 'Apache Junction')
   s = s.replace(/\bUt\b/g, 'UT').replace(/,\s*UT\s*,\s*UT\b/gi, ', UT')
   s = s.replace(/\s*,\s*,+/g, ',').replace(/^\s*,|,\s*$/g, '').replace(/\s+,/g, ',').trim()
-  if (!hasState(s)) s += ', ' + inferState(s)
+  if (tail) s += ', ' + tail
+  if (!hasState(s) && !hasZip(s)) { const st = inferState(s); if (st) s += ', ' + st }
   return s
 }
 
@@ -70,11 +83,21 @@ async function nominatim(address) {
   return j?.[0] ? { lat: parseFloat(j[0].lat), lng: parseFloat(j[0].lon), source: 'nominatim' } : null
 }
 
+// Is this hit believable for this address? State or ZIP: anywhere in the US.
+// A Utah/Arizona city name alone: the Mountain West. Bare grid numbers with
+// no city: Salt Lake County only, because grid numbers repeat per town.
+function plausibleFor(addr, r) {
+  if (!r) return false
+  if (hasState(addr) || hasZip(addr)) return inUS(r)
+  if (hasCity(addr)) return inRegion(r)
+  return onWasatch(r)
+}
+
 // Returns { lat, lng, source } or null. Never throws.
 async function geocodeAddress(rawAddress, { allowNominatim = true } = {}) {
   if (!looksGeocodable(rawAddress)) return null
   const addr = normalize(rawAddress)
-  const plausible = r => r && (hasCity(addr) ? inRegion(r) : onWasatch(r))
+  const plausible = r => plausibleFor(addr, r)
   let r = null
   try { r = await census(addr) } catch { /* miss */ }
   if (!plausible(r) && allowNominatim) {
@@ -83,4 +106,4 @@ async function geocodeAddress(rawAddress, { allowNominatim = true } = {}) {
   return plausible(r) ? r : null
 }
 
-module.exports = { geocodeAddress, normalize, looksGeocodable }
+module.exports = { geocodeAddress, normalize, looksGeocodable, plausibleFor }
