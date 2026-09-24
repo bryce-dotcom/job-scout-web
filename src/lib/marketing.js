@@ -6,17 +6,17 @@
 // brand kit looks like" or "which platforms need a photo".
 
 export const BRAND_KIT_KEY = 'marketing_brand_kit'
-export const AYRSHARE_KEY = 'marketing_ayrshare'
+export const PUBLISHER_KEY = 'marketing_publisher'
 export const MEDIA_BUCKET = 'marketing-media'
 
-// Ayrshare platform ids and what each one needs. `needsMedia` platforms
+// Upload-Post platform ids and what each one needs. `needsMedia` platforms
 // refuse a text-only post; `videoOnly` refuses a photo.
 export const PLATFORMS = [
   { id: 'facebook',  label: 'Facebook',        maxChars: 63206, needsMedia: false },
   { id: 'instagram', label: 'Instagram',       maxChars: 2200,  needsMedia: true },
-  { id: 'gmb',       label: 'Google Business', maxChars: 1500,  needsMedia: false },
+  { id: 'google_business', label: 'Google Business', maxChars: 1500,  needsMedia: false },
   { id: 'linkedin',  label: 'LinkedIn',        maxChars: 3000,  needsMedia: false },
-  { id: 'twitter',   label: 'X (Twitter)',     maxChars: 280,   needsMedia: false },
+  { id: 'x',         label: 'X (Twitter)',     maxChars: 280,   needsMedia: false },
   { id: 'threads',   label: 'Threads',         maxChars: 500,   needsMedia: false },
   { id: 'tiktok',    label: 'TikTok',          maxChars: 2200,  needsMedia: true, videoOnly: true },
   { id: 'youtube',   label: 'YouTube',         maxChars: 5000,  needsMedia: true, videoOnly: true },
@@ -99,13 +99,13 @@ export function deriveBrandKitFromEos({ eos = {}, company = {}, existing = null 
 
 // The three things the walkthrough on the Marketing page asks for, in order.
 // Nothing here is hidden in Settings: the page itself shows what is missing.
-export function setupProgress({ brandKit, ayrshare, posts = [] } = {}) {
+export function setupProgress({ brandKit, publisher, posts = [] } = {}) {
+  const ayrshare = publisher
   const kit = brandKit || {}
   const brandDone = !!(clean(kit.voice) && (clean(kit.audience) || (kit.services || []).length))
-  // Platform mode stores a profile_key (JobScout's own Ayrshare account holds
-  // the profile); byo mode stores the tenant's api_key. Either counts, but
-  // only once a network is actually linked.
-  const keyDone = !!(clean(ayrshare?.api_key) || clean(ayrshare?.profile_key))
+  // The company is connected once it has its own publisher profile (Upload-Post
+  // user profile, made on first Connect) AND at least one network linked.
+  const keyDone = !!clean(ayrshare?.profile_username)
   const accounts = Array.isArray(ayrshare?.accounts) ? ayrshare.accounts : []
   const channelsDone = keyDone && accounts.length > 0
   const firstPostDone = posts.some((p) => p.status === 'posted' || p.status === 'scheduled')
@@ -156,21 +156,19 @@ export function composeCaption(caption = '', hashtags = []) {
   return body ? `${body}\n\n${tags.join(' ')}` : tags.join(' ')
 }
 
-// The body Ayrshare's POST /api/post takes. scheduleDate must be UTC ISO
-// without milliseconds; Ayrshare rejects the `.000Z` form.
-export function buildAyrsharePayload(post) {
+// The fields marketing-publish sends to Upload-Post (upload_photos / upload_text).
+// One caption for every network; photos go by public URL; scheduled_date is
+// UTC ISO and only set when the time is still in the future.
+export function buildPublishPayload(post) {
   const body = {
-    post: composeCaption(post.caption, post.hashtags),
+    title: composeCaption(post.caption, post.hashtags),
     platforms: [...(post.platforms || [])],
   }
   const media = (post.media_urls || []).filter(Boolean)
-  if (media.length) body.mediaUrls = media
-  if (post.media_type === 'video') body.isVideo = true
+  if (media.length) body.photos = media
   if (post.scheduled_for) {
     const d = new Date(post.scheduled_for)
-    if (!isNaN(d.getTime()) && d.getTime() > Date.now()) {
-      body.scheduleDate = d.toISOString().replace(/\.\d{3}Z$/, 'Z')
-    }
+    if (!isNaN(d.getTime()) && d.getTime() > Date.now()) body.scheduled_date = d.toISOString()
   }
   return body
 }

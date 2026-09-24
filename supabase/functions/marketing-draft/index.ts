@@ -26,9 +26,9 @@ const json = (body: unknown, status = 200) =>
 const PLATFORM_HINTS: Record<string, string> = {
   facebook: 'Facebook: conversational, 1-3 short paragraphs, a question or invitation at the end works.',
   instagram: 'Instagram: lead with the visual, short lines, 5-10 hashtags at the end.',
-  gmb: 'Google Business Profile: plain, local, service-focused, no hashtags, under 1500 characters, name the city.',
+  google_business: 'Google Business Profile: plain, local, service-focused, no hashtags, under 1500 characters, name the city.',
   linkedin: 'LinkedIn: professional but human, one insight about the work, 3-5 hashtags max.',
-  twitter: 'X: 280 characters total including hashtags.',
+  x: 'X: 280 characters total including hashtags.',
   threads: 'Threads: 500 characters, casual.',
   bluesky: 'Bluesky: 300 characters, casual.',
   pinterest: 'Pinterest: descriptive, keyword-rich, 500 characters.',

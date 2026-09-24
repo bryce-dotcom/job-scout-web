@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   deriveBrandKitFromEos, setupProgress, styleExamples, platformProblems,
-  composeCaption, buildAyrsharePayload, capturePath,
+  composeCaption, buildPublishPayload, capturePath,
 } from './marketing'
 
 const eos = {
@@ -42,19 +42,15 @@ describe('setupProgress', () => {
   it('is 0/3 for a fresh company', () => {
     expect(setupProgress({}).done).toBe(0)
   })
-  it('counts a key with no linked account as channels NOT done', () => {
-    const p = setupProgress({ brandKit: { voice: 'x', audience: 'y' }, ayrshare: { api_key: 'k', accounts: [] } })
+  it('counts a profile with no linked account as channels NOT done', () => {
+    const p = setupProgress({ brandKit: { voice: 'x', audience: 'y' }, publisher: { profile_username: 'jobscout-25', accounts: [] } })
     expect(p.steps.find((s) => s.id === 'channels').done).toBe(false)
     expect(p.done).toBe(1)
-  })
-  it('a platform-mode profile with a linked account counts as channels done', () => {
-    const p = setupProgress({ ayrshare: { profile_key: 'pk', accounts: [{ platform: 'facebook' }] } })
-    expect(p.steps.find((s) => s.id === 'channels').done).toBe(true)
   })
   it('completes with a linked account and a scheduled post', () => {
     const p = setupProgress({
       brandKit: { voice: 'x', services: ['LED'] },
-      ayrshare: { api_key: 'k', accounts: [{ platform: 'facebook' }] },
+      publisher: { profile_username: 'jobscout-25', accounts: [{ platform: 'facebook' }] },
       posts: [{ status: 'scheduled' }],
     })
     expect(p.complete).toBe(true)
@@ -95,28 +91,28 @@ describe('platformProblems', () => {
     expect(p[0].reason).toMatch(/video only/)
   })
   it('twitter over 280 characters is refused', () => {
-    const p = platformProblems({ platforms: ['twitter'], caption: 'x'.repeat(281) })
+    const p = platformProblems({ platforms: ['x'], caption: 'x'.repeat(281) })
     expect(p[0].reason).toMatch(/280/)
   })
   it('a clean post has no problems', () => {
-    expect(platformProblems({ platforms: ['facebook', 'gmb'], caption: 'hi' })).toEqual([])
+    expect(platformProblems({ platforms: ['facebook', 'google_business'], caption: 'hi' })).toEqual([])
   })
 })
 
-describe('composeCaption + buildAyrsharePayload', () => {
+describe('composeCaption + buildPublishPayload', () => {
   it('adds # to bare hashtags and separates them with a blank line', () => {
     expect(composeCaption('Done.', ['led', '#utah', 'two words'])).toBe('Done.\n\n#led #utah #twowords')
   })
-  it('omits media when there is none and strips milliseconds from scheduleDate', () => {
+  it('omits photos when there is none and sets scheduled_date only for the future', () => {
     const future = new Date(Date.now() + 3600e3).toISOString()
-    const body = buildAyrsharePayload({ caption: 'hi', hashtags: [], platforms: ['facebook'], media_urls: [], scheduled_for: future })
-    expect(body.mediaUrls).toBeUndefined()
-    expect(body.scheduleDate).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
+    const body = buildPublishPayload({ caption: 'hi', hashtags: [], platforms: ['facebook'], media_urls: [], scheduled_for: future })
+    expect(body.photos).toBeUndefined()
+    expect(body.scheduled_date).toBe(future)
   })
-  it('a past scheduled_for means post now (no scheduleDate)', () => {
-    const body = buildAyrsharePayload({ caption: 'hi', platforms: ['facebook'], scheduled_for: '2020-01-01T00:00:00Z', media_urls: ['https://a/b.jpg'] })
-    expect(body.scheduleDate).toBeUndefined()
-    expect(body.mediaUrls).toEqual(['https://a/b.jpg'])
+  it('a past scheduled_for means post now (no scheduled_date)', () => {
+    const body = buildPublishPayload({ caption: 'hi', platforms: ['facebook'], scheduled_for: '2020-01-01T00:00:00Z', media_urls: ['https://a/b.jpg'] })
+    expect(body.scheduled_date).toBeUndefined()
+    expect(body.photos).toEqual(['https://a/b.jpg'])
   })
 })
 

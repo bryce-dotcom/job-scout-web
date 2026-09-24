@@ -7,7 +7,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { toast } from '../lib/toast'
 import { getAccessLevel, ACCESS_LEVELS } from '../lib/accessControl'
 import {
-  BRAND_KIT_KEY, AYRSHARE_KEY, MEDIA_BUCKET, PLATFORMS, PLATFORM_BY_ID,
+  BRAND_KIT_KEY, PUBLISHER_KEY, MEDIA_BUCKET, PLATFORMS, PLATFORM_BY_ID,
   emptyBrandKit, deriveBrandKitFromEos, setupProgress, platformProblems, capturePath, composeCaption,
 } from '../lib/marketing'
 import {
@@ -18,7 +18,7 @@ import {
 
 // Marketing — step 1 of the Sales Flow. Everything a company does to be found
 // lives here: the brand kit (derived from EOS, edited in place), the connected
-// social accounts (Ayrshare is the publisher), the inbox of photos the crew
+// social accounts (Upload-Post publishes for us), the inbox of photos the crew
 // shared from the field, and the queue of posts the AI drafted from them.
 //
 // The setup walkthrough is ON THIS PAGE, at the top, until all three steps are
@@ -81,7 +81,7 @@ export default function Marketing() {
   const [company, setCompany] = useState(null)
   const [eos, setEos] = useState({})
   const [brandKit, setBrandKit] = useState(null)      // null = never saved
-  const [ayrshare, setAyrshare] = useState(null)
+  const [publisher, setPublisher] = useState(null)
   const [posts, setPosts] = useState([])
   const [captures, setCaptures] = useState([])
   const [composer, setComposer] = useState(null)      // { post?, captureIds[] }
@@ -94,14 +94,14 @@ export default function Marketing() {
     if (!companyId) return
     const [{ data: settings }, { data: co }, { data: p }, { data: c }] = await Promise.all([
       supabase.from('settings').select('key, value').eq('company_id', companyId)
-        .in('key', [BRAND_KIT_KEY, AYRSHARE_KEY, 'eos_core_values', 'eos_core_focus', 'eos_marketing_strategy']),
+        .in('key', [BRAND_KIT_KEY, PUBLISHER_KEY, 'eos_core_values', 'eos_core_focus', 'eos_marketing_strategy']),
       supabase.from('companies').select('id, company_name, logo_url, website, phone, city, state, primary_color').eq('id', companyId).maybeSingle(),
       supabase.from('marketing_posts').select('*').eq('company_id', companyId).neq('status', 'archived').order('created_at', { ascending: false }).limit(200),
       supabase.from('marketing_captures').select('*').eq('company_id', companyId).eq('status', 'new').order('created_at', { ascending: false }).limit(200),
     ])
     const get = (k) => (settings || []).find((r) => r.key === k)?.value
     setBrandKit(get(BRAND_KIT_KEY) ? parseJson(get(BRAND_KIT_KEY), null) : null)
-    setAyrshare(parseJson(get(AYRSHARE_KEY), null))
+    setPublisher(parseJson(get(PUBLISHER_KEY), null))
     setEos({
       core_values: parseJson(get('eos_core_values'), []),
       core_focus: parseJson(get('eos_core_focus'), {}),
@@ -122,8 +122,8 @@ export default function Marketing() {
     return true
   }, [companyId])
 
-  const progress = useMemo(() => setupProgress({ brandKit, ayrshare, posts }), [brandKit, ayrshare, posts])
-  const linkedPlatforms = useMemo(() => new Set((ayrshare?.accounts || []).map((a) => a.platform)), [ayrshare])
+  const progress = useMemo(() => setupProgress({ brandKit, publisher, posts }), [brandKit, publisher, posts])
+  const linkedPlatforms = useMemo(() => new Set((publisher?.accounts || []).map((a) => a.platform)), [publisher])
 
   // ── Brand kit ──────────────────────────────────────────────────────
   const saveBrandKit = async (next) => {
@@ -273,7 +273,7 @@ export default function Marketing() {
       ) : tab === 'brand' ? (
         <BrandTab theme={theme} isMobile={isMobile} kit={brandKit} company={company} eos={eos} onSave={saveBrandKit} onFill={fillFromEos} />
       ) : tab === 'channels' ? (
-        <ChannelsTab theme={theme} isMobile={isMobile} ayrshare={ayrshare} isManager={isManager} invoke={invoke} onChanged={load} />
+        <ChannelsTab theme={theme} isMobile={isMobile} publisher={publisher} isManager={isManager} invoke={invoke} onChanged={load} />
       ) : null}
 
       <input ref={uploadRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} onChange={handleUpload} />
@@ -542,24 +542,23 @@ function BrandTab({ theme, isMobile, kit, company, eos, onSave, onFill }) {
 }
 
 // ── Channels ─────────────────────────────────────────────────────────
-function ChannelsTab({ theme, isMobile, ayrshare, isManager, invoke, onChanged }) {
-  // The user never creates an Ayrshare account. JobScout holds one platform
-  // key; each company gets an Ayrshare profile made on its first Connect.
-  // Tapping Connect opens a popup that runs the network's own sign-in, the
-  // popup posts connect:success back, and we refresh the account list.
+function ChannelsTab({ theme, isMobile, publisher, isManager, invoke, onChanged }) {
+  // The user never creates a publisher account. JobScout holds one Upload-Post
+  // key; each company gets its own profile made on its first Connect. Tapping
+  // Connect opens a popup on the hosted connect page filtered to that one
+  // network; the network's own sign-in runs there. When the popup closes we
+  // re-read the profile's connected accounts.
   const [status, setStatus] = useState(null)   // { mode, platform_available, networks }
   const [busy, setBusy] = useState(null)       // platform id being connected
-  const [showAdvanced, setShowAdvanced] = useState(false)
-  const [key, setKey] = useState('')
   const popupRef = useRef(null)
-  const accounts = ayrshare?.accounts || []
+  const accounts = publisher?.accounts || []
   const byPlatform = useMemo(() => Object.fromEntries(accounts.map((a) => [a.platform, a])), [accounts])
 
   useEffect(() => {
     let cancelled = false
     invoke('marketing-publish', { action: 'status' }).then((r) => { if (!cancelled && r?.ok) setStatus(r) })
     return () => { cancelled = true }
-  }, [invoke, ayrshare])
+  }, [invoke, publisher])
 
   const refresh = useCallback(async (quiet) => {
     const r = await invoke('marketing-publish', { action: 'accounts' })
@@ -568,112 +567,83 @@ function ChannelsTab({ theme, isMobile, ayrshare, isManager, invoke, onChanged }
     onChanged()
   }, [invoke, onChanged])
 
-  // The popup talks back with postMessage; a closed popup with no message
-  // (the user closed it by hand) still triggers a refresh after a grace period.
-  useEffect(() => {
-    const onMsg = (e) => {
-      const t = typeof e.data === 'string' ? e.data : e.data?.type || e.data?.event || ''
-      if (!/^connect:/.test(t)) return
-      if (t === 'connect:success') toast.success('Connected')
-      else if (t === 'connect:error') toast.error(e.data?.message || 'That connection did not go through')
-      setBusy(null)
-      try { popupRef.current?.close() } catch { /* cross-origin */ }
-      refresh(true)
-    }
-    window.addEventListener('message', onMsg)
-    return () => window.removeEventListener('message', onMsg)
-  }, [refresh])
-
-  const connect = async (network) => {
+  // Open the window inside the click, before any await, or the browser blocks
+  // it as a popup. We point it at the real URL a moment later, then watch for
+  // it to close (the connect page has no postMessage; closing is the signal).
+  const openConnect = async (network) => {
     if (!isManager) { toast.error('A Manager or above connects social accounts.'); return }
-    // Open the window inside the click, before any await, or the browser
-    // blocks it as a popup. We point it at the real URL a moment later.
-    const w = isMobile ? 420 : 620, h = 760
+    const w = isMobile ? 420 : 640, h = 780
     const left = Math.max(0, (window.screen.width - w) / 2), top = Math.max(0, (window.screen.height - h) / 2)
     const popup = window.open('', 'jobscout_connect', `width=${w},height=${h},left=${left},top=${top}`)
     popupRef.current = popup
-    setBusy(network)
-    const r = await invoke('marketing-publish', { action: 'connect', network, origin: window.location.origin })
+    setBusy(network || 'all')
+    const r = await invoke('marketing-publish', { action: 'connect', network: network || undefined, origin: window.location.origin })
     if (!r.ok) {
       try { popup?.close() } catch { /* ignore */ }
       setBusy(null)
       toast.error(r.error || 'Could not start the connection')
-      if (r.platform_missing) setShowAdvanced(true)
       return
     }
     if (popup) popup.location = r.url
     else window.open(r.url, '_blank')
     const started = Date.now()
     const timer = setInterval(() => {
-      if (popup && !popup.closed && Date.now() - started < 10 * 60e3) return
+      if (popup && !popup.closed && Date.now() - started < 15 * 60e3) return
       clearInterval(timer)
-      setBusy((b) => (b === network ? null : b))
+      setBusy(null)
       refresh(true)
     }, 800)
   }
 
-  const disconnect = async (platform) => {
-    if (!window.confirm(`Disconnect ${PLATFORM_BY_ID[platform]?.label || platform}? Posts already published stay up.`)) return
-    setBusy(platform)
-    const r = await invoke('marketing-publish', { action: 'disconnect', platform })
-    setBusy(null)
-    if (!r.ok) { toast.error(r.error || 'Could not disconnect'); return }
-    toast.success('Disconnected')
-    onChanged()
-  }
-
-  const saveKey = async () => {
-    if (!key.trim()) return
-    setBusy('key')
-    const r = await invoke('marketing-publish', { action: 'save_key', api_key: key.trim() })
-    setBusy(null)
-    if (!r.ok) { toast.error(r.error || 'Could not connect'); return }
-    setKey('')
-    toast.success(r.accounts?.length ? `Connected. ${r.accounts.length} account${r.accounts.length === 1 ? '' : 's'} linked.` : 'Key accepted. Now connect your networks.')
-    onChanged()
-  }
-
-  const mode = status?.mode || (ayrshare?.profile_key ? 'platform' : ayrshare?.api_key ? 'byo' : 'unconfigured')
+  const canConnect = !!status?.platform_available
   const offered = new Set(status?.networks || PLATFORMS.map((p) => p.id))
-  const canConnect = mode !== 'unconfigured' || status?.platform_available
   const shown = PLATFORMS.filter((p) => offered.has(p.id) || byPlatform[p.id])
+  const needsReauth = accounts.filter((a) => a.reauth_required)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Card theme={theme} title="Social accounts" right={accounts.length > 0 && <button type="button" onClick={() => refresh(false)} disabled={!!busy} style={ghostBtn(theme)}><RefreshCw size={14} /> Refresh</button>}>
+      <Card theme={theme} title="Social accounts" right={
+        <div style={{ display: 'flex', gap: 6 }}>
+          {accounts.length > 0 && isManager && <button type="button" onClick={() => openConnect(null)} disabled={!!busy} style={ghostBtn(theme)} title="Add, reconnect or remove accounts">Manage</button>}
+          {accounts.length > 0 && <button type="button" onClick={() => refresh(false)} disabled={!!busy} style={ghostBtn(theme)}><RefreshCw size={14} /> Refresh</button>}
+        </div>
+      }>
         <div style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 1.5 }}>
           {accounts.length === 0
-            ? 'Tap Connect and sign in to the network. JobScout never sees the password; the network gives us permission to post on your behalf. Facebook and Instagram come through the Facebook login (Instagram needs a Business or Creator account tied to a Facebook Page).'
+            ? 'Tap Connect and sign in to the network. JobScout never sees the password; the network gives us permission to post on your behalf. Instagram needs a Business or Creator account tied to a Facebook Page.'
             : `${accounts.length} connected. Every post goes to the networks you pick in the composer.`}
         </div>
-        {!canConnect && status && (
+        {status && !canConnect && (
           <div style={{ fontSize: 12, color: '#b45309', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, padding: '8px 10px' }}>
-            Social publishing is not switched on for this JobScout install yet. An admin needs to set the publisher key on the server. Until then, a company with its own Ayrshare key can use Advanced below.
+            Social publishing is not switched on for this JobScout install yet. An admin needs to set the publisher key on the server. Until then, use Post by hand from the queue.
+          </div>
+        )}
+        {needsReauth.length > 0 && (
+          <div style={{ fontSize: 12, color: '#b45309', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, padding: '8px 10px' }}>
+            {needsReauth.map((a) => PLATFORM_BY_ID[a.platform]?.label || a.platform).join(', ')} asked to be signed in again. Tap Reconnect.
           </div>
         )}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
           {shown.map((p) => {
             const a = byPlatform[p.id]
             const working = busy === p.id
+            const ok = a && !a.reauth_required
             return (
-              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, minHeight: 60, background: a ? 'rgba(34,197,94,0.08)' : theme.bg, border: `1px solid ${a ? 'rgba(34,197,94,0.35)' : theme.border}` }}>
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, minHeight: 60, background: ok ? 'rgba(34,197,94,0.08)' : theme.bg, border: `1px solid ${ok ? 'rgba(34,197,94,0.35)' : theme.border}` }}>
                 {a?.image
                   ? <img src={a.image} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                  : <div style={{ width: 32, height: 32, borderRadius: '50%', background: a ? '#22c55e' : theme.border, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{a ? <Check size={16} /> : <Link2 size={15} color={theme.textMuted} />}</div>}
+                  : <div style={{ width: 32, height: 32, borderRadius: '50%', background: ok ? '#22c55e' : theme.border, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{ok ? <Check size={16} /> : <Link2 size={15} color={theme.textMuted} />}</div>}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>{p.label}</div>
-                  <div style={{ fontSize: 11, color: a ? '#15803d' : theme.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {a ? a.display_name : p.videoOnly ? 'Video posts only' : 'Not connected'}
+                  <div style={{ fontSize: 11, color: ok ? '#15803d' : theme.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {a ? (a.reauth_required ? `${a.display_name} · needs sign-in` : a.display_name) : p.videoOnly ? 'Video posts only' : 'Not connected'}
                   </div>
                 </div>
-                {a ? (
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                    {a.profile_url && <a href={a.profile_url} target="_blank" rel="noreferrer" title="Open profile" style={{ ...ghostBtn(theme), padding: 8, minHeight: 36 }}><ExternalLink size={14} /></a>}
-                    {isManager && <button type="button" onClick={() => disconnect(p.id)} disabled={!!busy} title="Disconnect" style={{ ...ghostBtn(theme), padding: 8, minHeight: 36 }}><X size={14} /></button>}
-                  </div>
+                {ok ? (
+                  isManager && <button type="button" onClick={() => openConnect(p.id)} disabled={!!busy} title="Reconnect or remove" style={{ ...ghostBtn(theme), padding: '6px 10px', minHeight: 36, fontSize: 12 }}>Manage</button>
                 ) : (
-                  <button type="button" onClick={() => connect(p.id)} disabled={!!busy || !canConnect || !isManager} style={{ ...primaryBtn(MKT), padding: '8px 12px', minHeight: 40, opacity: (!canConnect || !isManager) ? 0.5 : 1 }}>
-                    {working ? 'Waiting…' : 'Connect'}
+                  <button type="button" onClick={() => openConnect(p.id)} disabled={!!busy || !canConnect || !isManager} style={{ ...primaryBtn(MKT), padding: '8px 12px', minHeight: 40, opacity: (!canConnect || !isManager) ? 0.5 : 1 }}>
+                    {working ? 'Waiting…' : a ? 'Reconnect' : 'Connect'}
                   </button>
                 )}
               </div>
@@ -681,29 +651,8 @@ function ChannelsTab({ theme, isMobile, ayrshare, isManager, invoke, onChanged }
           })}
         </div>
         {!isManager && <div style={{ fontSize: 12, color: theme.textMuted }}>A Manager or above connects and disconnects accounts.</div>}
-        {ayrshare?.monthly_post_quota != null && (
-          <div style={{ fontSize: 12, color: theme.textMuted }}>{ayrshare.monthly_post_count ?? 0} of {ayrshare.monthly_post_quota} posts used this month.</div>
-        )}
+        {busy && <div style={{ fontSize: 12, color: theme.textMuted }}>Finish signing in the popup window, then close it. This list refreshes on its own.</div>}
       </Card>
-
-      {isManager && (
-        <div>
-          <button type="button" onClick={() => setShowAdvanced((v) => !v)} style={{ ...ghostBtn(theme), fontSize: 12, minHeight: 36, padding: '6px 10px' }}>
-            {showAdvanced ? 'Hide advanced' : 'Advanced: use your own Ayrshare account'}
-          </button>
-          {showAdvanced && (
-            <Card theme={theme} title="Your own Ayrshare key">
-              <div style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 1.5 }}>
-                Only for a company that already runs its own Ayrshare account. Paste that account's API key and link networks on <a href="https://app.ayrshare.com/social-accounts" target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>Ayrshare's Social Accounts page</a>, then Refresh here. {mode === 'byo' && `Connected ${fmtWhen(ayrshare?.connected_at)}.`}
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={mode === 'byo' ? 'Paste a new key to replace it' : 'Ayrshare API key'} style={{ ...inputStyle(theme), flex: 1, minWidth: 200 }} autoComplete="off" />
-                <button type="button" onClick={saveKey} disabled={busy === 'key' || !key.trim()} style={primaryBtn(MKT)}>{mode === 'byo' ? 'Replace key' : 'Use this key'}</button>
-              </div>
-            </Card>
-          )}
-        </div>
-      )}
     </div>
   )
 }

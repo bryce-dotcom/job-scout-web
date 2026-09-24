@@ -1,33 +1,30 @@
-// marketing-publish: the one place JobScout talks to Ayrshare.
+// marketing-publish: the one place JobScout talks to the social publisher.
 //
-// Two ways a company can be connected:
+// The publisher is Upload-Post (api.upload-post.com). JobScout holds ONE
+// Upload-Post key (secret UPLOAD_POST_API_KEY, Professional plan: $50/mo for
+// 25 tenant profiles, blocks of 15/25 after). Each company gets an Upload-Post
+// "user profile" named jobscout-<company_id>, created here on its first
+// Connect. The tenant never sees Upload-Post: Connect opens a popup on
+// Upload-Post's hosted connect page filtered to that one network, the
+// network's own sign-in runs, and when the popup closes we re-read the
+// profile's connected accounts.
 //
-//   platform (the product)  JobScout holds ONE Ayrshare Business-plan key
-//                           (secret AYRSHARE_API_KEY). Each company gets an
-//                           Ayrshare "profile" created here on first use; its
-//                           profileKey is stored in settings.marketing_ayrshare.
-//                           The user never sees Ayrshare: they click Connect
-//                           Facebook on the Channels tab, we mint a link
-//                           session, the popup runs Facebook's own login, and
-//                           the account is linked to their profile.
-//   byo (fallback / dev)    The company pastes its own Ayrshare API key. Kept
-//                           for development and for a tenant that already has
-//                           Ayrshare; hidden behind "Advanced" in the UI.
+// Why this vendor: same connect-link model as Ayrshare at a tenth of the
+// price, and a real per-tenant profile object (an account id → company map
+// we maintain ourselves is the Watchdog-devices mistake again).
 //
-// Every request after that is the same call with different auth headers, so
-// `authFor(cfg)` is the only place the difference lives.
+// Vendor id columns keep their historical name: marketing_posts.ayrshare_id
+// now holds Upload-Post's job_id (scheduled) or request_id (sync/async).
 //
 // Who may do what: anyone signed in can look; connecting, publishing and
-// deleting need Manager or above. The gate lives here, next to the key.
+// unscheduling need Manager or above. The gate lives here, next to the key.
 //
 // Body: { action, ... }
-//   status      {}                       mode + linked accounts (cached) + which networks can be offered
-//   connect     { network?, origin }     ensure profile, mint a link session → { url }; no network = hosted grid page
-//   disconnect  { platform }             unlink one network from the profile
-//   accounts    {}                       refresh the cached account list from Ayrshare
-//   save_key    { api_key }              byo fallback: validate + store a tenant's own key
+//   status      {}                       mode + connected accounts (cached) + offered networks
+//   connect     { network?, origin }     ensure profile, mint connect URL → { url }
+//   accounts    {}                       re-read the profile's connected accounts
 //   publish     { post_id }              post now, or schedule if scheduled_for is in the future
-//   delete      { post_id }              delete a scheduled post at Ayrshare
+//   delete      { post_id }              cancel a scheduled post
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -40,37 +37,30 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
-const AYR = 'https://api.ayrshare.com/api'
-const PLATFORM_KEY = Deno.env.get('AYRSHARE_API_KEY') || ''
-const PLATFORM_DOMAIN = Deno.env.get('AYRSHARE_DOMAIN') || ''
-// X needs the tenant's (or our) X developer app; without it X is not offered.
-const X_KEY = Deno.env.get('AYRSHARE_X_OAUTH1_KEY') || ''
-const X_SECRET = Deno.env.get('AYRSHARE_X_OAUTH1_SECRET') || ''
+const API = 'https://api.upload-post.com/api'
+const PLATFORM_KEY = Deno.env.get('UPLOAD_POST_API_KEY') || ''
+const LOGO = Deno.env.get('MARKETING_CONNECT_LOGO') || 'https://jobscout.appsannex.com/Scout_LOGO_GUY.png'
 
-// Networks we offer in platform mode, in the order the Channels tab shows them.
-const OFFERED = ['facebook', 'instagram', 'gmb', 'linkedin', 'twitter', 'threads', 'tiktok', 'youtube', 'pinterest', 'bluesky']
+// Networks offered on the Channels tab, in order. Ids are Upload-Post's.
+const OFFERED = ['facebook', 'instagram', 'google_business', 'linkedin', 'x', 'threads', 'tiktok', 'youtube', 'pinterest', 'bluesky']
 
 type Cfg = {
-  mode?: 'platform' | 'byo'
-  api_key?: string
-  profile_key?: string
-  ref_id?: string
-  title?: string
+  vendor?: string
+  profile_username?: string
   accounts?: any[]
+  connected_at?: string
+  accounts_refreshed_at?: string
   [k: string]: unknown
 }
 
-function authFor(cfg: Cfg): Record<string, string> | null {
-  if (cfg.profile_key && PLATFORM_KEY) return { Authorization: `Bearer ${PLATFORM_KEY}`, 'Profile-Key': cfg.profile_key }
-  if (cfg.api_key) return { Authorization: `Bearer ${cfg.api_key}` }
-  return null
-}
+const authHeaders = () => ({ Authorization: `Apikey ${PLATFORM_KEY}` })
 
-async function ayr(headers: Record<string, string>, method: string, path: string, body?: unknown) {
-  const res = await fetch(`${AYR}${path}`, {
+async function up(method: string, path: string, body?: Record<string, unknown> | FormData) {
+  const isForm = body instanceof FormData
+  const res = await fetch(`${API}${path}`, {
     method,
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
+    headers: isForm ? authHeaders() : { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
   })
   let data: any = null
   const text = await res.text()
@@ -78,33 +68,37 @@ async function ayr(headers: Record<string, string>, method: string, path: string
   return { ok: res.ok, status: res.status, data }
 }
 
-function ayrError(data: any): string {
-  if (!data) return 'No reply from Ayrshare'
-  if (Array.isArray(data.errors) && data.errors.length) {
-    return data.errors.map((e: any) => [e.platform, e.message].filter(Boolean).join(': ')).join('; ')
+function upError(data: any): string {
+  if (!data) return 'No reply from the publisher'
+  if (data.platforms && typeof data.platforms === 'object') {
+    const bad = Object.entries(data.platforms)
+      .filter(([, v]: any) => v && v.status && v.status !== 'success' && v.status !== 'pending' && v.status !== 'scheduled')
+      .map(([k, v]: any) => `${k}: ${v.error || v.message || v.status}`)
+    if (bad.length) return bad.join('; ')
   }
-  return data.message || data.error || data.raw || 'Ayrshare refused the request'
+  return data.error || data.message || data.raw || 'The publisher refused the request'
 }
 
-function accountsFrom(user: any) {
-  const names: any[] = Array.isArray(user?.displayNames) ? user.displayNames : []
-  const active: string[] = Array.isArray(user?.activeSocialAccounts) ? user.activeSocialAccounts : []
-  const byPlatform = new Map<string, any>()
-  for (const n of names) {
-    if (!n?.platform) continue
-    byPlatform.set(n.platform, {
-      platform: n.platform,
-      display_name: n.displayName || n.pageName || n.username || n.platform,
-      username: n.username || null,
-      profile_url: n.profileUrl || null,
-      image: n.userImage || null,
+// Upload-Post's social_accounts is a map: platform → '' | { display_name, handle, username, social_images, reauth_required }
+function accountsFrom(profile: any) {
+  const sa = profile?.social_accounts || {}
+  const out: any[] = []
+  for (const [platform, v] of Object.entries(sa)) {
+    if (!v || typeof v !== 'object') continue
+    const a: any = v
+    out.push({
+      platform,
+      display_name: a.display_name || a.handle || a.username || platform,
+      username: a.handle || a.username || null,
+      profile_url: null,
+      image: a.social_images || null,
+      reauth_required: a.reauth_required === true,
     })
   }
-  for (const p of active) if (!byPlatform.has(p)) byPlatform.set(p, { platform: p, display_name: p })
-  return [...byPlatform.values()]
+  return out
 }
 
-// Same rule as src/lib/marketing.js composeCaption + buildAyrsharePayload.
+// Same rule as src/lib/marketing.js composeCaption + buildPublishPayload.
 function composeCaption(caption: string, hashtags: string[]) {
   const tags = (hashtags || []).map((t) => String(t).trim()).filter(Boolean)
     .map((t) => (t.startsWith('#') ? t : `#${t.replace(/\s+/g, '')}`))
@@ -128,115 +122,84 @@ serve(async (req) => {
     const action = String(body.action || '')
 
     const { data: settingRow } = await sb.from('settings').select('id, value')
-      .eq('company_id', companyId).eq('key', 'marketing_ayrshare').limit(1)
+      .eq('company_id', companyId).eq('key', 'marketing_publisher').limit(1)
     let cfg: Cfg = {}
     try { cfg = settingRow?.[0]?.value ? JSON.parse(settingRow[0].value) : {} } catch { cfg = {} }
+    let settingId: number | null = settingRow?.[0]?.id ?? null
 
     const saveCfg = async (next: Cfg) => {
       cfg = next
       const value = JSON.stringify(next)
-      if (settingRow?.[0]?.id) await sb.from('settings').update({ value }).eq('id', settingRow[0].id)
+      if (settingId) await sb.from('settings').update({ value }).eq('id', settingId)
       else {
-        const { data: ins } = await sb.from('settings').insert({ company_id: companyId, key: 'marketing_ayrshare', value }).select('id').maybeSingle()
-        if (ins?.id && settingRow) settingRow[0] = { id: ins.id, value }
+        const { data: ins } = await sb.from('settings').insert({ company_id: companyId, key: 'marketing_publisher', value }).select('id').maybeSingle()
+        settingId = ins?.id ?? null
       }
     }
 
-    const offered = () => OFFERED.filter((n) => n !== 'twitter' || (X_KEY && X_SECRET))
-    const modeOf = () => (cfg.profile_key && PLATFORM_KEY ? 'platform' : cfg.api_key ? 'byo' : PLATFORM_KEY ? 'platform' : 'unconfigured')
+    const username = cfg.profile_username || `jobscout-${companyId}`
 
-    const refreshAccounts = async (): Promise<{ ok: boolean; accounts?: any[]; error?: string; user?: any }> => {
-      const h = authFor(cfg)
-      if (!h) return { ok: true, accounts: [] }
-      const r = await ayr(h, 'GET', '/user')
-      if (!r.ok) return { ok: false, error: ayrError(r.data) }
-      const accounts = accountsFrom(r.data)
-      await saveCfg({
-        ...cfg, accounts, accounts_refreshed_at: new Date().toISOString(),
-        monthly_post_quota: r.data?.monthlyPostQuota ?? cfg.monthly_post_quota ?? null,
-        monthly_post_count: r.data?.monthlyPostCount ?? cfg.monthly_post_count ?? null,
-      })
-      return { ok: true, accounts, user: r.data }
+    const refreshAccounts = async (): Promise<{ ok: boolean; accounts?: any[]; error?: string }> => {
+      if (!cfg.profile_username || !PLATFORM_KEY) return { ok: true, accounts: [] }
+      const r = await up('GET', `/uploadposts/users/${encodeURIComponent(username)}`)
+      if (!r.ok) return { ok: false, error: upError(r.data) }
+      const accounts = accountsFrom(r.data?.profile || r.data)
+      await saveCfg({ ...cfg, accounts, accounts_refreshed_at: new Date().toISOString() })
+      return { ok: true, accounts }
     }
 
     // ── status ────────────────────────────────────────────────────────
     if (action === 'status') {
       return json({
-        ok: true, mode: modeOf(), platform_available: !!PLATFORM_KEY,
-        accounts: cfg.accounts || [], networks: offered(),
+        ok: true,
+        mode: PLATFORM_KEY ? 'platform' : 'unconfigured',
+        platform_available: !!PLATFORM_KEY,
+        accounts: cfg.accounts || [],
+        networks: OFFERED,
         connected_at: cfg.connected_at || null,
       })
     }
 
-    // ── connect (platform mode) ───────────────────────────────────────
+    if (!PLATFORM_KEY) return json({ ok: false, error: 'Social publishing is not switched on for JobScout yet.', platform_missing: true }, 400)
+
+    // ── connect ───────────────────────────────────────────────────────
     if (action === 'connect') {
       if (!isManager) return json({ ok: false, error: 'Only a Manager or above can connect social accounts.' }, 403)
-      if (!PLATFORM_KEY) return json({ ok: false, error: 'Social publishing is not switched on for JobScout yet.', platform_missing: true }, 400)
       const network = body.network ? String(body.network) : null
       const origin = String(body.origin || '')
-      if (network && !offered().includes(network)) return json({ ok: false, error: `${network} is not available yet.` }, 400)
+      if (network && !OFFERED.includes(network)) return json({ ok: false, error: `${network} is not available yet.` }, 400)
 
-      // First time: make this company its own Ayrshare profile.
-      if (!cfg.profile_key) {
-        const { data: co } = await sb.from('companies').select('company_name').eq('id', companyId).maybeSingle()
-        const title = `${(co?.company_name || 'Company').slice(0, 60)} · JobScout #${companyId}`
-        const r = await ayr({ Authorization: `Bearer ${PLATFORM_KEY}` }, 'POST', '/profiles', { title, hideTopHeader: true, hideLogo: true })
-        if (!r.ok || !r.data?.profileKey) return json({ ok: false, error: `Could not set up the publisher: ${ayrError(r.data)}` }, 502)
-        await saveCfg({
-          ...cfg, mode: 'platform', profile_key: r.data.profileKey, ref_id: r.data.refId || null, title,
-          connected_at: new Date().toISOString(), accounts: cfg.accounts || [],
-        })
+      // First time: make this company its own profile. 409/exists is fine.
+      if (!cfg.profile_username) {
+        const r = await up('POST', '/uploadposts/users', { username })
+        const exists = !r.ok && /exist|already|duplicate/i.test(JSON.stringify(r.data))
+        if (!r.ok && !exists) return json({ ok: false, error: `Could not set up the publisher: ${upError(r.data)}` }, 502)
+        await saveCfg({ ...cfg, vendor: 'upload-post', profile_username: username, connected_at: new Date().toISOString(), accounts: cfg.accounts || [] })
       }
 
-      const h = authFor(cfg)!
-      const extra: Record<string, string> = {}
-      if (network === 'twitter' && X_KEY && X_SECRET) { extra['X-Twitter-OAuth1-Api-Key'] = X_KEY; extra['X-Twitter-OAuth1-Api-Secret'] = X_SECRET }
-      const payload: Record<string, unknown> = network
-        ? { mode: 'connect', network, origin }
-        : { mode: 'grid', allowedSocial: offered(), redirect: origin ? `${origin}/marketing?linked=1` : undefined }
-      if (PLATFORM_DOMAIN) payload.domain = PLATFORM_DOMAIN
-      if (network === 'instagram') payload.instagramLinkMethod = 'facebook'
-      const r = await ayr({ ...h, ...extra }, 'POST', '/profiles/link-sessions', payload)
-      if (!r.ok || !r.data?.url) return json({ ok: false, error: ayrError(r.data) }, 502)
-      return json({ ok: true, url: r.data.url, expires_at: r.data.expiresAt || null, mode: network ? 'connect' : 'grid' })
-    }
-
-    // ── disconnect ────────────────────────────────────────────────────
-    if (action === 'disconnect') {
-      if (!isManager) return json({ ok: false, error: 'Only a Manager or above can disconnect.' }, 403)
-      const h = authFor(cfg)
-      if (!h) return json({ ok: false, error: 'Nothing is connected.' }, 400)
-      const platform = String(body.platform || '')
-      const r = await ayr(h, 'DELETE', '/profiles/social', { platform })
-      if (!r.ok) return json({ ok: false, error: ayrError(r.data) }, 400)
-      const acc = await refreshAccounts()
-      return json({ ok: true, accounts: acc.accounts || [] })
-    }
-
-    // ── save_key (byo fallback) ───────────────────────────────────────
-    if (action === 'save_key') {
-      if (!isManager) return json({ ok: false, error: 'Only a Manager or above can connect the publisher.' }, 403)
-      const apiKey = String(body.api_key || '').trim()
-      if (!apiKey) return json({ ok: false, error: 'Paste the Ayrshare API key.' }, 400)
-      const r = await ayr({ Authorization: `Bearer ${apiKey}` }, 'GET', '/user')
-      if (!r.ok) return json({ ok: false, error: `Ayrshare did not accept that key: ${ayrError(r.data)}` }, 400)
-      const accounts = accountsFrom(r.data)
-      await saveCfg({
-        ...cfg, mode: 'byo', api_key: apiKey, profile_key: undefined, ref_id: undefined,
-        connected_at: new Date().toISOString(), accounts, accounts_refreshed_at: new Date().toISOString(),
-        monthly_post_quota: r.data?.monthlyPostQuota ?? null, monthly_post_count: r.data?.monthlyPostCount ?? null,
+      const { data: co } = await sb.from('companies').select('company_name').eq('id', companyId).maybeSingle()
+      const r = await up('POST', '/uploadposts/users/generate-jwt', {
+        username,
+        redirect_url: origin ? `${origin}/marketing?connected=1` : undefined,
+        redirect_button_text: 'Back to JobScout',
+        logo_image: LOGO,
+        connect_title: network ? `Connect ${labelOf(network)}` : 'Connect your social accounts',
+        connect_description: `${co?.company_name || 'Your company'} · posts from JobScout go to the accounts you connect here.`,
+        platforms: network ? [network] : OFFERED,
+        show_calendar: false,
+        connect_theme: 'light',
       })
-      return json({ ok: true, accounts })
+      if (!r.ok || !r.data?.access_url) return json({ ok: false, error: upError(r.data) }, 502)
+      return json({ ok: true, url: r.data.access_url, expires_in: r.data.duration || null })
     }
 
-    const auth = authFor(cfg)
-    if (!auth) return json({ ok: false, error: 'No social accounts connected yet. Connect one on the Marketing page.', not_connected: true }, 400)
+    if (!cfg.profile_username) return json({ ok: false, error: 'No social accounts connected yet. Connect one on the Marketing page.', not_connected: true }, 400)
 
     // ── accounts ──────────────────────────────────────────────────────
     if (action === 'accounts') {
       const acc = await refreshAccounts()
       if (!acc.ok) return json({ ok: false, error: acc.error }, 400)
-      return json({ ok: true, accounts: acc.accounts, monthly_post_quota: acc.user?.monthlyPostQuota ?? null, monthly_post_count: acc.user?.monthlyPostCount ?? null })
+      return json({ ok: true, accounts: acc.accounts })
     }
 
     // ── publish ───────────────────────────────────────────────────────
@@ -247,38 +210,49 @@ serve(async (req) => {
       if (!post) return json({ ok: false, error: 'Post not found.' }, 404)
       if (['posted', 'scheduled'].includes(post.status) && post.ayrshare_id) return json({ ok: false, error: `Already ${post.status}.` }, 400)
       if (!post.platforms?.length) return json({ ok: false, error: 'Pick at least one platform.' }, 400)
-      const linked = new Set((cfg.accounts || []).map((a: any) => a.platform))
+      // Re-read the profile so a just-connected network counts.
+      const acc = await refreshAccounts()
+      const linked = new Set((acc.accounts || cfg.accounts || []).map((a: any) => a.platform))
       const unlinked = post.platforms.filter((p: string) => !linked.has(p))
       if (unlinked.length) return json({ ok: false, error: `Not connected yet: ${unlinked.join(', ')}. Connect it under Channels first.` }, 400)
 
-      const payload: any = {
-        post: composeCaption(post.caption, post.hashtags),
-        platforms: post.platforms,
-      }
+      const text = composeCaption(post.caption, post.hashtags)
       const media = (post.media_urls || []).filter(Boolean)
-      if (media.length) payload.mediaUrls = media
+      if (!text && !media.length) return json({ ok: false, error: 'Nothing to post: no caption and no media.' }, 400)
+
+      const form = new FormData()
+      form.append('user', username)
+      for (const p of post.platforms) form.append('platform[]', p)
+      form.append('title', text || ' ')
+      if (post.platforms.includes('linkedin')) form.append('linkedin_description', text)
+      for (const u of media) form.append('photos[]', u)
+      let scheduled = false
       if (post.scheduled_for) {
         const d = new Date(post.scheduled_for)
-        if (!isNaN(d.getTime()) && d.getTime() > Date.now() + 60_000) payload.scheduleDate = d.toISOString().replace(/\.\d{3}Z$/, 'Z')
+        if (!isNaN(d.getTime()) && d.getTime() > Date.now() + 60_000) {
+          form.append('scheduled_date', d.toISOString())
+          form.append('timezone', 'UTC')
+          scheduled = true
+        }
       }
-      if (!payload.post && !media.length) return json({ ok: false, error: 'Nothing to post: no caption and no media.' }, 400)
 
-      const r = await ayr(auth, 'POST', '/post', payload)
+      const r = await up('POST', media.length ? '/upload_photos' : '/upload_text', form)
       const now = new Date().toISOString()
-      if (!r.ok || r.data?.status === 'error') {
-        const error = ayrError(r.data)
-        await sb.from('marketing_posts').update({ status: 'failed', error, ayrshare_id: r.data?.id || post.ayrshare_id || null }).eq('id', postId)
+      if (!r.ok || r.data?.success === false || r.data?.error) {
+        const error = upError(r.data)
+        await sb.from('marketing_posts').update({ status: 'failed', error }).eq('id', postId)
         return json({ ok: false, error }, 400)
       }
-      const scheduled = r.data?.status === 'scheduled' || !!payload.scheduleDate
-      const postUrls = Array.isArray(r.data?.postIds)
-        ? r.data.postIds.map((p: any) => ({ platform: p.platform, id: p.id, postUrl: p.postUrl || null, status: p.status }))
-        : []
-      // Some platforms can fail while others succeed; Ayrshare reports both.
-      const partial = Array.isArray(r.data?.errors) && r.data.errors.length ? ayrError(r.data) : null
+      // 202 = scheduled/queued {job_id}; 200 sync = {platforms:{fb:{status,post_id,post_url}}}; 200 async = {request_id, platforms:{...pending}}
+      const vendorId = r.data?.job_id || r.data?.request_id || null
+      scheduled = scheduled || r.data?.status === 'scheduled' || r.data?.status === 'queued'
+      const plat = r.data?.platforms && typeof r.data.platforms === 'object' ? r.data.platforms : {}
+      const postUrls = Object.entries(plat).map(([platform, v]: any) => ({ platform, id: v?.post_id || null, postUrl: v?.post_url || null, status: v?.status || null }))
+      const failedOnes = postUrls.filter((p) => p.status && !['success', 'pending', 'scheduled'].includes(p.status))
+      const partial = failedOnes.length ? failedOnes.map((p) => `${p.platform}: ${(plat as any)[p.platform]?.error || p.status}`).join('; ') : null
       await sb.from('marketing_posts').update({
         status: scheduled ? 'scheduled' : 'posted',
-        ayrshare_id: r.data?.id || null,
+        ayrshare_id: vendorId,
         post_urls: postUrls,
         posted_at: scheduled ? null : now,
         error: partial,
@@ -297,9 +271,9 @@ serve(async (req) => {
       const postId = Number(body.post_id)
       const { data: post } = await sb.from('marketing_posts').select('id, ayrshare_id, status').eq('company_id', companyId).eq('id', postId).maybeSingle()
       if (!post) return json({ ok: false, error: 'Post not found.' }, 404)
-      if (post.ayrshare_id) {
-        const r = await ayr(auth, 'DELETE', '/post', { id: post.ayrshare_id })
-        if (!r.ok && r.status !== 404) return json({ ok: false, error: ayrError(r.data) }, 400)
+      if (post.ayrshare_id && post.status === 'scheduled') {
+        const r = await up('DELETE', `/uploadposts/schedule/${encodeURIComponent(post.ayrshare_id)}`)
+        if (!r.ok && r.status !== 404) return json({ ok: false, error: upError(r.data) }, 400)
       }
       await sb.from('marketing_posts').update({ status: 'approved', ayrshare_id: null, post_urls: [], posted_at: null, error: null }).eq('id', postId)
       return json({ ok: true })
@@ -311,3 +285,7 @@ serve(async (req) => {
     return json({ ok: false, error: (err as Error)?.message || 'Publish failed' }, 500)
   }
 })
+
+function labelOf(id: string) {
+  return ({ facebook: 'Facebook', instagram: 'Instagram', google_business: 'Google Business', linkedin: 'LinkedIn', x: 'X', threads: 'Threads', tiktok: 'TikTok', youtube: 'YouTube', pinterest: 'Pinterest', bluesky: 'Bluesky' } as Record<string, string>)[id] || id
+}

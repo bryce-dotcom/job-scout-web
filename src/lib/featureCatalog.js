@@ -40,7 +40,7 @@ export const FEATURE_CATALOG = [
       {
         name: 'Marketing',
         icon: 'Megaphone',
-        summary: 'Step 1 of the Sales Flow. Crews share job photos from Field Scout, the AI drafts a post in your voice (built from your EOS and learned from what you approve), a manager approves, and Ayrshare publishes it to Facebook, Instagram, Google Business, LinkedIn and X at once.',
+        summary: 'Step 1 of the Sales Flow. Crews share job photos from Field Scout, the AI drafts a post in your voice (built from your EOS and learned from what you approve), a manager approves, and it goes to Facebook, Instagram, Google Business, LinkedIn and X at once.',
         replaces: ['Hootsuite', 'Buffer', 'a marketing agency retainer', 'the owner posting at 10pm'],
         highlights: ['Field photos become posts', 'Brand kit from EOS', 'One publisher, every network', 'Learns from your edits'],
         route: '/marketing',
