@@ -170,16 +170,18 @@ export default function Marketing() {
   }
 
   // ── Posts ──────────────────────────────────────────────────────────
-  const invoke = async (fn, body) => {
+  // Stable identity: ChannelsTab keys an effect on it.
+  const invoke = useCallback(async (fn, body) => {
     const { data, error } = await supabase.functions.invoke(fn, { body })
     if (error) {
       // supabase-js hides the function's JSON on non-2xx; read it back.
       let msg = error.message
-      try { const j = await error.context?.json(); if (j?.error) msg = j.error } catch { /* keep */ }
-      return { ok: false, error: msg }
+      let extra = {}
+      try { const j = await error.context?.json(); if (j?.error) msg = j.error; if (j) extra = j } catch { /* keep */ }
+      return { ...extra, ok: false, error: msg }
     }
     return data || { ok: false, error: 'No reply' }
-  }
+  }, [])
   const setPostStatus = async (post, status, extra = {}) => {
     const patch = { status, ...extra }
     if (status === 'approved') { patch.approved_by = currentEmployee?.id || null; patch.approved_at = new Date().toISOString() }
@@ -292,7 +294,7 @@ function SetupWalkthrough({ theme, isMobile, progress, isManager, onBrand, onCha
   const actions = { brand: onBrand, channels: onChannels, first_post: onFirstPost }
   const hints = {
     brand: 'Pulled from your EOS core values, focus and marketing strategy. Fix anything that sounds wrong; the AI writes in this voice.',
-    channels: isManager ? 'Paste your Ayrshare API key, then link Facebook, Instagram, Google Business, LinkedIn and X on Ayrshare. One key covers all of them.' : 'A Manager or above connects the accounts. Ask them to open this page.',
+    channels: isManager ? 'Tap Connect on Facebook, Instagram, Google Business or LinkedIn and sign in. Two minutes, no other accounts to create.' : 'A Manager or above connects the accounts. Ask them to open this page.',
     first_post: 'Pick a photo from the inbox, or start blank. The AI drafts it, you approve it, it goes everywhere at once.',
   }
   const next = progress.steps.find((s) => !s.done)
@@ -511,78 +513,167 @@ function BrandTab({ theme, isMobile, kit, company, eos, onSave, onFill }) {
 
 // ── Channels ─────────────────────────────────────────────────────────
 function ChannelsTab({ theme, isMobile, ayrshare, isManager, invoke, onChanged }) {
+  // The user never creates an Ayrshare account. JobScout holds one platform
+  // key; each company gets an Ayrshare profile made on its first Connect.
+  // Tapping Connect opens a popup that runs the network's own sign-in, the
+  // popup posts connect:success back, and we refresh the account list.
+  const [status, setStatus] = useState(null)   // { mode, platform_available, networks }
+  const [busy, setBusy] = useState(null)       // platform id being connected
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [key, setKey] = useState('')
-  const [busy, setBusy] = useState(false)
+  const popupRef = useRef(null)
   const accounts = ayrshare?.accounts || []
-  const connected = !!ayrshare?.api_key
+  const byPlatform = useMemo(() => Object.fromEntries(accounts.map((a) => [a.platform, a])), [accounts])
+
+  useEffect(() => {
+    let cancelled = false
+    invoke('marketing-publish', { action: 'status' }).then((r) => { if (!cancelled && r?.ok) setStatus(r) })
+    return () => { cancelled = true }
+  }, [invoke, ayrshare])
+
+  const refresh = useCallback(async (quiet) => {
+    const r = await invoke('marketing-publish', { action: 'accounts' })
+    if (!r.ok) { if (!quiet) toast.error(r.error || 'Refresh failed'); return }
+    if (!quiet) toast.success(`${r.accounts?.length || 0} connected`)
+    onChanged()
+  }, [invoke, onChanged])
+
+  // The popup talks back with postMessage; a closed popup with no message
+  // (the user closed it by hand) still triggers a refresh after a grace period.
+  useEffect(() => {
+    const onMsg = (e) => {
+      const t = typeof e.data === 'string' ? e.data : e.data?.type || e.data?.event || ''
+      if (!/^connect:/.test(t)) return
+      if (t === 'connect:success') toast.success('Connected')
+      else if (t === 'connect:error') toast.error(e.data?.message || 'That connection did not go through')
+      setBusy(null)
+      try { popupRef.current?.close() } catch { /* cross-origin */ }
+      refresh(true)
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [refresh])
+
+  const connect = async (network) => {
+    if (!isManager) { toast.error('A Manager or above connects social accounts.'); return }
+    // Open the window inside the click, before any await, or the browser
+    // blocks it as a popup. We point it at the real URL a moment later.
+    const w = isMobile ? 420 : 620, h = 760
+    const left = Math.max(0, (window.screen.width - w) / 2), top = Math.max(0, (window.screen.height - h) / 2)
+    const popup = window.open('', 'jobscout_connect', `width=${w},height=${h},left=${left},top=${top}`)
+    popupRef.current = popup
+    setBusy(network)
+    const r = await invoke('marketing-publish', { action: 'connect', network, origin: window.location.origin })
+    if (!r.ok) {
+      try { popup?.close() } catch { /* ignore */ }
+      setBusy(null)
+      toast.error(r.error || 'Could not start the connection')
+      if (r.platform_missing) setShowAdvanced(true)
+      return
+    }
+    if (popup) popup.location = r.url
+    else window.open(r.url, '_blank')
+    const started = Date.now()
+    const timer = setInterval(() => {
+      if (popup && !popup.closed && Date.now() - started < 10 * 60e3) return
+      clearInterval(timer)
+      setBusy((b) => (b === network ? null : b))
+      refresh(true)
+    }, 800)
+  }
+
+  const disconnect = async (platform) => {
+    if (!window.confirm(`Disconnect ${PLATFORM_BY_ID[platform]?.label || platform}? Posts already published stay up.`)) return
+    setBusy(platform)
+    const r = await invoke('marketing-publish', { action: 'disconnect', platform })
+    setBusy(null)
+    if (!r.ok) { toast.error(r.error || 'Could not disconnect'); return }
+    toast.success('Disconnected')
+    onChanged()
+  }
+
   const saveKey = async () => {
     if (!key.trim()) return
-    setBusy(true)
+    setBusy('key')
     const r = await invoke('marketing-publish', { action: 'save_key', api_key: key.trim() })
-    setBusy(false)
+    setBusy(null)
     if (!r.ok) { toast.error(r.error || 'Could not connect'); return }
     setKey('')
-    toast.success(r.accounts?.length ? `Connected. ${r.accounts.length} account${r.accounts.length === 1 ? '' : 's'} linked.` : 'Connected. Now link your social accounts on Ayrshare.')
+    toast.success(r.accounts?.length ? `Connected. ${r.accounts.length} account${r.accounts.length === 1 ? '' : 's'} linked.` : 'Key accepted. Now connect your networks.')
     onChanged()
   }
-  const refresh = async () => {
-    setBusy(true)
-    const r = await invoke('marketing-publish', { action: 'accounts' })
-    setBusy(false)
-    if (!r.ok) { toast.error(r.error || 'Refresh failed'); return }
-    toast.success(`${r.accounts?.length || 0} linked`)
-    onChanged()
-  }
+
+  const mode = status?.mode || (ayrshare?.profile_key ? 'platform' : ayrshare?.api_key ? 'byo' : 'unconfigured')
+  const offered = new Set(status?.networks || PLATFORMS.map((p) => p.id))
+  const canConnect = mode !== 'unconfigured' || status?.platform_available
+  const shown = PLATFORMS.filter((p) => offered.has(p.id) || byPlatform[p.id])
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'minmax(0,1.2fr) minmax(0,1fr)', gap: 14 }}>
-      <Card theme={theme} title="Publisher: Ayrshare">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Card theme={theme} title="Social accounts" right={accounts.length > 0 && <button type="button" onClick={() => refresh(false)} disabled={!!busy} style={ghostBtn(theme)}><RefreshCw size={14} /> Refresh</button>}>
         <div style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 1.5 }}>
-          One connection posts to Facebook, Instagram, Google Business Profile, LinkedIn, X, Threads, TikTok, YouTube and Pinterest. JobScout never stores your social passwords; Ayrshare holds the links.
+          {accounts.length === 0
+            ? 'Tap Connect and sign in to the network. JobScout never sees the password; the network gives us permission to post on your behalf. Facebook and Instagram come through the Facebook login (Instagram needs a Business or Creator account tied to a Facebook Page).'
+            : `${accounts.length} connected. Every post goes to the networks you pick in the composer.`}
         </div>
-        <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: theme.text, lineHeight: 1.6 }}>
-          <li>Create an Ayrshare account at <a href="https://app.ayrshare.com" target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>app.ayrshare.com</a> (free plan works to start).</li>
-          <li>Copy the API key from the Ayrshare dashboard and paste it below.</li>
-          <li>On Ayrshare, open <a href="https://app.ayrshare.com/social-accounts" target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>Social Accounts</a> and link each network. Then refresh here.</li>
-        </ol>
-        {isManager ? (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={connected ? 'Paste a new key to replace it' : 'Ayrshare API key'} style={{ ...inputStyle(theme), flex: 1, minWidth: 200 }} autoComplete="off" />
-            <button type="button" onClick={saveKey} disabled={busy || !key.trim()} style={primaryBtn(MKT)}>{connected ? 'Replace key' : 'Connect'}</button>
-          </div>
-        ) : (
-          <div style={{ fontSize: 12, color: theme.textMuted }}>A Manager or above connects the key.</div>
-        )}
-        {connected && (
-          <div style={{ fontSize: 12, color: theme.textMuted }}>
-            Connected {fmtWhen(ayrshare.connected_at)}.
-            {ayrshare.monthly_post_quota != null && ` ${ayrshare.monthly_post_count ?? 0} of ${ayrshare.monthly_post_quota} posts used this month.`}
+        {!canConnect && status && (
+          <div style={{ fontSize: 12, color: '#b45309', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, padding: '8px 10px' }}>
+            Social publishing is not switched on for this JobScout install yet. An admin needs to set the publisher key on the server. Until then, a company with its own Ayrshare key can use Advanced below.
           </div>
         )}
-      </Card>
-      <Card theme={theme} title="Linked accounts" right={connected && <button type="button" onClick={refresh} disabled={busy} style={ghostBtn(theme)}><RefreshCw size={14} /> Refresh</button>}>
-        {!connected ? (
-          <div style={{ fontSize: 13, color: theme.textMuted }}>Connect Ayrshare first.</div>
-        ) : accounts.length === 0 ? (
-          <div style={{ fontSize: 13, color: theme.textMuted }}>No networks linked yet. Link them on <a href="https://app.ayrshare.com/social-accounts" target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>Ayrshare</a>, then Refresh.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {PLATFORMS.map((p) => {
-              const a = accounts.find((x) => x.platform === p.id)
-              return (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: a ? 'rgba(34,197,94,0.08)' : theme.bg, border: `1px solid ${a ? 'rgba(34,197,94,0.35)' : theme.border}` }}>
-                  {a?.image ? <img src={a.image} alt="" style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} /> : <div style={{ width: 26, height: 26, borderRadius: '50%', background: theme.border }} />}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>{p.label}</div>
-                    <div style={{ fontSize: 11, color: theme.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a ? a.display_name : 'Not linked'}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+          {shown.map((p) => {
+            const a = byPlatform[p.id]
+            const working = busy === p.id
+            return (
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, minHeight: 60, background: a ? 'rgba(34,197,94,0.08)' : theme.bg, border: `1px solid ${a ? 'rgba(34,197,94,0.35)' : theme.border}` }}>
+                {a?.image
+                  ? <img src={a.image} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                  : <div style={{ width: 32, height: 32, borderRadius: '50%', background: a ? '#22c55e' : theme.border, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{a ? <Check size={16} /> : <Link2 size={15} color={theme.textMuted} />}</div>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>{p.label}</div>
+                  <div style={{ fontSize: 11, color: a ? '#15803d' : theme.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {a ? a.display_name : p.videoOnly ? 'Video posts only' : 'Not connected'}
                   </div>
-                  {a ? <CircleCheck size={18} color="#22c55e" /> : <Circle size={18} color={theme.textMuted} />}
-                  {a?.profile_url && <a href={a.profile_url} target="_blank" rel="noreferrer" style={{ color: theme.textMuted }}><ExternalLink size={14} /></a>}
                 </div>
-              )
-            })}
-          </div>
+                {a ? (
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    {a.profile_url && <a href={a.profile_url} target="_blank" rel="noreferrer" title="Open profile" style={{ ...ghostBtn(theme), padding: 8, minHeight: 36 }}><ExternalLink size={14} /></a>}
+                    {isManager && <button type="button" onClick={() => disconnect(p.id)} disabled={!!busy} title="Disconnect" style={{ ...ghostBtn(theme), padding: 8, minHeight: 36 }}><X size={14} /></button>}
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => connect(p.id)} disabled={!!busy || !canConnect || !isManager} style={{ ...primaryBtn(MKT), padding: '8px 12px', minHeight: 40, opacity: (!canConnect || !isManager) ? 0.5 : 1 }}>
+                    {working ? 'Waiting…' : 'Connect'}
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        {!isManager && <div style={{ fontSize: 12, color: theme.textMuted }}>A Manager or above connects and disconnects accounts.</div>}
+        {ayrshare?.monthly_post_quota != null && (
+          <div style={{ fontSize: 12, color: theme.textMuted }}>{ayrshare.monthly_post_count ?? 0} of {ayrshare.monthly_post_quota} posts used this month.</div>
         )}
       </Card>
+
+      {isManager && (
+        <div>
+          <button type="button" onClick={() => setShowAdvanced((v) => !v)} style={{ ...ghostBtn(theme), fontSize: 12, minHeight: 36, padding: '6px 10px' }}>
+            {showAdvanced ? 'Hide advanced' : 'Advanced: use your own Ayrshare account'}
+          </button>
+          {showAdvanced && (
+            <Card theme={theme} title="Your own Ayrshare key">
+              <div style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 1.5 }}>
+                Only for a company that already runs its own Ayrshare account. Paste that account's API key and link networks on <a href="https://app.ayrshare.com/social-accounts" target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>Ayrshare's Social Accounts page</a>, then Refresh here. {mode === 'byo' && `Connected ${fmtWhen(ayrshare?.connected_at)}.`}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={mode === 'byo' ? 'Paste a new key to replace it' : 'Ayrshare API key'} style={{ ...inputStyle(theme), flex: 1, minWidth: 200 }} autoComplete="off" />
+                <button type="button" onClick={saveKey} disabled={busy === 'key' || !key.trim()} style={primaryBtn(MKT)}>{mode === 'byo' ? 'Replace key' : 'Use this key'}</button>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -728,13 +819,13 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
                 const on = platforms.includes(p.id)
                 return (
                   <button key={p.id} type="button" onClick={() => setPlatforms((xs) => (on ? xs.filter((x) => x !== p.id) : [...xs, p.id]))}
-                    title={linked ? '' : 'Not linked on Ayrshare yet'} style={{ ...chip(theme, on), opacity: linked ? 1 : 0.55 }}>
+                    title={linked ? '' : 'Not connected yet'} style={{ ...chip(theme, on), opacity: linked ? 1 : 0.55 }}>
                     {on ? <Check size={13} /> : null} {p.label}
                   </button>
                 )
               })}
             </div>
-            {unlinked.length > 0 && <div style={{ fontSize: 12, color: '#eab308', marginTop: 6 }}>Not linked yet: {unlinked.map((p) => PLATFORM_BY_ID[p]?.label || p).join(', ')}. Link them under Channels, or unpick them.</div>}
+            {unlinked.length > 0 && <div style={{ fontSize: 12, color: '#eab308', marginTop: 6 }}>Not connected yet: {unlinked.map((p) => PLATFORM_BY_ID[p]?.label || p).join(', ')}. Connect them under Channels, or unpick them.</div>}
             {problems.map((pr) => <div key={pr.platform + pr.reason} style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{pr.reason}</div>)}
           </div>
 

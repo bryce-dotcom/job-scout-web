@@ -47,6 +47,10 @@ describe('setupProgress', () => {
     expect(p.steps.find((s) => s.id === 'channels').done).toBe(false)
     expect(p.done).toBe(1)
   })
+  it('a platform-mode profile with a linked account counts as channels done', () => {
+    const p = setupProgress({ ayrshare: { profile_key: 'pk', accounts: [{ platform: 'facebook' }] } })
+    expect(p.steps.find((s) => s.id === 'channels').done).toBe(true)
+  })
   it('completes with a linked account and a scheduled post', () => {
     const p = setupProgress({
       brandKit: { voice: 'x', services: ['LED'] },

@@ -49,9 +49,9 @@ export default {
       },
       {
         icon: 'Link2',
-        title: 'Connect Ayrshare',
-        body: 'Channels tab → paste the Ayrshare API key (app.ayrshare.com; the free plan works to start). Then link Facebook, Instagram, Google Business, LinkedIn, X on Ayrshare\'s Social Accounts page and hit Refresh. Manager+ only.',
-        narration: 'Paste the Ayrshare key. Link your networks on Ayrshare. Refresh. Done.',
+        title: 'Connect social accounts',
+        body: 'Channels tab → tap Connect on Facebook, Instagram, Google Business or LinkedIn → sign in to that network in the popup → it shows as connected. No other account to create; JobScout runs the publisher (Ayrshare) behind the scenes and makes the company its own profile on first Connect. Manager+ only.',
+        narration: 'Tap Connect. Sign in to Facebook. Done. Same for the others.',
         baseDur: 6000,
       },
       {
@@ -79,7 +79,8 @@ export default {
 
     gotchas: [
       "Nothing publishes without a human approval. Field techs can share photos and draft; only Manager+ can publish. That is deliberate: field photos carry customer property, faces and addresses.",
-      "The publisher is Ayrshare, one API key per company, pasted on the Channels tab. Networks are linked on Ayrshare's site, not in JobScout. A platform that is not linked there shows as 'Not linked' and publish refuses it.",
+      "The publisher is Ayrshare, but the tenant never sees it: JobScout holds one Business-plan key (secret AYRSHARE_API_KEY), makes each company an Ayrshare profile on its first Connect, and the Connect buttons open the network's own sign-in in a popup (Ayrshare link sessions, connect mode). 'Advanced' on the Channels tab still accepts a company's own Ayrshare key for a tenant that already has one. A network that is not connected shows as 'Not connected' and publish refuses it.",
+      "If Connect says 'Social publishing is not switched on for this JobScout install yet', the server secret AYRSHARE_API_KEY is missing. X (Twitter) is offered only when AYRSHARE_X_OAUTH1_KEY/SECRET are set too.",
       "The brand kit is derived from EOS but lives in its own settings key (marketing_brand_kit). Editing EOS later does not change it; press Fill blanks from EOS to pull new answers into empty fields only.",
       "Style learning is example-based, not fine-tuning: the drafter reads approved captions and ai_draft-vs-caption edit pairs. Archive a bad post and it stops being an example.",
       "marketing-media is a PUBLIC bucket because Ayrshare fetches media by URL. A capture is a copy the tech chose to share; private job photos stay in project-documents.",

@@ -102,7 +102,10 @@ export function deriveBrandKitFromEos({ eos = {}, company = {}, existing = null 
 export function setupProgress({ brandKit, ayrshare, posts = [] } = {}) {
   const kit = brandKit || {}
   const brandDone = !!(clean(kit.voice) && (clean(kit.audience) || (kit.services || []).length))
-  const keyDone = !!clean(ayrshare?.api_key)
+  // Platform mode stores a profile_key (JobScout's own Ayrshare account holds
+  // the profile); byo mode stores the tenant's api_key. Either counts, but
+  // only once a network is actually linked.
+  const keyDone = !!(clean(ayrshare?.api_key) || clean(ayrshare?.profile_key))
   const accounts = Array.isArray(ayrshare?.accounts) ? ayrshare.accounts : []
   const channelsDone = keyDone && accounts.length > 0
   const firstPostDone = posts.some((p) => p.status === 'posted' || p.status === 'scheduled')
