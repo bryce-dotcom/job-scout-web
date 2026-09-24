@@ -44,6 +44,7 @@ export const KNOWN_ROUTES = new Set([
   // Main app
   '/', '/dashboard',
   '/employees', '/customers', '/customers/:id',
+  '/marketing',
   '/leads', '/leads/:id', '/lead-setter', '/pipeline',
   '/products', '/estimates', '/estimates/:id',
   '/jobs', '/jobs/:id', '/jobs/calendar', '/job-board',

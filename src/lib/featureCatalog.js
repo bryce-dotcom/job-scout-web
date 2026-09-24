@@ -38,6 +38,15 @@ export const FEATURE_CATALOG = [
         walkthrough: 'prospect-scout',
       },
       {
+        name: 'Marketing',
+        icon: 'Megaphone',
+        summary: 'Step 1 of the Sales Flow. Crews share job photos from Field Scout, the AI drafts a post in your voice (built from your EOS and learned from what you approve), a manager approves, and Ayrshare publishes it to Facebook, Instagram, Google Business, LinkedIn and X at once.',
+        replaces: ['Hootsuite', 'Buffer', 'a marketing agency retainer', 'the owner posting at 10pm'],
+        highlights: ['Field photos become posts', 'Brand kit from EOS', 'One publisher, every network', 'Learns from your edits'],
+        route: '/marketing',
+        status: 'shipped',
+      },
+      {
         name: 'Leads',
         icon: 'UserPlus',
         summary: 'The single intake for every potential customer — phone, web form, walk-in, HCP import, or Apollo — with owner, setter, source pay-per-lead, and conversion tracking.',

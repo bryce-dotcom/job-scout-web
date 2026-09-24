@@ -65,7 +65,7 @@ import {
   Eye,
   Inbox,
   PlayCircle as Play,
-  Target, SlidersHorizontal } from 'lucide-react'
+  Target, SlidersHorizontal, Megaphone } from 'lucide-react'
 
 // Theme context
 const ThemeContext = createContext(null)
@@ -254,6 +254,7 @@ export default function Layout() {
   const menuParentOptions = {
     SALES_FLOW: [
       { value: '', label: '(Section level)' },
+      { value: 'Marketing', label: 'Under Marketing' },
       { value: 'Leads', label: 'Under Leads' },
       { value: 'Lead Setter', label: 'Under Lead Setter' },
       { value: 'Pipeline', label: 'Under Pipeline' },
@@ -315,14 +316,17 @@ export default function Layout() {
   // The green 5 that used to sit on the Jobs row now sits on the WORK group.
   // 1-4 win the work; 5 delivers it. Same colour as before so the badge people
   // already recognise did not change meaning, only scope.
-  const WORK_STEP = { number: 5, color: '#22c55e' }
+  const WORK_STEP = { number: 6, color: '#22c55e' }
   const dashboardItem = { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
 
   // Sales Flow - Numbered steps with tooltips (per design standards)
   const salesFlowItems = [
-    { to: '/leads', icon: UserPlus, label: 'Leads', step: 1, hint: 'All potential customers start here', color: '#6b7280' },
+    // Marketing is step 1 because it is where leads come FROM. Being found
+    // precedes being called. Its setup walkthrough lives on the page itself.
+    { to: '/marketing', icon: Megaphone, label: 'Marketing', step: 1, hint: 'Be found: posts, brand, channels — field photos become social posts', color: '#e11d48' },
+    { to: '/leads', icon: UserPlus, label: 'Leads', step: 2, hint: 'All potential customers start here', color: '#6b7280' },
     {
-      to: '/lead-setter', icon: Headphones, label: 'Lead Setter', step: 2,
+      to: '/lead-setter', icon: Headphones, label: 'Lead Setter', step: 3,
       hint: 'Call leads and schedule appointments', color: '#8b5cf6',
       // Appointments nests here because Lead Setter PRODUCES them — its own
       // description is "call leads and schedule appointments". It used to sit
@@ -334,13 +338,13 @@ export default function Layout() {
         { to: '/appointments', icon: CalendarCheck, label: 'Appointments', hint: 'Book and reschedule sales visits — everything booked here also shows on the Company Calendar' },
       ],
     },
-    { to: '/pipeline', icon: GitBranch, label: 'Pipeline', step: 3, hint: 'Track leads through sales process', color: '#f59e0b', badgeCount: dueFollowUps },
-    { to: '/estimates', icon: FileText, label: 'Estimates', step: 4, hint: 'Create and send estimates', color: '#3b82f6' }
+    { to: '/pipeline', icon: GitBranch, label: 'Pipeline', step: 4, hint: 'Track leads through sales process', color: '#f59e0b', badgeCount: dueFollowUps },
+    { to: '/estimates', icon: FileText, label: 'Estimates', step: 5, hint: 'Create and send estimates', color: '#3b82f6' }
     // Jobs used to be step 5 here. It is the first step of DELIVERY, not the
     // last step of sales, and the three other screens that mean the same thing
     // (Job Board, Recurring Jobs, Service Visits) sat four items away in
     // another section. The number was promising a path it did not describe.
-    // Step 5 is now the WORK group below — see WORK_STEP.
+    // Step 6 is now the WORK group below — see WORK_STEP (Marketing took step 1).
   ]
 
   // Base navigation sections (without dynamically placed agents)

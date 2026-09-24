@@ -16,8 +16,9 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { toast } from '../lib/toast'
 import { syncQueue } from '../lib/syncQueue'
+import { MEDIA_BUCKET, capturePath } from '../lib/marketing'
 import {
-  Compass, Clock, MapPin, Play, Square, Coffee,
+  Compass, Clock, MapPin, Play, Square, Coffee, Megaphone,
   ChevronDown, ChevronUp, ExternalLink, Navigation,
   CheckCircle, Timer, Briefcase, DollarSign, Star,
   AlertTriangle, Send, X, CreditCard, Banknote, Smartphone,
@@ -730,6 +731,45 @@ export default function FieldScout() {
     setLinePhotoUploading(true)
     let uploaded = 0
     let lastErr = null
+
+    // Share to Marketing: not a job photo. A copy goes to the public
+    // marketing-media bucket and a marketing_captures row puts it in the
+    // office's Marketing inbox with who sent it and which job it came from.
+    if (context === 'marketing') {
+      const note = window.prompt('Anything to say about it? (optional)') || ''
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        try {
+          const path = capturePath(companyId, file.name)
+          const { error: upErr } = await supabase.storage
+            .from(MEDIA_BUCKET)
+            .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false })
+          if (upErr) throw upErr
+          const { data: pub } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path)
+          const { error: dbErr } = await supabase.from('marketing_captures').insert({
+            company_id: companyId,
+            employee_id: currentEmployee?.id || null,
+            job_id: activeEntry.job_id,
+            bucket: MEDIA_BUCKET,
+            path,
+            url: pub.publicUrl,
+            media_type: file.type?.startsWith('video/') ? 'video' : 'image',
+            note: note.trim() || null,
+          })
+          if (dbErr) throw dbErr
+          uploaded++
+        } catch (err) {
+          console.error('[FieldScout] marketing share failed', err)
+          lastErr = err
+        }
+      }
+      if (uploaded > 0) toast.success(uploaded === 1 ? 'Shared with Marketing' : `${uploaded} photos shared with Marketing`)
+      if (lastErr) toast.error(`${files.length - uploaded} failed: ` + (lastErr?.message || 'unknown'))
+      setLinePhotoUploading(false)
+      setLinePhotoTarget(null)
+      return
+    }
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       try {
@@ -2601,6 +2641,28 @@ export default function FieldScout() {
                                   >
                                     <Camera size={14} />
                                     After{counts.after > 0 ? ` (${counts.after})` : ''}
+                                  </button>
+                                  {/* Share to Marketing: a COPY goes to the public
+                                      marketing inbox; the job's own photos are untouched. */}
+                                  <button
+                                    type="button"
+                                    onClick={() => triggerLinePhoto(l.id, 'marketing')}
+                                    disabled={linePhotoUploading}
+                                    title="Share a photo with the office for social media"
+                                    style={{
+                                      flex: 1,
+                                      padding: '10px 12px', minHeight: '44px',
+                                      background: 'rgba(225,29,72,0.25)',
+                                      border: '1px solid rgba(225,29,72,0.55)',
+                                      borderRadius: '8px',
+                                      color: '#fff',
+                                      fontSize: '12px', fontWeight: '700',
+                                      cursor: linePhotoUploading ? 'wait' : 'pointer',
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                    }}
+                                  >
+                                    <Megaphone size={14} />
+                                    Marketing
                                   </button>
                                   <button
                                     type="button"

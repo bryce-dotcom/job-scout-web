@@ -14,6 +14,7 @@ import Employees from './pages/Employees'
 import Customers from './pages/Customers'
 import CustomerDetail from './pages/CustomerDetail'
 import Leads from './pages/Leads'
+import Marketing from './pages/Marketing'
 import LeadDetail from './pages/LeadDetail'
 import LeadSetter from './pages/LeadSetter'
 import SalesPipeline from './pages/SalesPipeline'
@@ -399,6 +400,7 @@ function App() {
           <Route path="/employees" element={<Employees />} />
           <Route path="/customers" element={<Customers />} />
           <Route path="/customers/:id" element={<CustomerDetail />} />
+          <Route path="/marketing" element={<Marketing />} />
           <Route path="/leads" element={<Leads />} />
           <Route path="/leads/:id" element={<LeadDetail />} />
           <Route path="/lead-setter" element={<LeadSetter />} />

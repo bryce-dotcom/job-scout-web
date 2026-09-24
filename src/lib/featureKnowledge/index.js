@@ -19,6 +19,7 @@ import zachTreatments     from './zach-treatments.js'
 import zachPricing        from './zach-pricing.js'
 import customers          from './customers.js'
 import leads              from './leads.js'
+import marketing          from './marketing.js'
 import salesPipeline      from './sales-pipeline.js'
 import leadSetter         from './lead-setter.js'
 import liahona            from './liahona.js'
@@ -77,6 +78,7 @@ const CARDS = [
   zachPricing,
   customers,
   leads,
+  marketing,
   salesPipeline,
   leadSetter,
   liahona,
