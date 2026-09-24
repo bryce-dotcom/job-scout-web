@@ -6,6 +6,39 @@ import AdminModal, { FormField, FormInput, FormSelect, FormTextarea, FormToggle,
 import { Badge } from './components/AdminStats'
 import { Plus, Search, Edit2, Trash2, Download, Upload, Zap, CheckSquare, Square, Loader, ExternalLink, FileUp, RefreshCw, Check, X, StopCircle, Map, Sparkles, FileText } from 'lucide-react'
 import { extractFormFields } from '../../lib/pdfFormFiller'
+import { researchUtilityState } from '../../lib/utilityResearch'
+
+// Every row this page writes is a GLOBAL utility row (company_id NULL, shared
+// by every tenant). RLS refuses an insert with an error, but an update or
+// delete it refuses just matches ZERO rows and reports nothing — which is how
+// this page "saved" changes to nobody from 2026-07-22 to 09-24. Ask for the
+// touched ids back and treat none as a refusal, so a modal never closes on a
+// no-op. Child cascades (delete a provider's programs) may legitimately touch
+// nothing: pass allowNone for those.
+async function writeRows(query, what, { allowNone = false } = {}) {
+  const { data, error } = await query.select('id')
+  if (error) throw new Error(`${what} failed: ${error.message}`)
+  if (!allowNone && (!data || data.length === 0)) {
+    throw new Error(`${what} changed no rows — this account is not allowed to edit shared utility data (platform developer only).`)
+  }
+  return data || []
+}
+
+// Bulk loops keep going past a failure but must SAY so at the end, with the
+// first real message instead of "check console".
+function bulkWriter() {
+  const state = { errors: 0, first: '' }
+  state.attempt = async (query, what, opts) => {
+    try { await writeRows(query, what, opts) } catch (err) {
+      state.errors++
+      if (!state.first) state.first = err.message
+    }
+  }
+  state.report = () => {
+    if (state.errors > 0) alert(`Completed with ${state.errors} error(s). First: ${state.first}`)
+  }
+  return state
+}
 
 const US_STATES = [
   'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA',
@@ -82,6 +115,7 @@ export default function DataConsoleUtilities() {
   const [researching, setResearching] = useState(false)
   const [researchResults, setResearchResults] = useState(null)
   const [showResearchModal, setShowResearchModal] = useState(false)
+  const [researchProgress, setResearchProgress] = useState('')
   const [checkedProviders, setCheckedProviders] = useState({})
   const [checkedPrograms, setCheckedPrograms] = useState({})
   const [checkedIncentives, setCheckedIncentives] = useState({})
@@ -324,9 +358,9 @@ export default function DataConsoleUtilities() {
         program_id: selectedProgram?.id || editingForm.program_id || null
       }
       if (editingForm.id) {
-        await supabase.from('utility_forms').update(data).eq('id', editingForm.id)
+        await writeRows(supabase.from('utility_forms').update(data).eq('id', editingForm.id), 'Save form')
       } else {
-        await supabase.from('utility_forms').insert(data)
+        await writeRows(supabase.from('utility_forms').insert(data), 'Save form')
       }
       if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
       setEditingForm(null)
@@ -338,9 +372,10 @@ export default function DataConsoleUtilities() {
 
   const handleDeleteForm = async (form) => {
     if (!confirm('Delete this form?')) return
-    const { error } = await supabase.from('utility_forms').delete().eq('id', form.id)
-    if (error) {
-      alert('Delete failed: ' + error.message)
+    try {
+      await writeRows(supabase.from('utility_forms').delete().eq('id', form.id), 'Delete form')
+    } catch (err) {
+      alert(err.message)
       return
     }
     if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
@@ -349,19 +384,19 @@ export default function DataConsoleUtilities() {
   const handleDeleteAllForms = async () => {
     if (!selectedProvider) return
     if (!confirm(`Delete ALL ${forms.length} forms? This cannot be undone.`)) return
-    let errors = 0
+    const bulk = bulkWriter()
     for (const f of forms) {
-      const { error } = await supabase.from('utility_forms').delete().eq('id', f.id)
-      if (error) errors++
+      await bulk.attempt(supabase.from('utility_forms').delete().eq('id', f.id), 'Delete form')
     }
-    if (errors > 0) alert(`Completed with ${errors} error(s).`)
+    bulk.report()
     fetchForms(selectedProvider.id, selectedProgram?.id || null)
   }
 
   const handlePublishForm = async (form) => {
-    const { error } = await supabase.from('utility_forms').update({ status: 'published' }).eq('id', form.id)
-    if (error) {
-      alert('Publish failed: ' + error.message)
+    try {
+      await writeRows(supabase.from('utility_forms').update({ status: 'published' }).eq('id', form.id), 'Publish form')
+    } catch (err) {
+      alert(err.message)
       return
     }
     if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
@@ -415,7 +450,7 @@ export default function DataConsoleUtilities() {
             if (res.data?.success) {
               // Save storage path to form record
               if (res.data.storage_path) {
-                await supabase.from('utility_forms').update({ form_file: res.data.storage_path }).eq('id', form.id)
+                await writeRows(supabase.from('utility_forms').update({ form_file: res.data.storage_path }).eq('id', form.id), 'Save form file')
                 form.form_file = res.data.storage_path
                 if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
               }
@@ -467,7 +502,7 @@ export default function DataConsoleUtilities() {
       })
       if (error) throw error
 
-      await supabase.from('utility_forms').update({ form_file: storagePath }).eq('id', form.id)
+      await writeRows(supabase.from('utility_forms').update({ form_file: storagePath }).eq('id', form.id), 'Save form file')
       if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
 
       // If mapping modal is open, reload fields
@@ -550,7 +585,7 @@ export default function DataConsoleUtilities() {
       for (const [field, path] of Object.entries(fieldMapping)) {
         if (path) cleaned[field] = path
       }
-      await supabase.from('utility_forms').update({ field_mapping: Object.keys(cleaned).length > 0 ? cleaned : null }).eq('id', mappingForm.id)
+      await writeRows(supabase.from('utility_forms').update({ field_mapping: Object.keys(cleaned).length > 0 ? cleaned : null }).eq('id', mappingForm.id), 'Save field mapping')
       if (selectedProvider) fetchForms(selectedProvider.id, selectedProgram?.id || null)
       setMappingForm(null)
     } catch (err) {
@@ -564,9 +599,9 @@ export default function DataConsoleUtilities() {
     setSaving(true)
     try {
       if (editingProvider.id) {
-        await supabase.from('utility_providers').update(editingProvider).eq('id', editingProvider.id)
+        await writeRows(supabase.from('utility_providers').update(editingProvider).eq('id', editingProvider.id), 'Save provider')
       } else {
-        await supabase.from('utility_providers').insert(editingProvider)
+        await writeRows(supabase.from('utility_providers').insert(editingProvider), 'Save provider')
       }
       await fetchProviders()
       setEditingProvider(null)
@@ -578,26 +613,28 @@ export default function DataConsoleUtilities() {
 
   const handleDeleteProvider = async (provider) => {
     if (!confirm(`Delete ${provider.provider_name}? This will also delete all programs, incentives, and rate schedules.`)) return
-    // Delete incentives for all programs under this provider first
-    const { data: providerPrograms } = await supabase
-      .from('utility_programs')
-      .select('id')
-      .eq('utility_name', provider.provider_name)
-    if (providerPrograms?.length) {
-      for (const prog of providerPrograms) {
-        await supabase.from('incentive_measures').delete().eq('program_id', prog.id)
-        await supabase.from('prescriptive_measures').delete().eq('program_id', prog.id)
+    try {
+      // Delete incentives for all programs under this provider first
+      const { data: providerPrograms } = await supabase
+        .from('utility_programs')
+        .select('id')
+        .eq('utility_name', provider.provider_name)
+      const none = { allowNone: true }
+      if (providerPrograms?.length) {
+        for (const prog of providerPrograms) {
+          await writeRows(supabase.from('incentive_measures').delete().eq('program_id', prog.id), 'Delete incentives', none)
+          await writeRows(supabase.from('prescriptive_measures').delete().eq('program_id', prog.id), 'Delete measures', none)
+        }
       }
-    }
-    // Delete forms and rate schedules for this provider
-    await supabase.from('utility_forms').delete().eq('provider_id', provider.id)
-    await supabase.from('utility_rate_schedules').delete().eq('provider_id', provider.id)
-    // Delete programs
-    await supabase.from('utility_programs').delete().eq('utility_name', provider.provider_name)
-    // Delete the provider
-    const { error } = await supabase.from('utility_providers').delete().eq('id', provider.id)
-    if (error) {
-      alert('Delete failed: ' + error.message)
+      // Delete forms and rate schedules for this provider
+      await writeRows(supabase.from('utility_forms').delete().eq('provider_id', provider.id), 'Delete forms', none)
+      await writeRows(supabase.from('utility_rate_schedules').delete().eq('provider_id', provider.id), 'Delete rate schedules', none)
+      // Delete programs
+      await writeRows(supabase.from('utility_programs').delete().eq('utility_name', provider.provider_name), 'Delete programs', none)
+      // Delete the provider
+      await writeRows(supabase.from('utility_providers').delete().eq('id', provider.id), 'Delete provider')
+    } catch (err) {
+      alert(err.message)
       return
     }
     await fetchProviders()
@@ -612,9 +649,9 @@ export default function DataConsoleUtilities() {
     try {
       const data = { ...editingProgram, utility_name: selectedProvider.provider_name }
       if (editingProgram.id) {
-        await supabase.from('utility_programs').update(data).eq('id', editingProgram.id)
+        await writeRows(supabase.from('utility_programs').update(data).eq('id', editingProgram.id), 'Save program')
       } else {
-        await supabase.from('utility_programs').insert(data)
+        await writeRows(supabase.from('utility_programs').insert(data), 'Save program')
       }
       await fetchPrograms(selectedProvider.provider_name)
       setEditingProgram(null)
@@ -626,11 +663,12 @@ export default function DataConsoleUtilities() {
 
   const handleDeleteProgram = async (program) => {
     if (!confirm(`Delete ${program.program_name}? This will also delete its incentives and prescriptive measures.`)) return
-    await supabase.from('incentive_measures').delete().eq('program_id', program.id)
-    await supabase.from('prescriptive_measures').delete().eq('program_id', program.id)
-    const { error } = await supabase.from('utility_programs').delete().eq('id', program.id)
-    if (error) {
-      alert('Delete failed: ' + error.message)
+    try {
+      await writeRows(supabase.from('incentive_measures').delete().eq('program_id', program.id), 'Delete incentives', { allowNone: true })
+      await writeRows(supabase.from('prescriptive_measures').delete().eq('program_id', program.id), 'Delete measures', { allowNone: true })
+      await writeRows(supabase.from('utility_programs').delete().eq('id', program.id), 'Delete program')
+    } catch (err) {
+      alert(err.message)
       return
     }
     await fetchPrograms(selectedProvider.provider_name)
@@ -650,9 +688,9 @@ export default function DataConsoleUtilities() {
         rate_value: editingIncentive.rate_value ?? editingIncentive.rate
       }
       if (editingIncentive.id) {
-        await supabase.from('incentive_measures').update(data).eq('id', editingIncentive.id)
+        await writeRows(supabase.from('incentive_measures').update(data).eq('id', editingIncentive.id), 'Save incentive')
       } else {
-        await supabase.from('incentive_measures').insert(data)
+        await writeRows(supabase.from('incentive_measures').insert(data), 'Save incentive')
       }
       await fetchIncentives(selectedProgram.id)
       setEditingIncentive(null)
@@ -664,9 +702,10 @@ export default function DataConsoleUtilities() {
 
   const handleDeleteIncentive = async (incentive) => {
     if (!confirm('Delete this incentive?')) return
-    const { error } = await supabase.from('incentive_measures').delete().eq('id', incentive.id)
-    if (error) {
-      alert('Delete failed: ' + error.message)
+    try {
+      await writeRows(supabase.from('incentive_measures').delete().eq('id', incentive.id), 'Delete incentive')
+    } catch (err) {
+      alert(err.message)
       return
     }
     await fetchIncentives(selectedProgram.id)
@@ -678,9 +717,9 @@ export default function DataConsoleUtilities() {
     try {
       const data = { ...editingRateSchedule, provider_id: selectedProvider.id }
       if (editingRateSchedule.id) {
-        await supabase.from('utility_rate_schedules').update(data).eq('id', editingRateSchedule.id)
+        await writeRows(supabase.from('utility_rate_schedules').update(data).eq('id', editingRateSchedule.id), 'Save rate schedule')
       } else {
-        await supabase.from('utility_rate_schedules').insert(data)
+        await writeRows(supabase.from('utility_rate_schedules').insert(data), 'Save rate schedule')
       }
       await fetchRateSchedules(selectedProvider.id)
       setEditingRateSchedule(null)
@@ -692,9 +731,10 @@ export default function DataConsoleUtilities() {
 
   const handleDeleteRateSchedule = async (schedule) => {
     if (!confirm('Delete this rate schedule?')) return
-    const { error } = await supabase.from('utility_rate_schedules').delete().eq('id', schedule.id)
-    if (error) {
-      alert('Delete failed: ' + error.message)
+    try {
+      await writeRows(supabase.from('utility_rate_schedules').delete().eq('id', schedule.id), 'Delete rate schedule')
+    } catch (err) {
+      alert(err.message)
       return
     }
     await fetchRateSchedules(selectedProvider.id)
@@ -703,7 +743,8 @@ export default function DataConsoleUtilities() {
   // Delete All handlers
   const handleDeleteAllProviders = async () => {
     if (!confirm(`Delete ALL ${filteredProviders.length} providers${stateFilter ? ` in ${stateFilter}` : ''}? This will also delete their programs, incentives, and rate schedules. This cannot be undone.`)) return
-    let errors = 0
+    const bulk = bulkWriter()
+    const none = { allowNone: true }
     for (const p of filteredProviders) {
       const { data: providerPrograms } = await supabase
         .from('utility_programs')
@@ -711,22 +752,16 @@ export default function DataConsoleUtilities() {
         .eq('utility_name', p.provider_name)
       if (providerPrograms?.length) {
         for (const prog of providerPrograms) {
-          const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', prog.id)
-          if (rateErr) errors++
-          const { error: pmErr } = await supabase.from('prescriptive_measures').delete().eq('program_id', prog.id)
-          if (pmErr) errors++
+          await bulk.attempt(supabase.from('incentive_measures').delete().eq('program_id', prog.id), 'Delete incentives', none)
+          await bulk.attempt(supabase.from('prescriptive_measures').delete().eq('program_id', prog.id), 'Delete measures', none)
         }
       }
-      const { error: formErr } = await supabase.from('utility_forms').delete().eq('provider_id', p.id)
-      if (formErr) errors++
-      const { error: schedErr } = await supabase.from('utility_rate_schedules').delete().eq('provider_id', p.id)
-      if (schedErr) errors++
-      const { error: progErr } = await supabase.from('utility_programs').delete().eq('utility_name', p.provider_name)
-      if (progErr) errors++
-      const { error } = await supabase.from('utility_providers').delete().eq('id', p.id)
-      if (error) errors++
+      await bulk.attempt(supabase.from('utility_forms').delete().eq('provider_id', p.id), 'Delete forms', none)
+      await bulk.attempt(supabase.from('utility_rate_schedules').delete().eq('provider_id', p.id), 'Delete rate schedules', none)
+      await bulk.attempt(supabase.from('utility_programs').delete().eq('utility_name', p.provider_name), 'Delete programs', none)
+      await bulk.attempt(supabase.from('utility_providers').delete().eq('id', p.id), 'Delete provider')
     }
-    if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
+    bulk.report()
     await fetchProviders()
     setSelectedProvider(null)
   }
@@ -734,18 +769,16 @@ export default function DataConsoleUtilities() {
   const handleDeleteAllPrograms = async () => {
     if (!selectedProvider) return
     if (!confirm(`Delete ALL ${programs.length} programs for ${selectedProvider.provider_name}? This will also delete their incentives and prescriptive measures. This cannot be undone.`)) return
-    let errors = 0
+    const bulk = bulkWriter()
+    const none = { allowNone: true }
     for (const p of programs) {
-      const { error: rateErr } = await supabase.from('incentive_measures').delete().eq('program_id', p.id)
-      if (rateErr) errors++
-      const { error: pmErr } = await supabase.from('prescriptive_measures').delete().eq('program_id', p.id)
-      if (pmErr) errors++
+      await bulk.attempt(supabase.from('incentive_measures').delete().eq('program_id', p.id), 'Delete incentives', none)
+      await bulk.attempt(supabase.from('prescriptive_measures').delete().eq('program_id', p.id), 'Delete measures', none)
     }
     for (const p of programs) {
-      const { error } = await supabase.from('utility_programs').delete().eq('id', p.id)
-      if (error) errors++
+      await bulk.attempt(supabase.from('utility_programs').delete().eq('id', p.id), 'Delete program')
     }
-    if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
+    bulk.report()
     await fetchPrograms(selectedProvider.provider_name)
     setSelectedProgram(null)
   }
@@ -753,24 +786,22 @@ export default function DataConsoleUtilities() {
   const handleDeleteAllIncentives = async () => {
     if (!selectedProgram) return
     if (!confirm(`Delete ALL ${incentives.length} incentives for ${selectedProgram.program_name}? This cannot be undone.`)) return
-    let errors = 0
+    const bulk = bulkWriter()
     for (const r of incentives) {
-      const { error } = await supabase.from('incentive_measures').delete().eq('id', r.id)
-      if (error) errors++
+      await bulk.attempt(supabase.from('incentive_measures').delete().eq('id', r.id), 'Delete incentive')
     }
-    if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
+    bulk.report()
     await fetchIncentives(selectedProgram.id)
   }
 
   const handleDeleteAllRateSchedules = async () => {
     if (!selectedProvider) return
     if (!confirm(`Delete ALL ${rateSchedules.length} rate schedules for ${selectedProvider.provider_name}? This cannot be undone.`)) return
-    let errors = 0
+    const bulk = bulkWriter()
     for (const s of rateSchedules) {
-      const { error } = await supabase.from('utility_rate_schedules').delete().eq('id', s.id)
-      if (error) errors++
+      await bulk.attempt(supabase.from('utility_rate_schedules').delete().eq('id', s.id), 'Delete rate schedule')
     }
-    if (errors > 0) alert(`Completed with ${errors} error(s). Check console for details.`)
+    bulk.report()
     await fetchRateSchedules(selectedProvider.id)
   }
 
@@ -780,9 +811,9 @@ export default function DataConsoleUtilities() {
     try {
       const data = { ...editingPrescriptive, program_id: selectedProgram.id }
       if (editingPrescriptive.id) {
-        await supabase.from('prescriptive_measures').update(data).eq('id', editingPrescriptive.id)
+        await writeRows(supabase.from('prescriptive_measures').update(data).eq('id', editingPrescriptive.id), 'Save measure')
       } else {
-        await supabase.from('prescriptive_measures').insert(data)
+        await writeRows(supabase.from('prescriptive_measures').insert(data), 'Save measure')
       }
       await fetchPrescriptiveMeasures(selectedProgram.id)
       setEditingPrescriptive(null)
@@ -794,9 +825,10 @@ export default function DataConsoleUtilities() {
 
   const handleDeletePrescriptive = async (measure) => {
     if (!confirm('Delete this prescriptive measure?')) return
-    const { error } = await supabase.from('prescriptive_measures').delete().eq('id', measure.id)
-    if (error) {
-      alert('Delete failed: ' + error.message)
+    try {
+      await writeRows(supabase.from('prescriptive_measures').delete().eq('id', measure.id), 'Delete measure')
+    } catch (err) {
+      alert(err.message)
       return
     }
     await fetchPrescriptiveMeasures(selectedProgram.id)
@@ -805,12 +837,11 @@ export default function DataConsoleUtilities() {
   const handleDeleteAllPrescriptive = async () => {
     if (!selectedProgram) return
     if (!confirm(`Delete ALL ${prescriptiveMeasures.length} prescriptive measures for ${selectedProgram.program_name}? This cannot be undone.`)) return
-    let errors = 0
+    const bulk = bulkWriter()
     for (const m of prescriptiveMeasures) {
-      const { error } = await supabase.from('prescriptive_measures').delete().eq('id', m.id)
-      if (error) errors++
+      await bulk.attempt(supabase.from('prescriptive_measures').delete().eq('id', m.id), 'Delete measure')
     }
-    if (errors > 0) alert(`Completed with ${errors} error(s).`)
+    bulk.report()
     await fetchPrescriptiveMeasures(selectedProgram.id)
   }
 
@@ -900,7 +931,7 @@ export default function DataConsoleUtilities() {
           setImporting(false)
           return
         }
-        let errors = 0
+        let errors = 0, firstError = ''
         for (const pm of measures) {
           const { error } = await supabase
             .from('prescriptive_measures')
@@ -930,9 +961,10 @@ export default function DataConsoleUtilities() {
           if (error) {
             console.error('PDF measure insert error:', error)
             errors++
+            if (!firstError) firstError = error.message
           }
         }
-        if (errors > 0) alert(`Imported with ${errors} error(s).`)
+        if (errors > 0) alert(`Imported with ${errors} error(s). First: ${firstError}`)
         await fetchPrescriptiveMeasures(selectedProgram.id)
       } else {
         const schedules = (pdfResults.rate_schedules || []).filter((_, i) => checkedPdfItems[i])
@@ -941,7 +973,7 @@ export default function DataConsoleUtilities() {
           setImporting(false)
           return
         }
-        let errors = 0
+        let errors = 0, firstError = ''
         for (const rs of schedules) {
           const { error } = await supabase
             .from('utility_rate_schedules')
@@ -967,9 +999,10 @@ export default function DataConsoleUtilities() {
           if (error) {
             console.error('PDF rate schedule insert error:', error)
             errors++
+            if (!firstError) firstError = error.message
           }
         }
-        if (errors > 0) alert(`Imported with ${errors} error(s).`)
+        if (errors > 0) alert(`Imported with ${errors} error(s). First: ${firstError}`)
         await fetchRateSchedules(selectedProvider.id)
       }
 
@@ -989,65 +1022,44 @@ export default function DataConsoleUtilities() {
     }
 
     setResearching(true)
+    setResearchProgress('Starting…')
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-utility-research`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
-          },
-          body: JSON.stringify({ state: researchState === 'ALL' ? 'all US states' : researchState, fetch_pdfs: fetchPdfs })
-        }
-      )
+      // Phased: discover the state's utilities/programs first, then one call
+      // per program for its measures (src/lib/utilityResearch.js). A single
+      // call used to outrun the gateway's 150s idle timeout every time.
+      const { results, failures } = await researchUtilityState({
+        state: researchState === 'ALL' ? 'all US states' : researchState,
+        fetchPdfs,
+        onProgress: setResearchProgress,
+      })
 
-      const data = await response.json()
-
-      if (data?.success && data?.results) {
-        const results = data.results
-        // Normalize: if old "rates" key present, map to "incentives"
-        if (results.rates && !results.incentives) {
-          results.incentives = results.rates
-          delete results.rates
-        }
-        if (!results.rate_schedules) results.rate_schedules = []
-        if (!results.prescriptive_measures) results.prescriptive_measures = []
-        if (!results.forms) results.forms = []
-
-        setResearchResults(results)
-        // Default all items to checked
-        const pChecked = {}
-        results.providers.forEach((_, i) => { pChecked[i] = true })
-        setCheckedProviders(pChecked)
-        const prChecked = {}
-        results.programs.forEach((_, i) => { prChecked[i] = true })
-        setCheckedPrograms(prChecked)
-        const iChecked = {}
-        results.incentives.forEach((_, i) => { iChecked[i] = true })
-        setCheckedIncentives(iChecked)
-        const rsChecked = {}
-        results.rate_schedules.forEach((_, i) => { rsChecked[i] = true })
-        setCheckedRateSchedules(rsChecked)
-        const pmChecked = {}
-        results.prescriptive_measures.forEach((_, i) => { pmChecked[i] = true })
-        setCheckedPrescriptive(pmChecked)
-        const fChecked = {}
-        results.forms.forEach((_, i) => { fChecked[i] = true })
-        setCheckedForms(fChecked)
-        setShowResearchModal(true)
-      } else {
-        alert('Research failed: ' + (data?.error || 'Unknown error'))
+      setResearchResults(results)
+      // Default all items to checked
+      const allChecked = (rows) => Object.fromEntries(rows.map((_, i) => [i, true]))
+      setCheckedProviders(allChecked(results.providers))
+      setCheckedPrograms(allChecked(results.programs))
+      setCheckedIncentives(allChecked(results.incentives))
+      setCheckedRateSchedules(allChecked(results.rate_schedules))
+      setCheckedPrescriptive(allChecked(results.prescriptive_measures))
+      setCheckedForms(allChecked(results.forms))
+      setShowResearchModal(true)
+      if (failures.length > 0) {
+        alert(`Research finished, but measures could not be found for ${failures.length} program(s):\n` +
+          failures.map(f => `- ${f.program_name}: ${f.error}`).join('\n'))
       }
     } catch (err) {
       alert('Research error: ' + err.message)
     }
     setResearching(false)
+    setResearchProgress('')
   }
 
   const handleImportSelected = async () => {
     if (!researchResults) return
     setImporting(true)
+    // Every refused insert lands here (RLS refuses global rows for anyone but
+    // a platform developer) — the summary at the end names the first one.
+    const importErrors = []
 
     try {
       // 1. Insert selected providers
@@ -1071,6 +1083,7 @@ export default function DataConsoleUtilities() {
 
         if (error) {
           console.error('Provider insert error:', error)
+          importErrors.push(`Provider ${p.provider_name}: ${error.message}`)
           continue
         }
         providerNameMap[p.provider_name] = data
@@ -1125,6 +1138,7 @@ export default function DataConsoleUtilities() {
 
         if (error) {
           console.error('Program insert error:', error)
+          importErrors.push(`Program ${pr.program_name}: ${error.message}`)
           continue
         }
         programNameMap[`${pr.provider_name}|${pr.program_name}`] = data
@@ -1171,6 +1185,7 @@ export default function DataConsoleUtilities() {
 
         if (error) {
           console.error('Incentive insert error:', error)
+          importErrors.push(`Incentive: ${error.message}`)
         }
       }
 
@@ -1209,6 +1224,7 @@ export default function DataConsoleUtilities() {
 
         if (error) {
           console.error('Rate schedule insert error:', error)
+          importErrors.push(`Rate schedule: ${error.message}`)
         }
       }
 
@@ -1253,6 +1269,7 @@ export default function DataConsoleUtilities() {
 
         if (error) {
           console.error('Prescriptive measure insert error:', error)
+          importErrors.push(`Measure: ${error.message}`)
         }
       }
 
@@ -1289,14 +1306,20 @@ export default function DataConsoleUtilities() {
 
         if (error) {
           console.error('Form insert error:', error)
+          importErrors.push(`Form: ${error.message}`)
         }
       }
 
       // Refresh data
       await fetchProviders()
       setSelectedProvider(null)
-      setShowResearchModal(false)
-      setResearchResults(null)
+      if (importErrors.length > 0) {
+        // Keep the review modal open so nothing is lost; say what was refused.
+        alert(`Import finished with ${importErrors.length} error(s). First: ${importErrors[0]}`)
+      } else {
+        setShowResearchModal(false)
+        setResearchResults(null)
+      }
     } catch (err) {
       alert('Import error: ' + err.message)
     }
@@ -1438,7 +1461,7 @@ export default function DataConsoleUtilities() {
           results.push({ pdf, status: 'failed', error: data?.error || 'Unknown error', count: 0 })
           // Mark program as failed
           if (pdf.programId) {
-            await supabase.from('utility_programs').update({ pdf_enrichment_status: 'failed' }).eq('id', pdf.programId)
+            await writeRows(supabase.from('utility_programs').update({ pdf_enrichment_status: 'failed' }).eq('id', pdf.programId), 'Mark program failed', { allowNone: true }).catch(() => {})
           }
           setEnrichProgress(prev => ({ ...prev, results: [...prev.results, { ...pdf, status: 'failed', error: data?.error, count: 0 }] }))
           continue
@@ -1450,7 +1473,7 @@ export default function DataConsoleUtilities() {
           // Upsert prescriptive measures
           const measures = data.results.prescriptive_measures
           for (const pm of measures) {
-            await supabase.from('prescriptive_measures').insert({
+            await writeRows(supabase.from('prescriptive_measures').insert({
               program_id: pdf.programId,
               measure_code: pm.measure_code || null,
               measure_name: pm.measure_name,
@@ -1474,31 +1497,31 @@ export default function DataConsoleUtilities() {
               source_pdf_url: pdf.url,
               needs_pdf_upload: false,
               notes: pm.notes || null
-            })
+            }), 'Import measure')
           }
           itemCount = measures.length
           // Update program status
           if (pdf.programId) {
-            await supabase.from('utility_programs').update({
+            await writeRows(supabase.from('utility_programs').update({
               pdf_enrichment_status: 'complete',
               pdf_enriched_at: new Date().toISOString(),
               pdf_storage_path: data.storage_path || null
-            }).eq('id', pdf.programId)
+            }).eq('id', pdf.programId), 'Mark program enriched')
           }
         } else if (pdf.type === 'rate_schedule' && data.results?.rate_schedules) {
           // Update rate schedule with storage path
           if (pdf.scheduleId) {
-            await supabase.from('utility_rate_schedules').update({
+            await writeRows(supabase.from('utility_rate_schedules').update({
               pdf_storage_path: data.storage_path || null
-            }).eq('id', pdf.scheduleId)
+            }).eq('id', pdf.scheduleId), 'Save schedule PDF path')
           }
           itemCount = data.results.rate_schedules.length
         } else if (pdf.type === 'form') {
           // Update form with storage path
           if (pdf.formId) {
-            await supabase.from('utility_forms').update({
+            await writeRows(supabase.from('utility_forms').update({
               form_file: data.storage_path || null
-            }).eq('id', pdf.formId)
+            }).eq('id', pdf.formId), 'Save form file')
           }
           itemCount = 1
         }
@@ -1515,7 +1538,7 @@ export default function DataConsoleUtilities() {
         results.push({ pdf, status: 'failed', error: err.message, count: 0 })
         setEnrichProgress(prev => ({ ...prev, results: [...prev.results, { ...pdf, status: 'failed', error: err.message, count: 0 }] }))
         if (pdf.programId) {
-          await supabase.from('utility_programs').update({ pdf_enrichment_status: 'failed' }).eq('id', pdf.programId)
+          await writeRows(supabase.from('utility_programs').update({ pdf_enrichment_status: 'failed' }).eq('id', pdf.programId), 'Mark program failed', { allowNone: true }).catch(() => {})
         }
       }
     }
@@ -1625,7 +1648,7 @@ export default function DataConsoleUtilities() {
             }}
           >
             {researching ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Zap size={16} />}
-            {researching ? 'Researching...' : 'AI Research'}
+            {researching ? (researchProgress || 'Researching…') : 'AI Research'}
           </button>
           {selectedProvider && (
             <button

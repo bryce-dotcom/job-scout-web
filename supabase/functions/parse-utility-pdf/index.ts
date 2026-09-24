@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { encode as base64Encode, decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 import { callAnthropic } from "../_shared/anthropic.ts";
+import { streamedJson } from "../_shared/streamedJson.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -385,53 +386,40 @@ serve(async (req) => {
       }]
     };
 
-    const ai = await callAnthropic({ feature: 'parse-utility-pdf', companyId: null, req }, anthropicBody);
+    // A 64k-token extraction outruns the gateway's 150s idle timeout, which
+    // used to kill this function before it answered (HTTP 504 IDLE_TIMEOUT).
+    // Stream a heartbeat while Claude works; the result rides in the body
+    // with success:false on failure (status is 200 once the body has started
+    // — every caller already branches on `success`).
+    return streamedJson(corsHeaders, async () => {
+      let ai = await callAnthropic({ feature: 'parse-utility-pdf', companyId: null, req }, anthropicBody);
 
-    if (!ai.ok) {
       // Retry once on rate limit (mirrors the old `error.message includes 'rate limit'` check)
-      if (ai.errorKind === 'rate_limit') {
+      if (!ai.ok && ai.errorKind === 'rate_limit') {
         console.log('Rate limited, waiting 61s before retry...');
         await new Promise(r => setTimeout(r, 61000));
-        const retryAi = await callAnthropic({ feature: 'parse-utility-pdf', companyId: null, req }, anthropicBody);
-        if (!retryAi.ok) {
-          return new Response(JSON.stringify({ success: false, error: retryAi.friendly || 'Anthropic API error (after retry)', ai_unavailable: retryAi.unavailable === true, storage_path: storagePath }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-        const retryContent = retryAi.data.content?.[0]?.text || '';
-        const retryJsonMatch = retryContent.match(/\{[\s\S]*\}/);
-        if (retryJsonMatch) {
-          const results = JSON.parse(retryJsonMatch[0]);
-          return new Response(JSON.stringify({ success: true, document_type, results, storage_path: storagePath }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-        // No parseable JSON in the retry — fall through to the error response below (same as before).
+        ai = await callAnthropic({ feature: 'parse-utility-pdf', companyId: null, req }, anthropicBody);
       }
 
-      return new Response(JSON.stringify({ success: false, error: ai.friendly || 'Anthropic API error', ai_unavailable: ai.unavailable === true, storage_path: storagePath }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
+      if (!ai.ok) {
+        return { success: false, error: ai.friendly || 'Anthropic API error', ai_unavailable: ai.unavailable === true, storage_path: storagePath };
+      }
 
-    const data = ai.data;
+      const content = (ai.data?.content || [])
+        .filter((b: { type: string }) => b.type === 'text')
+        .map((b: { text: string }) => b.text)
+        .join('\n');
 
-    const content = data.content?.[0]?.text || '';
+      // Parse JSON from response
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const results = JSON.parse(jsonMatch[0]);
+          return { success: true, document_type, results, storage_path: storagePath };
+        } catch { /* fall through */ }
+      }
 
-    // Parse JSON from response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const results = JSON.parse(jsonMatch[0]);
-
-      return new Response(JSON.stringify({ success: true, document_type, results, storage_path: storagePath }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    return new Response(JSON.stringify({ success: false, error: 'Could not parse extraction results', raw: content, storage_path: storagePath }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      return { success: false, error: 'Could not parse extraction results', raw: content.substring(0, 2000), storage_path: storagePath };
     });
 
   } catch (error) {

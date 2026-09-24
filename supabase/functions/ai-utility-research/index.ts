@@ -1,9 +1,35 @@
+// AI utility research for Data Console > Utilities.
+//
+// Runs in PHASES, one HTTP request each, because a single "research the whole
+// state" call to Claude took several minutes and the gateway killed it at the
+// 150s idle timeout every time (see _shared/streamedJson.ts). The browser
+// orchestrates (src/lib/utilityResearch.js):
+//
+//   discover  { state }                -> providers, programs, rate_schedules, forms
+//   measures  { state, programs: [p] } -> incentives + prescriptive_measures for ONE program
+//   pdfs      { programs }             -> PDF links found on the program pages (no AI)
+//
+// Each phase streams a heartbeat while Claude works and returns the JSON
+// document in the body. Only a platform developer (the Data Console gate) may
+// call it — the caller is read from the JWT, never from the body.
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callAnthropic } from "../_shared/anthropic.ts";
+import { resolveCaller } from "../_shared/auth.ts";
+import { streamedJson } from "../_shared/streamedJson.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const MODEL = 'claude-sonnet-4-6';
+const DEVELOPER_LEVEL = 5;
+
+type Row = Record<string, unknown>;
+type Results = {
+  providers: Row[]; programs: Row[]; incentives: Row[];
+  prescriptive_measures: Row[]; rate_schedules: Row[]; forms: Row[];
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -13,11 +39,11 @@ const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 async function callClaude(
   system: string,
   userMessage: string,
-  opts: { webSearch?: number; maxTokens?: number; retries?: number; req?: Request } = {}
+  opts: { webSearch?: number; maxTokens?: number; retries?: number; req?: Request; companyId?: number | null } = {}
 ) {
-  const { webSearch = 0, maxTokens = 16000, retries = 1, req } = opts;
+  const { webSearch = 0, maxTokens = 16000, retries = 1, req, companyId = null } = opts;
   const body: Record<string, unknown> = {
-    model: 'claude-sonnet-4-6',
+    model: MODEL,
     max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: userMessage }],
@@ -27,7 +53,7 @@ async function callClaude(
   }
 
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const ai = await callAnthropic({ feature: 'ai-utility-research', companyId: null, req }, body);
+    const ai = await callAnthropic({ feature: 'ai-utility-research', companyId, req }, body);
 
     if (!ai.ok) {
       if (ai.errorKind === 'rate_limit' && attempt < retries) {
@@ -43,11 +69,10 @@ async function callClaude(
     }
 
     const data = ai.data;
-    const text = (data.content || [])
+    return (data.content || [])
       .filter((b: { type: string }) => b.type === 'text')
       .map((b: { text: string }) => b.text)
       .join('\n');
-    return text;
   }
   throw new Error('Max retries exceeded');
 }
@@ -66,106 +91,88 @@ function extractJson(text: string): Record<string, unknown> | null {
   catch { return null; }
 }
 
-// ── System Prompt (single-pass with web search) ──────────────────────────────
+function emptyResults(): Results {
+  return { providers: [], programs: [], incentives: [], prescriptive_measures: [], rate_schedules: [], forms: [] };
+}
 
-const SYSTEM_PROMPT = `You are a utility rebate and electric rate research assistant. Research ALL commercial energy efficiency programs for electric utilities in a given US state.
+// Coerce whatever Claude returned into the six arrays the UI expects.
+function normalize(raw: Record<string, unknown> | null): Results {
+  const out = emptyResults();
+  if (!raw) return out;
+  const arr = (k: string) => (Array.isArray(raw[k]) ? (raw[k] as Row[]) : []);
+  out.providers = arr('providers');
+  out.programs = arr('programs');
+  // Backward compat: an older prompt called the rate card "rates"
+  out.incentives = arr('incentives').length ? arr('incentives') : arr('rates');
+  out.prescriptive_measures = arr('prescriptive_measures');
+  out.rate_schedules = arr('rate_schedules');
+  out.forms = arr('forms');
+  for (const inc of out.incentives) {
+    if (inc.rate_value == null && inc.rate != null) inc.rate_value = inc.rate;
+    if (inc.rate == null && inc.rate_value != null) inc.rate = inc.rate_value;
+  }
+  for (const pm of out.prescriptive_measures) {
+    if (pm.needs_pdf_upload === undefined || pm.needs_pdf_upload === null) pm.needs_pdf_upload = true;
+  }
+  return out;
+}
 
-Use web search to find current program pages, incentive rate tables, tariff schedules, and application forms. Search for:
+// ── Prompts ──────────────────────────────────────────────────────────────────
+
+const DISCOVER_SYSTEM = `You are a utility rebate and electric rate research assistant. Research the electric utilities in a given US state that offer commercial energy efficiency programs, and their published commercial rate schedules and application forms.
+
+Use web search to find current program pages, tariff schedules, and application forms. Search for:
 - "[state] electric utility commercial rebates 2025"
 - "[major utility] business incentive program"
-- "[utility] prescriptive rebate rates"
 - "[utility] commercial rate schedule tariff"
 
 EXAMPLE (one record per array — show ALL fields like this):
 {"providers":[{"provider_name":"Rocky Mountain Power","state":"UT","service_territory":"Most of Utah","has_rebate_program":true,"rebate_program_url":"https://www.rockymountainpower.net/savings-energy-choices/business.html","contact_phone":"1-888-221-7070","notes":"Largest IOU"}],
 "programs":[{"provider_name":"Rocky Mountain Power","program_name":"wattsmart Business Incentives (2025)","program_type":"Prescriptive","program_category":"Comprehensive","delivery_mechanism":"Prescriptive","business_size":"All","dlc_required":true,"pre_approval_required":false,"application_required":true,"post_inspection_required":false,"contractor_prequalification":false,"program_url":"https://example.com/program","max_cap_percent":70,"annual_cap_dollars":500000,"source_year":2025,"eligible_sectors":["Commercial","Industrial"],"eligible_building_types":["Office","Warehouse","Retail"],"required_documents":["W9","Invoice","DLC certificate"],"stacking_allowed":false,"stacking_rules":"No prescriptive+custom","funding_status":"Open","processing_time_days":60,"rebate_payment_method":"Check","program_notes_ai":"Lighting rates vary by controls tier."}],
-"incentives":[{"provider_name":"Rocky Mountain Power","program_name":"wattsmart Business Incentives (2025)","measure_category":"Lighting","measure_subcategory":"LED Interior","fixture_category":"Linear","measure_type":"LED Retrofit","calc_method":"Per Watt Reduced","rate":0.60,"rate_value":0.60,"rate_unit":"/watt","tier":"No Controls","cap_percent":70,"equipment_requirements":"DLC 5.1+","baseline_description":"Fluorescent T8/T12","replacement_description":"DLC LED","notes":"Base rate"}],
-"prescriptive_measures":[{"provider_name":"Rocky Mountain Power","program_name":"wattsmart Business Incentives (2025)","measure_code":"LT-001","measure_name":"Interior Linear T8 to LED No Controls","measure_category":"Lighting","measure_subcategory":"Linear","baseline_equipment":"T8 4ft 32W 2-lamp","baseline_wattage":64,"replacement_equipment":"DLC LED 36W","replacement_wattage":36,"incentive_amount":0.60,"incentive_unit":"per_watt_reduced","incentive_formula":"(64-36) x $0.60 = $16.80","max_incentive":null,"location_type":"interior","application_type":"retrofit","dlc_required":true,"dlc_tier":"Standard","energy_star_required":false,"hours_requirement":null,"source_page":null,"needs_pdf_upload":true,"notes":"Base rate"},{"provider_name":"Rocky Mountain Power","program_name":"wattsmart Business Incentives (2025)","measure_code":"HV-001","measure_name":"VFD for HVAC Fan/Pump","measure_category":"HVAC","measure_subcategory":"VFD","baseline_equipment":"Constant speed motor","baseline_wattage":7460,"replacement_equipment":"VFD-controlled motor","replacement_wattage":null,"incentive_amount":200,"incentive_unit":"per_hp","incentive_formula":"$200/HP","max_incentive":5000,"location_type":null,"application_type":"retrofit","dlc_required":false,"dlc_tier":null,"energy_star_required":false,"hours_requirement":null,"source_page":null,"needs_pdf_upload":true,"notes":"HVAC only"}],
 "rate_schedules":[{"provider_name":"Rocky Mountain Power","schedule_name":"Schedule 6 - General Service","customer_category":"Medium Commercial","rate_type":"Demand","rate_per_kwh":0.0845,"peak_rate_per_kwh":null,"off_peak_rate_per_kwh":null,"summer_rate_per_kwh":null,"winter_rate_per_kwh":null,"demand_charge":9.50,"min_demand_charge":null,"customer_charge":35,"time_of_use":false,"effective_date":null,"source_url":"https://example.com/tariff.pdf","description":"200-1000 kW","notes":"With demand charge"}],
 "forms":[{"provider_name":"Rocky Mountain Power","program_name":"wattsmart Business Incentives (2025)","form_name":"Business Incentive Application","form_type":"Application","form_url":"https://example.com/app.pdf","version_year":2025,"is_required":true,"form_notes":"Main application"}]}
 
 TYPE RULES: source_year and version_year must be integers (2025 not "2025"). eligible_sectors, eligible_building_types, required_documents must be arrays or null — never plain strings.
 
-CRITICAL RULES:
-1. TWO ARRAYS — "incentives" (rate card summaries per tier) AND "prescriptive_measures" (specific line items with wattages). You MUST populate BOTH.
-2. EVERY program in the programs array MUST have at least 2 incentives AND 2 prescriptive_measures linked to it (matching provider_name + program_name). If a program has different rates or delivery than the main program, show its specific rates. Express/streamlined programs often have higher incentive percentages — show those.
-3. Lighting: show No Controls, Networked Controls, LLLC tiers. Show Linear, High Bay, Exterior.
-4. HVAC: VFD ($/HP), Heat Pump ($/ton), RTU ($/ton), Chillers.
-5. Also: Refrigeration, Motors, Building Envelope if offered.
-6. measure_code prefix: LT-, HV-, MT-, RF-, BE-
-7. needs_pdf_upload: always true
-8. incentive_formula: show the math like "(64W-36W) x $0.60 = $16.80"
-9. Rate schedules: find ALL published commercial rate schedules for each major utility. Include small commercial, medium/demand, large/TOU, AND any special schedules (agricultural, irrigation, lighting, industrial). Search for "[utility] tariff schedule" or "[utility] rate book". Aim for 5-8 schedules for the primary utility.
-10. rate and rate_value must BOTH be populated with same number.
-11. rate_per_kwh in dollars (0.0845 = 8.45 cents/kWh).
-12. program_name includes year: "Name (2025)".
-13. Find 3-8 providers. Major programs should have 15-25 prescriptive measures total across all its programs.
-14. For unknown fields, set to null. Never omit fields.
-
-FIELD COMPLETENESS — every record MUST populate these fields (search if needed):
-• providers: ALWAYS include rebate_program_url (search "[name] energy efficiency" for URL) and contact_phone (search "[name] contact us"). If truly unfindable, set null — but TRY.
-• programs: ALWAYS include pre_approval_required (true/false), stacking_allowed (true/false), annual_cap_dollars (number or null). Also include eligible_sectors, required_documents, funding_status, processing_time_days, rebate_payment_method.
-• incentives: ALWAYS include measure_category, fixture_category, calc_method, rate_unit, tier, equipment_requirements, baseline_description.
-• prescriptive_measures: ALWAYS include baseline_wattage (number — estimate from baseline equipment if exact unknown), dlc_required (true for lighting, false for HVAC/motors/refrigeration/envelope), location_type ("interior"/"exterior"/null for non-lighting). Also include replacement_wattage, incentive_formula, measure_subcategory.
-• rate_schedules: ALWAYS include demand_charge (number or null if none), customer_charge (number), source_url, description, customer_category, rate_type.
-• forms: ALWAYS include provider_name, form_url (search for it), version_year, is_required.
+RULES:
+1. Find 3-8 providers. Include every investor-owned utility, the largest municipal utilities and co-ops with a commercial rebate program.
+2. Every program's program_name includes the year: "Name (2025)". Each provider may have several programs (prescriptive, custom, express/small business, new construction). Include program_url whenever it is findable.
+3. Rate schedules: find the published commercial rate schedules for each major utility — small commercial, medium/demand, large/TOU, and special schedules (agricultural, irrigation, lighting, industrial). Aim for 5-8 for the primary utility. rate_per_kwh in dollars (0.0845 = 8.45 cents/kWh). Always include demand_charge (number or null), customer_charge, source_url, description, customer_category, rate_type.
+4. Forms: include provider_name, program_name, form_url, version_year, is_required for each.
+5. providers: always include rebate_program_url and contact_phone (search "[name] contact us"); null only when truly unfindable.
+6. programs: always include pre_approval_required, stacking_allowed, annual_cap_dollars (number or null), eligible_sectors, required_documents, funding_status, processing_time_days, rebate_payment_method.
+7. Do NOT include incentives or prescriptive_measures here — they are researched separately per program.
+8. For unknown fields, set null. Never omit fields.
 
 Return ONLY valid JSON, no other text.`;
 
-// ── Scoring ──────────────────────────────────────────────────────────────────
+const MEASURES_SYSTEM = `You are a utility rebate research assistant. You are given ONE commercial energy efficiency program of ONE electric utility. Research its incentive rate card and its prescriptive measure line items.
 
-function calculateCompleteness(results: Record<string, unknown[]>) {
-  const levelScores: Record<string, { name: string; score: number; count: number }> = {};
-  const scoreLevels = [
-    { level: 1, name: 'Utility Discovery', key: 'providers', required: ['provider_name', 'state', 'has_rebate_program'], optional: ['service_territory', 'rebate_program_url', 'contact_phone'] },
-    { level: 2, name: 'Program Discovery', key: 'programs', required: ['provider_name', 'program_name', 'program_type'], optional: ['program_category', 'delivery_mechanism', 'program_url', 'source_year'] },
-    { level: 3, name: 'Program Details', key: 'programs', required: ['program_name'], optional: ['max_cap_percent', 'annual_cap_dollars', 'required_documents', 'pre_approval_required', 'stacking_allowed', 'funding_status', 'processing_time_days', 'program_notes_ai'] },
-    { level: 4, name: 'Measure Categories', key: 'incentives', required: ['provider_name', 'program_name', 'rate_value'], optional: ['measure_category', 'fixture_category', 'calc_method', 'rate_unit', 'tier', 'equipment_requirements', 'baseline_description'] },
-    { level: 5, name: 'Prescriptive Measures', key: 'prescriptive_measures', required: ['provider_name', 'program_name', 'measure_name', 'incentive_amount'], optional: ['measure_code', 'baseline_equipment', 'baseline_wattage', 'replacement_equipment', 'incentive_unit', 'incentive_formula', 'dlc_required', 'location_type'] },
-    { level: 6, name: 'Rate Schedules', key: 'rate_schedules', required: ['provider_name', 'schedule_name', 'rate_per_kwh'], optional: ['customer_category', 'rate_type', 'demand_charge', 'customer_charge', 'time_of_use', 'source_url', 'description'] },
-    { level: 7, name: 'Forms & Documents', key: 'forms', required: ['form_name', 'form_type'], optional: ['provider_name', 'form_url', 'version_year', 'is_required', 'form_notes'] }
-  ];
+Use web search to find the program's incentive tables, measure worksheets and rate sheets. Search for:
+- "[utility] [program] prescriptive incentives"
+- "[utility] [program] lighting incentive worksheet"
+- "[utility] [program] HVAC incentives"
 
-  let totalWeighted = 0;
-  let weightedFilled = 0;
-  const weights: Record<number, number> = { 1: 10, 2: 15, 3: 15, 4: 15, 5: 25, 6: 10, 7: 10 };
-  const missing_data: string[] = [];
+EXAMPLE (one record per array — show ALL fields like this):
+{"incentives":[{"provider_name":"Rocky Mountain Power","program_name":"wattsmart Business Incentives (2025)","measure_category":"Lighting","measure_subcategory":"LED Interior","fixture_category":"Linear","measure_type":"LED Retrofit","calc_method":"Per Watt Reduced","rate":0.60,"rate_value":0.60,"rate_unit":"/watt","tier":"No Controls","cap_percent":70,"equipment_requirements":"DLC 5.1+","baseline_description":"Fluorescent T8/T12","replacement_description":"DLC LED","notes":"Base rate"}],
+"prescriptive_measures":[{"provider_name":"Rocky Mountain Power","program_name":"wattsmart Business Incentives (2025)","measure_code":"LT-001","measure_name":"Interior Linear T8 to LED No Controls","measure_category":"Lighting","measure_subcategory":"Linear","baseline_equipment":"T8 4ft 32W 2-lamp","baseline_wattage":64,"replacement_equipment":"DLC LED 36W","replacement_wattage":36,"incentive_amount":0.60,"incentive_unit":"per_watt_reduced","incentive_formula":"(64-36) x $0.60 = $16.80","max_incentive":null,"location_type":"interior","application_type":"retrofit","dlc_required":true,"dlc_tier":"Standard","energy_star_required":false,"hours_requirement":null,"source_page":null,"needs_pdf_upload":true,"notes":"Base rate"},{"provider_name":"Rocky Mountain Power","program_name":"wattsmart Business Incentives (2025)","measure_code":"HV-001","measure_name":"VFD for HVAC Fan/Pump","measure_category":"HVAC","measure_subcategory":"VFD","baseline_equipment":"Constant speed motor","baseline_wattage":7460,"replacement_equipment":"VFD-controlled motor","replacement_wattage":null,"incentive_amount":200,"incentive_unit":"per_hp","incentive_formula":"$200/HP","max_incentive":5000,"location_type":null,"application_type":"retrofit","dlc_required":false,"dlc_tier":null,"energy_star_required":false,"hours_requirement":null,"source_page":null,"needs_pdf_upload":true,"notes":"HVAC only"}]}
 
-  for (const sl of scoreLevels) {
-    const items = results[sl.key] || [];
-    let filled = 0;
-    let total = 0;
-    for (const item of items) {
-      const rec = item as Record<string, unknown>;
-      for (const f of [...sl.required, ...sl.optional]) {
-        total++;
-        const v = rec[f];
-        if (v !== null && v !== undefined && v !== '') filled++;
-      }
-    }
-    const score = total > 0 ? Math.round((filled / total) * 100) : 0;
-    levelScores[sl.level] = { name: sl.name, score, count: items.length };
-    const w = weights[sl.level] || 10;
-    totalWeighted += w;
-    weightedFilled += (score / 100) * w;
-    if (items.length === 0) {
-      missing_data.push(`Level ${sl.level} (${sl.name}): No data found`);
-    } else if (score < 50) {
-      missing_data.push(`Level ${sl.level} (${sl.name}): Only ${score}% complete`);
-    }
-  }
+RULES:
+1. TWO ARRAYS — "incentives" (rate card summary, one row per measure_category + tier) AND "prescriptive_measures" (specific line items with wattages). Populate BOTH. Use the exact provider_name and program_name you were given on every record.
+2. Lighting: show No Controls, Networked Controls, LLLC tiers where offered. Show Linear, High Bay, Exterior.
+3. HVAC: VFD ($/HP), Heat Pump ($/ton), RTU ($/ton), Chillers. Also Refrigeration, Motors, Building Envelope if offered.
+4. measure_code prefix: LT-, HV-, MT-, RF-, BE-. needs_pdf_upload: always true.
+5. incentive_formula shows the math like "(64W-36W) x $0.60 = $16.80". rate and rate_value must BOTH be populated with the same number.
+6. Every incentive has measure_category, fixture_category ("Other" for non-lighting), calc_method, rate_unit, tier ("Standard" if only one), equipment_requirements, baseline_description, replacement_description.
+7. Every prescriptive measure has baseline_wattage (estimate from equipment if exact unknown), replacement_wattage, dlc_required (true for lighting, false otherwise), location_type (interior/exterior/null for non-lighting), incentive_formula, measure_subcategory.
+8. Aim for 4-8 incentives and 10-16 prescriptive measures. Prefer accuracy over volume; do not invent measures the program does not offer.
+9. For unknown fields, set null. Never omit fields.
 
-  const completeness_score = totalWeighted > 0 ? Math.round((weightedFilled / totalWeighted) * 100) : 0;
-  return { completeness_score, level_scores: levelScores, missing_data };
-}
+Return ONLY valid JSON, no other text.`;
 
 // ── PDF Discovery (lightweight — actual processing deferred to UI) ────────────
 
-async function discoverPdfUrls(
-  results: Record<string, unknown[]>,
-  timeLimit: number
-) {
-  const programs = (results.programs || []) as Record<string, unknown>[];
+async function discoverPdfUrls(programs: Row[], timeLimit: number) {
   const programsWithUrls = programs
     .filter(p => p.program_url && String(p.program_url).startsWith('http'))
     .slice(0, 5);
@@ -222,120 +229,104 @@ async function discoverPdfUrls(
   return discoveredPdfs;
 }
 
+// ── Phases ───────────────────────────────────────────────────────────────────
+
+async function discoverPhase(state: string, req: Request, companyId: number | null) {
+  const started = Date.now();
+  console.log(`[discover] ${state}`);
+  const text = await callClaude(DISCOVER_SYSTEM,
+    `Research the electric utility providers in ${state} that offer commercial energy efficiency rebate programs.
+
+For each provider find:
+- Provider details — name, service territory, rebate program URL, contact phone. SEARCH for each provider's website and contact page.
+- Every incentive/rebate program with year, URL and qualification details (pre_approval_required, stacking_allowed, annual_cap_dollars, eligible_sectors, required_documents, funding_status, processing_time_days, rebate_payment_method, program_notes_ai).
+- The published commercial rate schedules (small commercial, medium/demand, large/TOU, agricultural/irrigation, lighting, industrial) with demand_charge, customer_charge, source_url, description, customer_category, rate_type.
+- Application forms with provider_name, program_name, form_url, version_year, is_required.
+
+Do not list incentive rates or prescriptive measures — those are researched per program in a later step.
+
+Return the structured JSON.`,
+    { webSearch: 6, maxTokens: 16000, req, companyId }
+  );
+  const results = normalize(extractJson(text));
+  console.log(`[discover] ${state}: ${results.providers.length} providers, ${results.programs.length} programs, ${results.rate_schedules.length} schedules, ${results.forms.length} forms in ${Date.now() - started}ms`);
+  if (results.providers.length === 0) {
+    return { success: false, error: 'Failed to parse results', raw: text.substring(0, 2000) };
+  }
+  return { success: true, phase: 'discover', results, timing: { total_ms: Date.now() - started } };
+}
+
+async function measuresPhase(state: string, program: Row, req: Request, companyId: number | null) {
+  const started = Date.now();
+  const providerName = String(program.provider_name || '');
+  const programName = String(program.program_name || '');
+  console.log(`[measures] ${providerName} / ${programName}`);
+  const text = await callClaude(MEASURES_SYSTEM,
+    `State: ${state}
+Utility (provider_name): ${providerName}
+Program (program_name): ${programName}
+Program URL: ${program.program_url || 'unknown — search for it'}
+Program type: ${program.program_type || 'unknown'}
+
+Research this program's incentive rate card and prescriptive measure line items. Use provider_name "${providerName}" and program_name "${programName}" on every record.
+
+Return the structured JSON.`,
+    { webSearch: 4, maxTokens: 12000, req, companyId }
+  );
+  const results = normalize(extractJson(text));
+  // Stamp the names we were given, so the import links rows to the right program
+  for (const r of [...results.incentives, ...results.prescriptive_measures]) {
+    r.provider_name = providerName;
+    r.program_name = programName;
+  }
+  console.log(`[measures] ${programName}: ${results.incentives.length} incentives, ${results.prescriptive_measures.length} measures in ${Date.now() - started}ms`);
+  return {
+    success: true,
+    phase: 'measures',
+    results: { incentives: results.incentives, prescriptive_measures: results.prescriptive_measures },
+    timing: { total_ms: Date.now() - started },
+  };
+}
+
 // ── Main Handler ─────────────────────────────────────────────────────────────
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  try {
-    const { state, fetch_pdfs } = await req.json();
+  let body: Record<string, unknown>;
+  try { body = await req.json(); } catch { return json({ success: false, error: 'Invalid JSON body' }, 400); }
 
-    if (!state) {
-      return new Response(JSON.stringify({ success: false, error: 'State is required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+  const caller = await resolveCaller(req, Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+  if (!caller) return json({ success: false, error: 'Sign in to run research' }, 401);
+  if (caller.level < DEVELOPER_LEVEL) return json({ success: false, error: 'Utility research is a platform developer tool' }, 403);
+
+  const phase = String(body.phase || 'discover');
+  const state = typeof body.state === 'string' ? body.state.trim() : '';
+  const programs = Array.isArray(body.programs) ? (body.programs as Row[]) : [];
+
+  if (phase === 'discover') {
+    if (!state) return json({ success: false, error: 'State is required' }, 400);
+    return streamedJson(corsHeaders, () => discoverPhase(state, req, caller.companyId));
+  }
+  if (phase === 'measures') {
+    if (!state) return json({ success: false, error: 'State is required' }, 400);
+    if (programs.length !== 1 || !programs[0]?.program_name) {
+      return json({ success: false, error: 'measures phase takes exactly one program' }, 400);
     }
-
-    const startTime = Date.now();
-    const elapsed = () => Date.now() - startTime;
-
-    // ─── Single-pass research with web search ───────────────────────────
-    console.log(`[Research] Starting for ${state} with web search...`);
-
-    const text = await callClaude(SYSTEM_PROMPT,
-      `Research ALL electric utility providers in ${state} with commercial energy efficiency rebate programs.
-
-For each provider, find:
-- Level 1: Provider details — name, territory, URL, phone. SEARCH for each provider's website and contact page.
-- Level 2: All incentive/rebate programs with year and URLs
-- Level 3: Program qualification details — pre_approval_required (bool), stacking_allowed (bool), annual_cap_dollars, eligible_sectors, required_documents, funding_status, processing_time_days, rebate_payment_method, program_notes_ai
-- Level 4: Incentive rate card — one row per measure_category + tier combo. EVERY incentive MUST have: measure_category, fixture_category (use "Other" for HVAC/motors), calc_method, rate_unit, tier (use "Standard" if only one tier), equipment_requirements, baseline_description, replacement_description.
-- Level 5: 15-25 prescriptive_measures with ALL fields filled. Every measure MUST have: baseline_wattage (estimate from equipment if exact unknown), replacement_wattage (estimate if needed), dlc_required (true for lighting, false otherwise), location_type (interior/exterior/null for non-lighting), incentive_formula with actual math, measure_subcategory.
-- Level 6: ALL published rate schedules for each major utility — not just 3. Include small commercial, medium/demand, large/TOU, agricultural/irrigation, lighting, industrial. Search "[utility] tariff rate book" for the full list. Each must have demand_charge, customer_charge, source_url, description, customer_category, rate_type.
-- Level 7: Forms — include provider_name, form_url, version_year, is_required for each.
-
-Search for actual utility program pages. Prioritize field completeness — every field in the schema should be populated (use null only when truly unknown). Maximize completeness at every level.
-
-Return the structured JSON.`,
-      { webSearch: 4, maxTokens: 32000, req }
-    );
-
-    console.log(`[Research] API call done in ${elapsed()}ms`);
-
-    const results = extractJson(text) as Record<string, unknown[]> | null;
-
-    if (!results?.providers) {
-      return new Response(JSON.stringify({ success: false, error: 'Failed to parse results', raw: text.substring(0, 2000) }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    // ─── Normalize ──────────────────────────────────────────────────────
-    // Backward compat: "rates" → "incentives"
-    if ((results as Record<string, unknown>).rates && !results.incentives) {
-      results.incentives = (results as Record<string, unknown>).rates as unknown[];
-      delete (results as Record<string, unknown>).rates;
-    }
-
-    // Ensure all arrays exist
-    if (!results.incentives) results.incentives = [];
-    if (!results.programs) results.programs = [];
-    if (!results.rate_schedules) results.rate_schedules = [];
-    if (!results.prescriptive_measures) results.prescriptive_measures = [];
-    if (!results.forms) results.forms = [];
-
-    // Normalize rate/rate_value
-    for (const inc of results.incentives as Record<string, unknown>[]) {
-      if (inc.rate_value == null && inc.rate != null) inc.rate_value = inc.rate;
-      if (inc.rate == null && inc.rate_value != null) inc.rate = inc.rate_value;
-    }
-
-    // Flag AI-only measures
-    for (const pm of results.prescriptive_measures as Record<string, unknown>[]) {
-      if (pm.needs_pdf_upload === undefined || pm.needs_pdf_upload === null) {
-        pm.needs_pdf_upload = true;
-      }
-    }
-
-    console.log(`[Normalize] providers: ${results.providers.length}, programs: ${results.programs.length}, incentives: ${results.incentives.length}, measures: ${results.prescriptive_measures.length}, schedules: ${results.rate_schedules.length}, forms: ${results.forms.length}`);
-
-    // ─── Optional: PDF discovery (lightweight — no processing) ─────────
-    let discovered_pdfs: { url: string; program_name: string; provider_name: string; type: string }[] = [];
-    if (fetch_pdfs) {
-      const pdfTimeLimit = Math.min(30000, Math.max(10000, 120000 - elapsed()));
-      console.log(`[PDF] Discovery with ${pdfTimeLimit}ms budget...`);
-      discovered_pdfs = await discoverPdfUrls(results, pdfTimeLimit);
-      console.log(`[PDF] Found ${discovered_pdfs.length} PDFs in ${elapsed()}ms`);
-    }
-
-    // ─── Score and return ───────────────────────────────────────────────
-    const { completeness_score, level_scores, missing_data } = calculateCompleteness(results);
-
-    console.log(`[Done] Score: ${completeness_score}/100 in ${elapsed()}ms`);
-
-    return new Response(JSON.stringify({
-      success: true,
-      results,
-      discovered_pdfs,
-      completeness_score,
-      level_scores,
-      missing_data,
-      timing: { total_ms: elapsed() }
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-
-  } catch (error) {
-    return new Response(JSON.stringify({
-      success: false,
-      error: (error as Error).message,
-      ai_unavailable: (error as { ai_unavailable?: boolean })?.ai_unavailable === true,
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    return streamedJson(corsHeaders, () => measuresPhase(state, programs[0], req, caller.companyId));
+  }
+  if (phase === 'pdfs') {
+    if (programs.length === 0) return json({ success: true, phase: 'pdfs', discovered_pdfs: [] });
+    return streamedJson(corsHeaders, async () => {
+      const started = Date.now();
+      const discovered_pdfs = await discoverPdfUrls(programs, 30000);
+      return { success: true, phase: 'pdfs', discovered_pdfs, timing: { total_ms: Date.now() - started } };
     });
   }
+  return json({ success: false, error: `Unknown phase "${phase}"` }, 400);
 });

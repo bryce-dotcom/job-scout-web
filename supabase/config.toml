@@ -424,6 +424,15 @@ verify_jwt = true
 [functions.read-sui-notice]
 verify_jwt = true
 
+# Data Console utility research + PDF extraction. Called with the signed-in
+# user's session JWT (research resolves the caller from it and requires a
+# platform developer). Both stream a heartbeat body — see _shared/streamedJson.ts.
+[functions.ai-utility-research]
+verify_jwt = true
+
+[functions.parse-utility-pdf]
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
