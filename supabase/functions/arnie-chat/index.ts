@@ -502,18 +502,18 @@ const PROPOSE_CREATE_TOOL = {
 const PROPOSE_BULK_TOOL = {
   name: 'propose_bulk_change',
   description:
-    'Draft the SAME change to one field across many products at once, for an admin to approve. Targets: ' +
+    'Draft the SAME change to one field across many rows at once, for an admin to approve. Targets: ' +
     bulkTargetsSentence() +
-    '. Use this for catalogue clean-up — normalising a manufacturer spelt two ways, retyping a category, or deactivating a batch. You give a filter (filter_field + filter_value, matched EXACTLY, including whitespace) and the new value; the server finds the rows. Run query_products with group_by=manufacturer FIRST so you are filtering on a value that really exists. Refuses above ' +
+    '. Two jobs: catalogue clean-up (a manufacturer spelt two ways, retyping a category, deactivating a batch) and RE-FILING THE BOOKS — "every Chevron charge is Fuel", "the Home Depot ones are Materials", "everything filed Other is really Meals". You give a filter (filter_field + filter_value) and the new value; the server finds the rows and lists every one of them on the card. For products the filter matches the WHOLE value exactly, whitespace included — run query_products with group_by=manufacturer first so you are filtering on a value that really exists. For expense_category use filter_field="text" and one distinctive word: it looks in the vendor, the merchant AND the description at once, which is what "the Chevron ones" means (one row says vendor Chevron, the next only "FUEL - CHEVRON #2214"). vendor / merchant / description narrow it to that one column; category and business_unit match the whole value. Refuses above ' +
     BULK_MAX +
-    ' rows. Nothing is written until the admin approves, and every affected product is listed on the card. Deactivating is how you "remove" a product — never claim you deleted one.',
+    ' rows. Nothing is written until the admin approves, and every affected row is listed on the card. Deactivating is how you "remove" a product — never claim you deleted one.',
   input_schema: {
     type: 'object',
     properties: {
-      target: { type: 'string', description: 'product_manufacturer, product_category or product_active' },
-      filter_field: { type: 'string', description: 'Column to match on: manufacturer, product_category, type or name' },
-      filter_value: { type: 'string', description: 'Exact value to match, whitespace included. Pass "" to match rows where it is empty.' },
-      value: { type: 'string', description: 'The new value. For product_active use true or false.' },
+      target: { type: 'string', description: 'product_manufacturer, product_category, product_active or expense_category' },
+      filter_field: { type: 'string', description: 'What to match on. Products: manufacturer, product_category, type, name. Expenses: "text" (a word anywhere in the vendor, merchant or description — use this one for a shop or a supplier), or vendor / merchant / description to narrow to one column, or category / business_unit to match the whole value.' },
+      filter_value: { type: 'string', description: 'What to match. Exact and whitespace-sensitive, except on expense_category text/vendor/merchant/description, where it is a word to find — keep it to the distinctive word ("chevron", not "Chevron gas station"). Pass "" to match rows where it is empty.' },
+      value: { type: 'string', description: 'The new value. For product_active use true or false. For expense_category it must be one of the Expenses page categories: Cost of Sale, Materials, Labor, Equipment Rental, Permits, Travel, Fuel, Meals, Subcontractor, Office Supplies, Marketing, Insurance, Utilities, Other.' },
     },
     required: ['target', 'filter_field', 'filter_value', 'value'],
   },

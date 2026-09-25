@@ -28,10 +28,42 @@ export const BULK_MAX = 200
 
 export interface BulkTarget {
   label: string           // "manufacturer" — used in copy
+  /** What one row IS, for copy: "product", "expense". */
+  noun: string
+  /** Where these rows live, for the refusal a non-admin sees: "the catalogue". */
+  scope: string
   table: string
   field: string
   /** Columns a filter may match on. Deliberately short. */
   filterable: string[]
+  /**
+   * Columns where the filter matches a WORD inside the value instead of the
+   * whole of it. Exact match is the default and stays the default: it is what
+   * makes "twenty-two say Maverick Lighting" safe to fix.
+   *
+   * Expenses needed the exception. A book of them does not carry a tidy
+   * vendor column — on the tenant that asked for this, 47 of 60 rows have
+   * vendor null and the merchant's name lives in free text ("FUEL - CHEVRON
+   * #2214"). Exact match cannot express "the Chevron ones" there, and a
+   * capability nobody can use is the thing that leaves every expense filed
+   * under Materials, which is exactly what we found.
+   *
+   * The control is not the operator, it is the card: every affected row is
+   * listed with its date and amount, the ceiling still applies, and apply
+   * still refuses if any one of them moved.
+   */
+  containsFilters?: string[]
+  /**
+   * The columns behind the pseudo-field "text": one word, matched across all
+   * of them at once.
+   *
+   * "The Chevron ones" is not a column. On the book that asked for this, one
+   * Chevron charge carries vendor 'Chevron' and description 'gas', another
+   * carries description 'FUEL - CHEVRON #2214' and no vendor at all. Filtering
+   * a single column finds one of the three and quietly leaves the rest —
+   * which reads as success and is worse than a refusal.
+   */
+  textFilters?: string[]
   minLevel: number
   selectCols: string
   labelOf: (row: Record<string, any>) => string
@@ -51,13 +83,28 @@ const bool = (v: string) => {
   return null
 }
 
+const money = (n: unknown) => '$' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const day = (v: unknown) => String(v ?? '').slice(0, 10)
+/** Everything a person needs to judge one line: when, who, how much, what it says. */
+const expenseLabel = (r: Record<string, any>) =>
+  [day(r.date), r.vendor || r.merchant || null, money(r.amount), r.description || null]
+    .filter(Boolean).join(' · ')
+
+/** The Expenses page's list, exactly (src/lib/schema.js EXPENSE_CATEGORIES). */
+const EXPENSE_CATEGORIES = [
+  'Cost of Sale', 'Materials', 'Labor', 'Equipment Rental', 'Permits', 'Travel', 'Fuel',
+  'Meals', 'Subcontractor', 'Office Supplies', 'Marketing', 'Insurance', 'Utilities', 'Other',
+]
+/** Only a category the page offers. A typo must not invent a fifteenth category nobody can filter by. */
+const expenseCategory = (v: string) => EXPENSE_CATEGORIES.find((c) => c.toLowerCase() === String(v).trim().toLowerCase()) ?? null
+
 export const BULK_TARGETS: Record<string, BulkTarget> = {
   product_manufacturer: {
-    label: 'manufacturer', table: 'products_services', field: 'manufacturer',
+    label: 'manufacturer', noun: 'product', scope: 'the catalogue', table: 'products_services', field: 'manufacturer',
     filterable: PRODUCT_FILTERS, minLevel: 3, selectCols: PRODUCT_SELECT, labelOf: productLabel,
   },
   product_category: {
-    label: 'category', table: 'products_services', field: 'product_category',
+    label: 'category', noun: 'product', scope: 'the catalogue', table: 'products_services', field: 'product_category',
     filterable: PRODUCT_FILTERS, minLevel: 3, selectCols: PRODUCT_SELECT, labelOf: productLabel,
   },
   product_active: {
@@ -66,9 +113,23 @@ export const BULK_TARGETS: Record<string, BulkTarget> = {
     // historical documents. Deactivating removes it from every picker, keeps
     // the history intact, and is reversible by the same rollback everything
     // else uses.
-    label: 'active flag', table: 'products_services', field: 'active',
+    label: 'active flag', noun: 'product', scope: 'the catalogue', table: 'products_services', field: 'active',
     filterable: PRODUCT_FILTERS, minLevel: 3, selectCols: PRODUCT_SELECT, labelOf: productLabel,
     coerce: bool,
+  },
+
+  // Re-filing the books. Every one of the first tenant's expenses was filed
+  // "Materials" — McDonald's and Domino's included — because fixing them one
+  // at a time is work nobody does.
+  expense_category: {
+    label: 'expense category', noun: 'expense', scope: 'the books',
+    table: 'expenses', field: 'category', minLevel: 3,
+    filterable: ['text', 'vendor', 'merchant', 'description', 'category', 'business_unit'],
+    containsFilters: ['vendor', 'merchant', 'description'],
+    textFilters: ['vendor', 'merchant', 'description'],
+    selectCols: 'id,expense_id,date,amount,vendor,merchant,description,category,job_id,status',
+    labelOf: expenseLabel,
+    coerce: expenseCategory,
   },
 }
 
@@ -99,7 +160,7 @@ export async function proposeBulkChange(
   const target = BULK_TARGETS[input.target]
   if (!target) return { error: `"${input.target}" isn't something Arnie can change in bulk.` }
   if (caller.level < target.minLevel) {
-    return { error: `Changing ${target.label} across the catalogue needs admin access.` }
+    return { error: `Changing ${target.label} across ${target.scope} needs admin access.` }
   }
 
   const field = String(input.filter_field || '').trim()
@@ -119,11 +180,22 @@ export async function proposeBulkChange(
     company_id: `eq.${companyId}`,
     order: 'id',
   })
-  params.append(field, filterValue === '' ? 'is.null' : `eq.${filterValue}`)
+  // "text" = the word anywhere in the columns the target nominates; a named
+  // column = a word inside that one where the target allows it; everything
+  // else = the whole value, whitespace and all.
+  const word = filterValue.replace(/[*,()]/g, ' ').trim()
+  const acrossText = field === 'text' && !!(target.textFilters || []).length
+  const byWord = acrossText || ((target.containsFilters || []).includes(field) && filterValue !== '')
+  if (acrossText) {
+    if (!word) return { error: `Tell me the word to look for — "the Chevron ones" means chevron.` }
+    params.append('or', `(${target.textFilters!.map((c) => `${c}.ilike.*${word}*`).join(',')})`)
+  } else if (byWord) params.append(field, `ilike.*${word}*`)
+  else params.append(field, filterValue === '' ? 'is.null' : `eq.${filterValue}`)
   const rows = await readRecordList(r, `${target.table}?${params}&limit=${BULK_MAX + 1}`)
 
   if (!rows.length) {
-    return { error: `Nothing has ${field} exactly ${JSON.stringify(filterValue)}. Run a grouped query first to see the real values.` }
+    if (acrossText) return { error: `No ${target.noun} mentions ${JSON.stringify(word)} — not in the ${target.textFilters!.join(', ')}.` }
+    return { error: byWord ? `No ${target.noun} has ${JSON.stringify(filterValue)} anywhere in its ${field}.` : `Nothing has ${field} exactly ${JSON.stringify(filterValue)}. Run a grouped query first to see the real values.` }
   }
   if (rows.length > BULK_MAX) {
     return { error: `That matches more than ${BULK_MAX} rows. Narrow it down — I won't put a change that big behind one button.` }
@@ -140,7 +212,8 @@ export async function proposeBulkChange(
     label: target.labelOf(x),
     before: x[target.field] == null || x[target.field] === '' ? '(empty)' : String(x[target.field]),
   }))
-  const summary = `Set ${target.label} to "${after}" on ${changing.length} ${changing.length === 1 ? 'product' : 'products'} where ${field} is ${JSON.stringify(filterValue)}.`
+  const where = acrossText ? `anything says ${JSON.stringify(word)}` : `${field} ${byWord ? 'contains' : 'is'} ${JSON.stringify(filterValue)}`
+  const summary = `Set ${target.label} to "${after}" on ${changing.length} ${changing.length === 1 ? target.noun : target.noun + 's'} where ${where}.`
 
   const insert = await fetch(`${r.url}/rest/v1/arnie_proposals`, {
     method: 'POST',
@@ -176,7 +249,7 @@ export async function proposeBulkChange(
       kind: 'bulk',
       label: target.label,
       field: target.field,
-      filter: `${field} = ${JSON.stringify(filterValue)}`,
+      filter: acrossText ? `mentions ${JSON.stringify(word)}` : `${field} ${byWord ? 'contains' : '='} ${JSON.stringify(filterValue)}`,
       after,
       rows: previewRows,
     },
@@ -206,7 +279,7 @@ export async function applyBulkProposal(
   }
   for (const row of rows) {
     if (String(row[field] ?? '') !== String(before[String(row.id)] ?? '')) {
-      return { ok: false, stale: true, error: `Product #${row.id} changed since I drafted this, so I stopped. Nothing was written — ask me again and I'll redraft it.` }
+      return { ok: false, stale: true, error: `One ${target.noun} (#${row.id}) changed since I drafted this, so I stopped. Nothing was written — ask me again and I'll redraft it.` }
     }
   }
 
