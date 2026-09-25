@@ -123,7 +123,7 @@ function load() {
 const asArray = (v) => (Array.isArray(v) ? v : v ? [v] : null)
 const int = (v) => (v == null || v === '' ? null : parseInt(v) || null)
 const num = (v) => (v == null || v === '' ? null : parseFloat(v) || null)
-const counts = { providers: 0, programs: 0, incentives: 0, measures: 0, schedules: 0, forms: 0, reused: 0 }
+const counts = { providers: 0, programs: 0, incentives: 0, measures: 0, schedules: 0, forms: 0, reused: 0, skippedNoAmount: 0 }
 
 async function one(query, label) {
   const { data, error } = await query
@@ -155,10 +155,14 @@ async function upsertProvider(p) {
 }
 
 async function upsertProgram(pr, utilityName) {
-  const existing = await one(sb.from('utility_programs').select('id').is('company_id', null).eq('utility_name', utilityName).ilike('program_name', pr.program_name).limit(1), 'find program')
-  if (existing?.[0]) { counts.reused++; return existing[0] }
+  const existing = await one(sb.from('utility_programs').select('id, state').is('company_id', null).eq('utility_name', utilityName).ilike('program_name', pr.program_name).limit(1), 'find program')
+  if (existing?.[0]) {
+    counts.reused++
+    if (APPLY && existing[0].state == null) await one(sb.from('utility_programs').update({ state: STATE }).eq('id', existing[0].id).select('id'), 'stamp program state')
+    return existing[0]
+  }
   const row = {
-    utility_name: utilityName, program_name: pr.program_name,
+    utility_name: utilityName, state: STATE, program_name: pr.program_name,
     program_type: pr.program_type || 'Prescriptive', program_category: pr.program_category || 'Lighting',
     delivery_mechanism: pr.delivery_mechanism || null, business_size: pr.business_size || 'All',
     dlc_required: pr.dlc_required ?? false, pre_approval_required: pr.pre_approval_required ?? false,
@@ -211,6 +215,7 @@ async function seed(res) {
   }
   for (const pm of res.prescriptive_measures) {
     const program_id = pid(pm); if (!program_id || !pm.measure_name) continue
+    if (num(pm.incentive_amount) == null) { counts.skippedNoAmount++; continue }
     if (!APPLY && String(program_id).startsWith('new:')) { counts.measures++; continue }
     await insertIfMissing('prescriptive_measures',
       sb.from('prescriptive_measures').select('id').eq('program_id', program_id).is('company_id', null).ilike('measure_name', pm.measure_name),
