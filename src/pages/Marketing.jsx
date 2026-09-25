@@ -7,8 +7,9 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { toast } from '../lib/toast'
 import { getAccessLevel, ACCESS_LEVELS } from '../lib/accessControl'
 import {
-  BRAND_KIT_KEY, PUBLISHER_KEY, MEDIA_BUCKET, PLATFORMS, PLATFORM_BY_ID,
+  BRAND_KIT_KEY, PUBLISHER_KEY, BRANDS_KEY, MEDIA_BUCKET, PLATFORMS, PLATFORM_BY_ID,
   emptyBrandKit, deriveBrandKitFromEos, setupProgress, platformProblems, capturePath, composeCaption,
+  brandsFrom, brandKey, brandForUnit, slugify,
 } from '../lib/marketing'
 import {
   Megaphone, Inbox, ListChecks, Palette, Link2, Mail, Sparkles, Upload, Camera, Check, X,
@@ -73,6 +74,7 @@ export default function Marketing() {
   const companyId = useStore((s) => s.companyId)
   const user = useStore((s) => s.user)
   const employees = useStore((s) => s.employees)
+  const businessUnits = useStore((s) => s.businessUnits)
   const currentEmployee = useMemo(() => (employees || []).find((e) => e.email === user?.email) || null, [employees, user])
   const isManager = getAccessLevel(currentEmployee) >= ACCESS_LEVELS.MANAGER
 
@@ -80,8 +82,17 @@ export default function Marketing() {
   const [tab, setTab] = useState('queue')
   const [company, setCompany] = useState(null)
   const [eos, setEos] = useState({})
-  const [brandKit, setBrandKit] = useState(null)      // null = never saved
-  const [publisher, setPublisher] = useState(null)
+  // One company, possibly several brands (HHH: cleaning, lighting, JobScout).
+  // Every brand's kit and publisher load at once so switching is instant;
+  // the current brand id is remembered per viewer.
+  const [brands, setBrands] = useState([])
+  const [brandId, setBrandId] = useState(() => { try { return localStorage.getItem('mkt_brand') || '' } catch { return '' } })
+  const [kitsByBrand, setKitsByBrand] = useState({})     // brand id → kit (null = never saved)
+  const [pubsByBrand, setPubsByBrand] = useState({})     // brand id → publisher blob
+  const brandKit = kitsByBrand[brandId] ?? null
+  const publisher = pubsByBrand[brandId] ?? null
+  const currentBrand = brands.find((b) => b.id === brandId) || brands[0] || null
+  const pickBrand = (id) => { setBrandId(id); try { localStorage.setItem('mkt_brand', id) } catch { /* private mode */ } }
   const [posts, setPosts] = useState([])
   const [captures, setCaptures] = useState([])
   const [captureMap, setCaptureMap] = useState({})    // every capture a post or the inbox refers to, private urls signed
@@ -95,14 +106,22 @@ export default function Marketing() {
     if (!companyId) return
     const [{ data: settings }, { data: co }, { data: p }, { data: c }] = await Promise.all([
       supabase.from('settings').select('key, value').eq('company_id', companyId)
-        .in('key', [BRAND_KIT_KEY, PUBLISHER_KEY, 'eos_core_values', 'eos_core_focus', 'eos_marketing_strategy']),
+        .or('key.like.marketing_%,key.in.(eos_core_values,eos_core_focus,eos_marketing_strategy)'),
       supabase.from('companies').select('id, company_name, logo_url, website, phone, city, state, primary_color').eq('id', companyId).maybeSingle(),
       supabase.from('marketing_posts').select('*').eq('company_id', companyId).neq('status', 'archived').order('created_at', { ascending: false }).limit(200),
       supabase.from('marketing_captures').select('*').eq('company_id', companyId).eq('status', 'new').order('created_at', { ascending: false }).limit(200),
     ])
     const get = (k) => (settings || []).find((r) => r.key === k)?.value
-    setBrandKit(get(BRAND_KIT_KEY) ? parseJson(get(BRAND_KIT_KEY), null) : null)
-    setPublisher(parseJson(get(PUBLISHER_KEY), null))
+    const brandList = brandsFrom(parseJson(get(BRANDS_KEY), []), co || {})
+    setBrands(brandList)
+    const kits = {}, pubs = {}
+    for (const b of brandList) {
+      kits[b.id] = get(brandKey(BRAND_KIT_KEY, b.id)) ? parseJson(get(brandKey(BRAND_KIT_KEY, b.id)), null) : null
+      pubs[b.id] = parseJson(get(brandKey(PUBLISHER_KEY, b.id)), null)
+    }
+    setKitsByBrand(kits)
+    setPubsByBrand(pubs)
+    setBrandId((cur) => (brandList.some((b) => b.id === cur) ? cur : brandList[0]?.id || ''))
     setEos({
       core_values: parseJson(get('eos_core_values'), []),
       core_focus: parseJson(get('eos_core_focus'), {}),
@@ -148,13 +167,40 @@ export default function Marketing() {
   // ── Brand kit ──────────────────────────────────────────────────────
   const saveBrandKit = async (next) => {
     const kit = { ...emptyBrandKit(), ...(brandKit || {}), ...next, updated_at: new Date().toISOString() }
-    setBrandKit(kit)
-    await saveSetting(BRAND_KIT_KEY, kit)
+    setKitsByBrand((m) => ({ ...m, [brandId]: kit }))
+    await saveSetting(brandKey(BRAND_KIT_KEY, brandId), kit)
   }
   const fillFromEos = async () => {
-    const kit = deriveBrandKitFromEos({ eos, company, existing: brandKit })
+    // A named brand starts from its own name and logo; EOS still supplies
+    // the values and strategy, which are company-wide.
+    const seed = currentBrand?.id
+      ? { ...company, company_name: currentBrand.name, logo_url: currentBrand.logo_url || company?.logo_url }
+      : company
+    const kit = deriveBrandKitFromEos({ eos, company: seed, existing: brandKit })
     await saveBrandKit(kit)
     toast.success('Brand kit filled from your EOS and company profile. Edit anything.')
+  }
+
+  // The brand list itself. Going from one unnamed default brand to named
+  // brands moves whatever was already set up (kit, connected accounts) onto
+  // the first named brand, so nothing connected is lost or orphaned.
+  const saveBrands = async (list) => {
+    const clean = brandsFrom(list, company || {})
+    const named = clean.filter((b) => b.id)
+    const hadDefaultData = !!(kitsByBrand[''] || pubsByBrand[''])
+    const ops = []
+    if (named.length && hadDefaultData && !brands.some((b) => b.id)) {
+      const first = named[0].id
+      if (kitsByBrand['']) ops.push(saveSetting(brandKey(BRAND_KIT_KEY, first), kitsByBrand['']))
+      if (pubsByBrand['']) ops.push(saveSetting(brandKey(PUBLISHER_KEY, first), pubsByBrand['']))
+      await Promise.all(ops)
+      await supabase.from('settings').delete().eq('company_id', companyId).in('key', [BRAND_KIT_KEY, PUBLISHER_KEY])
+      toast.success(`Your existing setup now belongs to ${named[0].name}.`)
+    }
+    await saveSetting(BRANDS_KEY, named.map(({ id, name, unit, logo_url }) => ({ id, name, unit, logo_url })))
+    if (named.length) pickBrand(named.some((b) => b.id === brandId) ? brandId : named[0].id)
+    else pickBrand('')
+    await load()
   }
 
   // ── Captures (inbox) ───────────────────────────────────────────────
@@ -250,6 +296,25 @@ export default function Marketing() {
         </button>
       </div>
 
+      {/* Brand switcher: only when the company markets more than one thing */}
+      {brands.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+          {brands.map((b) => {
+            const on = b.id === brandId
+            const acc = (pubsByBrand[b.id]?.accounts || []).length
+            return (
+              <button key={b.id} type="button" onClick={() => pickBrand(b.id)} style={{ ...chip(theme, on), padding: '8px 12px 8px 8px', gap: 8 }}>
+                {b.logo_url
+                  ? <img src={b.logo_url} alt="" style={{ width: 22, height: 22, borderRadius: 6, objectFit: 'contain', background: '#2c3530' }} />
+                  : <span style={{ width: 22, height: 22, borderRadius: 6, background: on ? MKT : theme.border, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>{(b.name || '?').slice(0, 1)}</span>}
+                <span>{b.name}</span>
+                <span style={{ fontSize: 10, opacity: 0.7 }}>{acc ? `${acc} linked` : 'not linked'}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {/* Setup walkthrough: on the page, until done */}
       {!loading && !(progress.complete && walkthroughHidden) && (
         <SetupWalkthrough
@@ -281,7 +346,7 @@ export default function Marketing() {
       {loading ? (
         <div style={{ color: theme.textMuted, fontSize: 14, padding: 24 }}>Loading…</div>
       ) : tab === 'queue' ? (
-        <QueueTab theme={theme} isMobile={isMobile} posts={posts} isManager={isManager} captureMap={captureMap}
+        <QueueTab theme={theme} isMobile={isMobile} posts={posts} isManager={isManager} captureMap={captureMap} brands={brands} brand={brandId}
           onEdit={(p) => setComposer({ post: p, captureIds: p.capture_ids || [] })}
           onApprove={(p) => setPostStatus(p, 'approved')} onPublish={publishPost} onUnschedule={unschedulePost}
           onArchive={(p) => setPostStatus(p, 'archived')} onNew={() => setComposer({ captureIds: [] })}
@@ -291,9 +356,9 @@ export default function Marketing() {
           onUploadClick={() => uploadRef.current?.click()} onDismiss={dismissCapture}
           onMakePost={(ids) => setComposer({ captureIds: ids })} />
       ) : tab === 'brand' ? (
-        <BrandTab theme={theme} isMobile={isMobile} kit={brandKit} company={company} eos={eos} onSave={saveBrandKit} onFill={fillFromEos} />
+        <BrandTab theme={theme} isMobile={isMobile} kit={brandKit} company={company} eos={eos} onSave={saveBrandKit} onFill={fillFromEos} brands={brands} brand={currentBrand} businessUnits={businessUnits} isManager={isManager} onSaveBrands={saveBrands} />
       ) : tab === 'channels' ? (
-        <ChannelsTab theme={theme} isMobile={isMobile} publisher={publisher} isManager={isManager} invoke={invoke} onChanged={load} />
+        <ChannelsTab theme={theme} isMobile={isMobile} publisher={publisher} brand={brandId} brandName={currentBrand?.name} isManager={isManager} invoke={invoke} onChanged={load} />
       ) : null}
 
       <input ref={uploadRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} onChange={handleUpload} />
@@ -323,7 +388,7 @@ export default function Marketing() {
         <Composer
           theme={theme} isMobile={isMobile} companyId={companyId} currentEmployee={currentEmployee} isManager={isManager}
           initialPost={composer.post || null} initialCaptureIds={composer.captureIds || []}
-          captures={captures} captureMap={captureMap} linkedPlatforms={linkedPlatforms} invoke={invoke}
+          captures={captures} captureMap={captureMap} linkedPlatforms={linkedPlatforms} invoke={invoke} brands={brands} brand={brandId} pubsByBrand={pubsByBrand}
           onClose={() => setComposer(null)} onSaved={() => { setComposer(null); load() }}
           onPublish={publishPost}
         />
@@ -374,9 +439,13 @@ function SetupWalkthrough({ theme, isMobile, progress, isManager, onBrand, onCha
 }
 
 // ── Queue ────────────────────────────────────────────────────────────
-function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, onEdit, onApprove, onPublish, onUnschedule, onArchive, onNew, onHandPost }) {
+function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands = [], brand = '', onEdit, onApprove, onPublish, onUnschedule, onArchive, onNew, onHandPost }) {
   const [filter, setFilter] = useState('open')
+  const multi = brands.length > 1
+  const brandName = (id) => brands.find((b) => b.id === (id || ''))?.name || ''
   const filtered = posts.filter((p) => {
+    // With several brands the queue shows the selected brand's posts.
+    if (multi && (p.brand || '') !== (brand || '')) return false
     if (filter === 'open') return ['draft', 'approved', 'failed'].includes(p.status)
     if (filter === 'scheduled') return p.status === 'scheduled'
     if (filter === 'posted') return p.status === 'posted'
@@ -411,6 +480,7 @@ function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, onEdit, 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: st.color, background: st.color + '18', borderRadius: 999, padding: '2px 8px' }}>{st.label}</span>
                     {p.suggested_at && p.status === 'draft' && <span title="Drafted overnight from recent work. Nobody has read it yet." style={{ fontSize: 11, fontWeight: 700, color: MKT, background: MKT_BG, borderRadius: 999, padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Sparkles size={11} /> Suggested</span>}
+                    {multi && brandName(p.brand) && <span style={{ fontSize: 11, fontWeight: 600, color: theme.textSecondary, background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 999, padding: '2px 8px' }}>{brandName(p.brand)}</span>}
                     {p.status === 'scheduled' && p.scheduled_for && <span style={{ fontSize: 11, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}><Clock size={12} /> {fmtWhen(p.scheduled_for)}</span>}
                     {p.status === 'posted' && p.posted_at && <span style={{ fontSize: 11, color: theme.textMuted }}>{fmtWhen(p.posted_at)}{!p.ayrshare_id ? ' · by hand' : ''}</span>}
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: theme.textMuted }}>{(p.platforms || []).map((id) => PLATFORM_BY_ID[id]?.label || id).join(' · ')}</span>
@@ -531,16 +601,19 @@ function BrandField({ theme, k, onSave, label, name, multiline, hint, list, plac
   )
 }
 
-function BrandTab({ theme, isMobile, kit, company, eos, onSave, onFill }) {
+function BrandTab({ theme, isMobile, kit, company, eos, onSave, onFill, brands = [], brand = null, businessUnits = [], isManager, onSaveBrands }) {
   const k = { ...emptyBrandKit(), ...(kit || {}) }
+  const shownLogo = k.logo_url || brand?.logo_url || company?.logo_url
+  const shownName = k.company_name || brand?.name || company?.company_name
   const hasEos = (eos?.core_values || []).length > 0 || eos?.core_focus?.purpose || eos?.marketing?.target_market
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <BrandsEditor theme={theme} isMobile={isMobile} brands={brands} company={company} businessUnits={businessUnits} isManager={isManager} onSave={onSaveBrands} />
       <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 14, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        {(k.logo_url || company?.logo_url) && <img src={k.logo_url || company?.logo_url} alt="logo" style={{ height: 44, maxWidth: 140, objectFit: 'contain', background: '#2c3530', borderRadius: 8, padding: 6 }} />}
+        {shownLogo && <img src={shownLogo} alt="logo" style={{ height: 44, maxWidth: 140, objectFit: 'contain', background: '#2c3530', borderRadius: 8, padding: 6 }} />}
         <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>{k.company_name || company?.company_name}</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>{shownName}{brand?.id && brand.name !== company?.company_name ? <span style={{ fontSize: 12, fontWeight: 500, color: theme.textMuted }}> · a brand of {company?.company_name}</span> : null}</div>
           <div style={{ fontSize: 12, color: theme.textMuted }}>
             {kit ? `Last edited ${fmtWhen(k.updated_at) || 'just now'}` : 'Not set up yet.'} {hasEos ? 'Your EOS answers can fill this in.' : 'Fill out EOS under Admin and this can start from there.'}
           </div>
@@ -579,7 +652,7 @@ function BrandTab({ theme, isMobile, kit, company, eos, onSave, onFill }) {
 }
 
 // ── Channels ─────────────────────────────────────────────────────────
-function ChannelsTab({ theme, isMobile, publisher, isManager, invoke, onChanged }) {
+function ChannelsTab({ theme, isMobile, publisher, brand = '', brandName, isManager, invoke, onChanged }) {
   // The user never creates a publisher account. JobScout holds one Upload-Post
   // key; each company gets its own profile made on its first Connect. Tapping
   // Connect opens a popup on the hosted connect page filtered to that one
@@ -593,16 +666,16 @@ function ChannelsTab({ theme, isMobile, publisher, isManager, invoke, onChanged 
 
   useEffect(() => {
     let cancelled = false
-    invoke('marketing-publish', { action: 'status' }).then((r) => { if (!cancelled && r?.ok) setStatus(r) })
+    invoke('marketing-publish', { action: 'status', brand }).then((r) => { if (!cancelled && r?.ok) setStatus(r) })
     return () => { cancelled = true }
-  }, [invoke, publisher])
+  }, [invoke, publisher, brand])
 
   const refresh = useCallback(async (quiet) => {
-    const r = await invoke('marketing-publish', { action: 'accounts' })
+    const r = await invoke('marketing-publish', { action: 'accounts', brand })
     if (!r.ok) { if (!quiet) toast.error(r.error || 'Refresh failed'); return }
     if (!quiet) toast.success(`${r.accounts?.length || 0} connected`)
     onChanged()
-  }, [invoke, onChanged])
+  }, [invoke, onChanged, brand])
 
   // Open the window inside the click, before any await, or the browser blocks
   // it as a popup. We point it at the real URL a moment later, then watch for
@@ -614,7 +687,7 @@ function ChannelsTab({ theme, isMobile, publisher, isManager, invoke, onChanged 
     const popup = window.open('', 'jobscout_connect', `width=${w},height=${h},left=${left},top=${top}`)
     popupRef.current = popup
     setBusy(network || 'all')
-    const r = await invoke('marketing-publish', { action: 'connect', network: network || undefined, origin: window.location.origin })
+    const r = await invoke('marketing-publish', { action: 'connect', network: network || undefined, origin: window.location.origin, brand })
     if (!r.ok) {
       try { popup?.close() } catch { /* ignore */ }
       setBusy(null)
@@ -639,7 +712,7 @@ function ChannelsTab({ theme, isMobile, publisher, isManager, invoke, onChanged 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Card theme={theme} title="Social accounts" right={
+      <Card theme={theme} title={brandName ? `${brandName} · social accounts` : 'Social accounts'} right={
         <div style={{ display: 'flex', gap: 6 }}>
           {accounts.length > 0 && isManager && <button type="button" onClick={() => openConnect(null)} disabled={!!busy} style={ghostBtn(theme)} title="Add, reconnect or remove accounts">Manage</button>}
           {accounts.length > 0 && <button type="button" onClick={() => refresh(false)} disabled={!!busy} style={ghostBtn(theme)}><RefreshCw size={14} /> Refresh</button>}
@@ -695,8 +768,13 @@ function ChannelsTab({ theme, isMobile, publisher, isManager, invoke, onChanged 
 }
 
 // ── Composer ─────────────────────────────────────────────────────────
-function Composer({ theme, isMobile, companyId, currentEmployee, isManager, initialPost, initialCaptureIds, captures, captureMap = {}, linkedPlatforms, invoke, onClose, onSaved, onPublish }) {
+function Composer({ theme, isMobile, companyId, currentEmployee, isManager, initialPost, initialCaptureIds, captures, captureMap = {}, linkedPlatforms: linkedDefault, invoke, brands = [], brand: brandDefault = '', pubsByBrand = {}, onClose, onSaved, onPublish }) {
   const [captureIds, setCaptureIds] = useState(initialCaptureIds)
+  // Which brand this post speaks for. The post's own, else the photo's, else
+  // the brand selected on the page. Accounts follow the brand.
+  const multi = brands.length > 1
+  const [postBrand, setPostBrand] = useState(() => initialPost?.brand ?? (initialCaptureIds.map((id) => captureMap[id]?.brand).find((b) => b != null) ?? brandDefault ?? ''))
+  const linkedPlatforms = useMemo(() => (multi ? new Set((pubsByBrand[postBrand]?.accounts || []).map((a) => a.platform)) : linkedDefault), [multi, pubsByBrand, postBrand, linkedDefault])
   const [note, setNote] = useState('')
   const [platforms, setPlatforms] = useState(initialPost?.platforms?.length ? initialPost.platforms : [...linkedPlatforms].filter((p) => !PLATFORM_BY_ID[p]?.videoOnly))
   const [caption, setCaption] = useState(initialPost?.caption || '')
@@ -725,7 +803,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
   const draft = async () => {
     if (!captureIds.length && !note.trim()) { toast.error('Give the AI something to go on: pick a photo or say what happened.'); return }
     setDrafting(true)
-    const r = await invoke('marketing-draft', { capture_ids: captureIds, note, platforms, job_id: initialPost?.job_id || captureIds.map((id) => captureById[id]?.job_id).find(Boolean) || null })
+    const r = await invoke('marketing-draft', { brand: postBrand || '', capture_ids: captureIds, note, platforms, job_id: initialPost?.job_id || captureIds.map((id) => captureById[id]?.job_id).find(Boolean) || null })
     setDrafting(false)
     if (!r.ok) { toast.error(r.error || 'Could not draft'); return }
     setCaption(r.caption || '')
@@ -741,6 +819,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
       media_urls: mediaUrls, capture_ids: captureIds, source: captureIds.length ? 'photo' : 'manual',
       job_id: initialPost?.job_id || captureIds.map((id) => captureById[id]?.job_id).find(Boolean) || null,
       scheduled_for: when ? new Date(when).toISOString() : null,
+      brand: postBrand || null,
     }
     if (status === 'approved') { row.approved_by = currentEmployee?.id || null; row.approved_at = new Date().toISOString() }
     let saved = null
@@ -776,6 +855,16 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
           <button type="button" onClick={onClose} style={{ ...ghostBtn(theme), padding: 8 }}><X size={18} /></button>
         </div>
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {multi && (
+            <div>
+              <div style={sectionLabel(theme)}>Posting as</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {brands.map((b) => (
+                  <button key={b.id} type="button" onClick={() => setPostBrand(b.id)} style={chip(theme, postBrand === b.id)}>{b.name}</button>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Media */}
           <div>
             <div style={sectionLabel(theme)}>Photos</div>
@@ -868,6 +957,70 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
         </div>
       </div>
     </div>
+  )
+}
+
+// ── Brands editor ────────────────────────────────────────────────────
+// The list of things this company markets. Most companies never open it:
+// one brand, the company. HHH has three. A brand may name the business
+// unit whose finished jobs feed it (so the nightly drafts land in the
+// right voice); a brand with no unit (JobScout) only gets what people
+// share into it by hand.
+function BrandsEditor({ theme, isMobile, brands, company, businessUnits = [], isManager, onSave }) {
+  const named = brands.filter((b) => b.id)
+  const [open, setOpen] = useState(named.length > 0)
+  const [rows, setRows] = useState(() => named.map((b) => ({ ...b })))
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setRows(named.map((b) => ({ ...b }))) }, [brands]) // eslint-disable-line react-hooks/exhaustive-deps
+  const units = (businessUnits || []).map((u) => (typeof u === 'string' ? u : u?.name)).filter(Boolean)
+  const unitLogo = (name) => (businessUnits || []).find((u) => u && typeof u === 'object' && u.name === name)?.logo_url || ''
+  const dirty = JSON.stringify(rows.map((r) => [r.name, r.unit || null, r.logo_url || ''])) !== JSON.stringify(named.map((r) => [r.name, r.unit || null, r.logo_url || '']))
+  const setRow = (i, patch) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  const add = () => setRows((rs) => [...rs, { id: '', name: '', unit: null, logo_url: '' }])
+  const save = async () => {
+    const list = rows.filter((r) => r.name.trim()).map((r) => ({ id: r.id || slugify(r.name), name: r.name.trim(), unit: r.unit || null, logo_url: r.logo_url || '' }))
+    const ids = list.map((r) => r.id)
+    if (new Set(ids).size !== ids.length) { toast.error('Two brands have the same name.'); return }
+    setSaving(true)
+    await onSave(list)
+    setSaving(false)
+  }
+  if (!isManager && !named.length) return null
+  return (
+    <Card theme={theme} title={named.length ? `Brands (${named.length})` : 'One brand'} right={
+      <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...ghostBtn(theme), minHeight: 34, padding: '6px 10px', fontSize: 12 }}>{open ? 'Hide' : named.length ? 'Edit' : 'Market more than one thing?'}</button>
+    }>
+      {!open ? (
+        <div style={{ fontSize: 13, color: theme.textSecondary }}>
+          {named.length ? named.map((b) => b.name).join(' · ') : `Everything posts as ${company?.company_name || 'the company'}. Add brands if you market separate businesses with their own accounts.`}
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.45 }}>
+            Each brand gets its own voice, its own connected accounts and its own queue. Tie a brand to a business unit and finished jobs from that unit are drafted in its voice. A brand with no unit only gets what people share into it.
+          </div>
+          {rows.map((r, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'minmax(0,1.2fr) minmax(0,1fr) minmax(0,1.4fr) auto', gap: 8, alignItems: 'center', padding: 10, borderRadius: 8, background: theme.bg, border: `1px solid ${theme.border}` }}>
+              <input value={r.name} onChange={(e) => setRow(i, { name: e.target.value })} placeholder="Brand name" disabled={!isManager} style={inputStyle(theme)} />
+              <select value={r.unit || ''} onChange={(e) => setRow(i, { unit: e.target.value || null, logo_url: r.logo_url || unitLogo(e.target.value) })} disabled={!isManager} style={inputStyle(theme)}>
+                <option value="">No business unit</option>
+                {units.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+              <input value={r.logo_url || ''} onChange={(e) => setRow(i, { logo_url: e.target.value })} placeholder="Logo URL (optional)" disabled={!isManager} style={inputStyle(theme)} />
+              {isManager && <button type="button" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} title="Remove" style={{ ...ghostBtn(theme), padding: 8, minHeight: 40 }}><X size={14} /></button>}
+            </div>
+          ))}
+          {isManager && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" onClick={add} style={ghostBtn(theme)}>Add a brand</button>
+              <div style={{ flex: 1 }} />
+              <button type="button" onClick={save} disabled={saving || !dirty} style={{ ...primaryBtn(MKT), opacity: dirty ? 1 : 0.5 }}>{saving ? 'Saving…' : 'Save brands'}</button>
+            </div>
+          )}
+          {named.length === 0 && rows.length > 0 && <div style={{ fontSize: 12, color: '#b45309' }}>Saving moves what is already set up (voice, connected accounts) onto the first brand in the list.</div>}
+        </>
+      )}
+    </Card>
   )
 }
 

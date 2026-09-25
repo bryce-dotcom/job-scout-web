@@ -18,6 +18,41 @@ import { callAnthropic } from './anthropic.ts'
 
 export const MEDIA_BUCKET = 'marketing-media'
 
+// ── Brands (mirrors src/lib/marketing.js) ─────────────────────────────
+// A company can market several things with different voices and accounts.
+// Brand-scoped settings are the base key suffixed with the brand id; the
+// default brand ('') keeps the bare key. A brand may name the business unit
+// whose finished jobs feed it.
+export interface Brand { id: string; name: string; unit: string | null; logo_url: string }
+export const brandKey = (base: string, brandId?: string | null) => (brandId ? `${base}:${brandId}` : base)
+export const brandProfileUsername = (companyId: number, brandId?: string | null) => (brandId ? `jobscout-${companyId}-${brandId}` : `jobscout-${companyId}`)
+export const slugify = (name: string) => String(name || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+export function brandsFrom(setting: unknown, company: { company_name?: string; logo_url?: string } = {}): Brand[] {
+  let raw: any[] = []
+  try { raw = Array.isArray(setting) ? setting : JSON.parse(String(setting || '[]')) } catch { raw = [] }
+  const list: Brand[] = (Array.isArray(raw) ? raw : [])
+    .filter((b) => b && (b.name || b.id))
+    .map((b) => ({ id: b.id || slugify(b.name), name: b.name || b.id, unit: b.unit || null, logo_url: b.logo_url || '' }))
+    .filter((b) => b.id)
+  if (list.length) return list
+  return [{ id: '', name: company.company_name || 'Company', unit: null, logo_url: company.logo_url || '' }]
+}
+export function brandForUnit(brands: Brand[], unit: unknown): string | null {
+  if (!brands?.length) return null
+  if (brands.length === 1) return brands[0].id
+  const u = String(unit || '').trim().toLowerCase()
+  if (!u) return null
+  const hit = brands.find((b) => String(b.unit || '').trim().toLowerCase() === u)
+  return hit ? hit.id : null
+}
+export async function loadBrands(sb: any, companyId: number): Promise<Brand[]> {
+  const [{ data: s }, { data: co }] = await Promise.all([
+    sb.from('settings').select('value').eq('company_id', companyId).eq('key', 'marketing_brands').limit(1),
+    sb.from('companies').select('company_name, logo_url').eq('id', companyId).maybeSingle(),
+  ])
+  return brandsFrom(s?.[0]?.value, co || {})
+}
+
 const PLATFORM_HINTS: Record<string, string> = {
   facebook: 'Facebook: conversational, 1-3 short paragraphs, a question or invitation at the end works.',
   instagram: 'Instagram: lead with the visual, short lines, 5-10 hashtags at the end.',
@@ -69,6 +104,7 @@ export interface DraftInput {
   note?: string
   platforms?: string[]
   jobId?: number | null
+  brand?: string | null   // brand id; '' or null = the company default brand
   tone?: string
   feature?: string
   req?: Request
@@ -89,24 +125,32 @@ export async function draftFromCaptures(input: DraftInput): Promise<DraftResult>
   const platforms = (input.platforms || []).map(String)
   const tone = String(input.tone || '').slice(0, 200)
   if (!captureIds.length && !note.trim()) return { ok: false, error: 'Give the AI something to go on: a photo or a note about what happened.' }
+  const brandId = input.brand || ''
+
+  // Style examples are per brand: a cleaning caption is not an example for
+  // the lighting voice.
+  let historyQ = sb.from('marketing_posts').select('caption, ai_draft, status, approved_at, created_at')
+    .eq('company_id', companyId).in('status', ['approved', 'scheduled', 'posted'])
+  historyQ = brandId ? historyQ.eq('brand', brandId) : historyQ.is('brand', null)
 
   const [{ data: settingRows }, { data: company }, { data: captures }, { data: history }, job] = await Promise.all([
     sb.from('settings').select('key, value').eq('company_id', companyId)
-      .in('key', ['marketing_brand_kit', 'eos_core_values', 'eos_core_focus', 'eos_marketing_strategy']),
-    sb.from('companies').select('company_name, city, state, website, phone').eq('id', companyId).maybeSingle(),
+      .in('key', ['marketing_brand_kit', brandKey('marketing_brand_kit', brandId), 'marketing_brands', 'eos_core_values', 'eos_core_focus', 'eos_marketing_strategy']),
+    sb.from('companies').select('company_name, logo_url, city, state, website, phone').eq('id', companyId).maybeSingle(),
     captureIds.length
       ? sb.from('marketing_captures').select('id, url, bucket, path, note, media_type, job_id').eq('company_id', companyId).in('id', captureIds)
       : Promise.resolve({ data: [] as any[] }),
-    sb.from('marketing_posts').select('caption, ai_draft, status, approved_at, created_at')
-      .eq('company_id', companyId).in('status', ['approved', 'scheduled', 'posted'])
-      .order('created_at', { ascending: false }).limit(40),
+    historyQ.order('created_at', { ascending: false }).limit(40),
     input.jobId
       ? sb.from('jobs').select('job_title, service_type, job_address, details, notes').eq('company_id', companyId).eq('id', input.jobId).maybeSingle()
       : Promise.resolve({ data: null as any }),
   ])
 
   const setting = (k: string) => parseJsonSetting((settingRows || []).find((r: any) => r.key === k)?.value)
-  const kit = setting('marketing_brand_kit') || {}
+  // A brand with no kit of its own borrows the company's; EOS stays company-wide.
+  const kit = setting(brandKey('marketing_brand_kit', brandId)) || setting('marketing_brand_kit') || {}
+  const brands = brandsFrom(setting('marketing_brands'), company || {})
+  const brand = brands.find((b) => b.id === brandId) || brands[0]
   const values = (setting('eos_core_values') || []).map((v: any) => (typeof v === 'string' ? v : v?.value)).filter(Boolean)
   const focus = setting('eos_core_focus') || {}
   const mk = setting('eos_marketing_strategy') || {}
@@ -117,7 +161,8 @@ export async function draftFromCaptures(input: DraftInput): Promise<DraftResult>
     .slice(0, 10).map((p: any) => ({ before: p.ai_draft.trim(), after: p.caption.trim() }))
 
   const brandLines = [
-    `Company: ${kit.company_name || company?.company_name || 'our company'}`,
+    `Company: ${kit.company_name || brand?.name || company?.company_name || 'our company'}`,
+    brand?.id && brand.name !== company?.company_name ? `This brand is "${brand.name}", run by ${company?.company_name}. Post as ${brand.name}; only mention ${company?.company_name} if the brand kit says to.` : '',
     kit.tagline ? `Tagline / what we do: ${kit.tagline}` : (focus.niche ? `What we do: ${focus.niche}` : ''),
     kit.service_area || company?.city ? `Service area: ${kit.service_area || [company?.city, company?.state].filter(Boolean).join(', ')}` : '',
     kit.audience || mk.target_market ? `Audience: ${kit.audience || mk.target_market}` : '',

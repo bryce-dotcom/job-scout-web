@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   deriveBrandKitFromEos, setupProgress, styleExamples, platformProblems,
-  composeCaption, buildPublishPayload, capturePath,
+  composeCaption, buildPublishPayload, capturePath, brandsFrom, brandKey, brandProfileUsername, brandForUnit,
 } from './marketing'
 
 const eos = {
@@ -121,5 +121,30 @@ describe('capturePath', () => {
     const p = capturePath(3, 'my photo (1).JPG', new Date('2026-09-24T10:00:00Z'))
     expect(p.startsWith('3/2026-09/')).toBe(true)
     expect(p.endsWith('_my_photo__1_.JPG')).toBe(true)
+  })
+})
+
+describe('brands', () => {
+  const co = { company_name: 'HHH', logo_url: 'l' }
+  it('no setting = one default brand named after the company', () => {
+    const b = brandsFrom(null, co)
+    expect(b).toEqual([{ id: '', name: 'HHH', unit: null, logo_url: 'l' }])
+    expect(brandKey('marketing_brand_kit', b[0].id)).toBe('marketing_brand_kit')
+    expect(brandProfileUsername(3, b[0].id)).toBe('jobscout-3')
+  })
+  it('derives ids, keys and profile names from brand names', () => {
+    const b = brandsFrom([{ name: 'Energy Scout', unit: 'Energy Scout' }, { name: 'JobScout' }], co)
+    expect(b.map((x) => x.id)).toEqual(['energy-scout', 'jobscout'])
+    expect(brandKey('marketing_publisher', 'energy-scout')).toBe('marketing_publisher:energy-scout')
+    expect(brandProfileUsername(3, 'jobscout')).toBe('jobscout-3-jobscout')
+  })
+  it('a job feeds the brand that names its unit; unmatched waits for a human', () => {
+    const b = brandsFrom([{ name: 'HHH Building Services', unit: 'HHH Building Services' }, { name: 'Energy Scout', unit: 'Energy Scout' }, { name: 'JobScout' }], co)
+    expect(brandForUnit(b, 'energy scout')).toBe('energy-scout')
+    expect(brandForUnit(b, 'Landscaping')).toBeNull()
+    expect(brandForUnit(b, null)).toBeNull()
+  })
+  it('a single-brand company routes every job to it', () => {
+    expect(brandForUnit(brandsFrom(null, co), 'whatever')).toBe('')
   })
 })

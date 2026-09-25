@@ -34,7 +34,7 @@ serve(async (req) => {
       sb, companyId: caller.companyId, req,
       captureIds: Array.isArray(body.capture_ids) ? body.capture_ids : [],
       note: body.note, platforms: Array.isArray(body.platforms) ? body.platforms : [],
-      jobId: body.job_id ? Number(body.job_id) : null, tone: body.tone, feature: 'marketing-draft',
+      jobId: body.job_id ? Number(body.job_id) : null, brand: body.brand ? String(body.brand) : '', tone: body.tone, feature: 'marketing-draft',
     })
     if (!r.ok) return json({ ok: false, error: r.error, ai_unavailable: r.unavailable === true }, r.unavailable ? 502 : 400)
     return json({ ok: true, caption: r.caption, hashtags: r.hashtags, alt_text: r.alt_text })

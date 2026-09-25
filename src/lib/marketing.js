@@ -180,3 +180,52 @@ export function capturePath(companyId, fileName, now = new Date()) {
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   return `${companyId}/${ym}/${now.getTime()}_${safe}`
 }
+
+// ── Brands ────────────────────────────────────────────────────────────
+// One company can market several things with different voices and
+// accounts (HHH: cleaning, lighting, and JobScout itself). A brand is its
+// own list entry, not a business unit; it MAY name the unit whose finished
+// jobs feed it. The default brand (id '') is what a single-brand company
+// uses without ever seeing the word "brand".
+
+export const BRANDS_KEY = 'marketing_brands'
+export const DEFAULT_BRAND = { id: '', name: '', unit: null, logo_url: '' }
+
+export function slugify(name) {
+  return String(name || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+}
+
+// A brand-scoped settings key. '' (default brand) keeps the bare key, so
+// everything a single-brand company already saved keeps working.
+export function brandKey(base, brandId) {
+  return brandId ? `${base}:${brandId}` : base
+}
+
+// The publisher profile a brand owns at the vendor. The default brand keeps
+// the historical name; others append their id.
+export function brandProfileUsername(companyId, brandId) {
+  return brandId ? `jobscout-${companyId}-${brandId}` : `jobscout-${companyId}`
+}
+
+// Normalise the setting into a list. No list, or an empty one, means the
+// company has one brand: the default, shown under the company's name.
+export function brandsFrom(setting, company = {}) {
+  const raw = Array.isArray(setting) ? setting : []
+  const list = raw
+    .filter((b) => b && (b.name || b.id))
+    .map((b) => ({ id: b.id || slugify(b.name), name: b.name || b.id, unit: b.unit || null, logo_url: b.logo_url || '' }))
+    .filter((b) => b.id)
+  if (list.length) return list
+  return [{ ...DEFAULT_BRAND, name: company.company_name || 'Company', logo_url: company.logo_url || '' }]
+}
+
+// Which brand a job's business unit feeds. One brand: always that one.
+// Several: the one that names the unit, else null (a human decides).
+export function brandForUnit(brands, unit) {
+  if (!brands?.length) return null
+  if (brands.length === 1) return brands[0].id
+  const u = String(unit || '').trim().toLowerCase()
+  if (!u) return null
+  const hit = brands.find((b) => String(b.unit || '').trim().toLowerCase() === u)
+  return hit ? hit.id : null
+}

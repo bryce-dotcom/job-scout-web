@@ -29,6 +29,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/auth.ts'
+import { brandKey, brandProfileUsername, loadBrands } from '../_shared/marketing.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -121,8 +122,21 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}))
     const action = String(body.action || '')
 
+    // Which brand? A post knows its own; everything else says in the body.
+    // '' / null = the company's default brand (bare settings key).
+    let brandId = ''
+    if (action === 'publish' || action === 'delete') {
+      const { data: pb } = await sb.from('marketing_posts').select('brand').eq('company_id', companyId).eq('id', Number(body.post_id)).maybeSingle()
+      brandId = pb?.brand || ''
+    } else {
+      brandId = String(body.brand || '')
+    }
+    const brands = await loadBrands(sb, companyId)
+    const brand = brands.find((b) => b.id === brandId) || brands[0]
+    const cfgKey = brandKey('marketing_publisher', brandId)
+
     const { data: settingRow } = await sb.from('settings').select('id, value')
-      .eq('company_id', companyId).eq('key', 'marketing_publisher').limit(1)
+      .eq('company_id', companyId).eq('key', cfgKey).limit(1)
     let cfg: Cfg = {}
     try { cfg = settingRow?.[0]?.value ? JSON.parse(settingRow[0].value) : {} } catch { cfg = {} }
     let settingId: number | null = settingRow?.[0]?.id ?? null
@@ -132,12 +146,12 @@ serve(async (req) => {
       const value = JSON.stringify(next)
       if (settingId) await sb.from('settings').update({ value }).eq('id', settingId)
       else {
-        const { data: ins } = await sb.from('settings').insert({ company_id: companyId, key: 'marketing_publisher', value }).select('id').maybeSingle()
+        const { data: ins } = await sb.from('settings').insert({ company_id: companyId, key: cfgKey, value }).select('id').maybeSingle()
         settingId = ins?.id ?? null
       }
     }
 
-    const username = cfg.profile_username || `jobscout-${companyId}`
+    const username = cfg.profile_username || brandProfileUsername(companyId, brandId)
 
     const refreshAccounts = async (): Promise<{ ok: boolean; accounts?: any[]; error?: string }> => {
       if (!cfg.profile_username || !PLATFORM_KEY) return { ok: true, accounts: [] }
@@ -157,6 +171,7 @@ serve(async (req) => {
         accounts: cfg.accounts || [],
         networks: OFFERED,
         connected_at: cfg.connected_at || null,
+        brand: brandId, brand_name: brand?.name || null,
       })
     }
 
@@ -177,14 +192,13 @@ serve(async (req) => {
         await saveCfg({ ...cfg, vendor: 'upload-post', profile_username: username, connected_at: new Date().toISOString(), accounts: cfg.accounts || [] })
       }
 
-      const { data: co } = await sb.from('companies').select('company_name').eq('id', companyId).maybeSingle()
       const r = await up('POST', '/uploadposts/users/generate-jwt', {
         username,
         redirect_url: origin ? `${origin}/marketing?connected=1` : undefined,
         redirect_button_text: 'Back to JobScout',
-        logo_image: LOGO,
-        connect_title: network ? `Connect ${labelOf(network)}` : 'Connect your social accounts',
-        connect_description: `${co?.company_name || 'Your company'} · posts from JobScout go to the accounts you connect here.`,
+        logo_image: brand?.logo_url || LOGO,
+        connect_title: network ? `Connect ${labelOf(network)} for ${brand?.name || 'your company'}` : `Connect ${brand?.name || 'your'} social accounts`,
+        connect_description: `${brand?.name || 'Your company'} · posts from JobScout go to the accounts you connect here.`,
         platforms: network ? [network] : OFFERED,
         show_calendar: false,
         connect_theme: 'light',
