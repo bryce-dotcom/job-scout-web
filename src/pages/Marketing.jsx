@@ -17,7 +17,7 @@ import {
   Megaphone, Inbox, ListChecks, Palette, Link2, Mail, Sparkles, Upload, Camera, Check, X,
   Send, Clock, ExternalLink, RefreshCw, ChevronRight, CircleCheck, Circle, Trash2, Pencil,
   Image as ImageIcon, AlertTriangle, Archive, CalendarClock, Hand, Copy, Download,
-  Play, CalendarDays, BarChart3, Globe, ChevronLeft,
+  Play, CalendarDays, BarChart3, Globe, ChevronLeft, FolderOpen, Search, Film, FileText, RotateCcw,
 } from 'lucide-react'
 
 // Marketing — step 1 of the Sales Flow. Everything a company does to be found
@@ -54,6 +54,24 @@ const parseJson = (v, fallback) => {
   if (typeof v === 'object') return v
   try { return JSON.parse(v) } catch { return fallback }
 }
+// A capture in a private bucket (a suggested draft's job photo) needs a
+// signed URL to show; public ones already carry theirs.
+async function signPrivateCaptures(rows) {
+  const priv = (rows || []).filter((x) => x.bucket && x.bucket !== MEDIA_BUCKET && x.path)
+  const byBucket = priv.reduce((m, x) => { (m[x.bucket] ||= []).push(x); return m }, {})
+  for (const [bucket, list] of Object.entries(byBucket)) {
+    try {
+      const { data: signed } = await supabase.storage.from(bucket).createSignedUrls(list.map((x) => x.path), 3600)
+      ;(signed || []).forEach((s, i) => { if (s?.signedUrl) list[i].url = s.signedUrl })
+    } catch (err) { console.warn('[Marketing] sign failed', bucket, err) }
+  }
+  return rows
+}
+const monthKey = (d) => {
+  const dt = new Date(d)
+  return isNaN(dt.getTime()) ? 'undated' : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+}
+const monthLabel = (k) => (k === 'undated' ? 'Undated' : new Date(`${k}-01T12:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }))
 const linesToList = (s) => String(s || '').split('\n').map((x) => x.trim()).filter(Boolean)
 const listToLines = (xs) => (Array.isArray(xs) ? xs.join('\n') : '')
 const fmtWhen = (d) => {
@@ -208,6 +226,10 @@ export default function Marketing() {
 
   // ── Captures (inbox) ───────────────────────────────────────────────
   const uploadRef = useRef(null)
+  // On a phone, capture= opens the camera straight away: one for a photo,
+  // one for a video. Field content is shot, not picked from a library.
+  const photoCamRef = useRef(null)
+  const videoCamRef = useRef(null)
   const [uploading, setUploading] = useState(false)
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files || [])
@@ -269,6 +291,7 @@ export default function Marketing() {
   const tabs = [
     { id: 'queue', label: 'Queue', icon: ListChecks, count: posts.filter((p) => ['draft', 'approved'].includes(p.status)).length },
     { id: 'inbox', label: 'Inbox', icon: Inbox, count: captures.length },
+    { id: 'library', label: 'Library', icon: FolderOpen },
     { id: 'calendar', label: 'Calendar', icon: CalendarDays },
     { id: 'performance', label: 'Performance', icon: BarChart3 },
     { id: 'brand', label: 'Brand', icon: Palette },
@@ -352,10 +375,14 @@ export default function Marketing() {
           onHandPost={(p) => setHandPost(p)} />
       ) : tab === 'inbox' ? (
         <InboxTab theme={theme} isMobile={isMobile} captures={captures} uploading={uploading} invoke={invoke} isManager={isManager} onChanged={load}
-          onUploadClick={() => uploadRef.current?.click()} onDismiss={dismissCapture}
+          onUploadClick={() => uploadRef.current?.click()} onTakePhoto={() => photoCamRef.current?.click()} onRecordVideo={() => videoCamRef.current?.click()} onDismiss={dismissCapture}
           onMakePost={(ids) => setComposer({ captureIds: ids })} />
       ) : tab === 'brand' ? (
         <BrandTab theme={theme} isMobile={isMobile} kit={brandKit} company={company} eos={eos} onSave={saveBrandKit} onFill={fillFromEos} brands={brands} brand={currentBrand} businessUnits={businessUnits} isManager={isManager} onSaveBrands={saveBrands} />
+      ) : tab === 'library' ? (
+        <LibraryTab theme={theme} isMobile={isMobile} companyId={companyId} brands={brands} brand={brandId} employees={employees} isManager={isManager}
+          onMakePost={(ids) => setComposer({ captureIds: ids })}
+          onReuse={(p) => setComposer({ captureIds: [], caption: p.caption, hashtags: p.hashtags || [] })} />
       ) : tab === 'calendar' ? (
         <CalendarTab theme={theme} isMobile={isMobile} posts={brandPosts} captureMap={captureMap} kit={brandKit} isManager={isManager}
           onCadence={(n) => saveBrandKit({ cadence_per_week: n })} onOpen={(p) => (['draft', 'approved', 'failed'].includes(p.status) ? setComposer({ post: p, captureIds: p.capture_ids || [] }) : null)}
@@ -367,6 +394,8 @@ export default function Marketing() {
       ) : null}
 
       <input ref={uploadRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} onChange={handleUpload} />
+      <input ref={photoCamRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUpload} />
+      <input ref={videoCamRef} type="file" accept="video/*" capture="environment" style={{ display: 'none' }} onChange={handleUpload} />
 
       {handPost && (
         <HandPostSheet
@@ -393,6 +422,7 @@ export default function Marketing() {
         <Composer
           theme={theme} isMobile={isMobile} companyId={companyId} currentEmployee={currentEmployee} isManager={isManager}
           initialPost={composer.post || null} initialCaptureIds={composer.captureIds || []} initialScheduledFor={composer.scheduledFor || null}
+          initialCaption={composer.caption || ''} initialHashtags={composer.hashtags || []}
           captures={captures} captureMap={captureMap} linkedPlatforms={linkedPlatforms} invoke={invoke} brands={brands} brand={brandId} pubsByBrand={pubsByBrand}
           onClose={() => setComposer(null)} onSaved={() => { setComposer(null); load() }}
           onPublish={publishPost}
@@ -533,7 +563,7 @@ function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands =
 }
 
 // ── Inbox ────────────────────────────────────────────────────────────
-function InboxTab({ theme, isMobile, captures, uploading, invoke, isManager, onChanged, onUploadClick, onDismiss, onMakePost }) {
+function InboxTab({ theme, isMobile, captures, uploading, invoke, isManager, onChanged, onUploadClick, onTakePhoto, onRecordVideo, onDismiss, onMakePost }) {
   const [selected, setSelected] = useState([])
   const [suggesting, setSuggesting] = useState(false)
   const toggle = (id) => setSelected((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id].slice(-5)))
@@ -553,14 +583,16 @@ function InboxTab({ theme, isMobile, captures, uploading, invoke, isManager, onC
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-        <button type="button" onClick={onUploadClick} disabled={uploading} style={ghostBtn(theme)}><Upload size={15} /> {uploading ? 'Uploading…' : 'Upload photos'}</button>
+        <button type="button" onClick={onTakePhoto} disabled={uploading} style={primaryBtn(MKT)}><Camera size={15} /> {uploading ? 'Sending…' : 'Take photo'}</button>
+        <button type="button" onClick={onRecordVideo} disabled={uploading} style={primaryBtn(MKT)}><Play size={15} /> Record video</button>
+        <button type="button" onClick={onUploadClick} disabled={uploading} style={ghostBtn(theme)}><Upload size={15} /> Upload</button>
         {selected.length > 0 && <button type="button" onClick={() => { onMakePost(selected); setSelected([]) }} style={primaryBtn(MKT)}><Sparkles size={15} /> Make a post from {selected.length}</button>}
         {isManager && <button type="button" onClick={suggestNow} disabled={suggesting} title="Draft posts from unused photos and yesterday's finished jobs" style={ghostBtn(theme)}><Sparkles size={15} /> {suggesting ? 'Drafting…' : 'Suggest posts now'}</button>}
         <span style={{ fontSize: 12, color: theme.textMuted, marginLeft: 'auto' }}>Every morning, unused photos and finished jobs become drafts in the queue.</span>
       </div>
       <TextInCard theme={theme} isMobile={isMobile} invoke={invoke} isManager={isManager} />
       {captures.length === 0 ? (
-        <Empty theme={theme} icon={Camera} title="Inbox is empty" body="Photos your crew shares from Field Scout land here. You can also upload straight from your phone." action={<button type="button" onClick={onUploadClick} style={primaryBtn(MKT)}><Upload size={15} /> Upload photos</button>} />
+        <Empty theme={theme} icon={Camera} title="Inbox is empty" body="Photos and videos your crew shares from Field Scout land here. Or shoot one right now." action={<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><button type="button" onClick={onTakePhoto} style={primaryBtn(MKT)}><Camera size={15} /> Take photo</button><button type="button" onClick={onRecordVideo} style={primaryBtn(MKT)}><Play size={15} /> Record video</button><button type="button" onClick={onUploadClick} style={ghostBtn(theme)}><Upload size={15} /> Upload</button></div>} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
           {captures.map((c) => {
@@ -785,7 +817,7 @@ function ChannelsTab({ theme, isMobile, publisher, brand = '', brandName, isMana
 }
 
 // ── Composer ─────────────────────────────────────────────────────────
-function Composer({ theme, isMobile, companyId, currentEmployee, isManager, initialPost, initialCaptureIds, initialScheduledFor = null, captures, captureMap = {}, linkedPlatforms: linkedDefault, invoke, brands = [], brand: brandDefault = '', pubsByBrand = {}, onClose, onSaved, onPublish }) {
+function Composer({ theme, isMobile, companyId, currentEmployee, isManager, initialPost, initialCaptureIds, initialScheduledFor = null, initialCaption = '', initialHashtags = [], captures, captureMap = {}, linkedPlatforms: linkedDefault, invoke, brands = [], brand: brandDefault = '', pubsByBrand = {}, onClose, onSaved, onPublish }) {
   const [captureIds, setCaptureIds] = useState(initialCaptureIds)
   // Which brand this post speaks for. The post's own, else the photo's, else
   // the brand selected on the page. Accounts follow the brand.
@@ -794,18 +826,37 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
   const linkedPlatforms = useMemo(() => (multi ? new Set((pubsByBrand[postBrand]?.accounts || []).map((a) => a.platform)) : linkedDefault), [multi, pubsByBrand, postBrand, linkedDefault])
   const [note, setNote] = useState('')
   const [platforms, setPlatforms] = useState(initialPost?.platforms?.length ? initialPost.platforms : [...linkedPlatforms].filter((p) => !PLATFORM_BY_ID[p]?.videoOnly))
-  const [caption, setCaption] = useState(initialPost?.caption || '')
-  const [hashtags, setHashtags] = useState((initialPost?.hashtags || []).join(' '))
+  const [caption, setCaption] = useState(initialPost?.caption || initialCaption || '')
+  const [hashtags, setHashtags] = useState((initialPost?.hashtags?.length ? initialPost.hashtags : initialHashtags || []).join(' '))
   const [aiDraft, setAiDraft] = useState(initialPost?.ai_draft || null)
   const [when, setWhen] = useState(toLocalInput(initialPost?.scheduled_for) || (initialScheduledFor ? `${initialScheduledFor}T09:00` : ''))
   const [drafting, setDrafting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
+  // Shoot straight into this post: the camera input uploads through the
+  // same path as the inbox and the new capture is selected at once.
+  const [shot, setShot] = useState([])          // captures made from inside the composer
+  const [shooting, setShooting] = useState(false)
+  const camPhotoRef = useRef(null)
+  const camVideoRef = useRef(null)
+  const onShot = async (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    setShooting(true)
+    for (const file of files) {
+      try {
+        const row = await uploadCapture({ companyId, employeeId: currentEmployee?.id || null, jobId: initialPost?.job_id || null, file, source: 'shared', brand: multi ? postBrand || null : null })
+        if (row) { setShot((xs) => [...xs, row]); setCaptureIds((xs) => [...xs, row.id].slice(-5)) }
+      } catch (err) { toast.error(err.message || 'Upload failed') }
+    }
+    setShooting(false)
+  }
   const [extraMedia, setExtraMedia] = useState(initialPost && !(initialPost.capture_ids || []).length ? initialPost.media_urls || [] : [])
 
   // A post we are editing may reference captures already marked used; keep
   // their urls even though they are not in the inbox list.
-  const captureById = useMemo(() => ({ ...captureMap, ...Object.fromEntries(captures.map((c) => [c.id, c])) }), [captures, captureMap])
+  const captureById = useMemo(() => ({ ...captureMap, ...Object.fromEntries(captures.map((c) => [c.id, c])), ...Object.fromEntries(shot.map((c) => [c.id, c])) }), [captures, captureMap, shot])
   const mediaUrls = useMemo(() => {
     const fromCaptures = captureIds.map((id) => captureById[id]?.url).filter(Boolean)
     const known = new Set(fromCaptures)
@@ -897,9 +948,17 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
                     style={{ position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#2c3530', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
                 </div>
               ))}
+              <button type="button" onClick={() => camPhotoRef.current?.click()} disabled={shooting} style={{ width: 84, height: 84, borderRadius: 8, border: `1px solid ${MKT}`, background: MKT_BG, color: MKT, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
+                <Camera size={18} /> {shooting ? 'Sending…' : 'Take photo'}
+              </button>
+              <button type="button" onClick={() => camVideoRef.current?.click()} disabled={shooting} style={{ width: 84, height: 84, borderRadius: 8, border: `1px solid ${MKT}`, background: MKT_BG, color: MKT, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
+                <Play size={18} /> Record video
+              </button>
               <button type="button" onClick={() => setShowPicker((v) => !v)} style={{ width: 84, height: 84, borderRadius: 8, border: `1px dashed ${theme.border}`, background: theme.bg, color: theme.textMuted, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11 }}>
                 <ImageIcon size={18} /> From inbox
               </button>
+              <input ref={camPhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onShot} />
+              <input ref={camVideoRef} type="file" accept="video/*" capture="environment" style={{ display: 'none' }} onChange={onShot} />
             </div>
             {showPicker && (
               <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 6, maxHeight: 200, overflowY: 'auto', padding: 8, background: theme.bg, borderRadius: 8 }}>
@@ -1294,6 +1353,175 @@ function PerformanceTab({ theme, isMobile, posts, captureMap, brand, invoke, pub
                     ))}
                   </div>
                 )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Library ──────────────────────────────────────────────────────────
+// Everything ever shot or written, filed by the system: brand, then kind
+// (videos, photos, scripts), then month, with tags nobody typed — the job's
+// service, who shot it, how it arrived, whether it has been used. Search
+// runs across all of it. Pick photos to make a post; reuse a script.
+function LibraryTab({ theme, isMobile, companyId, brands, brand, employees, isManager, onMakePost, onReuse }) {
+  const [caps, setCaps] = useState(null)
+  const [posts, setPosts] = useState([])
+  const [kind, setKind] = useState('all')          // all | video | photo | script
+  const [month, setMonth] = useState('all')
+  const [tag, setTag] = useState(null)
+  const [q, setQ] = useState('')
+  const [showDismissed, setShowDismissed] = useState(false)
+  const [selected, setSelected] = useState([])
+  const multi = brands.length > 1
+  const empName = useMemo(() => Object.fromEntries((employees || []).map((e) => [e.id, e.name])), [employees])
+
+  const load = useCallback(async () => {
+    const [{ data: c }, { data: p }] = await Promise.all([
+      supabase.from('marketing_captures').select('*, job:jobs(job_title, service_type, business_unit)').eq('company_id', companyId).order('created_at', { ascending: false }).limit(600),
+      supabase.from('marketing_posts').select('id, status, caption, hashtags, brand, created_at, posted_at, approved_at, capture_ids, media_type, job_id').eq('company_id', companyId).order('created_at', { ascending: false }).limit(600),
+    ])
+    setCaps(await signPrivateCaptures(c || []))
+    setPosts(p || [])
+  }, [companyId])
+  useEffect(() => { load() }, [load])
+
+  // The brand a capture belongs to: its own, else its post's, else its job's unit.
+  const postByCap = useMemo(() => { const m = {}; for (const p of posts) for (const id of p.capture_ids || []) m[id] = p; return m }, [posts])
+  const brandOf = (c) => c.brand ?? postByCap[c.id]?.brand ?? (multi ? brandForUnit(brands, c.job?.business_unit) : '') ?? null
+  const brandName = (id) => brands.find((b) => b.id === (id || ''))?.name || (id == null ? 'Unfiled' : id)
+
+  const SOURCE = { text: 'texted in', shared: 'from the field', suggested: 'from a job', upload: 'uploaded' }
+  const items = useMemo(() => {
+    const out = []
+    for (const c of caps || []) {
+      const b = brandOf(c)
+      const used = !!postByCap[c.id]
+      const tags = [
+        c.media_type === 'video' ? 'video' : 'photo',
+        SOURCE[c.source] || c.source,
+        used ? 'used' : 'unused',
+        c.job?.service_type, c.job?.business_unit,
+        empName[c.employee_id] ? `by ${empName[c.employee_id]}` : null,
+        c.media_type === 'video' && c.duration_s ? (c.duration_s < 15 ? 'short clip' : c.duration_s < 60 ? 'under a minute' : 'long video') : null,
+      ].filter(Boolean)
+      out.push({ id: `c${c.id}`, kind: c.media_type === 'video' ? 'video' : 'photo', when: c.created_at, month: monthKey(c.created_at), brand: b, thumb: captureThumb(c), url: c.url, title: c.note || c.job?.job_title || (c.media_type === 'video' ? 'Video' : 'Photo'), sub: `${fmtWhen(c.created_at)}${c.job?.job_title ? ' · ' + c.job.job_title : ''}`, tags, text: [c.note, c.job?.job_title, c.job?.service_type, empName[c.employee_id]].filter(Boolean).join(' ').toLowerCase(), cap: c, dismissed: c.status === 'dismissed', used })
+    }
+    for (const p of posts) {
+      if (!['approved', 'scheduled', 'posted'].includes(p.status) || !(p.caption || '').trim()) continue
+      const when = p.posted_at || p.approved_at || p.created_at
+      const tags = ['script', p.status === 'posted' ? 'went out' : p.status, p.media_type === 'video' ? 'for video' : null].filter(Boolean)
+      out.push({ id: `p${p.id}`, kind: 'script', when, month: monthKey(when), brand: p.brand || '', thumb: null, title: p.caption, sub: `${fmtWhen(when)} · ${(p.hashtags || []).map((h) => '#' + h).join(' ')}`, tags, text: `${p.caption} ${(p.hashtags || []).join(' ')}`.toLowerCase(), post: p, dismissed: false, used: true })
+    }
+    return out.sort((a, b) => new Date(b.when) - new Date(a.when))
+  }, [caps, posts, brands, empName]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const inBrand = items.filter((it) => !multi || (it.brand || '') === (brand || '') || (it.brand == null && kind !== 'script'))
+  const months = [...new Set(inBrand.map((it) => it.month))]
+  const tagCounts = inBrand.reduce((m, it) => { for (const t of it.tags) m[t] = (m[t] || 0) + 1; return m }, {})
+  const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 14)
+  const needle = q.trim().toLowerCase()
+  const shown = inBrand.filter((it) => (kind === 'all' || it.kind === kind) && (month === 'all' || it.month === month) && (!tag || it.tags.includes(tag)) && (!needle || it.text.includes(needle)) && (showDismissed || !it.dismissed))
+  const counts = { video: inBrand.filter((i) => i.kind === 'video' && !i.dismissed).length, photo: inBrand.filter((i) => i.kind === 'photo' && !i.dismissed).length, script: inBrand.filter((i) => i.kind === 'script').length }
+  const unfiled = multi ? items.filter((it) => it.brand == null && !it.dismissed).length : 0
+
+  const toggle = (it) => { if (it.kind === 'script') return; setSelected((xs) => (xs.includes(it.cap.id) ? xs.filter((x) => x !== it.cap.id) : [...xs, it.cap.id].slice(-5))) }
+  const setStatus = async (c, status) => { await supabase.from('marketing_captures').update({ status }).eq('id', c.id).eq('company_id', companyId); load() }
+  const fileUnder = async (c, brandId) => { await supabase.from('marketing_captures').update({ brand: brandId || null }).eq('id', c.id).eq('company_id', companyId); load() }
+  const download = async (it) => {
+    try {
+      const res = await fetch(it.url); const blob = await res.blob()
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = it.cap.path.split('/').pop() || 'file'; document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+    } catch { window.open(it.url, '_blank') }
+  }
+
+  if (caps === null) return <div style={{ color: theme.textMuted, fontSize: 14, padding: 24 }}>Opening the library…</div>
+  const folder = (id, label, Icon, n) => (
+    <button key={id} type="button" onClick={() => setKind(id)} style={{ ...chip(theme, kind === id), gap: 6 }}><Icon size={14} /> {label}{n != null ? <span style={{ fontSize: 11, opacity: 0.75 }}>{n}</span> : null}</button>
+  )
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 220, background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 999, padding: '0 12px', minHeight: 40 }}>
+          <Search size={14} color={theme.textMuted} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search notes, jobs, captions, who shot it…" style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, fontSize: 13, color: theme.text, minHeight: 38 }} />
+          {q && <button type="button" onClick={() => setQ('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: theme.textMuted }}><X size={14} /></button>}
+        </div>
+        {selected.length > 0 && <button type="button" onClick={() => { onMakePost(selected); setSelected([]) }} style={primaryBtn(MKT)}><Sparkles size={15} /> Make a post from {selected.length}</button>}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {folder('all', 'Everything', FolderOpen, null)}
+        {folder('video', 'Videos', Film, counts.video)}
+        {folder('photo', 'Photos', ImageIcon, counts.photo)}
+        {folder('script', 'Scripts', FileText, counts.script)}
+        <select value={month} onChange={(e) => setMonth(e.target.value)} style={{ ...inputStyle(theme), width: 'auto', minHeight: 36, padding: '6px 10px', fontSize: 12 }}>
+          <option value="all">All months</option>
+          {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+        </select>
+        <label style={{ fontSize: 12, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+          <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} /> show dismissed
+        </label>
+      </div>
+      {topTags.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: theme.textMuted }}>Filed as</span>
+          {topTags.map(([t, n]) => (
+            <button key={t} type="button" onClick={() => setTag(tag === t ? null : t)} style={{ ...chip(theme, tag === t), minHeight: 30, padding: '4px 10px', fontSize: 11 }}>{t} <span style={{ opacity: 0.6 }}>{n}</span></button>
+          ))}
+        </div>
+      )}
+      {unfiled > 0 && kind !== 'script' && (
+        <div style={{ fontSize: 12, color: '#b45309', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.4)', borderRadius: 8, padding: '8px 10px' }}>
+          {unfiled} item{unfiled === 1 ? '' : 's'} could not be filed under a brand on their own (no job, no post yet). They show under every brand until you file them from the tile.
+        </div>
+      )}
+      {shown.length === 0 ? (
+        <Empty theme={theme} icon={FolderOpen} title={q || tag ? 'Nothing matches' : 'Library is empty'} body="Everything shot in the field, texted in, uploaded, or written as a post files itself here by brand, kind and month." />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+          {shown.map((it) => {
+            const on = it.cap && selected.includes(it.cap.id)
+            return (
+              <div key={it.id} style={{ borderRadius: 10, overflow: 'hidden', border: `2px solid ${on ? MKT : theme.border}`, background: theme.bgCard, opacity: it.dismissed ? 0.55 : 1, display: 'flex', flexDirection: 'column' }}>
+                {it.kind === 'script' ? (
+                  <div style={{ padding: 10, fontSize: 12, color: theme.text, lineHeight: 1.4, minHeight: 120, maxHeight: 150, overflow: 'hidden', whiteSpace: 'pre-wrap' }}>{it.title}</div>
+                ) : (
+                  <button type="button" onClick={() => toggle(it)} style={{ display: 'block', width: '100%', padding: 0, border: 'none', background: '#111', cursor: 'pointer', position: 'relative' }}>
+                    {it.thumb ? <img src={it.thumb} alt="" style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} /> : <div style={{ height: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888' }}>{it.kind === 'video' ? <Play size={20} /> : <ImageIcon size={20} />}</div>}
+                    {it.kind === 'video' && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}><div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={14} /></div></div>}
+                    {on && <div style={{ position: 'absolute', top: 6, left: 6, width: 22, height: 22, borderRadius: '50%', background: MKT, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Check size={13} /></div>}
+                    {it.used && <div style={{ position: 'absolute', top: 6, right: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: 'rgba(34,197,94,0.85)', borderRadius: 999, padding: '2px 6px' }}>used</div>}
+                  </button>
+                )}
+                <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+                  {it.kind !== 'script' && <div style={{ fontSize: 12, color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.title}</div>}
+                  <div style={{ fontSize: 10, color: theme.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.sub}</div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {it.tags.slice(0, 3).map((t) => <span key={t} style={{ fontSize: 10, color: theme.textSecondary, background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 999, padding: '1px 6px' }}>{t}</span>)}
+                    {multi && it.brand != null && <span style={{ fontSize: 10, color: MKT, background: MKT_BG, borderRadius: 999, padding: '1px 6px' }}>{brandName(it.brand)}</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, marginTop: 'auto', alignItems: 'center' }}>
+                    {it.kind === 'script'
+                      ? <button type="button" onClick={() => onReuse(it.post)} style={{ ...ghostBtn(theme), minHeight: 30, padding: '4px 8px', fontSize: 11 }}><RotateCcw size={12} /> Reuse</button>
+                      : <>
+                          <button type="button" onClick={() => download(it)} title="Download" style={{ ...ghostBtn(theme), minHeight: 30, padding: '4px 8px', fontSize: 11 }}><Download size={12} /></button>
+                          {multi && it.brand == null && isManager && (
+                            <select defaultValue="" onChange={(e) => fileUnder(it.cap, e.target.value)} style={{ ...inputStyle(theme), minHeight: 30, padding: '2px 6px', fontSize: 11, width: 'auto' }}>
+                              <option value="" disabled>File under…</option>
+                              {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
+                          )}
+                          <div style={{ flex: 1 }} />
+                          {isManager && (it.dismissed
+                            ? <button type="button" onClick={() => setStatus(it.cap, 'new')} title="Restore" style={{ ...ghostBtn(theme), minHeight: 30, padding: '4px 8px', fontSize: 11 }}>Restore</button>
+                            : !it.used && <button type="button" onClick={() => setStatus(it.cap, 'dismissed')} title="Dismiss" style={{ ...ghostBtn(theme), minHeight: 30, padding: '4px 8px', fontSize: 11 }}><X size={12} /></button>)}
+                        </>}
+                  </div>
+                </div>
               </div>
             )
           })}

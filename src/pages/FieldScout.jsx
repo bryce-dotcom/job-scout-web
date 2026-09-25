@@ -18,7 +18,7 @@ import { toast } from '../lib/toast'
 import { syncQueue } from '../lib/syncQueue'
 import { uploadCapture } from '../lib/marketingUpload'
 import {
-  Compass, Clock, MapPin, Play, Square, Coffee, Megaphone,
+  Compass, Clock, MapPin, Play, Square, Coffee, Megaphone, Upload,
   ChevronDown, ChevronUp, ExternalLink, Navigation,
   CheckCircle, Timer, Briefcase, DollarSign, Star,
   AlertTriangle, Send, X, CreditCard, Banknote, Smartphone,
@@ -277,10 +277,13 @@ export default function FieldScout() {
   const linePhotoInputRef = useRef(null)
   // Its own input, at the top of the page: the line picker's input only
   // exists while a briefing is open, and a marketing snap is not tied to one.
-  const marketingInputRef = useRef(null)
-  const triggerMarketingSnap = () => {
+  const marketingInputRef = useRef(null)       // library / any file
+  const marketingPhotoRef = useRef(null)       // camera, photo
+  const marketingVideoRef = useRef(null)       // camera, video
+  const triggerMarketingSnap = (kind = 'photo') => {
     setLinePhotoTarget({ lineId: null, context: 'marketing' })
-    setTimeout(() => marketingInputRef.current?.click(), 50)
+    const ref = kind === 'video' ? marketingVideoRef : kind === 'library' ? marketingInputRef : marketingPhotoRef
+    setTimeout(() => ref.current?.click(), 50)
   }
 
   // Job search (for clock-in when no today's jobs)
@@ -2162,26 +2165,27 @@ export default function FieldScout() {
           <div style={{ fontSize: '13px', fontWeight: '700', color: theme.text }}>Snap for Marketing</div>
           <div style={{ fontSize: '12px', color: theme.textMuted, lineHeight: 1.35 }}>A photo of today's work, the truck, the crew. The office turns it into a post.</div>
         </div>
-        <button
-          type="button"
-          onClick={triggerMarketingSnap}
-          disabled={linePhotoUploading}
-          style={{
-            padding: '10px 14px', minHeight: '44px', borderRadius: '8px', border: 'none',
-            background: '#e11d48', color: '#fff', fontSize: '13px', fontWeight: '700',
-            cursor: linePhotoUploading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
-          }}
-        >
-          <Camera size={15} /> {linePhotoUploading && linePhotoTarget?.context === 'marketing' ? 'Sending…' : 'Snap'}
-        </button>
-        <input
-          ref={marketingInputRef}
-          type="file"
-          accept="image/*,video/*"
-          multiple
-          style={{ display: 'none' }}
-          onChange={handleLinePhotoUpload}
-        />
+        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+          {[['photo', Camera, 'Photo'], ['video', Play, 'Video'], ['library', Upload, '']].map(([kind, Icon, label]) => (
+            <button
+              key={kind}
+              type="button"
+              onClick={() => triggerMarketingSnap(kind)}
+              disabled={linePhotoUploading}
+              title={kind === 'library' ? 'Pick from your library' : kind === 'video' ? 'Record a video' : 'Take a photo'}
+              style={{
+                padding: label ? '10px 12px' : '10px', minHeight: '44px', borderRadius: '8px', border: label ? 'none' : `1px solid ${theme.border}`,
+                background: label ? '#e11d48' : theme.bgCard, color: label ? '#fff' : theme.textSecondary, fontSize: '13px', fontWeight: '700',
+                cursor: linePhotoUploading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+              }}
+            >
+              <Icon size={15} /> {label && linePhotoUploading && linePhotoTarget?.context === 'marketing' ? '…' : label}
+            </button>
+          ))}
+        </div>
+        <input ref={marketingPhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleLinePhotoUpload} />
+        <input ref={marketingVideoRef} type="file" accept="video/*" capture="environment" style={{ display: 'none' }} onChange={handleLinePhotoUpload} />
+        <input ref={marketingInputRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} onChange={handleLinePhotoUpload} />
       </div>
       <MyVehicleCard theme={theme} />
 
