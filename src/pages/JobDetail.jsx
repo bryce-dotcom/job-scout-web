@@ -18,7 +18,7 @@ import { jobStatusColors as statusColors } from '../lib/statusColors'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { isLegacyNetShape, jobARSnapshot } from '../lib/arHelpers'
 import { reconcileInvoicePair } from '../lib/invoiceReconcile'
-import { resolveJobUtility, providerById } from '../lib/jobUtility'
+import { resolveJobUtility, providerById, utilityFormsForJob } from '../lib/jobUtility'
 import { generateWorkOrderPdf, workOrderFilename } from '../lib/workOrderPdf'
 import { businessUnitFor } from '../lib/invoiceSend'
 import {
@@ -2468,8 +2468,14 @@ function JobDetailInner() {
         .order('sort_order', { ascending: true })
     ])
 
+    // Only the forms that apply to THIS job's utility (job → audit → company
+    // default; else the job's state). The shared catalogue now carries every
+    // western utility's forms, and all of them used to be listed here.
+    const jobUtility = resolveJobUtility({ job, audit: null, providers: utilityProviders, settings })
+    const applicableForms = utilityFormsForJob({ forms: utilityFormsRes.data || [], utility: jobUtility, job, providers: utilityProviders })
+
     // Normalize utility_forms into same shape
-    const utilityTemplates = (utilityFormsRes.data || []).map(uf => {
+    const utilityTemplates = applicableForms.map(uf => {
       const mapping = uf.field_mapping || {}
       const fieldCount = Object.keys(mapping).length
       const mappedCount = Object.values(mapping).filter(v => v).length

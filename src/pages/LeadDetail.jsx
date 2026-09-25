@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import AddressAutocomplete from '../components/AddressAutocomplete'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { utilityFormsForJob } from '../lib/jobUtility'
 import { findMatchingCustomer, contactGapPatch } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { leadStatusForJob } from '../lib/leadDeliveryStatus'
@@ -58,6 +59,7 @@ export default function LeadDetail() {
   const goBack = useSmartBack('/leads')
   const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
+  const utilityProviders = useStore((state) => state.utilityProviders) || []
   const employees = useStore((state) => state.employees)
   const createQuote = useStore((state) => state.createQuote)
   const createQuoteLine = useStore((state) => state.createQuoteLine)
@@ -590,8 +592,12 @@ export default function LeadDetail() {
         .order('sort_order', { ascending: true })
     ])
 
+    // Only the forms for providers in the lead's state — the shared catalogue
+    // carries every western utility's forms now (no utility on a lead yet).
+    const applicableForms = utilityFormsForJob({ forms: utilityFormsRes.data || [], utility: null, job: { address: lead?.address }, providers: utilityProviders })
+
     // Normalize utility_forms into same shape as document_templates
-    const utilityTemplates = (utilityFormsRes.data || []).map(uf => {
+    const utilityTemplates = applicableForms.map(uf => {
       const mapping = uf.field_mapping || {}
       const fieldCount = Object.keys(mapping).length
       const mappedCount = Object.values(mapping).filter(v => v).length

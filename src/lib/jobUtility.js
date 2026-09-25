@@ -122,3 +122,21 @@ export function defaultAppliesTo(provider, job) {
   const jState = jobState(job)
   return !pState || !jState || pState === jState
 }
+
+// ── which forms a job is offered ──────────────────────────────────────────
+// The shared catalogue is seeded for thirteen western states (2026-09-25).
+// Listing every published form on a job would bury the one that applies.
+// The job's utility (job → audit → company default) → its forms; no
+// resolvable utility → the forms of providers in the job's state; no state
+// either → every published form, the pre-seed behaviour.
+export function utilityFormsForJob({ forms = [], utility = null, job = null, providers = [] } = {}) {
+  const list = Array.isArray(forms) ? forms : []
+  if (utility?.id != null) return list.filter(f => Number(f.provider_id) === Number(utility.id))
+  const st = jobState(job)
+  if (st) {
+    const ids = new Set(providers.filter(p => String(p.state || '').trim().toUpperCase() === st).map(p => Number(p.id)))
+    const inState = list.filter(f => ids.has(Number(f.provider_id)))
+    if (inState.length) return inState
+  }
+  return list
+}
