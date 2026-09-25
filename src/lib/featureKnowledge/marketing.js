@@ -85,7 +85,9 @@ export default {
       "Style learning is example-based, not fine-tuning: the drafter reads approved captions and ai_draft-vs-caption edit pairs. Archive a bad post and it stops being an example.",
       "marketing-media is a PUBLIC bucket because the publisher fetches media by URL. A capture is a copy the tech chose to share; private job photos stay in project-documents.",
       "Post by hand: on an approved or failed post, copies the caption + hashtags, saves the photo, and after the person posts it in the network's own app, Mark as posted flips it to posted with no ayrshare_id (that combination reads 'by hand' on the card). It keeps the queue and the learning examples true when no publisher is connected yet.",
-      "Google Ads, website analytics and inbound MMS are NOT built (phase 2+). The Email tab is a link to Conrad Connect.",
+      "Text-in (Inbox tab card): techs text a photo + a line to the company's Twilio number and marketing-textin files it in the inbox (source 'text') and tells the managers. Switch on text-in sets the number's SMS webhook via Twilio's API using the company's own credentials from Settings → Integrations; the sender must match an employee's phone or the photo is refused with a reply saying so.",
+      "Drafts write themselves: marketing-suggest runs daily at 7:30 Mountain (pg_cron) and on Suggest posts now. It drafts one post per unused inbox photo group and per job finished in the last ~26h that has photos, marks them Suggested in the queue, and notifies managers once a day. A suggested draft's photos stay PRIVATE (project-documents) until a human publishes; only then are copies made in marketing-media.",
+      "Google Ads and website analytics are NOT built (phase 2+). The Email tab is a link to Conrad Connect.",
     ],
 
     faqs: [

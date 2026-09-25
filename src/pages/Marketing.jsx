@@ -84,6 +84,7 @@ export default function Marketing() {
   const [publisher, setPublisher] = useState(null)
   const [posts, setPosts] = useState([])
   const [captures, setCaptures] = useState([])
+  const [captureMap, setCaptureMap] = useState({})    // every capture a post or the inbox refers to, private urls signed
   const [composer, setComposer] = useState(null)      // { post?, captureIds[] }
   const [handPost, setHandPost] = useState(null)      // post being posted by hand
   const [walkthroughHidden, setWalkthroughHidden] = useState(() => {
@@ -108,6 +109,25 @@ export default function Marketing() {
       marketing: parseJson(get('eos_marketing_strategy'), {}),
     })
     setCompany(co || null)
+    // Captures a post points at may be 'used' (not in the inbox list) and may
+    // live in a PRIVATE bucket (a suggested draft's job photos). Fetch the
+    // missing ones and sign private paths so thumbnails render everywhere.
+    const referenced = new Set((p || []).flatMap((x) => x.capture_ids || []))
+    const have = new Set((c || []).map((x) => x.id))
+    const missing = [...referenced].filter((id) => !have.has(id))
+    const { data: more } = missing.length
+      ? await supabase.from('marketing_captures').select('*').eq('company_id', companyId).in('id', missing)
+      : { data: [] }
+    const all = [...(c || []), ...(more || [])]
+    const priv = all.filter((x) => x.bucket && x.bucket !== MEDIA_BUCKET && x.path)
+    const byBucket = priv.reduce((m, x) => { (m[x.bucket] ||= []).push(x); return m }, {})
+    for (const [bucket, rows] of Object.entries(byBucket)) {
+      try {
+        const { data: signed } = await supabase.storage.from(bucket).createSignedUrls(rows.map((x) => x.path), 3600)
+        ;(signed || []).forEach((s, i) => { if (s?.signedUrl) rows[i].url = s.signedUrl })
+      } catch (err) { console.warn('[Marketing] sign failed', bucket, err) }
+    }
+    setCaptureMap(Object.fromEntries(all.map((x) => [x.id, x])))
     setPosts(p || [])
     setCaptures(c || [])
     setLoading(false)
@@ -261,13 +281,13 @@ export default function Marketing() {
       {loading ? (
         <div style={{ color: theme.textMuted, fontSize: 14, padding: 24 }}>Loading…</div>
       ) : tab === 'queue' ? (
-        <QueueTab theme={theme} isMobile={isMobile} posts={posts} isManager={isManager}
+        <QueueTab theme={theme} isMobile={isMobile} posts={posts} isManager={isManager} captureMap={captureMap}
           onEdit={(p) => setComposer({ post: p, captureIds: p.capture_ids || [] })}
           onApprove={(p) => setPostStatus(p, 'approved')} onPublish={publishPost} onUnschedule={unschedulePost}
           onArchive={(p) => setPostStatus(p, 'archived')} onNew={() => setComposer({ captureIds: [] })}
           onHandPost={(p) => setHandPost(p)} />
       ) : tab === 'inbox' ? (
-        <InboxTab theme={theme} isMobile={isMobile} captures={captures} uploading={uploading}
+        <InboxTab theme={theme} isMobile={isMobile} captures={captures} uploading={uploading} invoke={invoke} isManager={isManager} onChanged={load}
           onUploadClick={() => uploadRef.current?.click()} onDismiss={dismissCapture}
           onMakePost={(ids) => setComposer({ captureIds: ids })} />
       ) : tab === 'brand' ? (
@@ -303,7 +323,7 @@ export default function Marketing() {
         <Composer
           theme={theme} isMobile={isMobile} companyId={companyId} currentEmployee={currentEmployee} isManager={isManager}
           initialPost={composer.post || null} initialCaptureIds={composer.captureIds || []}
-          captures={captures} linkedPlatforms={linkedPlatforms} invoke={invoke}
+          captures={captures} captureMap={captureMap} linkedPlatforms={linkedPlatforms} invoke={invoke}
           onClose={() => setComposer(null)} onSaved={() => { setComposer(null); load() }}
           onPublish={publishPost}
         />
@@ -354,7 +374,7 @@ function SetupWalkthrough({ theme, isMobile, progress, isManager, onBrand, onCha
 }
 
 // ── Queue ────────────────────────────────────────────────────────────
-function QueueTab({ theme, isMobile, posts, isManager, onEdit, onApprove, onPublish, onUnschedule, onArchive, onNew, onHandPost }) {
+function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, onEdit, onApprove, onPublish, onUnschedule, onArchive, onNew, onHandPost }) {
   const [filter, setFilter] = useState('open')
   const filtered = posts.filter((p) => {
     if (filter === 'open') return ['draft', 'approved', 'failed'].includes(p.status)
@@ -378,7 +398,7 @@ function QueueTab({ theme, isMobile, posts, isManager, onEdit, onApprove, onPubl
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
           {filtered.map((p) => {
             const st = STATUS_STYLE[p.status] || STATUS_STYLE.draft
-            const thumb = (p.media_urls || [])[0]
+            const thumb = (p.media_urls || [])[0] || (p.capture_ids || []).map((id) => captureMap[id]?.url).find(Boolean)
             const urls = Array.isArray(p.post_urls) ? p.post_urls.filter((u) => u?.postUrl) : []
             return (
               <div key={p.id} style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -390,6 +410,7 @@ function QueueTab({ theme, isMobile, posts, isManager, onEdit, onApprove, onPubl
                 <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: st.color, background: st.color + '18', borderRadius: 999, padding: '2px 8px' }}>{st.label}</span>
+                    {p.suggested_at && p.status === 'draft' && <span title="Drafted overnight from recent work. Nobody has read it yet." style={{ fontSize: 11, fontWeight: 700, color: MKT, background: MKT_BG, borderRadius: 999, padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Sparkles size={11} /> Suggested</span>}
                     {p.status === 'scheduled' && p.scheduled_for && <span style={{ fontSize: 11, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}><Clock size={12} /> {fmtWhen(p.scheduled_for)}</span>}
                     {p.status === 'posted' && p.posted_at && <span style={{ fontSize: 11, color: theme.textMuted }}>{fmtWhen(p.posted_at)}{!p.ayrshare_id ? ' · by hand' : ''}</span>}
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: theme.textMuted }}>{(p.platforms || []).map((id) => PLATFORM_BY_ID[id]?.label || id).join(' · ')}</span>
@@ -430,16 +451,32 @@ function QueueTab({ theme, isMobile, posts, isManager, onEdit, onApprove, onPubl
 }
 
 // ── Inbox ────────────────────────────────────────────────────────────
-function InboxTab({ theme, isMobile, captures, uploading, onUploadClick, onDismiss, onMakePost }) {
+function InboxTab({ theme, isMobile, captures, uploading, invoke, isManager, onChanged, onUploadClick, onDismiss, onMakePost }) {
   const [selected, setSelected] = useState([])
+  const [suggesting, setSuggesting] = useState(false)
   const toggle = (id) => setSelected((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id].slice(-5)))
+  // The same thing the nightly cron does, on demand for this company: draft
+  // a post for every inbox photo nobody used and every job that finished
+  // since yesterday with photos on it.
+  const suggestNow = async () => {
+    setSuggesting(true)
+    const r = await invoke('marketing-suggest', {})
+    setSuggesting(false)
+    if (!r.ok) { toast.error(r.error || 'Could not draft'); return }
+    const made = Object.values(r.results || {}).reduce((n, x) => n + (x?.made || 0), 0)
+    toast.success(made ? `${made} draft${made === 1 ? '' : 's'} added to the queue` : 'Nothing new to draft: no unused photos and no finished jobs with photos since yesterday.')
+    onChanged()
+  }
+  const SOURCE_LABEL = { text: 'texted', shared: 'from Field Scout', suggested: 'from a job', upload: '' }
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <button type="button" onClick={onUploadClick} disabled={uploading} style={ghostBtn(theme)}><Upload size={15} /> {uploading ? 'Uploading…' : 'Upload photos'}</button>
         {selected.length > 0 && <button type="button" onClick={() => { onMakePost(selected); setSelected([]) }} style={primaryBtn(MKT)}><Sparkles size={15} /> Make a post from {selected.length}</button>}
-        <span style={{ fontSize: 12, color: theme.textMuted, marginLeft: 'auto' }}>Crews add photos here from Field Scout with Share to Marketing.</span>
+        {isManager && <button type="button" onClick={suggestNow} disabled={suggesting} title="Draft posts from unused photos and yesterday's finished jobs" style={ghostBtn(theme)}><Sparkles size={15} /> {suggesting ? 'Drafting…' : 'Suggest posts now'}</button>}
+        <span style={{ fontSize: 12, color: theme.textMuted, marginLeft: 'auto' }}>Every morning, unused photos and finished jobs become drafts in the queue.</span>
       </div>
+      <TextInCard theme={theme} isMobile={isMobile} invoke={invoke} isManager={isManager} />
       {captures.length === 0 ? (
         <Empty theme={theme} icon={Camera} title="Inbox is empty" body="Photos your crew shares from Field Scout land here. You can also upload straight from your phone." action={<button type="button" onClick={onUploadClick} style={primaryBtn(MKT)}><Upload size={15} /> Upload photos</button>} />
       ) : (
@@ -459,7 +496,7 @@ function InboxTab({ theme, isMobile, captures, uploading, onUploadClick, onDismi
                 <button type="button" onClick={() => onDismiss(c.id)} title="Dismiss" style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.45)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={13} /></button>
                 <div style={{ padding: '6px 8px', fontSize: 11, color: theme.textMuted, display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {c.note && <div style={{ color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.note}</div>}
-                  <div>{fmtWhen(c.created_at)}{c.job_id ? ` · job ${c.job_id}` : ''}</div>
+                  <div>{fmtWhen(c.created_at)}{SOURCE_LABEL[c.source] ? ` · ${SOURCE_LABEL[c.source]}` : ''}{c.job_id ? ` · job ${c.job_id}` : ''}</div>
                 </div>
               </div>
             )
@@ -658,7 +695,7 @@ function ChannelsTab({ theme, isMobile, publisher, isManager, invoke, onChanged 
 }
 
 // ── Composer ─────────────────────────────────────────────────────────
-function Composer({ theme, isMobile, companyId, currentEmployee, isManager, initialPost, initialCaptureIds, captures, linkedPlatforms, invoke, onClose, onSaved, onPublish }) {
+function Composer({ theme, isMobile, companyId, currentEmployee, isManager, initialPost, initialCaptureIds, captures, captureMap = {}, linkedPlatforms, invoke, onClose, onSaved, onPublish }) {
   const [captureIds, setCaptureIds] = useState(initialCaptureIds)
   const [note, setNote] = useState('')
   const [platforms, setPlatforms] = useState(initialPost?.platforms?.length ? initialPost.platforms : [...linkedPlatforms].filter((p) => !PLATFORM_BY_ID[p]?.videoOnly))
@@ -673,7 +710,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
 
   // A post we are editing may reference captures already marked used; keep
   // their urls even though they are not in the inbox list.
-  const captureById = useMemo(() => Object.fromEntries(captures.map((c) => [c.id, c])), [captures])
+  const captureById = useMemo(() => ({ ...captureMap, ...Object.fromEntries(captures.map((c) => [c.id, c])) }), [captures, captureMap])
   const mediaUrls = useMemo(() => {
     const fromCaptures = captureIds.map((id) => captureById[id]?.url).filter(Boolean)
     const known = new Set(fromCaptures)
@@ -830,6 +867,49 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Text-in ──────────────────────────────────────────────────────────
+// Techs text a photo to the company's Twilio number and it lands in the
+// inbox (marketing-textin). Switching it on sets that number's SMS webhook
+// through Twilio's API with the company's own credentials, from here, so
+// nobody opens the Twilio console.
+function TextInCard({ theme, isMobile, invoke, isManager }) {
+  const [st, setSt] = useState(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    invoke('marketing-textin', { action: 'status' }).then((r) => { if (!cancelled) setSt(r?.ok ? r : { ok: false, error: r?.error }) })
+    return () => { cancelled = true }
+  }, [invoke])
+  const enable = async () => {
+    setBusy(true)
+    const r = await invoke('marketing-textin', { action: 'enable' })
+    setBusy(false)
+    if (!r.ok) { toast.error(r.error || 'Could not switch on text-in'); return }
+    toast.success(`Text-in is on. Techs text photos to ${r.number || 'the company number'}.`)
+    setSt((s) => ({ ...(s || {}), ok: true, configured: true, enabled: true, number: r.number }))
+  }
+  if (!st) return null
+  const on = st.configured && st.enabled
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', marginBottom: 12, borderRadius: 10, background: on ? 'rgba(34,197,94,0.08)' : theme.bgCard, border: `1px solid ${on ? 'rgba(34,197,94,0.35)' : theme.border}`, flexWrap: 'wrap' }}>
+      <div style={{ width: 32, height: 32, borderRadius: '50%', background: on ? '#22c55e' : theme.border, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{on ? <Check size={16} /> : <Camera size={15} color={theme.textMuted} />}</div>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>Text photos in{on && st.number ? `: ${st.number}` : ''}</div>
+        <div style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.4 }}>
+          {on
+            ? 'Anyone on the team can text a photo and a line about the job to this number from the cell on their employee record. It lands here.'
+            : !st.configured
+              ? 'Needs the company Twilio number under Settings → Integrations (Account SID, Auth Token, From Number). Then switch it on here.'
+              : 'Twilio is set up. Switch this on and techs can text photos straight to the inbox.'}
+        </div>
+      </div>
+      {!on && st.configured && isManager && (
+        <button type="button" onClick={enable} disabled={busy} style={primaryBtn(MKT)}>{busy ? 'Switching on…' : 'Switch on text-in'}</button>
+      )}
     </div>
   )
 }

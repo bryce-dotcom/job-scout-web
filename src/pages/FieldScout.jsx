@@ -763,7 +763,24 @@ export default function FieldScout() {
           lastErr = err
         }
       }
-      if (uploaded > 0) toast.success(uploaded === 1 ? 'Shared with Marketing' : `${uploaded} photos shared with Marketing`)
+      if (uploaded > 0) {
+        toast.success(uploaded === 1 ? 'Shared with Marketing' : `${uploaded} photos shared with Marketing`)
+        // Tell the office. A shared photo sitting silently in the inbox is
+        // the same as not sharing it.
+        try {
+          const senior = new Set(['Manager', 'Admin', 'Super Admin', 'Owner', 'Developer'])
+          const managers = (employees || []).filter(e => e.active !== false && (senior.has(e.user_role) || e.is_admin === true) && e.id !== currentEmployee?.id)
+          const title = `${currentEmployee?.name || 'A tech'} shared ${uploaded === 1 ? 'a photo' : `${uploaded} photos`} for marketing`
+          const message = note.trim() ? note.trim().slice(0, 140) : 'No note. Open the inbox to make a post.'
+          if (managers.length) {
+            await supabase.from('employee_notifications').insert(managers.map(m => ({
+              company_id: companyId, employee_id: m.id, type: 'marketing_capture', title, message, route: '/marketing',
+              metadata: { job_id: activeEntry.job_id, employee_id: currentEmployee?.id || null },
+            })))
+          }
+          await supabase.from('company_notifications').insert({ company_id: companyId, type: 'marketing_capture', title, message, metadata: { route: '/marketing' } })
+        } catch (err) { console.warn('[FieldScout] marketing notify failed', err) }
+      }
       if (lastErr) toast.error(`${files.length - uploaded} failed: ` + (lastErr?.message || 'unknown'))
       setLinePhotoUploading(false)
       setLinePhotoTarget(null)

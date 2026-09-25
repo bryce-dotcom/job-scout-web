@@ -16,7 +16,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ShieldAlert, Wrench, CalendarClock, CheckCircle2, Bell, X } from 'lucide-react'
+import { ShieldAlert, Wrench, CalendarClock, CheckCircle2, Bell, X, Megaphone } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 
@@ -28,6 +28,8 @@ const ICON = {
   fleet_request_scheduled: CheckCircle2,
   fleet_request_resolved: CheckCircle2,
   fleet_request_declined: Wrench,
+  marketing_capture: Megaphone,
+  marketing_drafts_ready: Megaphone,
 }
 // Severity is colour, and only the two that need to interrupt are loud.
 const TONE = {

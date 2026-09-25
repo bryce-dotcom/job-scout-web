@@ -217,7 +217,30 @@ serve(async (req) => {
       if (unlinked.length) return json({ ok: false, error: `Not connected yet: ${unlinked.join(', ')}. Connect it under Channels first.` }, 400)
 
       const text = composeCaption(post.caption, post.hashtags)
-      const media = (post.media_urls || []).filter(Boolean)
+      let media: string[] = (post.media_urls || []).filter(Boolean)
+      // A suggested draft points at PRIVATE job photos. Only now, with a human
+      // publishing, do copies go to the public bucket the publisher fetches from.
+      if (!media.length && post.capture_ids?.length) {
+        const { data: caps } = await sb.from('marketing_captures').select('id, bucket, path, url, media_type')
+          .eq('company_id', companyId).in('id', post.capture_ids)
+        const urls: string[] = []
+        for (const [i, c] of (caps || []).entries()) {
+          if (c.media_type === 'video') continue
+          if (c.bucket === 'marketing-media' && c.url) { urls.push(c.url); continue }
+          try {
+            const { data: file, error } = await sb.storage.from(c.bucket).download(c.path)
+            if (error || !file) continue
+            const ext = (c.path.split('.').pop() || 'jpg').toLowerCase().replace('jpeg', 'jpg')
+            const path = `${companyId}/published/${postId}_${i}.${ext}`
+            const { error: upErr } = await sb.storage.from('marketing-media').upload(path, file, { contentType: file.type || 'image/jpeg', upsert: true })
+            if (upErr) continue
+            const { data: pub } = sb.storage.from('marketing-media').getPublicUrl(path)
+            urls.push(pub.publicUrl)
+          } catch (err) { console.warn('[marketing-publish] copy failed', c.id, err) }
+        }
+        media = urls
+        if (media.length) await sb.from('marketing_posts').update({ media_urls: media }).eq('id', postId)
+      }
       if (!text && !media.length) return json({ ok: false, error: 'Nothing to post: no caption and no media.' }, 400)
 
       const form = new FormData()
