@@ -1,0 +1,100 @@
+import { describe, it, expect } from 'vitest'
+import {
+  DOCUMENT_TYPES, labelsFor, documentConfig, navLabel, documentType, documentLabels, unverifiedSendRule, configFromSettings } from './documentVocabulary'
+
+describe('what the company calls it', () => {
+  it('a company that never configured anything writes estimates', () => {
+    expect(documentConfig(null)).toEqual({ enabled: ['estimate'], primary: 'estimate' })
+    expect(navLabel(null)).toEqual({ primary: 'Estimates', secondary: null })
+  })
+
+  it('reads the setting whether it arrives as an object or a JSON string', () => {
+    const obj = { enabled: ['bid', 'estimate'], primary: 'bid' }
+    expect(documentConfig(obj).primary).toBe('bid')
+    expect(documentConfig(JSON.stringify(obj)).primary).toBe('bid')
+  })
+
+  it('survives a half-saved setting rather than leaving the nav blank', () => {
+    expect(documentConfig({ enabled: [], primary: 'bid' })).toEqual({ enabled: ['estimate'], primary: 'estimate' })
+    expect(documentConfig({ enabled: ['bid'], primary: 'proposal' })).toEqual({ enabled: ['bid'], primary: 'bid' })
+    expect(documentConfig('not json at all').primary).toBe('estimate')
+    expect(documentConfig({ enabled: ['nonsense'] }).enabled).toEqual(['estimate'])
+  })
+
+  it('is not fooled by casing', () => {
+    expect(documentConfig({ enabled: ['BID', 'Proposal'], primary: 'Bid' }))
+      .toEqual({ enabled: ['bid', 'proposal'], primary: 'bid' })
+  })
+})
+
+describe('the nav entry', () => {
+  it('shows nothing underneath when the company only does one kind', () => {
+    expect(navLabel({ enabled: ['bid'], primary: 'bid' })).toEqual({ primary: 'Bids', secondary: null })
+  })
+
+  it('names the others underneath when it does more than one', () => {
+    expect(navLabel({ enabled: ['estimate', 'bid', 'proposal'], primary: 'bid' }))
+      .toEqual({ primary: 'Bids', secondary: 'Estimates · Proposals' })
+  })
+
+  it('orders the second line the same way for everyone, whatever order they ticked', () => {
+    const a = navLabel({ enabled: ['proposal', 'estimate'], primary: 'estimate' })
+    const b = navLabel({ enabled: ['estimate', 'proposal'], primary: 'estimate' })
+    expect(a).toEqual(b)
+    expect(a.secondary).toBe('Proposals')
+  })
+})
+
+describe('what to call one document', () => {
+  const config = { enabled: ['estimate', 'bid'], primary: 'bid' }
+
+  it('a document with no type of its own follows the company word', () => {
+    // So renaming does not mean relabelling ten thousand old rows.
+    expect(documentType({ id: 1 }, config)).toBe('bid')
+    expect(documentLabels({ id: 1 }, config).one).toBe('Bid')
+  })
+
+  it('a document that knows what it is keeps it, whatever the company leads with', () => {
+    expect(documentType({ document_type: 'estimate' }, config)).toBe('estimate')
+    expect(documentLabels({ document_type: 'proposal' }, config)).toMatchObject({ one: 'Proposal', many: 'Proposals' })
+  })
+
+  it('a junk type falls back to a word rather than rendering blank', () => {
+    expect(documentType({ document_type: 'invoice' }, config)).toBe('bid')
+    expect(labelsFor('nonsense').one).toBe('Estimate')
+    expect(labelsFor(null).many).toBe('Estimates')
+  })
+
+  it('every type has a full set of labels', () => {
+    for (const t of DOCUMENT_TYPES) {
+      const l = labelsFor(t)
+      expect(l.one).toBeTruthy()
+      expect(l.many).toBeTruthy()
+      expect(l.article).toBeTruthy()
+    }
+  })
+})
+
+describe('an unverified sourced price', () => {
+  // A bid is a document you are bound by; an estimate is a conversation.
+  it('blocks the send on a bid and warns on the others', () => {
+    expect(unverifiedSendRule('bid')).toBe('block')
+    expect(unverifiedSendRule('estimate')).toBe('warn')
+    expect(unverifiedSendRule('proposal')).toBe('warn')
+  })
+})
+
+describe('reading it out of the store', () => {
+  it('finds the row in the settings array the pages already hold', () => {
+    const settings = [
+      { key: 'job_statuses', value: '[]' },
+      { key: 'document_types', value: JSON.stringify({ enabled: ['estimate', 'bid'], primary: 'bid' }) },
+    ]
+    expect(configFromSettings(settings)).toEqual({ enabled: ['estimate', 'bid'], primary: 'bid' })
+  })
+
+  it('a company with no such row still gets a word', () => {
+    expect(configFromSettings([])).toEqual({ enabled: ['estimate'], primary: 'estimate' })
+    expect(configFromSettings(null)).toEqual({ enabled: ['estimate'], primary: 'estimate' })
+  })
+})
