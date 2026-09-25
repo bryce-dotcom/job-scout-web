@@ -21,6 +21,7 @@ import { quoteStatusColors as statusColors } from '../lib/statusColors'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { generateEstimatePdf, showsSavingsOnPdf } from '../lib/estimatePdf'
+import { DOCUMENT_TYPES, configFromSettings, labelsFor, documentType, documentWord } from '../lib/documentVocabulary'
 import { toast } from '../lib/toast'
 import SignedProposalCard from '../components/SignedProposalCard'
 import EmailDeliveryBadge from '../components/EmailDeliveryBadge'
@@ -178,9 +179,14 @@ function EstimateDetailInner() {
   const updateQuote = useStore((state) => state.updateQuote)
   const deleteQuote = useStore((state) => state.deleteQuote)
   const settings = useStore((state) => state.settings)
+  const docCfg = configFromSettings(settings)
   const businessUnits = useStore((state) => state.businessUnits)
 
   const [estimate, setEstimate] = useState(null)
+  // What this document is called — its own document_type, else what the
+  // company leads with (lib/documentVocabulary). The header, the kind pill,
+  // the PDF title, the email and the formal layout all read this one value.
+  const docLabels = labelsFor(documentType(estimate, docCfg))
   const [portalTokenStats, setPortalTokenStats] = useState(null) // { access_count, accessed_at, expires_at, is_revoked }
   const [lineItems, setLineItems] = useState([])
   // Arnie's top-3 picks from the add-on catalog for THIS specific
@@ -1638,7 +1644,8 @@ function EstimateDetailInner() {
         company,
         settings: effectiveSettings,
         layout: effectiveSettings.pdf_layout || 'email',
-        businessUnit: buObject
+        businessUnit: buObject,
+        documentWord: documentWord(estimate, docCfg, 'pdf'),
       })
 
       // Show preview instead of immediately saving
@@ -1895,6 +1902,7 @@ function EstimateDetailInner() {
           settings: effectiveSettings,
           layout: effectiveSettings.pdf_layout || 'email',
           businessUnit: buObject,
+          documentWord: documentWord(estimate, docCfg, 'pdf'),
         })
         const fileName = `estimates/${companyId}/${estimate.quote_id || estimate.id}_${Date.now()}.pdf`
         const { error: upErr } = await supabase.storage
@@ -2016,6 +2024,10 @@ function EstimateDetailInner() {
           business_unit_email: buObject?.email || company?.owner_email || '',
           business_unit_address: buObject?.address || company?.address || '',
           presentation_mode: presMode,
+          // The word on the subject line and the button: Estimate, Bid or
+          // Proposal, by lib/documentVocabulary — the same word the PDF and
+          // the portal carry, so the customer never sees two.
+          document_word: documentWord(estimate, docCfg, presMode),
           customer_name: custName,
           subtotal: subtotalCalc,
           discount: discountCalc,
@@ -2097,7 +2109,7 @@ function EstimateDetailInner() {
         console.warn('[EstimateDetail] failed to archive sent email into thread:', logErr)
       }
 
-      toast.success('Estimate sent successfully!')
+      toast.success(`${docLabels.one} sent successfully!`)
       setShowSendModal(false)
       setSendSubject('')
       setSendAttachments([])
@@ -2442,7 +2454,7 @@ function EstimateDetailInner() {
             fontWeight: '700',
             color: theme.text
           }}>
-            Estimate {estimate.quote_id || `#${estimate.id}`}
+            {docLabels.one} {estimate.quote_id || `#${estimate.id}`}
           </h1>
           <p style={{ fontSize: '14px', color: theme.textSecondary }}>
             {estimate.estimate_name || customerInfo?.name || customerInfo?.customer_name || 'No customer'}
@@ -2523,6 +2535,32 @@ function EstimateDetailInner() {
             buttons stack onto extra rows on phones instead of running past
             the viewport edge (clipped by the page-root overflowX:hidden). */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {/* Which kind of document this is. Shown only when the company
+              produces more than one kind (or this one was typed by hand), so
+              a company that only writes estimates never sees a pointless
+              pill. Saved on the row: a document made a Bid stays a Bid
+              whatever the company later leads with. */}
+          {(docCfg.enabled.length > 1 || estimate.document_type) && (
+            <select
+              value={documentType(estimate, docCfg)}
+              title="What kind of document this is — the word the customer sees"
+              onChange={async (e) => {
+                await updateEstimateField('document_type', e.target.value)
+                await fetchQuotes()
+              }}
+              style={{
+                padding: '6px 28px 6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: '500',
+                backgroundColor: theme.accentBg, color: theme.accent, border: 'none', cursor: 'pointer',
+                appearance: 'none', WebkitAppearance: 'none',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='${encodeURIComponent(theme.accent)}'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', minHeight: '32px'
+              }}
+            >
+              {[...new Set([...docCfg.enabled, ...(DOCUMENT_TYPES.includes(estimate.document_type) ? [estimate.document_type] : [])])].map(t => (
+                <option key={t} value={t}>{labelsFor(t).one}</option>
+              ))}
+            </select>
+          )}
           <select
             value={estimate.status}
             onChange={async (e) => {
@@ -2569,7 +2607,7 @@ function EstimateDetailInner() {
           </select>
           <button
             onClick={() => setShowSettingsModal(true)}
-            title="Estimate Settings"
+            title={`${docLabels.one} Settings`}
             style={{
               padding: '8px',
               backgroundColor: theme.bgCard,
@@ -2724,7 +2762,7 @@ function EstimateDetailInner() {
               <CheckCircle size={20} color="#16a34a" />
             </div>
             <div>
-              <div style={{ fontSize: '15px', fontWeight: '600', color: '#166534' }}>Estimate Approved</div>
+              <div style={{ fontSize: '15px', fontWeight: '600', color: '#166534' }}>{docLabels.one} Approved</div>
               <div style={{ fontSize: '13px', color: '#4d7c0f' }}>Ready to convert to a job and start delivery</div>
             </div>
           </div>
@@ -2958,7 +2996,7 @@ function EstimateDetailInner() {
                 justifyContent: 'space-between',
                 cursor: isMobile ? 'pointer' : 'default'
               }}>
-              Estimate Details
+              {docLabels.one} Details
               {isMobile && (detailsCollapsed ? <ChevronDown size={18} /> : <ChevronRight size={18} />)}
             </h3>
             {!detailsCollapsed && (
@@ -2988,7 +3026,7 @@ function EstimateDetailInner() {
                 )}
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>Estimate Name</label>
+                <label style={labelStyle}>{docLabels.one} Name</label>
                 <input
                   type="text"
                   value={estimate.estimate_name || ''}
@@ -3008,7 +3046,7 @@ function EstimateDetailInner() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Estimate Date</label>
+                <label style={labelStyle}>{docLabels.one} Date</label>
                 <input
                   type="date"
                   value={estimate.created_at ? estimate.created_at.slice(0, 10) : ''}
@@ -3094,7 +3132,7 @@ function EstimateDetailInner() {
                 </p>
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>Estimate Message</label>
+                <label style={labelStyle}>{docLabels.one} Message</label>
                 <textarea
                   value={estimate.estimate_message || ''}
                   onChange={(e) => updateEstimateField('estimate_message', e.target.value)}
@@ -3853,7 +3891,7 @@ function EstimateDetailInner() {
               color: theme.text,
               marginBottom: '16px'
             }}>
-              Estimate Summary
+              {docLabels.one} Summary
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -5478,6 +5516,9 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
 
   // Data shape that FormalProposal expects (same as CustomerPortal)
   const previewData = {
+    // The company's vocabulary, so the kicker reads BID for a bid here
+    // exactly as it will on the customer's portal.
+    document_vocabulary: configFromSettings(storeSettings),
     document: {
       ...estimate,
       settings_overrides: {

@@ -86,6 +86,7 @@ serve(async (req) => {
     let lineItems: unknown[] = [];
     let approval = null;
     let paymentsData: unknown[] = [];
+    let documentVocabulary: unknown = null;
 
     if (tokenRow.document_type === 'estimate') {
       const { data: est } = await supabase
@@ -182,6 +183,18 @@ serve(async (req) => {
           }
           lineItems = lineItems.map((l: any) => ({ ...l, line_photos: byLine[l.id] || [] }));
         }
+
+        // What this company calls the document (settings.document_types —
+        // lib/documentVocabulary). The portal resolves the word from it and
+        // the row's own document_type, so "Approve Estimate" reads "Approve
+        // Bid" for a buyer who asked for a bid. Missing row = estimates.
+        const { data: vocabRows } = await supabase
+          .from('settings')
+          .select('value')
+          .eq('company_id', est.company_id)
+          .eq('key', 'document_types')
+          .limit(1);
+        documentVocabulary = vocabRows?.[0]?.value ?? null;
 
         // Check for existing approval
         const { data: approvalData } = await supabase
@@ -500,7 +513,8 @@ serve(async (req) => {
       google_place_id: company?.google_place_id || null,
       google_review_url: googleReviewUrl,
       invoice_settings: invoiceSettings,
-      saved_payment_methods: savedPaymentMethods
+      saved_payment_methods: savedPaymentMethods,
+      document_vocabulary: documentVocabulary
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {

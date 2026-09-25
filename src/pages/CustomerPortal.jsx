@@ -6,6 +6,7 @@ import { buildInvoiceSections, deductionLineLabel } from '../lib/invoiceSections
 import { isLegacyNetShape } from '../lib/arHelpers'
 import { withAssets } from '../lib/productAssets'
 import { enabledWalletsFrom, displayHandle, walletGuidance } from '../lib/wallets'
+import { documentWord } from '../lib/documentVocabulary'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -246,6 +247,11 @@ export default function CustomerPortal() {
   const { document_type, document: doc, line_items, company, customer, business_unit, approval, payments, payment_config, google_place_id, google_review_url, invoice_settings } = data
   const isEstimate = document_type === 'estimate'
   const isInvoice = document_type === 'invoice'
+  // The word the buyer asked for — Estimate, Bid or Proposal — from the
+  // quote's own document_type and the company's vocabulary, which
+  // get-portal-document sends as document_vocabulary. (`document_type`
+  // above is the TOKEN's kind, estimate vs invoice: a different field.)
+  const word = isEstimate ? documentWord(doc, data.document_vocabulary, doc?.settings_overrides?.presentation_mode) : 'Invoice'
 
   // Branding
   const displayName = business_unit?.name || company?.company_name || 'Company'
@@ -448,7 +454,7 @@ export default function CustomerPortal() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px' }}>
               <span style={{ fontSize: '24px', color: theme.success }}>&#10003;</span>
               <div>
-                <p style={{ fontWeight: '600', color: theme.success, margin: 0 }}>Estimate Approved</p>
+                <p style={{ fontWeight: '600', color: theme.success, margin: 0 }}>{word} Approved</p>
                 <p style={{ color: theme.textSecondary, fontSize: '13px', margin: '4px 0 0' }}>Your approval has been recorded.</p>
               </div>
             </div>
@@ -465,7 +471,7 @@ export default function CustomerPortal() {
             <h1 style={{ fontSize: isMobile ? '18px' : '22px', fontWeight: '700', color: theme.text, margin: '0 0 6px' }}>{displayName}</h1>
             <div style={{ display: 'inline-block', backgroundColor: theme.accentBg, padding: '6px 16px', borderRadius: '20px' }}>
               <span style={{ color: theme.accent, fontSize: '14px', fontWeight: '600' }}>
-                {isEstimate ? `Estimate ${doc.quote_id || ''}` : `Invoice ${doc.invoice_id || ''}`}
+                {isEstimate ? `${word} ${doc.quote_id || ''}` : `Invoice ${doc.invoice_id || ''}`}
               </span>
             </div>
 
@@ -879,7 +885,7 @@ export default function CustomerPortal() {
               onClick={() => setShowApproveModal(true)}
               style={styles.primaryButton}
             >
-              I Approve This Estimate
+              I Approve This {word}
             </button>
           )}
 
@@ -1237,9 +1243,9 @@ export default function CustomerPortal() {
         <div style={styles.overlay}>
           <div style={{ ...styles.modal, maxWidth: isMobile ? '100%' : '440px' }}>
             <div style={{ padding: isMobile ? '20px 20px 0' : '24px 24px 0' }}>
-              <h2 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: '700', color: theme.text, margin: '0 0 4px' }}>Approve Estimate</h2>
+              <h2 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: '700', color: theme.text, margin: '0 0 4px' }}>Approve {word}</h2>
               <p style={{ color: theme.textMuted, fontSize: '14px', margin: '0 0 20px' }}>
-                Confirm your information to approve this estimate.
+                Confirm your information to approve this {word.toLowerCase()}.
               </p>
             </div>
 

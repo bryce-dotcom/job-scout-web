@@ -93,6 +93,25 @@ export function documentLabels(doc, raw) {
 }
 
 /**
+ * The word the CUSTOMER sees — email subject, portal header, PDF title, the
+ * formal layout's kicker.
+ *
+ * Before document types existed the presentation mode chose the word: the
+ * plain PDF said "Estimate", the interactive and formal layouts said
+ * "Proposal". A company that never touched the setting keeps exactly that,
+ * so nothing it sends today reads differently tomorrow. A document that IS
+ * a bid or a proposal (its own type, or the company leads with one) says so
+ * in every mode — the government buyer who asked for a bid gets "Bid" on
+ * the PDF, in the subject line and on the signing page alike.
+ */
+export function documentWord(doc, raw, presentationMode) {
+  const type = documentType(doc, raw)
+  if (type !== DEFAULT_PRIMARY) return labelsFor(type).one
+  const mode = String(presentationMode || 'pdf').toLowerCase()
+  return (mode === 'interactive' || mode === 'formal') ? LABELS.proposal.one : LABELS.estimate.one
+}
+
+/**
  * A bid is a document you are bound by, so an unverified sourced price stops
  * it going out; an estimate warns and lets you send (Bryce, 2026-09-25).
  * Field Scout blocks a send on failed verification and the clock-out flow

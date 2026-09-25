@@ -56,6 +56,7 @@ import { seedSampleData, clearAllData } from '../lib/seedData'
 import BillingTab from '../components/BillingTab'
 import { toast } from '../lib/toast'
 import { WALLETS } from '../lib/wallets'
+import { DOCUMENT_TYPES, DOCUMENT_TYPES_KEY, labelsFor, configFromSettings } from '../lib/documentVocabulary'
 
 // Auto-format phone number as (XXX) XXX-XXXX while typing
 function formatPhoneInput(value) {
@@ -2221,6 +2222,69 @@ function NotificationsTab({ theme, settings, saveSetting, user }) {
   )
 }
 
+// Which kinds of document this company sends before the work — estimates,
+// bids, proposals — and which one it leads with. lib/documentVocabulary is
+// the rule (nav, page, PDF, email, portal all read it); this only writes the
+// setting. Saves on every change: a company that sends bids wants the
+// sidebar to say so the moment it ticks the box, and there is no half-state
+// worth a Save button.
+function DocumentTypesSection({ theme, settings, saveSetting }) {
+  const cfg = configFromSettings(settings)
+  const [saving, setSaving] = useState(false)
+
+  const save = async (next) => {
+    setSaving(true)
+    await saveSetting(DOCUMENT_TYPES_KEY, next)
+    setSaving(false)
+    toast.success(`You send ${next.enabled.map(t => labelsFor(t).many.toLowerCase()).join(', ')}, leading with ${labelsFor(next.primary).many.toLowerCase()}`)
+  }
+  const toggle = (type) => {
+    const on = cfg.enabled.includes(type)
+    let enabled = on ? cfg.enabled.filter(t => t !== type) : [...cfg.enabled, type]
+    if (enabled.length === 0) enabled = [type] // never none — the nav needs a word
+    const primary = enabled.includes(cfg.primary) ? cfg.primary : enabled[0]
+    save({ enabled, primary })
+  }
+  const leadWith = (type) => {
+    const enabled = cfg.enabled.includes(type) ? cfg.enabled : [...cfg.enabled, type]
+    save({ enabled, primary: type })
+  }
+
+  return (
+    <div style={{ marginBottom: '28px', paddingBottom: '20px', borderBottom: `1px solid ${theme.border}` }}>
+      <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '4px' }}>What do you send before the work?</h4>
+      <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px', lineHeight: 1.5 }}>
+        Tick every kind you produce and choose the one you lead with. The sidebar, each document's page,
+        the PDF title, the email subject and the customer's approval page all use that word, so a buyer
+        who asked for a bid sees <strong>Bid</strong>, never <strong>Estimate</strong>. Each document can
+        still be switched to another kind on its own page.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '8px', maxWidth: '480px' }}>
+        {DOCUMENT_TYPES.map(type => {
+          const on = cfg.enabled.includes(type)
+          const isPrimary = cfg.primary === type
+          return (
+            <div key={type} style={{
+              display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', minHeight: '44px',
+              border: `1px solid ${isPrimary ? theme.accent : theme.border}`, borderRadius: '8px',
+              backgroundColor: isPrimary ? theme.accentBg : 'transparent', opacity: saving ? 0.7 : 1,
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, cursor: 'pointer', minHeight: '24px' }}>
+                <input type="checkbox" checked={on} disabled={saving} onChange={() => toggle(type)} />
+                <span style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{labelsFor(type).many}</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: isPrimary ? theme.accent : theme.textMuted, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                <input type="radio" name="document_types_primary" checked={isPrimary} disabled={saving} onChange={() => leadWith(type)} />
+                {isPrimary ? 'You lead with this' : 'Lead with this'}
+              </label>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function EstimateDefaultsTab({ theme, settings, saveSetting }) {
   const existing = settings.find(s => s.key === 'estimate_defaults')
   let defaults = {
@@ -2334,6 +2398,7 @@ function EstimateDefaultsTab({ theme, settings, saveSetting }) {
 
   return (
     <div>
+      <DocumentTypesSection theme={theme} settings={settings} saveSetting={saveSetting} />
       <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Estimate Defaults</h3>
       <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '24px' }}>
         Configure default settings for all new estimates. Individual estimates can override these.

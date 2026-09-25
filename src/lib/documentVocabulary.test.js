@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  DOCUMENT_TYPES, labelsFor, documentConfig, navLabel, documentType, documentLabels, unverifiedSendRule, configFromSettings } from './documentVocabulary'
+  DOCUMENT_TYPES, labelsFor, documentConfig, navLabel, documentType, documentLabels, unverifiedSendRule, configFromSettings, documentWord } from './documentVocabulary'
 
 describe('what the company calls it', () => {
   it('a company that never configured anything writes estimates', () => {
@@ -96,5 +96,34 @@ describe('reading it out of the store', () => {
   it('a company with no such row still gets a word', () => {
     expect(configFromSettings([])).toEqual({ enabled: ['estimate'], primary: 'estimate' })
     expect(configFromSettings(null)).toEqual({ enabled: ['estimate'], primary: 'estimate' })
+  })
+})
+
+describe('the word the customer sees', () => {
+  // Before types existed the presentation mode chose the word. A company that
+  // never touched the setting must keep sending exactly what it sends today.
+  it('an untyped estimate keeps the per-mode word it always had', () => {
+    expect(documentWord({}, null, 'pdf')).toBe('Estimate')
+    expect(documentWord({}, null, undefined)).toBe('Estimate')
+    expect(documentWord({}, null, 'interactive')).toBe('Proposal')
+    expect(documentWord({}, null, 'formal')).toBe('Proposal')
+  })
+
+  it('a bid is a Bid in every mode — the buyer asked for one', () => {
+    const bid = { document_type: 'bid' }
+    expect(documentWord(bid, null, 'pdf')).toBe('Bid')
+    expect(documentWord(bid, null, 'interactive')).toBe('Bid')
+    expect(documentWord(bid, null, 'formal')).toBe('Bid')
+  })
+
+  it('an untyped document at a company that leads with bids is a Bid', () => {
+    const raw = { enabled: ['estimate', 'bid'], primary: 'bid' }
+    expect(documentWord({ document_type: null }, raw, 'pdf')).toBe('Bid')
+    // ...and one deliberately made an estimate there stays an estimate.
+    expect(documentWord({ document_type: 'estimate' }, raw, 'pdf')).toBe('Estimate')
+  })
+
+  it('a typed proposal says Proposal even on the plain PDF', () => {
+    expect(documentWord({ document_type: 'proposal' }, null, 'pdf')).toBe('Proposal')
   })
 })

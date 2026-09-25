@@ -6,6 +6,7 @@ import { buildDefaultTerms, sha256Hex } from './formalProposalDefaults'
 import { sanitizeValueSection } from '../../lib/valueClaims'
 import { getCustomerPrimary, getCustomerSecondary } from '../../lib/customerDisplay'
 import { resolveAnnualSavings } from '../../lib/annualSavings'
+import { documentWord } from '../../lib/documentVocabulary'
 
 /**
  * Formal / legal proposal view rendered inside CustomerPortal.
@@ -171,7 +172,10 @@ export default function FormalProposal({
             {senderEmail && <div style={styles.senderLine}>{senderEmail}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={styles.kicker}>PROPOSAL</div>
+            {/* The kicker is the buyer's first word. A bid says BID; the company's
+                own vocabulary (data.document_vocabulary, sent by the portal
+                function) decides for an untyped document. */}
+            <div style={styles.kicker}>{documentWord(doc, data?.document_vocabulary, 'formal').toUpperCase()}</div>
             <div style={styles.metaRow}>No. <strong>{doc?.quote_id || `EST-${doc?.id}`}</strong></div>
             <div style={styles.metaRow}>Date: {today}</div>
             {doc?.expiration_date && <div style={styles.metaRow}>Expires: {new Date(doc.expiration_date).toLocaleDateString()}</div>}

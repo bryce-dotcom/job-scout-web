@@ -49,10 +49,17 @@ serve(async (req) => {
       down_payment_amount,
       custom_subject,
       extra_attachments,
+      // What this company calls the document: 'Estimate' | 'Bid' | 'Proposal'
+      // (lib/documentVocabulary.documentWord on the client). Absent from older
+      // callers, in which case the presentation mode picks the word exactly as
+      // it always did.
+      document_word,
     } = await req.json();
 
     const isInteractive = presentation_mode === 'interactive';
     const isFormal = presentation_mode === 'formal';
+    const word: string = String(document_word || ((isInteractive || isFormal) ? 'Proposal' : 'Estimate')).trim() || 'Estimate';
+    const wordLower = word.toLowerCase();
 
     if (!recipient_email || !estimate_id) {
       return new Response(JSON.stringify({ error: 'recipient_email and estimate_id are required' }),
@@ -137,14 +144,14 @@ serve(async (req) => {
     if (contactAddress) contactParts.push(contactAddress);
     const contactLine = contactParts.join(' &nbsp;&bull;&nbsp; ');
 
-    const badgeLabel = isFormal ? `FORMAL PROPOSAL ${estNum}` : isInteractive ? `PROPOSAL ${estNum}` : `ESTIMATE ${estNum}`;
+    const badgeLabel = isFormal ? `FORMAL ${word.toUpperCase()} ${estNum}` : `${word.toUpperCase()} ${estNum}`;
     const defaultSubject = isFormal
-      ? `Formal Proposal ${estNum} from ${displayName}`
+      ? `Formal ${word} ${estNum} from ${displayName}`
       : isInteractive
-        ? `Your Proposal from ${displayName}`
-        : `Estimate ${estNum} from ${displayName}`;
+        ? `Your ${word} from ${displayName}`
+        : `${word} ${estNum} from ${displayName}`;
     const subject = custom_subject || defaultSubject;
-    const ctaLabel = isFormal ? 'Review &amp; Sign Proposal' : isInteractive ? 'View Your Proposal' : 'View Estimate Online';
+    const ctaLabel = isFormal ? `Review &amp; Sign ${word}` : isInteractive ? `View Your ${word}` : `View ${word} Online`;
 
     // Summary table — only for formal. Mirrors the EstimateDetail summary
     // exactly: Subtotal, Discount, Contract Total, Utility Incentive,
@@ -185,10 +192,10 @@ serve(async (req) => {
     }
 
     const introCopy = isFormal
-      ? `We've prepared a formal proposal for your review. This is a complete legal agreement${totalNum > 0 ? ` for <strong style="color:#2c3530;">${currency(totalNum)}</strong>` : ''}. You can read it top-to-bottom, digitally sign it, and optionally pay the ${dpLabel.toLowerCase()} online using the secure link below.`
+      ? `We've prepared a formal ${wordLower} for your review. This is a complete legal agreement${totalNum > 0 ? ` for <strong style="color:#2c3530;">${currency(totalNum)}</strong>` : ''}. You can read it top-to-bottom, digitally sign it, and optionally pay the ${dpLabel.toLowerCase()} online using the secure link below.`
       : isInteractive
-        ? `We've prepared a detailed proposal for your review. Click below to view your interactive proposal with project details, cost breakdown, and projected savings.`
-        : `Thank you for your interest. Please find your estimate attached to this email as a PDF document.`;
+        ? `We've prepared a detailed ${wordLower} for your review. Click below to view your interactive ${wordLower} with project details, cost breakdown, and projected savings.`
+        : `Thank you for your interest. Please find your ${wordLower} attached to this email as a PDF document.`;
 
     const htmlBody = `
 <!DOCTYPE html>

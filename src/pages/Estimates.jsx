@@ -11,6 +11,7 @@ import { estimatesFields, quoteLinesFields } from '../lib/importExportFields'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
 import PageHeader from '../components/PageHeader'
 import { matchAllTokens, buildBlob } from '../lib/searchUtils'
+import { configFromSettings, labelsFor, documentType } from '../lib/documentVocabulary'
 import { findSimilarLeads } from '../lib/leadDuplicates'
 
 // Light theme fallback
@@ -37,6 +38,13 @@ export default function Estimates() {
   const serviceTypes = useStore((state) => state.serviceTypes)
   const fetchQuotes = useStore((state) => state.fetchQuotes)
   const fetchLeads = useStore((state) => state.fetchLeads)
+  // What this company calls these — Estimates, Bids, Proposals — and which
+  // kinds it produces. lib/documentVocabulary is the rule; the nav, the
+  // detail page and everything the customer sees read the same one.
+  const settings = useStore((state) => state.settings)
+  const docCfg = configFromSettings(settings)
+  const lead = labelsFor(docCfg.primary)
+  const manyKinds = docCfg.enabled.length > 1
 
   const [showModal, setShowModal] = useState(false)
   const [associationType, setAssociationType] = useState('lead') // 'lead' | 'customer' | 'newLead'
@@ -46,7 +54,8 @@ export default function Estimates() {
     salesperson_id: '',
     service_type: '',
     estimate_name: '',
-    notes: ''
+    notes: '',
+    document_type: ''
   })
   const [newLeadData, setNewLeadData] = useState({
     customer_name: '',
@@ -59,6 +68,7 @@ export default function Estimates() {
   const [error, setError] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('all') // estimate | bid | proposal, when the company produces several
   // Hide noise estimates by default (Draft + $0). Doug reported the
   // unfiltered list was full of $0 / unrelated drafts when he searched.
   const [hideNoise, setHideNoise] = useState(true)
@@ -135,6 +145,7 @@ export default function Estimates() {
     const matchesSearch = matchAllTokens(blob, searchTerm)
 
     const matchesStatus = statusFilter === 'all' || quote.status === statusFilter
+    if (typeFilter !== 'all' && documentType(quote, docCfg) !== typeFilter) return false
 
     // "Hide noise" — drop drafts with $0 since those are usually
     // unfinished estimates. Bypass when a search is active so the
@@ -240,7 +251,11 @@ export default function Estimates() {
         estimate_name: formData.estimate_name || null,
         notes: formData.notes || null,
         status: 'Draft',
-        quote_amount: 0
+        quote_amount: 0,
+        // The kind is stored on the row only when the rep had a choice to
+        // make. A one-kind company leaves it null, so renaming later renames
+        // everything; a rep who picked Bid from three keeps a Bid.
+        document_type: manyKinds ? (formData.document_type || docCfg.primary) : null
       }])
       .select()
       .single()
@@ -252,7 +267,7 @@ export default function Estimates() {
     }
 
     setShowModal(false)
-    setFormData({ lead_id: '', customer_id: '', salesperson_id: '', service_type: '', estimate_name: '', notes: '' })
+    setFormData({ lead_id: '', customer_id: '', salesperson_id: '', service_type: '', estimate_name: '', notes: '', document_type: '' })
     setNewLeadData({ customer_name: '', email: '', phone: '', address: '', service_type: '' })
     setAssociationType('lead')
     await fetchQuotes()
@@ -300,7 +315,7 @@ export default function Estimates() {
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
       {/* Header */}
       <PageHeader
-        title="Estimates"
+        title={lead.many}
         icon={FileText}
         actions={<>
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
@@ -331,7 +346,7 @@ export default function Estimates() {
             }}
           >
             <Plus size={18} />
-            {isMobile ? 'New' : 'New Estimate'}
+            {isMobile ? 'New' : `New ${lead.one}`}
           </button>
         </>}
       />
@@ -402,7 +417,7 @@ export default function Estimates() {
           }} />
           <input
             type="text"
-            placeholder="Search estimates..."
+            placeholder={`Search ${lead.many.toLowerCase()}...`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
@@ -425,6 +440,16 @@ export default function Estimates() {
           <option value="Rejected">Rejected</option>
           <option value="Expired">Expired</option>
         </select>
+        {manyKinds && (
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            style={{ ...inputStyle, width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 0 : '140px', fontSize: isMobile ? '16px' : '14px', minHeight: isMobile ? '44px' : 'auto' }}
+          >
+            <option value="all">All kinds</option>
+            {docCfg.enabled.map(t => <option key={t} value={t}>{labelsFor(t).many}</option>)}
+          </select>
+        )}
         <label
           title="Drafts with $0 are usually unfinished — hide them by default. Searching ignores this filter."
           style={{
@@ -514,6 +539,12 @@ export default function Estimates() {
                       </h3>
                       <p style={{ fontSize: '13px', color: theme.accent, fontWeight: '500' }}>
                         {estimate.quote_id || `#${estimate.id}`}
+                        {/* The kind, when there is more than one to tell apart */}
+                        {(manyKinds || (estimate.document_type && estimate.document_type !== docCfg.primary)) && (
+                          <span style={{ marginLeft: '8px', padding: '1px 7px', borderRadius: '10px', fontSize: '11px', backgroundColor: theme.accentBg, color: theme.accent }}>
+                            {labelsFor(documentType(estimate, docCfg)).one}
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -582,7 +613,7 @@ export default function Estimates() {
                 fontWeight: '600',
                 color: theme.text
               }}>
-                New Estimate
+                New {labelsFor(formData.document_type || docCfg.primary).one}
               </h2>
               <button
                 onClick={() => setShowModal(false)}
@@ -615,8 +646,34 @@ export default function Estimates() {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {manyKinds && (
+                  <div>
+                    <label style={labelStyle}>What kind of document is this?</label>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {docCfg.enabled.map(t => {
+                        const on = (formData.document_type || docCfg.primary) === t
+                        return (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setFormData(f => ({ ...f, document_type: t }))}
+                            style={{
+                              padding: '8px 14px', minHeight: '40px', borderRadius: '8px', cursor: 'pointer',
+                              border: `1px solid ${on ? theme.accent : theme.border}`,
+                              backgroundColor: on ? theme.accentBg : 'transparent',
+                              color: on ? theme.accent : theme.textSecondary,
+                              fontSize: '14px', fontWeight: on ? 600 : 400,
+                            }}
+                          >
+                            {labelsFor(t).one}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div>
-                  <label style={labelStyle}>Estimate Name</label>
+                  <label style={labelStyle}>{labelsFor(formData.document_type || docCfg.primary).one} Name</label>
                   <input
                     type="text"
                     name="estimate_name"
@@ -872,7 +929,7 @@ export default function Estimates() {
                     opacity: loading ? 0.6 : 1
                   }}
                 >
-                  {loading ? 'Creating...' : 'Create Estimate'}
+                  {loading ? 'Creating...' : `Create ${labelsFor(formData.document_type || docCfg.primary).one}`}
                 </button>
               </div>
             </form>

@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext, useMemo } from 'react'
 import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useStore } from '../lib/store'
+import { configFromSettings, navLabel } from '../lib/documentVocabulary'
 import { fetchDueFollowUpCount } from '../lib/followUpDue'
 import FeedbackButton from './FeedbackButton'
 import ArnieFloatingPanel from './ArnieFloatingPanel'
@@ -177,6 +178,13 @@ export default function Layout() {
   const clearSession = useStore((state) => state.clearSession)
   const isDeveloper = useStore((state) => state.isDeveloper)
   const aiModules = useStore((state) => state.aiModules) || []
+  // What this company calls the thing it sends before the work. The nav
+  // reads the same rule as the page, the email and the portal
+  // (lib/documentVocabulary), so the sidebar cannot say Estimates while the
+  // customer is being sent a Bid. The second line exists only when the
+  // company produces more than one kind.
+  const settingsRows = useStore((state) => state.settings)
+  const docNav = navLabel(configFromSettings(settingsRows))
   const updateAgentPlacement = useStore((state) => state.updateAgentPlacement)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [expandedMenus, setExpandedMenus] = useState({})
@@ -339,7 +347,10 @@ export default function Layout() {
       ],
     },
     { to: '/pipeline', icon: GitBranch, label: 'Pipeline', step: 4, hint: 'Track leads through sales process', color: '#f59e0b', badgeCount: dueFollowUps },
-    { to: '/estimates', icon: FileText, label: 'Estimates', step: 5, hint: 'Create and send estimates', color: '#3b82f6' }
+    // `label` stays 'Estimates': it is the KEY agents are parented under
+    // ("Under Estimates" in the placement picker) and must not move with the
+    // company's vocabulary. `title` and `subtitle` are what the eye sees.
+    { to: '/estimates', icon: FileText, label: 'Estimates', title: docNav.primary, subtitle: docNav.secondary, step: 5, hint: `Create and send ${docNav.primary.toLowerCase()}`, color: '#3b82f6' }
     // Jobs used to be step 5 here. It is the first step of DELIVERY, not the
     // last step of sales, and the three other screens that mean the same thing
     // (Job Board, Recurring Jobs, Service Visits) sat four items away in
@@ -1080,7 +1091,12 @@ export default function Layout() {
                       }}>
                         {item.step}
                       </div>
-                      <span style={{ flex: 1 }}>{item.label}</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block' }}>{item.title || item.label}</span>
+                        {item.subtitle && (
+                          <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>{item.subtitle}</span>
+                        )}
+                      </span>
                       <item.icon size={16} style={{ opacity: 0.6 }} />
                     </NavLink>
                     {/* Sub-steps of this stage (Appointments under Lead
@@ -1653,7 +1669,10 @@ export default function Layout() {
                             {item.step}
                           </div>
                           <div style={{ flex: 1 }}>
-                            <div>{item.label}</div>
+                            <div>
+                              {item.title || item.label}
+                              {item.subtitle && <span style={{ fontSize: '11px', opacity: 0.75, marginLeft: '6px' }}>{item.subtitle}</span>}
+                            </div>
                             <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
                               {item.hint}
                             </div>

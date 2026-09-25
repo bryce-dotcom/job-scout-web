@@ -98,7 +98,11 @@ async function loadPhotoForPdf(url, maxSide = 600) {
  */
 export const showsSavingsOnPdf = (settings) => settings?.estimate_pdf_show_savings !== false
 
-export async function generateEstimatePdf({ estimate, lineItems, company, settings, layout = 'email', businessUnit }) {
+// documentWord: what this company calls the document — "Estimate", "Bid" or
+// "Proposal" (lib/documentVocabulary.documentWord). The title at the top of
+// the PDF is the first thing the buyer reads, so it must match what they
+// asked for. Defaults to Estimate so older callers render unchanged.
+export async function generateEstimatePdf({ estimate, lineItems, company, settings, layout = 'email', businessUnit, documentWord = 'Estimate' }) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' })
   const pw = doc.internal.pageSize.getWidth()   // 215.9
   const ph = doc.internal.pageSize.getHeight()   // 279.4
@@ -137,13 +141,13 @@ export async function generateEstimatePdf({ estimate, lineItems, company, settin
     doc.addPage()
   }
 
-  drawEstimate(doc, { estimate, lineItems: enrichedLines, company, brand, logo, settings, m, pw, ph, cw })
+  drawEstimate(doc, { estimate, lineItems: enrichedLines, company, brand, logo, settings, m, pw, ph, cw, documentWord })
 
   return doc.output('blob')
 }
 
 // ─── Main estimate layout ───────────────────────────────────────
-function drawEstimate(doc, { estimate, lineItems, company, brand, logo, settings, m, pw, ph, cw }) {
+function drawEstimate(doc, { estimate, lineItems, company, brand, logo, settings, m, pw, ph, cw, documentWord = 'Estimate' }) {
   let y = m
 
   // ── Header band ──
@@ -212,11 +216,11 @@ function drawEstimate(doc, { estimate, lineItems, company, brand, logo, settings
   doc.line(m, y, pw - m, y)
   y += 6
 
-  // ── "ESTIMATE" title + estimate number ──
+  // ── "ESTIMATE" / "BID" / "PROPOSAL" title + document number ──
   doc.setFontSize(24)
   doc.setTextColor(...C.primaryDk)
   doc.setFont('helvetica', 'bold')
-  doc.text('ESTIMATE', m, y + 1)
+  doc.text(String(documentWord || 'Estimate').toUpperCase(), m, y + 1)
 
   const estNum = estimate.quote_id || `EST-${estimate.id}`
   doc.setFontSize(12)
