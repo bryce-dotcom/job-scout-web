@@ -35,6 +35,7 @@ const providerRx = flag('--provider') ? new RegExp(flag('--provider'), 'i') : nu
 const CONCURRENCY = Number(flag('--concurrency') || 2)
 const MIN_MAPPED = Number(flag('--min-mapped') || 3)
 const LIMIT = Number(flag('--limit') || 0)
+const UPLOAD_MISSING = has('--upload-missing')
 
 const env = Object.fromEntries(
   fs.readFileSync('.env', 'utf8').split('\n').filter(l => l.includes('='))
@@ -68,6 +69,20 @@ function storagePathFor(form, provider) {
   return `${provider.state || 'XX'}/${slug(provider.provider_name)}/form/${filename.replace(/[^A-Za-z0-9._-]+/g, '_')}`
 }
 
+// The parser returns the bytes; we store them (its own upload failed silently
+// until 2026-09-25, and a path is only a file once the object really exists).
+const publicUrl = (p) => `${URL}/storage/v1/object/public/utility-pdfs/${p.split('/').map(encodeURIComponent).join('/')}`
+async function objectExists(storage_path) {
+  const r = await fetch(publicUrl(storage_path), { method: 'HEAD' })
+  return r.ok
+}
+async function uploadPdf(storage_path, base64) {
+  const { error } = await sb.storage.from('utility-pdfs').upload(storage_path, Buffer.from(base64, 'base64'), { contentType: 'application/pdf', upsert: true })
+  if (error) throw new Error(`storage upload failed: ${error.message}`)
+  if (!(await objectExists(storage_path))) throw new Error('stored object not readable')
+  return storage_path
+}
+
 async function fieldsOf(base64) {
   const doc = await PDFDocument.load(Buffer.from(base64, 'base64'), { ignoreEncryption: true })
   return doc.getForm().getFields().map(f => f.getName())
@@ -84,23 +99,46 @@ async function runWithConcurrency(items, limit, fn) {
 let q = sb.from('utility_forms')
   .select('id, form_name, form_type, form_url, form_file, status, field_mapping, form_notes, provider:utility_providers!utility_forms_provider_id_fkey(id, provider_name, state)')
   .is('company_id', null).not('form_url', 'is', null)
-if (!REFRESH) q = q.is('form_file', null)
+if (UPLOAD_MISSING) q = q.not('form_file', 'is', null)
+else if (!REFRESH) q = q.is('form_file', null)
 const { data: forms, error } = await q.order('id')
 if (error) { console.error(error.message); process.exit(1) }
 let work = forms.filter(f => f.provider && (!STATE || f.provider.state === STATE) && (!providerRx || providerRx.test(f.provider.provider_name)))
 if (LIMIT) work = work.slice(0, LIMIT)
 console.log(`${APPLY ? 'PREPARING' : 'DRY RUN'}: ${work.length} form(s)${STATE ? ' in ' + STATE : ''}`)
 
-const tally = { published: 0, flat: 0, unmapped: 0, failed: 0 }
+const tally = { published: 0, flat: 0, unmapped: 0, failed: 0, uploaded: 0, present: 0 }
+
+// --upload-missing: restore the object for a form whose recorded file is not
+// in the bucket. Mapping and status are kept.
+async function uploadMissing(form) {
+  const p = form.provider
+  const label = `${p.state} ${p.provider_name} / ${form.form_name}`
+  if (await objectExists(form.form_file)) { tally.present++; return }
+  if (!APPLY) { console.log(`  missing   ${label} -> ${form.form_file}`); tally.uploaded++; return }
+  try {
+    const fetched = await parsePdf({ pdf_url: form.form_url, document_type: 'form', store_in_storage: false, provider_name: p.provider_name, program_name: null })
+    if (!fetched.pdf_base64) throw new Error('parser returned no PDF bytes')
+    await uploadPdf(form.form_file, fetched.pdf_base64)
+    tally.uploaded++
+    console.log(`  uploaded  ${label} -> ${form.form_file}`)
+  } catch (err) {
+    tally.failed++
+    console.log(`  failed    ${label}: ${err.message.slice(0, 120)}`)
+  }
+}
+
 async function prepare(form) {
+  if (UPLOAD_MISSING) return uploadMissing(form)
   const p = form.provider
   const label = `${p.state} ${p.provider_name} / ${form.form_name}`
   if (!APPLY) { console.log(`  would fetch ${label}\n      ${form.form_url}`); return }
   const note = (msg) => `${(form.form_notes || '').replace(/\s*\[auto[^\]]*\][^\n]*/g, '').trim()}\n[auto ${new Date().toISOString().slice(0, 10)}] ${msg}`.trim()
   try {
     const storage_path = storagePathFor(form, p)
-    const fetched = await parsePdf({ pdf_url: form.form_url, document_type: 'form', store_in_storage: true, storage_path, provider_name: p.provider_name, program_name: null })
-    const form_file = fetched.storage_path || storage_path
+    const fetched = await parsePdf({ pdf_url: form.form_url, document_type: 'form', store_in_storage: false, provider_name: p.provider_name, program_name: null })
+    if (!fetched.pdf_base64) throw new Error('parser returned no PDF bytes')
+    const form_file = await uploadPdf(storage_path, fetched.pdf_base64)
     const fields = fetched.pdf_base64 ? await fieldsOf(fetched.pdf_base64) : []
     if (fields.length === 0) {
       tally.flat++

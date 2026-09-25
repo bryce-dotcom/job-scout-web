@@ -287,7 +287,11 @@ serve(async (req) => {
     }
 
     // Upload to Supabase Storage if requested (direct REST API — no JS client needed)
+    // A failed upload is reported back as storage_error, never swallowed:
+    // on 2026-09-25 every upload had been failing silently (no apikey header)
+    // while callers recorded the path they asked for as if it existed.
     let storagePath: string | null = null;
+    let storageError: string | null = null;
     if (store_in_storage && storage_path) {
       try {
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -296,11 +300,12 @@ serve(async (req) => {
         // Use saved raw bytes, or decode from base64 using std library
         const binaryData = pdfBytes || base64Decode(pdfData);
 
-        const uploadUrl = `${supabaseUrl}/storage/v1/object/utility-pdfs/${storage_path}`;
+        const uploadUrl = `${supabaseUrl}/storage/v1/object/utility-pdfs/${storage_path.split('/').map(encodeURIComponent).join('/')}`;
         const uploadRes = await fetch(uploadUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${serviceRoleKey}`,
+            'apikey': serviceRoleKey,
             'Content-Type': 'application/pdf',
             'x-upsert': 'true'
           },
@@ -309,12 +314,14 @@ serve(async (req) => {
 
         if (!uploadRes.ok) {
           const errText = await uploadRes.text();
+          storageError = `${uploadRes.status} ${errText.slice(0, 200)}`;
           console.error('Storage upload error:', uploadRes.status, errText);
         } else {
           storagePath = storage_path;
           console.log(`PDF uploaded to utility-pdfs/${storage_path}`);
         }
       } catch (storageErr) {
+        storageError = (storageErr as Error).message;
         console.error('Storage upload failed:', (storageErr as Error).message);
         // Continue — extraction is still valuable even if storage fails
       }
@@ -326,6 +333,7 @@ serve(async (req) => {
         success: true,
         document_type,
         storage_path: storagePath,
+        storage_error: storageError,
         pdf_base64: pdfData,
         results: null
       }), {
@@ -415,7 +423,7 @@ serve(async (req) => {
       if (jsonMatch) {
         try {
           const results = JSON.parse(jsonMatch[0]);
-          return { success: true, document_type, results, storage_path: storagePath };
+          return { success: true, document_type, results, storage_path: storagePath, storage_error: storageError };
         } catch { /* fall through */ }
       }
 
