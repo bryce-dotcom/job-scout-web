@@ -121,7 +121,15 @@ function check(r, exp) {
   // invariants, every case
   if (EMOJI.test(r.text)) fails.push('emoji in reply — JobScout draws its own icons')
   if (TOOL_NAME.test(r.text)) fails.push('a tool name in the reply — say "the Payroll page", not query_payroll')
-  if (r.proposal && /\b(I'?ve|I have|it'?s been) (created|filed|logged|saved)\b|^\**Filed\b|\bit'?s (live|in|queued)\b/i.test(r.text)) fails.push('a draft described as done — it is not created until they approve')
+  // A draft must never be described as done. But "approve the card and it's in
+  // the pipeline" is the RIGHT sentence — the claim is conditional on the
+  // click. So the past-tense claims fail anywhere, while "it's in …" only
+  // fails in a sentence that does not hang it on approving.
+  if (r.proposal) {
+    const claimedDone = /\b(I'?ve|I have|it'?s been) (created|filed|logged|saved)\b|^\**Filed\b|\bit'?s (live|queued)\b/i.test(r.text)
+      || r.text.split(/(?<=[.!?\n])\s+/).some((s) => /\bit'?s in\b/i.test(s) && !/\bapprove|\bonce you|\bwhen you|\bafter you|\bhit\b/i.test(s))
+    if (claimedDone) fails.push('a draft described as done — it is not created until they approve')
+  }
   return fails
 }
 
