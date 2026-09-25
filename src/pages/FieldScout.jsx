@@ -275,6 +275,13 @@ export default function FieldScout() {
   const [linePhotoTarget, setLinePhotoTarget] = useState(null) // { lineId, context }
   const [linePhotoUploading, setLinePhotoUploading] = useState(false)
   const linePhotoInputRef = useRef(null)
+  // Its own input, at the top of the page: the line picker's input only
+  // exists while a briefing is open, and a marketing snap is not tied to one.
+  const marketingInputRef = useRef(null)
+  const triggerMarketingSnap = () => {
+    setLinePhotoTarget({ lineId: null, context: 'marketing' })
+    setTimeout(() => marketingInputRef.current?.click(), 50)
+  }
 
   // Job search (for clock-in when no today's jobs)
   const [jobSearchQuery, setJobSearchQuery] = useState('')
@@ -726,8 +733,11 @@ export default function FieldScout() {
   const handleLinePhotoUpload = async (e) => {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
-    if (files.length === 0 || !linePhotoTarget || !activeEntry?.job_id) return
+    if (files.length === 0 || !linePhotoTarget) return
     const { lineId, context } = linePhotoTarget
+    // A marketing snap needs no job (the truck, the crew, the yard); every
+    // other photo belongs to a job line.
+    if (context !== 'marketing' && !activeEntry?.job_id) return
     setLinePhotoUploading(true)
     let uploaded = 0
     let lastErr = null
@@ -749,7 +759,7 @@ export default function FieldScout() {
           const { error: dbErr } = await supabase.from('marketing_captures').insert({
             company_id: companyId,
             employee_id: currentEmployee?.id || null,
-            job_id: activeEntry.job_id,
+            job_id: activeEntry?.job_id ?? null,
             bucket: MEDIA_BUCKET,
             path,
             url: pub.publicUrl,
@@ -775,7 +785,7 @@ export default function FieldScout() {
           if (managers.length) {
             await supabase.from('employee_notifications').insert(managers.map(m => ({
               company_id: companyId, employee_id: m.id, type: 'marketing_capture', title, message, route: '/marketing',
-              metadata: { job_id: activeEntry.job_id, employee_id: currentEmployee?.id || null },
+              metadata: { job_id: activeEntry?.job_id ?? null, employee_id: currentEmployee?.id || null },
             })))
           }
           await supabase.from('company_notifications').insert({ company_id: companyId, type: 'marketing_capture', title, message, metadata: { route: '/marketing' } })
@@ -2150,6 +2160,44 @@ export default function FieldScout() {
           itself, one tap away. Above the clock-in warning because that one
           needs no action and these do. */}
       <MyNotifications theme={theme} />
+
+      {/* ===== SECTION 1.2: SNAP FOR MARKETING =====
+          Not tied to a job. The truck, the crew, a finished yard from the
+          street: one tap, a note, and the office has it in the Marketing
+          inbox (Marketing → Inbox), where the AI drafts the post. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '12px',
+        padding: '12px 14px', marginBottom: '16px', borderRadius: '12px',
+        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+      }}>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(225,29,72,0.12)', color: '#e11d48', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Megaphone size={18} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '13px', fontWeight: '700', color: theme.text }}>Snap for Marketing</div>
+          <div style={{ fontSize: '12px', color: theme.textMuted, lineHeight: 1.35 }}>A photo of today's work, the truck, the crew. The office turns it into a post.</div>
+        </div>
+        <button
+          type="button"
+          onClick={triggerMarketingSnap}
+          disabled={linePhotoUploading}
+          style={{
+            padding: '10px 14px', minHeight: '44px', borderRadius: '8px', border: 'none',
+            background: '#e11d48', color: '#fff', fontSize: '13px', fontWeight: '700',
+            cursor: linePhotoUploading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
+          }}
+        >
+          <Camera size={15} /> {linePhotoUploading && linePhotoTarget?.context === 'marketing' ? 'Sending…' : 'Snap'}
+        </button>
+        <input
+          ref={marketingInputRef}
+          type="file"
+          accept="image/*,video/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleLinePhotoUpload}
+        />
+      </div>
       <MyVehicleCard theme={theme} />
 
       {/* ===== SECTION 1.2: UNFINISHED CLOCK-IN WARNING =====

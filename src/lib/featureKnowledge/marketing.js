@@ -17,7 +17,7 @@ export default {
   highlights: [
     'Setup walkthrough on the page itself: brand, channels, first post',
     'Brand kit derived from EOS core values, focus and marketing strategy',
-    'Field Scout "Share to Marketing" drops job photos into the inbox',
+    'Field Scout "Share to Marketing" on job photos, and "Snap for Marketing" at the top of the day view for the truck, the crew, anything',
     'AI drafts from photos + a note; approve, schedule or publish',
     'One publisher key covers Facebook, Instagram, Google Business, LinkedIn, X and more',
   ],
