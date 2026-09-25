@@ -757,7 +757,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                     borderRadius: 12, padding: 12,
                   }}>
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#d9963f', marginBottom: 6 }}>
-                      {rows.length} {rows.length === 1 ? 'product' : 'products'} — {pv.label}
+                      {rows.length} {(pv.noun || 'product') + (rows.length === 1 ? '' : 's')} — {pv.label}
                     </div>
                     <div style={{ fontSize: 12.5, color: dark.textSecondary, marginBottom: 10 }}>
                       Where {pv.filter} → <span style={{ color: '#7fdba0', fontWeight: 600 }}>{String(pv.after)}</span>
