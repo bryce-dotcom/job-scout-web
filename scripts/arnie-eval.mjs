@@ -398,6 +398,43 @@ const CASES = [
     },
     expect: { proposal: 'none', text_match: [/manager|another rep|someone else/i] } },
 
+  // — re-filing the books: "the Chevron ones" means all three text columns, and the card shows every row —
+  { id: 'bulk.owner.refiles.chevron.expenses.then.rollback', as: 'owner',
+    run: async (ctx) => {
+      const fx = await expenseFixture()
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'All our Chevron expenses are filed as Materials — they should be Fuel. Fix them.' }])
+        if (r.proposal?.preview?.kind === 'bulk') {
+          const pv = r.proposal.preview
+          if (pv.after !== 'Fuel') throw new Error('wrong category: ' + pv.after)
+          const labels = (pv.rows || []).map((x) => x.label).join(' | ')
+          // All three Chevron rows — the one with a vendor column AND the two that only say it in free text.
+          for (const want of ['FUEL - CHEVRON #2214', 'Chevron, truck 2', 'Chevron · $71.05']) {
+            if (!labels.includes(want)) throw new Error(`the card missed ${want}: ${labels}`)
+          }
+          if (/Dominos|Home Depot/.test(labels)) throw new Error('the card swept in something that is not Chevron: ' + labels)
+          if (!(pv.rows || []).every((x) => x.before === 'Materials')) throw new Error('before values wrong: ' + JSON.stringify(pv.rows))
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.ok) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const after = await rest(`expenses?select=expense_id,category&company_id=eq.${DEMO.company}&expense_id=like.EXP-EVAL-CAT*&order=expense_id`)
+          const cat = Object.fromEntries(after.map((x) => [x.expense_id, x.category]))
+          if (cat['EXP-EVAL-CAT-1'] !== 'Fuel' || cat['EXP-EVAL-CAT-2'] !== 'Fuel' || cat['EXP-EVAL-CAT-3'] !== 'Fuel') throw new Error('Chevron rows not re-filed: ' + JSON.stringify(cat))
+          if (cat['EXP-EVAL-CAT-4'] !== 'Materials' || cat['EXP-EVAL-CAT-5'] !== 'Materials') throw new Error('something else was re-filed: ' + JSON.stringify(cat))
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+          const back = await rest(`expenses?select=category&company_id=eq.${DEMO.company}&expense_id=like.EXP-EVAL-CAT*`)
+          if (!back.every((x) => x.category === 'Materials')) throw new Error('rollback left the books re-filed: ' + JSON.stringify(back))
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally { await fx.cleanup() }
+    },
+    expect: { proposal_kind: 'bulk', text_match: [/approve/i, /Fuel/], text_not_match: [/deleted|removed/i] } },
+  { id: 'bulk.tech.refiling.refused', as: 'tech',
+    run: async (ctx) => {
+      const fx = await expenseFixture()
+      try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'All our Chevron expenses are filed as Materials — change them all to Fuel.' }]) } finally { await fx.cleanup() }
+    },
+    expect: { proposal: 'none', text_match: [/admin/i] } },
+
   // — one customer, one read: the work for everyone, the money for an admin —
   { id: 'account.owner.history.jobs.balance.last.contact', as: 'owner',
     run: async (ctx) => {
@@ -800,6 +837,24 @@ async function wonFixture(number, salespersonId) {
     { company_id: C, quote_id: quote.id, item_id: null, item_name: 'Extended warranty', quantity: 1, price: 500, line_total: 500, labor_cost: 0, in_utility_scope: false, sort_order: 3 },
   ]) })
   return { quoteId: quote.id, leadId: lead.id, cleanup: wipe }
+}
+
+// An expense book filed the way a real one is: everything under Materials, the
+// merchant named in a vendor column on one row and buried in free text on the
+// next, and two rows that are genuinely not fuel.
+async function expenseFixture() {
+  const C = DEMO.company
+  const wipe = async () => { for (const e of await rest(`expenses?select=id&company_id=eq.${C}&expense_id=like.EXP-EVAL-CAT*`)) await rest(`expenses?id=eq.${e.id}`, { method: 'DELETE' }) }
+  await wipe()
+  const d = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10)
+  await rest('expenses', { method: 'POST', body: JSON.stringify([
+    { expense_id: 'EXP-EVAL-CAT-1', description: 'FUEL - CHEVRON #2214', vendor: null, amount: 96.41, date: d(9) },
+    { expense_id: 'EXP-EVAL-CAT-2', description: 'Chevron, truck 2', vendor: null, amount: 58.2, date: d(6) },
+    { expense_id: 'EXP-EVAL-CAT-3', description: 'gas', vendor: 'Chevron', amount: 71.05, date: d(3) },
+    { expense_id: 'EXP-EVAL-CAT-4', description: 'Lunch for the crew', vendor: 'Dominos', amount: 44.12, date: d(5) },
+    { expense_id: 'EXP-EVAL-CAT-5', description: 'Conduit and fittings', vendor: 'Home Depot', amount: 312.88, date: d(4) },
+  ].map((r) => ({ company_id: C, category: 'Materials', status: 'Approved', ...r }))) })
+  return { cleanup: wipe }
 }
 
 // A lead of this run's own, unbooked, for the two cases that need one.

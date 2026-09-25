@@ -14,11 +14,25 @@ const bulk = src('_shared/arnieBulk.ts')
 // Everything below is the price of making it plural.
 
 describe('what bulk can touch', () => {
-  it('stays inside the product catalogue', () => {
-    // Widening this is a deliberate act. Bulk edits to jobs, leads, invoices
-    // or payments are not something that should arrive by accident.
+  it('touches the catalogue and the expense book, and nothing else', () => {
+    // Widening this is a deliberate act, and this assertion is where the act
+    // happens. Expenses joined on 2026-09-25: a real book had all 60 rows
+    // filed "Materials", McDonald's included, because fixing them one at a
+    // time is work nobody does. Jobs, leads, invoices and payments stay out —
+    // those carry money that has MOVED, not money that was filed wrong.
     const tables = new Set(Object.values(BULK_TARGETS).map(t => t.table))
-    expect([...tables]).toEqual(['products_services'])
+    expect([...tables].sort()).toEqual(['expenses', 'products_services'])
+    for (const banned of ['jobs', 'leads', 'invoices', 'payments', 'employees', 'quotes']) {
+      expect(tables.has(banned), `${banned} must not be bulk-editable`).toBe(false)
+    }
+  })
+
+  it('only ever edits the filing, never an amount, a date or who it belongs to', () => {
+    const fields = Object.values(BULK_TARGETS).filter(t => t.table === 'expenses').map(t => t.field)
+    expect(fields).toEqual(['category'])
+    for (const money of ['amount', 'date', 'job_id', 'status', 'receipt_url']) {
+      expect(fields.includes(money), `${money} must not be bulk-editable`).toBe(false)
+    }
   })
 
   it('is admin-only, every target', () => {
@@ -53,11 +67,22 @@ describe('the model supplies a filter, never a list of rows', () => {
     }
   })
 
-  it('matches exactly, never fuzzily', () => {
-    // The bug being fixed IS whitespace, so `eq.` is load-bearing: an ilike
-    // would match "MES" and "MES " together and quietly rewrite both.
+  it('matches exactly unless the target has opted into a word match, and the catalogue never has', () => {
+    // The bug being fixed on PRODUCTS is whitespace, so `eq.` is load-bearing
+    // there: an ilike would match "MES" and "MES " together and quietly
+    // rewrite both. Expenses opted into a word match on 2026-09-25 because
+    // their text is free-form and exact match cannot express "the Chevron
+    // ones". The opt-in is per target and declared in the registry, so this
+    // is the assertion that keeps it from spreading by accident.
     expect(bulk).toMatch(/`eq\.\$\{filterValue\}`/)
-    expect(bulk).not.toMatch(/ilike/)
+    for (const [key, t] of Object.entries(BULK_TARGETS)) {
+      if (t.table !== 'products_services') continue
+      expect(t.containsFilters, `${key} must match the whole value`).toBeUndefined()
+      expect(t.textFilters, `${key} must match the whole value`).toBeUndefined()
+    }
+    // Both fuzzy branches are reachable only through those declarations.
+    expect(bulk).toMatch(/const acrossText = field === 'text' && !!\(target\.textFilters \|\| \[\]\)\.length/)
+    expect(bulk).toMatch(/const byWord = acrossText \|\| \(\(target\.containsFilters \|\| \[\]\)\.includes\(field\) && filterValue !== ''\)/)
   })
 
   it('refuses a set too large for a human to review', () => {
@@ -102,5 +127,82 @@ describe('coercing a value', () => {
     // Guessing here silently deactivates a chunk of the catalogue.
     expect(active.coerce('maybe')).toBeNull()
     expect(active.coerce('')).toBeNull()
+  })
+})
+
+describe('re-filing the books', () => {
+  const t = BULK_TARGETS.expense_category
+
+  it('takes only a category the Expenses page offers, however it is typed', () => {
+    expect(t.coerce('fuel')).toBe('Fuel')
+    expect(t.coerce('  MEALS ')).toBe('Meals')
+    expect(t.coerce('Cost of sale')).toBe('Cost of Sale')
+    // A typo must not invent a fifteenth category nobody can filter by later.
+    expect(t.coerce('Fuell')).toBeNull()
+    expect(t.coerce('gas')).toBeNull()
+    expect(t.coerce('')).toBeNull()
+  })
+
+  it('the page and the rail keep the same list', async () => {
+    const { EXPENSE_CATEGORIES } = await import('./schema.js')
+    for (const c of EXPENSE_CATEGORIES) expect(t.coerce(c), c).toBe(c)
+    const listed = bulk.match(/const EXPENSE_CATEGORIES = \[([\s\S]*?)\]/)[1]
+    expect([...listed.matchAll(/'([^']+)'/g)].map(m => m[1])).toEqual(EXPENSE_CATEGORIES)
+  })
+
+  it('a row on the card carries what a person needs to judge it: when, who, how much, what it says', () => {
+    expect(t.labelOf({ date: '2026-09-16T00:00:00+00:00', vendor: null, amount: 96.41, description: 'FUEL - CHEVRON #2214' }))
+      .toBe('2026-09-16 · $96.41 · FUEL - CHEVRON #2214')
+    expect(t.labelOf({ date: '2026-09-22', vendor: 'Chevron', amount: 71.05, description: 'gas' }))
+      .toBe('2026-09-22 · Chevron · $71.05 · gas')
+    expect(t.labelOf({ date: '2026-09-01', amount: 1234.5 })).toBe('2026-09-01 · $1,234.50')
+  })
+
+  it('"the Chevron ones" searches vendor, merchant AND description together', () => {
+    // One row names the shop in a vendor column and the next buries it in free
+    // text; filtering one column finds a third of them and reads as success.
+    expect(t.filterable).toContain('text')
+    expect(t.textFilters).toEqual(['vendor', 'merchant', 'description'])
+    expect(bulk).toMatch(/const acrossText = field === 'text' && !!\(target\.textFilters \|\| \[\]\)\.length/)
+    expect(bulk).toMatch(/params\.append\('or', `\(\$\{target\.textFilters!\.map\(\(c\) => `\$\{c\}\.ilike\.\*\$\{word\}\*`\)\.join\(','\)\}\)`\)/)
+  })
+
+  it('a word match is for expenses only — the catalogue still matches the whole value', () => {
+    expect(BULK_TARGETS.product_manufacturer.containsFilters).toBeUndefined()
+    expect(BULK_TARGETS.product_manufacturer.textFilters).toBeUndefined()
+    expect(t.containsFilters).toEqual(['vendor', 'merchant', 'description'])
+  })
+
+  it('the ceiling, the every-row card and the all-or-nothing apply still hold for it', () => {
+    // The word match widens what can be selected, so the three things that make
+    // a bulk approval honest matter more here, not less.
+    expect(BULK_MAX).toBe(200)
+    expect(bulk).toMatch(/rows\.length > BULK_MAX/)
+    expect(bulk).toMatch(/previewRows = changing\.map/)
+    expect(bulk).toMatch(/stale: true, error: `One \$\{target\.noun\}/)
+    expect(isBulkTarget('expense_category')).toBe(true)
+  })
+
+  it('admin only, and the refusal says where, not "the catalogue"', () => {
+    expect(t.minLevel).toBeGreaterThanOrEqual(3)
+    expect(t.scope).toBe('the books')
+    expect(t.noun).toBe('expense')
+    expect(bulk).toMatch(/needs admin access/)
+    expect(bulk).not.toMatch(/across the catalogue needs admin/)
+  })
+})
+
+describe('the tool and the prompt say how to aim it', () => {
+  const chat = src('arnie-chat/index.ts')
+  const engine = readFileSync(resolve(here, '../pages/agents/arnie/arnieEngine.js'), 'utf8')
+  it('the tool offers expense_category and explains "text"', () => {
+    expect(chat).toMatch(/product_active or expense_category/)
+    expect(chat).toMatch(/"text" \(a word anywhere in the vendor, merchant or description/)
+    expect(chat).toMatch(/Cost of Sale, Materials, Labor/)
+  })
+  it('the prompt tells it not to filter on vendor alone', () => {
+    expect(engine).toMatch(/## Re-filing the books/)
+    expect(engine).toMatch(/Do not filter on vendor alone/)
+    expect(engine).toMatch(/never how much/)
   })
 })
