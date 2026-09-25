@@ -1205,12 +1205,27 @@ export default function Books() {
   // add everything else on top. Before this, a Venmo balance only showed up if
   // it happened to push the bank_accounts sum above the connected sum.
   const sumBalances = (rows) => rows.reduce((sum, acc) => sum + (parseFloat(acc.current_balance) || 0), 0)
-  const totalPlaidMirrorBalance = sumBalances(bankAccounts.filter(b => b.connected_account_id))
-  const totalConnectedBalance = sumBalances(activeConnected)
+  // A credit card or loan is money OWED. Plaid reports its balance as a
+  // positive number, so summing every connected account counted HHH's Visa
+  // ($8,083 owed) as $8,083 in the bank and Books read that much higher than
+  // the bank did (2026-09-25). Cash = depository + Stripe + manual cash and
+  // wallets; card and loan balances are liabilities on the Position block.
+  const isDebtAccount = (a) => ['credit', 'loan'].includes(String(a?.account_type || '').toLowerCase())
+  const debtConnectedIds = new Set(activeConnected.filter(isDebtAccount).map(a => a.id))
+  const isDebtRow = (b) => isDebtAccount(b) || debtConnectedIds.has(b.connected_account_id)
+  const totalPlaidMirrorBalance = sumBalances(bankAccounts.filter(b => b.connected_account_id && !isDebtRow(b)))
+  const totalConnectedBalance = sumBalances(activeConnected.filter(a => !isDebtAccount(a)))
   const manualAccounts = bankAccounts.filter(isManualAccount)
-  const totalManualBalance = sumBalances(manualAccounts)
+  const manualCashAccounts = manualAccounts.filter(a => !isDebtAccount(a))
+  const totalManualBalance = sumBalances(manualCashAccounts)
   const totalStripeBalance = sumBalances(bankAccounts.filter(b => b.provider === 'stripe'))
   const totalCash = Math.max(totalPlaidMirrorBalance, totalConnectedBalance) + totalStripeBalance + totalManualBalance
+  // Owed on cards and loans: connected (de-duped against their mirrors the
+  // same way) plus any hand-entered credit-card account.
+  const debtConnected = activeConnected.filter(isDebtAccount)
+  const debtMirror = bankAccounts.filter(b => b.connected_account_id && isDebtRow(b))
+  const totalCardDebt = Math.max(sumBalances(debtConnected), sumBalances(debtMirror)) + sumBalances(manualAccounts.filter(isDebtAccount))
+  const debtAccountNames = [...debtConnected.map(a => `${a.account_name || 'Card'} (${a.mask || ''})`.replace(' ()', '')), ...manualAccounts.filter(isDebtAccount).map(a => a.name)]
 
   // By calendar day, not by `new Date(x).getMonth()`: payments.date and
   // plaid_transactions.date are date columns and expenses.date is a
@@ -1278,8 +1293,9 @@ export default function Books() {
     const deposits = depositsHeld({ payments, leadPayments, invoices })
     const salesTaxOwed = Math.max(0, salesTaxSummary({ invoices, payments, manualExpenses: expenses }, () => true, 'cash').owed)
     const assetsTotal = cash + customerAR + utilityAR + inventory + totalAssetValue
-    const liabilitiesTotal = ap + taxesOwed + salesTaxOwed + deposits.total + totalLiabilityValue
-    return { cash, customerAR, utilityAR, inventory, ap, taxesOwed, salesTaxOwed, deposits, assetsTotal, liabilitiesTotal, netWorth: assetsTotal - liabilitiesTotal }
+    const cardDebt = totalCardDebt
+    const liabilitiesTotal = ap + taxesOwed + salesTaxOwed + deposits.total + totalLiabilityValue + cardDebt
+    return { cash, customerAR, utilityAR, inventory, ap, taxesOwed, salesTaxOwed, deposits, cardDebt, assetsTotal, liabilitiesTotal, netWorth: assetsTotal - liabilitiesTotal }
   })()
 
   // ─── Transaction handlers ───
@@ -2116,12 +2132,17 @@ export default function Books() {
                   Cash Available
                   {isFilteredByBu && <span style={{ marginLeft: '6px', fontSize: '11px', fontStyle: 'italic' }}>(all units)</span>}
                 </span>
-                <HelpBadge text="Connected bank balances, plus your Stripe balance awaiting payout, plus manual accounts like Venmo or cash on hand. Bank balances are not split by business unit." />
+                <HelpBadge text="Checking and savings balances as of the last bank sync (once a day, or when you press Sync on the Transactions tab), plus your Stripe balance awaiting payout, plus manual accounts like Venmo or cash on hand. Credit cards and loans are not cash — what you owe on them is listed separately. Your bank's own screen may differ by pending transactions. Bank balances are not split by business unit." />
               </div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#22c55e' }}>{formatCurrency(totalCash)}</div>
+              {totalCardDebt > 0 && (
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                  owed on {debtAccountNames.join(', ')}: {formatCurrency(totalCardDebt)} — not counted as cash
+                </div>
+              )}
               {totalManualBalance !== 0 && (
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                  includes {formatCurrency(totalManualBalance)} in {manualAccounts.map(a => a.name).join(', ')}
+                  includes {formatCurrency(totalManualBalance)} in {manualCashAccounts.map(a => a.name).join(', ')}
                 </div>
               )}
             </div>
@@ -3722,6 +3743,7 @@ export default function Books() {
               </div>
               <div>
                 {[
+                  ['Credit cards & loans (connected)', position.cardDebt],
                   ['Vendor bills open', position.ap],
                   ['Payroll taxes not yet deposited', position.taxesOwed],
                   ['Sales tax collected, not remitted', position.salesTaxOwed],
