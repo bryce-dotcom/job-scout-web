@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   deriveBrandKitFromEos, setupProgress, styleExamples, platformProblems,
   composeCaption, buildPublishPayload, capturePath, brandsFrom, brandKey, brandProfileUsername, brandForUnit,
+  postDay, postsByDay, weekOf, weekProgress, monthGrid,
 } from './marketing'
 
 const eos = {
@@ -146,5 +147,30 @@ describe('brands', () => {
   })
   it('a single-brand company routes every job to it', () => {
     expect(brandForUnit(brandsFrom(null, co), 'whatever')).toBe('')
+  })
+})
+
+describe('calendar & cadence', () => {
+  const mk = (status, at) => ({ status, posted_at: status === 'posted' ? at : null, scheduled_for: status === 'scheduled' ? at : null, created_at: at })
+  it('a post lands on the day it went out, is due, or was written', () => {
+    expect(postDay(mk('posted', '2026-09-22T15:00:00'))).toBe('2026-09-22')
+    expect(postDay(mk('scheduled', '2026-09-27T09:00:00'))).toBe('2026-09-27')
+    expect(postDay(mk('draft', '2026-09-24T08:00:00'))).toBe('2026-09-24')
+  })
+  it('groups by day and counts the Monday-start week against the target', () => {
+    const wed = new Date('2026-09-23T12:00:00')
+    const posts = [mk('posted', '2026-09-21T10:00:00'), mk('scheduled', '2026-09-26T10:00:00'), mk('draft', '2026-09-24T10:00:00'), mk('posted', '2026-09-14T10:00:00')]
+    expect(Object.keys(postsByDay(posts)).sort()).toEqual(['2026-09-14', '2026-09-21', '2026-09-24', '2026-09-26'])
+    expect(weekOf(wed)[0]).toBe('2026-09-21')
+    expect(weekOf(wed)[6]).toBe('2026-09-27')
+    expect(weekProgress(posts, 3, wed)).toEqual({ counted: 2, drafts: 1, target: 3, remaining: 1, met: false })
+    expect(weekProgress(posts, 0, wed).met).toBe(true)
+  })
+  it('month grid starts under the right weekday and pads to full weeks', () => {
+    const g = monthGrid(2026, 8) // September 2026 starts on a Tuesday
+    expect(g[0]).toBeNull()
+    expect(g[1]).toEqual({ key: '2026-09-01', day: 1 })
+    expect(g.length % 7).toBe(0)
+    expect(g.filter(Boolean).length).toBe(30)
   })
 })

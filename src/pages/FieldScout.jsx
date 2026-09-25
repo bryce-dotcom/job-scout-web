@@ -16,7 +16,7 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { toast } from '../lib/toast'
 import { syncQueue } from '../lib/syncQueue'
-import { MEDIA_BUCKET, capturePath } from '../lib/marketing'
+import { uploadCapture } from '../lib/marketingUpload'
 import {
   Compass, Clock, MapPin, Play, Square, Coffee, Megaphone,
   ChevronDown, ChevronUp, ExternalLink, Navigation,
@@ -750,23 +750,8 @@ export default function FieldScout() {
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
         try {
-          const path = capturePath(companyId, file.name)
-          const { error: upErr } = await supabase.storage
-            .from(MEDIA_BUCKET)
-            .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false })
-          if (upErr) throw upErr
-          const { data: pub } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path)
-          const { error: dbErr } = await supabase.from('marketing_captures').insert({
-            company_id: companyId,
-            employee_id: currentEmployee?.id || null,
-            job_id: activeEntry?.job_id ?? null,
-            bucket: MEDIA_BUCKET,
-            path,
-            url: pub.publicUrl,
-            media_type: file.type?.startsWith('video/') ? 'video' : 'image',
-            note: note.trim() || null,
-          })
-          if (dbErr) throw dbErr
+          // Photo or video; a video also gets its poster and stills here.
+          await uploadCapture({ companyId, employeeId: currentEmployee?.id || null, jobId: activeEntry?.job_id ?? null, file, note, source: 'shared' })
           uploaded++
         } catch (err) {
           console.error('[FieldScout] marketing share failed', err)

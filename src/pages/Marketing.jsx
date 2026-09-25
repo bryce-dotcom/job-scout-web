@@ -10,11 +10,14 @@ import {
   BRAND_KIT_KEY, PUBLISHER_KEY, BRANDS_KEY, MEDIA_BUCKET, PLATFORMS, PLATFORM_BY_ID,
   emptyBrandKit, deriveBrandKitFromEos, setupProgress, platformProblems, capturePath, composeCaption,
   brandsFrom, brandKey, brandForUnit, slugify,
+  postsByDay, weekOf, weekProgress, monthGrid, postDay,
 } from '../lib/marketing'
+import { uploadCapture, captureThumb } from '../lib/marketingUpload'
 import {
   Megaphone, Inbox, ListChecks, Palette, Link2, Mail, Sparkles, Upload, Camera, Check, X,
   Send, Clock, ExternalLink, RefreshCw, ChevronRight, CircleCheck, Circle, Trash2, Pencil,
   Image as ImageIcon, AlertTriangle, Archive, CalendarClock, Hand, Copy, Download,
+  Play, CalendarDays, BarChart3, Globe, ChevronLeft,
 } from 'lucide-react'
 
 // Marketing — step 1 of the Sales Flow. Everything a company does to be found
@@ -214,15 +217,8 @@ export default function Marketing() {
     let ok = 0
     for (const file of files) {
       try {
-        const path = capturePath(companyId, file.name)
-        const { error: upErr } = await supabase.storage.from(MEDIA_BUCKET).upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false })
-        if (upErr) throw upErr
-        const { data: pub } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path)
-        const { error: dbErr } = await supabase.from('marketing_captures').insert({
-          company_id: companyId, employee_id: currentEmployee?.id || null, bucket: MEDIA_BUCKET, path,
-          url: pub.publicUrl, media_type: file.type?.startsWith('video/') ? 'video' : 'image',
-        })
-        if (dbErr) throw dbErr
+        // Photo or video; a video also gets its poster and stills here.
+        await uploadCapture({ companyId, employeeId: currentEmployee?.id || null, file, source: 'shared', brand: brands.length > 1 ? brandId : null })
         ok++
       } catch (err) {
         toast.error(`${file.name}: ${err.message || 'upload failed'}`)
@@ -273,10 +269,13 @@ export default function Marketing() {
   const tabs = [
     { id: 'queue', label: 'Queue', icon: ListChecks, count: posts.filter((p) => ['draft', 'approved'].includes(p.status)).length },
     { id: 'inbox', label: 'Inbox', icon: Inbox, count: captures.length },
+    { id: 'calendar', label: 'Calendar', icon: CalendarDays },
+    { id: 'performance', label: 'Performance', icon: BarChart3 },
     { id: 'brand', label: 'Brand', icon: Palette },
     { id: 'channels', label: 'Channels', icon: Link2 },
     { id: 'email', label: 'Email', icon: Mail },
   ]
+  const brandPosts = brands.length > 1 ? posts.filter((p) => (p.brand || '') === (brandId || '')) : posts
 
   if (!companyId) return null
 
@@ -357,8 +356,14 @@ export default function Marketing() {
           onMakePost={(ids) => setComposer({ captureIds: ids })} />
       ) : tab === 'brand' ? (
         <BrandTab theme={theme} isMobile={isMobile} kit={brandKit} company={company} eos={eos} onSave={saveBrandKit} onFill={fillFromEos} brands={brands} brand={currentBrand} businessUnits={businessUnits} isManager={isManager} onSaveBrands={saveBrands} />
+      ) : tab === 'calendar' ? (
+        <CalendarTab theme={theme} isMobile={isMobile} posts={brandPosts} captureMap={captureMap} kit={brandKit} isManager={isManager}
+          onCadence={(n) => saveBrandKit({ cadence_per_week: n })} onOpen={(p) => (['draft', 'approved', 'failed'].includes(p.status) ? setComposer({ post: p, captureIds: p.capture_ids || [] }) : null)}
+          onNewOn={(day) => setComposer({ captureIds: [], scheduledFor: day })} />
+      ) : tab === 'performance' ? (
+        <PerformanceTab theme={theme} isMobile={isMobile} posts={brandPosts} captureMap={captureMap} brand={brandId} invoke={invoke} publisher={publisher} />
       ) : tab === 'channels' ? (
-        <ChannelsTab theme={theme} isMobile={isMobile} publisher={publisher} brand={brandId} brandName={currentBrand?.name} isManager={isManager} invoke={invoke} onChanged={load} />
+        <ChannelsTab theme={theme} isMobile={isMobile} publisher={publisher} brand={brandId} brandName={currentBrand?.name} isManager={isManager} invoke={invoke} onChanged={load} kit={brandKit} onSaveKit={saveBrandKit} />
       ) : null}
 
       <input ref={uploadRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} onChange={handleUpload} />
@@ -387,7 +392,7 @@ export default function Marketing() {
       {composer && (
         <Composer
           theme={theme} isMobile={isMobile} companyId={companyId} currentEmployee={currentEmployee} isManager={isManager}
-          initialPost={composer.post || null} initialCaptureIds={composer.captureIds || []}
+          initialPost={composer.post || null} initialCaptureIds={composer.captureIds || []} initialScheduledFor={composer.scheduledFor || null}
           captures={captures} captureMap={captureMap} linkedPlatforms={linkedPlatforms} invoke={invoke} brands={brands} brand={brandId} pubsByBrand={pubsByBrand}
           onClose={() => setComposer(null)} onSaved={() => { setComposer(null); load() }}
           onPublish={publishPost}
@@ -467,12 +472,19 @@ function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands =
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
           {filtered.map((p) => {
             const st = STATUS_STYLE[p.status] || STATUS_STYLE.draft
-            const thumb = (p.media_urls || [])[0] || (p.capture_ids || []).map((id) => captureMap[id]?.url).find(Boolean)
+            const firstCap = (p.capture_ids || []).map((id) => captureMap[id]).find(Boolean)
+            const isVideo = p.media_type === 'video' || firstCap?.media_type === 'video'
+            const thumb = isVideo ? captureThumb(firstCap) : ((p.media_urls || [])[0] || (p.capture_ids || []).map((id) => captureMap[id]?.url).find(Boolean))
             const urls = Array.isArray(p.post_urls) ? p.post_urls.filter((u) => u?.postUrl) : []
             return (
               <div key={p.id} style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 {thumb ? (
-                  <img src={thumb} alt="" style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }} />
+                  <div style={{ position: 'relative' }}>
+                    <img src={thumb} alt="" style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }} />
+                    {isVideo && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={18} /></div></div>}
+                  </div>
+                ) : isVideo ? (
+                  <div style={{ height: 60, background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted }}><Play size={18} /></div>
                 ) : (
                   <div style={{ height: 60, background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted }}><ImageIcon size={18} /></div>
                 )}
@@ -557,7 +569,9 @@ function InboxTab({ theme, isMobile, captures, uploading, invoke, isManager, onC
               <div key={c.id} style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: `2px solid ${on ? MKT : theme.border}`, background: theme.bgCard }}>
                 <button type="button" onClick={() => toggle(c.id)} style={{ display: 'block', width: '100%', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}>
                   {c.media_type === 'video'
-                    ? <video src={c.url} style={{ width: '100%', height: 140, objectFit: 'cover', display: 'block' }} muted />
+                    ? (captureThumb(c)
+                        ? <div style={{ position: 'relative' }}><img src={captureThumb(c)} alt={c.note || ''} style={{ width: '100%', height: 140, objectFit: 'cover', display: 'block' }} /><div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}><div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={15} /></div></div></div>
+                        : <video src={c.url} style={{ width: '100%', height: 140, objectFit: 'cover', display: 'block' }} muted playsInline />)
                     : <img src={c.url} alt={c.note || ''} style={{ width: '100%', height: 140, objectFit: 'cover', display: 'block' }} />}
                 </button>
                 <div style={{ position: 'absolute', top: 6, left: 6, width: 24, height: 24, borderRadius: '50%', background: on ? MKT : 'rgba(0,0,0,0.45)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
@@ -652,7 +666,7 @@ function BrandTab({ theme, isMobile, kit, company, eos, onSave, onFill, brands =
 }
 
 // ── Channels ─────────────────────────────────────────────────────────
-function ChannelsTab({ theme, isMobile, publisher, brand = '', brandName, isManager, invoke, onChanged }) {
+function ChannelsTab({ theme, isMobile, publisher, brand = '', brandName, isManager, invoke, onChanged, kit, onSaveKit }) {
   // The user never creates a publisher account. JobScout holds one Upload-Post
   // key; each company gets its own profile made on its first Connect. Tapping
   // Connect opens a popup on the hosted connect page filtered to that one
@@ -762,13 +776,16 @@ function ChannelsTab({ theme, isMobile, publisher, brand = '', brandName, isMana
         </div>
         {!isManager && <div style={{ fontSize: 12, color: theme.textMuted }}>A Manager or above connects and disconnects accounts.</div>}
         {busy && <div style={{ fontSize: 12, color: theme.textMuted }}>Finish signing in the popup window, then close it. This list refreshes on its own.</div>}
+        {(byPlatform.facebook || byPlatform.linkedin) && <PagePickers theme={theme} brand={brand} invoke={invoke} isManager={isManager} status={status} />}
       </Card>
+      <LinksCard theme={theme} isMobile={isMobile} kit={kit} brandName={brandName} isManager={isManager} onSave={onSaveKit} />
+      <AdsCard theme={theme} isMobile={isMobile} kit={kit} isManager={isManager} onSave={onSaveKit} />
     </div>
   )
 }
 
 // ── Composer ─────────────────────────────────────────────────────────
-function Composer({ theme, isMobile, companyId, currentEmployee, isManager, initialPost, initialCaptureIds, captures, captureMap = {}, linkedPlatforms: linkedDefault, invoke, brands = [], brand: brandDefault = '', pubsByBrand = {}, onClose, onSaved, onPublish }) {
+function Composer({ theme, isMobile, companyId, currentEmployee, isManager, initialPost, initialCaptureIds, initialScheduledFor = null, captures, captureMap = {}, linkedPlatforms: linkedDefault, invoke, brands = [], brand: brandDefault = '', pubsByBrand = {}, onClose, onSaved, onPublish }) {
   const [captureIds, setCaptureIds] = useState(initialCaptureIds)
   // Which brand this post speaks for. The post's own, else the photo's, else
   // the brand selected on the page. Accounts follow the brand.
@@ -780,7 +797,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
   const [caption, setCaption] = useState(initialPost?.caption || '')
   const [hashtags, setHashtags] = useState((initialPost?.hashtags || []).join(' '))
   const [aiDraft, setAiDraft] = useState(initialPost?.ai_draft || null)
-  const [when, setWhen] = useState(toLocalInput(initialPost?.scheduled_for))
+  const [when, setWhen] = useState(toLocalInput(initialPost?.scheduled_for) || (initialScheduledFor ? `${initialScheduledFor}T09:00` : ''))
   const [drafting, setDrafting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
@@ -795,7 +812,8 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
     const kept = (initialPost?.media_urls || []).filter((u) => !known.has(u) && (initialPost?.capture_ids || []).length > 0 && captureIds.length === (initialPost?.capture_ids || []).length)
     return [...fromCaptures, ...kept, ...extraMedia]
   }, [captureIds, captureById, initialPost, extraMedia])
-  const mediaType = captureIds.some((id) => captureById[id]?.media_type === 'video') ? 'video' : 'image'
+  const videoCapture = captureIds.map((id) => captureById[id]).find((c) => c?.media_type === 'video') || null
+  const mediaType = videoCapture ? 'video' : (initialPost?.media_type === 'video' ? 'video' : 'image')
   const tagList = hashtags.split(/[\s,]+/).map((t) => t.replace(/^#/, '')).filter(Boolean)
   const problems = platformProblems({ platforms, caption: composeCaption(caption, tagList), mediaUrls, mediaType })
   const unlinked = platforms.filter((p) => !linkedPlatforms.has(p))
@@ -820,6 +838,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
       job_id: initialPost?.job_id || captureIds.map((id) => captureById[id]?.job_id).find(Boolean) || null,
       scheduled_for: when ? new Date(when).toISOString() : null,
       brand: postBrand || null,
+      media_type: mediaType === 'video' ? 'video' : mediaUrls.length ? 'image' : 'text',
     }
     if (status === 'approved') { row.approved_by = currentEmployee?.id || null; row.approved_at = new Date().toISOString() }
     let saved = null
@@ -871,7 +890,9 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {mediaUrls.map((u, i) => (
                 <div key={u + i} style={{ position: 'relative' }}>
-                  <img src={u} alt="" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.border}` }} />
+                  {videoCapture && videoCapture.url === u
+                    ? <video src={u} poster={captureThumb(videoCapture) || undefined} controls muted playsInline style={{ width: 168, height: 84, objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.border}`, background: '#000' }} />
+                    : <img src={u} alt="" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.border}` }} />}
                   <button type="button" onClick={() => { const id = captureIds.find((cid) => captureById[cid]?.url === u); if (id) setCaptureIds((xs) => xs.filter((x) => x !== id)); else setExtraMedia((xs) => xs.filter((x) => x !== u)) }}
                     style={{ position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#2c3530', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
                 </div>
@@ -1021,6 +1042,264 @@ function BrandsEditor({ theme, isMobile, brands, company, businessUnits = [], is
         </>
       )}
     </Card>
+  )
+}
+
+// ── Page pickers ─────────────────────────────────────────────────────
+// A Facebook login can reach several Pages and a LinkedIn login several
+// company pages. The vendor only guesses when there is exactly one, so
+// the brand says which. Publishing to that network refuses until it does.
+function PagePickers({ theme, brand, invoke, isManager, status }) {
+  const [pages, setPages] = useState(null)   // { facebook: [], linkedin: [], chosen }
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    invoke('marketing-publish', { action: 'pages', brand }).then((r) => { if (!cancelled && r?.ok) setPages(r) })
+    return () => { cancelled = true }
+  }, [invoke, brand, status])
+  const choose = async (patch) => {
+    setBusy(true)
+    const r = await invoke('marketing-publish', { action: 'set_pages', brand, ...patch })
+    setBusy(false)
+    if (!r.ok) { toast.error(r.error || 'Could not save'); return }
+    setPages((p) => ({ ...(p || {}), chosen: r.chosen }))
+    toast.success('Saved')
+  }
+  if (!pages) return null
+  const fb = pages.facebook || [], li = pages.linkedin || []
+  if (fb.length < 2 && li.length < 2) return null
+  const sel = (theme) => ({ ...inputStyle(theme), minHeight: 40, padding: '8px 10px' })
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, padding: 10, borderRadius: 8, background: theme.bg, border: `1px solid ${theme.border}` }}>
+      {fb.length > 1 && (
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: theme.textSecondary }}>Facebook posts go to</span>
+          <select value={pages.chosen?.facebook_page_id || ''} disabled={!isManager || busy} onChange={(e) => choose({ facebook_page_id: e.target.value })} style={sel(theme)}>
+            <option value="">Pick a Page…</option>
+            {fb.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          {!pages.chosen?.facebook_page_id && <span style={{ fontSize: 11, color: '#b45309' }}>This login reaches {fb.length} Pages. Facebook posts wait until you pick one.</span>}
+        </label>
+      )}
+      {li.length > 1 && (
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: theme.textSecondary }}>LinkedIn posts go to</span>
+          <select value={pages.chosen?.linkedin_page_id || ''} disabled={!isManager || busy} onChange={(e) => choose({ linkedin_page_id: e.target.value })} style={sel(theme)}>
+            <option value="">Pick a page…</option>
+            <option value="personal">Personal profile</option>
+            {li.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          {!pages.chosen?.linkedin_page_id && <span style={{ fontSize: 11, color: '#b45309' }}>This login reaches {li.length} company pages. LinkedIn posts wait until you pick one.</span>}
+        </label>
+      )}
+    </div>
+  )
+}
+
+// ── Website & Google Ads ─────────────────────────────────────────────
+// Everything a brand runs, one tap away. Google Ads is a link and an
+// account id for now: live spend needs Google's developer token, which is
+// applied for separately; when it lands, the numbers slot in here.
+function LinksCard({ theme, isMobile, kit, brandName, isManager, onSave }) {
+  const links = kit?.links || {}
+  const Field = ({ name, label, placeholder }) => {
+    const [v, setV] = useState(links[name] || '')
+    useEffect(() => { setV(links[name] || '') }, [links[name]]) // eslint-disable-line react-hooks/exhaustive-deps
+    return (
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: theme.textSecondary }}>{label}</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input value={v} onChange={(e) => setV(e.target.value)} onBlur={() => { if ((v || '') !== (links[name] || '')) onSave({ links: { ...links, [name]: v.trim() } }) }} placeholder={placeholder} disabled={!isManager} style={inputStyle(theme)} />
+          {v && <a href={/^https?:/.test(v) ? v : `https://${v}`} target="_blank" rel="noreferrer" style={{ ...ghostBtn(theme), padding: 8 }}><ExternalLink size={14} /></a>}
+        </div>
+      </label>
+    )
+  }
+  return (
+    <Card theme={theme} title={`${brandName ? brandName + ' · ' : ''}Website & listings`}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(2, minmax(0,1fr))', gap: 10 }}>
+        <Field name="website" label="Website" placeholder="https://" />
+        <Field name="google_business" label="Google Business listing" placeholder="https://g.page/…" />
+        <Field name="booking" label="Booking / quote page" placeholder="https://" />
+        <Field name="reviews" label="Leave-a-review link" placeholder="https://g.page/r/…/review" />
+      </div>
+      <div style={{ fontSize: 12, color: theme.textMuted }}>The AI uses the website as the call-to-action link when the brand kit has no other.</div>
+    </Card>
+  )
+}
+
+function AdsCard({ theme, isMobile, kit, isManager, onSave }) {
+  const ads = kit?.ads || {}
+  const [cid, setCid] = useState(ads.google_ads_customer_id || '')
+  useEffect(() => { setCid(ads.google_ads_customer_id || '') }, [ads.google_ads_customer_id])
+  const clean = cid.replace(/[^\d]/g, '')
+  const url = clean ? `https://ads.google.com/aw/overview?ocid=${clean}` : 'https://ads.google.com/'
+  return (
+    <Card theme={theme} title="Google Ads" right={<a href={url} target="_blank" rel="noreferrer" style={ghostBtn(theme)}><ExternalLink size={14} /> Open Google Ads</a>}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'minmax(0,1fr) minmax(0,1.4fr)', gap: 10, alignItems: 'start' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: theme.textSecondary }}>Customer ID</span>
+          <input value={cid} onChange={(e) => setCid(e.target.value)} onBlur={() => { if ((cid || '') !== (ads.google_ads_customer_id || '')) onSave({ ads: { ...ads, google_ads_customer_id: cid.trim() } }) }} placeholder="123-456-7890" disabled={!isManager} style={inputStyle(theme)} />
+        </label>
+        <div style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.45 }}>
+          Spend and conversions will show here once Google grants JobScout an Ads API developer token (a one-time application, weeks). Until then this is the door to the account. Paid social from the posts here is a later phase.
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// ── Calendar ─────────────────────────────────────────────────────────
+// The month, with every post on the day it went out, is due, or was
+// written. A cadence target per brand (posts a week) makes the gaps
+// obvious; the suggester keeps drafting toward it.
+function CalendarTab({ theme, isMobile, posts, captureMap, kit, isManager, onCadence, onOpen, onNewOn }) {
+  const today = new Date()
+  const [ym, setYm] = useState({ y: today.getFullYear(), m: today.getMonth() })
+  const byDay = useMemo(() => postsByDay(posts), [posts])
+  const cells = useMemo(() => monthGrid(ym.y, ym.m), [ym])
+  const week = weekProgress(posts, kit?.cadence_per_week || 0, today)
+  const todayKey = postDay({ status: 'draft', created_at: today })
+  const thisWeek = new Set(weekOf(today))
+  const label = new Date(ym.y, ym.m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  const move = (d) => setYm(({ y, m }) => { const x = new Date(y, m + d, 1); return { y: x.getFullYear(), m: x.getMonth() } })
+  const dot = (p) => (STATUS_STYLE[p.status] || STATUS_STYLE.draft).color
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '10px 14px' }}>
+        <div style={{ fontSize: 13, color: theme.text, flex: 1, minWidth: 200 }}>
+          <b>This week:</b> {week.counted} posted or scheduled{week.drafts ? `, ${week.drafts} waiting for approval` : ''}
+          {week.target ? (week.met ? '. Target met.' : `. ${week.remaining} more to hit ${week.target} a week.`) : '.'}
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: theme.textSecondary }}>
+          Target per week
+          <select value={kit?.cadence_per_week || 0} disabled={!isManager} onChange={(e) => onCadence(Number(e.target.value))} style={{ ...inputStyle(theme), width: 'auto', minHeight: 36, padding: '6px 10px' }}>
+            {[0, 1, 2, 3, 4, 5, 7].map((n) => <option key={n} value={n}>{n === 0 ? 'none' : n}</option>)}
+          </select>
+        </label>
+      </div>
+      <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, padding: isMobile ? 8 : 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <button type="button" onClick={() => move(-1)} style={{ ...ghostBtn(theme), padding: 8, minHeight: 36 }}><ChevronLeft size={16} /></button>
+          <div style={{ fontSize: 15, fontWeight: 700, color: theme.text, flex: 1, textAlign: 'center' }}>{label}</div>
+          <button type="button" onClick={() => move(1)} style={{ ...ghostBtn(theme), padding: 8, minHeight: 36 }}><ChevronRight size={16} /></button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: 4 }}>
+          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <div key={i} style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textAlign: 'center', padding: '4px 0' }}>{d}</div>)}
+          {cells.map((c, i) => {
+            if (!c) return <div key={`b${i}`} />
+            const list = byDay[c.key] || []
+            const isToday = c.key === todayKey
+            const inWeek = thisWeek.has(c.key)
+            return (
+              <div key={c.key} onClick={() => (isManager && !list.length ? onNewOn(c.key) : null)} style={{ minHeight: isMobile ? 54 : 84, borderRadius: 8, padding: 4, border: `1px solid ${isToday ? MKT : theme.border}`, background: inWeek ? MKT_BG.replace('0.10', '0.05') : theme.bg, cursor: isManager && !list.length ? 'pointer' : 'default', overflow: 'hidden' }}>
+                <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? MKT : theme.textSecondary }}>{c.day}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2 }}>
+                  {list.slice(0, isMobile ? 2 : 3).map((p) => {
+                    const cap = (p.capture_ids || []).map((id) => captureMap[id]).find(Boolean)
+                    const thumb = (p.media_urls || [])[0] || captureThumb(cap)
+                    return (
+                      <button key={p.id} type="button" onClick={(e) => { e.stopPropagation(); onOpen(p) }} title={p.caption} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', minHeight: 0 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: dot(p), flexShrink: 0 }} />
+                        {thumb && !isMobile ? <img src={thumb} alt="" style={{ width: 18, height: 18, borderRadius: 3, objectFit: 'cover', flexShrink: 0 }} /> : null}
+                        {!isMobile && <span style={{ fontSize: 10, color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(p.caption || 'Untitled').slice(0, 24)}</span>}
+                      </button>
+                    )
+                  })}
+                  {list.length > (isMobile ? 2 : 3) && <div style={{ fontSize: 10, color: theme.textMuted }}>+{list.length - (isMobile ? 2 : 3)}</div>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8, fontSize: 11, color: theme.textMuted }}>
+          {Object.entries(STATUS_STYLE).filter(([k]) => k !== 'archived').map(([k, v]) => <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: v.color }} /> {v.label}</span>)}
+          <span style={{ marginLeft: 'auto' }}>Tap an empty day to schedule a post there.</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Performance ──────────────────────────────────────────────────────
+// What the posts did. Metrics come from the publisher's cached analytics,
+// keyed to our posts by the native post id each network gave back.
+function PerformanceTab({ theme, isMobile, posts, captureMap, brand, invoke, publisher }) {
+  const [metrics, setMetrics] = useState(null)
+  const [err, setErr] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const load = useCallback(async () => {
+    if (!publisher?.profile_username) { setMetrics([]); return }
+    setLoading(true); setErr(null)
+    const r = await invoke('marketing-publish', { action: 'analytics', brand })
+    setLoading(false)
+    if (!r.ok) { setErr(r.error || 'Could not load'); setMetrics([]); return }
+    setMetrics(r.metrics || [])
+  }, [invoke, brand, publisher])
+  useEffect(() => { load() }, [load])
+
+  const byKey = useMemo(() => Object.fromEntries((metrics || []).map((m) => [`${m.platform}:${m.post_id}`, m])), [metrics])
+  const posted = posts.filter((p) => p.status === 'posted' && p.ayrshare_id)
+  const rows = posted.map((p) => {
+    const per = (p.post_urls || []).map((u) => ({ ...u, metrics: byKey[`${u.platform}:${u.id}`]?.m || null }))
+    const sum = (k) => per.reduce((n, x) => n + (x.metrics?.[k] || 0), 0)
+    return { p, per, views: sum('views'), likes: sum('likes'), comments: sum('comments'), shares: sum('shares'), any: per.some((x) => x.metrics) }
+  }).sort((a, b) => (b.views + b.likes * 5) - (a.views + a.likes * 5))
+  const totals = rows.reduce((t, r) => ({ views: t.views + r.views, likes: t.likes + r.likes, comments: t.comments + r.comments, shares: t.shares + r.shares }), { views: 0, likes: 0, comments: 0, shares: 0 })
+  const handTotal = posts.filter((p) => p.status === 'posted' && !p.ayrshare_id).length
+  const Stat = ({ label, value }) => (
+    <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '10px 14px', minWidth: 0 }}>
+      <div style={{ fontSize: 11, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: 0.3 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: theme.text }}>{value.toLocaleString()}</div>
+    </div>
+  )
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'repeat(5, minmax(0,1fr))', gap: 10 }}>
+        <Stat label="Posts" value={posted.length + handTotal} />
+        <Stat label="Views" value={totals.views} />
+        <Stat label="Likes" value={totals.likes} />
+        <Stat label="Comments" value={totals.comments} />
+        <Stat label="Shares" value={totals.shares} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: theme.textMuted }}>
+        {loading ? 'Reading the networks…' : err ? <span style={{ color: '#ef4444' }}>{err}</span> : metrics && metrics.length === 0 && posted.length ? 'Numbers appear a few hours after a post goes out.' : handTotal ? `${handTotal} post${handTotal === 1 ? '' : 's'} went out by hand; those have no numbers here.` : ''}
+        <button type="button" onClick={load} disabled={loading} style={{ ...ghostBtn(theme), marginLeft: 'auto', minHeight: 34, padding: '6px 10px' }}><RefreshCw size={13} /> Refresh</button>
+      </div>
+      {rows.length === 0 ? (
+        <Empty theme={theme} icon={BarChart3} title="Nothing published yet" body="Once posts go out through the publisher, views, likes, comments and shares show here per post and per network." />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {rows.map(({ p, per, views, likes, comments, shares, any }) => {
+            const cap = (p.capture_ids || []).map((id) => captureMap[id]).find(Boolean)
+            const thumb = (p.media_urls || [])[0] || captureThumb(cap)
+            return (
+              <div key={p.id} style={{ display: 'flex', gap: 12, padding: 10, background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, alignItems: 'center' }}>
+                {thumb ? <img src={thumb} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} /> : <div style={{ width: 56, height: 56, borderRadius: 8, background: theme.bg, flexShrink: 0 }} />}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.caption || 'Untitled'}</div>
+                  <div style={{ fontSize: 11, color: theme.textMuted, display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                    <span>{fmtWhen(p.posted_at)}</span>
+                    {per.map((u) => (
+                      <a key={u.platform + u.id} href={u.postUrl || '#'} target="_blank" rel="noreferrer" style={{ color: u.postUrl ? '#3b82f6' : theme.textMuted, textDecoration: 'none' }}>
+                        {PLATFORM_BY_ID[u.platform]?.label || u.platform}{u.metrics ? ` ${(u.metrics.views || 0).toLocaleString()}v · ${(u.metrics.likes || 0).toLocaleString()}♥` : ''}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+                {!isMobile && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 56px)', gap: 4, textAlign: 'center', flexShrink: 0 }}>
+                    {[['views', views], ['likes', likes], ['cmts', comments], ['shares', shares]].map(([l, v]) => (
+                      <div key={l}><div style={{ fontSize: 15, fontWeight: 700, color: any ? theme.text : theme.textMuted }}>{any ? v.toLocaleString() : '–'}</div><div style={{ fontSize: 10, color: theme.textMuted }}>{l}</div></div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 

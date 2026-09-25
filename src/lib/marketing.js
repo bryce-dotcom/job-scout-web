@@ -229,3 +229,64 @@ export function brandForUnit(brands, unit) {
   const hit = brands.find((b) => String(b.unit || '').trim().toLowerCase() === u)
   return hit ? hit.id : null
 }
+
+// ── Calendar & cadence ────────────────────────────────────────────────
+// The calendar is the month as a grid of days; a post lands on the day it
+// went out (posted_at), is due to (scheduled_for), or was written
+// (created_at) while it is still a draft. Cadence is a per-brand target of
+// posts per week; the calendar and the queue say how this week is going.
+
+const dayKey = (d) => {
+  const dt = new Date(d)
+  if (isNaN(dt.getTime())) return null
+  const p = (n) => String(n).padStart(2, '0')
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`
+}
+
+export function postDay(post) {
+  if (!post) return null
+  if (post.status === 'posted' && post.posted_at) return dayKey(post.posted_at)
+  if (post.scheduled_for) return dayKey(post.scheduled_for)
+  return dayKey(post.created_at)
+}
+
+export function postsByDay(posts = []) {
+  const out = {}
+  for (const p of posts) {
+    const k = postDay(p)
+    if (!k) continue
+    ;(out[k] ||= []).push(p)
+  }
+  return out
+}
+
+// Monday-start week containing `date`, as local day keys.
+export function weekOf(date = new Date()) {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  const dow = (d.getDay() + 6) % 7 // Mon = 0
+  d.setDate(d.getDate() - dow)
+  return Array.from({ length: 7 }, (_, i) => { const x = new Date(d); x.setDate(d.getDate() + i); return dayKey(x) })
+}
+
+// How this week is going against the target. "Counted" = posted or
+// scheduled; drafts do not count until someone approves them.
+export function weekProgress(posts = [], target = 0, date = new Date()) {
+  const days = new Set(weekOf(date))
+  const counted = posts.filter((p) => ['posted', 'scheduled'].includes(p.status) && days.has(postDay(p))).length
+  const drafts = posts.filter((p) => ['draft', 'approved'].includes(p.status) && days.has(postDay(p))).length
+  const t = Math.max(0, Number(target) || 0)
+  return { counted, drafts, target: t, remaining: t ? Math.max(0, t - counted) : 0, met: t ? counted >= t : true }
+}
+
+// Grid cells for a month view: leading blanks so the 1st sits under its
+// weekday (Monday first), then every day, as { key, day } or null.
+export function monthGrid(year, month /* 0-11 */) {
+  const first = new Date(year, month, 1)
+  const lead = (first.getDay() + 6) % 7
+  const days = new Date(year, month + 1, 0).getDate()
+  const cells = Array.from({ length: lead }, () => null)
+  for (let d = 1; d <= days; d++) cells.push({ key: dayKey(new Date(year, month, d)), day: d })
+  while (cells.length % 7) cells.push(null)
+  return cells
+}

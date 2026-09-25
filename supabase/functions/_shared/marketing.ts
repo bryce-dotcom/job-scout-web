@@ -138,7 +138,7 @@ export async function draftFromCaptures(input: DraftInput): Promise<DraftResult>
       .in('key', ['marketing_brand_kit', brandKey('marketing_brand_kit', brandId), 'marketing_brands', 'eos_core_values', 'eos_core_focus', 'eos_marketing_strategy']),
     sb.from('companies').select('company_name, logo_url, city, state, website, phone').eq('id', companyId).maybeSingle(),
     captureIds.length
-      ? sb.from('marketing_captures').select('id, url, bucket, path, note, media_type, job_id').eq('company_id', companyId).in('id', captureIds)
+      ? sb.from('marketing_captures').select('id, url, bucket, path, note, media_type, job_id, frames, poster_url, duration_s').eq('company_id', companyId).in('id', captureIds)
       : Promise.resolve({ data: [] as any[] }),
     historyQ.order('created_at', { ascending: false }).limit(40),
     input.jobId
@@ -204,8 +204,19 @@ ${edits.length ? `\nEDITS THEY MADE TO EARLIER DRAFTS (learn from the correction
 
   const content: any[] = []
   let hasVideo = false
+  let blindVideo = false
   for (const c of captures || []) {
-    if (c.media_type === 'video') { hasVideo = true; continue }
+    if (c.media_type === 'video') {
+      hasVideo = true
+      // Stills pulled out in the browser at upload time; a texted video has none.
+      const frames: string[] = Array.isArray(c.frames) ? c.frames.filter(Boolean) : []
+      if (frames.length) {
+        content.push({ type: 'text', text: `The next ${frames.length} image${frames.length === 1 ? '' : 's'} are stills from one video${c.duration_s ? ` (${Math.round(Number(c.duration_s))}s)` : ''}, in order.` })
+        for (const u of frames.slice(0, 4)) content.push({ type: 'image', source: { type: 'url', url: u } })
+      } else blindVideo = true
+      if (c.note) content.push({ type: 'text', text: `Note on that video: ${c.note}` })
+      continue
+    }
     const block = await imageBlockFor(sb, c)
     if (block) content.push(block)
     if (c.note) content.push({ type: 'text', text: `Note on that photo: ${c.note}` })
@@ -223,7 +234,7 @@ ${edits.length ? `\nEDITS THEY MADE TO EARLIER DRAFTS (learn from the correction
     text: [
       note ? `What the crew said: ${note}` : 'No note from the crew; go by the photos and the job.',
       jobBits,
-      hasVideo ? 'One of the attachments is a video (not shown).' : '',
+      blindVideo ? 'One of the attachments is a video with no stills available; go by the note.' : hasVideo ? 'This is a video post; write for a video.' : '',
       'Write the post now. JSON only.',
     ].filter(Boolean).join('\n\n'),
   })
