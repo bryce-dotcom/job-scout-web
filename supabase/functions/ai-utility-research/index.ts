@@ -245,8 +245,8 @@ For each provider find:
 
 Do not list incentive rates or prescriptive measures — those are researched per program in a later step.
 
-Return the structured JSON.`,
-    { webSearch: 6, maxTokens: 16000, req, companyId }
+Your reply must begin with { and be nothing but the JSON document: no preamble, no narration of your searches, no code fences. (Washington's reply once opened with two paragraphs of prose, ran out of room, and the JSON was cut off.)`,
+    { webSearch: 6, maxTokens: 24000, req, companyId }
   );
   const results = normalize(extractJson(text));
   console.log(`[discover] ${state}: ${results.providers.length} providers, ${results.programs.length} programs, ${results.rate_schedules.length} schedules, ${results.forms.length} forms in ${Date.now() - started}ms`);
@@ -290,6 +290,18 @@ Return the structured JSON.`,
 
 // ── Main Handler ─────────────────────────────────────────────────────────────
 
+function jwtRole(token: string): string | null {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)));
+    return typeof payload?.role === 'string' ? payload.role : null;
+  } catch {
+    return null;
+  }
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -301,9 +313,25 @@ serve(async (req) => {
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ success: false, error: 'Invalid JSON body' }, 400); }
 
-  const caller = await resolveCaller(req, Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
-  if (!caller) return json({ success: false, error: 'Sign in to run research' }, 401);
-  if (caller.level < DEVELOPER_LEVEL) return json({ success: false, error: 'Utility research is a platform developer tool' }, 403);
+  // Who may run this: a platform developer signed into the Data Console, or
+  // the platform's own service key (scripts/seed-utility-research.mjs and
+  // friends). Developer is a platform-only role since 20260924180000, so a
+  // script cannot mint a throwaway developer login to call this — the
+  // service key IS the platform's identity for automation.
+  // The gateway has already verified the bearer's signature (verify_jwt);
+  // a service-role JWT carries role = "service_role". The runtime's own copy
+  // of the key is not compared byte-for-byte because the injected value and
+  // the one in .env can be different formats of the same credential.
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const bearer = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  const isServiceCall = bearer.length > 0 && (bearer === serviceKey || jwtRole(bearer) === 'service_role');
+  let callerCompanyId: number | null = null;
+  if (!isServiceCall) {
+    const caller = await resolveCaller(req, Deno.env.get('SUPABASE_URL'), serviceKey);
+    if (!caller) return json({ success: false, error: 'Sign in to run research' }, 401);
+    if (caller.level < DEVELOPER_LEVEL) return json({ success: false, error: 'Utility research is a platform developer tool' }, 403);
+    callerCompanyId = callerCompanyId;
+  }
 
   const phase = String(body.phase || 'discover');
   const state = typeof body.state === 'string' ? body.state.trim() : '';
@@ -311,14 +339,14 @@ serve(async (req) => {
 
   if (phase === 'discover') {
     if (!state) return json({ success: false, error: 'State is required' }, 400);
-    return streamedJson(corsHeaders, () => discoverPhase(state, req, caller.companyId));
+    return streamedJson(corsHeaders, () => discoverPhase(state, req, callerCompanyId));
   }
   if (phase === 'measures') {
     if (!state) return json({ success: false, error: 'State is required' }, 400);
     if (programs.length !== 1 || !programs[0]?.program_name) {
       return json({ success: false, error: 'measures phase takes exactly one program' }, 400);
     }
-    return streamedJson(corsHeaders, () => measuresPhase(state, programs[0], req, caller.companyId));
+    return streamedJson(corsHeaders, () => measuresPhase(state, programs[0], req, callerCompanyId));
   }
   if (phase === 'pdfs') {
     if (programs.length === 0) return json({ success: true, phase: 'pdfs', discovered_pdfs: [] });
