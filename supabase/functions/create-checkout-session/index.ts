@@ -437,9 +437,19 @@ serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      const wisetackBaseUrl = wisetackMode === 'live'
-        ? 'https://api.wisetack.com'
-        : 'https://api.sandbox.wisetack.com';
+      // UNVERIFIED. Wisetack publishes no API documentation: the base URL, the
+      // request shape below and the response fields were all written without
+      // access to a spec, and this call has never once succeeded.
+      //
+      // What IS known, probed 2026-09-26: api.wisetack.com and
+      // api.sandbox.wisetack.com do not resolve at all, so these defaults are
+      // wrong. api.wisetack.us resolves and answers 403 "Forbidden" on every
+      // path (an API gateway rejecting an unknown key), which fits their
+      // portal living at business.wisetack.us. The real base URL, paths and
+      // field names come with partner onboarding — so they are overridable by
+      // secret, and nobody has to ship a release to correct a guess.
+      const wisetackBaseUrl = (Deno.env.get('WISETACK_API_BASE') || '').replace(/\/+$/, '')
+        || (wisetackMode === 'live' ? 'https://api.wisetack.com' : 'https://api.sandbox.wisetack.com');
 
       // Fetch customer info for Wisetack
       let customerName = '';
@@ -460,28 +470,39 @@ serve(async (req) => {
 
       const amountDollars = (amount_cents / 100).toFixed(2);
 
-      // Create Wisetack loan application
-      const wtRes = await fetch(`${wisetackBaseUrl}/v1/loan-applications`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${wisetackApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          merchant_id: merchantId,
-          transaction_amount: parseFloat(amountDollars),
-          purpose: description,
-          consumer: {
-            first_name: customerName.split(' ')[0] || '',
-            last_name: customerName.split(' ').slice(1).join(' ') || '',
-            email: customerEmail,
-            phone: customerPhone.replace(/\D/g, ''),
+      // Create Wisetack loan application. A transport failure (bad host, DNS,
+      // timeout) THROWS rather than returning !ok, and the outer catch hands
+      // the customer error.message — so a homeowner's screen read
+      // "dns error: failed to lookup address information". Caught here so
+      // they get a sentence and we keep the detail in the logs.
+      let wtRes: Response;
+      try {
+        wtRes = await fetch(`${wisetackBaseUrl}/v1/loan-applications`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${wisetackApiKey}`,
+            'Content-Type': 'application/json',
           },
-          merchant_reference_id: `${tokenRow.document_type}_${tokenRow.document_id}`,
-          redirect_url: `${portalUrl}?payment=success&provider=wisetack`,
-          webhook_url: financingWebhookUrl(),
-        }),
-      });
+          body: JSON.stringify({
+            merchant_id: merchantId,
+            transaction_amount: parseFloat(amountDollars),
+            purpose: description,
+            consumer: {
+              first_name: customerName.split(' ')[0] || '',
+              last_name: customerName.split(' ').slice(1).join(' ') || '',
+              email: customerEmail,
+              phone: customerPhone.replace(/\D/g, ''),
+            },
+            merchant_reference_id: `${tokenRow.document_type}_${tokenRow.document_id}`,
+            redirect_url: `${portalUrl}?payment=success&provider=wisetack`,
+            webhook_url: financingWebhookUrl(),
+          }),
+        });
+      } catch (e) {
+        console.error('Wisetack unreachable at ' + wisetackBaseUrl + ':', e instanceof Error ? e.message : String(e));
+        return new Response(JSON.stringify({ error: 'Financing is temporarily unavailable. Please choose another payment method or contact us.' }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
 
       if (!wtRes.ok) {
         const errText = await wtRes.text();
