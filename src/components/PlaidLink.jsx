@@ -7,7 +7,9 @@ import { Landmark } from 'lucide-react'
 // the Auth product (routing + account numbers) — no public-token exchange
 // afterwards, the item already has its access token. Used by Payroll's ACH
 // settings when a bank was linked for Books before Auth was asked for.
-export default function PlaidLink({ companyId, onSuccess, onError, theme, style, updateItemId = null, label = null }) {
+// relink: update mode for a bank whose login broke (ITEM_LOGIN_REQUIRED) —
+// re-authenticate only, do not ask Plaid to add Auth on the way through.
+export default function PlaidLink({ companyId, onSuccess, onError, theme, style, updateItemId = null, relink = false, label = null }) {
   const [linkToken, setLinkToken] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -19,7 +21,7 @@ export default function PlaidLink({ companyId, onSuccess, onError, theme, style,
       setLoading(true)
       try {
         const { data, error } = await supabase.functions.invoke('plaid-link', {
-          body: { action: 'create_link_token', company_id: companyId, ...(updateItemId ? { update_item_id: updateItemId } : {}) }
+          body: { action: 'create_link_token', company_id: companyId, ...(updateItemId ? { update_item_id: updateItemId } : {}), ...(relink ? { relink: true } : {}) }
         })
         if (!cancelled) {
           if (error || data?.error) {
@@ -36,7 +38,7 @@ export default function PlaidLink({ companyId, onSuccess, onError, theme, style,
 
     createToken()
     return () => { cancelled = true }
-  }, [companyId, updateItemId])
+  }, [companyId, updateItemId, relink])
 
   const onPlaidSuccess = useCallback(async (publicToken, metadata) => {
     // Update mode: the item is already linked; Plaid has just added Auth to
@@ -100,7 +102,7 @@ export default function PlaidLink({ companyId, onSuccess, onError, theme, style,
       }}
     >
       <Landmark size={14} />
-      {loading ? 'Connecting...' : (label || (updateItemId ? 'Reconnect bank for payroll' : 'Connect Bank Account'))}
+      {loading ? 'Connecting...' : (label || (updateItemId ? (relink ? 'Re-login to bank' : 'Reconnect bank for payroll') : 'Connect Bank Account'))}
     </button>
   )
 }

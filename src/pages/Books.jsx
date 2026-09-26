@@ -44,7 +44,7 @@ import { zelleSenderName, matchCustomerName } from '../lib/zelleSender'
 import {
   BookOpen, Plus, X, DollarSign, TrendingUp, TrendingDown,
   Wallet, CreditCard, Building, PiggyBank, Pencil, Trash2,
-  Calendar, FileText, Search, Zap, Landmark, RefreshCw,
+  Calendar, FileText, Search, Zap, Landmark, RefreshCw, AlertTriangle,
   Sparkles, Check, CheckCircle, ChevronDown, ChevronRight,
   Download, Filter, AlertCircle, Settings as SettingsIcon,
   Link, Briefcase,
@@ -61,6 +61,7 @@ import {
 // so components this page renders can share it. Re-exported for the
 // existing importers of this page.
 import { TAX_CATEGORIES, TAX_CATEGORY_OPTIONS } from '../lib/taxCategories'
+import PlaidLink from '../components/PlaidLink'
 export { TAX_CATEGORIES, TAX_CATEGORY_OPTIONS }
 
 // Manual accounts on the Accounts tab. Venmo, Cash App and PayPal balances
@@ -353,6 +354,7 @@ export default function Books() {
   const [liabilities, setLiabilities] = useState([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [refreshingBalances, setRefreshingBalances] = useState(false)
 
   // Transaction filters
   const [txnSearch, setTxnSearch] = useState('')
@@ -1198,6 +1200,20 @@ export default function Books() {
 
   // ─── Calculations ───
   const activeConnected = connectedAccounts.filter(a => a.status === 'active')
+  // Bank links whose last Plaid call failed (sync_error is stamped by the
+  // plaid-link function). Grouped per item: one re-login fixes every account
+  // behind it. When the bank balances were last actually read is separate
+  // from last_synced, which is the transaction cursor stamp.
+  const bankIssues = (() => {
+    const byItem = new Map()
+    for (const a of activeConnected) {
+      if (!a.sync_error) continue
+      if (!byItem.has(a.plaid_item_id)) byItem.set(a.plaid_item_id, { itemId: a.plaid_item_id, institution: a.institution_name, error: a.sync_error, code: a.sync_error_code, since: a.sync_error_at, accounts: [] })
+      byItem.get(a.plaid_item_id).accounts.push(a)
+    }
+    return [...byItem.values()]
+  })()
+  const balancesAsOf = activeConnected.reduce((m, a) => { const t = a.balance_synced_at || a.last_synced; return t && (!m || t > m) ? t : m }, null)
   // bank_accounts holds three kinds of row: Plaid mirrors (connected_account_id
   // set — the same money as connected_accounts, possibly a sync behind), the
   // Stripe balance row, and manual accounts (Venmo, Cash App, cash on hand).
@@ -1298,6 +1314,31 @@ export default function Books() {
     return { cash, customerAR, utilityAR, inventory, ap, taxesOwed, salesTaxOwed, deposits, cardDebt, assetsTotal, liabilitiesTotal, netWorth: assetsTotal - liabilitiesTotal }
   })()
 
+  // Balances only — the one-click "is this what the bank says right now?"
+  // on top of the nightly cron. Transactions have their own Sync button.
+  const handleRefreshBalances = async () => {
+    setRefreshingBalances(true)
+    try {
+      const r = await supabase.functions.invoke('plaid-link', { body: { action: 'get_accounts', company_id: companyId } })
+      const data = r.data || {}
+      if (r.error || data.error) throw new Error(data.error || r.error?.message || 'Refresh failed')
+      await Promise.all([fetchConnectedAccounts?.(), fetchBankAccounts()])
+      if (data.errors?.length) toast.error(`${data.errors[0].institution || 'Your bank'} needs a re-login — see the notice at the top of Books`)
+      else toast.success(`Bank balances refreshed (${data.accounts?.length || 0} account${data.accounts?.length === 1 ? '' : 's'})`)
+    } catch (e) {
+      toast.error('Could not refresh balances: ' + e.message)
+    }
+    setRefreshingBalances(false)
+  }
+  // After Plaid's update-mode Link succeeds the item is healthy again: read
+  // the balances (clears the error stamp) and pull the transactions it missed.
+  const handleRelinked = async () => {
+    toast.success('Bank re-linked — catching up balances and transactions')
+    await handleRefreshBalances()
+    try { await syncPlaidTransactions() } catch (e) { toast.error('Balances are fresh, but the transaction sync failed: ' + e.message) }
+    await Promise.all([fetchConnectedAccounts?.(), fetchBankAccounts()])
+  }
+
   // ─── Transaction handlers ───
   const handleSync = async () => {
     setSyncing(true)
@@ -1323,6 +1364,7 @@ export default function Books() {
         .then(r => r.data || { error: r.error?.message })
         .catch(e => ({ error: e.message }))
       if (balances?.error) console.warn('[Books] balance refresh failed:', balances.error)
+      if (balances?.errors?.length) toast.error(`${balances.errors[0].institution || 'Your bank'} needs a re-login — see the notice at the top of Books`)
       await fetchConnectedAccounts?.()
 
       const plaidAdded = plaid?.sync?.total_added || 0
@@ -2121,6 +2163,18 @@ export default function Books() {
             </p>
           </div>
 
+          {bankIssues.map(issue => (
+            <div key={issue.itemId} style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', backgroundColor: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.35)', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <AlertTriangle size={18} style={{ color: '#b45309', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: '220px', fontSize: '13px', color: theme.text }}>
+                <div style={{ fontWeight: 600 }}>{issue.institution || 'Your bank'} needs a re-login</div>
+                <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
+                  Balances and transactions for {issue.accounts.length} account{issue.accounts.length === 1 ? '' : 's'} stopped updating{issue.since ? ` on ${new Date(issue.since).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}. The bank asked for a fresh login (new password, MFA, or a notice to accept). Log in once through Plaid and Books catches up on its own.
+                </div>
+              </div>
+              <PlaidLink companyId={companyId} updateItemId={issue.itemId} relink theme={theme} label={`Re-login to ${issue.institution || 'bank'}`} onSuccess={handleRelinked} onError={(m) => toast.error(m)} style={{ minHeight: '44px' }} />
+            </div>
+          ))}
           {/* Metric Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
             <div style={statCardStyle}>
@@ -2135,6 +2189,17 @@ export default function Books() {
                 <HelpBadge text="Checking and savings balances as of the last bank sync (once a day, or when you press Sync on the Transactions tab), plus your Stripe balance awaiting payout, plus manual accounts like Venmo or cash on hand. Credit cards and loans are not cash — what you owe on them is listed separately. Your bank's own screen may differ by pending transactions. Bank balances are not split by business unit." />
               </div>
               <div style={{ fontSize: '28px', fontWeight: '700', color: '#22c55e' }}>{formatCurrency(totalCash)}</div>
+              {activeConnected.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                    {balancesAsOf ? `bank as of ${new Date(balancesAsOf).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'bank balances never refreshed'}
+                  </span>
+                  <button onClick={handleRefreshBalances} disabled={refreshingBalances} title="Ask the bank for today's balances now (the app also does this nightly)"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', minHeight: '36px', borderRadius: '6px', border: `1px solid ${theme.border}`, backgroundColor: 'transparent', color: theme.accent, fontSize: '11px', cursor: refreshingBalances ? 'wait' : 'pointer' }}>
+                    <RefreshCw size={11} style={refreshingBalances ? { animation: 'spin 1s linear infinite' } : {}} /> {refreshingBalances ? 'Refreshing…' : 'Refresh bank'}
+                  </button>
+                </div>
+              )}
               {totalCardDebt > 0 && (
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
                   owed on {debtAccountNames.join(', ')}: {formatCurrency(totalCardDebt)} — not counted as cash

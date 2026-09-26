@@ -58,6 +58,18 @@ serve(async (req) => {
       return jsonResponse({ error: 'action and company_id are required' }, 400);
     }
 
+    // Plaid item health on every row of the item. A bank that needs a
+    // re-login (ITEM_LOGIN_REQUIRED) used to fail silently: get_accounts
+    // swallowed the error and returned [], the nightly cron logged a warning
+    // nobody read, and Books kept showing the balances from the day the
+    // login broke (HHH, 2026-09-23 → 25). Books reads these to say so.
+    const stampItemError = async (itemId: string, err: { code?: string | null; message: string } | null) => {
+      await supabase.from('connected_accounts').update(err
+        ? { sync_error: err.message, sync_error_code: err.code || null, sync_error_at: new Date().toISOString() }
+        : { sync_error: null, sync_error_code: null, sync_error_at: null })
+        .eq('company_id', company_id).eq('plaid_item_id', itemId);
+    };
+
     // Get Plaid config from settings
     const { data: setting } = await supabase
       .from('settings')
@@ -105,7 +117,7 @@ serve(async (req) => {
           user: { client_user_id: String(company_id) },
           client_name: 'JobScout',
           ...(updateAccessToken
-            ? { access_token: updateAccessToken, products: ['auth'] }
+            ? { access_token: updateAccessToken, ...(body.relink ? {} : { products: ['auth'] }) }
             : { products: ['transactions'], optional_products: ['auth'] }),
           country_codes: ['US'],
           language: 'en',
@@ -345,6 +357,7 @@ serve(async (req) => {
 
     if (action === 'get_accounts') {
       const results: Array<Record<string, unknown>> = [];
+      const errors: Array<Record<string, unknown>> = [];
 
       // Get all active connected accounts for this company
       const { data: accounts } = await supabase
@@ -374,12 +387,21 @@ serve(async (req) => {
           });
 
           const data = await res.json();
+          if (!res.ok || data.error_code) {
+            const message = data.error_message || data.display_message || data.error_code || `Plaid returned ${res.status}`;
+            await stampItemError(itemId, { code: data.error_code || null, message });
+            errors.push({ item: itemId, institution: itemAccounts[0]?.institution_name || null, error_code: data.error_code || null, error: message });
+            continue;
+          }
+          await stampItemError(itemId, null);
+          const refreshedAt = new Date().toISOString();
           for (const acct of (data.accounts || [])) {
             const match = itemAccounts.find(a => a.plaid_account_id === acct.account_id);
             if (match) {
               await supabase.from('connected_accounts').update({
                 current_balance: acct.balances?.current ?? null,
                 available_balance: acct.balances?.available ?? null,
+                balance_synced_at: refreshedAt,
               }).eq('id', match.id);
 
               // Update bank_accounts too
@@ -397,7 +419,7 @@ serve(async (req) => {
         }
       }
 
-      return jsonResponse({ accounts: results });
+      return jsonResponse({ accounts: results, errors });
     }
 
     // ─── DISCONNECT ───
@@ -516,6 +538,7 @@ serve(async (req) => {
       // fetched the same data nine times over — and stamped it onto whichever
       // account row the loop was on. See _shared/plaidSync.ts.
       const warnings: string[] = [];
+      const itemErrors: Array<Record<string, unknown>> = [];
       for (const [itemId, rows] of groupByItem(accounts)) {
         const item = config.items?.[itemId];
         if (!item?.access_token) {
@@ -523,13 +546,26 @@ serve(async (req) => {
           continue;
         }
 
-        const pull = await pullItem({
-          plaidBase,
-          clientId,
-          secret,
-          accessToken: item.access_token,
-          cursor: itemCursor(rows),
-        });
+        let pull;
+        try {
+          pull = await pullItem({
+            plaidBase,
+            clientId,
+            secret,
+            accessToken: item.access_token,
+            cursor: itemCursor(rows),
+          });
+        } catch (e) {
+          // pullItem throws Plaid's error_message. Record it on the item so
+          // Books can show a re-login button, and keep syncing the others.
+          const message = e instanceof Error ? e.message : String(e);
+          const code = /login|credential|MFA|user action/i.test(message) ? 'ITEM_LOGIN_REQUIRED' : null;
+          await stampItemError(itemId, { code, message });
+          warnings.push(`${item.institution_name || itemId}: ${message}`);
+          itemErrors.push({ item: itemId, institution: item.institution_name || null, error_code: code, error: message });
+          continue;
+        }
+        await stampItemError(itemId, null);
 
         const accountMap = buildAccountMap(rows);
         const upserts: Array<Record<string, unknown>> = [];
@@ -579,6 +615,7 @@ serve(async (req) => {
         total_removed: totalRemoved,
         accounts_synced: synced,
         warnings,
+        item_errors: itemErrors,
       });
     }
 
