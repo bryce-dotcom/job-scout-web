@@ -164,7 +164,7 @@ export default function Dashboard() {
   // Payroll runs + stubs so Money Out counts wages the way Books does
   // (accrual: gross + employer tax; cash: from the bank feed, runs only
   // when the feed shows no payroll).
-  const [payrollData, setPayrollData] = useState({ payrollRuns: [], paystubs: [], payrollConfig: null })
+  const [payrollData, setPayrollData] = useState({ payrollRuns: [], paystubs: [], payrollConfig: null, loans: [], loanPayments: [] })
   useEffect(() => {
     if (!companyId) return
     let cancelled = false
@@ -173,11 +173,15 @@ export default function Dashboard() {
       supabase.from('payroll_runs').select('id, pay_date, total_gross').eq('company_id', companyId).gte('pay_date', since),
       supabase.from('paystubs').select('payroll_run_id, employee_id, gross_pay, net_pay, federal_income_tax, state_income_tax, social_security_employee, social_security_employer, medicare_employee, medicare_employer, additional_medicare, futa, sui').eq('company_id', companyId).gte('pay_date', since),
       supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payroll_config').maybeSingle(),
-    ]).then(([r, s, c]) => {
+      // Loans: their payments are principal + interest (only the interest is an
+      // expense), and their due dates feed the cash outlook — same as Books.
+      supabase.from('liabilities').select('id, name, lender, current_balance, monthly_payment, next_payment_amount, next_payment_due, payment_day, interest_rate, status').eq('company_id', companyId),
+      supabase.from('loan_payments').select('id, liability_id, date, amount, principal, interest').eq('company_id', companyId).gte('date', since),
+    ]).then(([r, s, c, l, lp]) => {
       if (cancelled) return
       let payrollConfig = null
       try { payrollConfig = c.data?.value ? (typeof c.data.value === 'string' ? JSON.parse(c.data.value) : c.data.value) : null } catch { payrollConfig = null }
-      setPayrollData({ payrollRuns: r.data || [], paystubs: s.data || [], payrollConfig })
+      setPayrollData({ payrollRuns: r.data || [], paystubs: s.data || [], payrollConfig, loans: l.data || [], loanPayments: lp.data || [] })
     })
     return () => { cancelled = true }
   }, [companyId])
@@ -392,7 +396,7 @@ export default function Dashboard() {
   // twice. manualExpensesMTD/plaidOutMTD kept for the breakdown subtitle.
   const manualExpensesMTD = (expenses || []).filter(e => e.date && isThisMonth(e.date)).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0)
   const plaidOutMTD = (plaidTransactions || []).filter(t => t.amount > 0 && isThisMonth(t.date) && !t.is_transfer).reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0)
-  const thisMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills, payroll: summarizePayroll(payrollData, isThisMonth) }, isThisMonth)
+  const thisMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills, payroll: summarizePayroll(payrollData, isThisMonth), loanPayments: payrollData.loanPayments }, isThisMonth)
 
   // Quote amounts by lead (for sales won + pipeline chart)
   const quoteByLead = {}
@@ -452,7 +456,7 @@ export default function Dashboard() {
   const lastMonthLabel = firstOfLastMonth.toLocaleDateString('en-US', { month: 'short' })
 
   const lastMonthRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isLastMonth)
-  const lastMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills, payroll: summarizePayroll(payrollData, isLastMonth) }, isLastMonth)
+  const lastMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills, payroll: summarizePayroll(payrollData, isLastMonth), loanPayments: payrollData.loanPayments }, isLastMonth)
   const lastMonthNetIncome = lastMonthRevenue - lastMonthExpenses
   const lastMonthDeposits = (leadPayments || []).filter(d => isLastMonth(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
   const lastMonthWonJobs = wonJobsInRange(jobs, firstOfLastMonth, firstOfMonth)
@@ -470,7 +474,7 @@ export default function Dashboard() {
   const collectedIncentiveYTD = collectedIncentives(utilityInvoices, isThisYear)
   const ytdRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isThisYear)
 
-  const ytdExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills, payroll: summarizePayroll(payrollData, isThisYear) }, isThisYear)
+  const ytdExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills, payroll: summarizePayroll(payrollData, isThisYear), loanPayments: payrollData.loanPayments }, isThisYear)
   const ytdNetIncome = ytdRevenue - ytdExpenses
 
   // YTD — same definitions as MTD, just a wider window.
@@ -529,6 +533,7 @@ export default function Dashboard() {
       const fc = buildForecast({
         openingCash, invoices, payments, utilityInvoices, plaidTransactions,
         bills: accrualBills.bills, payrollRuns: payrollData.payrollRuns, paystubs: payrollData.paystubs, payrollConfig: payrollData.payrollConfig,
+        loans: payrollData.loans,
       })
       const lowDate = new Date(fc.low.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
       return { value: formatCurrency(fc.closing), subtitle: `Low point ${formatCurrency(fc.low.balance)} on ${lowDate} · from ${formatCurrency(fc.opening)} today` }

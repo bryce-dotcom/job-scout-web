@@ -11,6 +11,7 @@ import { getCurrentPayPeriod } from './bonusCalc'
 import { payDateForPeriod, businessDayOnOrBefore } from './payDate'
 import { annualByType } from './fleetRecurringCosts'
 import { isPayrollBankRow, paidRuns } from './payrollBooks'
+import { isActiveLoan, scheduledPayment, nextDueDate } from './loanMatch'
 
 const DAY = 86400000
 const num = (v) => parseFloat(v) || 0
@@ -31,7 +32,7 @@ export function buildForecast({
   invoices = [], payments = [], utilityInvoices = [], bills = [], taxLiabilities = [],
   payrollConfig = null, payrollRuns = [], paystubs = [],
   memberships = [], paymentPlans = [], fleetRecurringCosts = [],
-  plaidTransactions = [],
+  plaidTransactions = [], loans = [],
 } = {}) {
   const start = new Date(key(today) + 'T00:00:00')
   const end = addDays(start, days)
@@ -94,6 +95,20 @@ export function buildForecast({
     if (!(bal > 0)) continue
     const due = parseLocal(b.due_date) || addDays(parseLocal(b.bill_date) || start, 30)
     push(maxDate(due, start), -bal, `Bill${b.bill_number ? ` ${b.bill_number}` : ''}${b.vendor?.name ? ` — ${b.vendor.name}` : ''}`, 'bill', due < start ? 'overdue' : 'likely', { ref: b.id })
+  }
+  // Loan payments: the scheduled amount on each due date through the window
+  // (lender's next date when Plaid supplied it, else the payment day).
+  for (const l of loans || []) {
+    if (!isActiveLoan(l)) continue
+    const amt = scheduledPayment(l)
+    if (!(amt > 0)) continue
+    let due = nextDueDate(l, start)
+    for (let k = 0; k < 4 && due; k++) {
+      const d = parseLocal(due)
+      if (!d) break
+      if (d >= start) push(d, -amt, `Loan payment — ${l.name}${l.lender ? ` (${l.lender})` : ''}`, 'loan', 'likely', { ref: l.id })
+      due = key(new Date(d.getFullYear(), d.getMonth() + 1, d.getDate()))
+    }
   }
   for (const l of taxLiabilities || []) {
     if (l.paid_at) continue

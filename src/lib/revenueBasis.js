@@ -15,6 +15,7 @@
 
 import { isLegacyNetShape } from './arHelpers'
 import { isPayrollBankRow } from './payrollBooks'
+import { isLoanTxn, loanInterestInRange } from './loanMatch'
 
 export const BASIS_CASH = 'cash'
 export const BASIS_ACCRUAL = 'accrual'
@@ -133,11 +134,14 @@ function payrollForBasis(basis, { payroll, plaidTransactions = [] }, inRange) {
 // The one entry point pages should use, mirroring computeRevenue.
 export function computeExpenses(basis, data, inRange) {
   const { add, excludeBankPayroll } = payrollForBasis(basis, data, inRange)
-  const plaidTransactions = excludeBankPayroll
-    ? (data.plaidTransactions || []).filter(t => !isPayrollBankRow(t))
-    : data.plaidTransactions
+  // A booked loan payment is not an expense: the principal is a liability
+  // going down. Its interest is. Bank rows tied to a loan_payments row are
+  // set aside and the interest of the payments in range is added back
+  // (lib/loanMatch). Pass `loanPayments` or the whole payment counts.
+  const loanInterest = loanInterestInRange(data.loanPayments || [], inRange)
+  const plaidTransactions = (data.plaidTransactions || []).filter(t => !isLoanTxn(t) && !(excludeBankPayroll && isPayrollBankRow(t)))
   const base = basis === BASIS_ACCRUAL
     ? accrualExpenses({ ...data, plaidTransactions }, inRange)
     : cashExpenses({ ...data, plaidTransactions }, inRange)
-  return base + add
+  return base + add + loanInterest
 }

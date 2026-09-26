@@ -70,6 +70,64 @@ serve(async (req) => {
         .eq('company_id', company_id).eq('plaid_item_id', itemId);
     };
 
+    // A Plaid loan account is a loan in Books: one liabilities row per
+    // account (keyed by plaid_account_id), balance mirrored from the account,
+    // details (rate, next payment) from /liabilities/get when the lender
+    // supports it. Books' LoansCard matches the payments in the bank feed.
+    const LOAN_TYPE_BY_SUBTYPE: Record<string, string> = { auto: 'vehicle', mortgage: 'mortgage', 'home equity': 'line_of_credit', 'line of credit': 'line_of_credit', business: 'sba', commercial: 'sba', construction: 'sba', consumer: 'other', student: 'other', overdraft: 'line_of_credit', 'credit card': 'credit_card' };
+    const upsertLoanRow = async (acct: Record<string, any>, connectedId: number | null, institutionName: string | null) => {
+      const { data: existing } = await supabase.from('liabilities').select('id, source, name').eq('company_id', company_id).eq('plaid_account_id', acct.plaid_account_id || acct.account_id).limit(1);
+      const balance = acct.current_balance ?? acct.balances?.current ?? null;
+      const patch: Record<string, unknown> = {
+        current_balance: balance == null ? undefined : Math.abs(Number(balance)),
+        connected_account_id: connectedId, lender: institutionName || undefined, updated_at: new Date().toISOString(),
+      };
+      if (existing?.[0]) { await supabase.from('liabilities').update(patch).eq('id', existing[0].id); return existing[0].id; }
+      const { data: row } = await supabase.from('liabilities').insert({
+        company_id, name: acct.account_name || acct.name || 'Loan', lender: institutionName || null,
+        liability_type: LOAN_TYPE_BY_SUBTYPE[String(acct.account_subtype || acct.subtype || '').toLowerCase()] || 'other',
+        current_balance: balance == null ? 0 : Math.abs(Number(balance)), monthly_payment: 0, status: 'active', source: 'plaid',
+        plaid_account_id: acct.plaid_account_id || acct.account_id, connected_account_id: connectedId, match_payee: institutionName || null,
+      }).select('id').single();
+      return row?.id ?? null;
+    };
+    const pullLoanDetails = async (accessToken: string, rows: Array<Record<string, any>>): Promise<{ updated: number; warning: string | null }> => {
+      const res = await fetch(`${plaidBase}/liabilities/get`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId, secret, access_token: accessToken }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error_code) {
+        // NO_LIABILITY_ACCOUNTS / PRODUCTS_NOT_SUPPORTED / not enabled: the
+        // balance still mirrors from the account; only the detail is missing.
+        return { updated: 0, warning: data.error_message || data.error_code || `Plaid returned ${res.status}` };
+      }
+      const byAccount = new Map<string, Record<string, unknown>>();
+      for (const m of data.liabilities?.mortgage || []) byAccount.set(m.account_id, {
+        interest_rate: m.interest_rate?.percentage ?? null, next_payment_due: m.next_payment_due_date || null, next_payment_amount: m.next_monthly_payment ?? null,
+        last_payment_date: m.last_payment_date || null, last_payment_amount: m.last_payment_amount ?? null, origination_date: m.origination_date || null,
+        original_principal: m.origination_principal_amount ?? null, term_months: m.loan_term ? parseInt(String(m.loan_term), 10) || null : null,
+      });
+      for (const s of data.liabilities?.student || []) byAccount.set(s.account_id, {
+        interest_rate: s.interest_rate_percentage ?? null, next_payment_due: s.next_payment_due_date || null, next_payment_amount: s.minimum_payment_amount ?? null,
+        last_payment_date: s.last_payment_date || null, last_payment_amount: s.last_payment_amount ?? null, origination_date: s.origination_date || null,
+        original_principal: s.origination_principal_amount ?? null,
+      });
+      for (const c of data.liabilities?.credit || []) byAccount.set(c.account_id, {
+        interest_rate: (c.aprs || []).find((a: any) => a.apr_type === 'purchase_apr')?.apr_percentage ?? c.aprs?.[0]?.apr_percentage ?? null,
+        next_payment_due: c.next_payment_due_date || null, next_payment_amount: c.minimum_payment_amount ?? null,
+        last_payment_date: c.last_payment_date || null, last_payment_amount: c.last_payment_amount ?? null,
+      });
+      let updated = 0;
+      for (const r of rows) {
+        const d = byAccount.get(r.plaid_account_id);
+        if (!d) continue;
+        const { error } = await supabase.from('liabilities').update({ ...d, updated_at: new Date().toISOString() }).eq('company_id', company_id).eq('plaid_account_id', r.plaid_account_id);
+        if (!error) updated++;
+      }
+      return { updated, warning: null };
+    };
+
     // Get Plaid config from settings
     const { data: setting } = await supabase
       .from('settings')
@@ -118,7 +176,7 @@ serve(async (req) => {
           client_name: 'JobScout',
           ...(updateAccessToken
             ? { access_token: updateAccessToken, ...(body.relink ? {} : { products: ['auth'] }) }
-            : { products: ['transactions'], optional_products: ['auth'] }),
+            : { products: ['transactions'], optional_products: ['auth', 'liabilities'] }),
           country_codes: ['US'],
           language: 'en',
         }),
@@ -212,6 +270,9 @@ serve(async (req) => {
         } else {
           const { data: newRow } = await supabase.from('connected_accounts').insert(row).select().single();
           if (newRow) inserted.push(newRow);
+        }
+        if (acct.type === 'loan') {
+          await upsertLoanRow(acct, existing?.id || inserted[inserted.length - 1]?.id || null, institution?.name || null);
         }
 
         // Also create/update matching bank_accounts row
@@ -420,6 +481,38 @@ serve(async (req) => {
       }
 
       return jsonResponse({ accounts: results, errors });
+    }
+
+    // ─── SYNC LIABILITIES (loans) ───
+    // Mirror every connected loan account into liabilities and read the
+    // lender's detail. Runs nightly from the cron after get_accounts, and on
+    // demand from the Loans card.
+    if (action === 'sync_liabilities') {
+      const { data: loanAccts } = await supabase
+        .from('connected_accounts')
+        .select('id, plaid_item_id, plaid_account_id, institution_name, account_name, account_type, account_subtype, current_balance')
+        .eq('company_id', company_id).eq('status', 'active').eq('account_type', 'loan').order('id');
+      const warnings: string[] = [];
+      let mirrored = 0;
+      let updated = 0;
+      const byItem: Record<string, typeof loanAccts> = {};
+      for (const a of loanAccts || []) {
+        await upsertLoanRow(a, a.id, a.institution_name);
+        mirrored++;
+        (byItem[a.plaid_item_id] ||= []).push(a);
+      }
+      for (const [itemId, rows] of Object.entries(byItem)) {
+        const item = config.items?.[itemId];
+        if (!item?.access_token) { warnings.push(`No access token for ${rows?.[0]?.institution_name || itemId}`); continue; }
+        try {
+          const r = await pullLoanDetails(item.access_token, rows || []);
+          updated += r.updated;
+          if (r.warning) warnings.push(`${rows?.[0]?.institution_name || itemId}: ${r.warning}`);
+        } catch (e) {
+          warnings.push(`${rows?.[0]?.institution_name || itemId}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return jsonResponse({ success: true, loans_mirrored: mirrored, loans_updated: updated, warnings });
     }
 
     // ─── DISCONNECT ───

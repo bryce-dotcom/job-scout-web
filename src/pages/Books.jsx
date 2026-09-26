@@ -62,6 +62,8 @@ import {
 // existing importers of this page.
 import { TAX_CATEGORIES, TAX_CATEGORY_OPTIONS } from '../lib/taxCategories'
 import PlaidLink from '../components/PlaidLink'
+import LoansCard from './books/LoansCard'
+import { loanJournalRows } from '../lib/loanMatch'
 export { TAX_CATEGORIES, TAX_CATEGORY_OPTIONS }
 
 // Manual accounts on the Accounts tab. Venmo, Cash App and PayPal balances
@@ -101,7 +103,7 @@ const TXN_PAGE = 150
 // an accountant typically asks for so the user doesn't have to assemble
 // it themselves. Plain-English filenames inside the ZIP so the accountant
 // can find what they need without guessing.
-async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency, payments = [], storeExpenses = [], connectedAccounts = [], bankAccounts = [], payrollRuns = [], paystubs = [] }) {
+async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency, payments = [], storeExpenses = [], connectedAccounts = [], bankAccounts = [], payrollRuns = [], paystubs = [], loans = [], loanPayments = [] }) {
   const [{ default: JSZip }, { saveAs }] = await Promise.all([
     import('jszip'),
     import('file-saver'),
@@ -222,7 +224,9 @@ async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTrans
   // same money and are left out of the bank side of the journal.
   const payrollLines = payrollJournalRows({ payrollRuns, paystubs }, inRange)
   const journalTxns = payrollLines.length > 0 ? (plaidTransactions || []).filter(t => !isPayrollBankRow(t)) : plaidTransactions
-  const journal = [...buildJournal({ payments, manualExpenses: expenses, splitsByExpense, expenses: storeExpenses, plaidTransactions: journalTxns, connectedAccounts, bankAccounts, from, to }), ...payrollLines]
+  const loanLines = loanJournalRows(loanPayments, loans, inRange)
+  const journalTxnsNoLoans = loanLines.length > 0 ? (journalTxns || []).filter(t => !t.loan_payment_id) : journalTxns
+  const journal = [...buildJournal({ payments, manualExpenses: expenses, splitsByExpense, expenses: storeExpenses, plaidTransactions: journalTxnsNoLoans, connectedAccounts, bankAccounts, from, to }), ...payrollLines, ...loanLines]
     .sort((a, b) => a.date.localeCompare(b.date) || String(a.source).localeCompare(String(b.source)) || String(a.ref).localeCompare(String(b.ref)))
   const jt = journalTotals(journal)
   const runsInRange = (payrollRuns || []).filter(r => inRange(r.pay_date))
@@ -452,10 +456,10 @@ export default function Books() {
   // Payroll, agency money, and the forward-looking inputs (memberships,
   // payment plans, fleet recurring costs, payroll config) for the Payroll
   // card, Money Out, the journal export, and the cash forecast.
-  const [booksExtra, setBooksExtra] = useState({ payrollRuns: [], paystubs: [], taxLiabilities: [], payrollConfig: null, memberships: [], paymentPlans: [], fleetRecurringCosts: [] })
+  const [booksExtra, setBooksExtra] = useState({ payrollRuns: [], paystubs: [], taxLiabilities: [], payrollConfig: null, memberships: [], paymentPlans: [], fleetRecurringCosts: [], loans: [], loanPayments: [] })
   const fetchBooksExtra = async () => {
     const lastYear = `${new Date().getFullYear() - 1}-01-01`
-    const [runs, stubs, liab, cfg, mem, plans, fleetRec] = await Promise.all([
+    const [runs, stubs, liab, cfg, mem, plans, fleetRec, loanRows, loanPays] = await Promise.all([
       supabase.from('payroll_runs').select('id, period_start, period_end, pay_date, status, total_gross, employee_count').eq('company_id', companyId).gte('pay_date', lastYear).order('pay_date', { ascending: false }),
       supabase.from('paystubs').select('id, payroll_run_id, employee_id, pay_date, gross_pay, net_pay, federal_income_tax, state_income_tax, social_security_employee, social_security_employer, medicare_employee, medicare_employer, additional_medicare, futa, sui').eq('company_id', companyId).gte('pay_date', lastYear),
       supabase.from('payroll_tax_liabilities').select('id, payroll_run_id, jurisdiction, agency, kind, period_start, period_end, amount_employee, amount_employer, amount_total, due_date, paid_at').eq('company_id', companyId).gte('period_end', lastYear),
@@ -463,10 +467,12 @@ export default function Books() {
       supabase.from('customer_memberships').select('id, status, price_cents, billing_interval, current_period_end, plan_name, started_at, canceled_at').eq('company_id', companyId),
       supabase.from('payment_plans').select('id, status, frequency, installment_amount, total_installments, installments_completed, next_charge_date, auto_charge').eq('company_id', companyId).eq('status', 'active'),
       supabase.from('fleet_recurring_costs').select('id, fleet_id, cost_type, label, amount, period, allocation, effective_from, effective_to').eq('company_id', companyId),
+      supabase.from('liabilities').select('id, name, lender, liability_type, current_balance, monthly_payment, next_payment_amount, next_payment_due, payment_day, interest_rate, status, source').eq('company_id', companyId),
+      supabase.from('loan_payments').select('id, liability_id, date, amount, principal, interest, plaid_transaction_id').eq('company_id', companyId).gte('date', lastYear),
     ])
     let payrollConfig = null
     try { payrollConfig = cfg.data?.value ? (typeof cfg.data.value === 'string' ? JSON.parse(cfg.data.value) : cfg.data.value) : null } catch { payrollConfig = null }
-    setBooksExtra({ payrollRuns: runs.data || [], paystubs: stubs.data || [], taxLiabilities: liab.data || [], payrollConfig, memberships: mem.data || [], paymentPlans: plans.data || [], fleetRecurringCosts: fleetRec.data || [] })
+    setBooksExtra({ payrollRuns: runs.data || [], paystubs: stubs.data || [], taxLiabilities: liab.data || [], payrollConfig, memberships: mem.data || [], paymentPlans: plans.data || [], fleetRecurringCosts: fleetRec.data || [], loans: loanRows.data || [], loanPayments: loanPays.data || [] })
   }
 
   const [accrualBills, setAccrualBills] = useState({ bills: [], billPayments: [] })
@@ -1238,10 +1244,15 @@ export default function Books() {
   const totalCash = Math.max(totalPlaidMirrorBalance, totalConnectedBalance) + totalStripeBalance + totalManualBalance
   // Owed on cards and loans: connected (de-duped against their mirrors the
   // same way) plus any hand-entered credit-card account.
-  const debtConnected = activeConnected.filter(isDebtAccount)
-  const debtMirror = bankAccounts.filter(b => b.connected_account_id && isDebtRow(b))
-  const totalCardDebt = Math.max(sumBalances(debtConnected), sumBalances(debtMirror)) + sumBalances(manualAccounts.filter(isDebtAccount))
-  const debtAccountNames = [...debtConnected.map(a => `${a.account_name || 'Card'} (${a.mask || ''})`.replace(' ()', '')), ...manualAccounts.filter(isDebtAccount).map(a => a.name)]
+  // Cards only: a connected LOAN account is a loan — it lives on the Loans
+  // card as a liabilities row (plaid-link sync_liabilities mirrors it), so
+  // counting it here too would double the debt.
+  const isCardAccount = (a) => String(a?.account_type || '').toLowerCase() === 'credit'
+  const cardConnectedIds = new Set(activeConnected.filter(isCardAccount).map(a => a.id))
+  const debtConnected = activeConnected.filter(isCardAccount)
+  const debtMirror = bankAccounts.filter(b => b.connected_account_id && (isCardAccount(b) || cardConnectedIds.has(b.connected_account_id)))
+  const totalCardDebt = Math.max(sumBalances(debtConnected), sumBalances(debtMirror)) + sumBalances(manualAccounts.filter(isCardAccount))
+  const debtAccountNames = [...debtConnected.map(a => `${a.account_name || 'Card'} (${a.mask || ''})`.replace(' ()', '')), ...manualAccounts.filter(isCardAccount).map(a => a.name)]
 
   // By calendar day, not by `new Date(x).getMonth()`: payments.date and
   // plaid_transactions.date are date columns and expenses.date is a
@@ -1261,7 +1272,7 @@ export default function Books() {
   // aren't already a bank transaction (manual + all-bank double-counted).
   const payrollThisMonth = summarizePayroll(booksExtra, isThisMonth)
   const feedHasPayrollThisMonth = (plaidTransactions || []).some(t => parseFloat(t.amount) > 0 && !t.is_transfer && isThisMonth(t.date) && isPayrollBankRow(t))
-  const moneyOut = computeExpenses(accountingBasis, { expenses: storeExpenses, plaidTransactions, bills: accrualBills.bills, billPayments: accrualBills.billPayments, payroll: payrollThisMonth }, isThisMonth)
+  const moneyOut = computeExpenses(accountingBasis, { expenses: storeExpenses, plaidTransactions, bills: accrualBills.bills, billPayments: accrualBills.billPayments, payroll: payrollThisMonth, loanPayments: booksExtra.loanPayments }, isThisMonth)
 
   // Utility incentives tracking — BU-filtered via the linked customer
   // invoice's business_unit when available (utility_invoices doesn't
@@ -2278,7 +2289,7 @@ export default function Books() {
               bills: accrualBills.bills,
               taxLiabilities: booksExtra.taxLiabilities, payrollConfig: booksExtra.payrollConfig,
               payrollRuns: booksExtra.payrollRuns, paystubs: booksExtra.paystubs,
-              memberships: booksExtra.memberships, paymentPlans: booksExtra.paymentPlans, fleetRecurringCosts: booksExtra.fleetRecurringCosts,
+              memberships: booksExtra.memberships, paymentPlans: booksExtra.paymentPlans, fleetRecurringCosts: booksExtra.fleetRecurringCosts, loans: booksExtra.loans,
             }}
           />
 
@@ -3698,6 +3709,8 @@ export default function Books() {
             )
           })()}
 
+          <LoansCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency} plaidTransactions={plaidTransactions} connectedAccounts={connectedAccounts} userEmail={user?.email || null} onChanged={() => { fetchBooksExtra(); fetchPlaidTransactions?.() }} />
+
           {/* Balance sheet items — collapsed by default since most ops
               users don't enter assets/liabilities day-to-day. Expander
               labels what's inside in plain English. */}
@@ -3808,7 +3821,7 @@ export default function Books() {
               </div>
               <div>
                 {[
-                  ['Credit cards & loans (connected)', position.cardDebt],
+                  ['Credit cards (connected)', position.cardDebt],
                   ['Vendor bills open', position.ap],
                   ['Payroll taxes not yet deposited', position.taxesOwed],
                   ['Sales tax collected, not remitted', position.salesTaxOwed],
@@ -3919,7 +3932,7 @@ export default function Books() {
             }} title="Export the confirmed-transaction list as a single CSV for the date range above.">
               <Download size={14} /> Transactions CSV
             </button>
-            <button onClick={() => buildCpaPackage({ from: taxDateFrom, to: taxDateTo, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency, payments, storeExpenses, connectedAccounts, bankAccounts, payrollRuns: booksExtra.payrollRuns, paystubs: booksExtra.paystubs })} style={{
+            <button onClick={() => buildCpaPackage({ from: taxDateFrom, to: taxDateTo, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency, payments, storeExpenses, connectedAccounts, bankAccounts, payrollRuns: booksExtra.payrollRuns, paystubs: booksExtra.paystubs, loans: booksExtra.loans, loanPayments: booksExtra.loanPayments })} style={{
               display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 16px',
               backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px',
               fontSize: '13px', fontWeight: '600', cursor: 'pointer', minHeight: '44px'

@@ -45,7 +45,7 @@ const money = (n) => Math.round(n * 100) / 100;
 console.log('Cleaning any prior demo…');
 const prior = await sel('companies', `or=(owner_email.eq.${encodeURIComponent(EMAIL)},company_name.eq.${encodeURIComponent(COMPANY)})&select=id`);
 for (const c of prior) {
-  for (const t of ['payments', 'invoices', 'quotes', 'time_clock', 'expenses', 'jobs', 'leads', 'customers', 'products_services', 'fleet', 'inventory', 'settings', 'employees', 'vendors', 'assets', 'liabilities', 'manual_expenses']) {
+  for (const t of ['payments', 'invoices', 'quotes', 'time_clock', 'expenses', 'jobs', 'leads', 'customers', 'products_services', 'fleet', 'inventory', 'settings', 'employees', 'vendors', 'assets', 'loan_payments', 'liabilities', 'manual_expenses']) {
     await del(t, `company_id=eq.${c.id}`);
   }
   await del('companies', `id=eq.${c.id}`);
@@ -393,6 +393,19 @@ await run('assets', async () => {
   ]);
   return r.length;
 });
+
+// ───────────────────────── LOANS ─────────────────────────
+await run('liabilities', async () => {
+  const r = await ins('liabilities', [
+    { company_id: cid, name: 'F-250 truck loan', lender: 'Ford Credit', liability_type: 'vehicle', current_balance: 28400, monthly_payment: 612.5, payment_day: 15, interest_rate: 6.9, match_payee: 'FORD CREDIT', original_principal: 42000, term_months: 72, status: 'active', source: 'manual' },
+    { company_id: cid, name: 'Line of credit', lender: 'Zions Bank', liability_type: 'line_of_credit', current_balance: 12000, monthly_payment: 350, payment_day: 1, interest_rate: 9.25, match_payee: 'ZIONS BANK LOC', original_principal: 25000, term_months: null, status: 'active', source: 'manual' },
+  ])
+  const truck = r?.[0]
+  if (truck) await ins('loan_payments', [
+    { company_id: cid, liability_id: truck.id, date: dstr(-41), amount: 612.5, principal: 448.35, interest: 164.15, source: 'manual' },
+    { company_id: cid, liability_id: truck.id, date: dstr(-11), amount: 612.5, principal: 450.93, interest: 161.57, source: 'manual' },
+  ])
+})
 
 // ───────────────────────── SETTINGS ─────────────────────────
 await run('settings', async () => {

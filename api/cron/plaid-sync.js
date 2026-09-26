@@ -64,6 +64,8 @@ module.exports = async function handler(req, res) {
         // ("the bank amounts are not matching the actual bank"); putting it on
         // a cron would have made it permanent and silent.
         const balances = await call(companyId, 'get_accounts')
+        // Loans linked through Plaid: balance mirrored + lender detail.
+        const loans = await call(companyId, 'sync_liabilities')
 
         results.push({
           company_id: companyId,
@@ -71,6 +73,7 @@ module.exports = async function handler(req, res) {
           added: json.total_added ?? 0,
           modified: json.total_modified ?? 0,
           balances_refreshed: !balances?.error,
+          loans_updated: loans?.loans_updated ?? 0,
           // Surfaced rather than swallowed: an account at the bank that isn't
           // connected here means transactions we are choosing not to import,
           // and that has to be visible in the cron log.

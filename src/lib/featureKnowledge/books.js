@@ -84,6 +84,7 @@ export default {
     ],
 
     gotchas: [
+      'Loans (Accounts tab → Loans & lines of credit): a liabilities row, typed in or created from a Plaid loan account (the bank link asks for the Liabilities product; sync_liabilities mirrors the balance and reads rate / next payment nightly). A payment is a loan_payments row; booking a matching bank outflow from the card VERIFIES it, categorises the bank row "Loan Payment", drops the balance by the principal, and Money Out counts only the interest (lib/loanMatch). A connected credit card is NOT a loan — it shows as "owed" under Cash Available.',
       'Venmo / Cash App / Zelle are wallets, not banks: Plaid never sees the wallet. Books tracks the wallet balance as a manual account (Accounts tab, with a running estimate) and reconciles the CASH-OUT when it lands in the real bank — Transactions tab, "Venmo (via bank feed)" filter, or the Match button on an unmatched deposit.',
       'Transactions without categories sit in Uncategorized → ignored by P&L until you tag them. Don\'t leave Uncategorized lingering.',
       'Form 1065 line mapping only matters for partnerships. Single-member LLCs report on Schedule C — different form.',
