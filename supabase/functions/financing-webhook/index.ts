@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { invoiceCustomerTotal } from "../_shared/money.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,13 +8,43 @@ const corsHeaders = {
 };
 
 // Handles webhooks from financing providers (Wisetack, GreenSky, Service Finance, Hearth)
-// Each provider sends a notification when a loan is approved/funded
+// Each provider sends a notification when a loan is approved/funded.
+//
+// This endpoint inserts a payment and can mark an invoice Paid or an
+// estimate Won, so it is gated on a shared secret we put in the webhook
+// URL ourselves (create-checkout-session builds it from the same env var).
+// It has to be publicly reachable — a provider cannot send a Supabase JWT —
+// and "publicly reachable" plus "writes money" with nothing in between is
+// how you get an invoice marked paid by anyone who guesses the URL.
+//
+// Until this was pinned in config.toml the function answered 401 to every
+// provider, so no financing payment could EVER have been recorded: the
+// customer would be funded at Wisetack and JobScout would never know.
+const WEBHOOK_SECRET = Deno.env.get("FINANCING_WEBHOOK_SECRET") || "";
+
+/** Constant-time-ish compare so a wrong token cannot be found a byte at a time. */
+function secretOk(given: string | null): boolean {
+  if (!WEBHOOK_SECRET) return false;          // not configured = closed, never open
+  const a = new TextEncoder().encode(String(given || ""));
+  const b = new TextEncoder().encode(WEBHOOK_SECRET);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
     const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    const url = new URL(req.url);
+    const token = url.searchParams.get("t") || req.headers.get("x-financing-token");
+    if (!secretOk(token)) {
+      return new Response(JSON.stringify({ error: "unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false }
@@ -157,12 +188,19 @@ async function recordFinancingPayment(
   if (documentType === 'invoice') {
     const { data: invoice } = await supabase
       .from('invoices')
-      .select('id, amount, customer_id, company_id')
+      // discount_applied and tax_amount decide what the CUSTOMER owes. This
+      // selected neither and then compared the money in against the GROSS,
+      // so an Energy Scout invoice the utility covers most of would never
+      // read Paid however much the customer financed.
+      .select('id, amount, discount_applied, tax_amount, customer_id, company_id')
       .eq('id', documentId)
       .single();
 
     if (invoice) {
-      await supabase.from('payments').insert({
+      // A provider retries until it gets a 2xx. external_payment_id carries
+      // a unique index, so a redelivery is refused by the database rather
+      // than quietly inserting a second payment for the same loan.
+      const { error: payErr } = await supabase.from('payments').insert({
         company_id: invoice.company_id,
         invoice_id: invoice.id,
         customer_id: invoice.customer_id,
@@ -171,7 +209,13 @@ async function recordFinancingPayment(
         method: method,
         status: 'Completed',
         notes: `${provider} (${transactionId})`,
+        external_payment_id: transactionId || null,
       });
+      if (payErr && (payErr.code === '23505' || /duplicate key/i.test(payErr.message || ''))) {
+        console.log(`financing: ${provider} ${transactionId} already recorded, ignoring redelivery`);
+        return;
+      }
+      if (payErr) throw new Error(`financing payment insert failed: ${payErr.message}`);
 
       const { data: allPayments } = await supabase
         .from('payments')
@@ -179,8 +223,11 @@ async function recordFinancingPayment(
         .eq('invoice_id', invoice.id);
 
       const totalPaid = (allPayments || []).reduce((sum: number, p: { amount: number }) => sum + (p.amount || 0), 0);
-      const invoiceAmount = parseFloat(String(invoice.amount)) || 0;
-      const newStatus = totalPaid >= invoiceAmount ? 'Paid' : 'Partial';
+      // What the customer owes, not the gross — _shared/money is the rule.
+      const owed = invoiceCustomerTotal(invoice.amount, invoice.discount_applied, invoice.tax_amount);
+      // 'Partially Paid' is the app's word. 'Partial' is in no colour map and
+      // matches no other check in the codebase.
+      const newStatus = totalPaid >= owed - 0.01 ? 'Paid' : 'Partially Paid';
 
       await supabase.from('invoices')
         .update({ payment_status: newStatus })

@@ -40,6 +40,15 @@ async function getCcFeeSettings(supabase: ReturnType<typeof createClient>, compa
   };
 }
 
+// The URL we hand a financing provider carries the shared secret the
+// webhook checks (see financing-webhook). Built in one place so the three
+// providers cannot drift apart and leave one of them unable to call back.
+function financingWebhookUrl(): string {
+  const base = `${Deno.env.get('SUPABASE_URL')}/functions/v1/financing-webhook`;
+  const secret = Deno.env.get('FINANCING_WEBHOOK_SECRET') || '';
+  return secret ? `${base}?t=${encodeURIComponent(secret)}` : base;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -460,7 +469,7 @@ serve(async (req) => {
           },
           merchant_reference_id: `${tokenRow.document_type}_${tokenRow.document_id}`,
           redirect_url: `${portalUrl}?payment=success&provider=wisetack`,
-          webhook_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/financing-webhook`,
+          webhook_url: financingWebhookUrl(),
         }),
       });
 
@@ -568,7 +577,7 @@ serve(async (req) => {
           reference_id: `${tokenRow.document_type}_${tokenRow.document_id}`,
           homeowner: { name: custName, email: custEmail, phone: custPhone.replace(/\D/g, ''), address: custAddress },
           redirect_url: `${portalUrl}?payment=success&provider=hearth`,
-          webhook_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/financing-webhook`,
+          webhook_url: financingWebhookUrl(),
         }),
       });
 
@@ -619,7 +628,7 @@ serve(async (req) => {
           reference_id: `${tokenRow.document_type}_${tokenRow.document_id}`,
           consumer: { name: custName, email: custEmail, phone: custPhone.replace(/\D/g, '') },
           redirect_url: `${portalUrl}?payment=success&provider=service_finance`,
-          webhook_url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/financing-webhook`,
+          webhook_url: financingWebhookUrl(),
         }),
       });
 

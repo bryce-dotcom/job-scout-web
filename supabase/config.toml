@@ -385,6 +385,13 @@ verify_jwt = false
 # gets 401 on every delivery, and the endpoint auto-disables — which is exactly
 # what happened on 2026-08-06. Both functions verify the Stripe signature
 # themselves (HMAC over the raw body), so they are safe to expose.
+# A financing provider cannot send a Supabase JWT, so this must be public.
+# It is gated instead on FINANCING_WEBHOOK_SECRET, which create-checkout-session
+# puts in the webhook URL it hands the provider. Before this pin it answered
+# 401 to every provider and no financing payment could ever be recorded.
+[functions.financing-webhook]
+verify_jwt = false
+
 [functions.stripe-webhook]
 verify_jwt = false
 
