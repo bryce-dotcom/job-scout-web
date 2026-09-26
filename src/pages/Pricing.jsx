@@ -56,8 +56,13 @@ const CREW = [
     hi: ['Bid package → priced bid', 'Exact / equivalent / must-source match', 'Redlined until verified with a link', 'Handwritten takeoff forms in'],
     rep: ['retyping bid schedules', 'manual data entry'],
     out: { kicker: 'read a bid package', head: 'ITB_2026-114_LED_Retrofit.pdf · 14 pages', rows: ['9 items read · 7 matched to catalog', '2 flagged to source · 1 equivalent explained'], done: 'bid built in their format ✓' } },
+  { ab: 'DN', name: 'Don', role: 'Excavation & sitework',
+    hook: 'Hand Don the site plan and the dirt notes; he runs the takeoff — cut, fill, swell, OSHA sloping, truck counts — and prices the bid.',
+    hi: ['Reads site plans, notes & site data', 'Cut / fill volumes + swell math', 'OSHA sloping & haul-truck counts', 'Priced excavation bid'],
+    rep: ['a takeoff estimator', 'Trimble', 'a day with a spreadsheet'],
+    out: { kicker: 'ran a takeoff', head: 'Lot 14 · pad + utilities', rows: ['1,240 cy cut · 380 cy fill · 22% swell', 'Type B slope · 41 truck loads'], done: 'excavation bid drafted ✓' } },
 ]
-const COMING = ['Plumbing', 'HVAC', 'Roofing', 'Electrical', 'Painting', 'Masonry', 'Flooring', 'Windows', 'Cleaning', 'Gutters', 'Excavation', 'Safety']
+const COMING = ['Plumbing', 'HVAC', 'Roofing', 'Electrical', 'Painting', 'Masonry', 'Flooring', 'Windows', 'Cleaning', 'Gutters', 'Safety']
 
 // Live "AI workforce, on the clock" hero feed — real work the crew does, cycling.
 const ACTIVITY = [
@@ -140,7 +145,7 @@ const SWITCH = [
     { k: 'CompanyCam', n: 'Photos + Victor', ai: true, d: 'Per-line photos; AI grades the job before you invoice.' },
   ] },
   { cat: 'Money & books', rows: [
-    { k: 'QuickBooks · Xero · Wave', n: 'Books', d: 'Real P&L, bank reconciliation, job costing.' },
+    { k: 'QuickBooks · Xero · Wave', n: 'Books', d: 'A real ledger — P&L, balance sheet, bank rec, per-job costing, 1099s & depreciation.' },
     { k: 'Bank feeds · Yodlee', n: 'Plaid + AI categorize', ai: true, d: 'The feed sorts itself and learns how you code it.' },
     { k: 'Expensify · Ramp', n: 'Expenses', ai: true, d: 'Snap a receipt → itemized and allocated to the job.' },
     { k: 'Pilot.com · Bench', n: 'Frankie', ai: true, d: 'A plain-English CFO: cash, AR/AP, per-job profit.' },
@@ -156,6 +161,7 @@ const SWITCH = [
   ] },
   { cat: 'Marketing & documents', rows: [
     { k: 'Mailchimp · Klaviyo · Constant Contact', n: 'Conrad', ai: true, d: 'Writes the campaign, picks the segment, sends it.' },
+    { k: 'Hootsuite · Buffer · Later', n: 'Marketing', isNew: true, ai: true, d: 'Crews snap a job photo; AI writes the post in your voice; approve and it posts to the networks you’ve connected.' },
     { k: 'Veryfi · Mindee · manual entry', n: 'Dougie', ai: true, d: 'Any bill or form → fields pulled, learns your fixes.' },
     { k: 'Ninety.io · Bloom · EOSOne', n: 'EOS, built in', d: 'V/TO, Rocks, an auto-populated Scorecard, L10.' },
   ] },
@@ -168,7 +174,7 @@ const CSS = `
   .pr{--paper:#f4efe3;--paper2:#ece3d1;--card:#fffdf7;--ink:#191d15;--sub:#4f5a4a;--muted:#848a79;--line:#d9cfb6;--line2:#cabf9f;
     --grn:#54613a;--grnDk:#3a4526;--grnBg:rgba(84,97,58,0.10);--viz:#f26a12;--vizDk:#c9530a;--vizBg:rgba(242,106,18,0.12);
     --night:#161b12;--nightGrn:#212819;--sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased}
+    background:var(--paper) url(/topo-body.svg) center/340px repeat fixed;color:var(--ink);font-family:var(--sans);line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased}
   .pr *{box-sizing:border-box}
   .pr a{color:inherit;text-decoration:none}
   .pr .wrap{max-width:1140px;margin:0 auto;padding:0 20px}
@@ -190,9 +196,10 @@ const CSS = `
   .pr .eb.on-dark{color:#ffb27a;background:rgba(242,106,18,.16)}
   .pr h1,.pr h2,.pr h3{margin:0;letter-spacing:-.03em;text-wrap:balance}
   .pr .kicker{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}
-  .pr .hero{background:var(--night);color:#f4efe3;border-radius:0 0 30px 30px;overflow:hidden;position:relative}
-  .pr .hero::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background:radial-gradient(120% 80% at 100% 0%,rgba(242,106,18,.15),transparent 55%),radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:auto,20px 20px}
-  .pr .hero .wrap{padding:44px 20px 40px;position:relative}
+  .pr .hero{background:var(--night);color:#f4efe3;border-radius:0 0 30px 30px;overflow:hidden;position:relative;isolation:isolate}
+  .pr .hero::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:url(/topo-hero.svg) center/320px repeat;opacity:1;-webkit-mask-image:radial-gradient(135% 112% at 30% 42%,transparent 1%,#000 74%);mask-image:radial-gradient(135% 112% at 30% 42%,transparent 1%,#000 74%)}
+  .pr .hero::after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:radial-gradient(120% 80% at 100% 0%,rgba(242,106,18,.17),transparent 55%)}
+  .pr .hero .wrap{padding:44px 20px 40px;position:relative;z-index:1}
   .pr .hero h1{font-size:clamp(37px,9.6vw,72px);font-weight:870;line-height:1.02;margin:20px 0 0}
   .pr .hero h1 .hl{position:relative;z-index:0;color:#fff;white-space:nowrap}
   .pr .hero h1 .hl::after{content:"";position:absolute;left:-2px;right:-2px;bottom:.02em;height:.4em;background:var(--viz);z-index:-1;border-radius:4px;transform:skewX(-9deg) scaleX(var(--draw,0));transform-origin:left;transition:transform .7s .2s cubic-bezier(.2,.7,.2,1)}
@@ -642,8 +649,8 @@ export default function Pricing() {
             <div className="hero-grid">
               <div className="hero-left">
                 <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> The business operating system, built by the people who do the work</span>
-                <h1>Stop going to AI. It’s already in <span className="hl">your quote</span>.</h1>
-                <p className="lede">Everyone else hands you a chatbot to go visit. JobScout builds the AI into the quote, the job, and the books — the proposal rewrites itself, the add-ons surface themselves, the bank feed sorts itself, the reschedule’s already drafted. You just approve. Burn the status quo — the work’s done by the time you look.</p>
+                <h1>Not one AI you have to learn. <span className="hl">A dozen</span> that already know the job.</h1>
+                <p className="lede">Everyone else hands you one chatbot and a class on how to prompt it. JobScout is the whole operation — quotes, jobs, the books, the fleet — run by a crew of AIs that each already know the work. One login. Less than a single chatbot seat.</p>
                 <div className="cta-row">
                   <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
                   <button className="btn btn-ghost on-dark" onClick={() => navigate('/login?demo=1')}>Try the live demo <Icon id="i-arrow" /></button>
@@ -1048,7 +1055,7 @@ export default function Pricing() {
         <section>
           <div className="wrap">
             <div className="final rv">
-              <span className="eb on-dark">Free for 30 days · No card · Cancel anytime</span>
+              <span className="eb on-dark">Free for 30 days · Cancel anytime</span>
               <h2>Get the paperwork off your plate. Keep the parts you love.</h2>
               <p>Set it up this afternoon, import your customers in one click, and let the robots take the busywork. Cancel anytime — though something tells me you won’t miss the data entry.</p>
               <div className="cta-row">
