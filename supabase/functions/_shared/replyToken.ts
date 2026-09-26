@@ -133,3 +133,53 @@ export function feedbackTokenFromAddresses(addresses: (string | null | undefined
   }
   return null
 }
+
+// ── Sal's inbox: bids+<token>@… ───────────────────────────────────────────
+//
+// The address a tenant pastes into every procurement portal's notification
+// settings (Bonfire, the Arizona Procurement Portal, OpenGov, BidNet,
+// DemandStar, PlanHub…) so their bid alerts arrive in JobScout instead of a
+// mailbox nobody reads. No portal offers an API and every one forbids
+// scraping; this address IS the feed (SAL_SCOUT_PLAN.md §3).
+//
+// It names the COMPANY, not a record, and it is signed for the same reason
+// the estimate token is: From is forged trivially, and an unsigned company
+// id would let anyone drop junk into any tenant's inbox by counting upwards.
+// The message is namespaced (`bids:<id>`) so it can never verify as an
+// estimate or ticket token. The worst a leaked address can do is fill the
+// Inbox tab with mail; it grants nothing.
+
+export async function bidsInboxToken(companyId: number | string, secret: string): Promise<string> {
+  const id = Number(companyId)
+  if (!Number.isFinite(id) || id <= 0) throw new Error('bidsInboxToken: not a company id')
+  const sig = (await hmacHex(`bids:${id}`, secret)).slice(0, SIG_LEN)
+  return `${id.toString(36)}${sig}`
+}
+
+export async function bidsInboxAddress(companyId: number | string, secret: string, domain: string): Promise<string> {
+  return `bids+${await bidsInboxToken(companyId, secret)}@${domain}`
+}
+
+/** Recover the company id from a bids token, or null if it does not verify. */
+export async function parseBidsToken(token: string | null | undefined, secret: string): Promise<number | null> {
+  const t = String(token || '').trim().toLowerCase()
+  if (t.length <= SIG_LEN) return null
+  const idPart = t.slice(0, t.length - SIG_LEN)
+  const sig = t.slice(-SIG_LEN)
+  const id = parseInt(idPart, 36)
+  if (!Number.isFinite(id) || id <= 0) return null
+  const expected = (await hmacHex(`bids:${id}`, secret)).slice(0, SIG_LEN)
+  if (sig.length !== expected.length) return null
+  let diff = 0
+  for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i)
+  return diff === 0 ? id : null
+}
+
+/** Pull a bids token out of any of the To/Cc addresses on an inbound email. */
+export function bidsTokenFromAddresses(addresses: (string | null | undefined)[]): string | null {
+  for (const raw of addresses || []) {
+    const m = String(raw || '').toLowerCase().match(/bids\+([a-z0-9]+)@/)
+    if (m) return m[1]
+  }
+  return null
+}

@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   matchInboundToEstimate, normalizeEmail, stripQuotedReply, type QuoteCandidate,
 } from "../_shared/inboundMatch.ts";
-import { parseReplyToken, tokenFromAddresses, parseFeedbackToken, feedbackTokenFromAddresses } from "../_shared/replyToken.ts";
+import { parseReplyToken, tokenFromAddresses, parseFeedbackToken, feedbackTokenFromAddresses, parseBidsToken, bidsTokenFromAddresses } from "../_shared/replyToken.ts";
 import { verifySvixSignature, htmlToText, isAutoReply, recipientKind, readEmail } from "../_shared/inboundWebhook.ts";
 import { emailRep, repEmailShell, appLink } from "../_shared/notifyRep.ts";
 
@@ -38,9 +38,9 @@ const json = (body: unknown, status = 200) =>
 // The words the customer wrote are one more call away, and without this call
 // every reply would land on the estimate as "(empty reply)" — matched to the
 // right place and useless once you got there.
-type Received = { body: string; headers: Record<string, unknown> };
+type Received = { body: string; html: string; headers: Record<string, unknown> };
 async function fetchResendReceived(emailId: string): Promise<Received> {
-  const none: Received = { body: '', headers: {} };
+  const none: Received = { body: '', html: '', headers: {} };
   // Reading a received email needs a FULL-ACCESS key. The sending key the
   // rest of the app uses ("Jobscout Invoices", sending access) gets
   // 401 restricted_api_key here — seen in Resend's API log on 2026-09-11 —
@@ -63,12 +63,69 @@ async function fetchResendReceived(emailId: string): Promise<Received> {
     }
     const e = await res.json();
     const headers = (e && typeof e.headers === 'object' && e.headers) ? e.headers : {};
-    if (typeof e?.text === 'string' && e.text.trim()) return { body: e.text, headers };
-    return { body: htmlToText(String(e?.html || '')), headers };
+    const html = String(e?.html || '');
+    if (typeof e?.text === 'string' && e.text.trim()) return { body: e.text, html, headers };
+    return { body: htmlToText(html), html, headers };
   } catch (err) {
     console.error('[inbound-email] Resend receiving fetch threw:', (err as Error)?.message);
     return none;
   }
+}
+
+// Sal's inbox keeps attachments. A portal alert often carries the notice as
+// a PDF, and a forwarded GC invitation carries the whole package; those are
+// what Benny reads later. Resend serves them from a separate endpoint as
+// signed download URLs, so each one is pulled and put in the tenant's
+// storage before the URL expires. A file that will not fetch is recorded
+// with its error rather than dropped — the row must always say what came.
+type CapturedAttachment = {
+  name: string; content_type: string | null; size: number | null;
+  bucket?: string; storage_path?: string; fetched_at?: string; error?: string;
+};
+const ATTACHMENT_CAP = 30 * 1024 * 1024; // Benny's read limit, per file
+async function captureBidAttachments(
+  // deno-lint-ignore no-explicit-any
+  supabase: any, companyId: number, emailId: string,
+): Promise<CapturedAttachment[]> {
+  const key = Deno.env.get('RESEND_INBOUND_API_KEY') || Deno.env.get('RESEND_API_KEY');
+  if (!key) return [];
+  let list: any[] = [];
+  try {
+    const res = await fetch(`https://api.resend.com/emails/receiving/${encodeURIComponent(emailId)}/attachments`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) {
+      console.error('[inbound-email] Resend attachments list failed:', res.status, (await res.text().catch(() => '')).slice(0, 200));
+      return [];
+    }
+    const j = await res.json();
+    list = Array.isArray(j?.data) ? j.data : Array.isArray(j) ? j : [];
+  } catch (err) {
+    console.error('[inbound-email] Resend attachments list threw:', (err as Error)?.message);
+    return [];
+  }
+  const out: CapturedAttachment[] = [];
+  for (const a of list) {
+    const name = String(a?.filename || a?.name || 'attachment').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 120);
+    const base: CapturedAttachment = { name, content_type: a?.content_type ?? a?.contentType ?? null, size: Number(a?.size) || null };
+    if (base.size && base.size > ATTACHMENT_CAP) { out.push({ ...base, error: 'over 30 MB — not stored' }); continue; }
+    const url = String(a?.download_url || a?.downloadUrl || '');
+    if (!url) { out.push({ ...base, error: 'no download url' }); continue; }
+    try {
+      const f = await fetch(url);
+      if (!f.ok) { out.push({ ...base, error: `download ${f.status}` }); continue; }
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      if (bytes.length > ATTACHMENT_CAP) { out.push({ ...base, error: 'over 30 MB — not stored' }); continue; }
+      const path = `bids/${companyId}/inbox/${emailId}/${name}`;
+      const { error: upErr } = await supabase.storage.from('project-documents')
+        .upload(path, bytes, { contentType: base.content_type || 'application/octet-stream', upsert: true });
+      if (upErr) { out.push({ ...base, error: `store: ${upErr.message}` }); continue; }
+      out.push({ ...base, size: bytes.length, bucket: 'project-documents', storage_path: path, fetched_at: new Date().toISOString() });
+    } catch (err) {
+      out.push({ ...base, error: (err as Error)?.message || 'fetch failed' });
+    }
+  }
+  return out;
 }
 
 // Resend signs every webhook (Svix format). With RESEND_WEBHOOK_SECRET set,
@@ -119,15 +176,24 @@ serve(async (req) => {
 
   // Resend's webhook has told us an email exists; now go and read it.
   let headers: Record<string, unknown> = (payload?.data?.headers && typeof payload.data.headers === 'object') ? payload.data.headers : {};
+  let mailHtml = '';
   if (!mail.body && payload?.type === 'email.received' && payload?.data?.email_id) {
     const got = await fetchResendReceived(String(payload.data.email_id));
     mail.body = got.body;
+    mailHtml = got.html;
     headers = { ...headers, ...got.headers };
   }
 
+  // Which of our addresses it came to is decided first, because Sal's inbox
+  // must NOT go through the auto-reply filter: procurement portals send
+  // their alerts with Auto-Submitted: auto-generated and Precedence: bulk —
+  // exactly the headers that mark an out-of-office — and every alert would
+  // be thrown away as one.
+  const kindEarly = recipientKind(mail.to);
+
   // Out-of-office, bounces, delivery reports: nobody wrote these, and filing
   // one on an estimate would light the pipeline card up as "replied".
-  if (isAutoReply(mail.subject, headers)) {
+  if (kindEarly !== 'bids' && isAutoReply(mail.subject, headers)) {
     console.log(`[inbound-email] auto-reply from ${mail.from || '?'} ignored: "${mail.subject}"`);
     return json({ ok: true, matched: false, reason: 'auto_reply' });
   }
@@ -135,7 +201,7 @@ serve(async (req) => {
   // The MX covers the whole domain, so replies to invoice and receipt emails
   // arrive here too. Those are not estimate replies and must never be filed
   // on one; they are raised to the tenant instead, further down.
-  let kind = recipientKind(mail.to);
+  let kind = kindEarly;
 
   // Always 200, even on rubbish.
   //
@@ -173,6 +239,60 @@ serve(async (req) => {
   // against the wrong key. Verifying with a secret that might be wrong is worse
   // than not verifying: it turns a deterministic match into a silent miss.
   const REPLY_SECRET = Deno.env.get('REPLY_TOKEN_SECRET') || '';
+
+  // ── Sal's inbox: a procurement portal alert or a forwarded invitation ────
+  // The bids+ token names the tenant. The mail is filed whole — text, html
+  // (the solicitation links live in the anchors), attachments in storage —
+  // on bid_inbox, and raised as a notification. Sal's parser (Phase 1) turns
+  // the row into opportunities; until then it is visible on his Inbox tab.
+  // A token that does not verify is ordinary mail, like a bad feedback token.
+  if (kind === 'bids') {
+    const bidsToken = bidsTokenFromAddresses([mail.to, ...(mail.allRecipients || [])]);
+    const bidsCompanyId = bidsToken && REPLY_SECRET ? await parseBidsToken(bidsToken, REPLY_SECRET) : null;
+    if (bidsCompanyId) {
+      const emailId = payload?.data?.email_id ? String(payload.data.email_id) : null;
+      const attachments = emailId ? await captureBidAttachments(supabase, bidsCompanyId, emailId) : [];
+      const row = {
+        company_id: bidsCompanyId,
+        email_id: emailId,
+        from_email: mail.from,
+        subject: mail.subject || '(no subject)',
+        text_body: mail.body || '',
+        html_body: mailHtml || null,
+        received_at: new Date().toISOString(),
+        attachments,
+        status: 'received',
+        raw: { to: mail.to, recipients: mail.allRecipients || [], headers, provider: payload?.type || null },
+      };
+      // A provider retries a webhook for days; the unique index on
+      // (company_id, email_id) makes the retry a no-op, not a duplicate.
+      const q = emailId
+        ? supabase.from('bid_inbox').upsert(row, { onConflict: 'company_id,email_id', ignoreDuplicates: true }).select('id')
+        : supabase.from('bid_inbox').insert(row).select('id');
+      const { data: inboxRows, error: ibErr } = await q;
+      if (ibErr) {
+        console.error('[inbound-email] could not file bid alert:', ibErr.message);
+        return json({ ok: true, matched: false, kind: 'bids', reason: 'bid_inbox_write_failed' });
+      }
+      const inboxId = inboxRows?.[0]?.id ?? null;
+      if (inboxId != null) {
+        const stored = attachments.filter((a) => a.storage_path).length;
+        const { error: nErr } = await supabase.from('company_notifications').insert({
+          company_id: bidsCompanyId,
+          type: 'bid_alert',
+          title: `Sal: ${mail.subject || 'new bid alert'}`,
+          message: `${mail.from} — ${(mail.body || '').replace(/\s+/g, ' ').slice(0, 240)}${stored ? ` (${stored} attachment${stored === 1 ? '' : 's'})` : ''}`,
+          metadata: { bid_inbox_id: inboxId, from_email: mail.from, attachments: stored, route: '/agents/sal', source: 'inbound_email' },
+          created_by: null,
+        });
+        if (nErr) console.error('[inbound-email] could not raise bid-alert notification:', nErr.message);
+      }
+      console.log(`[inbound-email] bid alert from ${mail.from} filed on Sal's inbox for company ${bidsCompanyId} (${attachments.length} attachment(s))`);
+      return json({ ok: true, matched: true, kind: 'bids', company_id: bidsCompanyId, bid_inbox_id: inboxId, attachments: attachments.length });
+    }
+    console.warn(`[inbound-email] mail to a bids address did not resolve to a company (${bidsToken ? 'token did not verify' : 'no token'}) — handling as other mail`);
+    kind = 'other';
+  }
 
   // ── a reply to a feedback ticket ─────────────────────────────────────────
   // Ticket answers go out with reply_to = feedback+<token>@…, the token

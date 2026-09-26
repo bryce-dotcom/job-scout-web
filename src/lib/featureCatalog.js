@@ -29,6 +29,15 @@ export const FEATURE_CATALOG = [
     summary: 'Apollo-to-close: prospect, set, sell, and sign — all in one pipeline.',
     features: [
       {
+        name: 'Sal — Solicitation Scout',
+        icon: 'Radar',
+        summary: "Point every procurement portal's alerts at Sal's address and the bids come to you: Bonfire, the Arizona Procurement Portal, OpenGov, BidNet, DemandStar, PlanHub, GC invitations, plus SAM.gov for federal work. Every alert lands on his inbox with its attachments kept. Scoring, the board, and the hand-off to Benny are being built on top.",
+        replaces: ['checking six portals every morning', 'a mailbox of bid alerts nobody reads'],
+        highlights: ['One address for every portal', 'Alerts and attachments kept', 'Never scrapes a portal', 'Hands chosen bids to Benny'],
+        route: '/agents/sal',
+        walkthrough: null,
+      },
+      {
         name: 'Prospect Scout',
         icon: 'Sparkles',
         summary: 'Your setters type plain English — "warehouses in Salt Lake County over 50 employees" — and Claude does the live web research, returning real businesses with cited sources. Tap to enrich with email + phone, multi-select, and bulk-import to the pipeline.',

@@ -34,6 +34,9 @@ const AGENT_MODULE_TEMPLATES = {
   'frankie-finance':  { module_name: 'frankie-finance',display_name: 'Frankie - Finance AI',         icon: 'DollarSign',  default_menu_section: 'OPERATIONS', route_path: '/agents/frankie',        sort_order: 45, description: 'AI bookkeeper + finance assistant' },
   'benny-bids':      { module_name: 'benny',         display_name: 'Benny - Bid Builder',    icon: 'FileSearch',  default_menu_section: 'SALES_FLOW', default_menu_parent: 'Estimates', route_path: '/agents/benny', sort_order: 27, description: 'Reads the buyer\'s bid package and builds the bid — sourced prices redlined until verified' },
   'don-excavator':    { module_name: 'don-excavator', display_name: 'Don - Excavation AI',          icon: 'Shovel',      default_menu_section: 'SALES_FLOW', route_path: '/agents/don',            sort_order: 28, description: 'AI excavation estimator — sites, takeoffs, unit-price bids' },
+  // Finding projects to bid on is marketing (Bryce, 2026-09-26), so Sal sits
+  // under Marketing the way Benny sits under Estimates.
+  'sal-scout':        { module_name: 'sal',           display_name: 'Sal - Solicitation Scout',     icon: 'Radar',       default_menu_section: 'SALES_FLOW', default_menu_parent: 'Marketing', route_path: '/agents/sal', sort_order: 29, description: 'Reads procurement portal alerts and SAM.gov, scores the fit, hands chosen bids to Benny' },
 };
 
 export const useStore = create(
@@ -1518,7 +1521,10 @@ export const useStore = create(
                   icon: tpl.icon,
                   status: 'active',
                   default_menu_section: tpl.default_menu_section,
-                  default_menu_parent: null,
+                  // The template's parent, not a hard null: Benny under
+                  // Estimates and Sal under Marketing only reached the
+                  // sidebar by migration before this read the template.
+                  default_menu_parent: tpl.default_menu_parent ?? null,
                   user_menu_section: null,
                   user_menu_parent: null,
                   sort_order: tpl.sort_order,

@@ -106,13 +106,16 @@ export function isAutoReply(subject: string | null | undefined, headers: Record<
 //   token      reply+<signed>@…   — names the estimate; the only fully trusted route
 //   estimates  estimates@…        — where estimate emails come FROM; a reply here
 //                                   may be matched to the sender's estimate
+//   bids       bids+<signed>@…    — names a tenant's bid inbox (Sal); portal
+//                                   alerts and forwarded invitations land there
 //   other      invoices@, receipts@, noreply@, anything else — never an estimate
 //                                   reply, so never filed on one
-export type RecipientKind = 'token' | 'feedback' | 'estimates' | 'other'
+export type RecipientKind = 'token' | 'feedback' | 'bids' | 'estimates' | 'other'
 export function recipientKind(to: string | null | undefined): RecipientKind {
   const local = String(to || '').toLowerCase().split('@')[0]
   if (/^reply\+/.test(local)) return 'token'
   if (/^feedback\+/.test(local)) return 'feedback'
+  if (/^bids\+/.test(local)) return 'bids'
   if (local === 'estimates') return 'estimates'
   return 'other'
 }

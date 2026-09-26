@@ -33,6 +33,8 @@ const TEMPLATES = {
   'victor-verify':    { module_name: 'victor-verify',  display_name: 'Victor - Verification AI',     icon: 'ShieldCheck',default_menu_section: 'OPERATIONS', route_path: '/agents/victor',         sort_order: 35, description: 'AI quality verification for completed work' },
   'arnie-og':         { module_name: 'arnie',          display_name: 'OG Arnie',                     icon: 'Bot',        default_menu_section: 'OPERATIONS', route_path: '/agents/arnie',          sort_order: 40, description: 'General-purpose AI assistant' },
   'frankie-finance':  { module_name: 'frankie-finance',display_name: 'Frankie - Finance AI',         icon: 'DollarSign', default_menu_section: 'OPERATIONS', route_path: '/agents/frankie',        sort_order: 45, description: 'AI bookkeeper + finance assistant' },
+  'benny-bids':       { module_name: 'benny',          display_name: 'Benny - Bid Builder',          icon: 'ClipboardList', default_menu_section: 'SALES_FLOW', default_menu_parent: 'Estimates', route_path: '/agents/benny', sort_order: 27, description: 'Reads the buyer\'s bid package and builds the bid — sourced prices redlined until verified' },
+  'sal-scout':        { module_name: 'sal',            display_name: 'Sal - Solicitation Scout',     icon: 'Radar',      default_menu_section: 'SALES_FLOW', default_menu_parent: 'Marketing',  route_path: '/agents/sal',   sort_order: 29, description: 'Reads procurement portal alerts and SAM.gov, scores the fit, hands chosen bids to Benny' },
 }
 
 ;(async () => {

@@ -16,4 +16,8 @@ export {
   feedbackReplyAddress,
   parseFeedbackToken,
   feedbackTokenFromAddresses,
+  bidsInboxToken,
+  bidsInboxAddress,
+  parseBidsToken,
+  bidsTokenFromAddresses,
 } from '../../supabase/functions/_shared/replyToken.ts'

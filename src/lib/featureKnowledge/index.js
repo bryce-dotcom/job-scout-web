@@ -60,6 +60,7 @@ import victor             from './victor.js'
 import arnie              from './arnie.js'
 import dougie             from './dougie.js'
 import benny              from './benny.js'
+import sal                from './sal.js'
 import myPay              from './my-pay.js'
 import utilityInvoices    from './utility-invoices.js'
 // — Round 4: schedule + reports + docs + lighting catalog + commissions + employees —
@@ -114,6 +115,7 @@ const CARDS = [
   arnie,
   dougie,
   benny,
+  sal,
   myPay,
   utilityInvoices,
   jobCalendar,
