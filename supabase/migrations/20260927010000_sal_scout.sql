@@ -53,8 +53,13 @@ comment on table public.bid_inbox is
   'Every email that reached a tenant''s signed bids+<token>@ address (procurement portal alerts, forwarded GC invitations). Sal''s parser turns rows into bid_opportunities; a row that cannot be parsed stays visible on his Inbox tab rather than vanishing.';
 
 -- A provider retries a webhook for days; the same email must land once.
+-- NOT a partial index: PostgREST upserts say ON CONFLICT (company_id,
+-- email_id) with no WHERE, and Postgres will not infer a partial unique
+-- index from that (42P10) — the same failure that hid 13 settings upserts
+-- for months. A plain unique index treats NULL email_ids as distinct, so
+-- rows from providers without an id still insert freely.
 create unique index if not exists bid_inbox_company_email_idx
-  on public.bid_inbox (company_id, email_id) where email_id is not null;
+  on public.bid_inbox (company_id, email_id);
 create index if not exists bid_inbox_company_received_idx
   on public.bid_inbox (company_id, received_at desc);
 
