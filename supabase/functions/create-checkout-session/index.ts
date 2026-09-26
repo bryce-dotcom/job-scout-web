@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { wisetackKey, wisetackMerchantId } from "../_shared/financing.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -427,11 +428,11 @@ serve(async (req) => {
       // The per-tenant value still wins when a company genuinely has its own
       // Wisetack contract — that way this works under either arrangement and
       // nobody who has already pasted a key loses it.
-      const wisetackApiKey = paymentConfig?.wisetack_api_key || Deno.env.get('WISETACK_API_KEY') || '';
-      const wisetackMerchantId = paymentConfig?.wisetack_merchant_id || Deno.env.get('WISETACK_MERCHANT_ID') || '';
+      const wisetackApiKey = wisetackKey(paymentConfig);
+      const merchantId = wisetackMerchantId(paymentConfig);
       const wisetackMode = paymentConfig?.wisetack_mode || Deno.env.get('WISETACK_MODE') || 'sandbox';
 
-      if (!wisetackApiKey || !wisetackMerchantId) {
+      if (!wisetackApiKey || !merchantId) {
         return new Response(JSON.stringify({ error: 'Wisetack financing is not configured for this company.' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
@@ -467,7 +468,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          merchant_id: wisetackMerchantId,
+          merchant_id: merchantId,
           transaction_amount: parseFloat(amountDollars),
           purpose: description,
           consumer: {

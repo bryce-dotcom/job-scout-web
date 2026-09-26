@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { resolveMatLabSplit, buildSummaryRows } from "../_shared/matLabCore.ts";
 import { publicSheet, publicTitle, buildDenyTerms, scrubText } from "../_shared/specScrub.ts";
+import { wisetackReady } from "../_shared/financing.ts";
 
 // The Material/Labor rule lives in _shared/matLabCore.ts, imported by both
 // this function and the React app (via src/lib/materialLaborSplit.js). It was
@@ -414,8 +415,12 @@ serve(async (req) => {
             }
             return out
           })(),
-          // Financing providers — only expose enabled flag (no keys)
-          wisetack_enabled: !!(cfg.wisetack_enabled && cfg.wisetack_api_key && cfg.wisetack_merchant_id),
+          // Financing providers — only expose enabled flag (no keys).
+          // wisetackReady is shared with create-checkout-session so the button
+          // shows exactly when the application call would succeed: this used to
+          // demand a per-tenant API key, which the platform-key setup leaves
+          // deliberately blank, so a fully configured company got no button.
+          wisetack_enabled: wisetackReady(cfg),
           greensky_enabled: !!(cfg.greensky_enabled && cfg.greensky_merchant_id),
           hearth_enabled: !!(cfg.hearth_enabled && cfg.hearth_partner_id),
           service_finance_enabled: !!(cfg.service_finance_enabled && cfg.service_finance_dealer_id),

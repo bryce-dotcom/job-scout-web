@@ -2888,7 +2888,9 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
     // Wallets are payment methods too: a handle is all it takes.
     ...WALLETS.map(w => form[w.keys.enabled] && String(form[w.keys.handle] || '').trim()),
     form.bank_enabled && form.bank_name,
-    form.wisetack_enabled && form.wisetack_api_key,
+    // The merchant ID, not the key: the key is normally JobScout's platform
+    // secret and is MEANT to be blank here (_shared/financing.ts).
+    form.wisetack_enabled && form.wisetack_merchant_id,
     form.greensky_enabled && form.greensky_merchant_id,
     form.hearth_enabled && form.hearth_partner_id,
     form.service_finance_enabled && form.service_finance_dealer_id,
@@ -3518,7 +3520,7 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
           <CreditCard size={20} style={{ color: form.wisetack_enabled ? '#4a7c59' : theme.accent }} />,
           'Wisetack',
           'Consumer financing for home services — #1 for contractors',
-          form.wisetack_enabled && form.wisetack_api_key,
+          form.wisetack_enabled && form.wisetack_merchant_id,
           <>
             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: '16px' }}>
               <input
