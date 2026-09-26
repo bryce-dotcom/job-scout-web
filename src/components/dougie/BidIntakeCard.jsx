@@ -77,7 +77,7 @@ export default function BidIntakeCard({ theme, mode = 'create', quote = null, on
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: '15px', fontWeight: 700, color: theme.text }}>{mode === 'fill' ? 'Let Dougie build this bid from the buyer\'s package' : 'Dougie reads the bid package'}</div>
           <div style={{ fontSize: '12px', color: theme.textMuted, lineHeight: 1.4 }}>
-            Drop in the invitation to bid. Dougie reads the schedule of items, matches each to your catalog — exact, an equivalent with his reasoning, or flagged to source — prices it, and builds the bid in the buyer's format. Anything he had to source lands redlined until you verify it with a link.
+            Drop in the invitation to bid. Dougie reads the schedule of items, matches each to your catalog — exact, an equivalent with his reasoning, or flagged to source — prices it, and builds the bid in the buyer's format. Anything your catalog does not carry he prices from the web and puts the supplier page on the line — still redlined until you open that page and mark it verified.
           </div>
         </div>
       </div>
@@ -99,7 +99,7 @@ export default function BidIntakeCard({ theme, mode = 'create', quote = null, on
         </label>
 
         <button onClick={run} disabled={busy || !file} style={{ padding: '11px 16px', minHeight: '44px', borderRadius: '8px', border: 'none', backgroundColor: '#a855f7', color: '#fff', fontSize: '14px', fontWeight: 600, cursor: busy || !file ? 'not-allowed' : 'pointer', opacity: busy || !file ? 0.6 : 1 }}>
-          {stage === 'uploading' ? 'Uploading…' : stage === 'reading' ? 'Dougie is reading and pricing… (about a minute)' : 'Build the bid'}
+          {stage === 'uploading' ? 'Uploading…' : stage === 'reading' ? 'Dougie is reading, matching and searching the web for prices… (a minute or two)' : 'Build the bid'}
         </button>
 
         {stage === 'done' && result && (
@@ -107,7 +107,7 @@ export default function BidIntakeCard({ theme, mode = 'create', quote = null, on
             <CheckCircle size={16} style={{ flexShrink: 0, marginTop: '1px' }} />
             <div>
               <strong>{result.read?.bid_number ? `${result.read.bid_number} — ` : ''}{result.read?.title || 'Bid built'}</strong>
-              <div>{result.lines} items · {result.counts?.exact || 0} exact · {result.counts?.equivalent || 0} equivalent · {result.counts?.must_source || 0} to source{result.read?.due_at ? ` · due ${new Date(result.read.due_at).toLocaleDateString()}` : ''}</div>
+              <div>{result.lines} items · {result.counts?.exact || 0} exact · {result.counts?.equivalent || 0} equivalent · {result.counts?.must_source || 0} to source{result.web_priced ? ` (${result.web_priced} priced from the web, links on the lines)` : ''}{result.read?.due_at ? ` · due ${new Date(result.read.due_at).toLocaleDateString()}` : ''}</div>
             </div>
           </div>
         )}

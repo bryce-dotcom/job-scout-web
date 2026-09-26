@@ -59,7 +59,7 @@ export default {
     ],
 
     gotchas: [
-      "Dougie has no web browsing. A must-source price is his estimate from market knowledge, not a quote — that is exactly why it is redlined until a human links a source.",
+      "A must-source price comes from a web search (server-side web_search tool, up to 3 searches per item): Dougie brings back the supplier page he read it on and puts the link on the line. It is STILL redlined until a person opens that page and ticks verified — the rule is a human stands behind every sourced number. If the search finds nothing reliable, the line falls back to his market estimate with no link.",
       "He only fills an EMPTY estimate (mode 'fill'); a draft with lines already on it refuses, so nothing gets doubled. Make a new bid instead.",
       "Exact/equivalent lines take the catalog price even when the catalog price is 0 — a 0 there means the price book needs the number, not Dougie.",
       "The bid presentation mode is offered only when the document is a bid or the company produces bids (settings.document_types).",

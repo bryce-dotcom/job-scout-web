@@ -155,6 +155,59 @@ ${candText || '(none)'}`
     const byNo = new Map<string, any>(matches.map((m) => [String(m.item_no), m]))
     const catById = new Map<number, any>(candidates.map((p) => [Number(p.id), p]))
 
+    // ── PASS 3: source on the web what the catalog cannot.
+    // Bryce, 2026-09-25: "add web browsing to Dougie". A must-source line
+    // used to carry Dougie's market estimate; now he searches for it and
+    // brings back the page he read the price on. It still lands redlined —
+    // the rule is that a HUMAN ticks verified against a link — but the link
+    // is already on the line, so verifying is reading it and clicking.
+    // Same server-side web_search tool ai-utility-research uses.
+    const isMustSource = (it: any) => { const m = byNo.get(String(it.item_no)); return !m || m.match_kind === 'must_source' || m.item_id == null }
+    const mustSource = items.filter(isMustSource)
+    const found = new Map<string, { unit_price: number; source_url: string; source_title: string; note: string }>()
+    let webSearches = 0
+    if (mustSource.length) {
+      const searchPrompt = `You are Dougie, pricing bid items a contractor's catalog does not carry. Use web search to find a CURRENT purchasable unit price for each item below from a real supplier or distributor page (Grainger, Graybar, Platt, HD Supply, Home Depot Pro, a manufacturer's store, or similar). Prefer a product that meets the spec; say what differs if it does not. For labor, commissioning or service items, search for typical regional trade rates and cite the page you used.
+
+Return ONLY a JSON object:
+{ "prices": [ { "item_no": "...", "unit_price": 0.00, "source_url": "https://...", "source_title": "page title", "product": "what the page sells", "note": "how it compares to the spec and what the price includes" } ] }
+
+Rules: unit_price is the price PER UNIT in the bid's unit (${[...new Set(mustSource.map((it) => it.unit || 'EA'))].join(', ')}). source_url must be the exact page you read the price on — never invent or guess a URL. If nothing reliable turns up for an item, omit it rather than guess.
+
+ITEMS:
+${mustSource.map((it) => `- item_no ${it.item_no || '?'} qty ${it.quantity} ${it.unit || ''}: ${it.description}${it.spec ? ` — SPEC: ${String(it.spec).slice(0, 500)}` : ''}`).join('\n')}`
+      try {
+        const tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: Math.min(12, mustSource.length * 3) }]
+        let messages: any[] = [{ role: 'user', content: [{ type: 'text', text: searchPrompt }] }]
+        let text = ''
+        for (let hop = 0; hop < 3; hop++) {
+          let r = await callAnthropic(meta, { model: READ_MODEL, max_tokens: 8192, messages, tools })
+          if (!r.ok && r.status === 404) r = await callAnthropic(meta, { model: FALLBACK_MODEL, max_tokens: 8192, messages, tools })
+          if (!r.ok) { console.warn('[dougie] web pricing unavailable:', r.friendly); break }
+          webSearches += (r.data?.usage?.server_tool_use?.web_search_requests as number) || 0
+          text = textOf(r)
+          // A long search can pause mid-turn; hand the transcript back and let it finish.
+          if (r.data?.stop_reason !== 'pause_turn') break
+          messages = [...messages, { role: 'assistant', content: r.data.content }]
+        }
+        const parsed = text ? parseJson(text) : null
+        for (const p of parsed?.prices || []) {
+          const url = String(p.source_url || '').trim()
+          const price = Number(p.unit_price)
+          if (!/^https?:\/\/\S+\.\S+/i.test(url) || !(price > 0)) continue
+          found.set(String(p.item_no), {
+            unit_price: Math.round(price * 100) / 100, source_url: url,
+            source_title: String(p.source_title || '').slice(0, 160),
+            note: [p.product, p.note].filter(Boolean).join(' — ').slice(0, 600),
+          })
+        }
+      } catch (e) {
+        // A failed search is not a reason to lose the bid: the line falls back
+        // to the estimate from the match pass, still redlined.
+        console.warn('[dougie] web pricing failed:', (e as Error)?.message)
+      }
+    }
+
     // ── Lines, through the intake contract.
     const lines: IntakeLine[] = items.map((it) => {
       const m = byNo.get(String(it.item_no)) || {}
@@ -170,11 +223,18 @@ ${candText || '(none)'}`
           bid_item_no: it.item_no || null, bid_spec: it.spec || it.description || null,
         }
       }
-      const est = Math.max(0, Number(m.estimated_unit_price) || 0)
+      // A price Dougie read on a supplier page beats his estimate; either way
+      // the line is ai_sourced and unverified until a person checks the link.
+      const web = found.get(String(it.item_no))
+      const est = web ? web.unit_price : Math.max(0, Number(m.estimated_unit_price) || 0)
       return {
         item_name: it.description || 'Bid item', description: it.spec || null, item_id: null, quantity: qty, price: est,
         unit_of_measure: it.unit || null, notes: m.justification || null,
-        price_source: 'ai_sourced', sourced_price: est, source_note: m.price_basis || m.justification || 'Dougie\'s market estimate — verify before sending',
+        price_source: 'ai_sourced', sourced_price: est,
+        source_url: web?.source_url || null,
+        source_note: web
+          ? `Found on the web${web.source_title ? ` — ${web.source_title}` : ''}${web.note ? `: ${web.note}` : ''}`
+          : (m.price_basis || m.justification || 'Dougie\'s market estimate — verify before sending'),
         match_kind: 'must_source', match_note: m.justification || null,
         bid_item_no: it.item_no || null, bid_spec: it.spec || it.description || null,
       }
@@ -243,6 +303,7 @@ ${candText || '(none)'}`
     const counts = { exact: 0, equivalent: 0, must_source: 0 }
     for (const l of lines) counts[(l.match_kind || 'must_source') as keyof typeof counts]++
     return json({ ok: true, quote_id: quoteId, mode, lines: lines.length, counts, unverified: counts.must_source,
+      web_priced: found.size, web_searches: webSearches,
       read: { title: bidIntake.title, bid_number: bidIntake.bid_number, buyer: bidIntake.buyer, due_at: bidIntake.due_at, sections: bidIntake.sections.length } })
   } catch (err) {
     console.error('[dougie-bid-intake]', err)

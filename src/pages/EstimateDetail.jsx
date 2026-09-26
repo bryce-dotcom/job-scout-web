@@ -3796,6 +3796,15 @@ function EstimateDetailInner() {
                                         <button type="button" onClick={() => handleVerifyLine(line, null)} style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '12px', textDecoration: 'underline', padding: 0 }}>undo</button>
                                       </div>
                                     ) : (
+                                      <>
+                                      {/* Dougie found this price on the web: the link is already on the
+                                          line, so verifying is reading that page and clicking. */}
+                                      {line.source_url && (
+                                        <div style={{ fontSize: '12px', marginBottom: '6px' }}>
+                                          <a href={line.source_url} target="_blank" rel="noreferrer" style={{ color: theme.accent, fontWeight: 600 }}>Open the page Dougie found ↗</a>
+                                          <span style={{ color: theme.textMuted }}> — if the price and item hold up, mark it verified.</span>
+                                        </div>
+                                      )}
                                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                         <input
                                           type="url"
@@ -3808,6 +3817,7 @@ function EstimateDetailInner() {
                                           Mark verified
                                         </button>
                                       </div>
+                                      </>
                                     )}
                                   </>
                                 )}
