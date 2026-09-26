@@ -3559,9 +3559,18 @@ function PaymentSettingsTab({ theme, settings, saveSetting, companyId }) {
                     type="password"
                     value={form.wisetack_api_key}
                     onChange={(e) => setForm(prev => ({ ...prev, wisetack_api_key: e.target.value }))}
-                    placeholder="wt_..."
+                    placeholder="Leave blank to use the JobScout partner key"
                     style={inputStyle}
                   />
+                  {/* A key typed here is stored in this company's settings row
+                      in plain text, where any manager can read it. The platform
+                      key lives in a Supabase secret instead and is what most
+                      companies should use — only a company with its own
+                      Wisetack contract needs to fill this in. */}
+                  <p style={{ margin: '4px 0 0', fontSize: '11px', color: theme.textMuted, lineHeight: 1.45 }}>
+                    Only needed if you have your own Wisetack contract. Leave it blank and JobScout uses its
+                    partner key — your Merchant ID above is what identifies you.
+                  </p>
                 </div>
                 <div style={{
                   padding: '12px 14px',

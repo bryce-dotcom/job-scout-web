@@ -418,9 +418,18 @@ serve(async (req) => {
 
     // ---- WISETACK ----
     if (chosenProvider === 'wisetack') {
-      const wisetackApiKey = paymentConfig?.wisetack_api_key;
-      const wisetackMerchantId = paymentConfig?.wisetack_merchant_id;
-      const wisetackMode = paymentConfig?.wisetack_mode || 'sandbox';
+      // The API key is a PLATFORM credential: JobScout holds one Wisetack
+      // partner key and identifies each tenant by merchant_id, the same shape
+      // as the Watchdog fleet integration. So it lives in a Supabase secret,
+      // not in settings.payment_config, where every tenant row would need its
+      // own copy of it in plain text and any manager could read it.
+      //
+      // The per-tenant value still wins when a company genuinely has its own
+      // Wisetack contract — that way this works under either arrangement and
+      // nobody who has already pasted a key loses it.
+      const wisetackApiKey = paymentConfig?.wisetack_api_key || Deno.env.get('WISETACK_API_KEY') || '';
+      const wisetackMerchantId = paymentConfig?.wisetack_merchant_id || Deno.env.get('WISETACK_MERCHANT_ID') || '';
+      const wisetackMode = paymentConfig?.wisetack_mode || Deno.env.get('WISETACK_MODE') || 'sandbox';
 
       if (!wisetackApiKey || !wisetackMerchantId) {
         return new Response(JSON.stringify({ error: 'Wisetack financing is not configured for this company.' }),
