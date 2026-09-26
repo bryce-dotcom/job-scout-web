@@ -183,6 +183,18 @@ describe('re-filing the books', () => {
     expect(isBulkTarget('expense_category')).toBe(true)
   })
 
+  it('the card calls an expense an expense — the noun rides on the preview', () => {
+    // Only visible in a browser: the card header hardcoded "products" and read
+    // "3 PRODUCTS — EXPENSE CATEGORY" over a list of expenses.
+    expect(bulk).toMatch(/noun: string/)
+    expect(bulk).toMatch(/noun: target.noun,/)
+    const chat = readFileSync(resolve(here, '../pages/agents/arnie/ArnieChat.jsx'), 'utf8')
+    expect(chat).toContain("{rows.length} {(pv.noun || 'product') + (rows.length === 1 ? '' : 's')}")
+    expect(chat).not.toContain("rows.length === 1 ? 'product' : 'products'")
+    // The filter phrase has to read as a sentence after the card's "Where ".
+    expect(bulk).toContain('`anything mentions ${JSON.stringify(word)}`')
+  })
+
   it('admin only, and the refusal says where, not "the catalogue"', () => {
     expect(t.minLevel).toBeGreaterThanOrEqual(3)
     expect(t.scope).toBe('the books')

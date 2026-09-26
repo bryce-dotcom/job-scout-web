@@ -140,6 +140,8 @@ export const bulkTargetsSentence = () =>
 export interface BulkPreview {
   kind: 'bulk'
   label: string
+  /** What one row IS, so the card does not call an expense a product. */
+  noun: string
   field: string
   filter: string
   after: string
@@ -248,8 +250,10 @@ export async function proposeBulkChange(
     preview: {
       kind: 'bulk',
       label: target.label,
+      noun: target.noun,
       field: target.field,
-      filter: acrossText ? `mentions ${JSON.stringify(word)}` : `${field} ${byWord ? 'contains' : '='} ${JSON.stringify(filterValue)}`,
+      // Reads after the card's "Where ": "anything mentions "chevron"".
+      filter: acrossText ? `anything mentions ${JSON.stringify(word)}` : `${field} ${byWord ? 'contains' : '='} ${JSON.stringify(filterValue)}`,
       after,
       rows: previewRows,
     },
