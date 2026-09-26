@@ -5,7 +5,7 @@ import {
 describe('what the company calls it', () => {
   it('a company that never configured anything writes estimates', () => {
     expect(documentConfig(null)).toEqual({ enabled: ['estimate'], primary: 'estimate' })
-    expect(navLabel(null)).toEqual({ primary: 'Estimates', secondary: null })
+    expect(navLabel(null)).toEqual({ primary: 'Estimates', secondary: 'Bids · Proposals' })
   })
 
   it('reads the setting whether it arrives as an object or a JSON string', () => {
@@ -28,20 +28,30 @@ describe('what the company calls it', () => {
 })
 
 describe('the nav entry', () => {
-  it('shows nothing underneath when the company only does one kind', () => {
-    expect(navLabel({ enabled: ['bid'], primary: 'bid' })).toEqual({ primary: 'Bids', secondary: null })
+  // Estimates in the normal size with the other two small underneath, and
+  // whatever the company picks becomes the big word. The second line is
+  // always there — it tells anyone that this one page holds all three.
+  it('a company that configured nothing leads with Estimates and names the other two', () => {
+    expect(navLabel(null)).toEqual({ primary: 'Estimates', secondary: 'Bids · Proposals' })
   })
 
-  it('names the others underneath when it does more than one', () => {
-    expect(navLabel({ enabled: ['estimate', 'bid', 'proposal'], primary: 'bid' }))
+  it('whatever the company picks becomes the big word, with the other two underneath', () => {
+    expect(navLabel({ enabled: ['bid'], primary: 'bid' }))
       .toEqual({ primary: 'Bids', secondary: 'Estimates · Proposals' })
+    expect(navLabel({ enabled: ['proposal'], primary: 'proposal' }))
+      .toEqual({ primary: 'Proposals', secondary: 'Estimates · Bids' })
   })
 
-  it('orders the second line the same way for everyone, whatever order they ticked', () => {
-    const a = navLabel({ enabled: ['proposal', 'estimate'], primary: 'estimate' })
-    const b = navLabel({ enabled: ['estimate', 'proposal'], primary: 'estimate' })
+  it('says the other two even when the company only produces one kind', () => {
+    // The line is a signpost, not an inventory.
+    expect(navLabel({ enabled: ['estimate'], primary: 'estimate' }).secondary).toBe('Bids · Proposals')
+  })
+
+  it('reads the same order for everyone, whatever order they ticked', () => {
+    const a = navLabel({ enabled: ['proposal', 'estimate', 'bid'], primary: 'estimate' })
+    const b = navLabel({ enabled: ['bid', 'proposal', 'estimate'], primary: 'estimate' })
     expect(a).toEqual(b)
-    expect(a.secondary).toBe('Proposals')
+    expect(a.secondary).toBe('Bids · Proposals')
   })
 })
 

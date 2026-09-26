@@ -72,11 +72,16 @@ export function documentConfig(raw) {
  * is clutter for the company that only ever writes estimates.
  */
 export function navLabel(raw) {
-  const { enabled, primary } = documentConfig(raw)
-  const others = enabled.filter(t => t !== primary)
+  const { primary } = documentConfig(raw)
+  // Always the other two, whatever the company has ticked. This first said
+  // them only when a company produced more than one kind, which was my
+  // embellishment and not what was asked for: the second line is there to
+  // tell ANYONE that this one page holds all three, whichever word the
+  // company leads with (Bryce, 2026-09-25).
+  const others = DOCUMENT_TYPES.filter(t => t !== primary)
   return {
     primary: labelsFor(primary).many,
-    secondary: others.length ? others.map(t => labelsFor(t).many).join(' · ') : null,
+    secondary: others.map(t => labelsFor(t).many).join(' · '),
   }
 }
 

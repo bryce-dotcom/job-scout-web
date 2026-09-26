@@ -8,6 +8,10 @@
 
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
+// Imported at the top, not with a dynamic import inside the test: compiling
+// schema.js on demand while ~200 test files run in parallel blew the 5s
+// default twice, which reads as a failure in the money suite and is not one.
+import { QUERIES } from './schema.js'
 import {
   invoiceCustomerTotal,
   invoiceBalance,
@@ -181,8 +185,7 @@ describe('utility AR reads the invoice, and the utility row only until it is lin
 
   // The unsafe omission, guarded at the source: the store must keep selecting
   // both columns, or a paid carrier reads as unpaid and utility AR inflates.
-  it('the store query that feeds AR selects both utility_owes and utility_paid_at', async () => {
-    const { QUERIES } = await import('./schema.js')
+  it('the store query that feeds AR selects both utility_owes and utility_paid_at', () => {
     const q = String(QUERIES.invoices)
     const ok = q.startsWith('*') || (/\butility_owes\b/.test(q) && /\butility_paid_at\b/.test(q))
     expect(ok).toBe(true)
