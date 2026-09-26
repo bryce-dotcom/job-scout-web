@@ -1,4 +1,43 @@
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PDFTextField, PDFCheckBox, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFSignature, PDFButton } from 'pdf-lib';
+
+// What kind of field this is. NOT field.constructor.name: the production
+// build minifies pdf-lib's class names, so "PDFTextField" arrives as "t" and
+// a name check matches nothing — every utility form generated in production
+// came back blank while the dev server filled it (found 2026-09-25 on the
+// demo's Xcel application). instanceof survives minification.
+export function fieldKind(field) {
+  if (field instanceof PDFTextField) return 'Text'
+  if (field instanceof PDFCheckBox) return 'CheckBox'
+  if (field instanceof PDFDropdown) return 'Dropdown'
+  if (field instanceof PDFOptionList) return 'OptionList'
+  if (field instanceof PDFRadioGroup) return 'RadioGroup'
+  if (field instanceof PDFSignature) return 'Signature'
+  if (field instanceof PDFButton) return 'Button'
+  return 'Unknown'
+}
+
+const TRUTHY = ['true', '1', 'yes', 'on', 'x', 'checked']
+
+/** Set one field from a string value, by kind. Throws on a pdf-lib refusal. */
+export function setFieldValue(field, value) {
+  const kind = fieldKind(field)
+  const text = String(value)
+  if (kind === 'Text') field.setText(text)
+  else if (kind === 'CheckBox') { if (TRUTHY.includes(text.toLowerCase())) field.check(); else field.uncheck() }
+  else if (kind === 'Dropdown' || kind === 'OptionList' || kind === 'RadioGroup') field.select(text)
+  return kind
+}
+
+function fillFields(form, fieldValues) {
+  for (const [fieldName, value] of Object.entries(fieldValues)) {
+    if (value === undefined || value === null || value === '') continue;
+    try {
+      setFieldValue(form.getField(fieldName), value)
+    } catch (err) {
+      console.warn(`Could not fill field "${fieldName}":`, err.message);
+    }
+  }
+}
 
 /**
  * Extract all fillable form fields from a PDF.
@@ -11,7 +50,7 @@ export async function extractFormFields(pdfBytes) {
   const fields = form.getFields();
 
   return fields.map((field) => {
-    const type = field.constructor.name.replace('PDF', '').replace('Field', '');
+    const type = fieldKind(field);
     let value = '';
     try {
       if (typeof field.getText === 'function') value = field.getText() || '';
@@ -36,26 +75,7 @@ export async function fillPdfForm(pdfBytes, fieldValues) {
   const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
   const form = pdfDoc.getForm();
 
-  for (const [fieldName, value] of Object.entries(fieldValues)) {
-    if (value === undefined || value === null || value === '') continue;
-    try {
-      const field = form.getField(fieldName);
-      const type = field.constructor.name;
-      if (type.includes('Text')) {
-        field.setText(String(value));
-      } else if (type.includes('CheckBox')) {
-        const truthyValues = ['true', '1', 'yes', 'on'];
-        if (truthyValues.includes(String(value).toLowerCase())) field.check();
-        else field.uncheck();
-      } else if (type.includes('Dropdown') || type.includes('OptionList')) {
-        field.select(String(value));
-      } else if (type.includes('RadioGroup')) {
-        field.select(String(value));
-      }
-    } catch (err) {
-      console.warn(`Could not fill field "${fieldName}":`, err.message);
-    }
-  }
+  fillFields(form, fieldValues)
 
   return await pdfDoc.save();
 }
@@ -72,26 +92,7 @@ export async function fillPdfFormWithImages(pdfBytes, fieldValues, imageOverlays
   const form = pdfDoc.getForm();
 
   // Fill text fields (same as fillPdfForm)
-  for (const [fieldName, value] of Object.entries(fieldValues)) {
-    if (value === undefined || value === null || value === '') continue;
-    try {
-      const field = form.getField(fieldName);
-      const type = field.constructor.name;
-      if (type.includes('Text')) {
-        field.setText(String(value));
-      } else if (type.includes('CheckBox')) {
-        const truthyValues = ['true', '1', 'yes', 'on'];
-        if (truthyValues.includes(String(value).toLowerCase())) field.check();
-        else field.uncheck();
-      } else if (type.includes('Dropdown') || type.includes('OptionList')) {
-        field.select(String(value));
-      } else if (type.includes('RadioGroup')) {
-        field.select(String(value));
-      }
-    } catch (err) {
-      console.warn(`Could not fill field "${fieldName}":`, err.message);
-    }
-  }
+  fillFields(form, fieldValues)
 
   // Embed image overlays
   for (const overlay of imageOverlays) {
