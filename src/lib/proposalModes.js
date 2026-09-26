@@ -13,6 +13,11 @@
 //                 It is a quote, not a pitch.
 //   interactive — the full case: savings, payback, ROI, charts.
 //   formal      — the legal document, terms and signature.
+//   bid         — the buyer's own schedule of items (2026-09-25): item
+//                 numbers, unit prices and extensions in THEIR format, with
+//                 an acknowledgement block. Offered only when the document
+//                 is a bid or the company produces bids — a window cleaner
+//                 never sees it.
 
 export const PROPOSAL_MODES = {
   pdf: {
@@ -42,6 +47,15 @@ export const PROPOSAL_MODES = {
     showsSavings: true,
     showsIncentive: true,
   },
+  bid: {
+    id: 'bid',
+    label: 'Bid Schedule',
+    send: 'Send Bid',
+    resend: 'Resend Bid',
+    blurb: "The buyer's schedule of items in their format — item numbers, unit prices, extensions and an acknowledgement block — as a web page and a PDF for their portal.",
+    showsSavings: false,
+    showsIncentive: false,
+  },
 }
 
 export const DEFAULT_PROPOSAL_MODE = 'pdf'
@@ -57,7 +71,11 @@ export function sendButtonLabel(mode, alreadySent = false) {
   return alreadySent ? m.resend : m.send
 }
 
-/** For the selector. Order is deliberate: cheapest document first, contract last. */
-export function proposalModeOptions() {
-  return [PROPOSAL_MODES.pdf, PROPOSAL_MODES.interactive, PROPOSAL_MODES.formal]
+/**
+ * For the selector. Order is deliberate: cheapest document first, contract
+ * last, and the bid schedule only for a company that bids (`bid: true`).
+ */
+export function proposalModeOptions({ bid = false } = {}) {
+  const base = [PROPOSAL_MODES.pdf, PROPOSAL_MODES.interactive, PROPOSAL_MODES.formal]
+  return bid ? [...base, PROPOSAL_MODES.bid] : base
 }

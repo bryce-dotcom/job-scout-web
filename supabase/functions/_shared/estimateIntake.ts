@@ -48,6 +48,17 @@ export interface IntakeLine {
   /** The field tech's words and photos. First-class, not an afterthought. */
   notes?: string | null
   photos?: unknown[] | null
+  // Where the price came from (Dougie's bid intake). All optional; a
+  // producer that does not source prices leaves them null and nothing
+  // changes for it. See _shared/sourcedPricing.ts for what they mean.
+  price_source?: 'catalog' | 'manual' | 'ai_sourced' | null
+  sourced_price?: number | null
+  source_url?: string | null
+  source_note?: string | null
+  match_kind?: 'exact' | 'equivalent' | 'must_source' | null
+  match_note?: string | null
+  bid_item_no?: string | null
+  bid_spec?: string | null
 }
 
 /**
@@ -140,6 +151,14 @@ export function intakeLineRows(
       in_utility_scope: l.in_utility_scope !== false,
       notes: l.notes ?? null,
       photos: l.photos && l.photos.length ? l.photos : null,
+      price_source: l.price_source ?? null,
+      sourced_price: l.sourced_price == null ? null : round2(l.sourced_price),
+      source_url: l.source_url ?? null,
+      source_note: l.source_note ?? null,
+      match_kind: l.match_kind ?? null,
+      match_note: l.match_note ?? null,
+      bid_item_no: l.bid_item_no ?? null,
+      bid_spec: l.bid_spec ?? null,
       sort_order: sort++,
     })
   }

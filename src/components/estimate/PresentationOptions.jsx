@@ -1,4 +1,4 @@
-import { FileText, Sparkles, FileSignature, Send, Download } from 'lucide-react'
+import { FileText, Sparkles, FileSignature, Send, Download, ClipboardList } from 'lucide-react'
 import { proposalModeOptions, proposalMode, sendButtonLabel } from '../../lib/proposalModes'
 
 // Three ways to present a quote, shown as three choices.
@@ -22,7 +22,10 @@ const ICONS = {
   pdf: FileText,
   interactive: Sparkles,
   formal: FileSignature,
+  bid: ClipboardList,
 }
+
+const COUNT_WORDS = ['', 'One', 'Two', 'Three', 'Four', 'Five']
 
 export default function PresentationOptions({
   theme,
@@ -36,13 +39,17 @@ export default function PresentationOptions({
   onSend,            // (modeId) => void   — set the mode and open the send modal
   onPreviewPdf,      // ()      => void
   onDownloadPdf,     // ()      => void
+  offerBid = false,  // a company that bids sees the bid schedule row
+  onPreviewBid,      // ()      => void — the buyer's-format PDF
+  bidUnverified = 0, // sourced prices nobody has verified; the bid row says so
 }) {
   const active = proposalMode(currentMode).id
+  const options = proposalModeOptions({ bid: offerBid })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 2px', lineHeight: 1.5 }}>
-        Three ways to send this. Pick the one that fits the customer.
+        {COUNT_WORDS[options.length] || options.length} ways to send this. Pick the one that fits the customer.
       </p>
 
       {/* Said HERE as well as in settings, because this is the screen a rep
@@ -58,7 +65,7 @@ export default function PresentationOptions({
         </div>
       )}
 
-      {proposalModeOptions().map((m) => {
+      {options.map((m) => {
         const Icon = ICONS[m.id] || FileText
         const isActive = m.id === active
         return (
@@ -89,6 +96,13 @@ export default function PresentationOptions({
                 <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '3px', lineHeight: 1.45 }}>
                   {m.blurb}
                 </div>
+                {/* A bid binds you to its numbers. Say on the row itself when
+                    it cannot go yet, rather than in a refusal after the click. */}
+                {m.id === 'bid' && bidUnverified > 0 && (
+                  <div style={{ fontSize: '12px', color: '#b91c1c', marginTop: '6px', fontWeight: 600 }}>
+                    {bidUnverified} AI-sourced price{bidUnverified === 1 ? '' : 's'} still unverified — verify each with a source link before this can be sent.
+                  </div>
+                )}
               </div>
             </div>
 
@@ -123,6 +137,22 @@ export default function PresentationOptions({
               {/* Only the plain estimate has a file to look at or keep. The
                   other two are web documents the customer opens from a link,
                   so offering "download" there would be a lie. */}
+              {m.id === 'bid' && (
+                <button
+                  onClick={onPreviewBid}
+                  disabled={generatingPdf || saving}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    padding: '10px 14px', backgroundColor: 'transparent', color: theme.accent,
+                    border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px',
+                    cursor: (generatingPdf || saving) ? 'not-allowed' : 'pointer', opacity: (generatingPdf || saving) ? 0.6 : 1, minHeight: '40px',
+                  }}
+                  title="The bid form as the buyer will receive it — the PDF you upload to their portal"
+                >
+                  <FileText size={15} />
+                  {generatingPdf ? 'Generating…' : 'Bid PDF'}
+                </button>
+              )}
               {m.id === 'pdf' && (
                 <>
                   <button

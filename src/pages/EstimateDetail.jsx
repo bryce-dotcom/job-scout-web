@@ -14,7 +14,7 @@ import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
 import LoadingSpinner from '../components/LoadingSpinner'
-import { AlertTriangle, ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image, Upload } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image, Upload, ShieldCheck } from 'lucide-react'
 import FlowIndicator from '../components/FlowIndicator'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
@@ -22,6 +22,9 @@ import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { generateEstimatePdf, showsSavingsOnPdf } from '../lib/estimatePdf'
 import { DOCUMENT_TYPES, configFromSettings, labelsFor, documentType, documentWord } from '../lib/documentVocabulary'
+import { sendGate, sendGateMessage, priceBadge, matchBadge, canVerify, verifiedPatch, unverifiedPatch, unverifiedSourcedLines } from '../lib/sourcedPricing'
+import { generateBidPdf, bidPdfBlob } from '../lib/bidPdf'
+import BidIntakeCard from '../components/dougie/BidIntakeCard'
 import { toast } from '../lib/toast'
 import SignedProposalCard from '../components/SignedProposalCard'
 import EmailDeliveryBadge from '../components/EmailDeliveryBadge'
@@ -960,6 +963,23 @@ function EstimateDetailInner() {
     await supabase.from('quote_lines').update({ description: newDesc || null }).eq('id', line.id)
   }
 
+  // A sourced price becomes a real price only when a person has checked it
+  // against something they can link to. The link IS the verification —
+  // the tick without the link is the thing this replaces. sourceUrl null
+  // undoes it and the row goes back to redlined.
+  const handleVerifyLine = async (line, sourceUrl) => {
+    let patch
+    if (sourceUrl === null) patch = unverifiedPatch
+    else {
+      if (!canVerify(sourceUrl)) { toast.error('Paste the link you verified this price against — a distributor page, a supplier quote, a catalog.'); return }
+      patch = verifiedPatch({ sourceUrl, by: user?.email || currentEmployee?.email || currentEmployee?.name || null })
+    }
+    const { error } = await supabase.from('quote_lines').update(patch).eq('id', line.id)
+    if (error) { toast.error('Could not save: ' + error.message); return }
+    setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, ...patch } : l))
+    toast.success(sourceUrl === null ? 'Back to unverified' : 'Price verified')
+  }
+
   const handleLineNotesChange = async (line, newNotes) => {
     setLineItems(prev => prev.map(l => l.id === line.id ? { ...l, notes: newNotes } : l))
     await supabase.from('quote_lines').update({ notes: newNotes || null }).eq('id', line.id)
@@ -1712,6 +1732,16 @@ function EstimateDetailInner() {
     setGeneratingPdf(false)
   }
 
+  // The bid form as the buyer receives it — the PDF a rep uploads to the
+  // buyer's portal. Unverified prices print redlined under a DRAFT band,
+  // so a draft can never pass for the form.
+  const handlePreviewBid = () => {
+    try {
+      const doc = generateBidPdf({ estimate, lineItems, company, businessUnit: getBusinessUnitObject(), customer: customerInfo })
+      window.open(URL.createObjectURL(doc.output('blob')), '_blank')
+    } catch (e) { toast.error('Could not build the bid PDF: ' + e.message) }
+  }
+
   const handleDownloadPdf = async () => {
     if (!estimate.pdf_url) return
     try {
@@ -1799,6 +1829,14 @@ function EstimateDetailInner() {
     if (!lineItems || lineItems.length === 0) {
       toast.error('Please add at least one line item before sending.')
       return
+    }
+    // A sourced price nobody verified: a bid stops here, an estimate or
+    // proposal asks. send-estimate enforces the same rule server-side
+    // (_shared/sourcedPricing.ts); this is the same sentence, earlier.
+    {
+      const g = sendGate(documentType(estimate, docCfg), lineItems)
+      if (g.gate === 'block') { toast.error(sendGateMessage('block', g.unverified, docLabels.one), { duration: 9000 }); return }
+      if (g.gate === 'warn' && !confirm(sendGateMessage('warn', g.unverified, docLabels.one))) return
     }
     setSendingEmail(true)
 
@@ -1895,7 +1933,9 @@ function EstimateDetailInner() {
             }))
           return { ...l, line_photos: signed.filter(Boolean) }
         }))
-        const pdfBlob = await generateEstimatePdf({
+        const pdfBlob = presMode === 'bid'
+          ? bidPdfBlob({ estimate, lineItems, company, businessUnit: buObject, customer: customerInfo, draftWatermark: false })
+          : await generateEstimatePdf({
           estimate: { ...estimate, ...auditExtrasForSnap },
           lineItems: linesWithPhotosForSnap,
           company,
@@ -2014,7 +2054,7 @@ function EstimateDetailInner() {
           company_id: companyId,
           estimate_id: estimate.id,
           recipient_email: sendEmail,
-          pdf_storage_path: estimate.pdf_url,
+          pdf_storage_path: presMode === 'bid' ? (snapshotPdfPath || estimate.pdf_url) : estimate.pdf_url,
           company_name: company?.company_name || '',
           estimate_number: estimate.quote_id || `EST-${estimate.id}`,
           portal_url: portalUrl,
@@ -2028,6 +2068,8 @@ function EstimateDetailInner() {
           // Proposal, by lib/documentVocabulary — the same word the PDF and
           // the portal carry, so the customer never sees two.
           document_word: documentWord(estimate, docCfg, presMode),
+          document_type: documentType(estimate, docCfg),
+          acknowledge_unverified: true, // the rep answered the warn above
           customer_name: custName,
           subtotal: subtotalCalc,
           discount: discountCalc,
@@ -3438,7 +3480,12 @@ function EstimateDetailInner() {
                 textAlign: 'center',
                 color: theme.textMuted
               }}>
-                No line items yet. Add products or services to this estimate.
+                No line items yet. Add products or services to this {docLabels.one.toLowerCase()}.
+                {(documentType(estimate, docCfg) === 'bid' || docCfg.enabled.includes('bid')) && (
+                  <div style={{ marginTop: '14px', textAlign: 'left' }}>
+                    <BidIntakeCard theme={theme} mode="fill" quote={estimate} compact onDone={() => fetchEstimateData()} />
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -3494,6 +3541,7 @@ function EstimateDetailInner() {
                         <div style={{ color: theme.textMuted, display: 'flex', alignItems: 'center' }}>
                           {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         </div>
+                        <div style={{ minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                           <p style={{ fontWeight: '500', color: theme.text, fontSize: '14px', margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {line.item_name || line.item?.name || 'Custom Item'}
@@ -3503,6 +3551,22 @@ function EstimateDetailInner() {
                               <Camera size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />{totalPhotoCount}
                             </span>
                           )}
+                        </div>
+                        {/* Dougie's pricing, under the name so it never crowds
+                            the quantity box: redlined until verified, and how
+                            the line was matched. */}
+                        {(() => {
+                          const pb = priceBadge(line), mb = matchBadge(line)
+                          if (!pb && !mb) return null
+                          // The name column is narrow: the icon always shows, the word ellipsizes, the tooltip says it all.
+                          const pill = (b, bg, fg, Icon) => <span title={b.text} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '10px', padding: '1px 6px', borderRadius: '10px', fontWeight: '600', backgroundColor: bg, color: fg, whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden', minWidth: 0 }}>{Icon && <Icon size={10} style={{ flexShrink: 0 }} />}<span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.short || b.text}</span></span>
+                          return (
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '3px', minWidth: 0, overflow: 'hidden' }}>
+                              {pb && pill(pb, pb.tone === 'redline' ? 'rgba(239,68,68,0.12)' : 'rgba(34,197,94,0.12)', pb.tone === 'redline' ? '#b91c1c' : '#166534', pb.tone === 'redline' ? AlertTriangle : ShieldCheck)}
+                              {mb && pill(mb, mb.tone === 'warn' ? 'rgba(234,179,8,0.15)' : 'rgba(59,130,246,0.12)', mb.tone === 'warn' ? '#854F0B' : '#1e40af')}
+                            </div>
+                          )
+                        })()}
                         </div>
                         {!isMobile && (
                           <div>
@@ -3708,6 +3772,48 @@ function EstimateDetailInner() {
                               }}
                             />
                           </div>
+                          {/* Dougie's pricing: how the line was matched, and the
+                              verification a sourced price needs before a bid can go. */}
+                          {(line.price_source === 'ai_sourced' || line.match_kind) && (() => {
+                            const redlined = line.price_source === 'ai_sourced' && !line.price_verified_at
+                            return (
+                              <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', border: `1px solid ${redlined ? '#ef4444' : theme.border}`, backgroundColor: redlined ? 'rgba(239,68,68,0.05)' : 'transparent' }}>
+                                <label style={{ fontSize: '11px', fontWeight: '600', color: redlined ? '#b91c1c' : theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>
+                                  {redlined ? 'AI-sourced price — unverified' : line.price_source === 'ai_sourced' ? 'Sourced price — verified' : "Dougie's match"}
+                                </label>
+                                {line.match_note && (
+                                  <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '6px', lineHeight: 1.45 }}>
+                                    <strong>{line.match_kind === 'must_source' ? 'Not in your catalog' : line.match_kind === 'equivalent' ? 'Equivalent' : 'Exact match'}:</strong> {line.match_note}
+                                  </div>
+                                )}
+                                {line.price_source === 'ai_sourced' && (
+                                  <>
+                                    {line.source_note && <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '6px', lineHeight: 1.45 }}>Basis: {line.source_note}</div>}
+                                    {line.price_verified_at ? (
+                                      <div style={{ fontSize: '12px', color: '#166534', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                        <span>Verified{line.price_verified_by ? ` by ${line.price_verified_by}` : ''} on {new Date(line.price_verified_at).toLocaleDateString()}</span>
+                                        {line.source_url && <a href={line.source_url} target="_blank" rel="noreferrer" style={{ color: theme.accent }}>source</a>}
+                                        <button type="button" onClick={() => handleVerifyLine(line, null)} style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '12px', textDecoration: 'underline', padding: 0 }}>undo</button>
+                                      </div>
+                                    ) : (
+                                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                        <input
+                                          type="url"
+                                          id={`src-${line.id}`}
+                                          defaultValue={line.source_url || ''}
+                                          placeholder="Paste the link you checked this price against…"
+                                          style={{ flex: 1, minWidth: '200px', padding: '8px 10px', fontSize: '12px', color: theme.text, border: `1px solid ${theme.border}`, borderRadius: '6px', backgroundColor: theme.bgCard, outline: 'none', minHeight: '36px' }}
+                                        />
+                                        <button type="button" onClick={() => handleVerifyLine(line, document.getElementById(`src-${line.id}`)?.value || '')} style={{ padding: '8px 12px', minHeight: '36px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                                          Mark verified
+                                        </button>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            )
+                          })()}
                           {/* Notes */}
                           <div style={{ marginBottom: '10px' }}>
                             <label style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>Internal Notes</label>
@@ -4292,6 +4398,9 @@ function EstimateDetailInner() {
                 }}
                 onPreviewPdf={handleGeneratePdf}
                 onDownloadPdf={handleDownloadPdf}
+                offerBid={documentType(estimate, docCfg) === 'bid' || docCfg.enabled.includes('bid')}
+                onPreviewBid={handlePreviewBid}
+                bidUnverified={unverifiedSourcedLines(lineItems).length}
               />
 
               {/* Portal Link */}

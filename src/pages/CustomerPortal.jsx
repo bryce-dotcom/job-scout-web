@@ -7,6 +7,7 @@ import { isLegacyNetShape } from '../lib/arHelpers'
 import { withAssets } from '../lib/productAssets'
 import { enabledWalletsFrom, displayHandle, walletGuidance } from '../lib/wallets'
 import { documentWord } from '../lib/documentVocabulary'
+import BidSchedule from '../components/proposal/BidSchedule'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -538,8 +539,12 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        {/* Line items */}
-        {isEstimate && line_items && line_items.length > 0 && (
+        {/* Line items — a bid shows the buyer's own schedule instead
+            (lib/bidSchedule, the same arrangement as the PDF). */}
+        {isEstimate && presentationModeRaw === 'bid' && (
+          <BidSchedule data={data} theme={theme} isMobile={isMobile} />
+        )}
+        {isEstimate && presentationModeRaw !== 'bid' && line_items && line_items.length > 0 && (
           <div style={{ ...styles.card, marginBottom: '16px' }}>
             <div style={{ padding: '20px' }}>
               <h3 style={styles.sectionTitle}>Line Items</h3>

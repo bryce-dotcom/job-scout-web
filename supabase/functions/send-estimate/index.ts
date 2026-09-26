@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveQuoteEmailLinks, renderQuoteEmailLinks } from "../_shared/quoteEmailLinks.ts";
 import { replyAddress } from "../_shared/replyToken.ts";
+import { sendGate, sendGateMessage, resolveDocumentType } from "../_shared/sourcedPricing.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -54,6 +55,10 @@ serve(async (req) => {
       // callers, in which case the presentation mode picks the word exactly as
       // it always did.
       document_word,
+      // The resolved kind (estimate | bid | proposal) and whether the rep
+      // already answered the unverified-price warning on the page.
+      document_type,
+      acknowledge_unverified,
     } = await req.json();
 
     const isInteractive = presentation_mode === 'interactive';
@@ -74,6 +79,41 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         error: `Invalid recipient email format: "${recipient_email}". Please verify the customer's email address before resending.`
       }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // A sourced price nobody verified (_shared/sourcedPricing.ts): a bid is
+    // refused outright — you are bound by a bid — and an estimate or proposal
+    // is refused until the caller says it knows. The page asks in these same
+    // words first; this is the rule, not a courtesy.
+    {
+      const { data: gateLines } = await supabase
+        .from('quote_lines')
+        .select('id, item_name, price_source, price_verified_at')
+        .eq('quote_id', estimate_id)
+        .eq('company_id', _company_id);
+      const { data: gateQuote } = await supabase
+        .from('quotes')
+        .select('document_type')
+        .eq('id', estimate_id)
+        .eq('company_id', _company_id)
+        .maybeSingle();
+      let settingRaw: unknown = null;
+      if (!gateQuote?.document_type && !document_type) {
+        const { data: sRows } = await supabase
+          .from('settings').select('value')
+          .eq('company_id', _company_id).eq('key', 'document_types').limit(1);
+        settingRaw = sRows?.[0]?.value ?? null;
+      }
+      const kind = resolveDocumentType(gateQuote?.document_type || document_type, settingRaw);
+      const gate = sendGate(kind, gateLines || []);
+      if (gate.gate === 'block' || (gate.gate === 'warn' && !acknowledge_unverified)) {
+        const wordFor = kind === 'bid' ? 'Bid' : kind === 'proposal' ? 'Proposal' : 'Estimate';
+        return new Response(JSON.stringify({
+          error: sendGateMessage(gate.gate, gate.unverified, wordFor),
+          gate: gate.gate,
+          unverified: gate.unverified.map((l) => ({ id: l.id, item_name: l.item_name })),
+        }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     // Download PDF from Supabase Storage (PDF estimates only — formal and

@@ -221,7 +221,11 @@ export default function Layout() {
 
   // Helper to get effective section for an agent (user override > default)
   const getAgentSection = (agent) => agent.user_menu_section || agent.default_menu_section
-  const getAgentParent = (agent) => agent.user_menu_parent !== undefined ? agent.user_menu_parent : agent.default_menu_parent
+  // A row's user_menu_parent arrives from the database as NULL, not undefined,
+  // so !== undefined always took the null and dropped the default. Dougie's
+  // template says 'Estimates' and he vanished from the sidebar (2026-09-25).
+  // The placement picker writes '' for a deliberate section-level choice.
+  const getAgentParent = (agent) => agent.user_menu_parent != null ? agent.user_menu_parent : agent.default_menu_parent
 
   // Get agents for a specific section (optionally filtered by parent)
   // A section that no longer exists must not swallow an agent. CUSTOMERS was
