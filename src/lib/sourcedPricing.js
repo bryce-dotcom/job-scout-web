@@ -40,7 +40,7 @@ export function sendGateMessage(gate, unverified, documentWord = 'Estimate') {
   if (gate === 'block') {
     return `This bid has ${n} AI-sourced price${n === 1 ? '' : 's'} nobody has verified (${names}). A bid binds you to its numbers — verify each one with a source link before it goes out.`
   }
-  return `${n} price${n === 1 ? '' : 's'} on this ${documentWord.toLowerCase()} came from Dougie and ${n === 1 ? 'has' : 'have'} not been verified (${names}). Send anyway?`
+  return `${n} price${n === 1 ? '' : 's'} on this ${documentWord.toLowerCase()} came from Benny and ${n === 1 ? 'has' : 'have'} not been verified (${names}). Send anyway?`
 }
 
 /**
@@ -55,7 +55,7 @@ export function priceBadge(line) {
     : { text: 'AI-sourced · unverified', short: 'Unverified', tone: 'redline' }
 }
 
-/** The match badge, when Dougie matched the line: exact needs no badge. */
+/** The match badge, when Benny matched the line: exact needs no badge. */
 export function matchBadge(line) {
   const k = String(line?.match_kind || '').toLowerCase()
   if (k === 'equivalent') return { text: 'Equivalent', tone: 'info' }

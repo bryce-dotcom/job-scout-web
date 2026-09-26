@@ -1,4 +1,4 @@
-// Dougie reads a bid package and builds the bid.
+// Benny reads a bid package and builds the bid.
 //
 // Bryce's design (2026-09-25): an AI reads the customer's bid document and
 // builds the bid in THEIR required format — a three-way product match
@@ -58,7 +58,7 @@ serve(async (req) => {
     const auth = req.headers.get('Authorization') || ''
     const uRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { Authorization: auth, apikey: ANON_KEY } })
     const user = uRes.ok ? await uRes.json() : null
-    if (!user?.email) return json({ error: 'Sign in to use Dougie' }, 401)
+    if (!user?.email) return json({ error: 'Sign in to use Benny' }, 401)
     const empRes = await fetch(`${SUPABASE_URL}/rest/v1/employees?select=id,name,email&company_id=eq.${companyId}&email=ilike.${encodeURIComponent(user.email)}&limit=1`, { headers: svc })
     const emp = (await empRes.json())?.[0]
     if (!emp) return json({ error: 'You are not on this company\'s roster' }, 403)
@@ -75,7 +75,7 @@ serve(async (req) => {
       ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }
       : { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } }
 
-    const meta = { feature: 'dougie-bid-intake', companyId }
+    const meta = { feature: 'benny-bid-intake', companyId }
     const ask = async (content: unknown[], maxTokens = 8192) => {
       let r = await callAnthropic(meta, { model: READ_MODEL, max_tokens: maxTokens, messages: [{ role: 'user', content }] })
       if (!r.ok && r.status === 404) r = await callAnthropic(meta, { model: FALLBACK_MODEL, max_tokens: maxTokens, messages: [{ role: 'user', content }] })
@@ -85,7 +85,7 @@ serve(async (req) => {
     const parseJson = (t: string) => { const m = t.match(/\{[\s\S]*\}/); if (!m) throw new Error('no JSON in reply'); return JSON.parse(m[0]) }
 
     // ── PASS 1: read the package.
-    const readPrompt = `You are Dougie, a document reader for a field-services contractor. This is a bid package (an invitation to bid, request for quote, or bid form) the contractor received from a buyer. Read ALL of it and return ONLY a JSON object, no prose:
+    const readPrompt = `You are Benny, a bid builder for a field-services contractor. This is a bid package (an invitation to bid, request for quote, or bid form) the contractor received from a buyer. Read ALL of it and return ONLY a JSON object, no prose:
 
 {
   "title": "short title of the solicitation",
@@ -109,10 +109,10 @@ Rules: keep the buyer's item numbers and order exactly. quantity is a number (us
     const read = await ask([docBlock, { type: 'text', text: readPrompt }], 12000)
     if (!read.ok) return json({ error: read.friendly, ai_unavailable: read.unavailable === true }, 502)
     let pkg: any
-    try { pkg = parseJson(textOf(read)) } catch { return json({ error: 'Dougie could not make out a bid schedule in that document', raw: textOf(read).slice(0, 2000) }, 422) }
+    try { pkg = parseJson(textOf(read)) } catch { return json({ error: 'Benny could not make out a bid schedule in that document', raw: textOf(read).slice(0, 2000) }, 422) }
     const items: any[] = []
     for (const sec of pkg.sections || []) for (const it of sec.items || []) items.push({ ...it, section: sec.name || 'Schedule of Items' })
-    if (items.length === 0) return json({ error: 'Dougie read the document but found no schedule of items in it' }, 422)
+    if (items.length === 0) return json({ error: 'Benny read the document but found no schedule of items in it' }, 422)
 
     // ── Catalog candidates: the tenant's own price book, narrowed per item by word overlap.
     const catRes = await fetch(`${SUPABASE_URL}/rest/v1/products_services?select=*&company_id=eq.${companyId}&limit=4000`, { headers: svc })
@@ -132,7 +132,7 @@ Rules: keep the buyer's item numbers and order exactly. quantity is a number (us
     const candText = candidates.map((p) => `#${p.id} | ${p.name}${p.manufacturer ? ` | ${p.manufacturer}` : ''}${p.model_number ? ` ${p.model_number}` : ''}${p.product_category ? ` | ${p.product_category}` : ''} | $${priceOf(p).toFixed(2)}${p.description ? ` | ${String(p.description).slice(0, 140)}` : ''}`).join('\n')
 
     // ── PASS 2: match.
-    const matchPrompt = `You are Dougie, pricing a bid for a contractor. For each of the buyer's items, decide how the contractor's own catalog covers it. Return ONLY a JSON object:
+    const matchPrompt = `You are Benny, pricing a bid for a contractor. For each of the buyer's items, decide how the contractor's own catalog covers it. Return ONLY a JSON object:
 
 { "matches": [ { "item_no": "...", "match_kind": "exact" | "equivalent" | "must_source", "item_id": 123 or null, "justification": "one or two sentences", "estimated_unit_price": 0.00, "price_basis": "what the estimate is based on" } ] }
 
@@ -156,8 +156,8 @@ ${candText || '(none)'}`
     const catById = new Map<number, any>(candidates.map((p) => [Number(p.id), p]))
 
     // ── PASS 3: source on the web what the catalog cannot.
-    // Bryce, 2026-09-25: "add web browsing to Dougie". A must-source line
-    // used to carry Dougie's market estimate; now he searches for it and
+    // Bryce, 2026-09-25: "add web browsing to Benny". A must-source line
+    // used to carry Benny's market estimate; now he searches for it and
     // brings back the page he read the price on. It still lands redlined —
     // the rule is that a HUMAN ticks verified against a link — but the link
     // is already on the line, so verifying is reading it and clicking.
@@ -167,7 +167,7 @@ ${candText || '(none)'}`
     const found = new Map<string, { unit_price: number; source_url: string; source_title: string; note: string }>()
     let webSearches = 0
     if (mustSource.length) {
-      const searchPrompt = `You are Dougie, pricing bid items a contractor's catalog does not carry. Use web search to find a CURRENT purchasable unit price for each item below from a real supplier or distributor page (Grainger, Graybar, Platt, HD Supply, Home Depot Pro, a manufacturer's store, or similar). Prefer a product that meets the spec; say what differs if it does not. For labor, commissioning or service items, search for typical regional trade rates and cite the page you used.
+      const searchPrompt = `You are Benny, pricing bid items a contractor's catalog does not carry. Use web search to find a CURRENT purchasable unit price for each item below from a real supplier or distributor page (Grainger, Graybar, Platt, HD Supply, Home Depot Pro, a manufacturer's store, or similar). Prefer a product that meets the spec; say what differs if it does not. For labor, commissioning or service items, search for typical regional trade rates and cite the page you used.
 
 Return ONLY a JSON object:
 { "prices": [ { "item_no": "...", "unit_price": 0.00, "source_url": "https://...", "source_title": "page title", "product": "what the page sells", "note": "how it compares to the spec and what the price includes" } ] }
@@ -183,7 +183,7 @@ ${mustSource.map((it) => `- item_no ${it.item_no || '?'} qty ${it.quantity} ${it
         for (let hop = 0; hop < 3; hop++) {
           let r = await callAnthropic(meta, { model: READ_MODEL, max_tokens: 8192, messages, tools })
           if (!r.ok && r.status === 404) r = await callAnthropic(meta, { model: FALLBACK_MODEL, max_tokens: 8192, messages, tools })
-          if (!r.ok) { console.warn('[dougie] web pricing unavailable:', r.friendly); break }
+          if (!r.ok) { console.warn('[benny] web pricing unavailable:', r.friendly); break }
           webSearches += (r.data?.usage?.server_tool_use?.web_search_requests as number) || 0
           text = textOf(r)
           // A long search can pause mid-turn; hand the transcript back and let it finish.
@@ -204,7 +204,7 @@ ${mustSource.map((it) => `- item_no ${it.item_no || '?'} qty ${it.quantity} ${it
       } catch (e) {
         // A failed search is not a reason to lose the bid: the line falls back
         // to the estimate from the match pass, still redlined.
-        console.warn('[dougie] web pricing failed:', (e as Error)?.message)
+        console.warn('[benny] web pricing failed:', (e as Error)?.message)
       }
     }
 
@@ -223,7 +223,7 @@ ${mustSource.map((it) => `- item_no ${it.item_no || '?'} qty ${it.quantity} ${it
           bid_item_no: it.item_no || null, bid_spec: it.spec || it.description || null,
         }
       }
-      // A price Dougie read on a supplier page beats his estimate; either way
+      // A price Benny read on a supplier page beats his estimate; either way
       // the line is ai_sourced and unverified until a person checks the link.
       const web = found.get(String(it.item_no))
       const est = web ? web.unit_price : Math.max(0, Number(m.estimated_unit_price) || 0)
@@ -234,7 +234,7 @@ ${mustSource.map((it) => `- item_no ${it.item_no || '?'} qty ${it.quantity} ${it
         source_url: web?.source_url || null,
         source_note: web
           ? `Found on the web${web.source_title ? ` — ${web.source_title}` : ''}${web.note ? `: ${web.note}` : ''}`
-          : (m.price_basis || m.justification || 'Dougie\'s market estimate — verify before sending'),
+          : (m.price_basis || m.justification || 'Benny\'s market estimate — verify before sending'),
         match_kind: 'must_source', match_note: m.justification || null,
         bid_item_no: it.item_no || null, bid_spec: it.spec || it.description || null,
       }
@@ -263,8 +263,8 @@ ${mustSource.map((it) => `- item_no ${it.item_no || '?'} qty ${it.quantity} ${it
       const q = (await qRes.json())?.[0]
       if (!q) return json({ error: 'That estimate is not in this company' }, 404)
       const lRes = await fetch(`${SUPABASE_URL}/rest/v1/quote_lines?select=id&quote_id=eq.${quoteId}&limit=1`, { headers: svc })
-      if (((await lRes.json()) || []).length) return json({ error: 'That estimate already has line items. Dougie only fills an empty one — make a new bid instead.' }, 409)
-      const intake: EstimateIntake = { source: 'dougie-bid', company_id: companyId, lines }
+      if (((await lRes.json()) || []).length) return json({ error: 'That estimate already has line items. Benny only fills an empty one — make a new bid instead.' }, 409)
+      const intake: EstimateIntake = { source: 'benny-bid', company_id: companyId, lines }
       const rows = intakeLineRows(intake, quoteId)
       const ins = await fetch(`${SUPABASE_URL}/rest/v1/quote_lines`, { method: 'POST', headers: { ...svc, Prefer: 'return=representation' }, body: JSON.stringify(rows) })
       const made = ins.ok ? await ins.json() : null
@@ -277,7 +277,7 @@ ${mustSource.map((it) => `- item_no ${it.item_no || '?'} qty ${it.quantity} ${it
       })
     } else {
       const intake: EstimateIntake = {
-        source: 'dougie-bid', company_id: companyId,
+        source: 'benny-bid', company_id: companyId,
         lead_id: body.lead_id ? Number(body.lead_id) : null, customer_id: body.customer_id ? Number(body.customer_id) : null,
         salesperson_id: body.salesperson_id ? Number(body.salesperson_id) : emp.id,
         business_unit: body.business_unit || null, service_type: body.service_type || null,
@@ -306,7 +306,7 @@ ${mustSource.map((it) => `- item_no ${it.item_no || '?'} qty ${it.quantity} ${it
       web_priced: found.size, web_searches: webSearches,
       read: { title: bidIntake.title, bid_number: bidIntake.bid_number, buyer: bidIntake.buyer, due_at: bidIntake.due_at, sections: bidIntake.sections.length } })
   } catch (err) {
-    console.error('[dougie-bid-intake]', err)
-    return json({ error: (err as Error)?.message || 'Dougie hit an error' }, 500)
+    console.error('[benny-bid-intake]', err)
+    return json({ error: (err as Error)?.message || 'Benny hit an error' }, 500)
   }
 })

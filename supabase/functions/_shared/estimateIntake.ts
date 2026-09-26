@@ -48,7 +48,7 @@ export interface IntakeLine {
   /** The field tech's words and photos. First-class, not an afterthought. */
   notes?: string | null
   photos?: unknown[] | null
-  // Where the price came from (Dougie's bid intake). All optional; a
+  // Where the price came from (Benny's bid intake). All optional; a
   // producer that does not source prices leaves them null and nothing
   // changes for it. See _shared/sourcedPricing.ts for what they mean.
   price_source?: 'catalog' | 'manual' | 'ai_sourced' | null

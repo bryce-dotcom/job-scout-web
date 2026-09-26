@@ -1,77 +1,72 @@
 // Knowledge Card — Dougie The Document Reader
-// Bid packages → priced bids (2026-09-25), and Lenard's handwritten takeoff
-// forms. Says only what is built; the previous card described a universal
-// document reader with Gemini Vision and doc-type schemas that never existed.
+// Lenard's handwritten-takeoff reader, with a per-company corrections loop.
+// Bryce, 2026-09-26: Dougie lives inside Lenard and stays there; bid
+// packages are Benny's job (benny.js). This card says only what Dougie does.
 
 export default {
   id: 'dougie',
   title: 'Dougie The Document Reader',
-  category: 'Sales',
+  category: 'Operations',
   icon: 'FileSearch',
-  route: '/agents/dougie',
+  route: '/lighting-audits',
 
   summary:
-    "AI document reader. Drop in the buyer's bid package and Dougie reads the schedule of items, matches each to your catalog (exact, an equivalent with his reasoning, or flagged to source), prices it, and builds the bid in the buyer's format. Anything he had to source lands redlined until someone verifies it with a link. He also reads handwritten lighting takeoff forms for Lenard.",
+    "Lenard's document reader. Photograph a handwritten lighting takeoff form and Dougie transcribes it, structures it into areas and fixture lines matched to the price book, and learns your corrections so the next form reads better.",
 
-  replaces: ['retyping a bid schedule by hand', 'guessing which catalog item the spec means', 'manual data entry from takeoff forms'],
+  replaces: ['retyping takeoff forms', 'manual data entry from field sheets'],
   highlights: [
-    'Bid package → priced bid',
-    'Exact / equivalent / must-source match',
-    'Sourced prices redlined until verified',
-    'Bid schedule in the buyer\'s format',
+    'Handwritten takeoff form → structured audit',
+    'Two-pass read: transcribe, then structure against the images',
+    'Per-company correction loop',
+    'Photo or PDF page in',
   ],
 
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'upload',   baseDur: 4500, narration: 'Drop the invitation to bid into Dougie. Fourteen pages, a schedule of nine items, a due date on page two.' },
-      { id: 'extract',  baseDur: 6500, narration: 'Dougie reads it. Item numbers, quantities, units, the spec text for every line — and the buyer\'s own sections, base bid and alternates.' },
-      { id: 'correct',  baseDur: 6500, narration: 'He matches each item to your catalog: seven exact, one equivalent with his reasoning written on the line, one he had to source — redlined.' },
-      { id: 'learn',    baseDur: 6500, narration: 'You paste the distributor link and mark it verified. The redline clears. Until then the bid cannot be sent — a bid binds you to its numbers.' },
-      { id: 'use',      baseDur: 6000, narration: 'Send the bid: their format, their item numbers, a PDF for their portal and a page for their inbox.' },
+      { id: 'upload',   baseDur: 4500, narration: 'Photograph the takeoff sheet from the site walk. Handwriting, arrows, a coffee ring.' },
+      { id: 'extract',  baseDur: 6500, narration: 'Dougie transcribes it, then structures it: areas, fixture types, counts, heights, controls — matched to your price book.' },
+      { id: 'correct',  baseDur: 6500, narration: 'He read a 4 as a 9 in the warehouse. You fix it. Dougie records the correction.' },
+      { id: 'learn',    baseDur: 6500, narration: 'Next sheet from the same crew — Dougie applies what he learned. He gets sharper every week.' },
+      { id: 'use',      baseDur: 6000, narration: 'The audit is built. Lenard prices it, the estimate follows.' },
     ],
   },
 
   setup: {
     overview:
-      "Recruit Dougie under Settings → AI Agents and he appears under Estimates. Drop a bid package on his page (or on an empty bid) and the bid builds itself. Verify anything he sourced before it goes out.",
+      "Dougie ships inside Lenard. On a lighting audit, choose the takeoff photos and let him read them; correct anything off and he remembers it for your company.",
     introBaseDur: 1200,
-    introNarration: "Drop the bid package in. Verify what he sourced. Send.",
+    introNarration: "Photograph the form. Correct what is off. He gets sharper.",
     steps: [
-      { icon: 'Bot', title: 'Recruit Dougie', body: 'Settings → AI Agents → Dougie → Recruit. He shows up under Estimates in the sidebar.', narration: 'Recruit Dougie in Settings, AI Agents.', baseDur: 4500 },
-      { icon: 'FileUp', title: 'Drop in the bid package', body: 'On Dougie\'s page, pick the lead or customer and choose the PDF (or a photo of the bid form). Or open an empty bid and use the card there.', narration: 'Pick who it is for and choose the package.', baseDur: 5000 },
-      { icon: 'Eye', title: 'Review the match', body: 'Each line says how it was matched. Exact and equivalent lines carry the catalog price; must-source lines carry Dougie\'s estimate, redlined.', narration: 'Review how each item was matched.', baseDur: 5000 },
-      { icon: 'ShieldCheck', title: 'Verify what he sourced', body: 'Paste the source link on the line and mark it verified. A bid with an unverified sourced price cannot be sent; an estimate or proposal warns.', narration: 'Verify each sourced price with a link.', baseDur: 5500 },
+      { icon: 'Camera', title: 'Photograph the takeoff form', body: 'On a Lenard audit (RMP or SRP), add the photos of the handwritten takeoff sheet — up to five pages.', narration: 'Add the photos of the takeoff sheet.', baseDur: 4500 },
+      { icon: 'Eye', title: 'Review what he read', body: 'Dougie returns the header and every area with its fixture lines. Check counts and fixture types against the sheet.', narration: 'Review the areas and counts.', baseDur: 5000 },
+      { icon: 'GraduationCap', title: 'Correct + train', body: 'Fix anything off. Corrections post to dougie_corrections and are replayed as examples on the next read for your company.', narration: 'Correct what is off. Dougie remembers per company.', baseDur: 5500 },
     ],
   },
 
   agentKnowledge: {
     whatItIs:
-      "Dougie reads documents into JobScout. Two jobs today: (1) bid packages — an invitation to bid, RFQ or bid form → a priced bid in the buyer's format, through the estimate-intake contract; (2) Lenard's handwritten lighting takeoff forms (dougie-analyze, called from the Lenard audit pages) with a per-company corrections loop.",
+      "Dougie reads handwritten lighting takeoff forms for Lenard (dougie-analyze), called from the Lenard audit pages (LenardUTRMP, LenardAZSRP). He is not a general document reader and he does not do bids — that is Benny (benny-bid-intake).",
 
     howItWorks:
-      "dougie-bid-intake Edge Function (Claude through _shared/anthropic.ts, metered). The browser uploads the package to the project-documents bucket; the function reads it in two passes: READ (buyer's format + schedule of items as JSON) and MATCH (each item against the tenant's own catalog candidates → exact | equivalent | must_source with justification). Matched lines take the CATALOG price; must-source lines take Dougie's market estimate as sourced_price with price_source='ai_sourced' and no price_verified_at — redlined. Writes go through _shared/estimateIntakeRest (header + lines or nothing). quotes.bid_intake holds the buyer's format; presentation_mode 'bid' renders lib/bidSchedule on the portal and lib/bidPdf for the buyer's portal. send-estimate refuses a bid with an unverified sourced price (409) and asks on an estimate/proposal (_shared/sourcedPricing.ts; lib/sourcedPricing.js is the browser twin).",
+      "dougie-analyze Edge Function: up to 5 page images → PASS 1 raw transcription (Claude through _shared/anthropic.ts) → PASS 2 structuring into { header, areas[] } with the images alongside so handwriting can be cross-checked. Recent rows from dougie_corrections (per company) are replayed as few-shot examples. Returns header, areas and the raw transcription.",
 
     examples: [
-      'ITB 2026-114 PDF (14 pages) → Dougie: 9 items in Base Bid + Alternate 1, due Oct 14 2:00 PM, 7 exact catalog matches, 1 equivalent ("DLC-listed 150W high bay, different brand, same lumen output"), 1 must-source (pole base) at $412 estimated — redlined',
-      'Verify: paste https://distributor.example/pole-base-24 on the line → Mark verified → redline clears → Send Bid enabled',
-      'Handwritten takeoff photo → Dougie (via Lenard): 4 areas, 240 fixtures, types matched to the price book',
+      'Takeoff photo → Dougie: header (customer, site), 4 areas, 240 fixtures, T12/T8/HID types with heights and controls, matched to the price book',
+      'Correction: warehouse count 49 → 4 fixed by the user → replayed as an example on the next read',
     ],
 
     gotchas: [
-      "A must-source price comes from a web search (server-side web_search tool, up to 3 searches per item): Dougie brings back the supplier page he read it on and puts the link on the line. It is STILL redlined until a person opens that page and ticks verified — the rule is a human stands behind every sourced number. If the search finds nothing reliable, the line falls back to his market estimate with no link.",
-      "He only fills an EMPTY estimate (mode 'fill'); a draft with lines already on it refuses, so nothing gets doubled. Make a new bid instead.",
-      "Exact/equivalent lines take the catalog price even when the catalog price is 0 — a 0 there means the price book needs the number, not Dougie.",
-      "The bid presentation mode is offered only when the document is a bid or the company produces bids (settings.document_types).",
-      "Not built: reading bid packages that arrive as Excel/Word (PDF or images only); auto-submitting to a buyer's portal; the old 'universal document reader' with doc-type schemas.",
+      "Image input only (JPEG/PNG page photos); a PDF has to be rasterised by the caller first.",
+      "Corrections are keyed per company (LENARD_COMPANY_ID in the function today), so they help HHH; other tenants get no replayed examples yet.",
+      "Not built: utility bills, receipts, W-9s, insurance certs, rebate forms, doc-type schemas, confidence scores — an earlier card claimed these; none exist.",
     ],
 
     actions: {
-      open: { route: '/agents/dougie', label: 'Open Dougie' },
-      estimates: { route: '/estimates', label: 'Bids and estimates' },
+      open: { route: '/lighting-audits', label: 'Lighting audits' },
     },
   },
 
-  lastVerified: '2026-09-25',
+  lastVerified: '2026-09-26',
   freshUntil: 90,
 }

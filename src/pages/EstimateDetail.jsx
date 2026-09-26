@@ -24,7 +24,7 @@ import { generateEstimatePdf, showsSavingsOnPdf } from '../lib/estimatePdf'
 import { DOCUMENT_TYPES, configFromSettings, labelsFor, documentType, documentWord } from '../lib/documentVocabulary'
 import { sendGate, sendGateMessage, priceBadge, matchBadge, canVerify, verifiedPatch, unverifiedPatch, unverifiedSourcedLines } from '../lib/sourcedPricing'
 import { generateBidPdf, bidPdfBlob } from '../lib/bidPdf'
-import BidIntakeCard from '../components/dougie/BidIntakeCard'
+import BidIntakeCard from '../components/benny/BidIntakeCard'
 import { toast } from '../lib/toast'
 import SignedProposalCard from '../components/SignedProposalCard'
 import EmailDeliveryBadge from '../components/EmailDeliveryBadge'
@@ -3552,7 +3552,7 @@ function EstimateDetailInner() {
                             </span>
                           )}
                         </div>
-                        {/* Dougie's pricing, under the name so it never crowds
+                        {/* Benny's pricing, under the name so it never crowds
                             the quantity box: redlined until verified, and how
                             the line was matched. */}
                         {(() => {
@@ -3772,14 +3772,14 @@ function EstimateDetailInner() {
                               }}
                             />
                           </div>
-                          {/* Dougie's pricing: how the line was matched, and the
+                          {/* Benny's pricing: how the line was matched, and the
                               verification a sourced price needs before a bid can go. */}
                           {(line.price_source === 'ai_sourced' || line.match_kind) && (() => {
                             const redlined = line.price_source === 'ai_sourced' && !line.price_verified_at
                             return (
                               <div style={{ marginBottom: '10px', padding: '10px', borderRadius: '8px', border: `1px solid ${redlined ? '#ef4444' : theme.border}`, backgroundColor: redlined ? 'rgba(239,68,68,0.05)' : 'transparent' }}>
                                 <label style={{ fontSize: '11px', fontWeight: '600', color: redlined ? '#b91c1c' : theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px', display: 'block' }}>
-                                  {redlined ? 'AI-sourced price — unverified' : line.price_source === 'ai_sourced' ? 'Sourced price — verified' : "Dougie's match"}
+                                  {redlined ? 'AI-sourced price — unverified' : line.price_source === 'ai_sourced' ? 'Sourced price — verified' : "Benny's match"}
                                 </label>
                                 {line.match_note && (
                                   <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '6px', lineHeight: 1.45 }}>
@@ -3797,11 +3797,11 @@ function EstimateDetailInner() {
                                       </div>
                                     ) : (
                                       <>
-                                      {/* Dougie found this price on the web: the link is already on the
+                                      {/* Benny found this price on the web: the link is already on the
                                           line, so verifying is reading that page and clicking. */}
                                       {line.source_url && (
                                         <div style={{ fontSize: '12px', marginBottom: '6px' }}>
-                                          <a href={line.source_url} target="_blank" rel="noreferrer" style={{ color: theme.accent, fontWeight: 600 }}>Open the page Dougie found ↗</a>
+                                          <a href={line.source_url} target="_blank" rel="noreferrer" style={{ color: theme.accent, fontWeight: 600 }}>Open the page Benny found ↗</a>
                                           <span style={{ color: theme.textMuted }}> — if the price and item hold up, mark it verified.</span>
                                         </div>
                                       )}

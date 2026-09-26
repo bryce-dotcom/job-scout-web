@@ -1,7 +1,7 @@
 // Sourced prices and the send gate — the SERVER half.
 //
 // A quote line's price is either from the catalog, typed by a person, or
-// estimated by Dougie from market knowledge ("ai_sourced"). An AI-sourced
+// estimated by Benny from market knowledge ("ai_sourced"). An AI-sourced
 // price is redlined until a human sets price_verified_at against a source
 // link. Bryce's rule (2026-09-25): a bid is a document you are bound by, so
 // an unverified sourced price BLOCKS the send; an estimate or proposal WARNS
@@ -47,7 +47,7 @@ export function sendGateMessage(gate: SendGate, unverified: PricedLine[], docume
   if (gate === 'block') {
     return `This bid has ${n} AI-sourced price${n === 1 ? '' : 's'} nobody has verified (${names}). A bid binds you to its numbers — verify each one with a source link before it goes out.`
   }
-  return `${n} price${n === 1 ? '' : 's'} on this ${documentWord.toLowerCase()} came from Dougie and ${n === 1 ? 'has' : 'have'} not been verified (${names}). Send anyway?`
+  return `${n} price${n === 1 ? '' : 's'} on this ${documentWord.toLowerCase()} came from Benny and ${n === 1 ? 'has' : 'have'} not been verified (${names}). Send anyway?`
 }
 
 /**

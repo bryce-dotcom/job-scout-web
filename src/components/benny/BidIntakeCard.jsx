@@ -4,11 +4,11 @@ import { supabase } from '../../lib/supabase'
 import { useStore } from '../../lib/store'
 import { toast } from '../../lib/toast'
 
-// Dougie reads the buyer's bid package and builds the bid.
+// Benny reads the buyer's bid package and builds the bid.
 //
-// One card, two homes: Dougie's own page (mode 'create' — pick who it is
+// One card, two homes: Benny's own page (mode 'create' — pick who it is
 // for, drop the package, get a bid) and an empty draft on the estimate page
-// (mode 'fill' — the bid already exists, Dougie fills its lines). The upload
+// (mode 'fill' — the bid already exists, Benny fills its lines). The upload
 // goes straight to storage from the browser; the edge function reads it from
 // there, so a 20-page PDF never rides inside a JSON body.
 
@@ -43,7 +43,7 @@ export default function BidIntakeCard({ theme, mode = 'create', quote = null, on
       const { data: sess } = await supabase.auth.getSession()
       const token = sess?.session?.access_token
       const [kind, id] = who.split(':')
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/dougie-bid-intake`, {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/benny-bid-intake`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ANON_KEY}`, apikey: ANON_KEY },
         body: JSON.stringify({
@@ -54,10 +54,10 @@ export default function BidIntakeCard({ theme, mode = 'create', quote = null, on
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok || !data.ok) throw new Error(data.error || `Dougie could not build the bid (${res.status})`)
+      if (!res.ok || !data.ok) throw new Error(data.error || `Benny could not build the bid (${res.status})`)
       setResult(data); setStage('done')
       await fetchQuotes?.()
-      toast.success(`Dougie built the bid: ${data.lines} items, ${data.unverified} to verify`)
+      toast.success(`Benny built the bid: ${data.lines} items, ${data.unverified} to verify`)
       onDone?.(data.quote_id, data)
     } catch (e) {
       setError(e.message); setStage('error')
@@ -75,9 +75,9 @@ export default function BidIntakeCard({ theme, mode = 'create', quote = null, on
           <FileSearch size={18} style={{ color: '#a855f7' }} />
         </div>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: '15px', fontWeight: 700, color: theme.text }}>{mode === 'fill' ? 'Let Dougie build this bid from the buyer\'s package' : 'Dougie reads the bid package'}</div>
+          <div style={{ fontSize: '15px', fontWeight: 700, color: theme.text }}>{mode === 'fill' ? 'Let Benny build this bid from the buyer\'s package' : 'Benny reads the bid package'}</div>
           <div style={{ fontSize: '12px', color: theme.textMuted, lineHeight: 1.4 }}>
-            Drop in the invitation to bid. Dougie reads the schedule of items, matches each to your catalog — exact, an equivalent with his reasoning, or flagged to source — prices it, and builds the bid in the buyer's format. Anything your catalog does not carry he prices from the web and puts the supplier page on the line — still redlined until you open that page and mark it verified.
+            Drop in the invitation to bid. Benny reads the schedule of items, matches each to your catalog — exact, an equivalent with his reasoning, or flagged to source — prices it, and builds the bid in the buyer's format. Anything your catalog does not carry he prices from the web and puts the supplier page on the line — still redlined until you open that page and mark it verified.
           </div>
         </div>
       </div>
@@ -99,7 +99,7 @@ export default function BidIntakeCard({ theme, mode = 'create', quote = null, on
         </label>
 
         <button onClick={run} disabled={busy || !file} style={{ padding: '11px 16px', minHeight: '44px', borderRadius: '8px', border: 'none', backgroundColor: '#a855f7', color: '#fff', fontSize: '14px', fontWeight: 600, cursor: busy || !file ? 'not-allowed' : 'pointer', opacity: busy || !file ? 0.6 : 1 }}>
-          {stage === 'uploading' ? 'Uploading…' : stage === 'reading' ? 'Dougie is reading, matching and searching the web for prices… (a minute or two)' : 'Build the bid'}
+          {stage === 'uploading' ? 'Uploading…' : stage === 'reading' ? 'Benny is reading, matching and searching the web for prices… (a minute or two)' : 'Build the bid'}
         </button>
 
         {stage === 'done' && result && (

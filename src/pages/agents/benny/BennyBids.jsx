@@ -5,14 +5,14 @@ import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { supabase } from '../../../lib/supabase'
-import BidIntakeCard from '../../../components/dougie/BidIntakeCard'
+import BidIntakeCard from '../../../components/benny/BidIntakeCard'
 import { bidIntakeOf, fmtMoney } from '../../../lib/bidSchedule'
 
 const defaultTheme = { bg: '#f7f5ef', bgCard: '#fff', border: '#d6cdb8', text: '#2c3530', textSecondary: '#4d5a52', textMuted: '#7d8a7f', accent: '#5a6349', accentBg: 'rgba(90,99,73,.12)' }
 
-// Dougie's desk: drop a bid package here, and every bid he has built so far
+// Benny's desk: drop a bid package here, and every bid he has built so far
 // with how much of it still needs a human's eyes.
-export default function DougieBids() {
+export default function BennyBids() {
   const navigate = useNavigate()
   const companyId = useStore((s) => s.companyId)
   const themeCtx = useTheme()
@@ -53,7 +53,7 @@ export default function DougieBids() {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '24px 0 10px' }}>
         <ClipboardList size={18} style={{ color: theme.accent }} />
-        <h3 style={{ fontSize: '15px', fontWeight: 700, color: theme.text, margin: 0 }}>Bids Dougie has built</h3>
+        <h3 style={{ fontSize: '15px', fontWeight: 700, color: theme.text, margin: 0 }}>Bids Benny has built</h3>
       </div>
 
       {loading ? (
@@ -95,7 +95,7 @@ export default function DougieBids() {
       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '24px', padding: '12px 14px', borderRadius: '10px', backgroundColor: theme.accentBg, fontSize: '12px', color: theme.textSecondary, lineHeight: 1.5 }}>
         <Lightbulb size={16} style={{ color: theme.accent, flexShrink: 0, marginTop: '1px' }} />
         <div>
-          Dougie also reads handwritten lighting takeoff forms — that lives inside Lenard's audit pages. A price he had to source is his market estimate, not a quote: it stays redlined, and the bid cannot be sent, until someone verifies it with a link on the bid's page.
+          A price Benny had to source comes from a supplier page he found on the web — the link is on the line. It stays redlined, and the bid cannot be sent, until someone opens that page and marks it verified. (Handwritten lighting takeoff forms are Dougie's job, inside Lenard's audit pages.)
         </div>
       </div>
     </div>

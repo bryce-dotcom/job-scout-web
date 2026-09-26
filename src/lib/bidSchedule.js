@@ -3,7 +3,7 @@
 // the PDF and the estimate preview, so a total on the screen can never
 // disagree with the total on the paper the procurement office receives.
 //
-// What Dougie read from the package lives in quotes.bid_intake; what we are
+// What Benny read from the package lives in quotes.bid_intake; what we are
 // bidding lives in quote_lines (bid_item_no / bid_spec carry the buyer's own
 // numbering and spec text). This file only arranges and adds.
 

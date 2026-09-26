@@ -1,9 +1,9 @@
-// Dougie demo: a realistic invitation-to-bid PDF run through dougie-bid-intake
+// Benny demo: a realistic invitation-to-bid PDF run through benny-bid-intake
 // in the DEMO tenant (company 25). Re-run any time to put a fresh bid on
-// Dougie's page for a sales demo (about a minute). Remove it afterwards with
-// the ids it prints. Live rehearsal of Dougie's bid intake in the DEMO tenant.
+// Benny's page for a sales demo (about a minute). Remove it afterwards with
+// the ids it prints. Live rehearsal of Benny's bid intake in the DEMO tenant.
 // 1. Make a realistic invitation-to-bid PDF.  2. Upload it the way the page
-// does.  3. Sign in as the demo owner and call dougie-bid-intake.  4. Print
+// does.  3. Sign in as the demo owner and call benny-bid-intake.  4. Print
 // what landed.  Cleanup is a separate script (tmp-bid-cleanup.mjs).
 import { jsPDF } from 'jspdf'
 import { createClient } from '@supabase/supabase-js'
@@ -69,7 +69,7 @@ const pdfBytes = Buffer.from(doc.output('arraybuffer'))
 fs.writeFileSync(OUT, pdfBytes)
 console.log('package written', OUT, pdfBytes.length, 'bytes,', doc.getNumberOfPages(), 'pages')
 
-// ── 2. Upload as the page would, 3. sign in as the demo owner, call Dougie
+// ── 2. Upload as the page would, 3. sign in as the demo owner, call Benny
 const sb = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_ANON_KEY)
 const { data: auth, error: aErr } = await sb.auth.signInWithPassword({ email: 'demo@jobscout.app', password: 'Demo1234!' })
 if (aErr) { console.error('demo sign-in failed:', aErr.message); process.exit(1) }
@@ -80,13 +80,13 @@ console.log('uploaded', path)
 const { data: lead } = await sb.from('leads').select('id, customer_name, business_name').eq('company_id', 25).order('id', { ascending: false }).limit(1).single()
 console.log('lead', lead)
 const t0 = Date.now()
-const res = await fetch(`${env.VITE_SUPABASE_URL}/functions/v1/dougie-bid-intake`, {
+const res = await fetch(`${env.VITE_SUPABASE_URL}/functions/v1/benny-bid-intake`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.session.access_token}`, apikey: env.VITE_SUPABASE_ANON_KEY },
   body: JSON.stringify({ company_id: 25, mode: 'create', storage_path: path, storage_bucket: 'project-documents', file_name: 'ITB_2026-114_LED_Retrofit.pdf', media_type: 'application/pdf', lead_id: lead.id }),
 })
 const out = await res.json().catch(() => ({}))
-console.log('dougie', res.status, `${Math.round((Date.now() - t0) / 1000)}s`, JSON.stringify(out, null, 1))
+console.log('benny', res.status, `${Math.round((Date.now() - t0) / 1000)}s`, JSON.stringify(out, null, 1))
 if (out.quote_id) {
   const { data: lines } = await sb.from('quote_lines').select('bid_item_no, item_name, quantity, unit_of_measure, price, price_source, match_kind, match_note, sourced_price, source_note').eq('quote_id', out.quote_id).order('sort_order')
   for (const l of lines || []) console.log(`  [${l.bid_item_no}] ${l.item_name} × ${l.quantity} ${l.unit_of_measure || ''} @ $${l.price} | ${l.price_source} | ${l.match_kind} | ${(l.match_note || '').slice(0, 110)}${l.source_note ? ' | basis: ' + l.source_note.slice(0, 80) : ''}`)

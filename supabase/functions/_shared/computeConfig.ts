@@ -40,6 +40,7 @@ const FEATURE_AGENTS: Record<string, string> = {
   'prospect-research': 'lead-setter',
   'cc-generate-email': 'conrad',
   'dougie-analyze': 'dougie',
+  'benny-bid-intake': 'benny',
   'victor-verify': 'victor',
   'arnie-chat': 'arnie',
   'arnie-suggest-addons': 'arnie',

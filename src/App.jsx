@@ -95,8 +95,8 @@ import DonTakeoffDetail from './pages/agents/don/DonTakeoffDetail'
 import DonGroundTruth from './pages/agents/don/DonGroundTruth'
 import DonPriceBook from './pages/agents/don/DonPriceBook'
 import DonSettings from './pages/agents/don/DonSettings'
-import DougieWorkspace from './pages/agents/dougie/DougieWorkspace'
-import DougieBids from './pages/agents/dougie/DougieBids'
+import BennyWorkspace from './pages/agents/benny/BennyWorkspace'
+import BennyBids from './pages/agents/benny/BennyBids'
 import ConradWorkspace from './pages/agents/conrad/ConradWorkspace'
 import ConradDashboard from './pages/agents/conrad/ConradDashboard'
 import ConradCampaigns from './pages/agents/conrad/ConradCampaigns'
@@ -502,9 +502,9 @@ function App() {
           </Route>
 
           {/* Don Workspace (Excavation) */}
-          {/* Dougie Workspace (Document Reader — bid packages) */}
-          <Route path="/agents/dougie" element={<DougieWorkspace />}>
-            <Route index element={<DougieBids />} />
+          {/* Benny Workspace (Bid Builder) */}
+          <Route path="/agents/benny" element={<BennyWorkspace />}>
+            <Route index element={<BennyBids />} />
           </Route>
 
           <Route path="/agents/don" element={<DonWorkspace />}>
