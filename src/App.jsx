@@ -98,8 +98,10 @@ import DonSettings from './pages/agents/don/DonSettings'
 import BennyWorkspace from './pages/agents/benny/BennyWorkspace'
 import BennyBids from './pages/agents/benny/BennyBids'
 import SalWorkspace from './pages/agents/sal/SalWorkspace'
+import SalBoard from './pages/agents/sal/SalBoard'
 import SalInbox from './pages/agents/sal/SalInbox'
 import SalSources from './pages/agents/sal/SalSources'
+import SalProfile from './pages/agents/sal/SalProfile'
 import ConradWorkspace from './pages/agents/conrad/ConradWorkspace'
 import ConradDashboard from './pages/agents/conrad/ConradDashboard'
 import ConradCampaigns from './pages/agents/conrad/ConradCampaigns'
@@ -511,8 +513,10 @@ function App() {
           </Route>
           {/* Sal Workspace (Solicitation Scout — finds bids, hands them to Benny) */}
           <Route path="/agents/sal" element={<SalWorkspace />}>
-            <Route index element={<SalInbox />} />
+            <Route index element={<SalBoard />} />
+            <Route path="inbox" element={<SalInbox />} />
             <Route path="sources" element={<SalSources />} />
+            <Route path="profile" element={<SalProfile />} />
           </Route>
 
           <Route path="/agents/don" element={<DonWorkspace />}>
