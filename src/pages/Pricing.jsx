@@ -179,7 +179,7 @@ const CSS = `
   .pr{--paper:#f4efe3;--paper2:#ece3d1;--card:#fffdf7;--ink:#191d15;--sub:#4f5a4a;--muted:#848a79;--line:#d9cfb6;--line2:#cabf9f;
     --grn:#54613a;--grnDk:#3a4526;--grnBg:rgba(84,97,58,0.10);--viz:#f26a12;--vizDk:#c9530a;--vizBg:rgba(242,106,18,0.12);
     --night:#161b12;--nightGrn:#212819;--sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    background:var(--paper) url(/topo-body.svg) center/200px repeat fixed;color:var(--ink);font-family:var(--sans);line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased}
+    background:linear-gradient(rgba(244,239,227,.62),rgba(244,239,227,.62)),url(/topo-bg.png) center/cover no-repeat fixed;color:var(--ink);font-family:var(--sans);line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased}
   .pr *{box-sizing:border-box}
   .pr a{color:inherit;text-decoration:none}
   .pr .wrap{max-width:1140px;margin:0 auto;padding:0 20px}
@@ -201,8 +201,7 @@ const CSS = `
   .pr .eb.on-dark{color:#ffb27a;background:rgba(242,106,18,.16)}
   .pr h1,.pr h2,.pr h3{margin:0;letter-spacing:-.03em;text-wrap:balance}
   .pr .kicker{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}
-  .pr .hero{background:var(--night);color:#f4efe3;border-radius:0 0 30px 30px;overflow:hidden;position:relative;isolation:isolate}
-  .pr .hero::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:url(/topo-hero.svg) center/200px repeat;opacity:1;-webkit-mask-image:radial-gradient(135% 112% at 30% 42%,transparent 1%,#000 74%);mask-image:radial-gradient(135% 112% at 30% 42%,transparent 1%,#000 74%)}
+  .pr .hero{background:linear-gradient(rgba(20,25,16,.88),rgba(20,25,16,.9)),url(/topo-bg.png) center/cover no-repeat fixed;color:#f4efe3;border-radius:0 0 30px 30px;overflow:hidden;position:relative;isolation:isolate}
   .pr .hero::after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:radial-gradient(120% 80% at 100% 0%,rgba(242,106,18,.17),transparent 55%)}
   .pr .hero .wrap{padding:44px 20px 40px;position:relative;z-index:1}
   .pr .hero h1{font-size:clamp(37px,9.6vw,72px);font-weight:870;line-height:1.02;margin:20px 0 0}
