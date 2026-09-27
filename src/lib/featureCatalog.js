@@ -31,9 +31,9 @@ export const FEATURE_CATALOG = [
       {
         name: 'Sal — Solicitation Scout',
         icon: 'Radar',
-        summary: "Point every procurement portal's alerts at Sal's address and the bids come to you: Bonfire, the Arizona Procurement Portal, OpenGov, BidNet, DemandStar, PlanHub, GC invitations, plus SAM.gov for federal work. Every alert lands on his inbox with its attachments kept. Scoring, the board, and the hand-off to Benny are being built on top.",
-        replaces: ['checking six portals every morning', 'a mailbox of bid alerts nobody reads'],
-        highlights: ['One address for every portal', 'Alerts and attachments kept', 'Never scrapes a portal', 'Hands chosen bids to Benny'],
+        summary: "Point every procurement portal's alerts at Sal's address and the bids come to you: Bonfire, the Arizona Procurement Portal, OpenGov, BidNet, DemandStar, PlanHub, GC invitations, plus SAM.gov each morning and any RSS notice feed. Sal reads each one, scores it against your profile, and puts it on the Board. Choose one and he makes the lead, puts the deadlines on the calendar, and drops the package on Benny to build the bid.",
+        replaces: ['checking six portals every morning', 'a mailbox of bid alerts nobody reads', 'the spreadsheet of due dates'],
+        highlights: ['One address for every portal + SAM.gov + RSS', 'Scored against your profile', 'Choose → lead, deadlines, Benny', 'Never scrapes a portal'],
         route: '/agents/sal',
         walkthrough: null,
       },
