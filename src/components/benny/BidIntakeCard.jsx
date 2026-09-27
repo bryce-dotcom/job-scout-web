@@ -56,6 +56,12 @@ export default function BidIntakeCard({ theme, mode = 'create', quote = null, on
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) throw new Error(data.error || `Benny could not build the bid (${res.status})`)
       setResult(data); setStage('done')
+      if (data.accepted && !data.quote_id) {
+        // A set of drawings: Benny is taking it off in stages and the bid
+        // lands on the Bids list in a few minutes. Nothing to open yet.
+        toast.success(data.message || 'Benny is building the bid — it appears on your Bids list in a few minutes')
+        return
+      }
       await fetchQuotes?.()
       toast.success(`Benny built the bid: ${data.lines} items, ${data.unverified} to verify`)
       onDone?.(data.quote_id, data)

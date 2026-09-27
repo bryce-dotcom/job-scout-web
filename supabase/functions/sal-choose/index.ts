@@ -170,19 +170,33 @@ serve(async (req) => {
     }
     if (!leadId) return json({ error: 'Choose the opportunity before building' }, 409)
 
-    await sb.from('bid_opportunities').update({ status: 'building', updated_at: now }).eq('id', oppId)
-    const bRes = await fetch(`${SUPABASE_URL}/functions/v1/benny-bid-intake`, {
+    // Hand over and return. A bid form takes Benny a minute; a plan takeoff
+    // takes three or four, past the gateway's 150-second idle limit, so
+    // nobody waits on him. He reports back to the opportunity when done
+    // (opportunity_id → ready + quote_id, or chosen + build_error), and the
+    // board shows "Benny is building" until then.
+    await sb.from('bid_opportunities').update({ status: 'building', build_error: null, updated_at: now }).eq('id', oppId)
+    const handoff = fetch(`${SUPABASE_URL}/functions/v1/benny-bid-intake`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth, apikey: ANON_KEY },
-      body: JSON.stringify({ company_id: companyId, mode: 'create', storage_path: storagePath, storage_bucket: 'project-documents', file_name: fileName || 'package.pdf', media_type: mediaType, lead_id: leadId, salesperson_id: emp.id }),
+      body: JSON.stringify({ company_id: companyId, mode: 'create', storage_path: storagePath, storage_bucket: 'project-documents', file_name: fileName || 'package.pdf', media_type: mediaType, lead_id: leadId, salesperson_id: emp.id,
+        opportunity_id: oppId,
+        // What the buyer asked for, so a plan set with no bid form gets the right takeoff.
+        scope_hint: [opp.title, opp.summary].filter(Boolean).join(' — ').slice(0, 600) }),
+    }).then(async (r) => {
+      // Benny patches the row himself; this only catches a hand-off that never reached him.
+      if (!r.ok) {
+        const b = await r.json().catch(() => ({}))
+        if (r.status === 401 || r.status === 403 || r.status === 404 || r.status >= 500) {
+          await sb.from('bid_opportunities').update({ status: 'chosen', build_error: String(b.error || `Benny returned ${r.status}`).slice(0, 500), updated_at: new Date().toISOString() }).eq('id', oppId).eq('status', 'building')
+        }
+      }
+    }).catch(async (e) => {
+      await sb.from('bid_opportunities').update({ status: 'chosen', build_error: `Could not reach Benny: ${(e as Error)?.message}`.slice(0, 500), updated_at: new Date().toISOString() }).eq('id', oppId).eq('status', 'building')
     })
-    const b = await bRes.json().catch(() => ({}))
-    if (!bRes.ok || !b.ok) {
-      const msg = String(b.error || `Benny returned ${bRes.status}`)
-      await sb.from('bid_opportunities').update({ status: 'chosen', build_error: msg, updated_at: now }).eq('id', oppId)
-      return json({ ok: false, status: 'chosen', lead_id: leadId, error: `Benny could not build it: ${msg}`, benny: b }, 502)
-    }
-    await sb.from('bid_opportunities').update({ status: 'ready', quote_id: b.quote_id, build_error: null, updated_at: now }).eq('id', oppId)
-    return json({ ok: true, status: 'ready', lead_id: leadId, quote_id: b.quote_id, benny: { lines: b.lines, unverified: b.unverified, counts: b.counts } })
+    // deno-lint-ignore no-explicit-any
+    const rt = (globalThis as any).EdgeRuntime
+    if (rt?.waitUntil) rt.waitUntil(handoff)
+    return json({ ok: true, status: 'building', lead_id: leadId, message: 'Benny has the package. A bid form takes about a minute; a plan takeoff a few. The card turns "Bid ready" when he is done.' })
   } catch (err) {
     console.error('[sal-choose]', err)
     return json({ error: (err as Error)?.message || 'Sal hit an error' }, 500)

@@ -71,6 +71,9 @@ export default function SalBoard() {
   }
   useEffect(() => { load() }, [companyId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(t) }, [])
+  // While Benny is building, the row changes under us: poll until it settles.
+  const building = rows.some((r) => r.status === 'building')
+  useEffect(() => { if (!building) return; const t = setInterval(load, 15000); return () => clearInterval(t) }, [building]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const visible = useMemo(() => {
     const f = FILTERS.find((x) => x.key === filter) || FILTERS[0]
@@ -90,7 +93,8 @@ export default function SalBoard() {
     }
     if (!r.ok) { toast.error(r.data?.error || `Sal could not ${action} that (${r.status})`); if (r.data?.lead_id) await load(); return }
     if (action === 'choose' || action === 'build') {
-      if (r.data.status === 'ready') toast.success(`Benny built the bid: ${r.data.benny?.lines ?? '?'} lines, ${r.data.benny?.unverified ?? 0} to verify`)
+      if (r.data.status === 'building') toast.success('Benny has the package — the card turns "Bid ready" when he is done')
+      else if (r.data.status === 'ready') toast.success(`Benny built the bid: ${r.data.benny?.lines ?? '?'} lines, ${r.data.benny?.unverified ?? 0} to verify`)
       else toast.success(r.data.message || 'Chosen — lead and deadlines made')
     } else if (action === 'dismiss') toast.success('Dismissed')
     else if (action === 'shortlist') toast.success('Shortlisted')
@@ -258,6 +262,7 @@ export default function SalBoard() {
                           <input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" style={{ display: 'none' }} disabled={busy === r.id} onChange={(e) => uploadPackage(r, e.target.files?.[0])} />
                         </label>
                       )}
+                      {r.status === 'building' && <span style={{ fontSize: '13px', color: theme.accent, fontWeight: 600 }}>Benny is building the bid… (a plan takeoff takes a few minutes)</span>}
                       {r.status === 'chosen' && !r.quote_id && stored > 0 && <button disabled={busy === r.id} onClick={() => act(r, 'build')} style={btn('secondary')}><ClipboardList size={15} /> Send the stored package to Benny</button>}
                       {r.quote_id && <button onClick={() => navigate(`/estimates/${r.quote_id}`)} style={btn('primary')}><ClipboardList size={15} /> Open the bid Benny built</button>}
                       {r.lead_id && <button onClick={() => navigate(`/leads/${r.lead_id}`)} style={btn('secondary')}>Open the lead</button>}
