@@ -40,7 +40,8 @@ import { buildLeadIndex, primaryOwnerId } from './jobOwnership'
 import { wonJobsInRange, sumJobTotal } from './jobMetrics'
 
 export const UNATTRIBUTED = 'unattributed'
-const FIELD_APPOINTMENTS = new Set(['Block', 'Job', 'Recurring Job'])
+// 'Bid Deadline' is a date Sal put on the calendar, not a meeting anyone set.
+const FIELD_APPOINTMENTS = new Set(['Block', 'Job', 'Recurring Job', 'Bid Deadline'])
 const key = (v) => (v == null || v === '' ? null : String(v))
 
 // The rep credited for an appointment: the rep it was booked for, else the

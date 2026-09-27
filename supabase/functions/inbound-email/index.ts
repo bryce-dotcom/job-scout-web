@@ -288,6 +288,18 @@ serve(async (req) => {
         if (nErr) console.error('[inbound-email] could not raise bid-alert notification:', nErr.message);
       }
       console.log(`[inbound-email] bid alert from ${mail.from} filed on Sal's inbox for company ${bidsCompanyId} (${attachments.length} attachment(s))`);
+      // Read it now rather than at the next 10-minute sweep. Fire-and-forget:
+      // the webhook must answer Resend quickly, and the sweep (api/cron/
+      // sal-ingest) picks up anything this does not reach.
+      if (inboxId != null) {
+        const kick = fetch(`${SUPABASE_URL}/functions/v1/sal-ingest`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE_ROLE_KEY}`, apikey: SERVICE_ROLE_KEY },
+          body: JSON.stringify({ company_id: bidsCompanyId, inbox_id: inboxId }),
+        }).then((r) => { if (!r.ok) console.warn('[inbound-email] sal-ingest kick returned', r.status) }).catch((e) => console.warn('[inbound-email] sal-ingest kick failed:', (e as Error)?.message));
+        // deno-lint-ignore no-explicit-any
+        const rt = (globalThis as any).EdgeRuntime;
+        if (rt?.waitUntil) rt.waitUntil(kick);
+      }
       return json({ ok: true, matched: true, kind: 'bids', company_id: bidsCompanyId, bid_inbox_id: inboxId, attachments: attachments.length });
     }
     console.warn(`[inbound-email] mail to a bids address did not resolve to a company (${bidsToken ? 'token did not verify' : 'no token'}) — handling as other mail`);

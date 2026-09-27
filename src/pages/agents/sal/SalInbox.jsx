@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Inbox, Paperclip, ChevronDown, ChevronUp, Radar, AlertTriangle, Lightbulb } from 'lucide-react'
+import { Inbox, Paperclip, ChevronDown, ChevronUp, Radar, AlertTriangle, Lightbulb, Sparkles } from 'lucide-react'
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/Layout'
 import { useIsMobile } from '../../../hooks/useIsMobile'
@@ -40,6 +43,26 @@ export default function SalInbox() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(null)
+  const [reading, setReading] = useState(null)
+
+  // A person can ask Sal to read a row now instead of at the next sweep —
+  // and re-read one he could not make out, after fixing the Profile.
+  const readNow = async (r) => {
+    setReading(r.id)
+    try {
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess?.session?.access_token
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/sal-ingest`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ANON_KEY}`, apikey: ANON_KEY },
+        body: JSON.stringify({ company_id: companyId, inbox_id: r.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false) throw new Error(data.error || `Sal could not read it (${res.status})`)
+      if (data.ignored) toast.success(`Sal read it: not a solicitation (${data.note || 'no bid in it'})`)
+      else toast.success(`Sal read it: ${data.opportunities?.length || 0} opportunity${data.opportunities?.length === 1 ? '' : 'ies'} on the board`)
+      await load()
+    } catch (e) { toast.error(e.message) } finally { setReading(null) }
+  }
 
   const load = async () => {
     if (!companyId) return
@@ -118,6 +141,16 @@ export default function SalInbox() {
                         ))}
                       </div>
                     )}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', margin: '10px 0' }}>
+                      <button disabled={reading === r.id} onClick={() => readNow(r)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minHeight: '40px', padding: '0 12px', borderRadius: '8px', border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', opacity: reading === r.id ? 0.6 : 1 }}>
+                        <Sparkles size={14} /> {reading === r.id ? 'Reading…' : r.status === 'received' ? 'Read it now' : 'Read it again'}
+                      </button>
+                      {(r.opportunity_ids || []).length > 0 && (
+                        <button onClick={() => navigate('/agents/sal')} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minHeight: '40px', padding: '0 12px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.text, fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                          <Radar size={14} /> {r.opportunity_ids.length} on the board
+                        </button>
+                      )}
+                    </div>
                     <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'inherit', fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5, margin: '8px 0 0', maxHeight: '360px', overflow: 'auto' }}>{(r.text_body || '').trim() || '(no text body)'}</pre>
                   </div>
                 )}
@@ -130,7 +163,7 @@ export default function SalInbox() {
       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '24px', padding: '12px 14px', borderRadius: '10px', backgroundColor: theme.accentBg, fontSize: '12px', color: theme.textSecondary, lineHeight: 1.5 }}>
         <Lightbulb size={16} style={{ color: theme.accent, flexShrink: 0, marginTop: '1px' }} />
         <div>
-          Sal never logs into a portal and never scrapes one. What lands here is what the portals emailed to his address, with the files they attached. Reading each alert into a scored opportunity, and dropping the ones you choose on Benny, is the next thing being built.
+          Sal never logs into a portal and never scrapes one. What lands here is what the portals emailed to his address, with the files they attached. He reads each one within ten minutes and puts what he finds on the Board, scored against your Profile.
         </div>
       </div>
     </div>

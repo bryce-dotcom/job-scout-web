@@ -2255,6 +2255,7 @@ export default function SalesPipeline() {
         const getSourceStyle = (source) => {
           if (source?.includes('Lenard') || source?.includes('SRP') || source?.includes('RMP')) return { bg: 'rgba(249,115,22,0.1)', color: '#c2410c', border: '1px solid rgba(249,115,22,0.25)' }
           if (source === 'Referral') return { bg: 'rgba(34,197,94,0.1)', color: '#16a34a', border: '1px solid rgba(34,197,94,0.25)' }
+          if (source === 'Bid Finder') return { bg: 'rgba(59,130,246,0.1)', color: '#1d4ed8', border: '1px solid rgba(59,130,246,0.25)' } // Sal found it
           return { bg: 'rgba(90,99,73,0.08)', color: '#7d8a7f', border: `1px solid ${m.border}` }
         }
 

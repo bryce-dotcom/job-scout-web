@@ -6,13 +6,15 @@ import AgentHeader from '../../../components/AgentHeader'
 // is marketing, so Sal is his own agent under Marketing). He finds the bids
 // and hands the chosen ones to Benny, who builds them.
 //
-// Phase 0 tabs: the Inbox (everything a portal emailed to the tenant's bids+
-// address, attachments kept) and Sources (the address itself and where to
-// paste it). The board, scoring and the hand-off to Benny follow
-// (SAL_SCOUT_PLAN.md §5).
+//   Board    what he found, scored — Shortlist / Dismiss / Choose
+//   Inbox    everything a portal emailed to the tenant's bids+ address
+//   Sources  the address, the feeds switched on, and their health
+//   Profile  what a fit means here (SAL_SCOUT_PLAN.md §4.1)
 const SAL_TABS = [
-  { path: '/agents/sal', label: 'Inbox', icon: 'Inbox', end: true },
-  { path: '/agents/sal/sources', label: 'Sources', icon: 'Radar' },
+  { path: '/agents/sal', label: 'Board', icon: 'Radar', end: true },
+  { path: '/agents/sal/inbox', label: 'Inbox', icon: 'Inbox' },
+  { path: '/agents/sal/sources', label: 'Sources', icon: 'Rss' },
+  { path: '/agents/sal/profile', label: 'Profile', icon: 'UserCircle' },
 ]
 
 export default function SalWorkspace() {
