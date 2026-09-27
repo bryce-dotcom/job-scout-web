@@ -9,6 +9,7 @@
 
 import { jsPDF } from 'jspdf'
 import { buildSchedule, fmtMoney, fmtQty } from './bidSchedule'
+import { pdfSafe } from './bidPacketPdf'
 
 const INK = [44, 53, 48]        // #2c3530
 const MUTED = [125, 138, 127]   // #7d8a7f
@@ -69,7 +70,7 @@ export function generateBidPdf({ estimate, lineItems, company, businessUnit, cus
     doc.setFontSize(8); doc.setTextColor(...MUTED); doc.setFont('helvetica', 'bold')
     doc.text(label.toUpperCase(), m, y)
     doc.setFontSize(10); doc.setTextColor(...INK); doc.setFont('helvetica', 'normal')
-    const lines = doc.splitTextToSize(String(value), cw)
+    const lines = doc.splitTextToSize(pdfSafe(value), cw)
     doc.text(lines, m, y + 4.5)
     y += 4.5 + lines.length * 4.6 + 3
   }
@@ -101,7 +102,7 @@ export function generateBidPdf({ estimate, lineItems, company, businessUnit, cus
     headerRow()
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
     for (const r of sec.rows) {
-      const descLines = doc.splitTextToSize(r.description, cols[1].w - 4)
+      const descLines = doc.splitTextToSize(pdfSafe(r.description), cols[1].w - 4)
       const h = Math.max(6, descLines.length * 4.2 + 2)
       if (y + h > ph - 18) { newPage(); headerRow(); doc.setFont('helvetica', 'normal'); doc.setFontSize(9) }
       let x = m + 2

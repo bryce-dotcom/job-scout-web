@@ -73,6 +73,7 @@ type Job = {
   business_unit: string | null; service_type: string | null
   storage_bucket: string; storage_path: string; file_name: string | null; media_type: string; file_size: number | null; scope_hint: string | null
   stage: string; state: Any; error: string | null
+  extra_paths?: Any[]
 }
 async function loadJob(id: number): Promise<Job | null> {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/benny_jobs?id=eq.${id}&limit=1`, { headers: svc })
@@ -117,6 +118,24 @@ async function docBlockFor(job: Job): Promise<{ block: Any; bytes: number }> {
   return { block, bytes: bytes.length }
 }
 
+// Every document in the package, primary first: bid form + specs + addenda
+// read together (SAL_SCOUT_PLAN §5.6.1). Each file keeps the 30 MB cap; the
+// set is capped at 60 MB — beyond that the extras are dropped with a note so
+// the build still runs on the form.
+async function docBlocksFor(job: Job): Promise<{ blocks: Any[]; bytes: number; dropped: string[] }> {
+  const primary = await docBlockFor(job)
+  const blocks: Any[] = [primary.block]; let total = primary.bytes; const dropped: string[] = []
+  for (const x of (job.extra_paths || [])) {
+    try {
+      const sub = { ...job, storage_bucket: x.bucket || job.storage_bucket, storage_path: x.path, media_type: x.media_type || 'application/pdf' } as Job
+      const b = await docBlockFor(sub)
+      if (total + b.bytes > 60 * 1024 * 1024) { dropped.push(x.name || x.path); continue }
+      blocks.push(b.block); total += b.bytes
+    } catch (e) { dropped.push(`${x.name || x.path} (${(e as Error)?.message || 'unreadable'})`) }
+  }
+  return { blocks, bytes: total, dropped }
+}
+
 const askFor = (companyId: number) => async (content: unknown[], maxTokens = 8192) => {
   const meta = { feature: 'benny-bid-intake', companyId }
   let r = await callAnthropic(meta, { model: READ_MODEL, max_tokens: maxTokens, messages: [{ role: 'user', content }] })
@@ -129,8 +148,8 @@ const askFor = (companyId: number) => async (content: unknown[], maxTokens = 819
 // STAGE: read
 async function stageRead(job: Job) {
   const ask = askFor(job.company_id)
-  const { block, bytes } = await docBlockFor(job)
-  const readPrompt = `You are Benny, a bid builder for a field-services contractor. This is a bid package (an invitation to bid, request for quote, or bid form) the contractor received from a buyer. Read ALL of it and return ONLY a JSON object, no prose:
+  const { blocks, bytes, dropped } = await docBlocksFor(job)
+  const readPrompt = `You are Benny, a bid builder for a field-services contractor. This is a bid package (an invitation to bid, request for quote, or bid form) the contractor received from a buyer — possibly several documents (bid form, specifications, addenda): read them together, and let an addendum's changes win. Read ALL of it and return ONLY a JSON object, no prose:
 
 {
   "title": "short title of the solicitation",
@@ -151,18 +170,18 @@ async function stageRead(job: Job) {
 }
 
 Rules: keep the buyer's item numbers and order exactly. quantity is a number (use 1 for lump sum). unit is the printed unit (EA, LF, SF, LS, HR...). Include EVERY schedule item, including alternates and allowances, in their own sections. Do not invent items or prices. If the document is a set of DRAWINGS with no bid schedule at all, return sections: [] and say so in instructions.`
-  const read = await ask([block, { type: 'text', text: readPrompt }], 12000)
+  const read = await ask([...blocks, { type: 'text', text: readPrompt }], 12000)
   let pkg: Any
   try { pkg = parseJson(textOf(read)) } catch { throw new StageError('Benny could not make out a bid schedule in that document', 422, { raw: textOf(read).slice(0, 2000) }) }
   const items: Any[] = []
   for (const sec of pkg.sections || []) for (const it of sec.items || []) items.push({ ...it, section: sec.name || 'Schedule of Items' })
-  await saveJob(job, { file_size: bytes, state: { ...job.state, pkg, items }, stage: items.length ? 'match' : 'takeoff' })
+  await saveJob(job, { file_size: bytes, state: { ...job.state, pkg, items, dropped_docs: dropped }, stage: items.length ? 'match' : 'takeoff' })
 }
 
 // STAGE: takeoff — no schedule → count the drawings
 async function stageTakeoff(job: Job) {
   const ask = askFor(job.company_id)
-  const { block } = await docBlockFor(job)
+  const { blocks } = await docBlocksFor(job)
   const scope = String(job.scope_hint || '').slice(0, 600)
   const takeoffPrompt = `You are Benny, an estimator for a field-services contractor. This document has NO bid schedule: it is a set of drawings (plans, elevations, electrical/mechanical sheets, schedules). Produce a trade TAKEOFF from it so the contractor can bid.${scope ? `\n\nThe scope requested: ${scope}` : ''}
 If no scope is stated, infer the trade from the sheets (electrical, lighting, plumbing, HVAC, etc.) and say which.
@@ -185,7 +204,7 @@ Return ONLY a JSON object, no prose:
 }
 
 Rules for an ELECTRICAL takeoff: sections in this order — Service & Distribution; Dedicated circuits (range, oven, dryer, HVAC, water heater, disposal, dishwasher, microwave, EV); Rough-in openings (duplex, GFCI/WR, switches: single-pole, 3-way, 4-way, dimmer); Lighting fixtures (recessed cans, surface/ceiling, pendants, exterior, under-cabinet, fans with light); Life safety (smoke, smoke/CO, combination); Exhaust fans; Low voltage (data, TV, doorbell, thermostat); Permit & inspection (LS 1); Labor (rough-in HR, trim-out HR — estimate from the openings). Count every symbol on every electrical sheet; if the electrical is drawn on the floor plans, count there. Say in spec WHERE each count came from. Owner-supplied fixtures still need an install line. Never write a price. quantity is a number; unit is EA, LF, LS or HR. Be terse: spec is ONE short clause (under 100 characters), at most 40 items in total, no prose outside the JSON.`
-  const tk = await ask([block, { type: 'text', text: takeoffPrompt }], 16000)
+  const tk = await ask([...blocks, { type: 'text', text: takeoffPrompt }], 16000)
   if (tk.data?.stop_reason === 'max_tokens') throw new StageError('Benny ran out of room writing the takeoff — the plan set is very large; send the electrical sheets only', 422, { raw: textOf(tk).slice(-800) })
   let takeoff: Any
   try { takeoff = parseJson(textOf(tk)) } catch { throw new StageError('Benny read the document but found neither a schedule of items nor drawings he could take off', 422, { raw: textOf(tk).slice(0, 2000) }) }
@@ -384,6 +403,7 @@ async function stageWrite(job: Job): Promise<Record<string, unknown>> {
       quote_amount: intakeTotal(intake), document_type: 'bid', bid_intake: bidIntake,
       estimate_name: q.estimate_name || estimateName,
       settings_overrides: { ...(q.settings_overrides || {}), presentation_mode: 'bid' },
+      bid_opportunity_id: job.opportunity_id ?? null,
       updated_at: new Date().toISOString(),
     })
   } else {
@@ -402,7 +422,7 @@ async function stageWrite(job: Job): Promise<Record<string, unknown>> {
       if (e instanceof IntakeWriteError) throw new StageError(e.message, e.kind === 'invalid' ? 400 : 500, { kind: e.kind })
       throw e
     }
-    await patchQuote(quoteId, { document_type: 'bid', bid_intake: bidIntake, settings_overrides: { presentation_mode: 'bid' } })
+    await patchQuote(quoteId, { document_type: 'bid', bid_intake: bidIntake, settings_overrides: { presentation_mode: 'bid' }, bid_opportunity_id: job.opportunity_id ?? null })
   }
 
   // The package rides along as a document on the estimate.
@@ -416,7 +436,87 @@ async function stageWrite(job: Job): Promise<Record<string, unknown>> {
   const result = { ok: true, quote_id: quoteId, mode: job.mode, lines: lines.length, counts, unverified: counts.must_source,
     web_priced: Object.keys(found).length, web_searches: st.web_searches || 0, takeoff: st.takeoff ? { trade: st.takeoff.trade, confidence: st.takeoff.confidence } : null,
     read: { title: bidIntake.title, bid_number: bidIntake.bid_number, buyer: bidIntake.buyer, due_at: bidIntake.due_at, sections: bidIntake.sections.length } }
-  await saveJob(job, { quote_id: quoteId, stage: 'done', state: { ...st, result }, finished_at: new Date().toISOString() })
+  // Not done yet: the requirements pass runs next, on the bid that now exists.
+  await saveJob(job, { quote_id: quoteId, stage: 'requirements', state: { ...st, result } })
+  return result
+}
+
+// The checklist rows every packet carries, then the buyer's. Twin of
+// src/lib/bidPacket.seedChecklist — keep the two in step.
+function seedChecklist(req: Any): Any[] {
+  const base = [
+    { key: 'bid_form', item: 'Bid schedule / bid form, priced and complete', required: true, kind: 'pricing', page: null, auto: 'bid_form' },
+    { key: 'cover_letter', item: 'Transmittal / cover letter', required: false, kind: 'other', page: null, auto: 'cover_letter' },
+    { key: 'qualifications', item: 'Qualification statement', required: false, kind: 'other', page: null, auto: 'qualifications' },
+  ]
+  const seen = new Set<string>(); const out: Any[] = []
+  for (const r of [...base, ...((req && Array.isArray(req.checklist)) ? req.checklist : [])]) {
+    const key = String(r.key || r.item || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    // A bid or performance bond is issued per project; the bonding LETTER on file never satisfies it (twin of lib/bidPacket).
+    const kind = r.kind || 'other'
+    const auto = kind === 'bond' && !/letter|capacity/i.test(String(r.item || '')) ? null : (r.auto || null)
+    out.push({ key, item: r.item || key, required: r.required !== false, kind, page: r.page ?? null, auto, done: false, done_by: null, done_at: null, waived_reason: null })
+  }
+  return out
+}
+
+// STAGE: requirements — the compliance matrix (SAL_SCOUT_PLAN §5.6.2). Runs
+// after the bid exists, so a failure here never costs the bid: it is noted
+// on the result and the build is still done.
+async function stageRequirements(job: Job): Promise<Record<string, unknown>> {
+  const st = job.state; const result: Any = st.result || { ok: true, quote_id: job.quote_id }
+  try {
+    const ask = askFor(job.company_id)
+    const { blocks } = await docBlocksFor(job)
+    const prompt = `You are Benny, reading a bid package for a contractor. List EVERY submission requirement as the buyer states it — the compliance matrix. Return ONLY a JSON object:
+{
+  "submit_method": "email" | "portal" | "mail" | "unknown",
+  "submit_to": { "email": null, "portal_url": null, "address": null, "contact_name": null, "contact_phone": null },
+  "due_at": "ISO 8601 or null", "questions_due_at": "ISO 8601 or null", "prebid": { "at": "ISO 8601 or null", "mandatory": false },
+  "bond": { "required": false, "pct": null, "kind": null },
+  "insurance": { "gl_each": null, "gl_aggregate": null, "auto": null, "umbrella": null, "workers_comp": null, "additional_insured": false },
+  "license": "license type or class required, or null",
+  "references": { "count": 0, "page": null },
+  "page_limit": null, "copies": null, "sealed": false, "label_text": "exact envelope wording, or null",
+  "forms": [ { "name": "form title as printed", "page": 12, "purpose": "what it is", "signature_required": true, "notarized": false } ],
+  "acknowledgements": [ { "name": "Addendum No. 1", "page": 3 } ],
+  "checklist": [ { "key": "short_snake_key", "item": "one line, in the buyer's words", "required": true, "kind": "form" | "bond" | "insurance" | "license" | "w9" | "references" | "acknowledgement" | "copies" | "sealed" | "delivery" | "pricing" | "other", "page": 12, "auto": null } ]
+}
+Rules: one checklist row per thing the bidder must include, sign, initial, attach or do; page = where it is in the package. Set "auto" to "cert:insurance", "cert:workers_comp", "cert:w9", "cert:business_license" or "cert:bond" when the row is satisfied by that standard certificate; otherwise null. Do not add a row for pricing the bid form itself (that row exists). Nothing invented: if the package does not say, leave null or omit.`
+    const r = await ask([...blocks, { type: 'text', text: prompt }], 6000)
+    const req: Any = parseJson(textOf(r))
+    const now = new Date().toISOString()
+    const method = req.submit_method && req.submit_method !== 'unknown' ? String(req.submit_method) : null
+    // The opportunity carries the matrix; the bid carries a copy, so a bid built from the upload card has one too.
+    if (job.opportunity_id) {
+      const patch: Any = { requirements: req, updated_at: now }
+      if (method) patch.submit_method = method
+      if (req.submit_to && Object.values(req.submit_to).some(Boolean)) patch.submit_to = req.submit_to
+      await fetch(`${SUPABASE_URL}/rest/v1/bid_opportunities?id=eq.${job.opportunity_id}&company_id=eq.${job.company_id}`, { method: 'PATCH', headers: svc, body: JSON.stringify(patch) })
+    }
+    const qRes = await fetch(`${SUPABASE_URL}/rest/v1/quotes?select=bid_intake&id=eq.${job.quote_id}&company_id=eq.${job.company_id}&limit=1`, { headers: svc })
+    const q = (await qRes.json())?.[0]
+    await fetch(`${SUPABASE_URL}/rest/v1/quotes?id=eq.${job.quote_id}&company_id=eq.${job.company_id}`, { method: 'PATCH', headers: svc, body: JSON.stringify({ bid_intake: { ...(q?.bid_intake || {}), requirements: req } }) })
+    // Seed the submission — one live per bid. An existing draft keeps every tick a person made.
+    const seeded = seedChecklist(req)
+    const sRes = await fetch(`${SUPABASE_URL}/rest/v1/bid_submissions?select=id,checklist&quote_id=eq.${job.quote_id}&status=neq.withdrawn&limit=1`, { headers: svc })
+    const existing = (await sRes.json())?.[0]
+    if (existing) {
+      const keep = new Map<string, Any>((existing.checklist || []).map((x: Any) => [x.key, x]))
+      const merged = seeded.map((x) => keep.get(x.key) || x)
+      for (const [k, x] of keep) if (!merged.some((y) => y.key === k)) merged.push(x)
+      await fetch(`${SUPABASE_URL}/rest/v1/bid_submissions?id=eq.${existing.id}`, { method: 'PATCH', headers: svc, body: JSON.stringify({ checklist: merged, ...(method ? { method } : {}), updated_at: now }) })
+    } else {
+      await fetch(`${SUPABASE_URL}/rest/v1/bid_submissions`, { method: 'POST', headers: svc, body: JSON.stringify({ company_id: job.company_id, opportunity_id: job.opportunity_id, quote_id: job.quote_id, method, checklist: seeded, status: 'draft', created_by: job.requested_by }) })
+    }
+    result.requirements = { checklist: seeded.length, submit_method: method, bond: req.bond || null, forms: (req.forms || []).length }
+  } catch (e) {
+    console.warn('[benny] requirements pass failed:', (e as Error)?.message)
+    result.requirements_error = (e as Error)?.message || 'failed'
+  }
+  await saveJob(job, { stage: 'done', state: { ...st, result }, finished_at: new Date().toISOString() })
   return result
 }
 
@@ -428,6 +528,7 @@ async function runStage(job: Job): Promise<Record<string, unknown> | null> {
     case 'match': await stageMatch(job); return null
     case 'price': await stagePrice(job); return null
     case 'write': return await stageWrite(job)
+    case 'requirements': return await stageRequirements(job)
     default: return null
   }
 }
@@ -489,6 +590,10 @@ serve(async (req) => {
       storage_bucket: String(body.storage_bucket || 'project-documents'), storage_path: storagePath,
       file_name: String(body.file_name || storagePath.split('/').pop() || 'bid-package.pdf'),
       media_type: String(body.media_type || 'application/pdf'), scope_hint: body.scope_hint ? String(body.scope_hint).slice(0, 600) : null,
+      // The rest of the package (specs, addenda), read with the form.
+      extra_paths: Array.isArray(body.extra_paths)
+        ? body.extra_paths.slice(0, 12).map((x: Any) => ({ bucket: x.bucket || 'project-documents', path: String(x.path || x.storage_path || ''), name: x.name || null, media_type: x.media_type || 'application/pdf' })).filter((x: Any) => x.path)
+        : [],
       stage: 'read', state: {},
     }
     if (mode === 'fill' && !row.quote_id) return json({ error: 'quote_id is required to fill an existing bid' }, 400)
@@ -506,7 +611,7 @@ serve(async (req) => {
     // that turns out to need a takeoff is handed to the stages instead, and
     // the card is told where to look.
     try {
-      for (let guard = 0; guard < 6; guard++) {
+      for (let guard = 0; guard < 8; guard++) {
         if (job.stage === 'takeoff') {
           kick(job.id)
           return json({ ok: true, accepted: true, job_id: job.id, stage: 'takeoff', message: 'That is a set of drawings, not a bid form. Benny is taking it off — the bid appears on your Bids list in a few minutes.' }, 202)

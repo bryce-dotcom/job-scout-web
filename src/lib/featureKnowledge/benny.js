@@ -64,7 +64,8 @@ export default {
       "Exact/equivalent lines take the catalog unit_price even when it is 0 — a 0 there means the price book needs the number, not Benny.",
       "The bid presentation mode is offered only when the document is a bid or the company produces bids (settings.document_types).",
       "Reads the fixture schedule and spec tables in plan sheets if they are in the package; does NOT yet count fixture symbols off drawings (a takeoff from plans).",
-      "Not built: Excel/Word packages (PDF or images only); submitting to a buyer's portal.",
+      "The packet (Phase 2, 2026-09-27): after the bid is written Benny reads the package's submission requirements into a checklist (bid_submissions.checklist; a bid or performance bond is never auto-ticked, only a bonding-capacity letter is). The Bid packet card on the bid drafts the cover letter (bid-packet-ai), renders the qualification statement, maps the buyer's fillable form fields (blanks left for a person; signatures, notarization and bonds are always human), pulls the certificates off the company, and merges one PDF (lib/pdfPackage). lib/bidPacket.submitReadiness lists every reason it may not go yet.",
+      "Not built: sending (Phase 3); Excel/Word packages (PDF or images only); submitting to a buyer's portal.",
     ],
 
     actions: {

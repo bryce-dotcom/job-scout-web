@@ -41,6 +41,7 @@ const FEATURE_AGENTS: Record<string, string> = {
   'cc-generate-email': 'conrad',
   'dougie-analyze': 'dougie',
   'benny-bid-intake': 'benny',
+  'bid-packet-ai': 'benny',
   'bid-requirements': 'benny',
   'bid-cover-letter': 'benny',
   'bid-parse': 'sal',

@@ -65,7 +65,30 @@ export default function SalBoard() {
       .order('due_at', { ascending: true, nullsFirst: false })
       .limit(300)
     if (error) toast.error(`Could not load the board: ${error.message}`)
-    setRows(data || [])
+    // A chosen bid's readiness: prices to verify and checklist items open
+    // (lib/bidPacket is the rule; this is the count the card shows).
+    const withQuote = (data || []).filter((r) => r.quote_id)
+    let readiness = {}
+    if (withQuote.length) {
+      const ids = withQuote.map((r) => r.quote_id)
+      const [{ data: lines }, { data: subs }] = await Promise.all([
+        supabase.from('quote_lines').select('quote_id').in('quote_id', ids).eq('price_source', 'ai_sourced').is('price_verified_at', null),
+        supabase.from('bid_submissions').select('quote_id, status, checklist, packet_built_at').in('quote_id', ids).neq('status', 'withdrawn'),
+      ])
+      const unverified = {}
+      for (const l of lines || []) unverified[l.quote_id] = (unverified[l.quote_id] || 0) + 1
+      for (const q of ids) {
+        const sub = (subs || []).find((s) => s.quote_id === q)
+        const open = (sub?.checklist || []).filter((c) => c.required && !c.done && !c.waived_reason).length
+        const parts = []
+        if (unverified[q]) parts.push(`${unverified[q]} to verify`)
+        if (open) parts.push(`${open} checklist item${open === 1 ? '' : 's'} open`)
+        if (!sub) parts.push('no checklist yet')
+        else if (!sub.packet_built_at) parts.push('packet not built')
+        readiness[q] = { text: parts.length ? parts.join(' · ') : 'ready to submit', ready: parts.length === 0, status: sub?.status || null }
+      }
+    }
+    setRows((data || []).map((r) => r.quote_id ? { ...r, readiness: readiness[r.quote_id] || null } : r))
     setLoading(false)
     setNow(new Date())
   }
@@ -264,6 +287,7 @@ export default function SalBoard() {
                       )}
                       {r.status === 'building' && <span style={{ fontSize: '13px', color: theme.accent, fontWeight: 600 }}>Benny is building the bid… (a plan takeoff takes a few minutes)</span>}
                       {r.status === 'chosen' && !r.quote_id && stored > 0 && <button disabled={busy === r.id} onClick={() => act(r, 'build')} style={btn('secondary')}><ClipboardList size={15} /> Send the stored package to Benny</button>}
+                      {r.quote_id && r.readiness && <span style={{ fontSize: '12px', fontWeight: 600, color: r.readiness.ready ? '#166534' : '#b45309', alignSelf: 'center' }}>{r.readiness.text}</span>}
                       {r.quote_id && <button onClick={() => navigate(`/estimates/${r.quote_id}`)} style={btn('primary')}><ClipboardList size={15} /> Open the bid Benny built</button>}
                       {r.lead_id && <button onClick={() => navigate(`/leads/${r.lead_id}`)} style={btn('secondary')}>Open the lead</button>}
                       {busy === r.id && <span style={{ fontSize: '12px', color: theme.textMuted }}>Working…</span>}

@@ -155,6 +155,32 @@ serve(async (req) => {
     let storagePath: string | null = body.storage_path ? String(body.storage_path) : null
     let fileName: string | null = body.file_name ? String(body.file_name) : null
     let mediaType: string = body.media_type ? String(body.media_type) : 'application/pdf'
+    // §5.5: SAM resourceLinks and public links that were never fetched come
+    // down now — with the SAM key when the host is sam.gov. A login page
+    // instead of a file is noted on the document; those stay a person's upload.
+    if (['choose', 'build'].includes(action)) {
+      const docs: Any[] = Array.isArray(opp.documents) ? opp.documents : []
+      let changed = false
+      for (const d of docs) {
+        if (d.storage_path || !d.url || d.error || d.fetch_tried) continue
+        try {
+          const isSam = /(^|\.)sam\.gov$/i.test(new URL(d.url).hostname)
+          const key = Deno.env.get('SAM_API_KEY')
+          const u = isSam && key ? `${d.url}${d.url.includes('?') ? '&' : '?'}api_key=${key}` : d.url
+          const r = await fetch(u, { redirect: 'follow' })
+          const ct = (r.headers.get('content-type') || '').split(';')[0]
+          if (!r.ok || /text\/html/i.test(ct)) { d.fetch_tried = now; d.error = r.ok ? 'a login page, not a file — download it from the portal and drop it here' : `HTTP ${r.status}`; changed = true; continue }
+          const bytes = new Uint8Array(await r.arrayBuffer())
+          if (bytes.length > 30 * 1024 * 1024) { d.fetch_tried = now; d.error = 'over 30 MB'; changed = true; continue }
+          const name = String(d.name || d.url.split('/').pop() || 'document').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 120) || 'document'
+          const path = `bids/${companyId}/opps/${oppId}/${Date.now()}_${name}`
+          const { error: upErr } = await sb.storage.from('project-documents').upload(path, bytes, { contentType: ct || 'application/pdf' })
+          if (upErr) { d.fetch_tried = now; d.error = upErr.message; changed = true; continue }
+          Object.assign(d, { bucket: 'project-documents', storage_path: path, bytes: bytes.length, content_type: ct || null, fetched_at: now, error: null }); changed = true
+        } catch (e) { d.fetch_tried = now; d.error = (e as Error)?.message || 'fetch failed'; changed = true }
+      }
+      if (changed) { await sb.from('bid_opportunities').update({ documents: docs, updated_at: now }).eq('id', oppId); opp.documents = docs }
+    }
     if (!storagePath) {
       const docs: Any[] = Array.isArray(opp.documents) ? opp.documents : []
       const pdf = docs.find((d) => d.storage_path && /\.pdf$/i.test(d.name || d.storage_path)) || docs.find((d) => d.storage_path && /image\//i.test(d.content_type || ''))
@@ -175,10 +201,15 @@ serve(async (req) => {
     // nobody waits on him. He reports back to the opportunity when done
     // (opportunity_id → ready + quote_id, or chosen + build_error), and the
     // board shows "Benny is building" until then.
+    // The rest of the package rides along: specs and addenda are read with the form (§5.6.1).
+    const extraPaths = (Array.isArray(opp.documents) ? opp.documents : [])
+      .filter((d: Any) => d.storage_path && d.storage_path !== storagePath && /\.(pdf|png|jpe?g|webp)$/i.test(d.name || d.storage_path))
+      .slice(0, 12)
+      .map((d: Any) => ({ bucket: d.bucket || 'project-documents', path: d.storage_path, name: d.name || null, media_type: /\.pdf$/i.test(d.name || d.storage_path) ? 'application/pdf' : (d.content_type || 'image/jpeg') }))
     await sb.from('bid_opportunities').update({ status: 'building', build_error: null, updated_at: now }).eq('id', oppId)
     const handoff = fetch(`${SUPABASE_URL}/functions/v1/benny-bid-intake`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth, apikey: ANON_KEY },
-      body: JSON.stringify({ company_id: companyId, mode: 'create', storage_path: storagePath, storage_bucket: 'project-documents', file_name: fileName || 'package.pdf', media_type: mediaType, lead_id: leadId, salesperson_id: emp.id,
+      body: JSON.stringify({ company_id: companyId, mode: 'create', storage_path: storagePath, extra_paths: extraPaths, storage_bucket: 'project-documents', file_name: fileName || 'package.pdf', media_type: mediaType, lead_id: leadId, salesperson_id: emp.id,
         opportunity_id: oppId,
         // What the buyer asked for, so a plan set with no bid form gets the right takeoff.
         scope_hint: [opp.title, opp.summary].filter(Boolean).join(' — ').slice(0, 600) }),

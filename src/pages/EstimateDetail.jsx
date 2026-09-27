@@ -25,6 +25,7 @@ import { DOCUMENT_TYPES, configFromSettings, labelsFor, documentType, documentWo
 import { sendGate, sendGateMessage, priceBadge, matchBadge, canVerify, verifiedPatch, unverifiedPatch, unverifiedSourcedLines } from '../lib/sourcedPricing'
 import { generateBidPdf, bidPdfBlob } from '../lib/bidPdf'
 import BidIntakeCard from '../components/benny/BidIntakeCard'
+import BidPacketCard from '../components/benny/BidPacketCard'
 import { toast } from '../lib/toast'
 import SignedProposalCard from '../components/SignedProposalCard'
 import EmailDeliveryBadge from '../components/EmailDeliveryBadge'
@@ -4330,6 +4331,11 @@ function EstimateDetailInner() {
             </div>
           </div>
 
+          {/* The packet: what the buyer asked for, what we have, may it go
+              (lib/bidPacket). Only a bid Benny read has a checklist. */}
+          {estimate.bid_intake && (
+            <BidPacketCard theme={theme} estimate={estimate} lineItems={lineItems} company={company} businessUnit={getBusinessUnitObject()} customerInfo={customerInfo} user={user} currentEmployee={currentEmployee} isMobile={isMobile} />
+          )}
           {/* Actions */}
           <div style={{
             backgroundColor: theme.bgCard,
