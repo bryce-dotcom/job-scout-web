@@ -87,7 +87,7 @@ export default {
     gotchas: [
       "There is NO Deals table. The Pipeline IS the leads table filtered by status.",
       "'Quote Sent' status displays as 'Estimate Sent' on the board (stage display name mapping).",
-      "Sales Won stat in the header counts JOBS created in the date window (wonJobsInRange), not lead.status=Won.",
+      "Sales Won stat in the header counts JOBS created in the date window (wonJobsInRange), not lead.status=Won. Cancelled and archived jobs are excluded — cancelled work is not sold work — and a job is worth its own job_total, never its estimate's amount. Same rule as the dashboard and Sales Performance (lib/soldTotals).",
       "List View button (top-right) navigates to /leads — same data, grid layout.",
       "Delivery Pipeline is read-only from the pipeline — Operations moves cards from within the Jobs pages.",
       "Field techs are auto-scoped to their own pipeline (canViewAll=false); cannot see other reps' deals.",
@@ -101,7 +101,7 @@ export default {
       },
       {
         q: "Why does the Won column count differ from the 'Sales Won' stat?",
-        a: "Sales Won counts jobs created in the selected date window (using jobMetrics.wonJobsInRange). The Won column count shows leads with status=Won. They'll differ if won jobs moved to the Delivery track before the filter window.",
+        a: "Sales Won counts jobs created in the selected date window (using jobMetrics.wonJobsInRange, which excludes cancelled and archived work). The Won column count shows leads with status=Won. They'll differ if won jobs moved to the Delivery track before the filter window.",
       },
       {
         q: 'How do I see the pipeline for just one rep?',

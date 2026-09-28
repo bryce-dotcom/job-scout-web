@@ -24,6 +24,8 @@
 // field ('open' | 'delivered'). This helper resolves that config at call
 // time so custom pipelines work automatically.
 
+import { soldJobsInRange, soldValue } from './soldTotals'
+
 // Standard delivered-status names, used as a fallback when a company has
 // never flagged category='delivered' on any of its job statuses. Without
 // this, every "Jobs Completed" / "Job Revenue" metric reads ZERO for that
@@ -73,18 +75,16 @@ function ms(d) {
  * Returns the matching jobs (caller decides whether to .length or .reduce on
  * job_total). We prefer returning the array over returning aggregates so
  * callers can render counts AND dollars from one filter pass.
+ *
+ * This used to say "no status filter needed — every job in the table
+ * represents a won deal", and so counted CANCELLED and ARCHIVED work as sales.
+ * The Sales Pipeline's own Sold tile excluded them, so the same company had
+ * two "sold" numbers $25,401.47 apart on the year and no way to tell which was
+ * real. Cancelled work is not sold work: one rule now, in lib/soldTotals.
  */
 export function wonJobsInRange(jobs, startDate, endDate) {
-  const startMs = ms(startDate)
-  const endMs = ms(endDate)
   if (!Array.isArray(jobs)) return []
-  return jobs.filter(j => {
-    const t = ms(j.created_at)
-    if (t == null) return false
-    if (startMs != null && t < startMs) return false
-    if (endMs != null && t >= endMs) return false
-    return true
-  })
+  return soldJobsInRange(jobs, { start: startDate, end: endDate })
 }
 
 /**
@@ -113,73 +113,27 @@ export function deliveredJobsInRange(jobs, jobStatuses, startDate, endDate) {
   })
 }
 
-/** Dollar value of a job for revenue metrics: its own `job_total`, or the
- *  linked estimate's `quote_amount` when job_total is blank — so a job created
- *  without a total (or converted before pricing) doesn't silently count as $0
- *  in Sales Won. Pass `quoteAmountById` = Map(quote_id -> quote_amount). */
-export function jobValue(job, quoteAmountById) {
-  const own = parseFloat(job?.job_total) || 0
-  if (own > 0) return own
-  if (quoteAmountById && job?.quote_id != null) {
-    const est = parseFloat(quoteAmountById.get(job.quote_id)) || 0
-    if (est > 0) return est
-  }
-  return 0
+/** Dollar value of a job: its own `job_total`. lib/soldTotals.soldValue is the
+ *  rule — see there for why the estimate fallback was removed.
+ *
+ *  Call sites still pass a `quoteAmountById` map as a second argument and it is
+ *  simply ignored — that map let an estimate's amount stand in for a job's, and
+ *  HHH has an approved estimate of $1,651,117.14 against a $16,299.20 job. It
+ *  was firing on zero jobs when it was removed, so no figure moved. */
+export function jobValue(job) {
+  return soldValue(job)
 }
 
-/** Sum job value over a list. Optional `quoteAmountById` enables the estimate
- *  fallback for jobs with a blank job_total (back-compatible without it). */
-export function sumJobTotal(jobs, quoteAmountById) {
-  return (jobs || []).reduce((s, j) => s + jobValue(j, quoteAmountById), 0)
+/** Sum job value over a list. */
+export function sumJobTotal(jobs) {
+  return (jobs || []).reduce((s, j) => s + soldValue(j), 0)
 }
 
-// ── "Sold" is cumulative, not a pipeline stage ──────────────────────────────
-//
-// A deal is SOLD the moment the customer says yes. It stays sold forever,
-// however far it later progresses. The Sales Pipeline used to answer "how
-// much has this rep sold?" by summing the cards sitting in the Won COLUMN —
-// so every deal that moved on to Scheduled/Completed/Invoiced/Paid silently
-// left the total. Cole had 18 jobs worth $257,665.84 sold this year and not
-// one of them was still in a Won stage, so the tile read ~$159k. The better a
-// rep was at moving work forward, the smaller their sold number got.
-//
-// A pipeline COLUMN is rightly a snapshot of where work sits now; this is the
-// cumulative counterpart. Keep them separate rather than making one serve both.
-
-/** When a deal was sold: the estimate's approved date, else the date the job
- *  came into existence (a job only exists because someone sold it). Returns
- *  null for a card that has not been sold — a live lead or an open estimate. */
-export function soldDateOf(card) {
-  if (!card) return null
-  const approved = card._quoteApprovedDate || card.approved_date || null
-  if (approved) return approved
-  const job = card.jobs?.[0]
-  if (job?.created_at) return job.created_at
-  if (card._isJob && card.created_at) return card.created_at
-  return null
-}
-
-/** Has this card been sold at all? */
-export function isSold(card) {
-  return soldDateOf(card) != null
-}
-
-/** Every card sold within [start, end), whatever stage it now sits in.
- *  Half-open so consecutive periods can't double-count the same deal. */
-export function soldInRange(cards, startDate, endDate) {
-  if (!Array.isArray(cards)) return []
-  const startMs = startDate ? new Date(startDate).getTime() : null
-  const endMs = endDate ? new Date(endDate).getTime() : null
-  return cards.filter(c => {
-    const d = soldDateOf(c)
-    if (!d) return false
-    const t = new Date(d).getTime()
-    if (!Number.isFinite(t)) return false
-    if (startMs != null && t < startMs) return false
-    if (endMs != null && t >= endMs) return false
-    return true
-  })
-}
+// A FOURTH "sold" rule used to live here (soldDateOf / isSold / soldInRange),
+// operating on pipeline cards. Nothing in the app ever called it — only its
+// own tests did — and a spare definition of the number everyone argues about
+// is exactly how this codebase ended up with three that disagreed. Sold is
+// lib/soldTotals, and only lib/soldTotals.
 
 // ── Common date windows ─────────────────────────────────────────────────────
 

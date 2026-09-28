@@ -176,10 +176,14 @@ describe('a close counts in the month it closed, and the page can be read agains
     expect(a).toEqual({ wonCount: 1, wonTotal: 800, viaEstimateCount: 0, viaEstimateTotal: 0, directCount: 1, directTotal: 800 })
   })
 
-  it('a job with no total is worth its estimate in the bridge, as on the dashboard', () => {
+  it('an unpriced job is worth $0 in the bridge, not its estimate', () => {
+    // It used to be worth its estimate "as on the dashboard". Both were
+    // changed together: an estimate is the offer, and one of HHH's carries
+    // $1,651,117.14 against a $16,299.20 job. See lib/soldTotals.soldValue.
     const b = salesWonBridge({ jobs: [{ id: 960, quote_id: 200, job_total: null, created_at: '2026-09-10T00:00:00Z' }], quotes: q }, sept)
-    expect(b.wonTotal).toBe(9000)
-    expect(b.viaEstimateTotal).toBe(9000)
+    expect(b.wonCount).toBe(1)
+    expect(b.wonTotal).toBe(0)
+    expect(b.viaEstimateTotal).toBe(0)
   })
 })
 

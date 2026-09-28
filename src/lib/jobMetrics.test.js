@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   getDeliveredStatusIds, getOpenStatusIds, wonJobsInRange,
   deliveredJobsInRange, jobValue, sumJobTotal, startOfMonth, startOfYear, daysAgo,
-  soldDateOf, isSold, soldInRange,
 } from './jobMetrics'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -119,36 +118,45 @@ describe('deliveredJobsInRange', () => {
   })
 })
 
-describe('jobValue — a priced job never counts as $0', () => {
-  it('uses the job total when it has one', () => {
+describe('jobValue — a job is worth its own total, never an estimate', () => {
+  it('uses the job total', () => {
     expect(jobValue({ job_total: 5000 })).toBe(5000)
   })
 
-  it('falls back to the linked estimate when job_total is blank', () => {
-    // A job converted before pricing would otherwise vanish from Sales Won.
+  it('does NOT stand an estimate in for a missing job total', () => {
+    // The fallback that used to live here let an OFFER count as a SALE. HHH
+    // carries an approved estimate of $1,651,117.14 against a $16,299.20 job,
+    // so one bad quote could move the company's Sales Won by $1.6M. An
+    // unpriced job is worth $0 and is REPORTED as unpriced (soldByRep) rather
+    // than quietly valued from somewhere else.
     const quotes = new Map([[77, 8200]])
-    expect(jobValue({ job_total: null, quote_id: 77 }, quotes)).toBe(8200)
-    expect(jobValue({ job_total: 0, quote_id: 77 }, quotes)).toBe(8200)
-  })
-
-  it('prefers the job total over the estimate when both exist', () => {
-    expect(jobValue({ job_total: 5000, quote_id: 77 }, new Map([[77, 8200]]))).toBe(5000)
+    expect(jobValue({ job_total: null, quote_id: 77 }, quotes)).toBe(0)
+    expect(jobValue({ job_total: 0, quote_id: 77 }, quotes)).toBe(0)
+    expect(sumJobTotal([{ job_total: 1000 }, { quote_id: 77 }], quotes)).toBe(1000)
   })
 
   it('returns 0 when there is nothing to value it by', () => {
     expect(jobValue({})).toBe(0)
     expect(jobValue(null)).toBe(0)
-    expect(jobValue({ quote_id: 99 }, new Map())).toBe(0)
-  })
-
-  it('sums a list, applying the estimate fallback per job', () => {
-    const quotes = new Map([[77, 8200]])
-    expect(sumJobTotal([{ job_total: 1000 }, { quote_id: 77 }], quotes)).toBe(9200)
   })
 
   it('sums to 0 for an empty or null list', () => {
     expect(sumJobTotal([])).toBe(0)
     expect(sumJobTotal(null)).toBe(0)
+  })
+})
+
+describe('wonJobsInRange is the sold rule — cancelled work is not a sale', () => {
+  // The $25,401.47 that made the dashboard and the pipeline disagree on the year.
+  const jobs = [
+    { id: 1, created_at: '2026-07-01T00:00:00Z', status: 'Completed' },
+    { id: 2, created_at: '2026-07-02T00:00:00Z', status: 'Cancelled' },
+    { id: 3, created_at: '2026-07-03T00:00:00Z', status: 'Archived' },
+    { id: 4, created_at: '2026-07-04T00:00:00Z', status: 'Canceled' },
+    { id: 5, created_at: '2026-07-05T00:00:00Z', status: 'Voided' },
+  ]
+  it('drops cancelled, archived and voided jobs', () => {
+    expect(wonJobsInRange(jobs, null, null).map(j => j.id)).toEqual([1])
   })
 })
 
@@ -176,66 +184,5 @@ describe('date windows are local, not UTC', () => {
   })
 })
 
-describe('sold is cumulative, not a pipeline stage', () => {
-  // The Cole bug: 18 jobs sold this year, none still sitting in a Won stage,
-  // so a Won-column sum reported ~$159k against a real $257,665.84.
-  const approvedEstimate = { _isEstimate: true, _quoteApprovedDate: '2026-03-01T00:00:00Z' }
-  const jobCard = { _isJob: true, created_at: '2026-04-01T00:00:00Z' }
-  const leadWithJob = { jobs: [{ created_at: '2026-05-01T00:00:00Z' }] }
-  const openLead = { status: 'Contacted' }
-  const openEstimate = { _isEstimate: true, _quoteAmount: 5000 }
-
-  it('counts a deal that has moved far past Won', () => {
-    // status is deliberately a delivery stage — it must not matter.
-    expect(isSold({ ...jobCard, status: 'Invoiced' })).toBe(true)
-    expect(isSold({ ...leadWithJob, status: 'Paid' })).toBe(true)
-  })
-
-  it('does NOT count a lead or an estimate that was never approved', () => {
-    expect(isSold(openLead)).toBe(false)
-    expect(isSold(openEstimate)).toBe(false)
-    expect(isSold(null)).toBe(false)
-  })
-
-  it('dates the sale by approval, then by the job coming into existence', () => {
-    expect(soldDateOf(approvedEstimate)).toBe('2026-03-01T00:00:00Z')
-    expect(soldDateOf(jobCard)).toBe('2026-04-01T00:00:00Z')
-    expect(soldDateOf(leadWithJob)).toBe('2026-05-01T00:00:00Z')
-  })
-
-  it('prefers the approval date over the job date when both exist', () => {
-    // The customer said yes on approval; the job record came later.
-    const both = { _quoteApprovedDate: '2026-03-01T00:00:00Z', jobs: [{ created_at: '2026-06-01T00:00:00Z' }] }
-    expect(soldDateOf(both)).toBe('2026-03-01T00:00:00Z')
-  })
-
-  it('sums every sold deal in the window regardless of stage', () => {
-    const cards = [
-      { ...jobCard, status: 'Completed' },
-      { ...leadWithJob, status: 'Invoiced' },
-      { ...approvedEstimate, status: 'Won' },
-      openLead,
-    ]
-    expect(soldInRange(cards, '2026-01-01T00:00:00Z', '2027-01-01T00:00:00Z')).toHaveLength(3)
-  })
-
-  it('excludes deals sold outside the window', () => {
-    const cards = [jobCard, { _isJob: true, created_at: '2025-04-01T00:00:00Z' }]
-    expect(soldInRange(cards, '2026-01-01T00:00:00Z', '2027-01-01T00:00:00Z')).toHaveLength(1)
-  })
-
-  it('uses a half-open window so months cannot double-count a deal', () => {
-    const edge = [{ _isJob: true, created_at: '2026-02-01T00:00:00Z' }]
-    expect(soldInRange(edge, '2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z')).toHaveLength(0)
-    expect(soldInRange(edge, '2026-02-01T00:00:00Z', '2026-03-01T00:00:00Z')).toHaveLength(1)
-  })
-
-  it('treats null bounds as all-time', () => {
-    expect(soldInRange([jobCard, approvedEstimate], null, null)).toHaveLength(2)
-  })
-
-  it('survives junk input', () => {
-    expect(soldInRange(null, null, null)).toEqual([])
-    expect(soldInRange([{ _isJob: true, created_at: 'nonsense' }], null, null)).toEqual([])
-  })
-})
+// 'sold is cumulative' moved wholesale to soldTotals.test.js when the fourth
+// unused sold rule was deleted from jobMetrics.

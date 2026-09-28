@@ -644,26 +644,51 @@ export const useStore = create(
         const cached = await offlineDb.getAll('jobs');
         if (cached.length > 0 && get().jobs.length === 0) set({ jobs: cached });
 
-        // Network refresh
+        // Network refresh.
+        //
+        // PostgREST caps a response at 1000 rows NO MATTER what .limit() says,
+        // so `.limit(5000)` was a promise the server never kept. HHH sat at 946
+        // live jobs — 54 short of silently dropping the oldest ones out of every
+        // total the dashboard, the EOS scorecard and Sales Performance compute
+        // from this store, with nothing anywhere to say a number had gone light.
+        // At ~40 new jobs a month that was about six weeks away. Paginate on a
+        // stable key instead; `start_date` is nullable so it cannot be the
+        // cursor, and ordering by it alone is not deterministic across pages.
+        const pageAll = async (select) => {
+          const out = [];
+          for (let from = 0; ; from += 1000) {
+            const { data, error } = await supabase
+              .from(TABLES.jobs)
+              .select(select)
+              .eq('company_id', companyId)
+              .neq('status', 'Archived')
+              .order('id', { ascending: false })
+              .range(from, from + 999);
+            if (error) return { data: null, error };
+            out.push(...(data || []));
+            if (!data || data.length < 1000) break;
+          }
+          // Hand back the order callers already had — Postgres sorts DESC with
+          // NULLS FIRST, and some screens read this list as "most recent first".
+          // Paging had to use `id` because `start_date` is nullable and not
+          // unique, so the sort is reapplied here rather than changed.
+          out.sort((a, b) => {
+            const x = a?.start_date || null, y = b?.start_date || null;
+            if (x === y) return 0;
+            if (x === null) return -1;
+            if (y === null) return 1;
+            return x < y ? 1 : -1;
+          });
+          return { data: out, error: null };
+        };
+
         try {
-          let { data, error } = await supabase
-            .from(TABLES.jobs)
-            .select(QUERIES.jobs)
-            .eq('company_id', companyId)
-            .neq('status', 'Archived')
-            .order('start_date', { ascending: false })
-            .limit(5000);
+          let { data, error } = await pageAll(QUERIES.jobs);
 
           // If join query fails/times out, fall back to simple select
           if (error) {
             console.warn('[fetchJobs] Join query failed, falling back:', error.message);
-            ({ data, error } = await supabase
-              .from(TABLES.jobs)
-              .select('*')
-              .eq('company_id', companyId)
-              .neq('status', 'Archived')
-              .order('start_date', { ascending: false })
-              .limit(5000));
+            ({ data, error } = await pageAll('*'));
           }
 
           if (!error && data) {

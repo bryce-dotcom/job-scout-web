@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { soldTotal, periodBounds } from './soldTotals'
+import { soldTotal, soldByRep, periodBounds } from './soldTotals'
 
 // The number this exists to get right: Cole sold 31 jobs / $305,199.43 in
 // 2026, and the Sales Won tile reads $0.00 because none are still sitting in
@@ -192,5 +192,89 @@ describe('cancelled work is not sold work', () => {
   it('still counts a job with no status at all', () => {
     const jobs = [{ id: 1, created_at: '2026-03-01T00:00:00Z', job_total: 500, salesperson_id: 16 }]
     expect(soldTotal(jobs, leads, { ownerId: 16 }).count).toBe(1)
+  })
+})
+
+// ── soldByRep: the number a sales manager is looking at ────────────────────
+//
+// Cole opened Sales Performance to see where his guys were for the month and
+// read $174,267 against a real $327,551 — Doug showed $80,162 of the $211,376
+// he had sold, and Christopher's 23 jobs showed as nothing at all. The page
+// built its rows from the estimate funnel, and 26 of that month's 40 jobs
+// never had an estimate. These pin the rule that replaced it.
+
+describe('soldByRep — every rep who sold, and what is behind the number', () => {
+  const employees = [{ id: 16, name: 'Cole Westcott' }, { id: 20, name: 'Doug Webb' }]
+  const leads = [{ id: 100, salesperson_id: 16 }]
+  const jobs = [
+    { id: 1, created_at: '2026-09-02T00:00:00Z', job_total: 1000, salesperson_id: 20, quote_id: 7, status: 'Completed' },
+    { id: 2, created_at: '2026-09-03T00:00:00Z', job_total: 3000, salesperson_id: 20, status: 'Scheduled' },
+    { id: 3, created_at: '2026-09-04T00:00:00Z', job_total: 500, salesperson_id: null, lead_id: '100', status: 'Paid' },
+    { id: 4, created_at: '2026-09-05T00:00:00Z', job_total: null, salesperson_id: 16, status: 'Chillin' },
+    { id: 5, created_at: '2026-09-06T00:00:00Z', job_total: 9999, salesperson_id: 20, status: 'Cancelled' },
+    { id: 6, created_at: '2026-09-07T00:00:00Z', job_total: 250, status: 'Scheduled' },
+  ]
+  const r = soldByRep(jobs, leads, { employees })
+
+  it('names every rep who sold, with no estimate needed', () => {
+    // Job 2 came through no estimate at all and still counts for Doug.
+    expect(r.rows.map((x) => x.name)).toEqual(['Doug Webb', 'Cole Westcott', 'Nobody on the deal'])
+  })
+
+  it('the rep rows add up to the company total', () => {
+    // The whole point: a manager can add the column up and get the headline.
+    expect(r.rows.reduce((s, x) => s + x.total, 0)).toBe(r.total)
+    expect(r.total).toBe(4750)
+    expect(r.count).toBe(5)
+  })
+
+  it('credits through the lead when the job carries no rep', () => {
+    const cole = r.rows.find((x) => x.name === 'Cole Westcott')
+    expect(cole.total).toBe(500)      // job 3, via lead 100
+    expect(cole.count).toBe(2)        // plus the unpriced job 4
+  })
+
+  it('counts an unpriced job rather than inventing a value for it', () => {
+    expect(r.unpriced).toBe(1)
+    expect(r.rows.find((x) => x.name === 'Cole Westcott').unpriced).toBe(1)
+  })
+
+  it('leaves cancelled work out', () => {
+    expect(r.rows.find((x) => x.name === 'Doug Webb').total).toBe(4000)
+  })
+
+  it('carries the jobs behind each row, biggest first', () => {
+    // So clicking a rep shows the same deals the row was built from, rather
+    // than a second query that could scope differently and disagree with it.
+    expect(r.rows[0].jobs.map((j) => j.id)).toEqual([2, 1])
+  })
+
+  it('separates work nobody is on instead of hiding or blaming it', () => {
+    const nobody = r.rows.find((x) => x.ownerId == null)
+    expect(nobody.total).toBe(250)
+    expect(r.rows[r.rows.length - 1]).toBe(nobody)
+  })
+
+  it('reports how much came through an estimate', () => {
+    expect(r.rows.find((x) => x.name === 'Doug Webb').viaEstimate).toBe(1)
+  })
+
+  it('honours the window', () => {
+    const aug = soldByRep(jobs, leads, { employees, start: '2026-08-01T00:00:00Z', end: '2026-09-01T00:00:00Z' })
+    expect(aug.rows).toEqual([])
+    expect(aug.total).toBe(0)
+  })
+
+  it('survives junk without throwing', () => {
+    expect(soldByRep(null, null, {}).rows).toEqual([])
+    expect(soldByRep([{ created_at: 'nonsense' }], []).count).toBe(0)
+  })
+})
+
+describe('last month is a closed window', () => {
+  it('ends where this month begins, so it stops moving', () => {
+    const b = periodBounds('lastmonth', new Date(2026, 8, 28))
+    expect(b.start).toBe(new Date(2026, 7, 1).toISOString())
+    expect(b.end).toBe(new Date(2026, 8, 1).toISOString())
   })
 })
