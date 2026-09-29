@@ -36,6 +36,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { callAnthropic } from '../_shared/anthropic.ts'
+import { sourcePrices } from '../_shared/bennySource.ts'
 import { createEstimateFromIntakeRest, fillEstimateFromIntakeRest, IntakeWriteError } from '../_shared/estimateIntakeRest.ts'
 import { intakeLineRows, intakeTotal, type EstimateIntake, type IntakeLine } from '../_shared/estimateIntake.ts'
 
@@ -283,50 +284,13 @@ async function stagePrice(job: Job) {
   const byNo = new Map<string, Any>((job.state.matches || []).map((m: Any) => [String(m.item_no), m]))
   const isMustSource = (it: Any) => { const m = byNo.get(String(it.item_no)); return !m || m.match_kind === 'must_source' || m.item_id == null }
   const mustSource = items.filter(isMustSource)
-  const found: Record<string, { unit_price: number; source_url: string; source_title: string; note: string }> = {}
-  let webSearches = 0
-  if (mustSource.length) {
-    const meta = { feature: 'benny-bid-intake', companyId: job.company_id }
-    const searchPrompt = `You are Benny, pricing bid items a contractor's catalog does not carry. Use web search to find a CURRENT purchasable unit price for each item below from a real supplier or distributor page (Grainger, Graybar, Platt, HD Supply, Home Depot Pro, a manufacturer's store, or similar). Prefer a product that meets the spec; say what differs if it does not. For labor, commissioning or service items, search for typical regional trade rates and cite the page you used.
-
-Return ONLY a JSON object:
-{ "prices": [ { "item_no": "...", "unit_price": 0.00, "source_url": "https://...", "source_title": "page title", "product": "what the page sells", "note": "how it compares to the spec and what the price includes" } ] }
-
-Rules: unit_price is the price PER UNIT in the bid's unit (${[...new Set(mustSource.map((it) => it.unit || 'EA'))].join(', ')}). source_url must be the exact page you read the price on — never invent or guess a URL. If nothing reliable turns up for an item, omit it rather than guess. Keep note under 160 characters.
-
-ITEMS:
-${mustSource.map((it) => `- item_no ${it.item_no || '?'} qty ${it.quantity} ${it.unit || ''}: ${it.description}${it.spec ? ` — SPEC: ${String(it.spec).slice(0, 500)}` : ''}`).join('\n')}`
-    try {
-      const tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: Math.min(12, mustSource.length * 3) }]
-      let messages: Any[] = [{ role: 'user', content: [{ type: 'text', text: searchPrompt }] }]
-      let text = ''
-      for (let hop = 0; hop < 3; hop++) {
-        let r = await callAnthropic(meta, { model: READ_MODEL, max_tokens: 8192, messages, tools })
-        if (!r.ok && r.status === 404) r = await callAnthropic(meta, { model: FALLBACK_MODEL, max_tokens: 8192, messages, tools })
-        if (!r.ok) { console.warn('[benny] web pricing unavailable:', r.friendly); break }
-        webSearches += (r.data?.usage?.server_tool_use?.web_search_requests as number) || 0
-        text = textOf(r)
-        // A long search can pause mid-turn; hand the transcript back and let it finish.
-        if (r.data?.stop_reason !== 'pause_turn') break
-        messages = [...messages, { role: 'assistant', content: r.data.content }]
-      }
-      const parsed = text ? parseJson(text) : null
-      for (const p of parsed?.prices || []) {
-        const url = String(p.source_url || '').trim()
-        const price = Number(p.unit_price)
-        if (!/^https?:\/\/\S+\.\S+/i.test(url) || !(price > 0)) continue
-        found[String(p.item_no)] = {
-          unit_price: Math.round(price * 100) / 100, source_url: url,
-          source_title: String(p.source_title || '').slice(0, 160),
-          note: [p.product, p.note].filter(Boolean).join(' — ').slice(0, 600),
-        }
-      }
-    } catch (e) {
-      // A failed search is not a reason to lose the bid: the line falls back
-      // to the estimate from the match pass, still redlined.
-      console.warn('[benny] web pricing failed:', (e as Error)?.message)
-    }
-  }
+  // The search itself lives in _shared/bennySource.ts since 2026-09-29 —
+  // Arnie needed the same hand for an estimate line the price book does not
+  // carry, and one sourcing rule with two callers beats two that drift.
+  const { found, searches: webSearches } = await sourcePrices(
+    mustSource.map((it: Any) => ({ key: String(it.item_no), description: String(it.description || ''), quantity: it.quantity, unit: it.unit || null, spec: it.spec ?? null })),
+    { feature: 'benny-bid-intake', companyId: job.company_id },
+  )
   await saveJob(job, { state: { ...job.state, found, web_searches: webSearches }, stage: 'write' })
 }
 
