@@ -244,11 +244,18 @@ export interface ApproveOpts { deposit?: { amount: number; method?: string | nul
 
 /** Status Approved, the deposit payment if one was taken, the lead to Won, the company told. What the page's two Approve buttons do. */
 export async function approveEstimate(r: Rest, companyId: number, quoteId: number, opts: ApproveOpts = {}) {
-  const [quote] = await readRecordList(r, `quotes?select=id,quote_id,status,lead_id,customer_id,estimate_name,quote_amount&company_id=eq.${companyId}&id=eq.${quoteId}&limit=1`)
+  const [quote] = await readRecordList(r, `quotes?select=id,quote_id,status,lead_id,customer_id,estimate_name,quote_amount,approved_date&company_id=eq.${companyId}&id=eq.${quoteId}&limit=1`)
   if (!quote) return { ok: false as const, error: 'No such estimate.' }
   const before = { status: quote.status, lead_status: null as string | null }
   const dep = opts.deposit
+  // When it was approved is the day the deal closed, and nothing ever wrote
+  // it: approved_date is a field somebody types on the estimate page, so 238
+  // of the live tenant's 357 approved estimates have none and cannot be placed
+  // in a month. Every approve path — the page, the portal, Arnie — comes
+  // through here, so this is the one place to fix it. Never overwrite a date
+  // somebody already recorded.
   const patch: Record<string, unknown> = { status: 'Approved', updated_at: nowIso() }
+  if (!quote.approved_date) patch.approved_date = nowIso()
   if (dep) { patch.deposit_amount = r2(dep.amount); patch.deposit_method = dep.method || null; patch.deposit_date = dep.date || null; patch.deposit_notes = dep.notes || null; patch.deposit_photo = dep.photo_url || null }
   else patch.deposit_amount = 0
   if (opts.signedAttachmentId) patch.signed_proposal_attachment_id = opts.signedAttachmentId

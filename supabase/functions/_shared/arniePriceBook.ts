@@ -46,8 +46,16 @@ export function normalizeItems(raw: unknown, existingNames: Set<string>): { item
     if (price > 250000) { skipped.push({ name, why: `$${price.toLocaleString()} does not read like a unit price` }); continue }
     if (existingNames.has(key)) { skipped.push({ name, why: 'already in the book' }); continue }
     if (seen.has(key)) { skipped.push({ name, why: 'listed twice' }); continue }
-    seen.add(key)
     const cost = num((row as any).cost)
+    // A price identical to the cost is the signature of a COST column read as
+    // a price: it happened twice in live runs even with the rule on the tool
+    // field, and a sale at exactly break-even is vanishingly rare. Refusing
+    // costs one sentence; a wrong price in the book is found at invoice time.
+    if (cost != null && cost > 0 && cost === price) {
+      skipped.push({ name, why: 'the price and the cost are the same figure — tell me the selling price and I will add it' })
+      continue
+    }
+    seen.add(key)
     items.push({
       name, unit_price: price, cost: cost != null && cost >= 0 ? cost : null,
       type: isService(row) ? 'Service' : 'Product',
@@ -84,7 +92,7 @@ export async function preparePriceBook(r: Rest, caller: Caller, f: Record<string
     { label: 'Adding', value: `${items.length} item${items.length === 1 ? '' : 's'} — ${products} product${products === 1 ? '' : 's'}, ${services} service${services === 1 ? '' : 's'}` + (String(f.source || '').trim() ? ` from ${f.source.trim()}` : '') },
   ]
   // Cost equal to price is the tell of a cost read as a price — shown, not hidden.
-  for (const i of items.slice(0, 40)) display.push({ label: i.name, value: `$${i.unit_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}${i.cost != null ? ` (cost $${i.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })})` : ''} · ${i.type}${i.vendor_sku ? ` · ${i.vendor_sku}` : ''}${i.manufacturer ? ` · ${i.manufacturer}` : ''}${i.cost != null && i.cost === i.unit_price ? ' · cost equals price — check this one' : ''}` })
+  for (const i of items.slice(0, 40)) display.push({ label: i.name, value: `$${i.unit_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}${i.cost != null ? ` (cost $${i.cost.toLocaleString(undefined, { minimumFractionDigits: 2 })})` : ''} · ${i.type}${i.vendor_sku ? ` · ${i.vendor_sku}` : ''}${i.manufacturer ? ` · ${i.manufacturer}` : ''}` })
   if (items.length > 40) display.push({ label: '…', value: `and ${items.length - 40} more on the card's list` })
   if (skipped.length) display.push({ label: 'Skipped', value: skipped.slice(0, 12).map((s) => `${s.name} — ${s.why}`).join('; ') + (skipped.length > 12 ? `; and ${skipped.length - 12} more` : '') })
   display.push({ label: 'Where', value: 'Products & Services, ungrouped — drag them into sections there; services ' + (servicesTaxable ? 'taxable (your sales-tax setting)' : 'not taxed (your sales-tax setting)') })
