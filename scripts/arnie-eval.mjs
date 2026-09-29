@@ -745,9 +745,53 @@ const CASES = [
       }
     },
     expect: { proposal_kind: 'record', proposal_label: 'shift clock-out', text_match: [/Thu/i, /6:00|6 ?pm/i] } },
-  { id: 'create.quote.unknown.item.asks.for.price', as: 'tech',
+  // Not in the book and not purchasable anywhere: Benny searches, comes back
+  // with nothing he can stand behind, and the line is refused — not guessed.
+  { id: 'create.quote.unsourceable.item.refused.not.guessed', as: 'tech',
     turns: ['Quote the Parkside Office Tower lead for 10 flux capacitors.'],
     expect: { proposal: 'none', text_match: [/price/i], no_dollars: true } },
+  // Not in the book but real: Benny prices it from a supplier page, redlined,
+  // and the time goes on at the tenant's own labour rate.
+  { id: 'create.quote.unknown.product.benny.sources.it.with.labour', as: 'tech',
+    run: async (ctx) => {
+      // The demo tenant has no labour rate of its own, and a peer session may
+      // add or remove one at any moment — so this case brings its own.
+      const [rate] = await rest('labor_rates', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, name: 'Eval Sparky', rate_per_hour: 88, active: true, is_default: true }) })
+      const [lead] = await rest('leads', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, customer_name: 'Sourcing Eval', business_name: 'Sourcing Eval Co', status: 'New Lead', salesperson_id: DEMO.tech.employeeId }) })
+      const cleanup = async () => {
+        for (const q of await rest(`quotes?select=id&lead_id=eq.${lead.id}`)) { await rest(`quote_lines?quote_id=eq.${q.id}`, { method: 'DELETE' }); await rest(`quotes?id=eq.${q.id}`, { method: 'DELETE' }) }
+        await rest(`leads?id=eq.${lead.id}`, { method: 'DELETE' }); await rest(`labor_rates?id=eq.${rate.id}`, { method: 'DELETE' })
+      }
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Quote the Sourcing Eval Co lead for 8 Leviton 5-15R tamper-resistant duplex receptacles.' }])
+        if (r.proposal?.preview?.label === 'quote') {
+          const f = (r.proposal.preview.fields || []).map((x) => `${x.label}: ${x.value}`).join('\n')
+          if (!/where the price came from: https?:\/\//.test(f)) throw new Error('card does not show the supplier page: ' + f)
+          if (!/Benny sourced this/.test(f)) throw new Error('card does not say Benny sourced it: ' + f)
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const lines = await rest(`quote_lines?select=item_name,item_id,quantity,price,price_source,price_verified_at,source_url,match_kind&quote_id=eq.${ap.body.created_id}&order=id`)
+          const mat = lines.find((l) => l.price_source === 'ai_sourced')
+          if (!mat) throw new Error('no sourced line: ' + JSON.stringify(lines))
+          if (mat.item_id) throw new Error('a sourced line must not claim a price-book product: ' + JSON.stringify(mat))
+          if (!/^https?:\/\/\S+\.\S+/.test(mat.source_url || '')) throw new Error('sourced line has no real page: ' + mat.source_url)
+          if (mat.price_verified_at) throw new Error('a machine must not mark its own price verified')
+          if (mat.match_kind !== 'must_source') throw new Error('sourced line not flagged must_source: ' + mat.match_kind)
+          if (!(Number(mat.price) > 0)) throw new Error('sourced line has no price: ' + mat.price)
+          // The labour: priced by the rate this case put in, never by the model.
+          const lab = lines.find((l) => Number(l.price) === 88)
+          if (!lab) throw new Error('no labour line at the tenant rate: ' + JSON.stringify(lines))
+          if (!/Eval Sparky/.test(lab.item_name || '')) throw new Error('labour line not named for the rate: ' + lab.item_name)
+          if (!(Number(lab.quantity) > 0)) throw new Error('labour line has no hours: ' + lab.quantity)
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+          if ((await rest(`quotes?select=id&id=eq.${ap.body.created_id}`)).length) throw new Error('quote left behind')
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally { await cleanup() }
+    },
+    // Deliberately loose on wording: what matters is that the rep is told the
+    // price came from outside the book and is not verified yet.
+    expect: { proposal: 'create', proposal_label: 'quote', text_match: [/benny|sourced|found/i, /verif|redline/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been|was) sent\b/i] } },
   { id: 'create.quote.book.prices.then.withdraw', as: 'tech',
     turns: ['Quote the Parkside Office Tower lead for 40 LED high bays and 12 wall packs.'],
     expect: { proposal: 'create', proposal_label: 'quote', text_match: [/draft/i, /5,?160/, /7,?128/], text_not_match: [/\b(I'?ve|I have|it'?s been|has been|was) sent\b|\bsent (it|the quote|them)\b/i] },
