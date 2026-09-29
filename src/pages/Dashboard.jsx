@@ -34,7 +34,8 @@ import {
   Eye,
   EyeOff,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  Camera, Play, Megaphone
 } from 'lucide-react'
 import { summarizePayroll } from '../lib/payrollBooks'
 import { buildForecast } from '../lib/cashForecast'
@@ -760,6 +761,22 @@ export default function Dashboard() {
 
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+      {/* On a phone the first thing on the page is the camera. Marketing opens
+          on its capture screen; the marketer's queue is behind that. */}
+      {isMobile && (
+        <button
+          type="button"
+          onClick={() => navigate('/marketing')}
+          style={{ display: 'flex', alignItems: 'center', gap: '14px', width: '100%', padding: '16px', minHeight: '72px', borderRadius: '14px', border: 'none', background: '#e11d48', color: '#fff', cursor: 'pointer', textAlign: 'left', marginBottom: '16px', boxShadow: '0 4px 14px rgba(225,29,72,0.25)' }}
+        >
+          <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}><Camera size={26} /><Play size={26} /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '17px', fontWeight: '800', lineHeight: 1.2 }}>Send a photo or video to marketing</div>
+            <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '2px' }}>The work, the truck, the crew. Shoot it, it goes to the office.</div>
+          </div>
+          <Megaphone size={20} style={{ opacity: 0.9, flexShrink: 0 }} />
+        </button>
+      )}
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <img

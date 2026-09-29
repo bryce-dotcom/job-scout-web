@@ -101,6 +101,10 @@ export default function Marketing() {
 
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('queue')
+  // On a phone the page opens on "shoot it and send it". The queue, tabs and
+  // settings are the marketer's; a tech in the field never needs them.
+  const [view, setView] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'capture' : 'full'))
+  const noteRef = useRef('')
   const [company, setCompany] = useState(null)
   const [eos, setEos] = useState({})
   // One company, possibly several brands (HHH: cleaning, lighting, JobScout).
@@ -242,7 +246,7 @@ export default function Marketing() {
       try {
         // Photo or video; a video also gets its poster and stills here.
         setUploadPct(0)
-        await uploadCapture({ companyId, employeeId: currentEmployee?.id || null, file, source: 'shared', brand: brands.length > 1 ? brandId : null, onProgress: (f) => setUploadPct(Math.round(f * 100)) })
+        await uploadCapture({ companyId, employeeId: currentEmployee?.id || null, file, note: noteRef.current || '', source: 'shared', brand: brands.length > 1 ? brandId : null, onProgress: (f) => setUploadPct(Math.round(f * 100)) })
         ok++
       } catch (err) {
         toast.error(`${file.name}: ${err.message || 'upload failed'}`)
@@ -250,7 +254,11 @@ export default function Marketing() {
     }
     setUploading(false)
     setUploadPct(null)
-    if (ok) { toast.success(ok === 1 ? 'Added to the inbox' : `${ok} added to the inbox`); load() }
+    if (ok) {
+      noteRef.current = ''
+      toast.success(view === 'capture' ? (ok === 1 ? 'Sent. The office has it.' : `Sent ${ok}. The office has them.`) : (ok === 1 ? 'Added to the inbox' : `${ok} added to the inbox`))
+      load()
+    }
   }
   const dismissCapture = async (id) => {
     await supabase.from('marketing_captures').update({ status: 'dismissed' }).eq('id', id).eq('company_id', companyId)
@@ -305,10 +313,38 @@ export default function Marketing() {
 
   if (!companyId) return null
 
+  const hiddenInputs = (
+    <>
+      <input ref={uploadRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} onChange={handleUpload} />
+      <input ref={photoCamRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUpload} />
+      <input ref={videoCamRef} type="file" accept="video/*" capture="environment" style={{ display: 'none' }} onChange={handleUpload} />
+    </>
+  )
+
+  if (view === 'capture') {
+    return (
+      <div style={{ maxWidth: 560, margin: '0 auto', padding: isMobile ? '12px 16px 90px' : '20px 24px 60px' }}>
+        <CaptureFirst
+          theme={theme} isMobile={isMobile} brands={brands} brandId={brandId} onPickBrand={pickBrand}
+          uploading={uploading} uploadPct={uploadPct} noteRef={noteRef} isManager={isManager}
+          captures={captures} employeeId={currentEmployee?.id || null}
+          waiting={posts.filter((p) => ['draft', 'approved'].includes(p.status)).length}
+          onTakePhoto={() => photoCamRef.current?.click()} onRecordVideo={() => videoCamRef.current?.click()} onLibrary={() => uploadRef.current?.click()}
+          onBack={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+          onFull={() => setView('full')}
+        />
+        {hiddenInputs}
+      </div>
+    )
+  }
+
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '12px 16px 90px' : '20px 24px 60px' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+        {isMobile && (
+          <button type="button" onClick={() => setView('capture')} title="Back" style={{ ...ghostBtn(theme), padding: 8, minHeight: 40 }}><ChevronLeft size={18} /></button>
+        )}
         <div style={{ width: 40, height: 40, borderRadius: 10, background: MKT_BG, color: MKT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <Megaphone size={22} />
         </div>
@@ -396,9 +432,7 @@ export default function Marketing() {
         <ChannelsTab theme={theme} isMobile={isMobile} publisher={publisher} brand={brandId} brandName={currentBrand?.name} isManager={isManager} invoke={invoke} onChanged={load} kit={brandKit} onSaveKit={saveBrandKit} />
       ) : null}
 
-      <input ref={uploadRef} type="file" accept="image/*,video/*" multiple style={{ display: 'none' }} onChange={handleUpload} />
-      <input ref={photoCamRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleUpload} />
-      <input ref={videoCamRef} type="file" accept="video/*" capture="environment" style={{ display: 'none' }} onChange={handleUpload} />
+      {hiddenInputs}
 
       {handPost && (
         <HandPostSheet
@@ -431,6 +465,77 @@ export default function Marketing() {
           onPublish={publishPost}
         />
       )}
+    </div>
+  )
+}
+
+// ── Capture first ────────────────────────────────────────────────────
+// What a phone opens on. Three big buttons, a line to say what it is, and
+// what you have sent today. The queue and the tabs are one tap away for
+// the marketer; a tech never has to see them. Bryce: "if I'm in the field
+// and I press marketing the first thing I should see is how to add a video
+// from my phone or take one. Let the marketer deal with the posts."
+function CaptureFirst({ theme, isMobile, brands, brandId, onPickBrand, uploading, uploadPct, noteRef, isManager, captures, employeeId, waiting, onTakePhoto, onRecordVideo, onLibrary, onBack, onFull }) {
+  const [note, setNote] = useState('')
+  const multi = brands.length > 1
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const mine = captures.filter((c) => (!employeeId || c.employee_id === employeeId) && new Date(c.created_at) >= today)
+  const sending = uploading ? (uploadPct != null && uploadPct < 100 ? `Sending ${uploadPct}%` : 'Sending…') : null
+  const big = (color) => ({ display: 'flex', alignItems: 'center', gap: 14, width: '100%', padding: '18px 16px', minHeight: 72, borderRadius: 14, border: 'none', background: color, color: '#fff', fontSize: 17, fontWeight: 700, cursor: uploading ? 'wait' : 'pointer', textAlign: 'left', opacity: uploading ? 0.7 : 1 })
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button type="button" onClick={onBack} title="Back" style={{ ...ghostBtn(theme), padding: 8, minHeight: 40 }}><ChevronLeft size={18} /></button>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: MKT_BG, color: MKT, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Megaphone size={20} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: theme.text }}>Send it to marketing</div>
+          <div style={{ fontSize: 12, color: theme.textMuted }}>Shoot the work, the truck, the crew. The office turns it into a post.</div>
+        </div>
+      </div>
+
+      {multi && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {brands.map((b) => <button key={b.id} type="button" onClick={() => onPickBrand(b.id)} style={chip(theme, b.id === brandId)}>{b.name}</button>)}
+        </div>
+      )}
+
+      <button type="button" onClick={onTakePhoto} disabled={uploading} style={big(MKT)}>
+        <Camera size={26} /> <span>{sending || 'Take a photo'}</span>
+      </button>
+      <button type="button" onClick={onRecordVideo} disabled={uploading} style={big('#2c3530')}>
+        <Play size={26} /> <span>{sending ? 'Video' : 'Record a video'}</span>
+      </button>
+      <button type="button" onClick={onLibrary} disabled={uploading} style={{ ...big(theme.bgCard), color: theme.text, border: `1px solid ${theme.border}` }}>
+        <Upload size={24} /> <span>From my phone's library</span>
+      </button>
+      {uploading && uploadPct != null && (
+        <div style={{ height: 8, borderRadius: 4, background: theme.border, overflow: 'hidden' }}>
+          <div style={{ width: `${uploadPct}%`, height: '100%', background: MKT, transition: 'width 0.3s' }} />
+        </div>
+      )}
+
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: theme.textSecondary }}>What is it? (optional, goes with the next thing you send)</span>
+        <input value={note} onChange={(e) => { setNote(e.target.value); noteRef.current = e.target.value }} placeholder="Finished the Ogden warehouse today, crew of three" style={inputStyle(theme)} />
+      </label>
+
+      {mine.length > 0 && (
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: theme.textSecondary, marginBottom: 6 }}>Sent today ({mine.length})</div>
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+            {mine.map((c) => (
+              <div key={c.id} style={{ position: 'relative', flexShrink: 0 }}>
+                {captureThumb(c) ? <img src={captureThumb(c)} alt="" style={{ width: 72, height: 72, borderRadius: 8, objectFit: 'cover', border: `1px solid ${theme.border}` }} /> : <div style={{ width: 72, height: 72, borderRadius: 8, background: theme.bg, border: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted }}>{c.media_type === 'video' ? <Play size={16} /> : <ImageIcon size={16} />}</div>}
+                {c.media_type === 'video' && <div style={{ position: 'absolute', right: 4, bottom: 4, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={10} /></div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button type="button" onClick={onFull} style={{ ...ghostBtn(theme), justifyContent: 'center', marginTop: 4 }}>
+        {isManager ? `Posts, queue & settings${waiting ? ` · ${waiting} waiting` : ''}` : 'See the queue'} <ChevronRight size={14} />
+      </button>
     </div>
   )
 }
