@@ -89,6 +89,39 @@ Deno.serve(async (req) => {
           .update(update)
           .eq('email_id', emailId)
         if (quoteErr) console.error('[resend-webhook] quotes update error', quoteErr)
+
+        // A bid sent by email (bid-submit): delivered / bounced land on the
+        // submission, and a bounce raises a notification at once — the
+        // deadline has not moved and the bid is not in (SAL_SCOUT_PLAN §5.8).
+        if (['delivered', 'bounced', 'complained', 'delayed'].includes(simpleStatus)) {
+          const { data: subs } = await supabase
+            .from('bid_submissions')
+            .select('id, company_id, quote_id, opportunity_id, status')
+            .eq('email_id', emailId)
+            .limit(1)
+          const sub = subs?.[0]
+          if (sub) {
+            const patch: Record<string, unknown> = { delivery_status: simpleStatus, updated_at: new Date().toISOString() }
+            if (simpleStatus === 'delivered' && sub.status === 'sent') patch.status = 'delivered'
+            if (simpleStatus === 'bounced') { patch.status = 'bounced'; patch.bounce_reason = bounceReason || 'bounced' }
+            await supabase.from('bid_submissions').update(patch).eq('id', sub.id)
+            if (simpleStatus === 'bounced') {
+              let title = 'the bid'
+              if (sub.opportunity_id) {
+                const { data: opp } = await supabase.from('bid_opportunities').select('title').eq('id', sub.opportunity_id).maybeSingle()
+                if (opp?.title) title = opp.title
+                await supabase.from('bid_opportunities').update({ status: 'ready', updated_at: new Date().toISOString() }).eq('id', sub.opportunity_id)
+              }
+              await supabase.from('company_notifications').insert({
+                company_id: sub.company_id, type: 'bid_bounced',
+                title: `Sal: the bid email BOUNCED — ${title}`,
+                message: `${bounceReason || 'The buyer\'s server refused it'}. The bid is NOT in — send it again or submit another way before the deadline.`,
+                metadata: { submission_id: sub.id, quote_id: sub.quote_id, opportunity_id: sub.opportunity_id, route: `/estimates/${sub.quote_id}`, source: 'sal' },
+                created_by: null,
+              })
+            }
+          }
+        }
       }
     }
 

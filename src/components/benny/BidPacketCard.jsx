@@ -3,7 +3,8 @@ import { ClipboardList, CheckCircle, Circle, FileText, Download, Sparkles, Alert
 import { supabase } from '../../lib/supabase'
 import { useStore } from '../../lib/store'
 import { toast } from '../../lib/toast'
-import { seedChecklist, autoDoneChecklist, submitReadiness, certificateItems, sortPacket } from '../../lib/bidPacket'
+import { seedChecklist, autoDoneChecklist, submitReadiness, certificateItems, sortPacket, approvalSentence } from '../../lib/bidPacket'
+import { generateBidLabelPdf } from '../../lib/bidLabelPdf'
 import { bidIntakeOf } from '../../lib/bidSchedule'
 import { bidPdfBlob } from '../../lib/bidPdf'
 import { generateCoverLetterPdf, generateQualificationsPdf } from '../../lib/bidPacketPdf'
@@ -55,7 +56,18 @@ export default function BidPacketCard({ theme, estimate, lineItems, company, bus
   const [building, setBuilding] = useState(false)
   const [progress, setProgress] = useState('')
   const [loading, setLoading] = useState(true)
-  const who = user?.email || currentEmployee?.email || currentEmployee?.name || null
+  // Submit (§5.8)
+  const [approveTicked, setApproveTicked] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [toEmail, setToEmail] = useState('')
+  const [confirmNo, setConfirmNo] = useState('')
+  const [tracking, setTracking] = useState('')
+  // The signed-in person's roster row: the store keeps no currentEmployee,
+  // so match by email. bid-submit enforces the level server-side regardless.
+  const employees = useStore((s) => s.employees) || []
+  const me = employees.find((e) => e.email && user?.email && e.email.toLowerCase() === user.email.toLowerCase()) || currentEmployee || null
+  const who = user?.email || me?.email || me?.name || null
+  const canApprove = !!me?.is_admin || ['manager', 'admin', 'super admin', 'owner', 'developer'].includes(String(me?.user_role || '').toLowerCase())
   const intake = useMemo(() => bidIntakeOf(estimate), [estimate])
   const requirements = opp?.requirements && Object.keys(opp.requirements).length ? opp.requirements : (estimate?.bid_intake?.requirements || null)
   const dueAt = opp?.due_at || intake.due_at || null
@@ -135,7 +147,7 @@ export default function BidPacketCard({ theme, estimate, lineItems, company, bus
       parts.push({ kind: 'bid_form', file_name: `${ref}_bid_form.pdf`, bytes: new Uint8Array(await formBlob.arrayBuffer()) })
       if (coverLetter.trim()) {
         setProgress('Cover letter…')
-        const doc = generateCoverLetterPdf({ company, businessUnit, opportunity: opp, intake, coverLetter, total: Number(estimate.quote_amount) || null, signer: signer ? { name: signer.name, title: signer.role } : { name: currentEmployee?.name, title: currentEmployee?.role } })
+        const doc = generateCoverLetterPdf({ company, businessUnit, opportunity: opp, intake, coverLetter, total: Number(estimate.quote_amount) || null, signer: signer ? { name: signer.name, title: signer.role } : { name: me?.name, title: me?.role } })
         parts.push({ kind: 'cover_letter', file_name: 'cover_letter.pdf', bytes: new Uint8Array(doc.output('arraybuffer')) })
       }
       setProgress('Qualification statement…')
@@ -202,6 +214,44 @@ export default function BidPacketCard({ theme, estimate, lineItems, company, bus
     if (error || !data?.signedUrl) { toast.error('Could not open the file'); return }
     window.open(data.signedUrl, '_blank', 'noopener')
   }
+
+  // Every submit action goes through bid-submit, which resolves the caller
+  // from the JWT, reads recipients from the row, and mirrors to audit_log.
+  const callSubmit = async (action, extra = {}) => {
+    const { data: sess } = await supabase.auth.getSession()
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/bid-submit`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.session?.access_token || ANON_KEY}`, apikey: ANON_KEY }, body: JSON.stringify({ company_id: companyId, submission_id: sub?.id, action, ...extra }) })
+    const data = await r.json().catch(() => ({}))
+    if (!r.ok || !data.ok) { const why = data.reasons?.length ? `${data.error}: ${data.reasons.join('; ')}` : (data.error || `bid-submit ${r.status}`); throw new Error(why) }
+    return data
+  }
+  const act = async (label, action, extra) => {
+    setBusy(true)
+    try { const d = await callSubmit(action, extra); toast.success(label); await load(); return d }
+    catch (e) { toast.error(e.message); return null }
+    finally { setBusy(false) }
+  }
+  const approve = () => act('Approved for submission', 'approve', { approval_text: approvalSentence(company?.company_name) })
+  const sendEmail = async () => {
+    const to = (toEmail || sub?.sent_to?.email || opp?.submit_to?.email || '').trim()
+    if (!to) { toast.error("Enter the buyer's email address"); return }
+    if (!window.confirm(`Send the bid packet by email to ${to} now? The approver and you are copied; replies file on Sal's Inbox.`)) return
+    await act(`Bid sent to ${to}`, 'send_email', { to })
+  }
+  const recordPortal = () => act('Submission recorded', 'mark_submitted', { method: sub?.method === 'email' ? 'portal' : (sub?.method || 'portal'), confirmation_number: confirmNo || null })
+  const recordMail = () => act('Shipment recorded', 'mark_submitted', { method: 'mail', tracking: tracking || null })
+  const withdraw = () => { const reason = window.prompt('Withdraw this submission? Say why (kept on the record).'); if (reason === null) return; act('Withdrawn', 'withdraw', { reason }) }
+  const outcome = (o) => {
+    const award = o === 'won' ? window.prompt('Award amount (leave blank if unknown):') : null
+    const low = o === 'lost' ? window.prompt('Low bid amount, if the buyer published it (blank if unknown):') : null
+    if (award === null && o === 'won') return
+    if (low === null && o === 'lost') return
+    act(o === 'won' ? 'Won — recorded' : o === 'lost' ? 'Lost — recorded' : 'No award — recorded', 'outcome', { outcome: o, award_amount: award || null, low_bid_amount: low || null })
+  }
+  const labelSheet = () => {
+    try { const doc = generateBidLabelPdf({ opportunity: opp, intake, company, requirements, dueAt }); window.open(URL.createObjectURL(doc.output('blob')), '_blank') }
+    catch (e) { toast.error(`Could not build the label sheet: ${e.message}`) }
+  }
+  const setMethod = (m) => saveSub({ method: m })
 
   const readiness = useMemo(() => submitReadiness({ documentType: estimate?.document_type || 'bid', lines: lineItems, checklist: sub?.checklist || [], company, dueAt, blockers: opp?.blockers || [] }), [estimate, lineItems, sub, company, dueAt, opp])
 
@@ -282,7 +332,7 @@ export default function BidPacketCard({ theme, estimate, lineItems, company, bus
       {readiness.ready ? (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(34,197,94,0.1)', color: '#166534', fontSize: '13px' }}>
           <CheckCircle size={16} style={{ flexShrink: 0, marginTop: '1px' }} />
-          <div>Everything the buyer asked for is in the packet and every price stands behind a source. Sending from the app arrives with the next phase; until then, submit the files above the way the notice says.</div>
+          <div>Everything the buyer asked for is in the packet and every price stands behind a source. Approve it below and it goes out the way the notice says.</div>
         </div>
       ) : (
         <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '10px 12px', borderRadius: '8px', backgroundColor: 'rgba(234,179,8,0.12)', color: '#854F0B', fontSize: '13px' }}>
@@ -293,6 +343,90 @@ export default function BidPacketCard({ theme, estimate, lineItems, company, bus
           </div>
         </div>
       )}
+      {/* Submit (§5.8): a Manager ticks the exact sentence, then the bid goes
+          by the method the notice named. Nothing is ever sent without that click. */}
+      {sub && (() => {
+        const status = sub.status
+        const method = sub.method || opp?.submit_method || 'email'
+        const approved = ['approved', 'bounced'].includes(status)
+        const out = ['sent', 'delivered', 'confirmed'].includes(status)
+        const when = (d) => d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
+        const input = { padding: '8px 10px', fontSize: '13px', color: theme.text, backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '6px', minHeight: '36px', flex: 1, minWidth: '180px' }
+        return (
+          <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: `1px solid ${theme.border}` }}>
+            <div style={{ ...small, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Submit</div>
+
+            {status === 'draft' && (readiness.ready ? (canApprove ? (
+              <div>
+                <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '13px', color: theme.text, cursor: 'pointer', marginBottom: '8px' }}>
+                  <input type="checkbox" checked={approveTicked} onChange={(e) => setApproveTicked(e.target.checked)} style={{ marginTop: '3px' }} />
+                  <span>{approvalSentence(company?.company_name)}</span>
+                </label>
+                <button type="button" onClick={approve} disabled={!approveTicked || busy} style={{ ...btn(true), opacity: !approveTicked || busy ? 0.6 : 1 }}><CheckCircle size={14} /> Approve for submission</button>
+              </div>
+            ) : <div style={small}>Ready. A Manager or above approves the submission — the tick is theirs.</div>)
+              : <div style={small}>Approval opens once every reason above is cleared.</div>)}
+
+            {approved && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={small}>Approved by {sub.approved_by} on {when(sub.approved_at)}.{status === 'bounced' ? <span style={{ color: '#b91c1c', fontWeight: 600 }}> The email bounced{sub.bounce_reason ? ` (${sub.bounce_reason})` : ''} — send it again or submit another way.</span> : ''}</div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {['email', 'portal', 'mail'].map((m) => <button key={m} type="button" onClick={() => setMethod(m)} style={{ ...btn(false), borderColor: method === m ? theme.accent : theme.border, backgroundColor: method === m ? theme.accentBg : 'transparent' }}>{m === 'email' ? 'By email' : m === 'portal' ? 'On the portal' : 'By mail (sealed)'}</button>)}
+                </div>
+                {method === 'email' && (
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <input type="email" placeholder="Buyer's email (from the notice)" value={toEmail || sub.sent_to?.email || opp?.submit_to?.email || ''} onChange={(e) => setToEmail(e.target.value)} style={input} />
+                    <button type="button" onClick={sendEmail} disabled={busy} style={{ ...btn(true), opacity: busy ? 0.6 : 1 }}>{busy ? 'Sending…' : 'Send the bid by email'}</button>
+                  </div>
+                )}
+                {method === 'portal' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={small}>Upload the files above in the order listed{opp?.submit_to?.portal_url ? <> on <a href={opp.submit_to.portal_url} target="_blank" rel="noreferrer" style={{ color: theme.accent }}>the buyer's portal</a></> : opp?.url ? <> at <a href={opp.url} target="_blank" rel="noreferrer" style={{ color: theme.accent }}>the notice</a></> : ''}, then record the confirmation here. Bonfire and Jaggaer send no confirmation email — call the buyer contact to confirm receipt.</div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <input placeholder="Confirmation number (or what the portal showed)" value={confirmNo} onChange={(e) => setConfirmNo(e.target.value)} style={input} />
+                      <button type="button" onClick={recordPortal} disabled={busy} style={btn(true)}>Record the submission</button>
+                    </div>
+                  </div>
+                )}
+                {method === 'mail' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <button type="button" onClick={labelSheet} style={btn(false)}><FileText size={14} /> Label sheet</button>
+                      <input placeholder="Tracking number once it ships" value={tracking} onChange={(e) => setTracking(e.target.value)} style={input} />
+                      <button type="button" onClick={recordMail} disabled={busy} style={btn(true)}>Record the shipment</button>
+                    </div>
+                  </div>
+                )}
+                {canApprove && <button type="button" onClick={withdraw} style={{ background: 'none', border: 'none', color: theme.textMuted, fontSize: '12px', textDecoration: 'underline', cursor: 'pointer', alignSelf: 'flex-start', padding: 0 }}>withdraw the approval</button>}
+              </div>
+            )}
+
+            {out && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '13px', color: theme.text }}>
+                  {status === 'confirmed'
+                    ? <>Submitted {when(sub.sent_at)} by {sub.confirmation?.method || sub.method}{sub.confirmation?.number ? ` · confirmation ${sub.confirmation.number}` : ''}{sub.confirmation?.tracking ? ` · tracking ${sub.confirmation.tracking}` : ''}{sub.confirmation?.by ? ` · recorded by ${sub.confirmation.by}` : ''}</>
+                    : <>Sent {when(sub.sent_at)} to {sub.sent_to?.email}{sub.sent_to?.cc?.length ? ` (cc ${sub.sent_to.cc.join(', ')})` : ''} · delivery: <strong style={{ color: sub.delivery_status === 'delivered' ? '#166534' : theme.text }}>{sub.delivery_status || 'sent'}</strong></>}
+                </div>
+                {(!sub.outcome || sub.outcome === 'unknown') ? (
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={small}>Outcome:</span>
+                    <button type="button" onClick={() => outcome('won')} disabled={busy} style={btn(false)}>Won</button>
+                    <button type="button" onClick={() => outcome('lost')} disabled={busy} style={btn(false)}>Lost</button>
+                    <button type="button" onClick={() => outcome('no_award')} disabled={busy} style={btn(false)}>No award</button>
+                    {canApprove && status !== 'confirmed' && <button type="button" onClick={withdraw} style={{ background: 'none', border: 'none', color: theme.textMuted, fontSize: '12px', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>withdraw</button>}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: sub.outcome === 'won' ? '#166534' : theme.textSecondary }}>
+                    {sub.outcome === 'won' ? 'Won' : sub.outcome === 'lost' ? 'Lost' : 'No award'}{sub.award_amount ? ` · awarded $${Number(sub.award_amount).toLocaleString('en-US')}` : ''}{sub.low_bid_amount ? ` · low bid $${Number(sub.low_bid_amount).toLocaleString('en-US')}` : ''}{sub.outcome_at ? ` · ${when(sub.outcome_at)}` : ''}
+                  </div>
+                )}
+              </div>
+            )}
+            {status === 'withdrawn' && <div style={small}>Withdrawn{sub.outcome_notes ? `: ${sub.outcome_notes}` : ''}. Build and approve again to submit.</div>}
+          </div>
+        )
+      })()}
       {!isMobile && <div style={{ ...small, marginTop: '8px' }}>Benny fills fillable forms from your profile and leaves anything he is not sure of blank. Signatures, notarization and bid bonds are always yours.</div>}
     </div>
   )

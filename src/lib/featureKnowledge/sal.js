@@ -78,6 +78,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-09-26',
+  lastVerified: '2026-09-29',
   freshUntil: 60,
 }

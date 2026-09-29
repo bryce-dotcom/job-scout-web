@@ -94,4 +94,4 @@ if (out.quote_id) {
   console.log('quote', q.id, q.document_type, q.settings_overrides?.presentation_mode, '$' + q.quote_amount, '|', q.estimate_name)
   console.log('bid_intake', JSON.stringify({ ...q.bid_intake, sections: q.bid_intake?.sections?.map(s => `${s.name}: ${s.item_nos.join(',')}`) }, null, 1))
 }
-await sb.auth.signOut()
+await sb.auth.signOut({ scope: 'local' }) // never 'global': that revokes every session of the demo user, including a browser you are testing in

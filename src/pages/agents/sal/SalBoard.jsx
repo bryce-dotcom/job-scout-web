@@ -73,7 +73,7 @@ export default function SalBoard() {
       const ids = withQuote.map((r) => r.quote_id)
       const [{ data: lines }, { data: subs }] = await Promise.all([
         supabase.from('quote_lines').select('quote_id').in('quote_id', ids).eq('price_source', 'ai_sourced').is('price_verified_at', null),
-        supabase.from('bid_submissions').select('quote_id, status, checklist, packet_built_at').in('quote_id', ids).neq('status', 'withdrawn'),
+        supabase.from('bid_submissions').select('quote_id, status, checklist, packet_built_at, outcome, award_amount, sent_at').in('quote_id', ids).neq('status', 'withdrawn'),
       ])
       const unverified = {}
       for (const l of lines || []) unverified[l.quote_id] = (unverified[l.quote_id] || 0) + 1
@@ -85,7 +85,12 @@ export default function SalBoard() {
         if (open) parts.push(`${open} checklist item${open === 1 ? '' : 's'} open`)
         if (!sub) parts.push('no checklist yet')
         else if (!sub.packet_built_at) parts.push('packet not built')
-        readiness[q] = { text: parts.length ? parts.join(' · ') : 'ready to submit', ready: parts.length === 0, status: sub?.status || null }
+        const submitted = sub && ['sent', 'delivered', 'confirmed'].includes(sub.status)
+        const text = sub?.status === 'approved' ? 'approved — not sent yet'
+          : sub?.status === 'bounced' ? 'EMAIL BOUNCED — not in'
+          : submitted ? (sub.outcome && sub.outcome !== 'unknown' ? { won: 'won', lost: 'lost', no_award: 'no award' }[sub.outcome] : `submitted${sub.status === 'delivered' ? ' · delivered' : sub.status === 'confirmed' ? ' · confirmed' : ''}`)
+          : (parts.length ? parts.join(' · ') : 'ready to submit')
+        readiness[q] = { text, ready: parts.length === 0 && !submitted, status: sub?.status || null, outcome: sub?.outcome || null, award: sub?.award_amount || null, submitted }
       }
     }
     setRows((data || []).map((r) => r.quote_id ? { ...r, readiness: readiness[r.quote_id] || null } : r))
@@ -105,6 +110,17 @@ export default function SalBoard() {
     return list
   }, [rows, filter])
   const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.key, rows.filter((r) => f.statuses.includes(r.status)).length])), [rows])
+  // The tile (§5.9): open, due this week, submitted, won, awarded.
+  const tile = useMemo(() => {
+    const week = Date.now() + 7 * 86400e3
+    const open = rows.filter((r) => ['new', 'shortlisted', 'chosen', 'building', 'ready'].includes(r.status))
+    const dueWeek = open.filter((r) => r.due_at && new Date(r.due_at).getTime() < week && new Date(r.due_at) > new Date()).length
+    const submitted = rows.filter((r) => ['submitted', 'won', 'lost', 'no_award'].includes(r.status)).length
+    const won = rows.filter((r) => r.status === 'won').length
+    const decided = rows.filter((r) => ['won', 'lost'].includes(r.status)).length
+    const awarded = rows.reduce((t, r) => t + (r.readiness?.outcome === 'won' ? Number(r.readiness.award) || 0 : 0), 0)
+    return { open: open.length, dueWeek, submitted, won, winRate: decided ? Math.round((won / decided) * 100) : null, awarded }
+  }, [rows])
 
   const act = async (row, action, extra = {}) => {
     setBusy(row.id)
@@ -172,6 +188,24 @@ export default function SalBoard() {
         <Radar size={18} style={{ color: theme.accent }} />
         <h3 style={{ fontSize: '15px', fontWeight: 700, color: theme.text, margin: 0, flex: 1 }}>Bids worth a look</h3>
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', maxWidth: '100%' }}>
+          {/* The tile: what Sal has found, what is due, what went out, what it won. */}
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))', gap: '8px', marginBottom: '12px' }}>
+
+            {[['Open', tile.open], ['Due this week', tile.dueWeek], ['Submitted', tile.submitted], ['Won', tile.won], ['Win rate', tile.winRate == null ? '—' : `${tile.winRate}%`], ['Awarded', tile.awarded ? `${Math.round(tile.awarded).toLocaleString('en-US')}` : '—']].map(([k, v]) => (
+
+              <div key={k} style={{ padding: '8px 10px', borderRadius: '10px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard }}>
+
+                <div style={{ fontSize: '11px', color: theme.textMuted }}>{k}</div>
+
+                <div style={{ fontSize: '18px', fontWeight: 700, color: theme.text }}>{v}</div>
+
+              </div>
+
+            ))}
+
+          </div>
+
           {FILTERS.map((f) => <button key={f.key} onClick={() => setFilter(f.key)} style={chip(filter === f.key)}>{f.label}{counts[f.key] ? ` · ${counts[f.key]}` : ''}</button>)}
         </div>
       </div>
