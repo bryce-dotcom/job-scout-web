@@ -102,7 +102,7 @@ function ArnieAvatar({ size = 36 }) {
 // kickoff: a first message sent on the person's behalf when the chat mounts
 // — the Onboarding page uses it to start "set up my company" without the
 // new owner having to know what to type. Sent once, never again on re-render.
-export default function ArnieChat({ isPanel = false, onClose, sessionId: externalSessionId, kickoff = null, onApplied = null }) {
+export default function ArnieChat({ isPanel = false, onClose, sessionId: externalSessionId, kickoff = null, onApplied = null, autoMic = false }) {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
   const company = useStore(s => s.company)
@@ -200,7 +200,15 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     if (!kickoff || kickoffSent.current) return
     kickoffSent.current = true
     let fired = false
-    const t = setTimeout(() => { fired = true; handleSend(kickoff, { canned: true }) }, 400)
+    const t = setTimeout(() => {
+      fired = true; handleSend(kickoff, { canned: true })
+      // "Speak it": the button that opened this was the person's gesture, so
+      // the mic may start now. If the browser has no speech support the usual
+      // alert would interrupt a reply; skip quietly and they can type.
+      if (autoMic && (window.SpeechRecognition || window.webkitSpeechRecognition)) {
+        setTimeout(() => { try { startListening() } catch { /* they can tap the mic */ } }, 1200)
+      }
+    }, 400)
     // StrictMode mounts twice in dev: if the timer is cancelled before it
     // fires, the kickoff has not been sent — let the second mount send it.
     return () => { clearTimeout(t); if (!fired) kickoffSent.current = false }
@@ -231,7 +239,8 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     // app-wide (dropdowns etc.) without a manual reload.
     if (decision === 'apply' && !failed) {
       try { await useStore.getState().fetchSettings?.() } catch { /* refresh is best-effort */ }
-      try { onApplied?.(card) } catch { /* the page's own follow-up is its business */ }
+      // The created id rides in the apply response, not the card.
+      try { onApplied?.(card, res) } catch { /* the page's own follow-up is its business */ }
       // A created lead should be on the Leads page the moment they look.
       if (res.created_id) {
         try { await useStore.getState().fetchLeads?.() } catch { /* best-effort */ }

@@ -748,6 +748,31 @@ const CASES = [
       }
     },
     expect: { proposal_kind: 'record', proposal_label: 'shift clock-out', text_match: [/Thu/i, /6:00|6 ?pm/i] } },
+  // — "Describe it to Arnie" on an empty estimate (2026-09-29): the lines land IN that draft, not a new one —
+  { id: 'create.quote.fill.empty.draft.then.rollback', as: 'tech',
+    run: async (ctx) => {
+      const [lead] = await rest(`leads?select=id&company_id=eq.${DEMO.company}&business_name=ilike.*Parkside*&limit=1`)
+      const [q] = await rest('quotes', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, quote_id: 'EST-EVAL-FILL', lead_id: lead?.id || null, status: 'Draft', quote_amount: 0, estimate_name: 'Parkside — eval fill' }) })
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: `Fill estimate EST-EVAL-FILL with 12 wall packs.` }])
+        if (r.proposal?.preview?.label === 'quote') {
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.ok) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const lines = await rest(`quote_lines?select=item_id,quantity,line_total&quote_id=eq.${q.id}`); const [q2] = await rest(`quotes?select=quote_amount,status&id=eq.${q.id}`)
+          const news = await rest(`quotes?select=id&company_id=eq.${DEMO.company}&estimate_name=ilike.*Parkside*&id=gt.${q.id}`)
+          if (lines.length !== 1 || !lines[0].item_id || Number(lines[0].quantity) !== 12) throw new Error('lines not in the draft: ' + JSON.stringify(lines))
+          if (Number(q2.quote_amount) !== Number(lines[0].line_total) || q2.status !== 'Draft') throw new Error('headline/status: ' + JSON.stringify(q2))
+          if (news.length) throw new Error('a NEW quote was made instead of filling the draft')
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+          const back = await rest(`quote_lines?select=id&quote_id=eq.${q.id}`); const [q3] = await rest(`quotes?select=id,quote_amount&id=eq.${q.id}`)
+          if (back.length || !q3 || Number(q3.quote_amount) !== 0) throw new Error('rollback left the draft changed: ' + JSON.stringify({ back, q3 }))
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally {
+        await rest(`quote_lines?quote_id=eq.${q.id}`, { method: 'DELETE' }); await rest(`quotes?id=eq.${q.id}`, { method: 'DELETE' })
+      }
+    },
+    expect: { proposal: 'create', proposal_label: 'quote', text_match: [/EST-EVAL-FILL|fill/i, /12/], text_not_match: [/\b(I'?ve|I have|it'?s been|has been|was) sent\b/i] } },
   // Not in the book and not purchasable anywhere: Benny searches, comes back
   // with nothing he can stand behind, and the line is refused — not guessed.
   { id: 'create.quote.unsourceable.item.refused.not.guessed', as: 'tech',

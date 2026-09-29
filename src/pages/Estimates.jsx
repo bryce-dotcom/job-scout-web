@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
-import { Plus, Search, FileText, X, ChevronRight, DollarSign, User, Calendar, Upload, Download } from 'lucide-react'
+import { Plus, Search, FileText, X, ChevronRight, DollarSign, User, Calendar, Upload, Download, Mic } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import SearchableSelect from '../components/SearchableSelect'
 import ImportExportModal, { exportToCSV, exportToXLSX } from '../components/ImportExportModal'
@@ -12,6 +12,7 @@ import { quoteStatusColors as statusColors } from '../lib/statusColors'
 import PageHeader from '../components/PageHeader'
 import { matchAllTokens, buildBlob } from '../lib/searchUtils'
 import { configFromSettings, labelsFor, documentType } from '../lib/documentVocabulary'
+import { describeToArnie } from '../lib/arnieEstimate'
 import { findSimilarLeads } from '../lib/leadDuplicates'
 
 // Light theme fallback
@@ -42,6 +43,8 @@ export default function Estimates() {
   // kinds it produces. lib/documentVocabulary is the rule; the nav, the
   // detail page and everything the customer sees read the same one.
   const settings = useStore((state) => state.settings)
+  const hasAgent = useStore((state) => state.hasAgent)
+  const arnieHere = typeof hasAgent === 'function' && hasAgent('arnie-og')
   const docCfg = configFromSettings(settings)
   const lead = labelsFor(docCfg.primary)
   const manyKinds = docCfg.enabled.length > 1
@@ -324,6 +327,28 @@ export default function Estimates() {
           <button onClick={() => exportToXLSX(filteredEstimates, estimatesFields, 'estimates_export', { relatedTables: estimateRelatedTables, parentRefField: 'quote_id', mainSheetName: 'Estimates', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} />{!isMobile && ' Export'}
           </button>
+          {/* Describe it to Arnie: say or type the project; Arnie drafts the
+
+              lines from the price book and the card creates the estimate. */}
+
+          {arnieHere && (
+
+            <button
+
+              onClick={() => describeToArnie({})}
+
+              title="Say or type the project — Arnie drafts the estimate from your price book"
+
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'rgba(168,85,247,0.12)', color: '#7e22ce', border: '1px solid rgba(168,85,247,0.35)', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+
+            >
+
+              <Mic size={18} />{!isMobile && ' Describe it to Arnie'}
+
+            </button>
+
+          )}
+
           <button
             onClick={() => {
               // Pre-assign to whoever is creating it; still editable in the form.

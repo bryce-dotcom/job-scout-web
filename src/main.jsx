@@ -5,6 +5,7 @@ import './index.css'
 import App from './App.jsx'
 import { reportCrash, installGlobalCrashHandlers, installBreadcrumbs, addCrumb, chunkReloadPending, chunkReloadDecision } from './lib/crashReport'
 import { installOverflowWatch } from './lib/overflowWatch'
+import { installAppUpdateCheck } from './lib/appUpdate'
 import { useStore } from './lib/store'
 
 // Initialize Sentry
@@ -117,6 +118,12 @@ if ('serviceWorker' in navigator) {
     }
   })
 }
+
+// Everything above only runs on a page load. An installed app that stays
+// open on a phone for days never does one, so it kept serving last week's
+// build (Cole's Lenard after the savings fix). This keeps looking while the
+// app is open — see src/lib/appUpdate.js for what it does when it finds one.
+installAppUpdateCheck({ running: import.meta.env.VITE_APP_BUILD })
 
 // Record every crash in our OWN table as well as Sentry.
 //

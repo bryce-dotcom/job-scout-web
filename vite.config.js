@@ -1,11 +1,30 @@
+/* global process */
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// One stamp per build, baked into the bundle AND written to /version.json,
+// so an app that has stayed open on a phone can tell it is behind the server
+// and reload (src/lib/appUpdate.js). Vercel's commit sha when it builds
+// there, the clock otherwise; both sides of the comparison come from the
+// same build, so the value only has to be unique.
+const APP_BUILD = (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 10) || `local-${Date.now().toString(36)}`
+const versionStamp = () => ({
+  name: 'jobscout-version-stamp',
+  apply: 'build',
+  generateBundle() {
+    this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ build: APP_BUILD, at: new Date().toISOString() }) })
+  },
+})
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_APP_BUILD': JSON.stringify(APP_BUILD),
+  },
   plugins: [
     react(),
+    versionStamp(),
     VitePWA({
       registerType: 'autoUpdate',
       // The plugin's injected /registerSW.js calls register() with no catch.

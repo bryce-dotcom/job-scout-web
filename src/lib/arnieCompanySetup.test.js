@@ -178,6 +178,9 @@ describe('the tool, the prompt and the page agree', () => {
     expect(onboarding).toMatch(/kickoff="Set up my company\."/)
     expect(onboarding).toMatch(/card\?\.preview\?\.label === 'company'/)
     expect(arnieChat).toMatch(/if \(!fired\) kickoffSent\.current = false/)
-    expect(arnieChat).toMatch(/onApplied\?\.\(card\)/)
+    // The page has to be told, and told WHICH card. Extra arguments are the
+    // caller's business (it gained the apply result on 2026-09-29) — assert the
+    // hand-off, not the signature.
+    expect(arnieChat).toMatch(/onApplied\?\.\(card\b/)
   })
 })

@@ -2204,7 +2204,7 @@ export default function Layout() {
 
       {/* Arnie + Feedback float bottom-right — hide on detail/edit pages so
           they don't cover the page's own action button on mobile. */}
-      {!isDetailRoute && <ArnieFloatingPanel />}
+      <ArnieFloatingPanel hideLauncher={isDetailRoute} />
 
       {showNavCustomizer && (
         <NavCustomizer

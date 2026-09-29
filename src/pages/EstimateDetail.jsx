@@ -14,7 +14,7 @@ import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
 import LoadingSpinner from '../components/LoadingSpinner'
-import { AlertTriangle, ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image, Upload, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image, Upload, ShieldCheck, Mic } from 'lucide-react'
 import FlowIndicator from '../components/FlowIndicator'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
@@ -26,6 +26,7 @@ import { sendGate, sendGateMessage, priceBadge, matchBadge, canVerify, verifiedP
 import { generateBidPdf, bidPdfBlob } from '../lib/bidPdf'
 import BidIntakeCard from '../components/benny/BidIntakeCard'
 import BidPacketCard from '../components/benny/BidPacketCard'
+import { describeToArnie } from '../lib/arnieEstimate'
 import { toast } from '../lib/toast'
 import SignedProposalCard from '../components/SignedProposalCard'
 import EmailDeliveryBadge from '../components/EmailDeliveryBadge'
@@ -3487,6 +3488,18 @@ function EstimateDetailInner() {
                     <BidIntakeCard theme={theme} mode="fill" quote={estimate} compact onDone={() => fetchEstimateData()} />
                   </div>
                 )}
+                {/* Or say it: Arnie fills this empty draft from the price book. */}
+                <div style={{ marginTop: '14px' }}>
+                  <button
+                    type="button"
+                    onClick={() => describeToArnie({ forLabel: customerInfo?.business_name || customerInfo?.name || customerInfo?.customer_name || '', estimateRef: estimate.quote_id || null, estimateId: estimate.id })}
+                    title="Say or type the project — Arnie drafts the lines from your price book into this estimate"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 16px', minHeight: '44px', backgroundColor: 'rgba(168,85,247,0.12)', color: '#7e22ce', border: '1px solid rgba(168,85,247,0.35)', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    <Mic size={16} /> Describe it to Arnie
+                  </button>
+                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>Speak or type what the project is. Arnie drafts the lines from the price book, shows you the card, and fills this {docLabels.one.toLowerCase()} when you approve.</div>
+                </div>
               </div>
             ) : (
               <>
