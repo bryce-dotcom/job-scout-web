@@ -441,7 +441,10 @@ const CASES = [
       const fx = await expenseFixture()
       try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'All our Chevron expenses are filed as Materials — change them all to Fuel.' }]) } finally { await fx.cleanup() }
     },
-    expect: { proposal: 'none', text_match: [/admin/i] } },
+    // What matters is the refusal and that it names the level needed. Arnie
+    // says "owner access" as readily as "admin", and for the expense book both
+    // are true — do not tighten this back to one word.
+    expect: { proposal: 'none', text_match: [/admin|owner/i] } },
 
   // — one customer, one read: the work for everyone, the money for an admin —
   { id: 'account.owner.history.jobs.balance.last.contact', as: 'owner',
