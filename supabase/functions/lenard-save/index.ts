@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { round2 } from "../_shared/estimateIntake.ts";
+import { computeLightingSavings, readDemandSettings } from "../_shared/lightingSavings.ts";
 import { createEstimateFromIntakeRest, type IntakeWriteError } from "../_shared/estimateIntakeRest.ts";
 
 const corsHeaders = {
@@ -257,11 +258,18 @@ serve(async (req) => {
     const totalExistW = enrichedLines.reduce((s: number, l: any) => s + ((l.existW || 0) * (l.qty || 0)), 0);
     const totalNewW = enrichedLines.reduce((s: number, l: any) => s + ((l.newW || 0) * (l.qty || 0)), 0);
     const wattsReduced = Math.max(0, totalExistW - totalNewW);
-    const opHours = pd.operatingHours || 12;
-    const opDays = pd.daysPerYear || 365;
-    const rate = pd.energyRate || 0.10;
-    const annualKwhSavings = (wattsReduced * opHours * opDays) / 1000;
-    const annualDollarSavings = annualKwhSavings * rate;
+    // The same defaults the Lenard pages start from, so a payload without them
+    // does not quietly get a different year (this used to say 12 h / 365 d / $0.10).
+    const opHours = pd.operatingHours || 10;
+    const opDays = pd.daysPerYear || 260;
+    const rate = pd.energyRate || 0.08;
+    // ONE rule for what a retrofit saves — energy AND the demand half of the bill
+    // (_shared/lightingSavings, twin of lib/lightingSavings). Lenard computed only
+    // the energy half here, so every audit built from the takeoff pages read low.
+    const demand = await readDemandSettings(SUPABASE_URL!, { Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! }, Number(companyId));
+    const savings = computeLightingSavings({ wattsReduced, operatingHours: opHours, operatingDays: opDays, electricRate: rate, demandChargePerKw: demand.demandChargePerKw, demandCoincidence: demand.demandCoincidence });
+    const annualKwhSavings = savings.annualKwh;
+    const annualDollarSavings = savings.totalDollars;
     const projectCost = pd.projectCost || 0;
     const incentive = pd.totalIncentive || 0;
     const netCost = projectCost - incentive;

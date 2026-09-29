@@ -38,7 +38,7 @@ const s = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVI
   if (!demandChargePerKw) { console.log('no demand charge configured — nothing would change'); return }
 
   const { data: audits, error } = await s.from('lighting_audits')
-    .select('id,audit_id,watts_reduced,operating_hours,operating_days,electric_rate,annual_savings_kwh,annual_savings_dollars')
+    .select('id,audit_id,watts_reduced,operating_hours,operating_days,electric_rate,annual_savings_kwh,annual_savings_dollars,net_cost,payback_months')
     .eq('company_id', COMPANY).order('created_at', { ascending: false })
   if (error) { console.error('QUERY FAILED:', error.message); process.exit(1) }
 
@@ -57,7 +57,10 @@ const s = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVI
     // The energy half must reproduce what is already stored; if it does not,
     // the audit's own assumptions no longer explain its number and a blind
     // overwrite would destroy whatever a human corrected by hand.
-    if (next.annual_savings_dollars === was) continue
+    // Payback follows the savings: net cost over the corrected annual figure, in months.
+    const net = Number(a.net_cost) || 0
+    next.payback_months = next.annual_savings_dollars > 0 && net > 0 ? Math.round((net / next.annual_savings_dollars) * 12 * 10) / 10 : (Number(a.payback_months) || 0)
+    if (next.annual_savings_dollars === was && next.payback_months === (Number(a.payback_months) || 0)) continue
     changed++; oldSum += was; newSum += next.annual_savings_dollars
     if (changed <= 8) {
       console.log(`  ${String(a.audit_id).padEnd(14)} $${String(was).padEnd(10)} -> $${next.annual_savings_dollars}`)

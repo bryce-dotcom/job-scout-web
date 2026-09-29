@@ -1,4 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useStore } from '../../lib/store'
+import { computeLightingSavings } from '../../lib/lightingSavings'
 import { jsPDF } from "jspdf";
 import SignaturePad from 'signature_pad';
 import { supabase } from '../../lib/supabase';
@@ -324,6 +326,10 @@ export default function LenardAZSRP() {
   const [operatingHours, setOperatingHours] = useState(10);
   const [daysPerYear, setDaysPerYear] = useState(260);
   const [energyRate, setEnergyRate] = useState(0.10);
+  // The demand half of the bill (lib/lightingSavings): the company's tariff demand
+  // charge and coincidence — the same two settings the audit page uses.
+  const lightingDemandChargePerKw = useStore((s) => s.lightingDemandChargePerKw) || 0;
+  const lightingDemandCoincidence = useStore((s) => s.lightingDemandCoincidence);
 
   // Save project — customer info matching step 1 basic info
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -887,7 +893,16 @@ export default function LenardAZSRP() {
     const existKwh = (totals.existWatts * annualHours) / 1000;
     const proposedKwh = (totals.newWatts * annualHours) / 1000;
     const annualKwhSaved = existKwh - proposedKwh;
-    const annualEnergySavings = annualKwhSaved * energyRate;
+    // ONE rule for what a retrofit saves — energy AND the demand half of the bill
+    // (lib/lightingSavings, the same rule the audit page and lenard-save use). This
+    // page computed only the energy half, so every takeoff read roughly 40% low
+    // against a bill that meters both (Cole, Damien; Bryce 2026-09-29: "the
+    // payback says 1200, it should be double that"). annualEnergySavings keeps
+    // its name and now carries the total, so payback, NPV, IRR and the PDF follow.
+    const split = computeLightingSavings({ wattsReduced: totals.existWatts - totals.newWatts, operatingHours, operatingDays: daysPerYear, electricRate: energyRate, demandChargePerKw: lightingDemandChargePerKw, demandCoincidence: lightingDemandCoincidence });
+    const annualEnergySavings = split.totalDollars;
+    const energyOnlyDollars = split.energyDollars;
+    const demandDollars = split.demandDollars;
     const existAnnualCost = existKwh * energyRate;
     const proposedAnnualCost = proposedKwh * energyRate;
     const baselineProjectCost = linesSubtotal(lines);
@@ -939,13 +954,14 @@ export default function LenardAZSRP() {
 
     return {
       annualHours, existKwh, proposedKwh, annualKwhSaved, annualEnergySavings,
+      energyOnlyDollars, demandDollars,
       existAnnualCost, proposedAnnualCost, monthlyEnergySavings,
       projectCost, baselineProjectCost, utilityScopeCost,
       netProjectCost, simplePayback, roi,
       cashFlow, npv, irr,
       tenYearSavings, fiveYearSavings, lifetimeSavings, co2Saved,
     };
-  }, [operatingHours, daysPerYear, energyRate, totals, lines, upsellInScopeTotal, upsellOutOfScopeTotal]);
+  }, [operatingHours, daysPerYear, energyRate, lightingDemandChargePerKw, lightingDemandCoincidence, totals, lines, upsellInScopeTotal, upsellOutOfScopeTotal]);
 
   // ---- SAVE PROJECT ----
   const saveProject = async () => {
@@ -1367,7 +1383,7 @@ export default function LenardAZSRP() {
     doc.setFont(undefined, 'normal');
     doc.text(`${operatingHours} hrs/day  x  ${daysPerYear} days/yr`, pBoxX + 3, y + 5);
     doc.text(`${f.annualHours.toLocaleString()} annual operating hours`, pBoxX + 3, y + 10);
-    doc.text(`Electric rate: ${$c(energyRate)}/kWh`, pBoxX + 3, y + 15);
+    doc.text(`Electric rate: ${$c(energyRate)}/kWh${lightingDemandChargePerKw > 0 ? ` + $${lightingDemandChargePerKw}/kW demand at ${Math.round((lightingDemandCoincidence ?? 0.8) * 100)}% coincidence` : ''}`, pBoxX + 3, y + 15);
     y += 26;
 
     // ===================================================================
@@ -1409,6 +1425,8 @@ export default function LenardAZSRP() {
     y += 2;
     row('Current Annual Energy Cost', $c(f.existAnnualCost));
     row('Proposed Annual Energy Cost', $c(f.proposedAnnualCost));
+    row('Energy Savings', $c(f.energyOnlyDollars || 0));
+    if ((f.demandDollars || 0) > 0) row('Demand Savings', $c(f.demandDollars));
     row('Annual Cost Savings', $c(annSav), { bold: true, med: true, color: green, topLine: true });
     row('Monthly Cost Savings', $c(f.monthlyEnergySavings), { indent: 4, color: green });
     if (f.co2Saved > 0) row('Annual CO2 Reduction', `${f.co2Saved.toFixed(1)} metric tons`, { color: green });
@@ -1621,7 +1639,7 @@ export default function LenardAZSRP() {
     doc.setTextColor(...gray);
     doc.setFont(undefined, 'normal');
     const disclaimers = [
-      `OPERATING ASSUMPTIONS: ${operatingHours} hours/day, ${daysPerYear} days/year (${f.annualHours.toLocaleString()} hrs/yr). Electric rate: ${$c(energyRate)}/kWh. Actual savings vary with usage and rate changes.`,
+      `OPERATING ASSUMPTIONS: ${operatingHours} hours/day, ${daysPerYear} days/year (${f.annualHours.toLocaleString()} hrs/yr). Electric rate: ${$c(energyRate)}/kWh${lightingDemandChargePerKw > 0 ? ` + $${lightingDemandChargePerKw}/kW demand at ${Math.round((lightingDemandCoincidence ?? 0.8) * 100)}% coincidence` : ''}. Actual savings vary with usage and rate changes.`,
       'SRP INCENTIVES: Estimated rebate amounts subject to SRP program review, approval, and available funding. Pre-approval recommended before project start.',
       'LED LIFETIME: Products typically rated 50,000-100,000 hours (10-20+ years at stated hours). Analysis excludes lamp replacement cost savings from LED longevity.',
       `NPV/IRR: Net Present Value calculated at 5% discount rate over 10 years. IRR calculated over 10-year project horizon. Both assume constant annual savings of ${$c(annSav)}.`,
@@ -2525,6 +2543,9 @@ export default function LenardAZSRP() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', paddingTop: '6px', borderTop: `1px solid ${T.border}` }}>
                   <span>Annual kWh Saved</span><span style={{ color: T.green }}>{Math.round(financials.annualKwhSaved).toLocaleString()} kWh ({reductionPct}%)</span>
                 </div>
+                  {/* The two halves of the bill, so the total can be checked against a statement. */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginTop: '4px' }}><span>Energy savings ({'$'}{energyRate}/kWh)</span><span>{'$'}{Math.round(financials.energyOnlyDollars).toLocaleString()}/yr</span></div>
+                  {financials.demandDollars > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '2px' }}><span>Demand savings ({'$'}{lightingDemandChargePerKw}/kW x 12 x {Math.round((lightingDemandCoincidence ?? 0.8) * 100)}%)</span><span>{'$'}{Math.round(financials.demandDollars).toLocaleString()}/yr</span></div>}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700', marginTop: '4px' }}>
                   <span>Annual Cost Savings</span><span style={{ color: T.green }}>${Math.round(financials.annualEnergySavings).toLocaleString()}/yr</span>
                 </div>

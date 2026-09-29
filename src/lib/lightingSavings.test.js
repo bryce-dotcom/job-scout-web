@@ -96,3 +96,19 @@ describe('storage shape matches the existing columns', () => {
     expect(savingsForStorage({})).toEqual({ annual_savings_kwh: 0, annual_savings_dollars: 0 })
   })
 })
+
+describe('the diesel shop takeoff (AUD-MUN55RH1, 2026-09-29)', () => {
+  // 31 T5HO high bays at 324 W → 150 W: 5,394 W off the load. Lenard showed
+  // $1,121.95 — the energy half only. Bryce: "the payback says 1200, it should
+  // be double that." With HHH's $9.50/kW at 0.8 coincidence the bill's demand
+  // half adds $491.93 (5.394 kW × $9.50 × 12 × 0.8); the rest of the gap is the
+  // 10 h / 260 d run-time the rep sets, which is theirs to set. Every Lenard
+  // path now uses this one rule.
+  it('claims both halves of the bill', () => {
+    const s = computeLightingSavings({ wattsReduced: 10044 - 4650, operatingHours: 10, operatingDays: 260, electricRate: 0.08, demandChargePerKw: 9.5, demandCoincidence: 0.8 })
+    expect(Math.round(s.annualKwh)).toBe(14024)
+    expect(s.energyDollars).toBeCloseTo(1121.95, 1)
+    expect(s.demandDollars).toBeCloseTo(491.93, 1)
+    expect(savingsForStorage({ wattsReduced: 5394, operatingHours: 10, operatingDays: 260, electricRate: 0.08, demandChargePerKw: 9.5, demandCoincidence: 0.8 }).annual_savings_dollars).toBe(1613.88)
+  })
+})
