@@ -406,6 +406,15 @@ const CASES = [
     },
     expect: { proposal: 'none', text_match: [/manager|another rep|someone else/i] } },
 
+  // — "closed" is a sale, not a job whose status reads Closed —
+  { id: 'closed.owner.september.is.approved.estimates', as: 'owner',
+    turns: ['What did we close in August?'],
+    expect: { tools_include: ['query_closed'], tools_exclude: ['query_jobs'], proposal: 'none',
+      text_match: [/42,?400/, /3 deals?/i], text_not_match: [/job status|Closed status/i] } },
+  { id: 'closed.tech.refused', as: 'tech',
+    turns: ['What did we close in August?'],
+    expect: { proposal: 'none', no_dollars: true, text_match: [/admin|owner/i] } },
+
   // — re-filing the books: "the Chevron ones" means all three text columns, and the card shows every row —
   { id: 'bulk.owner.refiles.chevron.expenses.then.rollback', as: 'owner',
     run: async (ctx) => {

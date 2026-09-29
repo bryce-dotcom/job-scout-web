@@ -9,6 +9,7 @@ import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_shared/arnieMoney.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
 import { accountSummary } from "../_shared/arnieAccount.ts";
+import { closedDeals } from "../_shared/arnieClosed.ts";
 import { crewDay } from '../_shared/arnieDispatch.ts'
 import { FRANKIE_MODEL, FRANKIE_MAX_TOKENS, frankieToolsFor, execFrankieTool } from '../_shared/frankieTools.ts'
 
@@ -258,12 +259,25 @@ const TOOLS = [
     },
   },
   {
+    name: 'query_closed',
+    description: "What the company CLOSED — estimates the customer approved — in a period, with the total value and who closed them. Use this for \"what did we close in September\", \"how much did we close this month\", \"what has Noah closed this year\", close rate, won deals, sales closed. Do NOT use query_jobs with status Closed for this: a job whose status reads Closed is DELIVERED work, usually sold months earlier, and it is a different number. ADMIN+ only.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        start_date: { type: 'string', description: 'ISO date — closed on/after' },
+        end_date: { type: 'string', description: 'ISO date — closed on/before' },
+        salesperson_id: { type: 'integer', description: 'Only this rep, if they asked about one person' },
+        limit: { type: 'integer', description: 'How many deals to list back (default 25)' },
+      },
+    },
+  },
+  {
     name: 'query_quotes',
     description: 'Query quotes and estimates — counts, dollar totals, win/loss, by salesperson or month. Use for "how many quotes did we send", "what is out for signature", "who is quoting the most". ADMIN+ only.',
     input_schema: {
       type: 'object',
       properties: {
-        status: { type: 'string', description: 'Quote status as stored, e.g. Sent, Approved, Rejected, Draft' },
+        status: { type: 'string', description: 'Quote status as stored, e.g. Sent, Approved, Rejected, Draft. NOTE: the dates here are when the estimate was WRITTEN. For what was CLOSED in a period, use query_closed instead.' },
         salesperson_id: { type: 'integer' },
         start_date: { type: 'string', description: 'ISO date — quotes created on/after' },
         end_date: { type: 'string', description: 'ISO date — quotes created on/before' },
@@ -891,6 +905,13 @@ async function execTool(name: string, input: any, caller: Caller) {
         ...(items.length > 50 ? { note: `Showing the first 50 of ${items.length}.` } : {}),
         ...(got.truncated ? { WARNING: `Read ${got.rows.length} of ${got.total} inventory rows — this count is a floor, not a total.` } : {}),
       }
+    }
+
+    if (name === 'query_closed') {
+      if (!isAdmin) return { restricted: 'Admin access required for sales figures.' }
+      return await closedDeals({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, companyId as number, {
+        start: input?.start_date, end: input?.end_date, salespersonId: input?.salesperson_id, limit: input?.limit,
+      })
     }
 
     if (name === 'query_quotes') {
