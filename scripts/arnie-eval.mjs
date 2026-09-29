@@ -456,7 +456,9 @@ const CASES = [
       const fx = await expenseFixture()
       try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'All our Chevron expenses are filed as Materials — change them all to Fuel.' }]) } finally { await fx.cleanup() }
     },
-    expect: { proposal: 'none', text_match: [/admin/i] } },
+    // Reading the book is owner-gated and re-filing is admin-gated, so either word
+    // is the right refusal; what matters is that nothing was drafted.
+    expect: { proposal: 'none', text_match: [/admin|owner/i] } },
 
   // — one customer, one read: the work for everyone, the money for an admin —
   { id: 'account.owner.history.jobs.balance.last.contact', as: 'owner',
