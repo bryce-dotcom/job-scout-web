@@ -20,6 +20,12 @@ describe('a quote through Arnie goes through the one intake, not a sixth copy of
     expect(quote).not.toMatch(/rest\/v1\/quote_lines`, \{\s*method: 'POST'/)
   })
 
+  it('filling an existing empty draft goes through fillEstimateFromIntakeRest, the same one writer', () => {
+    expect(apply).toMatch(/fillEstimateFromIntakeRest\(target, intake, fillId\)/)
+    expect(prepare).toMatch(/already has line items — I only fill an empty draft/)
+    expect(prepare).toMatch(/I only fill an empty draft\. Say "new estimate" instead/)
+  })
+
   it('is a Draft, and the lead does not advance — nothing has been sent', () => {
     expect(prepare).toMatch(/status: 'Draft'/)
     expect(apply).toMatch(/advanceLeadTo: null/)

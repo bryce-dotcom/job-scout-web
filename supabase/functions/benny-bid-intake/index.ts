@@ -36,7 +36,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { callAnthropic } from '../_shared/anthropic.ts'
-import { createEstimateFromIntakeRest, IntakeWriteError } from '../_shared/estimateIntakeRest.ts'
+import { createEstimateFromIntakeRest, fillEstimateFromIntakeRest, IntakeWriteError } from '../_shared/estimateIntakeRest.ts'
 import { intakeLineRows, intakeTotal, type EstimateIntake, type IntakeLine } from '../_shared/estimateIntake.ts'
 
 const corsHeaders = {
@@ -392,15 +392,13 @@ async function stageWrite(job: Job): Promise<Record<string, unknown>> {
     const qRes = await fetch(`${SUPABASE_URL}/rest/v1/quotes?select=id,settings_overrides,estimate_name&id=eq.${quoteId}&company_id=eq.${job.company_id}&limit=1`, { headers: svc })
     const q = (await qRes.json())?.[0]
     if (!q) throw new StageError('That estimate is not in this company', 404)
-    const lRes = await fetch(`${SUPABASE_URL}/rest/v1/quote_lines?select=id&quote_id=eq.${quoteId}&limit=1`, { headers: svc })
-    if (((await lRes.json()) || []).length) throw new StageError('That estimate already has line items. Benny only fills an empty one — make a new bid instead.', 409)
     const intake: EstimateIntake = { source: 'benny-bid', company_id: job.company_id, lines }
-    const rows = intakeLineRows(intake, quoteId)
-    const ins = await fetch(`${SUPABASE_URL}/rest/v1/quote_lines`, { method: 'POST', headers: { ...svc, Prefer: 'return=representation' }, body: JSON.stringify(rows) })
-    const made = ins.ok ? await ins.json() : null
-    if (!Array.isArray(made) || made.length !== rows.length) throw new StageError(`Lines failed to write: ${ins.status} ${(await ins.text()).slice(0, 300)}`, 500)
+    // Through the one writer (estimateIntakeRest.fillEstimateFromIntakeRest): it
+    // refuses a draft that is not empty, so nothing is ever doubled.
+    try { await fillEstimateFromIntakeRest(target, intake, quoteId) }
+    catch (e) { if (e instanceof IntakeWriteError) throw new StageError(e.message, e.kind === 'invalid' ? 409 : 500); throw e }
     await patchQuote(quoteId, {
-      quote_amount: intakeTotal(intake), document_type: 'bid', bid_intake: bidIntake,
+      document_type: 'bid', bid_intake: bidIntake,
       estimate_name: q.estimate_name || estimateName,
       settings_overrides: { ...(q.settings_overrides || {}), presentation_mode: 'bid' },
       bid_opportunity_id: job.opportunity_id ?? null,

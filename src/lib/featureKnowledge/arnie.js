@@ -128,6 +128,10 @@ export default {
         a: 'Only a follow-up on a quiet quote, only when the person approves the card, only to the address already on the quote or lead — never one the model chose.',
       },
       {
+        q: 'Can he build an estimate from a description?',
+        a: 'Yes — "Describe it to Arnie" on the Estimates page (and on an empty estimate) opens him with the mic on: say or type who it is for and what the work is, and he drafts the lines from the price book and shows the card. On an empty draft he fills that estimate in place; a draft that already has lines is refused, nothing doubled. Approve the card and you land on the estimate. He never invents a price: an item the price book lacks needs a price from you.',
+      },
+      {
         q: 'Can he create invoices or purchase orders?',
         a: 'Not yet. He can read both, and he can record a payment that arrived on an invoice (admin) — the status updates and the receipt goes out, the same as the invoice page. Creating an invoice or a PO stays on those pages for now.',
       },
@@ -139,6 +143,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-09-15',
+  lastVerified: '2026-09-29',
   freshUntil: 90,
 }

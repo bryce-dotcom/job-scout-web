@@ -191,3 +191,50 @@ export async function createEstimateFromIntakeRest(
 
   return { quote: quote as Record<string, unknown>, quoteId, lineCount: count, residual: intakeResidual(intake) }
 }
+
+/**
+ * Put an intake's lines INTO an existing, empty Draft — the estimate a rep is
+ * already looking at — and set its headline from the same rule that priced
+ * the lines. The header stays theirs (name, customer, rep). Two producers
+ * needed this (Benny's fill mode, Arnie's "Fill estimate EST-5112") and each
+ * had started writing quote_lines by hand — the pattern this file exists to
+ * end. Lines together or nothing: a partial write is deleted and thrown.
+ */
+export async function fillEstimateFromIntakeRest(
+  target: RestTarget,
+  intake: EstimateIntake,
+  quoteId: number,
+): Promise<IntakeWriteResult> {
+  const { baseUrl, headers } = target
+  const qRes = await fetch(`${baseUrl}/rest/v1/quotes?select=id,status,estimate_name,service_type,last_sent_at,job_id,lead_id,customer_id&id=eq.${quoteId}&company_id=eq.${intake.company_id}&limit=1`, { headers })
+  const q = ((await readBody(qRes)) as Record<string, unknown>[] | null)?.[0]
+  if (!qRes.ok || !q) throw new IntakeWriteError(`Estimate #${quoteId} is not in this company`, 'invalid')
+  // The draft's OWN lead/customer is who it belongs to — the header stays
+  // theirs, so the ownership check reads the row, not the intake. (Validating
+  // with both nulled refused every fill: "belongs to nobody".)
+  const problems = validateIntake({ ...intake, lead_id: (q.lead_id as number | null) ?? null, customer_id: (q.customer_id as number | null) ?? null })
+  if (problems.length) throw new IntakeWriteError(`Cannot fill estimate #${quoteId}:\n  - ${problems.join('\n  - ')}`, 'invalid')
+  if (q.status !== 'Draft' || q.last_sent_at || q.job_id) throw new IntakeWriteError(`Estimate #${quoteId} is ${q.status}${q.last_sent_at ? ' and has been sent' : ''} — only an empty draft can be filled`, 'invalid')
+  const eRes = await fetch(`${baseUrl}/rest/v1/quote_lines?select=id&quote_id=eq.${quoteId}&company_id=eq.${intake.company_id}&limit=1`, { headers })
+  const existing = ((await readBody(eRes)) as unknown[] | null) || []
+  if (existing.length) throw new IntakeWriteError(`Estimate #${quoteId} already has line items — nothing doubled`, 'invalid')
+
+  const rows = intakeLineRows(intake, quoteId)
+  const lRes = await fetch(`${baseUrl}/rest/v1/quote_lines`, { method: 'POST', headers: { ...headers, 'Prefer': 'return=representation' }, body: JSON.stringify(rows) })
+  const lBody = await readBody(lRes)
+  const written = Array.isArray(lBody) ? lBody : null
+  const count = written?.length ?? 0
+  if (!lRes.ok || count !== rows.length) {
+    // Take back whatever landed, so the draft is as empty as it was.
+    await fetch(`${baseUrl}/rest/v1/quote_lines?quote_id=eq.${quoteId}&company_id=eq.${intake.company_id}`, { method: 'DELETE', headers: { ...headers, 'Prefer': 'return=minimal' } }).catch(() => {})
+    throw new IntakeWriteError(`Estimate lines failed, nothing left on #${quoteId}: ${!lRes.ok ? why(lBody) : `only ${count} of ${rows.length} lines were written`}`, 'lines')
+  }
+  const head = intakeQuoteRow(intake)
+  await fetch(`${baseUrl}/rest/v1/quotes?id=eq.${quoteId}&company_id=eq.${intake.company_id}`, { method: 'PATCH', headers, body: JSON.stringify({
+    quote_amount: head.quote_amount,
+    estimate_name: q.estimate_name || head.estimate_name || null,
+    service_type: q.service_type || head.service_type || null,
+    updated_at: new Date().toISOString(),
+  }) })
+  return { quote: q, quoteId, lineCount: count, residual: intakeResidual(intake) }
+}

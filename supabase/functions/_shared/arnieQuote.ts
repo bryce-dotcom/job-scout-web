@@ -22,7 +22,7 @@ import type { Caller } from './auth.ts'
 import { readRecordList, patchRow } from './arnieRest.ts'
 import { RECORD_TARGETS, resolveEntity } from './arnieRecords.ts'
 import type { Prepared } from './arnieCreate.ts'
-import { createEstimateFromIntakeRest, IntakeWriteError } from './estimateIntakeRest.ts'
+import { createEstimateFromIntakeRest, fillEstimateFromIntakeRest, IntakeWriteError } from './estimateIntakeRest.ts'
 import type { EstimateIntake, IntakeLine } from './estimateIntake.ts'
 
 const squash = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -74,7 +74,9 @@ export async function prepareQuote(r: Rest, caller: Caller, f: Record<string, st
     if (!cs.length) return { ok: false, error: `No customer matching "${f.customer}".` }
     if (cs.length > 1) return { needs_choice: cs.map((c: any) => ({ id: c.id, label: c.business_name || c.name })), message: 'More than one customer matches. Ask which, then call again with the full name.' }
     customerId = cs[0].id; forLabel = cs[0].business_name || cs[0].name
-  } else {
+  } else if (!f.quote) {
+    // Filling a named draft may omit both: the draft's own lead/customer is
+    // used below. Refusing here first is what made the fill path unreachable.
     return { ok: false, error: 'Who is the quote for? Name the lead or the customer.' }
   }
 
@@ -92,6 +94,30 @@ export async function prepareQuote(r: Rest, caller: Caller, f: Record<string, st
   }
 
   // The lines, against the price book.
+  // "Fill estimate EST-5112": an existing EMPTY Draft in this company. Its
+  // lead/customer stands in when the user named none; a draft with lines
+  // already on it is refused rather than doubled (same rule as Benny's fill).
+  let fillQuote: any = null
+  if (f.quote) {
+    const t = String(f.quote).trim()
+    const idNum = Number((t.match(/^#?(\d+)$/) || [])[1])
+    const rows = idNum
+      ? await readRecordList(r, `quotes?select=id,quote_id,status,estimate_name,lead_id,customer_id,service_type,last_sent_at,job_id&company_id=eq.${companyId}&id=eq.${idNum}&limit=1`)
+      : await readRecordList(r, `quotes?select=id,quote_id,status,estimate_name,lead_id,customer_id,service_type,last_sent_at,job_id&company_id=eq.${companyId}&or=(quote_id.ilike.*${encodeURIComponent(t)}*,estimate_name.ilike.*${encodeURIComponent(t)}*)&order=created_at.desc&limit=6`)
+    if (!rows.length) return { ok: false, error: `No estimate matching "${t}" in this company.` }
+    if (rows.length > 1) return { needs_choice: rows.map((q: any) => ({ id: q.id, label: `${q.quote_id || '#' + q.id} — ${q.estimate_name || 'unnamed'} (${q.status})` })), message: 'More than one estimate matches. Ask which one, then call again with its number.' }
+    fillQuote = rows[0]
+    if (fillQuote.status !== 'Draft' || fillQuote.last_sent_at || fillQuote.job_id) return { ok: false, error: `${fillQuote.quote_id || '#' + fillQuote.id} is ${fillQuote.status}${fillQuote.last_sent_at ? ' and has been sent' : ''} — I only fill an empty draft. Say "new estimate" instead.` }
+    const existing = await readRecordList(r, `quote_lines?select=id&quote_id=eq.${fillQuote.id}&company_id=eq.${companyId}&limit=1`)
+    if (existing.length) return { ok: false, error: `${fillQuote.quote_id || '#' + fillQuote.id} already has line items — I only fill an empty draft, so nothing gets doubled. Add to it on the Estimates page, or say "new estimate".` }
+    if (!leadId && !customerId) {
+      leadId = fillQuote.lead_id ? Number(fillQuote.lead_id) : null
+      customerId = fillQuote.customer_id ? Number(fillQuote.customer_id) : null
+      if (!forLabel) forLabel = fillQuote.estimate_name || fillQuote.quote_id || `estimate #${fillQuote.id}`
+    }
+  }
+  if (!leadId && !customerId) return { ok: false, error: 'Who is the quote for? Name the lead or the customer.' }
+
   const wanted = parseLines(f.lines)
   if (typeof wanted === 'string') return { ok: false, error: wanted }
   const products = await readRecordList(r, `products_services?select=id,name,unit_price,product_category,manufacturer,model_number&company_id=eq.${companyId}&active=eq.true&limit=3000`)
@@ -126,8 +152,9 @@ export async function prepareQuote(r: Rest, caller: Caller, f: Record<string, st
   }
   return {
     ok: true,
-    columns: { intake, lead_before: leadBefore, for_label: forLabel },
+    columns: { intake, lead_before: leadBefore, for_label: forLabel, fill_quote_id: fillQuote ? Number(fillQuote.id) : null, fill_quote_ref: fillQuote ? (fillQuote.quote_id || `#${fillQuote.id}`) : null },
     display: [
+      ...(fillQuote ? [{ label: 'Into', value: `${fillQuote.quote_id || '#' + fillQuote.id} — the empty draft, filled in place` }] : []),
       { label: 'For', value: forLabel },
       { label: 'Rep', value: repName || '(none)' },
       ...display,
@@ -140,12 +167,20 @@ export async function prepareQuote(r: Rest, caller: Caller, f: Record<string, st
 export async function applyQuote(r: Rest, companyId: number, prop: any): Promise<{ ok: true; id: number; label: string; created: Record<string, unknown> } | { ok: false; error: string; stale?: boolean }> {
   const intake = prop.payload?.columns?.intake as EstimateIntake | undefined
   if (!intake || intake.company_id !== companyId) return { ok: false, error: 'That draft is missing its quote.' }
+  const fillId = Number(prop.payload?.columns?.fill_quote_id) || 0
+  const target = { baseUrl: r.url, headers: { apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json' } }
+  if (fillId) {
+    // Into the empty draft the rep was looking at — through the one writer,
+    // which refuses a draft that gained lines since the card was drafted.
+    try {
+      const res = await fillEstimateFromIntakeRest(target, intake, fillId)
+      return { ok: true, id: fillId, label: prop.payload?.entity_label || 'quote', created: { quote_id: fillId, line_count: res.lineCount, filled: true } }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  }
   try {
-    const res = await createEstimateFromIntakeRest(
-      { baseUrl: r.url, headers: { apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json' } },
-      intake,
-      { advanceLeadTo: null },
-    )
+    const res = await createEstimateFromIntakeRest(target, intake, { advanceLeadTo: null })
     return { ok: true, id: res.quoteId, label: prop.payload?.entity_label || 'quote', created: { quote_id: res.quoteId, line_count: res.lineCount } }
   } catch (e) {
     if (e instanceof IntakeWriteError) return { ok: false, error: e.message + (e.rolledBack ? '' : ` (a header #${e.orphanQuoteId} was left behind)`) }
@@ -157,6 +192,13 @@ export async function applyQuote(r: Rest, companyId: number, prop: any): Promise
 export async function rollbackQuote(r: Rest, companyId: number, prop: any): Promise<{ ok: true; deleted: number } | { ok: false; error: string }> {
   const id = Number(prop.payload?.created?.quote_id)
   if (!id) return { ok: false, error: 'This draft never created a quote.' }
+  if (prop.payload?.created?.filled) {
+    // A filled draft keeps its header: take the lines back out and zero the headline.
+    const H = { apikey: r.key, Authorization: `Bearer ${r.key}`, Prefer: 'return=minimal' }
+    await fetch(`${r.url}/rest/v1/quote_lines?quote_id=eq.${id}&company_id=eq.${companyId}`, { method: 'DELETE', headers: H })
+    await patchRow(r, 'quotes', companyId, id, { quote_amount: 0, updated_at: new Date().toISOString() })
+    return { ok: true, deleted: id }
+  }
   const [q] = await readRecordList(r, `quotes?select=id,status,last_sent_at,job_id,approved_date&company_id=eq.${companyId}&id=eq.${id}&limit=1`)
   if (!q) return { ok: true, deleted: id }
   if (q.status !== 'Draft' || q.last_sent_at || q.job_id || q.approved_date) {

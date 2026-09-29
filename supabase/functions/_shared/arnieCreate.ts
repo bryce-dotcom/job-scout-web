@@ -198,8 +198,11 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
       service_type:  { column: null, label: 'Service',  max: 80 },
       salesperson:   { column: null, label: 'Rep',      max: 80 },
       notes:         { column: null, label: 'Notes',    max: 2000 },
+      // An existing EMPTY Draft estimate to fill instead of making a new one —
+      // the "Describe it to Arnie" button on an empty estimate (2026-09-29).
+      quote:         { column: null, label: 'Into',     max: 80 },
     },
-    labelOf: (f) => `Quote for ${f.lead || f.customer || 'someone'}`.slice(0, 120),
+    labelOf: (f) => (f.quote && !f.lead && !f.customer ? `Fill estimate ${f.quote}` : `Quote for ${f.lead || f.customer || 'someone'}`).slice(0, 120),
     prepare: prepareQuote,
     applyCustom: applyQuote,
     rollbackCustom: rollbackQuote,

@@ -16,7 +16,12 @@ const dark = {
   orangeGlow: 'rgba(249, 115, 22, 0.35)',
 }
 
-export default function ArnieFloatingPanel() {
+// hideLauncher: the corner pill stays off (detail pages, where it covered
+// page buttons on mobile) but the panel stays mounted, so a page button can
+// still open it through the arnie:open event ("Describe it to Arnie" on an
+// estimate). Before this the panel was unmounted on those routes and the
+// event fired into nothing.
+export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
   const hasAgent = useStore(s => s.hasAgent)
   const user = useStore(s => s.user)
   const company = useStore(s => s.company)
@@ -34,6 +39,11 @@ export default function ArnieFloatingPanel() {
   // history, and a fresh component is a cleaner way to get there than reaching
   // into the existing one to reset half its state.
   const [convKey, setConvKey] = useState(0)
+  // 'arnie:open' may carry a first message and ask for the mic (the Estimates
+  // page's "Describe it to Arnie"). Consumed by the next chat mount.
+  const [kickoff, setKickoff] = useState(null)
+  const [autoMic, setAutoMic] = useState(false)
+  const [intent, setIntent] = useState(null)
 
   // Reopening lands back in the conversation you were in. People close this
   // panel to see the screen behind it, not to change the subject — losing the
@@ -52,10 +62,32 @@ export default function ArnieFloatingPanel() {
   // Opening is an action, so the lookup happens here rather than in an effect
   // watching `open` — same result, and it keeps the async work on the event
   // that caused it instead of a render that reacted to it.
-  const openPanel = useCallback(() => {
+  const openPanel = useCallback((e) => {
+    const d = e?.detail || null
+    if (d?.kickoff) {
+      // A fresh thread for a task that starts with a script, so the kickoff
+      // is the first thing in it and nothing older gets replied to.
+      stopSpeaking()
+      setKickoff(String(d.kickoff))
+      setAutoMic(d.mic !== false)
+      setIntent(d.intent || null)
+      setSessionId(null)
+      setConvKey((k) => k + 1)
+      setOpen(true)
+      return
+    }
+    setKickoff(null); setAutoMic(false); setIntent(null)
     setOpen(true)
     resolveSession()
   }, [resolveSession])
+
+  // When Arnie's card lands an estimate, take the person to it.
+  const handleApplied = useCallback((card, res) => {
+    if (intent !== 'estimate') return
+    const created = card?.proposal?.created || card?.created || card?.proposal?.payload?.created
+    const quoteId = Number(res?.created_id) || Number(created?.quote_id) || 0
+    if (quoteId) { setOpen(false); navigate(`/estimates/${quoteId}`) }
+  }, [intent, navigate])
 
   useEffect(() => {
     // Let anything on the page pop the corner guy open — e.g. the onboarding
@@ -94,7 +126,7 @@ export default function ArnieFloatingPanel() {
   return (
     <>
       {/* Floating trigger — avatar with orange ring + "Ask Arnie" label */}
-      {!open && (
+      {!open && !hideLauncher && (
         <div
           onClick={openPanel}
           style={{
@@ -301,7 +333,7 @@ export default function ArnieFloatingPanel() {
               {sessionId === undefined ? (
                 <div style={{ padding: 24, color: dark.textMuted, fontSize: 13 }}>Loading…</div>
               ) : (
-                <ArnieChat key={convKey} isPanel onClose={handleClose} sessionId={sessionId} />
+                <ArnieChat key={convKey} isPanel onClose={handleClose} sessionId={sessionId} kickoff={kickoff} autoMic={autoMic} onApplied={handleApplied} />
               )}
             </div>
           </div>
