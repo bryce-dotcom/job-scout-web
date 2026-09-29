@@ -231,6 +231,7 @@ export default function Marketing() {
   const photoCamRef = useRef(null)
   const videoCamRef = useRef(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadPct, setUploadPct] = useState(null)   // 0..100 while a large file goes up
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
@@ -240,14 +241,16 @@ export default function Marketing() {
     for (const file of files) {
       try {
         // Photo or video; a video also gets its poster and stills here.
-        await uploadCapture({ companyId, employeeId: currentEmployee?.id || null, file, source: 'shared', brand: brands.length > 1 ? brandId : null })
+        setUploadPct(0)
+        await uploadCapture({ companyId, employeeId: currentEmployee?.id || null, file, source: 'shared', brand: brands.length > 1 ? brandId : null, onProgress: (f) => setUploadPct(Math.round(f * 100)) })
         ok++
       } catch (err) {
         toast.error(`${file.name}: ${err.message || 'upload failed'}`)
       }
     }
     setUploading(false)
-    if (ok) { toast.success(ok === 1 ? 'Photo added to the inbox' : `${ok} photos added`); load() }
+    setUploadPct(null)
+    if (ok) { toast.success(ok === 1 ? 'Added to the inbox' : `${ok} added to the inbox`); load() }
   }
   const dismissCapture = async (id) => {
     await supabase.from('marketing_captures').update({ status: 'dismissed' }).eq('id', id).eq('company_id', companyId)
@@ -374,7 +377,7 @@ export default function Marketing() {
           onArchive={(p) => setPostStatus(p, 'archived')} onNew={() => setComposer({ captureIds: [] })}
           onHandPost={(p) => setHandPost(p)} />
       ) : tab === 'inbox' ? (
-        <InboxTab theme={theme} isMobile={isMobile} captures={captures} uploading={uploading} invoke={invoke} isManager={isManager} onChanged={load}
+        <InboxTab theme={theme} isMobile={isMobile} captures={captures} uploading={uploading} uploadPct={uploadPct} invoke={invoke} isManager={isManager} onChanged={load}
           onUploadClick={() => uploadRef.current?.click()} onTakePhoto={() => photoCamRef.current?.click()} onRecordVideo={() => videoCamRef.current?.click()} onDismiss={dismissCapture}
           onMakePost={(ids) => setComposer({ captureIds: ids })} />
       ) : tab === 'brand' ? (
@@ -563,7 +566,8 @@ function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands =
 }
 
 // ── Inbox ────────────────────────────────────────────────────────────
-function InboxTab({ theme, isMobile, captures, uploading, invoke, isManager, onChanged, onUploadClick, onTakePhoto, onRecordVideo, onDismiss, onMakePost }) {
+function InboxTab({ theme, isMobile, captures, uploading, uploadPct = null, invoke, isManager, onChanged, onUploadClick, onTakePhoto, onRecordVideo, onDismiss, onMakePost }) {
+  const sending = uploading ? (uploadPct != null && uploadPct < 100 ? `Sending ${uploadPct}%` : 'Sending…') : null
   const [selected, setSelected] = useState([])
   const [suggesting, setSuggesting] = useState(false)
   const toggle = (id) => setSelected((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id].slice(-5)))
@@ -583,13 +587,18 @@ function InboxTab({ theme, isMobile, captures, uploading, invoke, isManager, onC
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-        <button type="button" onClick={onTakePhoto} disabled={uploading} style={primaryBtn(MKT)}><Camera size={15} /> {uploading ? 'Sending…' : 'Take photo'}</button>
-        <button type="button" onClick={onRecordVideo} disabled={uploading} style={primaryBtn(MKT)}><Play size={15} /> Record video</button>
+        <button type="button" onClick={onTakePhoto} disabled={uploading} style={primaryBtn(MKT)}><Camera size={15} /> {sending || 'Take photo'}</button>
+        <button type="button" onClick={onRecordVideo} disabled={uploading} style={primaryBtn(MKT)}><Play size={15} /> {sending ? 'Video' : 'Record video'}</button>
         <button type="button" onClick={onUploadClick} disabled={uploading} style={ghostBtn(theme)}><Upload size={15} /> Upload</button>
         {selected.length > 0 && <button type="button" onClick={() => { onMakePost(selected); setSelected([]) }} style={primaryBtn(MKT)}><Sparkles size={15} /> Make a post from {selected.length}</button>}
         {isManager && <button type="button" onClick={suggestNow} disabled={suggesting} title="Draft posts from unused photos and yesterday's finished jobs" style={ghostBtn(theme)}><Sparkles size={15} /> {suggesting ? 'Drafting…' : 'Suggest posts now'}</button>}
         <span style={{ fontSize: 12, color: theme.textMuted, marginLeft: 'auto' }}>Every morning, unused photos and finished jobs become drafts in the queue.</span>
       </div>
+      {uploading && uploadPct != null && (
+        <div style={{ height: 6, borderRadius: 3, background: theme.border, overflow: 'hidden', marginBottom: 12 }}>
+          <div style={{ width: `${uploadPct}%`, height: '100%', background: MKT, transition: 'width 0.3s' }} />
+        </div>
+      )}
       <TextInCard theme={theme} isMobile={isMobile} invoke={invoke} isManager={isManager} />
       {captures.length === 0 ? (
         <Empty theme={theme} icon={Camera} title="Inbox is empty" body="Photos and videos your crew shares from Field Scout land here. Or shoot one right now." action={<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><button type="button" onClick={onTakePhoto} style={primaryBtn(MKT)}><Camera size={15} /> Take photo</button><button type="button" onClick={onRecordVideo} style={primaryBtn(MKT)}><Play size={15} /> Record video</button><button type="button" onClick={onUploadClick} style={ghostBtn(theme)}><Upload size={15} /> Upload</button></div>} />
@@ -837,6 +846,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
   // same path as the inbox and the new capture is selected at once.
   const [shot, setShot] = useState([])          // captures made from inside the composer
   const [shooting, setShooting] = useState(false)
+  const [shotPct, setShotPct] = useState(null)
   const camPhotoRef = useRef(null)
   const camVideoRef = useRef(null)
   const onShot = async (e) => {
@@ -846,11 +856,13 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
     setShooting(true)
     for (const file of files) {
       try {
-        const row = await uploadCapture({ companyId, employeeId: currentEmployee?.id || null, jobId: initialPost?.job_id || null, file, source: 'shared', brand: multi ? postBrand || null : null })
+        setShotPct(0)
+        const row = await uploadCapture({ companyId, employeeId: currentEmployee?.id || null, jobId: initialPost?.job_id || null, file, source: 'shared', brand: multi ? postBrand || null : null, onProgress: (f) => setShotPct(Math.round(f * 100)) })
         if (row) { setShot((xs) => [...xs, row]); setCaptureIds((xs) => [...xs, row.id].slice(-5)) }
       } catch (err) { toast.error(err.message || 'Upload failed') }
     }
     setShooting(false)
+    setShotPct(null)
   }
   const [extraMedia, setExtraMedia] = useState(initialPost && !(initialPost.capture_ids || []).length ? initialPost.media_urls || [] : [])
 
@@ -949,7 +961,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
                 </div>
               ))}
               <button type="button" onClick={() => camPhotoRef.current?.click()} disabled={shooting} style={{ width: 84, height: 84, borderRadius: 8, border: `1px solid ${MKT}`, background: MKT_BG, color: MKT, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
-                <Camera size={18} /> {shooting ? 'Sending…' : 'Take photo'}
+                <Camera size={18} /> {shooting ? (shotPct != null && shotPct < 100 ? `${shotPct}%` : 'Sending…') : 'Take photo'}
               </button>
               <button type="button" onClick={() => camVideoRef.current?.click()} disabled={shooting} style={{ width: 84, height: 84, borderRadius: 8, border: `1px solid ${MKT}`, background: MKT_BG, color: MKT, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
                 <Play size={18} /> Record video

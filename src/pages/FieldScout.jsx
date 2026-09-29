@@ -274,6 +274,7 @@ export default function FieldScout() {
   const [linePhotoPicker, setLinePhotoPicker] = useState(null) // lineId
   const [linePhotoTarget, setLinePhotoTarget] = useState(null) // { lineId, context }
   const [linePhotoUploading, setLinePhotoUploading] = useState(false)
+  const [marketingPct, setMarketingPct] = useState(null)   // 0..100 while a marketing video goes up
   const linePhotoInputRef = useRef(null)
   // Its own input, at the top of the page: the line picker's input only
   // exists while a briefing is open, and a marketing snap is not tied to one.
@@ -754,7 +755,8 @@ export default function FieldScout() {
         const file = files[i]
         try {
           // Photo or video; a video also gets its poster and stills here.
-          await uploadCapture({ companyId, employeeId: currentEmployee?.id || null, jobId: activeEntry?.job_id ?? null, file, note, source: 'shared' })
+          setMarketingPct(0)
+          await uploadCapture({ companyId, employeeId: currentEmployee?.id || null, jobId: activeEntry?.job_id ?? null, file, note, source: 'shared', onProgress: (f) => setMarketingPct(Math.round(f * 100)) })
           uploaded++
         } catch (err) {
           console.error('[FieldScout] marketing share failed', err)
@@ -782,6 +784,7 @@ export default function FieldScout() {
       if (lastErr) toast.error(`${files.length - uploaded} failed: ` + (lastErr?.message || 'unknown'))
       setLinePhotoUploading(false)
       setLinePhotoTarget(null)
+      setMarketingPct(null)
       return
     }
 
@@ -2179,7 +2182,7 @@ export default function FieldScout() {
                 cursor: linePhotoUploading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
               }}
             >
-              <Icon size={15} /> {label && linePhotoUploading && linePhotoTarget?.context === 'marketing' ? '…' : label}
+              <Icon size={15} /> {label && linePhotoUploading && linePhotoTarget?.context === 'marketing' ? (marketingPct != null && marketingPct < 100 ? `${marketingPct}%` : '…') : label}
             </button>
           ))}
         </div>

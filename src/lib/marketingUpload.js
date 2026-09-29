@@ -10,19 +10,27 @@
 import { supabase } from './supabase'
 import { MEDIA_BUCKET, capturePath } from './marketing'
 import { extractVideoFrames } from './videoFrames'
+import { resumableUpload, RESUMABLE_THRESHOLD } from './resumableUpload'
 
-// Supabase's project-wide object cap; a phone clip over this fails at the
-// gateway with a message nobody can act on, so say it up front.
-export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+// The project's storage cap (raised from 50 MB to 500 MB on 2026-09-29 so a
+// phone video fits). Say it up front rather than let the gateway refuse.
+export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 
-export async function uploadCapture({ companyId, employeeId = null, jobId = null, file, note = '', source = 'shared', brand = null }) {
+// onProgress(fraction 0..1) fires as a large file goes up; small files jump
+// straight to 1.
+export async function uploadCapture({ companyId, employeeId = null, jobId = null, file, note = '', source = 'shared', brand = null, onProgress = null }) {
   if (!file) throw new Error('No file')
-  if (file.size > MAX_UPLOAD_BYTES) throw new Error(`${file.name || 'That file'} is ${Math.round(file.size / 1024 / 1024)} MB; the limit is 50 MB. Trim the clip or pick a shorter one.`)
+  if (file.size > MAX_UPLOAD_BYTES) throw new Error(`${file.name || 'That file'} is ${Math.round(file.size / 1024 / 1024)} MB; the limit is 500 MB. Trim the clip or pick a shorter one.`)
   const isVideo = String(file.type || '').startsWith('video/')
   const contentType = file.type || (isVideo ? 'video/mp4' : 'image/jpeg')
   const path = capturePath(companyId, file.name)
-  const { error: upErr } = await supabase.storage.from(MEDIA_BUCKET).upload(path, file, { contentType, upsert: false })
-  if (upErr) throw upErr
+  if (file.size > RESUMABLE_THRESHOLD) {
+    await resumableUpload({ bucket: MEDIA_BUCKET, path, file, contentType, onProgress })
+  } else {
+    const { error: upErr } = await supabase.storage.from(MEDIA_BUCKET).upload(path, file, { contentType, upsert: false })
+    if (upErr) throw upErr
+    onProgress?.(1)
+  }
   const { data: pub } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path)
 
   let poster_url = null, frames = [], duration_s = null
