@@ -128,8 +128,17 @@ describe('the price book from a document: rows checked, never invented', () => {
     expect(items.map((i) => i.type)).toEqual(['Service', 'Service', 'Product'])
     expect(MAX_ITEMS).toBe(80)
   })
-  it('a cost that equals the price is shown on the card as something to check', () => {
-    expect(bookSrc).toMatch(/i\.cost != null && i\.cost === i\.unit_price \? ' · cost equals price — check this one' : ''/)
+  it('a price identical to the cost is refused, not listed — it is a cost column read as a price', () => {
+    // Twice in live runs the model moved a blank PRICE cell's cost into
+    // unit_price. The card flagged it and a person still had to catch it;
+    // now the server will not carry the row at all.
+    const { items, skipped } = normalizeItems([
+      { name: 'Sod - fescue, per pallet', unit_price: 165, cost: 165 },
+      { name: 'Mulch - hardwood, per yard', unit_price: 65, cost: 28 },
+    ], new Set())
+    expect(items.map((i) => i.name)).toEqual(['Mulch - hardwood, per yard'])
+    expect(skipped[0]).toMatchObject({ name: 'Sod - fescue, per pallet' })
+    expect(skipped[0].why).toMatch(/the price and the cost are the same figure/)
   })
   it('the rows are the page\'s: type Product|Service, taxable per the sales-tax setting for services, ungrouped, active', () => {
     expect(bookSrc).toMatch(/taxable: i\.type === 'Product' \? true : c\.services_taxable === true/)
