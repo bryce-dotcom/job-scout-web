@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { leadStatusForJob } from './leadDeliveryStatus.js'
 import { tidyOwner } from './parcels.js'
 import { sourceFor, coverageLabel, PARCEL_SOURCES } from './parcelSources.js'
-import { knockOutcome, isToday } from '../components/liahona/util.js'
+import { knockOutcome, isToday, hasCoords, latLngPairs, latLngOf } from '../components/liahona/util.js'
 
 // The small pure rules behind Liahona. Each one was written after a real
 // miss (a status the board could not fetch, an owner string a rep could not
@@ -104,5 +104,60 @@ describe('knocks: what the lead card logs, the pin badge reads back', () => {
     const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1); yesterday.setHours(23, 59, 0, 0)
     expect(isToday(yesterday.toISOString())).toBe(false)
     expect(isToday(null)).toBe(false)
+  })
+})
+
+// ── A bad coordinate must not take the map down ────────────────────────────
+//
+// Crash 33894f25: "Invalid LatLng object: (NaN, NaN)" on /pipeline, and Noah
+// (69736f51) "it won't let me view the map". hasCoords validated the LATITUDE
+// only, so a row with a good latitude and an unparseable longitude passed the
+// filter, reached Leaflet, and threw — killing the map that was about to draw
+// everyone else's pins.
+describe('hasCoords / latLngPairs: one unplottable row cannot kill the map', () => {
+  it('requires BOTH halves to be finite', () => {
+    expect(hasCoords({ latitude: 40.7, longitude: -111.9 })).toBe(true)
+    expect(hasCoords({ latitude: 40.7, longitude: 'unknown' })).toBe(false)
+    expect(hasCoords({ latitude: 'unknown', longitude: -111.9 })).toBe(false)
+    expect(hasCoords({ latitude: 40.7, longitude: null })).toBe(false)
+    expect(hasCoords({ latitude: null, longitude: null })).toBe(false)
+    expect(hasCoords(null)).toBe(false)
+  })
+
+  it('rejects Infinity, which Number() will happily produce', () => {
+    expect(hasCoords({ latitude: '1e999', longitude: -111.9 })).toBe(false)
+  })
+
+  it('drops the bad rows and keeps the good ones', () => {
+    const rows = [
+      { latitude: 40.7, longitude: -111.9 },
+      { latitude: 41.2, longitude: 'nope' },
+      { latitude: null, longitude: null },
+      { latitude: '39.5', longitude: '-111.0' },
+    ]
+    expect(latLngPairs(rows)).toEqual([[40.7, -111.9], [39.5, -111]])
+  })
+
+  it('returns an empty list for junk instead of throwing', () => {
+    expect(latLngPairs(null)).toEqual([])
+    expect(latLngPairs([])).toEqual([])
+  })
+})
+
+describe('latLngOf: a geocode hit with no coordinates is not a place', () => {
+  it('accepts a real pair, including numeric strings', () => {
+    expect(latLngOf({ lat: 40.7, lng: -111.9 })).toEqual([40.7, -111.9])
+    expect(latLngOf({ lat: '40.7', lng: '-111.9' })).toEqual([40.7, -111.9])
+  })
+
+  it('returns null for the shapes that used to crash the map', () => {
+    // The search box only checked `if (!hit)`, so each of these reached
+    // setView and threw "Invalid LatLng object: (NaN, NaN)".
+    expect(latLngOf({ formatted: '123 Main St' })).toBe(null)
+    expect(latLngOf({ lat: undefined, lng: undefined })).toBe(null)
+    expect(latLngOf({ lat: 40.7 })).toBe(null)
+    expect(latLngOf({ lat: 'nope', lng: 'nope' })).toBe(null)
+    expect(latLngOf(null)).toBe(null)
+    expect(latLngOf(undefined)).toBe(null)
   })
 })

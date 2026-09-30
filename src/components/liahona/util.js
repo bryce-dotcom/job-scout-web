@@ -51,7 +51,36 @@ export function ensureLeaflet() {
   return leafletPromise
 }
 
-export const hasCoords = l => l && l.latitude != null && l.longitude != null && !Number.isNaN(Number(l.latitude))
+// Both halves, and finite — not just "not NaN latitude". This checked the
+// latitude only, so a row with a good latitude and an unparseable longitude
+// passed the filter and went to Leaflet, which throws "Invalid LatLng object"
+// and takes the whole map down with it (crash 33894f25; Noah, 69736f51:
+// "it won't let me view the map"). Number.isFinite also rejects Infinity,
+// which Number('1e999') will happily produce.
+export const hasCoords = (l) =>
+  !!l && l.latitude != null && l.longitude != null &&
+  Number.isFinite(Number(l.latitude)) && Number.isFinite(Number(l.longitude))
+
+/** Lat/lng pairs safe to hand Leaflet — anything unplottable is dropped
+ *  rather than crashing the map that was about to show the rest. */
+export const latLngPairs = (rows) =>
+  (rows || []).filter(hasCoords).map((l) => [Number(l.latitude), Number(l.longitude)])
+
+/**
+ * A plottable [lat, lng] from a `{lat, lng}`-shaped thing, or null.
+ *
+ * For the geocoder and neighbour results, which carry `lat`/`lng` rather than
+ * `latitude`/`longitude`. The search box checked only `if (!hit)` before
+ * calling setView, so a truthy result that carried no coordinates — which the
+ * national geocoder can return when the coordinates fail its plausibility
+ * check — became setView([undefined, undefined]) and threw "Invalid LatLng
+ * object: (NaN, NaN)", taking the whole map down (crash 33894f25, the day the
+ * geocoder went national).
+ */
+export const latLngOf = (o) => {
+  const lat = Number(o?.lat), lng = Number(o?.lng)
+  return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null
+}
 
 // Cheap planar distance in degrees, good enough for nearest-neighbour ordering.
 export const dist = (a, b) => {

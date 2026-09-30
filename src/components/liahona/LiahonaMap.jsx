@@ -33,7 +33,7 @@ import { isCompanyName, parcelAddress, parcelNotes, leadRowFromParcel } from './
 import NeighborsPanel from './NeighborsPanel'
 import LeadCard from './LeadCard'
 import {
-  PALETTE, US_CENTER, themeTokens, makeStyles, ensureLeaflet, hasCoords, dist, initials, minutesAgo, esc, loadView, saveView,
+  PALETTE, US_CENTER, themeTokens, makeStyles, ensureLeaflet, hasCoords, dist, initials, minutesAgo, esc, loadView, saveView, latLngPairs, latLngOf,
   knockOutcome, isToday
 } from './util'
 import { getStartPoint, buildRoute, drawRoute } from './routing'
@@ -256,7 +256,7 @@ export default function LiahonaMap({
       if (saved) {
         map.setView([saved.lat, saved.lng], saved.zoom)
       } else if (pts.length) {
-        map.fitBounds(pts.map(l => [Number(l.latitude), Number(l.longitude)]), { padding: [30, 30], maxZoom: 15 })
+        map.fitBounds(latLngPairs(pts), { padding: [30, 30], maxZoom: 15 })
       } else if (navigator.geolocation) {
         map.setView(US_CENTER, 4)
         navigator.geolocation.getCurrentPosition(
@@ -698,7 +698,10 @@ export default function LiahonaMap({
     setNeighbors({ lat, lng, label: originLabel, radiusFt, loading: false, items, origin: r.origin, reason: r.reason, provider: r.provider, county: r.county })
     setNeighborSel(new Set(items.filter(i => !i.lead).map(i => i.key)))
     const map = mapRef.current
-    if (map && items.length) map.fitBounds(items.map(i => [i.lat, i.lng]).concat([[lat, lng]]), { padding: [30, 30], maxZoom: 18 })
+    const fit = items.map(latLngOf).filter(Boolean)
+    const origin = latLngOf({ lat, lng })
+    if (origin) fit.push(origin)
+    if (map && fit.length) map.fitBounds(fit, { padding: [30, 30], maxZoom: 18 })
   }
   loadNeighborsRef.current = loadNeighbors
 
@@ -721,7 +724,9 @@ export default function LiahonaMap({
   const focusNeighbor = it => {
     const map = mapRef.current, L = window.L
     if (!map || !L) return
-    map.panTo([it.lat, it.lng])
+    const at = latLngOf(it)
+    if (!at) return
+    map.panTo(at)
     const pc = it.parcel
     const el = document.createElement('div')
     el.style.font = '13px system-ui'
@@ -940,8 +945,11 @@ export default function LiahonaMap({
 
   const fitToPins = () => {
     const map = mapRef.current
-    if (!map || !visibleLeads.length) return
-    map.fitBounds(visibleLeads.map(l => [Number(l.latitude), Number(l.longitude)]), { padding: [30, 30], maxZoom: 16 })
+    // Drop anything unplottable rather than letting one bad row throw
+    // "Invalid LatLng object" and take down the map showing the rest.
+    const pairs = latLngPairs(visibleLeads)
+    if (!map || !pairs.length) return
+    map.fitBounds(pairs, { padding: [30, 30], maxZoom: 16 })
   }
 
   const runSearch = async () => {
@@ -952,7 +960,11 @@ export default function LiahonaMap({
     const hit = await geocodeAddress(q)
     setSearching(false)
     if (!hit) { notify('No match for that address'); return }
-    map.setView([hit.lat, hit.lng], Math.max(map.getZoom(), 16))
+    // A hit can come back without usable coordinates; say so instead of
+    // handing Leaflet a NaN and losing the whole map.
+    const at = latLngOf(hit)
+    if (!at) { notify('Found that address but not its location on the map'); return }
+    map.setView(at, Math.max(map.getZoom(), 16))
     const g = groupsRef.current.search; g.clearLayers()
     const el = document.createElement('div')
     el.style.font = '13px system-ui'
