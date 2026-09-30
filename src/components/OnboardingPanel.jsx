@@ -99,13 +99,24 @@ export default function OnboardingPanel({ employee, theme, sectionHeaderStyle })
     setError('')
     setJustSent(null)
     try {
-      const { data: session } = await supabase.auth.getSession()
-      const tok = session?.session?.access_token
+      // send-onboarding-link identifies the CALLER from this token — it has to
+      // know who is granting access, and it checks their HR permission. The
+      // anon key identifies nobody, so falling back to it (which this did)
+      // could only ever produce the server's "Invalid auth token" in red, with
+      // nothing to tell Alayda that the real problem was her own session
+      // (1d846306, 2026-09-30 — it blocked every new hire's onboarding).
+      //
+      // One refresh attempt first: a tab left open overnight has a stale
+      // access token but a good refresh token, which is the common case.
+      let tok = (await supabase.auth.getSession())?.data?.session?.access_token
+      if (!tok) tok = (await supabase.auth.refreshSession())?.data?.session?.access_token
+      if (!tok) throw new Error('Your session has expired. Sign out and back in, then send the link again.')
+
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-onboarding-link`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${tok || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          Authorization: `Bearer ${tok}`,
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({
@@ -114,6 +125,10 @@ export default function OnboardingPanel({ employee, theme, sectionHeaderStyle })
         }),
       })
       const data = await res.json()
+      // A 401 here means the session was rejected server-side (revoked, or
+      // signed out elsewhere). Say what to do about it rather than showing
+      // the server's developer wording.
+      if (res.status === 401) throw new Error('Your session has expired. Sign out and back in, then send the link again.')
       if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`)
       setJustSent(data)
       // Real failures only — info notes (e.g. "SMS not configured")

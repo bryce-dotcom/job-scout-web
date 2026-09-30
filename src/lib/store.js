@@ -193,9 +193,18 @@ export const useStore = create(
         }
       },
 
-      // Clear session on logout
+      // Clear session on logout.
+      //
+      // scope 'local' — sign out of THIS browser. supabase-js defaults to
+      // 'global', which revokes every session the user has anywhere, so
+      // logging out on a phone at the end of a shift silently killed the
+      // desktop too. The desktop kept LOOKING fine (PostgREST accepts the
+      // unexpired JWT on its signature alone) while every edge function
+      // answered 401 session_not_found — which is how Alayda got
+      // "Invalid auth token" trying to send an onboarding link (1d846306).
+      // Signing out everywhere is a deliberate feature, not what Log Out means.
       clearSession: async () => {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' });
         await offlineDb.clearAll();
         set({
           company: null,

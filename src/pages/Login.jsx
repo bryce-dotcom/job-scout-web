@@ -72,13 +72,17 @@ export default function Login() {
       .eq('active', true)
 
     if (empError || !employees || employees.length === 0) {
-      await supabase.auth.signOut()
+      // 'local' — drop the half-authenticated session in THIS browser. The
+      // default scope is 'global', so a failed lookup here (an inactive
+      // employee row, an RLS hiccup, a typo that still authenticates) threw
+      // the person out of every other device they were signed in on.
+      await supabase.auth.signOut({ scope: 'local' })
       return { success: false, error: 'No account found for this email. Contact your administrator.' }
     }
 
     const withCompany = employees.filter(e => e.company)
     if (withCompany.length === 0) {
-      await supabase.auth.signOut()
+      await supabase.auth.signOut({ scope: 'local' })
       return { success: false, error: 'Company not found. Contact your administrator.' }
     }
 

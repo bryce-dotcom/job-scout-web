@@ -101,3 +101,26 @@ describe('payroll is HR-only, whatever the job title says', () => {
     expect(mayOpenPayroll({})).toBe(false)
   })
 })
+
+// ── Signing out must not sign you out everywhere ──────────────────────────
+//
+// supabase-js signOut() defaults to scope 'global', which revokes EVERY
+// session the user has. Logging out on a phone then killed the desktop:
+// PostgREST kept working (it accepts an unexpired JWT on its signature) while
+// every edge function answered 401 session_not_found. That is what Alayda hit
+// as "Invalid auth token" sending an onboarding link (ticket 1d846306), and
+// what broke a peer session's demo script. Every signOut in the app passes
+// scope 'local'; this fails the build if one goes back to the default.
+import { readFileSync } from 'node:fs'
+
+describe('every signOut is scoped to this browser', () => {
+  const files = ['src/lib/store.js', 'src/pages/Login.jsx']
+  for (const f of files) {
+    it(`${f} never calls a bare signOut()`, () => {
+      const src = readFileSync(f, 'utf8')
+      const calls = src.match(/signOut\([^)]*\)/g) || []
+      expect(calls.length).toBeGreaterThan(0)
+      for (const c of calls) expect(c).toMatch(/scope:\s*'local'/)
+    })
+  }
+})
