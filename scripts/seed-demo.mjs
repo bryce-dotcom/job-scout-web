@@ -45,7 +45,7 @@ const money = (n) => Math.round(n * 100) / 100;
 console.log('Cleaning any prior demo…');
 const prior = await sel('companies', `or=(owner_email.eq.${encodeURIComponent(EMAIL)},company_name.eq.${encodeURIComponent(COMPANY)})&select=id`);
 for (const c of prior) {
-  for (const t of ['payments', 'invoices', 'quotes', 'time_clock', 'expenses', 'jobs', 'leads', 'customers', 'products_services', 'fleet', 'inventory', 'settings', 'employees', 'vendors', 'assets', 'loan_payments', 'liabilities', 'manual_expenses']) {
+  for (const t of ['payments', 'invoices', 'quotes', 'time_clock', 'expenses', 'jobs', 'leads', 'customers', 'products_services', 'labor_rates', 'fleet', 'inventory', 'settings', 'employees', 'vendors', 'assets', 'loan_payments', 'liabilities', 'manual_expenses']) {
     await del(t, `company_id=eq.${c.id}`);
   }
   await del('companies', `id=eq.${c.id}`);
@@ -136,6 +136,20 @@ await run('products_services', async () => {
     company_id: cid, name, type, unit_price, cost, description, taxable: type === 'Product', active: true,
     allotted_time_hours: type === 'Service' ? 1.5 : 0.4, business_unit: 'Commercial',
   })));
+  return rows.length;
+});
+
+// ───────────────────────── LABOR RATES ─────────────────────────
+// The demo had none, which mattered from 2026-09-29: when Arnie quotes a
+// product the price book does not carry, Benny sources the price AND estimates
+// the hours, and the hours are priced at the company's own rate. No rate, no
+// labour line — so a demo of that showed half the feature.
+await run('labor_rates', async () => {
+  const rows = await ins('labor_rates', [
+    { company_id: cid, name: 'Standard Rate', rate_per_hour: 95, cost_per_hour: 42, description: 'Standard field labor', multiplier: 1, active: true, is_default: true },
+    { company_id: cid, name: 'Electrical', rate_per_hour: 125, cost_per_hour: 55, description: 'Licensed electrical work', multiplier: 1, active: true, is_default: false },
+    { company_id: cid, name: 'After Hours', rate_per_hour: 145, cost_per_hour: 62, description: 'Nights, weekends and emergency calls', multiplier: 1.5, active: true, is_default: false },
+  ]);
   return rows.length;
 });
 
