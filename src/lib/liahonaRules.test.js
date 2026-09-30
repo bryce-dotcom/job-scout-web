@@ -9,10 +9,25 @@ import { knockOutcome, isToday } from '../components/liahona/util.js'
 // read), so each case here is one of those.
 
 describe('leadStatusForJob: a converted lead mirrors its job, in the company\'s own statuses', () => {
-  const hhh = ['Chillin', 'Need To Order', 'Scheduled', 'In Progress', 'On Hold', 'Completed', 'Verified Complete', 'Invoiced', 'Paid', 'Closed'].map(n => ({ id: n, name: n }))
+  // HHH's real settings, and the point is the LAST one: the id a job carries
+  // ('Paid') is not the label on the board ('Payments'). The fixture used to
+  // build every row as { id: n, name: n }, so it could not see the resolver
+  // reading `name` — and a paid deal's lead walked back to 'Scheduled'.
+  const hhh = [
+    ...['Chillin', 'Need To Order', 'Scheduled', 'In Progress', 'On Hold', 'Completed', 'Verified Complete', 'Invoiced'].map(n => ({ id: n, name: n })),
+    { id: 'Paid', name: 'Payments' },
+    { id: 'Closed', name: 'Closed' },
+  ]
   it('uses the job status itself when the company has it', () => {
     expect(leadStatusForJob('Scheduled', hhh)).toBe('Scheduled')
     expect(leadStatusForJob('Paid', hhh)).toBe('Paid')
+  })
+
+  it('matches on the status id, not the board label', () => {
+    // A renamed stage must not strand the lead. 'Payments' is what the board
+    // shows; 'Paid' is what jobs.status holds and what leads.status must get.
+    expect(leadStatusForJob('Paid', hhh)).toBe('Paid')
+    expect(leadStatusForJob('Paid', hhh)).not.toBe('Scheduled')
   })
   it('maps the old default names onto the nearest configured status', () => {
     expect(leadStatusForJob('Job Scheduled', hhh)).toBe('Scheduled')

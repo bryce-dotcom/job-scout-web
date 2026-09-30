@@ -15,7 +15,14 @@ const DEFAULT_DELIVERY = { 'Chillin': 'Job Scheduled', 'Scheduled': 'Job Schedul
 
 export function leadStatusForJob(jobStatus, jobStatuses = []) {
   const js = jobStatus || 'Chillin'
-  const ids = (jobStatuses || []).map(s => typeof s === 'string' ? s : (s?.name || s?.id)).filter(Boolean)
+  // `id` FIRST. jobs.status holds the status id; `name` is only the board
+  // label, and the two differ the moment a company renames a stage. HHH's
+  // last stage is { id: 'Paid', name: 'Payments' }, so reading `name` here
+  // meant a PAID job's lead did not match 'Paid', fell through to the
+  // nearest-by-meaning branch and landed back in 'Scheduled' — the deal
+  // walking backwards down the board after the customer had paid.
+  // The test fixture hid it by building every row as { id: n, name: n }.
+  const ids = (jobStatuses || []).map(s => typeof s === 'string' ? s : (s?.id || s?.name)).filter(Boolean)
   if (ids.length === 0) return DEFAULT_DELIVERY[js] || 'Job Scheduled'
   if (ids.includes(js)) return js
   // The job's status is not one of the company's (a legacy name): the nearest

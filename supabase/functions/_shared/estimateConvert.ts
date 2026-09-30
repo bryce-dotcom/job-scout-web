@@ -69,7 +69,10 @@ export function contactGapPatch(customer: any, source: any): Record<string, stri
 const DEFAULT_DELIVERY: Record<string, string> = { 'Chillin': 'Job Scheduled', 'Scheduled': 'Job Scheduled', 'On Hold': 'Job Scheduled', 'In Progress': 'In Progress', 'Completed': 'Job Complete' }
 export function leadStatusForJob(jobStatus: string | null | undefined, jobStatuses: any[] = []): string {
   const js = jobStatus || 'Chillin'
-  const ids = (jobStatuses || []).map((s) => typeof s === 'string' ? s : (s?.name || s?.id)).filter(Boolean) as string[]
+  // `id` first — jobs.status holds the id, `name` is only the board label.
+  // See the note in src/lib/leadDeliveryStatus.js: HHH's { id: 'Paid',
+  // name: 'Payments' } sent paid deals back to 'Scheduled'.
+  const ids = (jobStatuses || []).map((s) => typeof s === 'string' ? s : (s?.id || s?.name)).filter(Boolean) as string[]
   if (ids.length === 0) return DEFAULT_DELIVERY[js] || 'Job Scheduled'
   if (ids.includes(js)) return js
   if (/complete|done|finish/i.test(js)) return ids.find((x) => /complete|done|finish/i.test(x)) || ids[0]
