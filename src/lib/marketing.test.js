@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   deriveBrandKitFromEos, setupProgress, styleExamples, platformProblems,
   composeCaption, buildPublishPayload, capturePath, brandsFrom, brandKey, brandProfileUsername, brandForUnit,
-  postDay, postsByDay, weekOf, weekProgress, monthGrid,
+  postDay, postsByDay, weekOf, weekProgress, monthGrid, profileLinks,
 } from './marketing'
 
 const eos = {
@@ -172,5 +172,34 @@ describe('calendar & cadence', () => {
     expect(g[1]).toEqual({ key: '2026-09-01', day: 1 })
     expect(g.length % 7).toBe(0)
     expect(g.filter(Boolean).length).toBe(30)
+  })
+})
+
+describe('profileLinks', () => {
+  it('builds page links from what the publisher knows and the brand kit', () => {
+    const pub = {
+      facebook_page_id: '151728748227548', facebook_page_name: 'HHH Building Services',
+      linkedin_page_id: 'urn:li:organization:106196078', linkedin_page_name: 'HHH Building Services',
+      accounts: [
+        { platform: 'facebook', display_name: 'Christopher R Lyman' },
+        { platform: 'instagram', username: 'honest_humble_helpful' },
+        { platform: 'linkedin', display_name: 'Bryce Westcott' },
+        { platform: 'tiktok', username: '@hhhservices' },
+        { platform: 'google_business', display_name: 'Bryce Westcott' },
+      ],
+    }
+    const l = profileLinks(pub, { links: { website: 'hhh.services', google_business: 'https://g.page/hhh' } })
+    const by = Object.fromEntries(l.map((x) => [x.platform, x]))
+    expect(by.facebook.url).toBe('https://www.facebook.com/151728748227548')
+    expect(by.facebook.name).toBe('HHH Building Services')
+    expect(by.instagram.url).toBe('https://www.instagram.com/honest_humble_helpful/')
+    expect(by.linkedin.url).toBe('https://www.linkedin.com/company/106196078/')
+    expect(by.tiktok.url).toBe('https://www.tiktok.com/@hhhservices')
+    expect(by.google_business.url).toBe('https://g.page/hhh')
+    expect(by.website.url).toBe('https://hhh.services')
+  })
+  it('skips networks it cannot address and copes with nothing connected', () => {
+    expect(profileLinks(null)).toEqual([])
+    expect(profileLinks({ accounts: [{ platform: 'instagram' }] })).toEqual([])
   })
 })

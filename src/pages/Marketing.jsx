@@ -10,7 +10,7 @@ import {
   BRAND_KIT_KEY, PUBLISHER_KEY, BRANDS_KEY, MEDIA_BUCKET, PLATFORMS, PLATFORM_BY_ID,
   emptyBrandKit, deriveBrandKitFromEos, setupProgress, platformProblems, capturePath, composeCaption,
   brandsFrom, brandKey, brandForUnit, slugify,
-  postsByDay, weekOf, weekProgress, monthGrid, postDay,
+  postsByDay, weekOf, weekProgress, monthGrid, postDay, profileLinks,
 } from '../lib/marketing'
 import { uploadCapture, captureThumb } from '../lib/marketingUpload'
 import {
@@ -45,6 +45,7 @@ const STATUS_STYLE = {
   approved:  { label: 'Approved',  color: '#3b82f6' },
   scheduled: { label: 'Scheduled', color: '#a855f7' },
   posted:    { label: 'Posted',    color: '#22c55e' },
+  publishing:{ label: 'Sending…',  color: '#a855f7' },
   failed:    { label: 'Failed',    color: '#ef4444' },
   archived:  { label: 'Archived',  color: '#7d8a7f' },
 }
@@ -296,7 +297,18 @@ export default function Marketing() {
     const r = await invoke('marketing-publish', { action: 'publish', post_id: post.id })
     if (!r.ok) { toast.error(r.error || 'Publish failed'); load(); return }
     if (r.warning) toast.error(`Posted with a problem: ${r.warning}`)
-    else toast.success(r.status === 'scheduled' ? 'Scheduled' : 'Posted')
+    else toast.success(r.status === 'scheduled' ? 'Scheduled' : 'Posted. Links arrive in a moment.')
+    load()
+    // The vendor answers before the networks do; ask again for the links.
+    if (r.status === 'posted' && !(r.post_urls || []).some((u) => u.postUrl)) {
+      setTimeout(async () => { await invoke('marketing-publish', { action: 'sync_post', post_id: post.id }); load() }, 8000)
+      setTimeout(async () => { await invoke('marketing-publish', { action: 'sync_post', post_id: post.id }); load() }, 30000)
+    }
+  }
+  const syncPost = async (post) => {
+    const r = await invoke('marketing-publish', { action: 'sync_post', post_id: post.id })
+    if (!r.ok) { toast.error(r.error || 'Could not check'); return }
+    toast.success(r.status === 'completed' ? 'Links updated' : `Still going: ${r.completed || 0} of ${r.total || '?'} networks done`)
     load()
   }
   const unschedulePost = async (post) => {
@@ -328,17 +340,21 @@ export default function Marketing() {
     </>
   )
 
-  if (view === 'capture') {
+  // The marketing tools are the marketer's (Manager and above). A tech gets
+  // the capture screen and nothing else, on any device.
+  if (view === 'capture' || !isManager) {
     return (
       <div style={{ maxWidth: 560, margin: '0 auto', padding: isMobile ? '12px 16px 90px' : '20px 24px 60px' }}>
         <CaptureFirst
           theme={theme} isMobile={isMobile} brands={brands} brandId={brandId} onPickBrand={pickBrand}
           uploading={uploading} uploadPct={uploadPct} noteRef={noteRef} isManager={isManager}
-          captures={captures} employeeId={currentEmployee?.id || null}
+          captures={captures} captureMap={captureMap} posts={posts} employeeId={currentEmployee?.id || null}
+          links={profileLinks(publisher, brandKit)}
           waiting={posts.filter((p) => ['draft', 'approved'].includes(p.status)).length}
+          scheduled={posts.filter((p) => p.status === 'scheduled').length}
           onTakePhoto={() => photoCamRef.current?.click()} onRecordVideo={() => videoCamRef.current?.click()} onLibrary={() => uploadRef.current?.click()}
           onBack={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
-          onFull={() => setView('full')}
+          onOpenTab={(t) => { setTab(t); setView('full') }}
         />
         {hiddenInputs}
       </div>
@@ -393,7 +409,7 @@ export default function Marketing() {
       )}
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 6, marginBottom: 12, WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: isMobile ? 'wrap' : 'nowrap', overflowX: isMobile ? 'visible' : 'auto', paddingBottom: 6, marginBottom: 12, WebkitOverflowScrolling: 'touch' }}>
         {tabs.map((t) => {
           const Icon = t.icon
           const active = tab === t.id
@@ -418,7 +434,7 @@ export default function Marketing() {
           onEdit={(p) => setComposer({ post: p, captureIds: p.capture_ids || [] })}
           onApprove={(p) => setPostStatus(p, 'approved')} onPublish={publishPost} onUnschedule={unschedulePost}
           onArchive={(p) => setPostStatus(p, 'archived')} onNew={() => setComposer({ captureIds: [] })}
-          onHandPost={(p) => setHandPost(p)} />
+          onHandPost={(p) => setHandPost(p)} onSync={syncPost} />
       ) : tab === 'inbox' ? (
         <InboxTab theme={theme} isMobile={isMobile} captures={captures} uploading={uploading} uploadPct={uploadPct} invoke={invoke} isManager={isManager} onChanged={load}
           onUploadClick={() => uploadRef.current?.click()} onTakePhoto={() => photoCamRef.current?.click()} onRecordVideo={() => videoCamRef.current?.click()} onDismiss={dismissCapture}
@@ -482,11 +498,28 @@ export default function Marketing() {
 // the marketer; a tech never has to see them. Bryce: "if I'm in the field
 // and I press marketing the first thing I should see is how to add a video
 // from my phone or take one. Let the marketer deal with the posts."
-function CaptureFirst({ theme, isMobile, brands, brandId, onPickBrand, uploading, uploadPct, noteRef, isManager, captures, employeeId, waiting, onTakePhoto, onRecordVideo, onLibrary, onBack, onFull }) {
+function CaptureFirst({ theme, isMobile, brands, brandId, onPickBrand, uploading, uploadPct, noteRef, isManager, captures, captureMap = {}, posts = [], employeeId, links = [], waiting = 0, scheduled = 0, onTakePhoto, onRecordVideo, onLibrary, onBack, onOpenTab }) {
   const [note, setNote] = useState('')
+  const [recent, setRecent] = useState(null)   // the viewer's last 20 captures, any status
   const multi = brands.length > 1
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const mine = captures.filter((c) => (!employeeId || c.employee_id === employeeId) && new Date(c.created_at) >= today)
+  const companyId = useStore((s) => s.companyId)
+  useEffect(() => {
+    let cancelled = false
+    let q = supabase.from('marketing_captures').select('id, url, poster_url, frames, media_type, status, post_id, created_at, employee_id, note').eq('company_id', companyId).order('created_at', { ascending: false }).limit(20)
+    if (employeeId) q = q.eq('employee_id', employeeId)
+    q.then(({ data }) => { if (!cancelled) setRecent(data || []) })
+    return () => { cancelled = true }
+  }, [companyId, employeeId, captures.length])
+  const postById = useMemo(() => Object.fromEntries(posts.map((p) => [p.id, p])), [posts])
+  const statusOf = (c) => {
+    const p = c.post_id ? postById[c.post_id] : null
+    if (p?.status === 'posted') return { label: 'Posted', color: '#22c55e', url: (p.post_urls || []).find((u) => u.postUrl)?.postUrl || null }
+    if (p?.status === 'scheduled') return { label: 'Scheduled', color: '#a855f7' }
+    if (p) return { label: 'In a post', color: '#3b82f6' }
+    if (c.status === 'dismissed') return { label: 'Not used', color: theme.textMuted }
+    return { label: 'Waiting', color: theme.textMuted }
+  }
+  const mine = recent || []
   const sending = uploading ? (uploadPct != null && uploadPct < 100 ? `Sending ${uploadPct}%` : 'Sending…') : null
   const big = (color) => ({ display: 'flex', alignItems: 'center', gap: 14, width: '100%', padding: '18px 16px', minHeight: 72, borderRadius: 14, border: 'none', background: color, color: '#fff', fontSize: 17, fontWeight: 700, cursor: uploading ? 'wait' : 'pointer', textAlign: 'left', opacity: uploading ? 0.7 : 1 })
   return (
@@ -526,23 +559,64 @@ function CaptureFirst({ theme, isMobile, brands, brandId, onPickBrand, uploading
         <input value={note} onChange={(e) => { setNote(e.target.value); noteRef.current = e.target.value }} placeholder="Finished the Ogden warehouse today, crew of three" style={inputStyle(theme)} />
       </label>
 
+      {/* What this person has sent, and where each one got to */}
       {mine.length > 0 && (
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: theme.textSecondary, marginBottom: 6 }}>Sent today ({mine.length})</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: theme.textSecondary, marginBottom: 6 }}>What you've sent</div>
           <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-            {mine.map((c) => (
-              <div key={c.id} style={{ position: 'relative', flexShrink: 0 }}>
-                {captureThumb(c) ? <img src={captureThumb(c)} alt="" style={{ width: 72, height: 72, borderRadius: 8, objectFit: 'cover', border: `1px solid ${theme.border}` }} /> : <div style={{ width: 72, height: 72, borderRadius: 8, background: theme.bg, border: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted }}>{c.media_type === 'video' ? <Play size={16} /> : <ImageIcon size={16} />}</div>}
-                {c.media_type === 'video' && <div style={{ position: 'absolute', right: 4, bottom: 4, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={10} /></div>}
-              </div>
+            {mine.map((c) => {
+              const st = statusOf(c)
+              const Wrap = st.url ? 'a' : 'div'
+              return (
+                <Wrap key={c.id} {...(st.url ? { href: st.url, target: '_blank', rel: 'noreferrer' } : {})} style={{ flexShrink: 0, width: 84, textDecoration: 'none' }}>
+                  <div style={{ position: 'relative' }}>
+                    {captureThumb(c) ? <img src={captureThumb(c)} alt="" style={{ width: 84, height: 84, borderRadius: 8, objectFit: 'cover', border: `1px solid ${theme.border}`, display: 'block' }} /> : <div style={{ width: 84, height: 84, borderRadius: 8, background: theme.bg, border: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted }}>{c.media_type === 'video' ? <Play size={16} /> : <ImageIcon size={16} />}</div>}
+                    {c.media_type === 'video' && <div style={{ position: 'absolute', right: 4, top: 4, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={10} /></div>}
+                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: st.color, marginTop: 3, display: 'flex', alignItems: 'center', gap: 3 }}>{st.label}{st.url && <ExternalLink size={9} />}</div>
+                  <div style={{ fontSize: 10, color: theme.textMuted }}>{fmtWhen(c.created_at)}</div>
+                </Wrap>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Where the brand lives online: see the pics once they are up */}
+      {links.length > 0 && (
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: theme.textSecondary, marginBottom: 6 }}>Find us online</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {links.map((l) => (
+              <a key={l.platform} href={l.url} target="_blank" rel="noreferrer" style={{ ...chip(theme, false), textDecoration: 'none', gap: 6 }}>
+                <span>{l.label}</span><span style={{ fontSize: 11, opacity: 0.7 }}>{l.name}</span><ExternalLink size={11} />
+              </a>
             ))}
           </div>
         </div>
       )}
 
-      <button type="button" onClick={onFull} style={{ ...ghostBtn(theme), justifyContent: 'center', marginTop: 4 }}>
-        {isManager ? `Posts, queue & settings${waiting ? ` · ${waiting} waiting` : ''}` : 'See the queue'} <ChevronRight size={14} />
-      </button>
+      {/* The marketer's tools: Manager and above only */}
+      {isManager && (
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: theme.textSecondary, marginBottom: 6 }}>Marketing tools</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 8 }}>
+            {[
+              ['queue', ListChecks, 'Queue', waiting ? `${waiting} waiting for approval` : 'Drafts, approvals, publishing'],
+              ['calendar', CalendarDays, 'Calendar', scheduled ? `${scheduled} scheduled` : 'Schedule and cadence'],
+              ['library', FolderOpen, 'Library', 'Every photo, video and script'],
+              ['performance', BarChart3, 'Performance', 'What each post did'],
+              ['brand', Palette, 'Brand', 'Voice, kit and brands'],
+              ['channels', Link2, 'Channels', 'Accounts, pages, website, ads'],
+            ].map(([id, Icon, label, sub]) => (
+              <button key={id} type="button" onClick={() => onOpenTab(id)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, padding: '12px', minHeight: 72, borderRadius: 12, border: `1px solid ${id === 'queue' && waiting ? MKT : theme.border}`, background: id === 'queue' && waiting ? MKT_BG : theme.bgCard, cursor: 'pointer', textAlign: 'left' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: id === 'queue' && waiting ? MKT : theme.text, fontSize: 14, fontWeight: 700 }}><Icon size={16} /> {label}</div>
+                <div style={{ fontSize: 11, color: theme.textMuted, lineHeight: 1.3 }}>{sub}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -589,7 +663,7 @@ function SetupWalkthrough({ theme, isMobile, progress, isManager, onBrand, onCha
 }
 
 // ── Queue ────────────────────────────────────────────────────────────
-function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands = [], brand = '', onEdit, onApprove, onPublish, onUnschedule, onArchive, onNew, onHandPost }) {
+function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands = [], brand = '', onEdit, onApprove, onPublish, onUnschedule, onArchive, onNew, onHandPost, onSync }) {
   const [filter, setFilter] = useState('open')
   const multi = brands.length > 1
   const brandName = (id) => brands.find((b) => b.id === (id || ''))?.name || ''
@@ -665,6 +739,7 @@ function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands =
                       </button>
                     )}
                     {p.status === 'scheduled' && isManager && <button type="button" disabled={busy === p.id} onClick={() => run(p.id, () => onUnschedule(p))} style={ghostBtn(theme)}><X size={14} /> Unschedule</button>}
+                    {p.status === 'posted' && p.ayrshare_id && !urls.length && <button type="button" disabled={busy === p.id} onClick={() => run(p.id, () => onSync(p))} style={ghostBtn(theme)} title="Ask the networks for the post links"><RefreshCw size={14} /> Get links</button>}
                     {p.status !== 'posted' && p.status !== 'scheduled' && <button type="button" onClick={() => onArchive(p)} style={{ ...ghostBtn(theme), marginLeft: 'auto' }} title="Archive"><Archive size={14} /></button>}
                   </div>
                 </div>

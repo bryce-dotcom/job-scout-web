@@ -293,19 +293,27 @@ serve(async (req) => {
       const { data: post } = await sb.from('marketing_posts').select('*').eq('company_id', companyId).eq('id', postId).maybeSingle()
       if (!post) return json({ ok: false, error: 'Post not found.' }, 404)
       if (['posted', 'scheduled'].includes(post.status) && post.ayrshare_id) return json({ ok: false, error: `Already ${post.status}.` }, 400)
+      if (post.status === 'publishing') return json({ ok: false, error: 'Already on its way. Give it a minute.' }, 409)
       if (!post.platforms?.length) return json({ ok: false, error: 'Pick at least one platform.' }, 400)
+      // Lock. HHH's first post went out twice on every network because two
+      // taps landed before the first reply came back. The UPDATE only wins
+      // for the first caller; the second sees zero rows and stops.
+      const { data: locked } = await sb.from('marketing_posts').update({ status: 'publishing' })
+        .eq('id', postId).eq('company_id', companyId).eq('status', post.status).select('id')
+      if (!locked?.length) return json({ ok: false, error: 'Already on its way. Give it a minute.' }, 409)
+      const unlock = async (patch: Record<string, unknown>) => sb.from('marketing_posts').update({ status: post.status, ...patch }).eq('id', postId)
       const acc = await refreshAccounts()
       const linked = new Set((acc.accounts || cfg.accounts || []).map((a: any) => a.platform))
       const unlinked = post.platforms.filter((p: string) => !linked.has(p))
-      if (unlinked.length) return json({ ok: false, error: `Not connected yet: ${unlinked.join(', ')}. Connect it under Channels first.` }, 400)
+      if (unlinked.length) { await unlock({}); return json({ ok: false, error: `Not connected yet: ${unlinked.join(', ')}. Connect it under Channels first.` }, 400) }
 
       // Pages: several reachable and none chosen = refuse rather than guess.
       const pages = await listPages().catch(() => ({ facebook: [], linkedin: [] }))
       if (post.platforms.includes('facebook') && pages.facebook.length > 1 && !cfg.facebook_page_id) {
-        return json({ ok: false, error: `Facebook: this login reaches ${pages.facebook.length} Pages. Pick which one under Channels first.` }, 400)
+        await unlock({}); return json({ ok: false, error: `Facebook: this login reaches ${pages.facebook.length} Pages. Pick which one under Channels first.` }, 400)
       }
       if (post.platforms.includes('linkedin') && pages.linkedin.length > 1 && !cfg.linkedin_page_id) {
-        return json({ ok: false, error: `LinkedIn: this login reaches ${pages.linkedin.length} company pages. Pick which one under Channels (or "personal profile") first.` }, 400)
+        await unlock({}); return json({ ok: false, error: `LinkedIn: this login reaches ${pages.linkedin.length} company pages. Pick which one under Channels (or "personal profile") first.` }, 400)
       }
 
       const text = composeCaption(post.caption, post.hashtags)
@@ -336,14 +344,17 @@ serve(async (req) => {
         media = urls
         if (media.length) await sb.from('marketing_posts').update({ media_urls: media }).eq('id', postId)
       }
-      if (!text && !media.length) return json({ ok: false, error: 'Nothing to post: no caption and no media.' }, 400)
+      if (!text && !media.length) { await unlock({}); return json({ ok: false, error: 'Nothing to post: no caption and no media.' }, 400) }
       const videoOnlyPicked = post.platforms.filter((p: string) => VIDEO_ONLY.includes(p))
-      if (videoOnlyPicked.length && !isVideo) return json({ ok: false, error: `${videoOnlyPicked.join(', ')} take video only. Unpick them or attach a video.` }, 400)
+      if (videoOnlyPicked.length && !isVideo) { await unlock({}); return json({ ok: false, error: `${videoOnlyPicked.join(', ')} take video only. Unpick them or attach a video.` }, 400) }
 
       const form = new FormData()
       form.append('user', username)
       for (const p of post.platforms) form.append('platform[]', p)
       form.append('title', text || ' ')
+      form.append('description', text)
+      if (post.platforms.includes('facebook')) form.append('facebook_title', text)
+      if (post.platforms.includes('instagram')) form.append('instagram_title', text)
       if (post.platforms.includes('linkedin')) {
         form.append('linkedin_description', text)
         if (cfg.linkedin_page_id && cfg.linkedin_page_id !== 'personal') form.append('target_linkedin_page_id', cfg.linkedin_page_id)
@@ -370,10 +381,30 @@ serve(async (req) => {
         form.append('async_upload', 'true')
       } else if (media.length) {
         endpoint = '/upload_photos'
-        for (const u of media) form.append('photos[]', u)
+        // Send the bytes, not URLs: given three URLs the vendor posted one photo.
+        // Google Business takes a single image; the others take up to ten.
+        const limit = post.platforms.every((p: string) => p === 'google_business') ? 1 : 10
+        let n = 0
+        for (const [i, u] of media.slice(0, limit).entries()) {
+          try {
+            const r = await fetch(u)
+            if (!r.ok) throw new Error(String(r.status))
+            const blob = await r.blob()
+            const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+            form.append('photos[]', blob, `photo-${i + 1}.${ext}`)
+            n++
+          } catch (err) { console.warn('[marketing-publish] photo fetch failed', u, err) }
+        }
+        if (!n) { await unlock({}); return json({ ok: false, error: 'Could not read the photos to send them.' }, 502) }
       }
 
-      const r = await up('POST', endpoint, form)
+      let r: { ok: boolean; status: number; data: any }
+      try {
+        r = await up('POST', endpoint, form)
+      } catch (err) {
+        await unlock({})
+        return json({ ok: false, error: `Could not reach the publisher: ${(err as Error)?.message || err}` }, 502)
+      }
       const now = new Date().toISOString()
       if (!r.ok || r.data?.success === false || r.data?.error) {
         const error = upError(r.data)
@@ -402,6 +433,24 @@ serve(async (req) => {
         await sb.from('marketing_captures').update({ status: 'used', post_id: postId }).eq('company_id', companyId).in('id', post.capture_ids)
       }
       return json({ ok: true, status: scheduled ? 'scheduled' : 'posted', post_urls: postUrls, warning: partial, processing })
+    }
+
+    // ── sync_post: per-platform links for an async publish ────────────
+    if (action === 'sync_post') {
+      const postId = Number(body.post_id)
+      const { data: post } = await sb.from('marketing_posts').select('id, ayrshare_id, status, post_urls').eq('company_id', companyId).eq('id', postId).maybeSingle()
+      if (!post?.ayrshare_id) return json({ ok: false, error: 'Nothing to sync.' }, 400)
+      let r = await up('GET', `/uploadposts/status?job_id=${encodeURIComponent(post.ayrshare_id)}`)
+      if (!r.ok || r.data?.status === 'not_found') r = await up('GET', `/uploadposts/status?request_id=${encodeURIComponent(post.ayrshare_id)}`)
+      if (!r.ok) return json({ ok: false, error: upError(r.data) }, 400)
+      const results: any[] = Array.isArray(r.data?.results) ? r.data.results : []
+      if (!results.length) return json({ ok: true, status: r.data?.status || 'pending', post_urls: post.post_urls || [] })
+      const postUrls = results.map((x: any) => ({ platform: x.platform, id: x.platform_post_id || null, postUrl: x.post_url || null, status: x.success ? 'success' : 'failed', error: x.error_message || null }))
+      const failed = postUrls.filter((x) => x.status === 'failed')
+      const patch: Record<string, unknown> = { post_urls: postUrls, error: failed.length ? failed.map((x) => `${x.platform}: ${x.error || 'failed'}`).join('; ') : null }
+      if (r.data?.status === 'completed' && post.status === 'posted') patch.posted_at = patch.posted_at || new Date().toISOString()
+      await sb.from('marketing_posts').update(patch).eq('id', postId)
+      return json({ ok: true, status: r.data?.status, post_urls: postUrls, completed: r.data?.completed, total: r.data?.total })
     }
 
     // ── delete (a scheduled post) ─────────────────────────────────────

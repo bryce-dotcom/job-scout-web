@@ -18,9 +18,35 @@ export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 
 // onProgress(fraction 0..1) fires as a large file goes up; small files jump
 // straight to 1.
-export async function uploadCapture({ companyId, employeeId = null, jobId = null, file, note = '', source = 'shared', brand = null, onProgress = null }) {
-  if (!file) throw new Error('No file')
-  if (file.size > MAX_UPLOAD_BYTES) throw new Error(`${file.name || 'That file'} is ${Math.round(file.size / 1024 / 1024)} MB; the limit is 500 MB. Trim the clip or pick a shorter one.`)
+// A phone JPEG carries its rotation as an EXIF flag, not in the pixels.
+// Facebook (through the publisher) ignored the flag and showed HHH's first
+// post sideways. Re-encode through a canvas with the orientation applied
+// so the pixels are upright everywhere, and cap the long edge at 2048px so
+// a 12 MP shot does not cost 6 MB of upload on job-site signal. Anything
+// that cannot be decoded (HEIC on a desktop browser) goes up as it came.
+export async function normalizePhoto(file, maxEdge = 2048) {
+  if (typeof document === 'undefined' || !String(file.type || '').startsWith('image/')) return file
+  if (/gif|svg/.test(file.type)) return file
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    const scale = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height))
+    const w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale))
+    const c = document.createElement('canvas'); c.width = w; c.height = h
+    c.getContext('2d').drawImage(bmp, 0, 0, w, h)
+    bmp.close?.()
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.9))
+    if (!blob) return file
+    const name = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg'
+    return new File([blob], name, { type: 'image/jpeg', lastModified: file.lastModified || Date.now() })
+  } catch {
+    return file
+  }
+}
+
+export async function uploadCapture({ companyId, employeeId = null, jobId = null, file: original, note = '', source = 'shared', brand = null, onProgress = null }) {
+  if (!original) throw new Error('No file')
+  if (original.size > MAX_UPLOAD_BYTES) throw new Error(`${original.name || 'That file'} is ${Math.round(original.size / 1024 / 1024)} MB; the limit is 500 MB. Trim the clip or pick a shorter one.`)
+  const file = await normalizePhoto(original)
   const isVideo = String(file.type || '').startsWith('video/')
   const contentType = file.type || (isVideo ? 'video/mp4' : 'image/jpeg')
   const path = capturePath(companyId, file.name)

@@ -290,3 +290,34 @@ export function monthGrid(year, month /* 0-11 */) {
   while (cells.length % 7) cells.push(null)
   return cells
 }
+
+// ── Where the brand lives online ──────────────────────────────────────
+// Links a tech can tap to see the brand's pages (and the pics they sent
+// in, once posted). Built from what the publisher told us about each
+// connected account plus the brand kit's links; only links we can
+// actually build are returned.
+export function profileLinks(publisher, kit = {}) {
+  const out = []
+  const links = kit?.links || {}
+  const by = Object.fromEntries((publisher?.accounts || []).map((a) => [a.platform, a]))
+  const handle = (a) => String(a?.username || '').replace(/^@/, '').trim()
+  if (by.facebook) {
+    const id = publisher?.facebook_page_id
+    out.push({ platform: 'facebook', label: 'Facebook', name: publisher?.facebook_page_name || by.facebook.display_name, url: id ? `https://www.facebook.com/${id}` : 'https://www.facebook.com/' })
+  }
+  if (by.instagram && handle(by.instagram)) out.push({ platform: 'instagram', label: 'Instagram', name: `@${handle(by.instagram)}`, url: `https://www.instagram.com/${handle(by.instagram)}/` })
+  if (by.tiktok && handle(by.tiktok)) out.push({ platform: 'tiktok', label: 'TikTok', name: `@${handle(by.tiktok)}`, url: `https://www.tiktok.com/@${handle(by.tiktok)}` })
+  if (by.linkedin) {
+    const org = String(publisher?.linkedin_page_id || '').match(/(\d+)$/)?.[1]
+    out.push({ platform: 'linkedin', label: 'LinkedIn', name: publisher?.linkedin_page_name || by.linkedin.display_name, url: org ? `https://www.linkedin.com/company/${org}/` : 'https://www.linkedin.com/' })
+  }
+  if (by.youtube && handle(by.youtube)) out.push({ platform: 'youtube', label: 'YouTube', name: `@${handle(by.youtube)}`, url: `https://www.youtube.com/@${handle(by.youtube)}` })
+  if (by.threads && handle(by.threads)) out.push({ platform: 'threads', label: 'Threads', name: `@${handle(by.threads)}`, url: `https://www.threads.net/@${handle(by.threads)}` })
+  if (by.x && handle(by.x)) out.push({ platform: 'x', label: 'X', name: `@${handle(by.x)}`, url: `https://x.com/${handle(by.x)}` })
+  if (by.bluesky && handle(by.bluesky)) out.push({ platform: 'bluesky', label: 'Bluesky', name: `@${handle(by.bluesky)}`, url: `https://bsky.app/profile/${handle(by.bluesky)}` })
+  if (by.pinterest && handle(by.pinterest)) out.push({ platform: 'pinterest', label: 'Pinterest', name: `@${handle(by.pinterest)}`, url: `https://www.pinterest.com/${handle(by.pinterest)}/` })
+  if (links.google_business) out.push({ platform: 'google_business', label: 'Google', name: 'Business listing', url: links.google_business })
+  else if (by.google_business) out.push({ platform: 'google_business', label: 'Google', name: by.google_business.display_name, url: 'https://business.google.com/' })
+  if (links.website) out.push({ platform: 'website', label: 'Website', name: links.website.replace(/^https?:\/\//, ''), url: /^https?:/.test(links.website) ? links.website : `https://${links.website}` })
+  return out
+}
