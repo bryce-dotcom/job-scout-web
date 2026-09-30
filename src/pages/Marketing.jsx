@@ -286,6 +286,13 @@ export default function Marketing() {
     load()
   }
   const publishPost = async (post) => {
+    // No networks picked: open the editor rather than error. (Post #5 on
+    // HHH: made from JobScout-filed photos, switched to HHH, nothing picked.)
+    if (!post.platforms?.length) {
+      toast.error('Pick where it goes first.')
+      setComposer({ post, captureIds: post.capture_ids || [] })
+      return
+    }
     const r = await invoke('marketing-publish', { action: 'publish', post_id: post.id })
     if (!r.ok) { toast.error(r.error || 'Publish failed'); load(); return }
     if (r.warning) toast.error(`Posted with a problem: ${r.warning}`)
@@ -939,7 +946,17 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
   const [postBrand, setPostBrand] = useState(() => initialPost?.brand ?? (initialCaptureIds.map((id) => captureMap[id]?.brand).find((b) => b != null) ?? brandDefault ?? ''))
   const linkedPlatforms = useMemo(() => (multi ? new Set((pubsByBrand[postBrand]?.accounts || []).map((a) => a.platform)) : linkedDefault), [multi, pubsByBrand, postBrand, linkedDefault])
   const [note, setNote] = useState('')
-  const [platforms, setPlatforms] = useState(initialPost?.platforms?.length ? initialPost.platforms : [...linkedPlatforms].filter((p) => !PLATFORM_BY_ID[p]?.videoOnly))
+  // Where it goes: whatever the brand has connected that takes this kind of
+  // post. Until the person hand-picks, the list follows the brand — switching
+  // "Posting as" from a brand with nothing connected to one with five must
+  // not leave the post aimed at nothing.
+  const defaultPlatforms = (linked) => [...linked].filter((p) => !PLATFORM_BY_ID[p]?.videoOnly)
+  const [platforms, setPlatforms] = useState(initialPost?.platforms?.length ? initialPost.platforms : defaultPlatforms(linkedPlatforms))
+  const [platformsTouched, setPlatformsTouched] = useState(!!initialPost?.platforms?.length)
+  useEffect(() => {
+    if (platformsTouched) return
+    setPlatforms(defaultPlatforms(linkedPlatforms))
+  }, [linkedPlatforms, platformsTouched]) // eslint-disable-line react-hooks/exhaustive-deps
   const [caption, setCaption] = useState(initialPost?.caption || initialCaption || '')
   const [hashtags, setHashtags] = useState((initialPost?.hashtags?.length ? initialPost.hashtags : initialHashtags || []).join(' '))
   const [aiDraft, setAiDraft] = useState(initialPost?.ai_draft || null)
@@ -1023,6 +1040,12 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
     return saved
   }
   const saveAnd = async (status, thenPublish) => {
+    // A draft can be aimed at nothing yet; an approved post cannot, or the
+    // queue's Publish has nowhere to send it.
+    if (status === 'approved' && !platforms.length) {
+      toast.error(linkedPlatforms.size ? 'Pick where it goes before approving.' : `${multi ? brands.find((b) => b.id === postBrand)?.name || 'This brand' : 'This company'} has no social accounts connected yet. Connect one under Channels, or save as a draft.`)
+      return
+    }
     const saved = await save(status)
     if (!saved) return
     if (thenPublish) { await onPublish(saved); onSaved(); return }
@@ -1120,7 +1143,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
                 const linked = linkedPlatforms.has(p.id)
                 const on = platforms.includes(p.id)
                 return (
-                  <button key={p.id} type="button" onClick={() => setPlatforms((xs) => (on ? xs.filter((x) => x !== p.id) : [...xs, p.id]))}
+                  <button key={p.id} type="button" onClick={() => { setPlatformsTouched(true); setPlatforms((xs) => (on ? xs.filter((x) => x !== p.id) : [...xs, p.id])) }}
                     title={linked ? '' : 'Not connected yet'} style={{ ...chip(theme, on), opacity: linked ? 1 : 0.55 }}>
                     {on ? <Check size={13} /> : null} {p.label}
                   </button>
