@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getAllowedNavSections } from './accessControl'
+import { getAllowedNavSections, canViewHR, isAdmin } from './accessControl'
 
 // The menu reorganisation moved Jobs into the WORK group and split purchasing
 // out into SUPPLY. The dangerous part is not the labels — it is that a field
@@ -55,5 +55,49 @@ describe('office roles see the full shape', () => {
     for (const u of [tech, admin, owner]) {
       expect(getAllowedNavSections(u)).toContain('OPERATIONS')
     }
+  })
+})
+
+// ── Who may open payroll ───────────────────────────────────────────────────
+//
+// Reported 2026-09-30: "regular employees can see the payroll information...
+// only an HR person should be seeing that, specifically London Miller."
+// London is user_role 'Manager' (level 2), job title Project Manager,
+// has_hr_access false — and the Payroll Inbox showed SSN last-4,
+// direct-deposit last-4 and every employee's gross pay with no check at all,
+// while Layout left its nav link in place for every non-field-tech.
+//
+// Both payroll surfaces gate on canViewHR(user) && isAdmin(user). These pin
+// that pair, because the nav is decoration and the page guard is the rule.
+
+describe('payroll is HR-only, whatever the job title says', () => {
+  const london = { role: 'Project Manager', user_role: 'Manager', has_hr_access: false }
+  const mayOpenPayroll = (u) => canViewHR(u) && isAdmin(u)
+
+  it('keeps a Manager out, HR flag or not', () => {
+    expect(mayOpenPayroll(london)).toBe(false)
+    // Even if someone grants HR to a Manager, payroll still needs Admin.
+    expect(mayOpenPayroll({ ...london, has_hr_access: true })).toBe(false)
+  })
+
+  it('keeps a plain user and a field tech out', () => {
+    expect(mayOpenPayroll({ role: 'Field Tech', user_role: 'User' })).toBe(false)
+    expect(mayOpenPayroll({ user_role: 'User', has_hr_access: true })).toBe(false)
+    expect(mayOpenPayroll({ user_role: 'Team Lead', has_hr_access: true })).toBe(false)
+  })
+
+  it('keeps an Admin out until HR is granted — an office admin is not HR', () => {
+    expect(mayOpenPayroll({ user_role: 'Admin', has_hr_access: false })).toBe(false)
+    expect(mayOpenPayroll({ user_role: 'Admin', has_hr_access: true })).toBe(true)
+  })
+
+  it('lets the bookkeeper and the owner in', () => {
+    expect(mayOpenPayroll({ user_role: 'Super Admin', has_hr_access: true })).toBe(true)
+    expect(mayOpenPayroll({ is_developer: true })).toBe(true)
+  })
+
+  it('treats a missing user as not allowed', () => {
+    expect(mayOpenPayroll(null)).toBe(false)
+    expect(mayOpenPayroll({})).toBe(false)
   })
 })

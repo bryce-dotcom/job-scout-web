@@ -157,28 +157,12 @@ export function getAllowedNavSections(user) {
   return sections
 }
 
-/**
- * Filter team-section items based on access level.
- * Field Techs see Time Clock + Payroll (own data). Users see Time Clock + Payroll (own).
- * Team Lead+ see Employees too.
- */
-export function getAllowedTeamItems(user) {
-  const level = getAccessLevel(user)
-  const ft = isFieldTech(user)
-
-  const items = []
-
-  // Team Lead+ see Employees
-  if (level >= ACCESS_LEVELS.TEAM_LEAD) items.push('/employees')
-
-  // Everyone sees Time Clock
-  items.push('/time-clock')
-
-  // Payroll: Admin+ only
-  if (level >= ACCESS_LEVELS.ADMIN) items.push('/payroll')
-
-  return items
-}
+// getAllowedTeamItems used to live here, saying "Payroll: Admin+ only". It was
+// NEVER CALLED — Layout.jsx has always done its own TEAM filtering — so it was
+// documentation of a rule nobody enforced, and reading it was what made the
+// Payroll Inbox hole look impossible. The real rule is the hrOnly blocklist in
+// Layout.jsx, and every payroll surface also guards itself (Payroll.jsx,
+// PayrollInbox.jsx) because nav is decoration, not access control.
 
 /**
  * Filter operations items for Field Techs.

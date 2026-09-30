@@ -475,8 +475,15 @@ export default function Layout() {
       // Payroll: Admin+ only (level 3+) AND requires the HR access flag.
       // Regular Admins without has_hr_access (e.g. office admins) never see
       // the Payroll link in nav; only Super Admins can grant HR access.
+      //
+      // This is a BLOCKLIST, so every payroll route has to be named here. It
+      // named only '/payroll', which meant '/payroll/inbox' — tax filings, SSN
+      // last-4, direct-deposit last-4, everyone's gross pay — was left in the
+      // sidebar for every non-field-tech, Project Managers included. Anything
+      // payroll-shaped added later must go in this list too.
       if (section.key === 'TEAM' && (userAccessLevel < 3 || !userHasHR)) {
-        return { ...section, baseItems: section.baseItems.filter(i => i.to !== '/payroll') }
+        const hrOnly = ['/payroll', '/payroll/inbox']
+        return { ...section, baseItems: section.baseItems.filter(i => !hrOnly.includes(i.to)) }
       }
       // Team Lead (level 1) and below: hide Employees page
       if (section.key === 'TEAM' && userAccessLevel < 1) {

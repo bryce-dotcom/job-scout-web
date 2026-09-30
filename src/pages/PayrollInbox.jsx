@@ -20,6 +20,7 @@ import PayrollRemittancePanel from '../components/PayrollRemittancePanel'
 import { suiRateStatus } from '../lib/suiRate'
 import { parseLocalDate } from '../lib/localDate'
 import { quarterOf } from '../lib/payrollQuarters'
+import { canViewHR, isAdmin } from '../lib/accessControl'
 import {
   Inbox, AlertTriangle, CheckCircle2, FileText, Clock, UserPlus,
   Settings as SettingsIcon, ChevronRight, Calendar, Building2,
@@ -56,6 +57,7 @@ export default function PayrollInbox() {
   const navigate = useNavigate()
   const companyId = useStore(s => s.companyId)
   const company   = useStore(s => s.company)
+  const user      = useStore(s => s.user)
   const themeCtx  = useTheme()
   const theme     = themeCtx?.theme || {
     bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8', text: '#2c3530',
@@ -140,8 +142,19 @@ export default function PayrollInbox() {
     window.open(data.signedUrl, '_blank')
   }
 
+  // This page reads SSN last-4, direct-deposit account last-4, tax
+  // classification and every employee's gross pay. It shipped with no access
+  // check of any kind, and its nav link was shown to EVERY non-field-tech —
+  // Layout removes '/payroll' for anyone without HR but never removed
+  // '/payroll/inbox', so a Project Manager had a link straight to it.
+  //
+  // The gate is on the FETCH as well as the render: gating only the render
+  // still pulls the rows into the browser, where anyone can read them out of
+  // the network tab. Same rule as Payroll.jsx — Admin AND the HR flag.
+  const allowed = canViewHR(user) && isAdmin(user)
+
   const refresh = async () => {
-    if (!companyId) return
+    if (!companyId || !allowed) return
     setLoading(true)
     const today = new Date()
     const sixtyDaysAgo = new Date(today.getTime() - 60 * 86400000).toISOString().slice(0, 10)
@@ -271,6 +284,25 @@ export default function PayrollInbox() {
     dueSoon.length === 0 &&
     newHires.length === 0 &&
     contractorIssues.length === 0
+
+  // `user &&` so the check does not flash the page before the store hydrates.
+  if (user && !allowed) {
+    return (
+      <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+        <div style={{ fontSize: 18, fontWeight: 600, color: theme.text, marginBottom: 8 }}>Access Restricted</div>
+        <div style={{ fontSize: 14, color: theme.textMuted, marginBottom: 16 }}>
+          The Payroll Inbox holds tax filings and employee tax details. It needs HR permission —
+          contact a Super Admin to request access.
+        </div>
+        <button onClick={() => navigate('/my-pay')} style={{
+          padding: '10px 20px', minHeight: 44, backgroundColor: theme.accent, color: '#fff', border: 'none',
+          borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+        }}>
+          View My Pay →
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: '20px', maxWidth: 980, margin: '0 auto' }}>
