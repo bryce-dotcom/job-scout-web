@@ -178,6 +178,8 @@ describe('the tool, the prompt and the page agree', () => {
     expect(onboarding).toMatch(/kickoff="Set up my company\."/)
     expect(onboarding).toMatch(/card\?\.preview\?\.label === 'company'/)
     expect(arnieChat).toMatch(/if \(!fired\) kickoffSent\.current = false/)
-    expect(arnieChat).toMatch(/onApplied\?\.\(card\)/)
+    // The apply response rides along since "Describe it to Arnie" (the
+    // created id is in it, not the card); Onboarding still only reads the card.
+    expect(arnieChat).toMatch(/onApplied\?\.\(card, res\)/)
   })
 })
