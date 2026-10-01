@@ -3280,7 +3280,7 @@ function EstimateDetailInner() {
                   }}
                 >
                   <Plus size={16} />
-                  Add Product
+                  Add Product or Service
                 </button>
                 <button
                   onClick={addCustomLineItem}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { sameType, groupServiceIndex, serviceTypeOf, serviceTypeCounts as countByType, chipTypes } from '../lib/productPicker'
 import { useTheme } from './Layout'
 import {
   X, Search, Package, Boxes, Wrench, Zap, Droplets, Leaf, ShoppingBag, Grid3X3, Clock,
@@ -110,45 +111,29 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect, recentPr
 
   const activeProducts = useMemo(() => products.filter((p) => p.active !== false), [products])
 
-  // Service type lives on product_groups, not on products. Derive each
-  // product's service type via its group_id.
-  const groupServiceById = useMemo(() => {
-    const m = {}
-    productGroups.forEach((g) => { m[g.id] = g.service_type })
-    return m
-  }, [productGroups])
-
-  const productServiceType = (p) => groupServiceById[p.group_id] || null
-
-  const serviceTypeCounts = useMemo(() => {
-    const m = {}
-    activeProducts.forEach((p) => {
-      const k = productServiceType(p)
-      if (k) m[k] = (m[k] || 0) + 1
-    })
-    return m
-  }, [activeProducts, groupServiceById])
-
-  // Build the list of service-type chips from what's actually on groups,
-  // plus any names declared in the company's settings list.
-  const chipServiceTypes = useMemo(() => {
-    const seen = new Set()
-    const out = []
-    serviceTypes.forEach((t) => { if (!seen.has(t)) { seen.add(t); out.push(t) } })
-    productGroups.forEach((g) => {
-      if (g.service_type && !seen.has(g.service_type)) { seen.add(g.service_type); out.push(g.service_type) }
-    })
-    return out
-  }, [serviceTypes, productGroups])
-
+  // The picker’s category rules live in lib/productPicker (tested there):
+  // a row’s category is its group’s service_type, else its own `type`, and
+  // categories compare case-insensitively so HHH’s 'Service' and 'service'
+  // are one chip. Reading the group alone left every group-less row with no
+  // category, so no chip could reach it (eede9f95).
+  const groupServiceById = useMemo(() => groupServiceIndex(productGroups), [productGroups])
+  const productServiceType = (p) => serviceTypeOf(p, groupServiceById)
+  const serviceTypeCounts = useMemo(
+    () => countByType(activeProducts, groupServiceById),
+    [activeProducts, groupServiceById],
+  )
+  const chipServiceTypes = useMemo(
+    () => chipTypes({ serviceTypes, productGroups, products: activeProducts }),
+    [serviceTypes, productGroups, activeProducts],
+  )
   const groupsForFilter = useMemo(() => {
     if (!serviceFilter) return []
-    return productGroups.filter((g) => g.service_type === serviceFilter)
+    return productGroups.filter((g) => sameType(g.service_type, serviceFilter))
   }, [productGroups, serviceFilter])
 
   const filteredProducts = useMemo(() => {
     let list = activeProducts
-    if (serviceFilter) list = list.filter((p) => productServiceType(p) === serviceFilter)
+    if (serviceFilter) list = list.filter((p) => sameType(productServiceType(p), serviceFilter))
     if (groupFilter !== null) list = list.filter((p) => p.group_id === groupFilter)
     if (search.trim()) {
       list = list.filter((p) =>
@@ -326,7 +311,7 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect, recentPr
       >
         {/* Header: title + close */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${theme.border}` }}>
-          <h2 style={{ margin: 0, fontSize: isMobile ? '15px' : '17px', fontWeight: 600, color: theme.text }}>Select Product</h2>
+          <h2 style={{ margin: 0, fontSize: isMobile ? '15px' : '17px', fontWeight: 600, color: theme.text }}>Select Product or Service</h2>
           <button
             onClick={onClose}
             style={{ padding: 8, minWidth: isMobile ? 44 : 'auto', minHeight: isMobile ? 44 : 'auto', background: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -345,7 +330,7 @@ export default function ProductPickerModal({ isOpen, onClose, onSelect, recentPr
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search products by name, SKU, description…"
+              placeholder="Search products and services by name, SKU, description…"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
