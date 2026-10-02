@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import ScoutLoader from '../components/ScoutLoader'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { isAdmin as checkAdmin, isManager as checkManager, canViewHR } from '../lib/accessControl'
@@ -2284,9 +2285,7 @@ export default function Payroll() {
   if (loading) {
     return (
       <div style={{ padding: isMobile ? '16px' : '24px', textAlign: 'center', color: theme.textMuted }}>
-        <div style={{ width: '40px', height: '40px', border: `3px solid ${theme.border}`, borderTopColor: theme.accent, borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '80px auto 16px' }} />
-        Loading payroll data...
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        <div style={{ marginTop: '80px' }}><ScoutLoader theme={theme} label="Loading payroll data…" /></div>
       </div>
     )
   }

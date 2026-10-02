@@ -1,47 +1,18 @@
-const theme = {
-  accent: '#5a6349',
-  textMuted: '#7d8a7f'
-}
+// Kept as a name, not as a spinner.
+//
+// Bryce: every indicator in JobScout is the little scout hiking, except inside
+// an individual AI where the agent has its own. This used to draw a rotating
+// border circle; it now delegates to ScoutLoader so the three pages still
+// calling it (EstimateDetail, InvoiceDetail, Invoices) match the rest of the
+// app without each needing to be edited, and so no new caller can reintroduce
+// a spinner by reaching for the obvious component name.
+//
+// New code should use <ScoutLoader> directly.
 
-export default function LoadingSpinner({ message = 'Loading...', size = 'medium' }) {
-  const sizes = {
-    small: { spinner: 24, border: 3 },
-    medium: { spinner: 40, border: 4 },
-    large: { spinner: 56, border: 5 }
-  }
+import ScoutLoader from './ScoutLoader'
 
-  const { spinner, border } = sizes[size] || sizes.medium
+const SIZES = { small: 40, medium: 52, large: 64 }
 
-  return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '40px',
-      gap: '16px'
-    }}>
-      <div style={{
-        width: `${spinner}px`,
-        height: `${spinner}px`,
-        border: `${border}px solid rgba(90,99,73,0.15)`,
-        borderTopColor: theme.accent,
-        borderRadius: '50%',
-        animation: 'spin 0.8s linear infinite'
-      }} />
-      {message && (
-        <div style={{
-          fontSize: '14px',
-          color: theme.textMuted
-        }}>
-          {message}
-        </div>
-      )}
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-    </div>
-  )
+export default function LoadingSpinner({ message = 'Loading…', size = 'medium', theme = null }) {
+  return <ScoutLoader label={message} size={SIZES[size] || SIZES.medium} theme={theme} />
 }

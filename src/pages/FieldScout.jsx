@@ -4580,8 +4580,7 @@ export default function FieldScout() {
               </div>
             ) : stripeLoading ? (
               <div style={{ textAlign: 'center', padding: '40px 0', color: theme.textMuted }}>
-                <Loader2 size={28} style={{ animation: 'spin 1s linear infinite', marginBottom: '12px' }} />
-                <div style={{ fontSize: '15px' }}>Setting up invoice...</div>
+                <ScoutLoader theme={theme} label="Setting up invoice…" />
               </div>
             ) : (
               <>
@@ -4850,8 +4849,7 @@ export default function FieldScout() {
 
             {invoiceLoading ? (
               <div style={{ textAlign: 'center', padding: '40px 0', color: theme.textMuted }}>
-                <Loader2 size={28} style={{ animation: 'spin 1s linear infinite', marginBottom: '12px' }} />
-                <div style={{ fontSize: '15px' }}>Loading invoice...</div>
+                <ScoutLoader theme={theme} label="Loading invoice…" />
               </div>
             ) : invoiceData ? (
               <div>

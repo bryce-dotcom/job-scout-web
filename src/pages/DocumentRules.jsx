@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
+import ScoutLoader from '../components/ScoutLoader'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
@@ -967,8 +968,7 @@ export default function DocumentRules() {
           >
             {uploading ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                <Loader size={20} style={{ color: theme.accent, animation: 'spin 1s linear infinite' }} />
-                <span style={{ color: theme.text, fontSize: '14px' }}>Uploading...</span>
+                <ScoutLoader theme={theme} label="Uploading…" size={44} style={{ padding: 0 }} />
               </div>
             ) : (
               <>
@@ -1573,8 +1573,7 @@ export default function DocumentRules() {
                   <div style={{ overflowY: 'auto', maxHeight: 'calc(85vh - 220px)' }}>
                     {mappingLoading ? (
                       <div style={{ padding: '48px', textAlign: 'center', color: theme.textMuted }}>
-                        <Loader size={20} style={{ marginBottom: '8px', animation: 'spin 1s linear infinite' }} />
-                        <div>{modalIsExcelTagMode ? 'Scanning for tags...' : excelCellMode ? 'Scanning for labels...' : 'Extracting form fields...'}</div>
+                        <ScoutLoader theme={theme} label={modalIsExcelTagMode ? 'Scanning for tags…' : excelCellMode ? 'Scanning for labels…' : 'Extracting form fields…'} />
                       </div>
                     ) : excelCellMode ? (
                       /* Excel Cell Mapping View */

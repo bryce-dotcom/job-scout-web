@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import ScoutLoader from './ScoutLoader'
 import {
   X, DollarSign, TrendingUp, TrendingDown, Receipt,
   Clock, Package, Truck, Users, Loader, Zap, ShoppingCart, FileText, AlertCircle
@@ -533,8 +534,7 @@ export default function JobCostingModal({ job, theme, onClose }) {
         <div style={bodyStyle}>
           {loading ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 0', gap: '10px' }}>
-              <Loader size={20} style={{ animation: 'spin 1s linear infinite' }} color={theme.accent} />
-              <span style={{ color: theme.textMuted, fontSize: '14px' }}>Loading costing data...</span>
+              <ScoutLoader theme={theme} label="Loading costing data…" size={52} />
             </div>
           ) : data ? (
             <>

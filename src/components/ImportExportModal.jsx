@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useTheme } from './Layout'
 import { Upload, X, ArrowRight, CheckCircle, AlertCircle, Loader, FileSpreadsheet, Undo2, FileText } from 'lucide-react'
 import * as XLSX from 'xlsx'
+import ScoutLoader from './ScoutLoader'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -864,9 +865,7 @@ export default function ImportExportModal({
             <div>
               {pdfExtracting ? (
                 <div style={{ textAlign: 'center', padding: '32px' }}>
-                  <FileText size={36} style={{ color: '#3b82f6', marginBottom: '12px', opacity: 0.7 }} />
-                  <Loader size={28} style={{ color: '#3b82f6', animation: 'spin 1s linear infinite' }} />
-                  <div style={{ fontSize: '14px', color: theme.textSecondary, marginTop: '12px' }}>AI is reading your PDF...</div>
+                  <ScoutLoader theme={theme} label="Reading your PDF…" />
                   <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>Extracting structured data from {importFile?.name}</div>
                   <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
                 </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useStore } from '../lib/store'
+import ScoutLoader from '../components/ScoutLoader'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { isAdmin as checkAdmin, isManager as checkManager } from '../lib/accessControl'
@@ -1266,9 +1267,7 @@ function JobsReport({ theme, companyId, jobs, employees, formatCurrency, inputSt
   if (loading) {
     return (
       <div style={{ padding: '60px', textAlign: 'center' }}>
-        <Loader2 size={32} style={{ color: theme.accent, animation: 'spin 1s linear infinite' }} />
-        <p style={{ color: theme.textMuted, marginTop: '12px' }}>Loading job data...</p>
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        <ScoutLoader theme={theme} label="Loading job data…" />
       </div>
     )
   }
@@ -1787,9 +1786,7 @@ function ProductsNeededReport({ theme, companyId, jobs, products, formatCurrency
   if (loading) {
     return (
       <div style={{ padding: '60px', textAlign: 'center' }}>
-        <Loader2 size={32} style={{ color: theme.accent, animation: 'spin 1s linear infinite' }} />
-        <p style={{ color: theme.textMuted, marginTop: '12px' }}>Loading product data...</p>
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        <ScoutLoader theme={theme} label="Loading product data…" />
       </div>
     )
   }

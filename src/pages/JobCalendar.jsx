@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
+import ScoutLoader from '../components/ScoutLoader'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { ChevronLeft, ChevronRight, ArrowLeft, Calendar, Loader } from 'lucide-react'
@@ -486,10 +487,7 @@ export default function JobCalendar() {
 
       {/* Loading indicator */}
       {loading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: theme.textMuted }}>
-          <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
-          <span style={{ fontSize: '13px' }}>Loading jobs...</span>
-        </div>
+        <ScoutLoader theme={theme} label="Loading jobs…" size={40} style={{ padding: 0, marginBottom: 16 }} />
       )}
 
       {/* Calendar Grid */}
