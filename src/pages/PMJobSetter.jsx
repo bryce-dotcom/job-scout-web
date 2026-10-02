@@ -22,6 +22,7 @@ import { resolveJobStatuses, normalizeStatuses, statusCategory, statusesToSave }
 import { fetchUtilityInvoicedJobIds, isUtilityInvoiced } from '../lib/utilityInvoiced'
 import UtilityInvoicedBadge from '../components/UtilityInvoicedBadge'
 import { localDateStr } from '../lib/localDate'
+import { zonedHour, zonedDayKey, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
 
 // Default calendar colors for visual distinction
 const calendarColors = [
@@ -1077,9 +1078,13 @@ export default function PMJobSetter() {
       const sectionDateStr = section.scheduled_date.substring(0, 10)
       const sameDay = sectionDateStr === slotDateStr
 
+      // The section's job, needed BOTH for the calendar filter and for the
+      // timezone its start_time should be read in — so it is looked up once
+      // here rather than inside the filter block.
+      const job = jobs.find(j => j.id === section.job_id)
+
       // Filter by selected calendar (via job's business unit)
       if (selectedCalendar !== 'all') {
-        const job = jobs.find(j => j.id === section.job_id)
         const cal = jobCalendars.find(c => c.id === selectedCalendar)
         if (cal?.business_unit && job?.business_unit !== cal.business_unit) {
           return false
@@ -1087,10 +1092,11 @@ export default function PMJobSetter() {
       }
 
       if (section.start_time) {
-        const startHour = new Date(section.start_time).getHours()
-        // Clamp out-of-range hours (e.g. timezone-shifted to 2 AM) into the
-        // first visible slot (8 AM) so they remain visible in week view.
-        const visibleHour = (startHour < 7 || startHour > 17) ? 8 : startHour
+        // In the job’s region, not the viewer’s device (lib/dateTz).
+        const startHour = zonedHour(section.start_time, tzForJob(job))
+        // Clamp genuinely out-of-hours work into the first visible slot so it
+        // stays visible in week view; null means an unreadable time.
+        const visibleHour = (startHour == null || startHour < 7 || startHour > 17) ? 8 : startHour
         return sameDay && visibleHour === hour
       }
       return sameDay && hour === 8
@@ -1102,30 +1108,44 @@ export default function PMJobSetter() {
   // (inclusive). Previously only the start date matched — a three-day job
   // would disappear from the calendar on days 2 and 3. Christopher
   // reported this as "Multi-Day Job only occupies one date".
+  // A calendar CELL is a local date — formatting it from its own Y/M/D is
+  // right. A JOB is an instant, and must be read in the job’s own region
+  // (lib/dateTz), never the viewer’s device: that is the whole reason
+  // dateTz exists, and this page was the one surface still using neither.
   const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const tzForJob = (job) => resolveTimezone(job?.business_unit, businessUnits, DEFAULT_TZ)
+  const jobDayKey = (job) => zonedDayKey(job?.start_date, tzForJob(job))
   // NOTE: getJobScheduledEnd() is defined below — works because both are
   // hoisted via the function-component closure (same render scope).
   const slotDateInJobRange = (slotDate, job) => {
     if (!job.start_date) return false
-    const start = new Date(job.start_date); start.setHours(0,0,0,0)
+    // Day KEYS in the job’s region, so a 6pm Mountain job does not move to
+    // the next day for a viewer whose device is further east.
+    const startKey = jobDayKey(job)
     const endRaw = getJobScheduledEnd(job) || new Date(job.start_date)
-    const endSrc = new Date(endRaw); endSrc.setHours(23,59,59,999)
-    const slot = new Date(slotDate); slot.setHours(12,0,0,0) // midday — safe from DST edges
-    return slot >= start && slot <= endSrc
+    const endKey = zonedDayKey(endRaw instanceof Date ? endRaw.toISOString() : endRaw, tzForJob(job)) || startKey
+    const slotKey = toLocalDateStr(new Date(slotDate))
+    return !!startKey && slotKey >= startKey && slotKey <= endKey
   }
   const getJobsForSlot = (date, hour) => {
     return getFilteredJobs().filter(job => {
       if (!slotDateInJobRange(date, job)) return false
       // For the FIRST day the job uses its scheduled hour; subsequent days
       // default to the 8 AM slot so continuing jobs show up somewhere.
-      const jobDt = new Date(job.start_date)
-      const isFirstDay = toLocalDateStr(jobDt) === toLocalDateStr(date)
-      const jobHour = jobDt.getHours()
-      // Clamp hours outside the visible range [7,17] (incl. midnight or
-      // timezone-shifted values) into the first slot so the job is never
-      // silently dropped from the week view (Christopher reported jobs
-      // showing in monthly view but missing from weekly view).
-      const visibleHour = (jobHour < 7 || jobHour > 17) ? 8 : jobHour
+      const isFirstDay = jobDayKey(job) === toLocalDateStr(new Date(date))
+      // The hour the job is scheduled for WHERE THE WORK IS. getHours() read
+      // the viewer’s device, so the same job sat in a different row for a
+      // tech in Arizona than for the office in Utah, and the clamp below then
+      // moved anything that fell outside 7–17 to 8am without saying so.
+      // Christopher: "After setting a time on the job tab it defaults to 7 am
+      // when you open up the job on the job board." (7bbfcab8)
+      const jobHour = zonedHour(job.start_date, tzForJob(job))
+      // Clamp genuinely out-of-hours work (a 5am start, a midnight callout)
+      // into the first slot so it is never silently dropped from the week view
+      // — Christopher also reported jobs showing in monthly but missing from
+      // weekly. A null hour means an unreadable start_date, which must clamp
+      // too rather than compare false against every slot and vanish.
+      const visibleHour = (jobHour == null || jobHour < 7 || jobHour > 17) ? 8 : jobHour
       if (isFirstDay) return visibleHour === hour
       return hour === 8
     })
@@ -1133,26 +1153,26 @@ export default function PMJobSetter() {
 
   // Appointment helpers for calendar
   const getAppointmentsForDate = (date) => {
-    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    // The cell is a local date; the appointment is an instant, so it is read
+    // in the company region. Reading the device put an evening appointment on
+    // the next day for anyone a timezone away.
+    const dateStr = toLocalDateStr(new Date(date))
     return appointments.filter(apt => {
       if (!apt.start_time) return false
-      const aptDt = new Date(apt.start_time)
-      const aptDateStr = `${aptDt.getFullYear()}-${String(aptDt.getMonth() + 1).padStart(2, '0')}-${String(aptDt.getDate()).padStart(2, '0')}`
-      return aptDateStr === dateStr
+      return zonedDayKey(apt.start_time, DEFAULT_TZ) === dateStr
     })
   }
 
   const getAppointmentsForSlot = (date, hour) => {
-    const slotDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    const slotDateStr = toLocalDateStr(new Date(date))
     return appointments.filter(apt => {
       if (!apt.start_time) return false
-      const aptDt = new Date(apt.start_time)
-      const aptDateStr = `${aptDt.getFullYear()}-${String(aptDt.getMonth() + 1).padStart(2, '0')}-${String(aptDt.getDate()).padStart(2, '0')}`
-      if (aptDateStr !== slotDateStr) return false
-      const aptHour = aptDt.getHours()
+      // Day and hour both in the company region, never the device.
+      if (zonedDayKey(apt.start_time, DEFAULT_TZ) !== slotDateStr) return false
+      const aptHour = zonedHour(apt.start_time, DEFAULT_TZ)
       // Clamp out-of-visible-range hours into the first slot (8 AM) so they
-      // are not hidden in week view.
-      const visibleHour = (aptHour < 7 || aptHour > 17) ? 8 : aptHour
+      // are not hidden in week view; null means an unreadable time.
+      const visibleHour = (aptHour == null || aptHour < 7 || aptHour > 17) ? 8 : aptHour
       return visibleHour === hour
     })
   }

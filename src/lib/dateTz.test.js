@@ -60,3 +60,55 @@ describe('zonedHour — bucket onto the right hour row', () => {
     expect(zonedHour('2026-07-15T19:00:00.000Z', MT)).toBe(13)
   })
 })
+
+// ── The job board read the viewer's device, the job tab read the job's region ──
+//
+// Christopher, 7bbfcab8: "After setting a time on the job tab it defaults to
+// 7 am when you open up the job on the job board. The date stays accurate but
+// not the times." JobDetail rendered the field with toZonedInput + the job's
+// resolved timezone; the board bucketed onto its hour rows with
+// new Date(start_date).getHours() — the DEVICE. These pin the two halves the
+// board now uses, with the numbers that make the symptom.
+describe('a job sits in the same hour row wherever you open it', () => {
+  // 9am Mountain in winter (MST, UTC-7) is 16:00 UTC.
+  const nineAmMountain = '2026-01-15T16:00:00Z'
+
+  it('reads the hour in the job region, not UTC and not the device', () => {
+    expect(zonedHour(nineAmMountain, 'America/Denver')).toBe(9)
+    // The same instant is 9am in Phoenix in winter (both -7) ...
+    expect(zonedHour(nineAmMountain, 'America/Phoenix')).toBe(9)
+    // ... and 8am in summer, when Denver moves and Phoenix does not. That one
+    // hour is why an Arizona crew saw a different row than the Utah office.
+    const nineAmSummer = '2026-07-15T15:00:00Z'   // 9am MDT
+    expect(zonedHour(nineAmSummer, 'America/Denver')).toBe(9)
+    expect(zonedHour(nineAmSummer, 'America/Phoenix')).toBe(8)
+  })
+
+  it('puts midnight Mountain on its own day, not the UTC one', () => {
+    // Midnight MST is 07:00 UTC — read as UTC it is both the wrong hour (7am,
+    // the number in the ticket) and, near month ends, the wrong day.
+    const midnightMountain = '2026-01-16T07:00:00Z'
+    expect(zonedHour(midnightMountain, 'America/Denver')).toBe(0)
+    expect(zonedDayKey(midnightMountain, 'America/Denver')).toBe('2026-01-16')
+    expect(new Date(midnightMountain).getUTCHours()).toBe(7)   // what it used to show
+  })
+
+  it('keeps an evening job on the day it was scheduled', () => {
+    // 6pm Mountain = 01:00 UTC the NEXT day; day-keying by UTC moved it.
+    const sixPmMountain = '2026-03-10T00:00:00Z'
+    expect(zonedDayKey(sixPmMountain, 'America/Denver')).toBe('2026-03-09')
+  })
+
+  it('returns null rather than NaN for an unreadable time, so it can be clamped', () => {
+    expect(zonedHour(null, 'America/Denver')).toBe(null)
+    expect(zonedHour('not a date', 'America/Denver')).toBe(null)
+    expect(zonedDayKey(null, 'America/Denver')).toBe('')
+  })
+
+  it('a round trip through the input keeps the wall clock', () => {
+    const tz = 'America/Denver'
+    const shown = toZonedInput(nineAmMountain, tz)
+    expect(shown).toBe('2026-01-15T09:00')
+    expect(fromZonedInput(shown, tz)).toBe(nineAmMountain.replace('Z', '.000Z'))
+  })
+})
