@@ -271,6 +271,7 @@ export function heldReasonLabel(row) {
     case 'job_not_finished': return 'Held - job still open, hours not all in'
     case 'unassigned_crew_hours': return 'Held - crew time not on the job that day'
     case 'allotted_over_actual': return 'Held - allotted hours far over hours worked'
+    case 'over_percent_of_job': return 'Held - big share of the job price, for review'
     default: return 'Needs verification'
   }
 }

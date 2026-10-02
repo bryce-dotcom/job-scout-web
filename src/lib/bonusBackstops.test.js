@@ -205,3 +205,75 @@ describe('how much loose time is enough to hold a bonus', () => {
     expect(details[0].unassignedHours).toBe(10)          // not 20
   })
 })
+
+describe('review, rather than a quiet cut', () => {
+  // Bryce, 2 Oct 2026: "is the cap the way to go or if the bonus goes over
+  // just a flag for doug london or managers to look at?" — review won. The
+  // ceiling stays in the code, blank, for when nobody works the queue.
+  const review = (pct, extra = {}) => calculateEfficiencyBonus({
+    employeeId: 1, timeLogEntries: ENTRIES, timeClockRows: CLOCK, jobs: [JOB],
+    employees: EMPLOYEES, skillLevels: [], deliveredStatusIds: DELIVERED,
+    payrollConfig: { ...CFG, bonus_review_percent_of_job: pct, ...extra },
+  })
+
+  it('is off unless the company sets a percentage', () => {
+    expect(review(undefined).bonus).toBeCloseTo(1440, 2)
+    expect(review('').bonus).toBeCloseTo(1440, 2)
+  })
+
+  it('holds the whole amount for review, it does not shave it', () => {
+    const { bonus, details } = review(10)              // pool is 36% of $4,000
+    expect(bonus).toBe(0)
+    expect(details[0].blockedReason).toBe('over_percent_of_job')
+    expect(bonusRowAmount(details[0])).toEqual({ amount: 1440, held: true })
+    expect(details[0].poolPercentOfJob).toBe(36)
+    expect(details[0].reviewPercentOfJob).toBe(10)
+  })
+
+  it('leaves a bonus under the threshold alone', () => {
+    const { bonus, details } = review(40)
+    expect(bonus).toBeCloseTo(1440, 2)
+    expect(details[0].poolPercentOfJob).toBe(36)
+  })
+
+  it('an admin override releases a reviewed bonus, like every other hold', () => {
+    const { bonus } = calculateEfficiencyBonus({
+      employeeId: 1, timeLogEntries: ENTRIES, timeClockRows: CLOCK, jobs: [JOB],
+      employees: EMPLOYEES, skillLevels: [], deliveredStatusIds: DELIVERED,
+      payrollConfig: { ...CFG, bonus_review_percent_of_job: 10 },
+      bonusOverrides: [{ job_id: 7, employee_id: 1 }],
+    })
+    expect(bonus).toBeCloseTo(1440, 2)
+  })
+
+  it('review and the ceiling work together: held, at the capped figure', () => {
+    const { bonus, details } = review(10, { bonus_max_percent_of_job: 20 })
+    expect(bonus).toBe(0)
+    expect(details[0].blockedReason).toBe('over_percent_of_job')
+    expect(bonusRowAmount(details[0]).amount).toBeCloseTo(800, 2)   // 20% of $4,000
+  })
+
+  it('the ledger records it as a held row with the reason', () => {
+    const rows = computeJobBonusRows({
+      job: JOB, timeClockRows: CLOCK, employees: EMPLOYEES, skillLevels: [],
+      payrollConfig: { ...CFG, bonus_review_percent_of_job: 10 },
+      deliveredStatusIds: DELIVERED,
+    })
+    expect(rows[0].release_reason).toBe('over_percent_of_job')
+    expect(rows[0].needs_verification).toBe(true)
+    expect(rows[0].amount).toBeCloseTo(1440, 2)
+  })
+})
+
+describe('nobody releases their own bonus', () => {
+  const payroll = read('src/pages/Payroll.jsx')
+
+  it('the handler refuses it', () => {
+    expect(payroll).toMatch(/bonusRow\.employee_id === adminEmp\.id/)
+    expect(payroll).toMatch(/This is your own bonus/)
+  })
+
+  it('and the button is not even offered', () => {
+    expect(payroll).toMatch(/b\.employee_id !== signedInEmployeeId/)
+  })
+})

@@ -406,6 +406,9 @@ export default function Payroll() {
   const [repCommissions, setRepCommissions] = useState([])
 
   const isAdmin = checkAdmin(user)
+  // Who is signed in, as an employee row — a bonus of their own is not
+  // theirs to release (see handleBonusVerify).
+  const signedInEmployeeId = employees.find(e => e.email === user?.email)?.id || null
   const isManagerPlus = checkManager(user)
   const hasHR = canViewHR(user)
 
@@ -2091,9 +2094,18 @@ export default function Payroll() {
   // payroll_adjustments row here — that would double-pay on top of bonusOwed.
   const handleBonusVerify = async (bonusRow) => {
     if (!bonusRow?.id) return
+    const adminEmp = employees.find(e => e.email === user?.email)
+    // Nobody clears the flag on their own money. Admin is a wide door at a
+    // company this size — two of HHH's three admins are project managers who
+    // run jobs and earn bonuses on them (Christopher Lyman had $4,767 of his
+    // own sitting in the held pile), and "held for review" means nothing if
+    // the person being reviewed is the reviewer.
+    if (adminEmp?.id && bonusRow.employee_id === adminEmp.id) {
+      alert('This is your own bonus. Someone else has to release it — ask an owner or another admin to review the job.')
+      return
+    }
     const jobLabel = bonusRow.jobs?.job_title || `Job ${bonusRow.job_id}`
     if (!confirm(`Mark this bonus as verified?\n\n${jobLabel} — ${fmt(parseFloat(bonusRow.amount) || 0)}\n\nThe amount is already owed; this clears the "needs verification" flag.`)) return
-    const adminEmp = employees.find(e => e.email === user?.email)
     try {
       const { error } = await supabase.from('job_bonuses')
         .update({
@@ -2956,13 +2968,18 @@ export default function Payroll() {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                     <div style={{ fontSize: '15px', fontWeight: '600', color: statusMeta.color }}>{fmt(parseFloat(b.amount) || 0)}</div>
-                    {isAdmin && b.needs_verification && b.status !== 'paid' && (
+                    {/* The button is hidden on your own row — handleBonusVerify
+                        refuses it anyway, this just stops the offer. */}
+                    {isAdmin && b.needs_verification && b.status !== 'paid' && b.employee_id !== signedInEmployeeId && (
                       <button
                         onClick={() => handleBonusVerify(b)}
                         style={{ padding: '4px 10px', background: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
                       >
                         Verify
                       </button>
+                    )}
+                    {isAdmin && b.needs_verification && b.status !== 'paid' && b.employee_id === signedInEmployeeId && (
+                      <span style={{ fontSize: 10, color: theme.textMuted, fontStyle: 'italic' }}>yours — another admin releases it</span>
                     )}
                     {isAdmin && b.status === 'accrued' && !b.needs_verification && (
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -4885,21 +4902,39 @@ export default function Payroll() {
 
                   <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
                     <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>
-                      Most a Job Can Pay in Bonus
+                      Send a Big Bonus for Review
                     </label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <input
                         type="number" min="0" max="100" step="1"
-                        placeholder="no cap"
-                        value={payrollConfig.bonus_max_percent_of_job ?? ''}
-                        onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_max_percent_of_job: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })}
+                        placeholder="off"
+                        value={payrollConfig.bonus_review_percent_of_job ?? ''}
+                        onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_review_percent_of_job: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })}
                         style={inputStyle}
                       />
                       <span style={{ fontSize: '14px', color: theme.textMuted }}>% of the job price</span>
                     </div>
                     <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
-                      A ceiling on the whole crew&apos;s pool for one job, before it is split. On work priced as a flat number, allotted hours are the price divided by your hourly rate rather than an estimate anyone made — so a small job can hand back a third of what it sold for. Leave blank for no cap.
+                      When a job&apos;s whole bonus pool comes to more than this share of what the job sold for, it is held for someone to look at — shown with the reason, at its full amount, and released from this page. On work priced as a flat number, allotted hours are the price divided by your hourly rate rather than an estimate anyone made, which is how a small job ends up handing back a quarter of itself. Leave blank to send nothing for review.
                     </div>
+                    <details style={{ marginTop: '10px' }}>
+                      <summary style={{ fontSize: '12px', fontWeight: 600, color: theme.textSecondary, cursor: 'pointer' }}>
+                        Hard ceiling as well
+                      </summary>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                        <input
+                          type="number" min="0" max="100" step="1"
+                          placeholder="no ceiling"
+                          value={payrollConfig.bonus_max_percent_of_job ?? ''}
+                          onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_max_percent_of_job: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })}
+                          style={inputStyle}
+                        />
+                        <span style={{ fontSize: '14px', color: theme.textMuted }}>% of the job price</span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
+                        This one does not ask — it cuts the pool to the ceiling before it is split. Worth setting only if the review queue above stops getting worked, since a bonus nobody reviews is held forever, which is worse for the crew than a smaller number they can see. Leave blank for no ceiling.
+                      </div>
+                    </details>
                   </div>
 
                   <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>

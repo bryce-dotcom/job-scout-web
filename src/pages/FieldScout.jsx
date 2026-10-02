@@ -3235,7 +3235,8 @@ export default function FieldScout() {
                       <div style={{ fontSize: '11px', color: '#d4940a', marginTop: '3px', fontWeight: '600' }}>
                         {d.blockedReason === 'job_not_finished' ? 'Waiting on the job finishing'
                           : d.blockedReason === 'unassigned_crew_hours' ? `Waiting on ${Number(d.unassignedHours || 0).toFixed(1)}h of crew time that is not on this job`
-                            : d.blockedReason === 'allotted_over_actual' ? 'Held for the office — allotted hours far over hours worked'
+                            : d.blockedReason === 'over_percent_of_job' ? 'With the office to look at — a big share of what the job sold for'
+                          : d.blockedReason === 'allotted_over_actual' ? 'Held for the office — allotted hours far over hours worked'
                               : 'Waiting on verification'}
                       </div>
                     )}

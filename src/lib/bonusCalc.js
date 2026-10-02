@@ -741,8 +741,21 @@ export function calculateEfficiencyBonus({
     // the gate so a HELD row shows the same money it would pay once released.
     const rawPool = savedHours * rate
     const uncappedCrewPool = rawPool - rawPool * (companyCut / 100)
-    const maxPct = parseFloat(payrollConfig.bonus_max_percent_of_job)
     const jobPrice = parseFloat(job.job_total) || 0
+    const poolPctOfJob = jobPrice > 0 ? (uncappedCrewPool / jobPrice) * 100 : null
+
+    // REVIEW first, ceiling second — two different answers to the same number
+    // being too big, and Bryce picked review (2 Oct 2026): "is the cap the way
+    // to go or if the bonus goes over just a flag for doug london or managers
+    // to look at?" A cap quietly pays a tidier version of a number computed
+    // from an allotment nobody estimated; a flag puts the job in front of
+    // someone who can fix the input instead. The ceiling stays available for
+    // when nobody is working the queue — a flag with no owner is a 100% cut.
+    const reviewPct = parseFloat(payrollConfig.bonus_review_percent_of_job)
+    const overPercentOfJob = Number.isFinite(reviewPct) && reviewPct > 0 && poolPctOfJob !== null
+      && poolPctOfJob > reviewPct
+
+    const maxPct = parseFloat(payrollConfig.bonus_max_percent_of_job)
     let crewPool = uncappedCrewPool
     let cappedBy = null
     if (Number.isFinite(maxPct) && maxPct > 0 && jobPrice > 0) {
@@ -754,7 +767,7 @@ export function calculateEfficiencyBonus({
     // Otherwise the bonus must clear the >3x allotted guard, both hours
     // backstops AND the verification gate before it can pay.
     const passes = hasAdminOverride || (
-      !suspiciousAllotted && jobFinished && !unassignedCrewHours &&
+      !suspiciousAllotted && jobFinished && !unassignedCrewHours && !overPercentOfJob &&
       (gateOff || passesVictor || paidOverrideApplies)
     )
 
@@ -791,12 +804,17 @@ export function calculateEfficiencyBonus({
         blockedReason: suspiciousAllotted ? 'allotted_over_actual'
           : !jobFinished ? 'job_not_finished'
           : unassignedCrewHours ? 'unassigned_crew_hours'
+          : overPercentOfJob ? 'over_percent_of_job'
           : !passesVictor ? 'no_completion_verification' : 'blocked',
         allottedRatio: allottedRatio === Infinity ? null : +allottedRatio.toFixed(1),
         // How much crew time that day never reached this job, so the page
         // can say what is missing instead of just "held".
         unassignedHours: +unassignedHours.toFixed(2),
         unassignedRatio: +unassignedRatio.toFixed(2),
+        // What the crew pool comes to as a share of the job price, so the
+        // review queue can be read without opening the job.
+        poolPercentOfJob: poolPctOfJob === null ? null : +poolPctOfJob.toFixed(1),
+        reviewPercentOfJob: Number.isFinite(reviewPct) ? reviewPct : null,
         paidPercent: paidPercent != null ? +paidPercent.toFixed(1) : null,
         paidThresholdPct,
         gateMode,
@@ -904,6 +922,7 @@ export function calculateEfficiencyBonus({
       // Set when the pool hit the % -of-price ceiling, so every surface can
       // say WHY the number is smaller than saved-hours x rate would give.
       cappedByPercentOfJob: cappedBy,
+      poolPercentOfJob: poolPctOfJob === null ? null : +poolPctOfJob.toFixed(1),
       releaseReason,
       paidPercent: paidPercent != null ? +paidPercent.toFixed(1) : null,
       gateMode,
