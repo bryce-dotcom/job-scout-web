@@ -51,14 +51,14 @@ const CREW = [
     hi: ['AI-drafted campaigns', 'Smart customer segments', 'Open + click tracking', 'Set-and-forget drip automations'],
     rep: ['Mailchimp', 'Klaviyo', 'HubSpot'],
     out: { kicker: 'ran a campaign', head: '“Spring maintenance special”', rows: ['86 spring customers segmented', '34% opened · 11 clicked'], done: '6 jobs booked from one email ✓' } },
-  { ab: 'DG', name: 'Dougie', role: 'Document reading',
-    hook: 'Drop in a bill, receipt, or rebate form; Dougie pulls the fields, learns your corrections, and the data entry stops.',
-    hi: ['OCR + structured field extraction', 'Learns your corrections', 'Pre-fills rebate & audit forms', 'PDF or phone photo in'],
-    rep: ['Veryfi', 'Mindee', 'manual data entry'],
-    out: { kicker: 'read a document', head: 'SRP_utility_bill.pdf · 12 pages', rows: ['12 fields pulled · 48,200 kWh · $6,410', 'Demand peak 214 kW · period tagged'], done: 'rebate form pre-filled ✓' } },
+  { ab: 'DG', name: 'Dougie', role: 'Handwritten takeoffs',
+    hook: 'Hand Dougie the scribbled lighting takeoff from the field; he reads the fixtures, tick-mark counts, heights and controls straight into the Lenard audit — learning your handwriting as he goes.',
+    hi: ['Reads handwritten takeoff sheets', 'Fixtures, counts, heights & controls', 'Learns your handwriting over time', 'Feeds the Lenard lighting audit'],
+    rep: ['retyping field sheets', 'manual data entry'],
+    out: { kicker: 'read a takeoff sheet', head: 'Handwritten count · Bldg C', rows: ['6 areas · 214 fixtures tallied', 'mounting heights + controls captured'], done: 'into the audit ✓' } },
   { ab: 'BB', name: 'Benny', role: 'Bid packages',
     hook: "Drop in the buyer's invitation to bid; Benny reads the schedule, matches every item to your catalog, prices the rest from the web, and builds the bid in their format — sourced prices redlined until you verify them.",
-    hi: ['Bid package → priced bid', 'Exact / equivalent / must-source match', 'Redlined until verified with a link', 'Handwritten takeoff forms in'],
+    hi: ['Bid package → priced bid', 'Exact / equivalent / must-source match', 'Redlined until verified with a link', 'Plan-set takeoff when there is no schedule'],
     rep: ['retyping bid schedules', 'manual data entry'],
     out: { kicker: 'read a bid package', head: 'ITB_2026-114_LED_Retrofit.pdf · 14 pages', rows: ['9 items read · 7 matched to catalog', '2 flagged to source · 1 equivalent explained'], done: 'bid built in their format ✓' } },
   { ab: 'DN', name: 'Don', role: 'Excavation & sitework',
@@ -66,6 +66,11 @@ const CREW = [
     hi: ['Reads site plans, notes & site data', 'Cut / fill volumes + swell math', 'OSHA sloping & haul-truck counts', 'Priced excavation bid'],
     rep: ['a takeoff estimator', 'Trimble', 'a day with a spreadsheet'],
     out: { kicker: 'ran a takeoff', head: 'Lot 14 · pad + utilities', rows: ['1,240 cy cut · 380 cy fill · 22% swell', 'Type B slope · 41 truck loads'], done: 'excavation bid drafted ✓' } },
+  { ab: 'SA', name: 'Sal', role: 'Bid finding',
+    hook: 'Point every procurement portal and SAM.gov at one Sal inbox; he reads the solicitations, scores each against what you actually win, and hands the ones you pick to Benny to build.',
+    hi: ['One inbox for every bid alert + SAM.gov', 'Scores each bid 0–100 on fit, not price', 'Deadlines straight onto your calendar', 'Hands the package to Benny'],
+    rep: ['BidNet · GovWin', 'a bid-finding service'],
+    out: { kicker: 'scored a solicitation', head: 'ITB · School district · LED retrofit', rows: ['Fit 86 / 100 · due in 11 days', 'Your trade, your county, your size'], done: 'sent to Benny to build ✓' } },
 ]
 const COMING = ['Plumbing', 'HVAC', 'Roofing', 'Electrical', 'Painting', 'Masonry', 'Flooring', 'Windows', 'Cleaning', 'Gutters', 'Safety']
 
@@ -73,7 +78,8 @@ const COMING = ['Plumbing', 'HVAC', 'Roofing', 'Electrical', 'Painting', 'Masonr
 const ACTIVITY = [
   { ab: 'FR', name: 'Frankie', msg: 'flagged a 45-day overdue invoice', meta: '$3,200' },
   { ab: 'ZA', name: 'Zach', msg: 'measured a 0.41-acre yard → quote sent', meta: 'just now' },
-  { ab: 'DG', name: 'Dougie', msg: 'read 12 utility bills, fields pulled', meta: '1m' },
+  { ab: 'BB', name: 'Benny', msg: 'built a bid from a 14-page ITB', meta: '1m' },
+  { ab: 'SA', name: 'Sal', msg: 'scored 3 new solicitations · 1 is a fit', meta: 'just now' },
   { ab: 'VI', name: 'Victor', msg: 'verified Job #4471 before invoice', meta: '✓' },
   { ab: 'CO', name: 'Conrad', msg: 'queued a win-back to 38 quiet customers', meta: '2m' },
   { ab: 'LE', name: 'Lenard', msg: 'counted 214 fixtures → rebate priced', meta: '3m' },
@@ -167,7 +173,7 @@ const SWITCH = [
   { cat: 'Marketing & documents', rows: [
     { k: 'Mailchimp · Klaviyo · Constant Contact', n: 'Conrad', ai: true, d: 'Writes the campaign, picks the segment, sends it.' },
     { k: 'Hootsuite · Buffer · Later', n: 'Marketing', isNew: true, ai: true, d: 'Crews snap a job photo; AI writes the post in your voice; approve and it posts to the networks you’ve connected.' },
-    { k: 'Veryfi · Mindee · manual entry', n: 'Dougie', ai: true, d: 'Any bill or form → fields pulled, learns your fixes.' },
+    { k: 'retyping field sheets · manual entry', n: 'Dougie', ai: true, d: 'Reads your handwritten lighting takeoff sheet straight into the Lenard audit.' },
     { k: 'Ninety.io · Bloom · EOSOne', n: 'EOS, built in', d: 'V/TO, Rocks, an auto-populated Scorecard, L10.' },
   ] },
   { cat: 'And the one everybody already knows', wide: true, rows: [
@@ -201,7 +207,7 @@ const CSS = `
   .pr .eb.on-dark{color:#ffb27a;background:rgba(242,106,18,.16)}
   .pr h1,.pr h2,.pr h3{margin:0;letter-spacing:-.03em;text-wrap:balance}
   .pr .kicker{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}
-  .pr .hero{background:linear-gradient(rgba(20,25,16,.88),rgba(20,25,16,.9)),url(/topo-bg.png) center/cover no-repeat fixed;color:#f4efe3;border-radius:0 0 30px 30px;overflow:hidden;position:relative;isolation:isolate}
+  .pr .hero{background:linear-gradient(rgba(22,27,17,.76),rgba(22,27,17,.82)),url(/topo-bg.png) center/cover no-repeat fixed;color:#f4efe3;border-radius:0 0 30px 30px;overflow:hidden;position:relative;isolation:isolate}
   .pr .hero::after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:radial-gradient(120% 80% at 100% 0%,rgba(242,106,18,.17),transparent 55%)}
   .pr .hero .wrap{padding:44px 20px 40px;position:relative;z-index:1}
   .pr .hero h1{font-size:clamp(37px,9.6vw,72px);font-weight:870;line-height:1.02;margin:20px 0 0}
@@ -764,6 +770,45 @@ export default function Pricing() {
               </div>
               <div className="repl">replaces <b>Apollo.io, ZoomInfo, Lusha</b> — and the prospecting agency.</div>
               <div className="repl" style={{ marginTop: 6 }}>Free on every plan to start. <b>Prospecting Pro</b> scales it to 50 searches + 200 enrichments a month — $49/mo, shared across your team.</div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div className="wrap">
+            <div className="prospect rv">
+              <span className="eb on-dark"><Icon id="i-dollar" style={{ fontSize: 13 }} /> Win government &amp; GC work</span>
+              <h3>A bid desk, without the bid desk.</h3>
+              <p className="say">Point every procurement portal and SAM.gov at one inbox. <b>Sal</b> reads each solicitation and scores it against the work you actually win. Pick one, and <b>Benny</b> reads the package — or takes it off the drawings when there’s no schedule — matches every line to your catalog, and builds the bid in the buyer’s own format. Prices he had to source stay redlined until you verify them, and a bid won’t send until you do.</p>
+              <div className="term">
+                <div className="top"><i /><i /><i /><span style={{ color: '#6b7160', marginLeft: 6 }}>ITB_2026-114 · LED retrofit · 14 pp</span></div>
+                <div className="q">Sal: fit 86/100 → Benny, build it<span className="cur" /></div>
+                <div className="res">
+                  <div className="row"><span>Item 3 · 2×4 LED troffer · 40 ea</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> catalog price</span></div>
+                  <div className="row"><span>Item 7 · occupancy sensor · 12 ea</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> equivalent</span></div>
+                  <div className="row"><span>Item 9 · exit sign · 6 ea</span><span style={{ color: '#f2913f', fontSize: 10.5 }}>sourced · verify to send</span></div>
+                </div>
+              </div>
+              <div className="repl">replaces <b>BidNet, GovWin</b>, a bid-finding service — and a day spent retyping someone else’s schedule.</div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div className="wrap">
+            <div className="prospect rv">
+              <span className="eb on-dark"><Icon id="i-share" style={{ fontSize: 13 }} /> Marketing, from the truck</span>
+              <h3>Your crew’s camera roll is your marketing team.</h3>
+              <p className="say">A tech taps <b>Share to Marketing</b> on a job photo from Field Scout. The AI writes the post in your company’s voice — learned from your EOS values and every caption you’ve approved — you tap OK, and it publishes to the networks you’ve connected. Nothing goes out without a human approval.</p>
+              <div className="term">
+                <div className="top"><i /><i /><i /><span style={{ color: '#6b7160', marginLeft: 6 }}>marketing · draft</span></div>
+                <div className="q">3 photos shared → “panel upgrade, Gilbert”<span className="cur" /></div>
+                <div className="res">
+                  <div className="row"><span>Another clean panel upgrade in Gilbert. Swipe for the before — booking spring installs now.</span><span className="cited">your voice</span></div>
+                  <div className="row"><span>Facebook · Instagram · Google · LinkedIn</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> approve to post</span></div>
+                </div>
+              </div>
+              <div className="repl">replaces <b>Hootsuite, Buffer, Later</b> — and the agency that never saw the job.</div>
             </div>
           </div>
         </section>
