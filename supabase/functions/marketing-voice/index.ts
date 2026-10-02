@@ -40,7 +40,19 @@ serve(async (req) => {
     if (body.action === 'status') {
       const key = elevenKey()
       const account = key ? await listVoices(key) : null
-      return json({ ok: true, available: !!key, voices: account || stockList(), from: account ? 'account' : 'stock' })
+      const voices = [...(account || stockList())]
+      // The company's own Arnie voice (settings arnie_voice.voice_id) leads the list
+      // when the key cannot read the account's voices.
+      try {
+        const sb0 = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+        const { data: row } = await sb0.from('settings').select('value').eq('company_id', caller.companyId).eq('key', 'arnie_voice').limit(1).maybeSingle()
+        let cfg: Record<string, unknown> = {}
+        if (row?.value && typeof row.value === 'object') cfg = row.value as Record<string, unknown>
+        else if (typeof row?.value === 'string') { try { cfg = JSON.parse(row.value) } catch { cfg = {} } }
+        const v = cfg.voice_id
+        if (typeof v === 'string' && !voices.some((x) => x.id === v)) voices.unshift({ id: v, name: 'Arnie', category: 'pinned', preview_url: null })
+      } catch { /* no pin */ }
+      return json({ ok: true, available: !!key, voices, from: account ? 'account' : 'stock' })
     }
 
     const key = elevenKey()

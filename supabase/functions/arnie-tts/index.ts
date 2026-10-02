@@ -246,8 +246,11 @@ Deno.serve(async (req) => {
       const key = elevenKey()
       const { allowed, voiceId: pinned } = await elevenAllowed(caller?.companyId ?? null)
       const account = key && allowed ? await listVoices(key) : null
-      const voices = key && allowed ? (account || stockList()) : []
+      const voices = key && allowed ? [...(account || stockList())] : []
       const arnie = pinned || findVoiceNamed(account, 'Arnie')?.id || null
+      // A voice pinned in settings (made in ElevenLabs, id pasted) may be
+      // missing from a list the key cannot read; put him at the front.
+      if (arnie && voices.length && !voices.some((v) => v.id === arnie)) voices.unshift({ id: arnie, name: 'Arnie', category: 'pinned', preview_url: null })
       return jsonRes({ available: !!key, allowed, from: account ? 'account' : 'stock', voices, arnie })
     }
 
