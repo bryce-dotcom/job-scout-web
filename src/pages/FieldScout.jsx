@@ -17,6 +17,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { toast } from '../lib/toast'
 import { syncQueue } from '../lib/syncQueue'
 import { uploadCapture } from '../lib/marketingUpload'
+import ScoutLoader from '../components/ScoutLoader'
 import {
   Compass, Clock, MapPin, Play, Square, Coffee, Megaphone, Upload,
   ChevronDown, ChevronUp, ExternalLink, Navigation,
@@ -2152,6 +2153,9 @@ export default function FieldScout() {
           needs no action and these do. */}
       <MyNotifications theme={theme} />
 
+      {linePhotoUploading && linePhotoTarget?.context === 'marketing' && (
+        <ScoutLoader overlay theme={theme} label={marketingPct != null && marketingPct < 100 ? 'Sending to marketing' : 'Almost there…'} pct={marketingPct} sub="Keep the app open until he gets there." />
+      )}
       {/* ===== SECTION 1.2: SNAP FOR MARKETING =====
           Not tied to a job. The truck, the crew, a finished yard from the
           street: one tap, a note, and the office has it in the Marketing

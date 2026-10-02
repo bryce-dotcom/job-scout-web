@@ -13,6 +13,7 @@ import {
   postsByDay, weekOf, weekProgress, monthGrid, postDay, profileLinks,
 } from '../lib/marketing'
 import { uploadCapture, captureThumb } from '../lib/marketingUpload'
+import ScoutLoader from '../components/ScoutLoader'
 import {
   Megaphone, Inbox, ListChecks, Palette, Link2, Mail, Sparkles, Upload, Camera, Check, X,
   Send, Clock, ExternalLink, RefreshCw, ChevronRight, CircleCheck, Circle, Trash2, Pencil,
@@ -428,7 +429,7 @@ export default function Marketing() {
       </div>
 
       {loading ? (
-        <div style={{ color: theme.textMuted, fontSize: 14, padding: 24 }}>Loading…</div>
+        <ScoutLoader theme={theme} label="Opening marketing…" />
       ) : tab === 'queue' ? (
         <QueueTab theme={theme} isMobile={isMobile} posts={posts} isManager={isManager} captureMap={captureMap} brands={brands} brand={brandId}
           onEdit={(p) => setComposer({ post: p, captureIds: p.capture_ids || [] })}
@@ -548,10 +549,8 @@ function CaptureFirst({ theme, isMobile, brands, brandId, onPickBrand, uploading
       <button type="button" onClick={onLibrary} disabled={uploading} style={{ ...big(theme.bgCard), color: theme.text, border: `1px solid ${theme.border}` }}>
         <Upload size={24} /> <span>From my phone's library</span>
       </button>
-      {uploading && uploadPct != null && (
-        <div style={{ height: 8, borderRadius: 4, background: theme.border, overflow: 'hidden' }}>
-          <div style={{ width: `${uploadPct}%`, height: '100%', background: MKT, transition: 'width 0.3s' }} />
-        </div>
+      {uploading && (
+        <ScoutLoader theme={theme} label={uploadPct != null && uploadPct < 100 ? 'Sending' : 'Almost there…'} pct={uploadPct} sub="Keep the app open until he gets there." />
       )}
 
       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -676,9 +675,11 @@ function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands =
     return true
   })
   const [busy, setBusy] = useState(null)
-  const run = async (id, fn) => { setBusy(id); try { await fn() } finally { setBusy(null) } }
+  const [busyLabel, setBusyLabel] = useState('')
+  const run = async (id, fn, label = 'Working on it…') => { setBusy(id); setBusyLabel(label); try { await fn() } finally { setBusy(null); setBusyLabel('') } }
   return (
     <div>
+      {busy && <ScoutLoader overlay theme={theme} label={busyLabel} />}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
         {[['open', 'Needs attention'], ['scheduled', 'Scheduled'], ['posted', 'Posted'], ['all', 'All']].map(([id, label]) => (
           <button key={id} type="button" onClick={() => setFilter(id)} style={chip(theme, filter === id)}>{label}</button>
@@ -729,7 +730,7 @@ function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands =
                     {['draft', 'approved', 'failed'].includes(p.status) && <button type="button" onClick={() => onEdit(p)} style={ghostBtn(theme)}><Pencil size={14} /> Edit</button>}
                     {p.status === 'draft' && <button type="button" disabled={busy === p.id} onClick={() => run(p.id, () => onApprove(p))} style={ghostBtn(theme)}><Check size={14} /> Approve</button>}
                     {['approved', 'failed'].includes(p.status) && isManager && (
-                      <button type="button" disabled={busy === p.id} onClick={() => run(p.id, () => onPublish(p))} style={primaryBtn(MKT)}>
+                      <button type="button" disabled={busy === p.id} onClick={() => run(p.id, () => onPublish(p), `Posting to ${(p.platforms || []).map((id) => PLATFORM_BY_ID[id]?.label || id).join(', ')}…`)} style={primaryBtn(MKT)}>
                         {p.scheduled_for && new Date(p.scheduled_for) > new Date() ? <><CalendarClock size={14} /> Schedule</> : <><Send size={14} /> Publish now</>}
                       </button>
                     )}
@@ -781,11 +782,7 @@ function InboxTab({ theme, isMobile, captures, uploading, uploadPct = null, invo
         {isManager && <button type="button" onClick={suggestNow} disabled={suggesting} title="Draft posts from unused photos and yesterday's finished jobs" style={ghostBtn(theme)}><Sparkles size={15} /> {suggesting ? 'Drafting…' : 'Suggest posts now'}</button>}
         <span style={{ fontSize: 12, color: theme.textMuted, marginLeft: 'auto' }}>Every morning, unused photos and finished jobs become drafts in the queue.</span>
       </div>
-      {uploading && uploadPct != null && (
-        <div style={{ height: 6, borderRadius: 3, background: theme.border, overflow: 'hidden', marginBottom: 12 }}>
-          <div style={{ width: `${uploadPct}%`, height: '100%', background: MKT, transition: 'width 0.3s' }} />
-        </div>
-      )}
+      {uploading && <ScoutLoader theme={theme} label={uploadPct != null && uploadPct < 100 ? 'Sending' : 'Almost there…'} pct={uploadPct} size={52} style={{ marginBottom: 12 }} />}
       <TextInCard theme={theme} isMobile={isMobile} invoke={invoke} isManager={isManager} />
       {captures.length === 0 ? (
         <Empty theme={theme} icon={Camera} title="Inbox is empty" body="Photos and videos your crew shares from Field Scout land here. Or shoot one right now." action={<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><button type="button" onClick={onTakePhoto} style={primaryBtn(MKT)}><Camera size={15} /> Take photo</button><button type="button" onClick={onRecordVideo} style={primaryBtn(MKT)}><Play size={15} /> Record video</button><button type="button" onClick={onUploadClick} style={ghostBtn(theme)}><Upload size={15} /> Upload</button></div>} />
@@ -1130,9 +1127,11 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
 
   const inFuture = when && new Date(when) > new Date()
   const canPublish = isManager && problems.length === 0 && unlinked.length === 0 && platforms.length > 0
+  const busyLabel = drafting ? 'Writing the post…' : shooting ? (shotPct != null && shotPct < 100 ? 'Sending' : 'Almost there…') : saving ? 'Saving…' : null
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'center' }} onClick={onClose}>
+      {busyLabel && <ScoutLoader overlay theme={theme} label={busyLabel} pct={shooting ? shotPct : null} sub={drafting ? 'Reading the photos and your brand kit.' : null} />}
       <div onClick={(e) => e.stopPropagation()} style={{ background: theme.bgCard, width: isMobile ? '100%' : 720, maxHeight: isMobile ? '100%' : '92vh', overflowY: 'auto', borderRadius: isMobile ? 0 : 14, display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.border}`, position: 'sticky', top: 0, background: theme.bgCard, zIndex: 1 }}>
           <Sparkles size={18} color={MKT} />
@@ -1181,8 +1180,13 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
                 {captures.map((c) => {
                   const on = captureIds.includes(c.id)
                   return (
-                    <button key={c.id} type="button" onClick={() => setCaptureIds((xs) => (on ? xs.filter((x) => x !== c.id) : [...xs, c.id].slice(-5)))} style={{ padding: 0, border: `2px solid ${on ? MKT : 'transparent'}`, borderRadius: 8, background: 'none', cursor: 'pointer', overflow: 'hidden' }}>
-                      <img src={c.url} alt="" style={{ width: '100%', height: 72, objectFit: 'cover', display: 'block' }} />
+                    <button key={c.id} type="button" onClick={() => setCaptureIds((xs) => (on ? xs.filter((x) => x !== c.id) : [...xs, c.id].slice(-5)))} style={{ padding: 0, border: `2px solid ${on ? MKT : 'transparent'}`, borderRadius: 8, background: '#111', cursor: 'pointer', overflow: 'hidden', position: 'relative' }}>
+                      {/* A video's poster, a photo's own file. A video with no
+                          stills (texted in) gets a play glyph, not a broken image. */}
+                      {captureThumb(c)
+                        ? <img src={captureThumb(c)} alt="" style={{ width: '100%', height: 72, objectFit: 'cover', display: 'block' }} />
+                        : <div style={{ width: '100%', height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb' }}>{c.media_type === 'video' ? <Play size={18} /> : <ImageIcon size={18} />}</div>}
+                      {c.media_type === 'video' && <div style={{ position: 'absolute', right: 4, bottom: 4, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={10} /></div>}
                     </button>
                   )
                 })}
@@ -1576,7 +1580,7 @@ function PerformanceTab({ theme, isMobile, posts, captureMap, brand, invoke, pub
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: theme.textMuted }}>
-        {loading ? 'Reading the networks…' : err ? <span style={{ color: '#ef4444' }}>{err}</span> : metrics && metrics.length === 0 && posted.length ? 'Per-post numbers arrive from the networks over the first days after a post; the network totals above are live.' : handTotal ? `${handTotal} post${handTotal === 1 ? '' : 's'} went out by hand; those have no numbers here.` : ''}
+        {loading ? <ScoutLoader theme={theme} label="Reading the networks…" size={40} style={{ padding: 0 }} /> : err ? <span style={{ color: '#ef4444' }}>{err}</span> : metrics && metrics.length === 0 && posted.length ? 'Per-post numbers arrive from the networks over the first days after a post; the network totals above are live.' : handTotal ? `${handTotal} post${handTotal === 1 ? '' : 's'} went out by hand; those have no numbers here.` : ''}
         <button type="button" onClick={load} disabled={loading} style={{ ...ghostBtn(theme), marginLeft: 'auto', minHeight: 34, padding: '6px 10px' }}><RefreshCw size={13} /> Refresh</button>
       </div>
       {rows.length === 0 ? (
@@ -1693,7 +1697,7 @@ function LibraryTab({ theme, isMobile, companyId, brands, brand, employees, isMa
     } catch { window.open(it.url, '_blank') }
   }
 
-  if (caps === null) return <div style={{ color: theme.textMuted, fontSize: 14, padding: 24 }}>Opening the library…</div>
+  if (caps === null) return <ScoutLoader theme={theme} label="Opening the library…" />
   const folder = (id, label, Icon, n) => (
     <button key={id} type="button" onClick={() => setKind(id)} style={{ ...chip(theme, kind === id), gap: 6 }}><Icon size={14} /> {label}{n != null ? <span style={{ fontSize: 11, opacity: 0.75 }}>{n}</span> : null}</button>
   )
