@@ -103,6 +103,7 @@ export default {
 
     gotchas: [
       'Arnie drafts; he does not do. "Here is the change" means nothing has changed yet — tap approve.',
+      "Arnie's voice (2026-10-02): three engines in arnieVoice.js — ElevenLabs (his OWN voice: the voice named \"Arnie\" in the company's ElevenLabs My Voices, or any voice there, through the arnie-tts function which holds the key), Microsoft Edge neural voices straight from the browser (free, the default elsewhere), and browser speechSynthesis last. ElevenLabs costs credits, so arnie-tts allows it only for the platform company (companies.is_platform) or a tenant whose settings row arnie_voice is { enabled: true, voice_id? }; everyone else gets an empty ElevenLabs list and Andrew. The pick is remembered per browser (localStorage arnie_voice); the default is Arnie's own voice when one exists. The server-side Edge path (edge_* through arnie-tts) has been failing for a while — the browser speaks Edge itself, so nobody noticed. Until the ElevenLabs key has Voices (read), the list is the nine stock voices and no voice is named Arnie.",
       'He never invents a record. If several match ("the Halifax job" when there are two), he asks which.',
       'Money is gated by role, and the gate is on the server: a tech cannot get another person\'s pay out of him by rephrasing.',
       'A follow-up message is the one change that cannot be rolled back. The card says Send, not Create, for that reason.',
@@ -143,6 +144,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-09-29',
+  lastVerified: '2026-10-02',
   freshUntil: 90,
 }

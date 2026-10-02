@@ -1,7 +1,51 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
-// Edge TTS — Microsoft's free neural TTS via WebSocket
-// Returns base64-encoded MP3 in JSON to avoid content-type issues with supabase.functions.invoke
+// Arnie's voice.
+//
+// Two engines:
+//   edge_*      Microsoft's free neural voices over the Edge read-aloud
+//               WebSocket (the browser usually does this itself; this path
+//               is the fallback when the browser cannot open the socket).
+//   eleven:<id> ElevenLabs — Arnie's OWN voice. The account was opened for
+//               Arnie; a voice named "Arnie" in My Voices is him. Credits
+//               cost money, so this engine is allowed only for the platform
+//               company (HHH) or a company whose settings row arnie_voice is
+//               { enabled: true, voice_id? }. Identity comes from the login token.
+//
+// Both return base64 mp3 in JSON so supabase.functions.invoke is happy.
+// { action: 'voices' } → { available, allowed, voices, arnie } for the picker.
+
+import { resolveCaller } from '../_shared/auth.ts'
+import { elevenKey, listVoices, stockList, findVoiceNamed, isVoiceId, synthesize } from '../_shared/elevenlabs.ts'
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+
+async function rest<T>(path: string): Promise<T | null> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } })
+    return r.ok ? await r.json() : null
+  } catch { return null }
+}
+
+// May this company spend ElevenLabs credits on Arnie? Platform company, or opted in.
+async function elevenAllowed(companyId: number | null): Promise<{ allowed: boolean; voiceId: string | null }> {
+  if (!companyId) return { allowed: false, voiceId: null }
+  const [co, st] = await Promise.all([
+    rest<Array<{ is_platform: boolean }>>(`companies?select=is_platform&id=eq.${companyId}&limit=1`),
+    rest<Array<{ value: unknown }>>(`settings?select=value&company_id=eq.${companyId}&key=eq.arnie_voice&limit=1`),
+  ])
+  let cfg: Record<string, unknown> = {}
+  const raw = st?.[0]?.value
+  if (raw && typeof raw === 'object') cfg = raw as Record<string, unknown>
+  else if (typeof raw === 'string') { try { cfg = JSON.parse(raw) } catch { cfg = {} } }
+  const allowed = co?.[0]?.is_platform === true || cfg.enabled === true
+  const voiceId = typeof cfg.voice_id === 'string' && isVoiceId(cfg.voice_id) ? cfg.voice_id : null
+  return { allowed, voiceId }
+}
+
+const jsonRes = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -194,7 +238,18 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { text, voiceId } = await req.json()
+    const body = await req.json()
+    const { text, voiceId } = body
+
+    if (body.action === 'voices') {
+      const caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY)
+      const key = elevenKey()
+      const { allowed, voiceId: pinned } = await elevenAllowed(caller?.companyId ?? null)
+      const account = key && allowed ? await listVoices(key) : null
+      const voices = key && allowed ? (account || stockList()) : []
+      const arnie = pinned || findVoiceNamed(account, 'Arnie')?.id || null
+      return jsonRes({ available: !!key, allowed, from: account ? 'account' : 'stock', voices, arnie })
+    }
 
     if (!text || typeof text !== 'string') {
       return new Response(
@@ -204,7 +259,19 @@ Deno.serve(async (req) => {
     }
 
     const truncated = text.length > 3000 ? text.slice(0, 3000) + '...' : text
-    const audioBytes = await getEdgeTTSAudio(truncated, voiceId || 'edge_andrew')
+    let audioBytes: Uint8Array
+    if (typeof voiceId === 'string' && voiceId.startsWith('eleven:')) {
+      const key = elevenKey()
+      if (!key) return jsonRes({ error: 'ElevenLabs is not set up on the server.' }, 400)
+      const caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY)
+      const { allowed } = await elevenAllowed(caller?.companyId ?? null)
+      if (!allowed) return jsonRes({ error: 'This company is not set up for ElevenLabs voices.' }, 403)
+      const id = voiceId.slice('eleven:'.length)
+      if (!isVoiceId(id)) return jsonRes({ error: 'Unknown voice.' }, 400)
+      audioBytes = await synthesize(key, id, truncated, { stability: 0.5, style: 0.15 })
+    } else {
+      audioBytes = await getEdgeTTSAudio(truncated, voiceId || 'edge_andrew')
+    }
     const base64Audio = uint8ToBase64(audioBytes)
 
     return new Response(

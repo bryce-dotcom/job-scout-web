@@ -9,7 +9,7 @@ import remarkGfm from 'remark-gfm'
 import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X, Wrench, Sun } from 'lucide-react'
 import { readAttachment, attachmentNote, describeAttachments, ACCEPT_ATTR, MAX_ATTACHMENTS } from '../../../lib/chatAttachments'
 import { DougieButton, composerTone } from '../../../components/ai/AiComposerTools'
-import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, ARNIE_VOICES, unlockAudio } from './arnieVoice'
+import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, getVoices, loadArnieVoices, rememberVoice, unlockAudio } from './arnieVoice'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { localDateStr } from '../../../lib/localDate'
 
@@ -122,8 +122,15 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   const [voiceOn, setVoiceOn] = useState(true) // always available now (browser TTS is free)
   const [listening, setListening] = useState(false)
   const [speaking, setSpeaking] = useState(false)
-  const [selectedVoice, setSelectedVoice] = useState(ARNIE_VOICES[0]?.id || 'browser_male_1')
+  const [voices, setVoices] = useState(() => getVoices())
+  const [selectedVoice, setSelectedVoice] = useState(() => getVoices()[0]?.id || 'browser_male_1')
   const [showVoiceSelect, setShowVoiceSelect] = useState(false)
+  // Arnie's own ElevenLabs voice (when this company may use it) arrives from the server.
+  useEffect(() => {
+    let live = true
+    loadArnieVoices().then(({ voices: list, defaultId }) => { if (!live) return; setVoices(list); setSelectedVoice(defaultId) })
+    return () => { live = false }
+  }, [])
 
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
@@ -621,7 +628,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
               }}
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                Voice: {ARNIE_VOICES.find(v => v.id === selectedVoice)?.name || 'Bill'}
+                Voice: {voices.find(v => v.id === selectedVoice)?.name || 'Andrew'}
               </span>
               <ChevronDown size={12} />
             </button>
@@ -632,10 +639,10 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                 borderRadius: 8, maxHeight: 240, overflowY: 'auto', zIndex: 10,
                 minWidth: 250, boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
               }}>
-                {ARNIE_VOICES.map(v => (
+                {voices.map(v => (
                   <div
                     key={v.id}
-                    onClick={() => { setSelectedVoice(v.id); setShowVoiceSelect(false) }}
+                    onClick={() => { setSelectedVoice(v.id); rememberVoice(v.id); setShowVoiceSelect(false) }}
                     style={{
                       padding: '8px 12px', cursor: 'pointer',
                       backgroundColor: v.id === selectedVoice ? dark.orangeBg : 'transparent',

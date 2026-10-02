@@ -1945,20 +1945,26 @@ function LibraryTab({ theme, isMobile, companyId, brands, brand, employees, isMa
 // ── Soundtrack (shared by the clip editor and the AI video maker) ───
 // Music the app makes itself (nothing to license), the company's own
 // track, or none; and a narrator read by ElevenLabs through marketing-voice.
+// Mirrors VOICES in supabase/functions/marketing-voice; shown until the server answers.
+const STOCK_VOICES = [['Bill', 'pqHfZKP75CvOlQylNhV4'], ['Rachel', '21m00Tcm4TlvDq8ikWAM'], ['Adam', 'pNInz6obpgDQGcFmaJgB'], ['Sarah', 'EXAVITQu4vr4xnSDxMaL'], ['Brian', 'nPczCjzI2devNBz1zQrb'], ['Drew', '29vD33N1CtxCmqQRPOHJ'], ['Antoni', 'ErXwobaYiN019PkySvjV'], ['Domi', 'AZnzlk1XvdvUeBnXmlld'], ['Charlie', 'IKne3meq5aSn9XLyUdCD']].map(([name, id]) => ({ id, name, category: 'premade', preview_url: null }))
+
 function useSoundtrack({ invoke, brand, autoMood = 'calm', initialMusic = 'none', initialVoiceOn = false }) {
   const [music, setMusic] = useState(initialMusic)      // auto | calm | upbeat | bold | own | none
   const [musicGain, setMusicGain] = useState(0.6)
   const [ownTrack, setOwnTrack] = useState(null)        // { name, arrayBuffer }
   const trackRef = useRef(null)
   const [voiceOn, setVoiceOn] = useState(initialVoiceOn)
-  const [voiceStatus, setVoiceStatus] = useState(null)  // { available, voices }
-  const [voiceName, setVoiceName] = useState('Bill')
+  const [voiceStatus, setVoiceStatus] = useState(null)  // { available, voices:[{id,name,category,preview_url}], from }
+  const [voiceId, setVoiceId] = useState(STOCK_VOICES[0].id)
   const [script, setScript] = useState('')
   const [voiceUrl, setVoiceUrl] = useState(null)        // generated mp3 for the current script
   const [voicing, setVoicing] = useState(false)
   const [preview, setPreview] = useState(null)          // { kind: 'music'|'voice', pause }
   useEffect(() => { invoke('marketing-voice', { action: 'status' }).then((r) => setVoiceStatus(r?.ok ? r : { available: false, voices: [] })) }, [invoke])
-  useEffect(() => { setVoiceUrl(null) }, [script, voiceName])
+  useEffect(() => { setVoiceUrl(null) }, [script, voiceId])
+  const voices = voiceStatus?.voices?.length ? voiceStatus.voices : STOCK_VOICES
+  // If the account list came back without the stock default, start on its first voice.
+  useEffect(() => { if (voiceStatus?.voices?.length && !voiceStatus.voices.some((v) => v.id === voiceId)) setVoiceId(voiceStatus.voices[0].id) }, [voiceStatus]) // eslint-disable-line react-hooks/exhaustive-deps
   const effectiveMood = music === 'auto' ? (autoMood || 'calm') : music
   const stopPreview = () => { try { preview?.pause() } catch { /* ignore */ } setPreview(null) }
   const previewMusic = async () => {
@@ -1973,7 +1979,7 @@ function useSoundtrack({ invoke, brand, autoMood = 'calm', initialMusic = 'none'
   const makeVoice = async () => {
     if (!script.trim()) return null
     setVoicing(true)
-    const r = await invoke('marketing-voice', { text: script.trim(), voice: voiceName, brand: brand || '' })
+    const r = await invoke('marketing-voice', { text: script.trim(), voice: voiceId, brand: brand || '' })
     setVoicing(false)
     if (!r.ok) { toast.error(r.error || 'Could not make the voice'); return null }
     setVoiceUrl(r.url)
@@ -1985,6 +1991,15 @@ function useSoundtrack({ invoke, brand, autoMood = 'calm', initialMusic = 'none'
     if (!url) return
     const a = new Audio(url); a.play().catch(() => {})
     const p = { kind: 'voice', pause: () => a.pause() }
+    setPreview(p); a.onended = () => setPreview((x) => (x === p ? null : x))
+  }
+  // ElevenLabs' own sample of the chosen voice (no credits spent).
+  const sampleVoice = () => {
+    stopPreview()
+    const url = voices.find((v) => v.id === voiceId)?.preview_url
+    if (!url) return
+    const a = new Audio(url); a.play().catch(() => {})
+    const p = { kind: 'sample', pause: () => a.pause() }
     setPreview(p); a.onended = () => setPreview((x) => (x === p ? null : x))
   }
   const buildSoundtrack = async (seconds) => {
@@ -2009,11 +2024,12 @@ function useSoundtrack({ invoke, brand, autoMood = 'calm', initialMusic = 'none'
   }
   const needsRecording = voiceOn && !!voiceStatus?.available && !!script.trim() && !voiceUrl
   const wantsSound = music !== 'none' || (voiceOn && !!voiceStatus?.available && !!script.trim())
-  return { music, setMusic, musicGain, setMusicGain, ownTrack, setOwnTrack, trackRef, voiceOn, setVoiceOn, voiceStatus, voiceName, setVoiceName, script, setScript, voiceUrl, voicing, preview, stopPreview, previewMusic, previewVoice, buildSoundtrack, needsRecording, wantsSound }
+  return { music, setMusic, musicGain, setMusicGain, ownTrack, setOwnTrack, trackRef, voiceOn, setVoiceOn, voiceStatus, voices, voiceId, setVoiceId, sampleVoice, script, setScript, voiceUrl, voicing, preview, stopPreview, previewMusic, previewVoice, buildSoundtrack, needsRecording, wantsSound }
 }
 
 function SoundtrackPanel({ theme, isMobile, snd, autoLabel = null, scriptPlaceholder = 'What the narrator says.' }) {
-  const { music, setMusic, musicGain, setMusicGain, ownTrack, setOwnTrack, trackRef, voiceOn, setVoiceOn, voiceStatus, voiceName, setVoiceName, script, setScript, voiceUrl, voicing, preview, stopPreview, previewMusic, previewVoice } = snd
+  const { music, setMusic, musicGain, setMusicGain, ownTrack, setOwnTrack, trackRef, voiceOn, setVoiceOn, voiceStatus, voices, voiceId, setVoiceId, sampleVoice, script, setScript, voiceUrl, voicing, preview, stopPreview, previewMusic, previewVoice } = snd
+  const chosen = voices.find((v) => v.id === voiceId)
   return (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(2, minmax(0,1fr))', gap: 10 }}>
       <div style={{ padding: 12, borderRadius: 10, background: theme.bg, border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2040,11 +2056,13 @@ function SoundtrackPanel({ theme, isMobile, snd, autoLabel = null, scriptPlaceho
           <label style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 500, color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} /> on</label>
         </div>
         {voiceStatus && !voiceStatus.available && <div style={{ fontSize: 11, color: '#b45309' }}>Needs an ElevenLabs key on the server. The script is ready for when it is set.</div>}
+        {voiceStatus?.available && voiceStatus.from === 'stock' && <div style={{ fontSize: 11, color: theme.textMuted }}>Stock voices. A key with Voices (read) lists your ElevenLabs My Voices here instead.</div>}
         <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={3} placeholder={scriptPlaceholder} style={{ ...inputStyle(theme), minHeight: 64, resize: 'vertical', fontFamily: 'inherit', fontSize: 13, opacity: voiceOn ? 1 : 0.6 }} />
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select value={voiceName} onChange={(e) => setVoiceName(e.target.value)} disabled={!voiceOn} style={{ ...inputStyle(theme), width: 'auto', minHeight: 32, padding: '4px 8px', fontSize: 12 }}>
-            {(voiceStatus?.voices?.length ? voiceStatus.voices : ['Bill', 'Rachel', 'Adam', 'Sarah', 'Brian']).map((v) => <option key={v} value={v}>{v}</option>)}
+          <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} disabled={!voiceOn} style={{ ...inputStyle(theme), width: 'auto', maxWidth: 180, minHeight: 32, padding: '4px 8px', fontSize: 12 }}>
+            {voices.map((v) => <option key={v.id} value={v.id}>{v.name}{v.category && v.category !== 'premade' ? ' · yours' : ''}</option>)}
           </select>
+          {chosen?.preview_url && <button type="button" onClick={preview?.kind === 'sample' ? stopPreview : sampleVoice} disabled={!voiceOn} title="ElevenLabs' sample of this voice" style={{ ...ghostBtn(theme), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>{preview?.kind === 'sample' ? 'Stop' : 'Sample'}</button>}
           <button type="button" onClick={preview?.kind === 'voice' ? stopPreview : previewVoice} disabled={!voiceOn || !voiceStatus?.available || !script.trim() || voicing} style={{ ...ghostBtn(theme), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>{voicing ? 'Recording…' : preview?.kind === 'voice' ? 'Stop' : voiceUrl ? 'Hear it' : 'Record & hear'}</button>
           <span style={{ fontSize: 11, color: theme.textMuted }}>~{Math.round(script.trim().split(/\s+/).filter(Boolean).length / 2.5)}s spoken</span>
         </div>

@@ -4,8 +4,13 @@
 // (the same voices the walkthrough narration uses). The browser mixes the
 // file under the video; the server never touches video.
 //
-// Body: { text, voice?: 'Bill'|'Rachel'|'Adam'|'Sarah'|'Brian'|'Drew'|'Antoni'|'Domi'|'Charlie', brand? }
+// Body: { text, voice?: a stock name ('Bill'…) or an ElevenLabs voice_id, brand? }
 // Reply: { ok, url, bytes, voice }   or   { ok:false, error, needs_key:true } when no key is set.
+//
+// { action:'status' } → { ok, available, voices:[{id,name,category,preview_url}], from:'account'|'stock' }.
+// With a key that has Voices (read), the list is the account's My Voices
+// (library picks and clones first, premade after); a text-to-speech-only
+// key gets the stock table below.
 //
 // Secret: ELEVENLABS_API_KEY (a real key, starts with sk_). The value in the
 // repo's .env on 2026-10-02 was a key ID and does not work.
@@ -13,6 +18,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/auth.ts'
+import { stockList, elevenKey, listVoices, resolveVoiceId, synthesize, STOCK_VOICES as VOICES } from '../_shared/elevenlabs.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,19 +27,6 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
-// Same table as scripts/generate-walkthrough-audio.cjs. Bill is the house voice.
-export const VOICES: Record<string, string> = {
-  Bill: 'pqHfZKP75CvOlQylNhV4',
-  Rachel: '21m00Tcm4TlvDq8ikWAM',
-  Adam: 'pNInz6obpgDQGcFmaJgB',
-  Sarah: 'EXAVITQu4vr4xnSDxMaL',
-  Brian: 'nPczCjzI2devNBz1zQrb',
-  Drew: '29vD33N1CtxCmqQRPOHJ',
-  Antoni: 'ErXwobaYiN019PkySvjV',
-  Domi: 'AZnzlk1XvdvUeBnXmlld',
-  Charlie: 'IKne3meq5aSn9XLyUdCD',
-}
-const MODEL = 'eleven_flash_v2_5'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -45,28 +38,23 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}))
 
     if (body.action === 'status') {
-      const key = Deno.env.get('ELEVENLABS_API_KEY') || ''
-      return json({ ok: true, available: key.startsWith('sk_'), voices: Object.keys(VOICES) })
+      const key = elevenKey()
+      const account = key ? await listVoices(key) : null
+      return json({ ok: true, available: !!key, voices: account || stockList(), from: account ? 'account' : 'stock' })
     }
 
-    const key = Deno.env.get('ELEVENLABS_API_KEY') || ''
-    if (!key.startsWith('sk_')) return json({ ok: false, needs_key: true, error: 'Voiceover needs an ElevenLabs API key on the server (ELEVENLABS_API_KEY, starts with sk_).' }, 400)
+    const key = elevenKey()
+    if (!key) return json({ ok: false, needs_key: true, error: 'Voiceover needs an ElevenLabs API key on the server (ELEVENLABS_API_KEY, starts with sk_).' }, 400)
     const text = String(body.text || '').trim().slice(0, 1200)
     if (!text) return json({ ok: false, error: 'Nothing to say.' }, 400)
-    const voiceName = VOICES[String(body.voice || '')] ? String(body.voice) : 'Bill'
+    const asked = String(body.voice || '')
+    const voiceId = resolveVoiceId(asked)
+    const voiceName = Object.keys(VOICES).find((n) => VOICES[n] === voiceId) || asked.slice(0, 24) || 'voice'
 
-    const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICES[voiceName]}?output_format=mp3_44100_128`, {
-      method: 'POST',
-      headers: { 'xi-api-key': key, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
-      body: JSON.stringify({ text, model_id: MODEL, voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.2, use_speaker_boost: true } }),
-    })
-    if (!r.ok) {
-      const detail = (await r.text()).slice(0, 300)
-      return json({ ok: false, error: `The voice service refused (${r.status}): ${detail}` }, 502)
-    }
-    const bytes = new Uint8Array(await r.arrayBuffer())
+    let bytes: Uint8Array
+    try { bytes = await synthesize(key, voiceId, text) } catch (e) { return json({ ok: false, error: (e as Error).message }, 502) }
     const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
-    const path = `${caller.companyId}/voice/${Date.now()}_${voiceName.toLowerCase()}.mp3`
+    const path = `${caller.companyId}/voice/${Date.now()}_${voiceName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.mp3`
     const { error } = await sb.storage.from('marketing-media').upload(path, bytes, { contentType: 'audio/mpeg', upsert: false })
     if (error) return json({ ok: false, error: error.message }, 500)
     const { data: pub } = sb.storage.from('marketing-media').getPublicUrl(path)

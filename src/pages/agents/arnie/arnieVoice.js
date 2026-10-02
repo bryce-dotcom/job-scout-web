@@ -1,8 +1,19 @@
-// Arnie TTS — Edge TTS (free Microsoft neural voices via direct WebSocket from browser)
+// Arnie TTS.
 //
-// Connects directly to Bing's speech synthesis WebSocket from the client.
-// No edge function needed. WebSocket is not subject to CORS.
-// Falls back to browser speechSynthesis if WebSocket fails.
+// Three engines, best first:
+//   eleven   ElevenLabs — Arnie's own voice (a voice named "Arnie" in the
+//            company's ElevenLabs My Voices, or any voice there). Goes
+//            through the arnie-tts function, which holds the key and lets
+//            only the platform company / opted-in tenants spend credits.
+//            Loaded at runtime by loadArnieVoices(); absent until then.
+//   edge     Microsoft's free neural voices over Bing's read-aloud WebSocket,
+//            straight from the browser (no CORS on WebSockets).
+//   browser  speechSynthesis — the fallback of last resort.
+//
+// The chosen voice is remembered per browser (localStorage arnie_voice);
+// the default is Arnie's own voice when the account has one.
+
+import { supabase } from '../../../lib/supabase'
 
 // ── Voice options ───────────────────────────────────────────────────────
 
@@ -23,6 +34,44 @@ const BROWSER_VOICES = [
 ]
 
 export const ARNIE_VOICES = [...EDGE_VOICES, ...BROWSER_VOICES]
+
+const VOICE_PREF_KEY = 'arnie_voice'
+let elevenVoices = []          // filled by loadArnieVoices()
+let elevenArnieId = null       // 'eleven:<id>' of the voice named Arnie, when the account has one
+
+export function getVoices() { return [...elevenVoices, ...EDGE_VOICES, ...BROWSER_VOICES] }
+export function savedVoiceId() { try { return localStorage.getItem(VOICE_PREF_KEY) } catch { return null } }
+export function rememberVoice(id) { try { localStorage.setItem(VOICE_PREF_KEY, id) } catch { /* private mode */ } }
+
+// Ask the server which ElevenLabs voices this company may use. Resolves
+// to the full list plus the id to start on: the saved pick if it still
+// exists, else Arnie's own voice, else Andrew.
+export async function loadArnieVoices() {
+  try {
+    const { data } = await supabase.functions.invoke('arnie-tts', { body: { action: 'voices' } })
+    const list = Array.isArray(data?.voices) ? data.voices : []
+    elevenVoices = list.map((v) => ({
+      id: `eleven:${v.id}`, name: v.name, engine: 'eleven', elevenId: v.id,
+      desc: v.id === data?.arnie ? "Arnie's own voice · ElevenLabs" : v.category && v.category !== 'premade' ? 'Your ElevenLabs voice' : 'ElevenLabs voice',
+    }))
+    elevenArnieId = data?.arnie ? `eleven:${data.arnie}` : null
+    if (elevenArnieId) elevenVoices.sort((a, b) => (a.id === elevenArnieId ? -1 : b.id === elevenArnieId ? 1 : 0))
+  } catch { elevenVoices = []; elevenArnieId = null }
+  const voices = getVoices()
+  const saved = savedVoiceId()
+  const defaultId = (saved && voices.some((v) => v.id === saved) && saved) || elevenArnieId || EDGE_VOICES[0].id
+  return { voices, defaultId }
+}
+
+// One chunk through the server (ElevenLabs), back as an mp3 Blob.
+async function elevenTTS(text, elevenId) {
+  const { data, error } = await supabase.functions.invoke('arnie-tts', { body: { text, voiceId: `eleven:${elevenId}` } })
+  if (error || !data?.audio) throw new Error(error?.message || data?.error || 'ElevenLabs failed')
+  const bin = atob(data.audio)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return new Blob([bytes], { type: 'audio/mpeg' })
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -346,14 +395,14 @@ function speakChunked(text, voice, onStart, onEnd) {
 let speakCallId = 0
 
 // Split text into speakable chunks (sentences) for faster first-word playback
-function splitIntoChunks(text) {
+function splitIntoChunks(text, max = 200) {
   // Split on sentence boundaries
   const raw = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text]
-  // Merge tiny chunks together (aim for 50-200 char chunks)
+  // Merge tiny chunks together (aim for 50-max char chunks)
   const chunks = []
   let cur = ''
   for (const r of raw) {
-    if ((cur + r).length > 200 && cur) {
+    if ((cur + r).length > max && cur) {
       chunks.push(cur.trim())
       cur = r
     } else {
@@ -370,16 +419,18 @@ export async function speak(text, voiceId, onStart, onEnd) {
   const clean = stripMarkdown(text)
   if (!clean) { onEnd?.(); return }
   const truncated = clean.length > 3000 ? clean.slice(0, 3000) + '...' : clean
-  const voiceDef = ARNIE_VOICES.find(v => v.id === voiceId) || ARNIE_VOICES[0]
+  const voiceDef = getVoices().find(v => v.id === voiceId) || EDGE_VOICES[0]
 
   console.log(`[Arnie Voice] speak #${callId} engine=${voiceDef.engine} voice=${voiceDef.name} len=${truncated.length}`)
 
-  // For Edge TTS: split into chunks, start playing first immediately
-  // While first chunk plays, pre-download next chunk for seamless handoff
-  if (voiceDef.engine === 'edge' && !edgeTTSBroken) {
+  // For ElevenLabs and Edge: split into chunks, start playing the first
+  // immediately; while it plays, pre-download the next for a seamless handoff.
+  const isEleven = voiceDef.engine === 'eleven'
+  const fetchChunk = isEleven ? (t) => elevenTTS(t, voiceDef.elevenId) : (t) => edgeTTS(t, voiceDef.msVoice)
+  if (isEleven || (voiceDef.engine === 'edge' && !edgeTTSBroken)) {
     stopSpeaking()
     currentSpeakId = callId // restore after stopSpeaking clears it
-    const chunks = splitIntoChunks(truncated)
+    const chunks = splitIntoChunks(truncated, isEleven ? 420 : 200)
     let started = false
     let failed = false
 
@@ -396,7 +447,7 @@ export async function speak(text, voiceId, onStart, onEnd) {
         prefetchPromise = null
       } else {
         try {
-          blob = await edgeTTS(chunks[i], voiceDef.msVoice)
+          blob = await fetchChunk(chunks[i])
         } catch {
           failed = true
           break
@@ -407,7 +458,7 @@ export async function speak(text, voiceId, onStart, onEnd) {
 
       // Start prefetching next chunk while this one plays
       if (i + 1 < chunks.length) {
-        prefetchPromise = edgeTTS(chunks[i + 1], voiceDef.msVoice).catch(() => null)
+        prefetchPromise = fetchChunk(chunks[i + 1]).catch(() => null)
       }
 
       // Play this chunk
@@ -434,11 +485,17 @@ export async function speak(text, voiceId, onStart, onEnd) {
     }
 
     if (!failed && started) {
-      console.log(`[Arnie Voice] speak #${callId} → Edge TTS complete (${chunks.length} chunks)`)
+      console.log(`[Arnie Voice] speak #${callId} → ${isEleven ? 'ElevenLabs' : 'Edge TTS'} complete (${chunks.length} chunks)`)
       onEnd?.()
       return
     }
 
+    if (failed && isEleven) {
+      // His own voice is unavailable right now (credits, network): Andrew steps in.
+      if (currentSpeakId !== callId) return
+      console.warn(`[Arnie Voice] speak #${callId} → ElevenLabs failed, using Edge`)
+      return speak(text, EDGE_VOICES[0].id, onStart, onEnd)
+    }
     if (failed) {
       edgeFailCount++
       if (edgeFailCount >= 3) edgeTTSBroken = true
