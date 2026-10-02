@@ -99,6 +99,17 @@ export async function extractVideoFrames(source) {
     video.load()
     const meta = await once(video, 'loadedmetadata', 10000)
     if (!meta) return { poster: null, frames: [], duration: null }
+    // A clip the browser just recorded (the editor's output) reports an
+    // infinite duration until it has been scanned to the end. Seeking far
+    // past the end forces the scan; the real duration follows.
+    if (!isFinite(video.duration)) {
+      const seeked = once(video, 'seeked', 8000)
+      try { video.currentTime = 1e9 } catch { /* ignore */ }
+      await seeked
+      await once(video, 'durationchange', 1500)
+      try { video.currentTime = 0 } catch { /* ignore */ }
+      await once(video, 'seeked', 5000)
+    }
     const duration = isFinite(video.duration) ? video.duration : null
     // Get a real frame decoded: wait for data, then play muted for a beat.
     await once(video, 'loadeddata', 6000)
