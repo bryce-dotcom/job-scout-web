@@ -114,6 +114,7 @@ export interface DraftResult {
   caption?: string
   hashtags?: string[]
   alt_text?: string
+  best_capture_id?: number | null   // with several videos: the one that fits the caption best
   error?: string
   unavailable?: boolean
 }
@@ -194,7 +195,7 @@ RULES
 - Talk about the actual work in the photos and the note. Never invent facts, prices, customer names, or results that are not in the note.
 - Do not name the customer or the exact street address unless the note says to.
 - Do not describe the photo literally ("here is a photo of"); talk to the reader.
-- Return strict JSON: {"caption": string, "hashtags": string[], "alt_text": string}. hashtags are bare words without #, 0-10 of them, none for Google Business. alt_text is one sentence describing the image for accessibility.
+- Return strict JSON: {"caption": string, "hashtags": string[], "alt_text": string, "best_video": number|null}. hashtags are bare words without #, 0-10 of them, none for Google Business. alt_text is one sentence describing the image for accessibility. best_video: when more than one VIDEO is attached, the id (the number after VIDEO #) of the one that best carries the caption you wrote — every network takes one video per post; otherwise null.
 ${tone ? `- Tone for this post: ${tone}` : ''}
 
 PLATFORMS
@@ -205,15 +206,17 @@ ${edits.length ? `\nEDITS THEY MADE TO EARLIER DRAFTS (learn from the correction
   const content: any[] = []
   let hasVideo = false
   let blindVideo = false
+  const videoIds: number[] = []
   for (const c of captures || []) {
     if (c.media_type === 'video') {
       hasVideo = true
+      videoIds.push(c.id)
       // Stills pulled out in the browser at upload time; a texted video has none.
       const frames: string[] = Array.isArray(c.frames) ? c.frames.filter(Boolean) : []
       if (frames.length) {
-        content.push({ type: 'text', text: `The next ${frames.length} image${frames.length === 1 ? '' : 's'} are stills from one video${c.duration_s ? ` (${Math.round(Number(c.duration_s))}s)` : ''}, in order.` })
+        content.push({ type: 'text', text: `VIDEO #${c.id}: the next ${frames.length} image${frames.length === 1 ? '' : 's'} are stills from it${c.duration_s ? ` (${Math.round(Number(c.duration_s))}s long)` : ''}, in order.` })
         for (const u of frames.slice(0, 4)) content.push({ type: 'image', source: { type: 'url', url: u } })
-      } else blindVideo = true
+      } else { blindVideo = true; content.push({ type: 'text', text: `VIDEO #${c.id}: no stills available.` }) }
       if (c.note) content.push({ type: 'text', text: `Note on that video: ${c.note}` })
       continue
     }
@@ -257,7 +260,8 @@ ${edits.length ? `\nEDITS THEY MADE TO EARLIER DRAFTS (learn from the correction
   const hashtags = Array.isArray(parsed.hashtags)
     ? parsed.hashtags.map((h: unknown) => String(h).replace(/^#/, '').replace(/\s+/g, '')).filter(Boolean).slice(0, 10)
     : []
-  return { ok: true, caption: parsed.caption.trim(), hashtags, alt_text: String(parsed.alt_text || '') }
+  const best = videoIds.length > 1 && videoIds.includes(Number(parsed.best_video)) ? Number(parsed.best_video) : null
+  return { ok: true, caption: parsed.caption.trim(), hashtags, alt_text: String(parsed.alt_text || ''), best_capture_id: best }
 }
 
 export async function managerIds(sb: any, companyId: number): Promise<number[]> {

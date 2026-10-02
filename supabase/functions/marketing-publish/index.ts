@@ -397,13 +397,28 @@ serve(async (req) => {
         }
       }
       let endpoint = '/upload_text'
+      // What actually gets sent, so only those captures are marked used.
+      let sentCaptureIds: number[] = (post.capture_ids || [])
       if (isVideo && media.length) {
         endpoint = '/upload'
-        form.append('video', media[0])
+        // Every network takes ONE video per post. The composer (or the AI)
+        // names it in primary_capture_id; otherwise the first video goes and
+        // the rest stay in the inbox for their own posts.
+        const videoCaps = (caps || []).filter((c: any) => c.media_type === 'video')
+        const chosen = videoCaps.find((c: any) => c.id === post.primary_capture_id) || videoCaps[0] || null
+        const videoUrl = chosen?.url || media[0]
+        form.append('video', videoUrl)
+        sentCaptureIds = chosen ? [chosen.id] : sentCaptureIds.slice(0, 1)
         form.append('description', text)
         if (post.platforms.includes('tiktok')) { form.append('privacy_level', 'PUBLIC_TO_EVERYONE'); form.append('disable_duet', 'false'); form.append('disable_comment', 'false'); form.append('disable_stitch', 'false') }
-        if (post.platforms.includes('instagram')) form.append('media_type', 'REELS')
-        if (post.platforms.includes('facebook')) form.append('facebook_media_type', 'VIDEO')
+        // How it lands: reel (default), a plain feed video, or a 24-hour story.
+        // Instagram has no plain video any more, so 'video' is still a Reel there.
+        const fmt = post.video_format === 'story' ? 'story' : post.video_format === 'video' ? 'video' : 'reel'
+        if (post.platforms.includes('instagram')) {
+          form.append('media_type', fmt === 'story' ? 'STORIES' : 'REELS')
+          if (fmt === 'reel') form.append('share_to_feed', 'true')
+        }
+        if (post.platforms.includes('facebook')) form.append('facebook_media_type', fmt === 'story' ? 'STORIES' : fmt === 'video' ? 'VIDEO' : 'REELS')
         if (post.platforms.includes('youtube')) { form.append('youtube_title', (post.caption || 'New video').split('\n')[0].slice(0, 95)); form.append('youtube_description', text); form.append('privacyStatus', 'PUBLIC') }
         form.append('async_upload', 'true')
       } else if (media.length) {
@@ -457,9 +472,15 @@ serve(async (req) => {
         approved_at: post.approved_at || now,
       }).eq('id', postId)
       if (post.capture_ids?.length) {
-        await sb.from('marketing_captures').update({ status: 'used', post_id: postId }).eq('company_id', companyId).in('id', post.capture_ids)
+        await sb.from('marketing_captures').update({ status: 'used', post_id: postId }).eq('company_id', companyId).in('id', sentCaptureIds)
+        const leftBehind = post.capture_ids.filter((id: number) => !sentCaptureIds.includes(id))
+        if (leftBehind.length) {
+          // Back to the inbox: a video the networks would not take with this post.
+          await sb.from('marketing_captures').update({ status: 'new', post_id: null }).eq('company_id', companyId).in('id', leftBehind)
+          await sb.from('marketing_posts').update({ capture_ids: sentCaptureIds }).eq('id', postId)
+        }
       }
-      return json({ ok: true, status: scheduled ? 'scheduled' : 'posted', post_urls: postUrls, warning: partial, processing })
+      return json({ ok: true, status: scheduled ? 'scheduled' : 'posted', post_urls: postUrls, warning: partial, processing, left_behind: (post.capture_ids || []).filter((id: number) => !sentCaptureIds.includes(id)).length })
     }
 
     // ── sync_post: per-platform links for an async publish ────────────

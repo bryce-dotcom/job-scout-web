@@ -37,7 +37,7 @@ serve(async (req) => {
       jobId: body.job_id ? Number(body.job_id) : null, brand: body.brand ? String(body.brand) : '', tone: body.tone, feature: 'marketing-draft',
     })
     if (!r.ok) return json({ ok: false, error: r.error, ai_unavailable: r.unavailable === true }, r.unavailable ? 502 : 400)
-    return json({ ok: true, caption: r.caption, hashtags: r.hashtags, alt_text: r.alt_text })
+    return json({ ok: true, caption: r.caption, hashtags: r.hashtags, alt_text: r.alt_text, best_capture_id: r.best_capture_id ?? null })
   } catch (err) {
     console.error('[marketing-draft]', err)
     return json({ ok: false, error: (err as Error)?.message || 'Draft failed' }, 500)

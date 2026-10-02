@@ -718,6 +718,7 @@ function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands =
                 <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: st.color, background: st.color + '18', borderRadius: 999, padding: '2px 8px' }}>{st.label}</span>
+                    {isVideo && <span style={{ fontSize: 11, fontWeight: 600, color: theme.textSecondary, background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 999, padding: '2px 8px' }}>{p.video_format === 'story' ? 'Story' : p.video_format === 'video' ? 'Video' : 'Reel'}</span>}
                     {p.suggested_at && p.status === 'draft' && <span title="Drafted overnight from recent work. Nobody has read it yet." style={{ fontSize: 11, fontWeight: 700, color: MKT, background: MKT_BG, borderRadius: 999, padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Sparkles size={11} /> Suggested</span>}
                     {multi && brandName(p.brand) && <span style={{ fontSize: 11, fontWeight: 600, color: theme.textSecondary, background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 999, padding: '2px 8px' }}>{brandName(p.brand)}</span>}
                     {p.status === 'scheduled' && p.scheduled_for && <span style={{ fontSize: 11, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}><Clock size={12} /> {fmtWhen(p.scheduled_for)}</span>}
@@ -1040,6 +1041,11 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
   const [hashtags, setHashtags] = useState((initialPost?.hashtags?.length ? initialPost.hashtags : initialHashtags || []).join(' '))
   const [aiDraft, setAiDraft] = useState(initialPost?.ai_draft || null)
   const [when, setWhen] = useState(toLocalInput(initialPost?.scheduled_for) || (initialScheduledFor ? `${initialScheduledFor}T09:00` : ''))
+  // Video posts: a Reel (default), a plain feed video, or a 24-hour Story.
+  const [videoFormat, setVideoFormat] = useState(initialPost?.video_format || 'reel')
+  const [primaryId, setPrimaryId] = useState(initialPost?.primary_capture_id || null)
+  const [aiPick, setAiPick] = useState(null)   // the drafter's choice, shown as a hint
+  const [splitting, setSplitting] = useState(false)
   const [drafting, setDrafting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
@@ -1076,7 +1082,25 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
     const kept = (initialPost?.media_urls || []).filter((u) => !known.has(u) && (initialPost?.capture_ids || []).length > 0 && captureIds.length === (initialPost?.capture_ids || []).length)
     return [...fromCaptures, ...kept, ...extraMedia]
   }, [captureIds, captureById, initialPost, extraMedia])
-  const videoCapture = captureIds.map((id) => captureById[id]).find((c) => c?.media_type === 'video') || null
+  const videoCaptures = captureIds.map((id) => captureById[id]).filter((c) => c?.media_type === 'video')
+  const videoCapture = videoCaptures.find((c) => c.id === primaryId) || videoCaptures[0] || null
+  // One post per video: same caption, each with one clip, saved as drafts.
+  const splitVideos = async () => {
+    if (videoCaptures.length < 2) return
+    setSplitting(true)
+    const rows = videoCaptures.map((c) => ({
+      company_id: companyId, status: 'draft', caption: caption.trim(), ai_draft: aiDraft, hashtags: tagList, platforms,
+      media_urls: [], capture_ids: [c.id], source: 'photo', job_id: initialPost?.job_id || c.job_id || null,
+      scheduled_for: null, brand: postBrand || null, media_type: 'video', video_format: videoFormat, primary_capture_id: c.id,
+      created_by: currentEmployee?.id || null,
+    }))
+    const { data, error } = await supabase.from('marketing_posts').insert(rows).select('id')
+    if (error) { toast.error(error.message); setSplitting(false); return }
+    if (initialPost) await supabase.from('marketing_posts').update({ status: 'archived' }).eq('id', initialPost.id).eq('company_id', companyId)
+    toast.success(`${data.length} drafts in the queue, one per video.`)
+    setSplitting(false)
+    onSaved()
+  }
   const mediaType = videoCapture ? 'video' : (initialPost?.media_type === 'video' ? 'video' : 'image')
   const tagList = hashtags.split(/[\s,]+/).map((t) => t.replace(/^#/, '')).filter(Boolean)
   const problems = platformProblems({ platforms, caption: composeCaption(caption, tagList), mediaUrls, mediaType })
@@ -1091,6 +1115,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
     setCaption(r.caption || '')
     setHashtags((r.hashtags || []).join(' '))
     if (!aiDraft) setAiDraft(r.caption || '')
+    if (r.best_capture_id) { setAiPick(r.best_capture_id); setPrimaryId(r.best_capture_id) }
   }
 
   const save = async (status) => {
@@ -1103,6 +1128,8 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
       scheduled_for: when ? new Date(when).toISOString() : null,
       brand: postBrand || null,
       media_type: mediaType === 'video' ? 'video' : mediaUrls.length ? 'image' : 'text',
+      video_format: mediaType === 'video' ? videoFormat : 'reel',
+      primary_capture_id: mediaType === 'video' ? (primaryId || videoCaptures[0]?.id || null) : null,
     }
     if (status === 'approved') { row.approved_by = currentEmployee?.id || null; row.approved_at = new Date().toISOString() }
     let saved = null
@@ -1202,6 +1229,43 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
               </div>
             )}
           </div>
+
+          {videoCaptures.length > 1 && (
+            <div style={{ borderRadius: 10, padding: 12, background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.4)' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#92400e', display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={15} /> Every network takes one video per post.</div>
+              <div style={{ fontSize: 12, color: '#92400e', marginTop: 4, lineHeight: 1.4 }}>Pick the one that carries this caption. The others go back to the inbox, or split this into {videoCaptures.length} posts and the AI writes each one.</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                {videoCaptures.map((c) => {
+                  const on = (primaryId || videoCaptures[0]?.id) === c.id
+                  return (
+                    <button key={c.id} type="button" onClick={() => setPrimaryId(c.id)} style={{ position: 'relative', padding: 0, border: `3px solid ${on ? MKT : 'transparent'}`, borderRadius: 10, background: '#111', cursor: 'pointer', overflow: 'hidden', width: 96 }}>
+                      {captureThumb(c) ? <img src={captureThumb(c)} alt="" style={{ width: 96, height: 72, objectFit: 'cover', display: 'block' }} /> : <VideoFrameTile src={c.url} size={72} />}
+                      {on && <div style={{ position: 'absolute', top: 4, left: 4, fontSize: 10, fontWeight: 700, color: '#fff', background: MKT, borderRadius: 999, padding: '2px 6px' }}>This one</div>}
+                      {aiPick === c.id && <div style={{ position: 'absolute', bottom: 4, left: 4, fontSize: 10, fontWeight: 700, color: '#fff', background: 'rgba(0,0,0,0.65)', borderRadius: 999, padding: '2px 6px', display: 'flex', alignItems: 'center', gap: 3 }}><Sparkles size={9} /> AI pick</div>}
+                      {c.duration_s && <div style={{ position: 'absolute', bottom: 4, right: 4, fontSize: 10, color: '#fff', background: 'rgba(0,0,0,0.65)', borderRadius: 999, padding: '2px 6px' }}>{Math.round(c.duration_s)}s</div>}
+                    </button>
+                  )
+                })}
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <button type="button" onClick={splitVideos} disabled={splitting || !caption.trim()} title={caption.trim() ? '' : 'Draft or write the caption first'} style={{ ...ghostBtn(theme), minHeight: 36 }}>{splitting ? 'Splitting…' : `Split into ${videoCaptures.length} posts`}</button>
+                <span style={{ fontSize: 11, color: '#92400e' }}>Vertical clips, 3 to 90 seconds, do best as Reels.</span>
+              </div>
+            </div>
+          )}
+          {mediaType === 'video' && (
+            <div>
+              <div style={sectionLabel(theme)}>Format</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {[['reel', 'Reel', 'Instagram Reel + Facebook Reel. Vertical works best, 3 to 90 seconds.'], ['video', 'Video post', 'A regular video in the Facebook feed. Instagram still gets a Reel.'], ['story', 'Story', 'Up for 24 hours on Instagram and Facebook. The caption is not shown.']].map(([id, label, hint]) => (
+                  <button key={id} type="button" onClick={() => setVideoFormat(id)} title={hint} style={chip(theme, videoFormat === id)}>{label}</button>
+                ))}
+              </div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 6 }}>
+                {videoFormat === 'reel' ? 'Instagram Reel and Facebook Reel. Vertical works best, 3 to 90 seconds.' : videoFormat === 'video' ? 'A regular video in the Facebook feed. Instagram still gets a Reel.' : 'Up for 24 hours on Instagram and Facebook. Stories do not show the caption.'}
+              </div>
+            </div>
+          )}
 
           {/* Note + draft */}
           <div>
