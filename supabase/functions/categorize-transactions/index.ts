@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAnthropic } from "../_shared/anthropic.ts";
-import { resolveIsTransfer } from "../_shared/transferRule.ts";
+import { resolveIsTransfer, isTransferCategory } from "../_shared/transferRule.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -139,6 +139,12 @@ serve(async (req) => {
               ai_category: rule.assigned_category,
               ai_tax_category: rule.assigned_tax_category || null,
               ai_confidence: 0.99,
+              // Resolve the flag here too. The AI path below has always done
+              // this; the rule path did not, so a rule assigning Transfer left
+              // is_transfer false and the row sat in the deposit feed waiting
+              // to be matched to an invoice it can never match (Tracy,
+              // 2240f676). The flag is the only thing reports read.
+              is_transfer: resolveIsTransfer({ category: rule.assigned_category }),
             }).eq('id', txn.id);
             ruleMatched.push(txn.id);
             matched = true;
@@ -306,6 +312,27 @@ Return ONLY a JSON array with this structure for each transaction:
           success: false,
           skipped: true,
           reason: `"${pattern}" is too generic to learn as a merchant rule — it would match unrelated transactions.`,
+        });
+      }
+
+      // Never learn TRANSFER as a merchant rule.
+      //
+      // Learning is automatic: confirming any transaction teaches a rule for
+      // that merchant. So one Home Depot receipt someone marked Transfer
+      // became "all Home Depot is a transfer", and 38 Home Depot purchases,
+      // 2 Harbor Freight and a Domino's were relabelled — $5,715 of real
+      // expense that would have vanished from the books the moment the flag
+      // started following the label (rules 2, 10 and 12, deleted 2026-10-02).
+      //
+      // Whether money moved between your own accounts is a property of the
+      // TRANSACTION, not of who it was with. The one merchant that genuinely
+      // is one — a payment processor paying out — is already handled directly:
+      // stripe-sync-books sets is_transfer on the payout itself.
+      if (isTransferCategory(category)) {
+        return jsonResponse({
+          success: false,
+          skipped: true,
+          reason: `"Transfer" is a fact about one transaction, not about ${pattern} — no rule learned.`,
         });
       }
 
