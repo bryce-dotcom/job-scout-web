@@ -68,7 +68,8 @@ serve(async (req) => {
         description ? `What to say: "${description}"` : 'No description; say what the photos show.',
         `Brand: ${name}.${kit.tagline ? ` Tagline: ${kit.tagline}.` : ''}${kit.cta ? ` Call to action: ${kit.cta}.` : ''}${kit.voice ? ` Voice: ${kit.voice}` : ''}`,
         `Plan a vertical social video under ${maxTotal} seconds. Scene kinds: "compare" (a BEFORE photo and an AFTER photo of the same place; the after is revealed over the before — use it whenever two photos show the same spot in two states), "photo" (one photo with slow motion), "clip" (a stretch of a video, start/end in seconds), "card" (text only on the brand colour: a punchy headline, optional sub line). Headlines are short and bold, under 8 words, the kind that stop a thumb ("Hard evidence that lighting is everything"). Open with the strongest visual and a headline; end with a card carrying the call to action. Use every strong photo once; leave out weak or repeated ones. 2 to 4 seconds per photo, 4 to 6 for a compare, 2 to 3 for a card.`,
-        'Return strict JSON: {"headline": string, "scenes": [{"kind":"compare","before":id,"after":id,"text":string,"seconds":n} | {"kind":"photo","capture":id,"text":string|null,"motion":"zoom_in"|"zoom_out"|"pan_left"|"pan_right","seconds":n} | {"kind":"clip","capture":id,"start":n,"end":n,"text":string|null,"seconds":n} | {"kind":"card","text":string,"sub":string|null,"seconds":n}], "cta": {"text": string, "sub": string|null}, "why": "one sentence for the marketer"}',
+        'Also write "voiceover": what a warm, plain-spoken narrator says over the whole video, in the brand voice, 2 to 4 short sentences, no more than about 2.5 words per second of video, ending on the call to action. No hashtags, no emojis, say numbers as words.',
+        'Return strict JSON: {"headline": string, "scenes": [{"kind":"compare","before":id,"after":id,"text":string,"seconds":n} | {"kind":"photo","capture":id,"text":string|null,"motion":"zoom_in"|"zoom_out"|"pan_left"|"pan_right","seconds":n} | {"kind":"clip","capture":id,"start":n,"end":n,"text":string|null,"seconds":n} | {"kind":"card","text":string,"sub":string|null,"seconds":n}], "cta": {"text": string, "sub": string|null}, "voiceover": string, "mood": "calm"|"upbeat"|"bold", "why": "one sentence for the marketer"}',
       ].join('\n\n') })
       const ai = await callAnthropic({ feature: 'marketing-storyboard', companyId: caller.companyId, req }, {
         model: 'claude-sonnet-4-6', max_tokens: 1200,
@@ -104,7 +105,8 @@ serve(async (req) => {
       }
       if (!scenes.length) return json({ ok: false, error: 'Nothing usable in that storyboard. Add a photo or two, or describe it differently.' }, 502)
       const cta = { text: String(sbd.cta?.text || kit.cta || `Call ${co?.phone || ''}`.trim()).slice(0, 60), sub: sbd.cta?.sub ? String(sbd.cta.sub).slice(0, 80) : (kit.website || co?.website || co?.phone || null) }
-      return json({ ok: true, headline: String(sbd.headline || '').slice(0, 80), scenes, cta, why: String(sbd.why || ''), total: +total.toFixed(1), brand: { name, logo_url: kit.logo_url || brand?.logo_url || null, color: kit.primary_color || null } })
+      const mood = ['calm', 'upbeat', 'bold'].includes(sbd.mood) ? sbd.mood : 'calm'
+      return json({ ok: true, headline: String(sbd.headline || '').slice(0, 80), scenes, cta, voiceover: String(sbd.voiceover || '').slice(0, 900), mood, why: String(sbd.why || ''), total: +total.toFixed(1), brand: { name, logo_url: kit.logo_url || brand?.logo_url || null, color: kit.primary_color || null } })
     }
 
     // ── plan_cut: which clips, in what order, how much of each ───────

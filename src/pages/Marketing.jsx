@@ -15,11 +15,12 @@ import {
 import { uploadCapture, captureThumb, backfillVideoPosters } from '../lib/marketingUpload'
 import ScoutLoader from '../components/ScoutLoader'
 import { renderEdit, renderStoryboard, normalizeStoryboard, totalSeconds, defaultTrim, canEditVideo, ASPECTS, MAX_RESULT_SECONDS } from '../lib/videoEdit'
+import { MOODS, renderMusicBed, decodeTrack } from '../lib/musicBed'
 import {
   Megaphone, Inbox, ListChecks, Palette, Link2, Mail, Sparkles, Upload, Camera, Check, X,
   Send, Clock, ExternalLink, RefreshCw, ChevronRight, CircleCheck, Circle, Trash2, Pencil,
   Image as ImageIcon, AlertTriangle, Archive, CalendarClock, Hand, Copy, Download,
-  Play, CalendarDays, BarChart3, Globe, ChevronLeft, FolderOpen, Search, Film, FileText, RotateCcw, Scissors, ArrowUp, ArrowDown, Clapperboard,
+  Play, CalendarDays, BarChart3, Globe, ChevronLeft, FolderOpen, Search, Film, FileText, RotateCcw, Scissors, ArrowUp, ArrowDown, Clapperboard, Music, Mic, Volume2,
 } from 'lucide-react'
 
 // Marketing — step 1 of the Sales Flow. Everything a company does to be found
@@ -2082,6 +2083,70 @@ function StoryboardMaker({ theme, isMobile, captures, caption, note, companyId, 
   const abortRef = useRef(null)
   const byId = useMemo(() => Object.fromEntries(captures.map((c) => [c.id, c])), [captures])
   const norm = sb ? normalizeStoryboard(sb, captures) : null
+  // Soundtrack: a bed the app makes (nothing to license), the company's own
+  // track, or silence; and a narrator read by ElevenLabs.
+  const [music, setMusic] = useState('auto')            // auto | calm | upbeat | bold | own | none
+  const [musicGain, setMusicGain] = useState(0.6)
+  const [ownTrack, setOwnTrack] = useState(null)        // { name, arrayBuffer }
+  const trackRef = useRef(null)
+  const [voiceOn, setVoiceOn] = useState(true)
+  const [voiceStatus, setVoiceStatus] = useState(null)  // { available, voices }
+  const [voiceName, setVoiceName] = useState('Bill')
+  const [script, setScript] = useState('')
+  const [voiceUrl, setVoiceUrl] = useState(null)        // generated mp3 for the current script
+  const [voicing, setVoicing] = useState(false)
+  const [preview, setPreview] = useState(null)          // { kind: 'music'|'voice', pause }
+  useEffect(() => { invoke('marketing-voice', { action: 'status' }).then((r) => setVoiceStatus(r?.ok ? r : { available: false, voices: [] })) }, [invoke])
+  useEffect(() => { if (sb?.voiceover && !script) setScript(sb.voiceover) }, [sb]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setVoiceUrl(null) }, [script, voiceName])
+  const effectiveMood = music === 'auto' ? (sb?.mood || 'calm') : music
+  const stopPreview = () => { try { preview?.pause() } catch { /* ignore */ } setPreview(null) }
+  const previewMusic = async () => {
+    stopPreview()
+    const AC = window.AudioContext || window.webkitAudioContext
+    const ac = new AC(); await ac.resume()
+    const buf = music === 'own' && ownTrack ? await decodeTrack(ownTrack.arrayBuffer, 8) : await renderMusicBed({ mood: effectiveMood, seconds: 8 })
+    const src = ac.createBufferSource(); src.buffer = buf; const g = ac.createGain(); g.gain.value = musicGain; src.connect(g); g.connect(ac.destination); src.start()
+    const fake = { kind: 'music', pause: () => { try { src.stop(); ac.close() } catch { /* ignore */ } } }
+    setPreview(fake); src.onended = () => { setPreview((p) => (p === fake ? null : p)); try { ac.close() } catch { /* ignore */ } }
+  }
+  const makeVoice = async () => {
+    if (!script.trim()) return null
+    setVoicing(true)
+    const r = await invoke('marketing-voice', { text: script.trim(), voice: voiceName, brand: brand || '' })
+    setVoicing(false)
+    if (!r.ok) { toast.error(r.error || 'Could not make the voice'); return null }
+    setVoiceUrl(r.url)
+    return r.url
+  }
+  const previewVoice = async () => {
+    stopPreview()
+    const url = voiceUrl || (await makeVoice())
+    if (!url) return
+    const a = new Audio(url); a.play().catch(() => {})
+    const p = { kind: 'voice', pause: () => a.pause() }
+    setPreview(p); a.onended = () => setPreview((x) => (x === p ? null : x))
+  }
+  const buildSoundtrack = async (seconds) => {
+    // voice first: if the narrator runs long the picture (and the music) stretch to fit
+    let voiceBuf = null
+    if (voiceOn && voiceStatus?.available && script.trim()) {
+      const url = voiceUrl || (await makeVoice())
+      if (url) {
+        const AC = window.AudioContext || window.webkitAudioContext
+        const ac = new AC()
+        try { voiceBuf = await ac.decodeAudioData(await (await fetch(url)).arrayBuffer()) } catch { toast.error('The voice file could not be read; making it without the narrator.') }
+        try { await ac.close() } catch { /* ignore */ }
+      }
+    }
+    const len = Math.max(seconds, (voiceBuf?.duration || 0) + 0.6) + 2
+    let musicBuf = null
+    if (music !== 'none') {
+      if (music === 'own' && ownTrack) musicBuf = await decodeTrack(ownTrack.arrayBuffer, len)
+      else musicBuf = await renderMusicBed({ mood: effectiveMood, seconds: len })
+    }
+    return { music: musicBuf, musicGain, voice: voiceBuf }
+  }
   const fmt = (n) => `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, '0')}`
 
   const plan = async () => {
@@ -2099,7 +2164,10 @@ function StoryboardMaker({ theme, isMobile, captures, caption, note, companyId, 
     const ac = new AbortController(); abortRef.current = ac
     setRendering({ pct: 0, seconds: 0 })
     try {
-      const out = await renderStoryboard({ storyboard: sb, captures, brand: { ...brandInfo, ...(sb.brand || {}) , logo_url: sb.brand?.logo_url || brandInfo.logo_url, color: sb.brand?.color || brandInfo.color }, aspect, onProgress: (pct, seconds) => setRendering({ pct: Math.round(pct * 100), seconds }), signal: ac.signal })
+      stopPreview()
+      setRendering({ pct: 0, seconds: 0, label: voiceOn && voiceStatus?.available && script.trim() && !voiceUrl ? 'Recording the narrator…' : 'Mixing the soundtrack…' })
+      const soundtrack = await buildSoundtrack(norm.total)
+      const out = await renderStoryboard({ storyboard: sb, captures, brand: { ...brandInfo, ...(sb.brand || {}) , logo_url: sb.brand?.logo_url || brandInfo.logo_url, color: sb.brand?.color || brandInfo.color }, aspect, soundtrack, onProgress: (pct, seconds) => setRendering({ pct: Math.round(pct * 100), seconds }), signal: ac.signal })
       setRendering({ pct: 100, seconds: out.duration, uploading: true })
       const row = await uploadCapture({ companyId, employeeId, jobId, file: out.file, note: `AI video: ${sb.headline || description.slice(0, 60)}`, source: 'generated', brand })
       toast.success(`Made a ${Math.round(out.duration)}s video.`)
@@ -2114,7 +2182,7 @@ function StoryboardMaker({ theme, isMobile, captures, caption, note, companyId, 
   const kindLabel = { compare: 'Before → after', photo: 'Photo', clip: 'Clip', card: 'Text card' }
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'center' }} onClick={() => !rendering && onClose()}>
-      {rendering && <ScoutLoader overlay theme={theme} label={rendering.uploading ? 'Sending the video…' : `Making it · ${fmt(rendering.seconds)} of ${fmt(norm?.total || 0)}`} pct={rendering.uploading ? null : rendering.pct} sub={rendering.uploading ? null : 'It plays through once while it records. Keep this screen open.'} />}
+      {rendering && <ScoutLoader overlay theme={theme} label={rendering.uploading ? 'Sending the video…' : rendering.label && rendering.pct === 0 ? rendering.label : `Making it · ${fmt(rendering.seconds)} of ${fmt(norm?.total || 0)}`} pct={rendering.uploading || (rendering.label && rendering.pct === 0) ? null : rendering.pct} sub={rendering.uploading ? null : 'It plays through once while it records. Keep this screen open.'} />}
       <div onClick={(e) => e.stopPropagation()} style={{ background: theme.bgCard, width: isMobile ? '100%' : 700, maxHeight: isMobile ? '100%' : '92vh', overflowY: 'auto', borderRadius: isMobile ? 0 : 14, display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.border}`, position: 'sticky', top: 0, background: theme.bgCard, zIndex: 1 }}>
           <Clapperboard size={18} color={MKT} />
@@ -2142,6 +2210,41 @@ function StoryboardMaker({ theme, isMobile, captures, caption, note, companyId, 
                 <div style={sectionLabel(theme)}>Frame</div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {Object.entries(ASPECTS).map(([id, a]) => <button key={id} type="button" onClick={() => setAspect(id)} style={chip(theme, aspect === id)}>{a.label}</button>)}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(2, minmax(0,1fr))', gap: 10 }}>
+                <div style={{ padding: 12, borderRadius: 10, background: theme.bg, border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: theme.text }}><Music size={15} /> Music</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {[['auto', `Auto (${MOODS[sb.mood || 'calm']?.label || 'Calm'})`], ['calm', 'Calm'], ['upbeat', 'Upbeat'], ['bold', 'Bold'], ['own', 'Your track'], ['none', 'None']].map(([id, label]) => (
+                      <button key={id} type="button" onClick={() => { setMusic(id); if (id === 'own' && !ownTrack) trackRef.current?.click() }} style={{ ...chip(theme, music === id), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>{label}</button>
+                    ))}
+                  </div>
+                  <input ref={trackRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; setOwnTrack({ name: f.name, arrayBuffer: await f.arrayBuffer() }); setMusic('own') }} />
+                  {music === 'own' && <div style={{ fontSize: 11, color: theme.textMuted }}>{ownTrack ? `${ownTrack.name} — use only music you have the rights to post.` : 'Pick an audio file you have the rights to.'}</div>}
+                  {music !== 'own' && music !== 'none' && <div style={{ fontSize: 11, color: theme.textMuted }}>Made by the app, nothing to license. Sits under the voice.</div>}
+                  {music !== 'none' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Volume2 size={14} color={theme.textMuted} />
+                      <input type="range" min={0} max={1} step={0.05} value={musicGain} onChange={(e) => setMusicGain(Number(e.target.value))} style={{ flex: 1 }} />
+                      <button type="button" onClick={preview?.kind === 'music' ? stopPreview : previewMusic} style={{ ...ghostBtn(theme), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>{preview?.kind === 'music' ? 'Stop' : 'Hear it'}</button>
+                    </div>
+                  )}
+                </div>
+                <div style={{ padding: 12, borderRadius: 10, background: theme.bg, border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: theme.text }}>
+                    <Mic size={15} /> Voiceover
+                    <label style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 500, color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} /> on</label>
+                  </div>
+                  {voiceStatus && !voiceStatus.available && <div style={{ fontSize: 11, color: '#b45309' }}>Needs an ElevenLabs key on the server. The script is ready for when it is set.</div>}
+                  <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={3} placeholder="What the narrator says. The AI wrote a first pass when it planned the video." style={{ ...inputStyle(theme), minHeight: 64, resize: 'vertical', fontFamily: 'inherit', fontSize: 13, opacity: voiceOn ? 1 : 0.6 }} />
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <select value={voiceName} onChange={(e) => setVoiceName(e.target.value)} disabled={!voiceOn} style={{ ...inputStyle(theme), width: 'auto', minHeight: 32, padding: '4px 8px', fontSize: 12 }}>
+                      {(voiceStatus?.voices?.length ? voiceStatus.voices : ['Bill', 'Rachel', 'Adam', 'Sarah', 'Brian']).map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                    <button type="button" onClick={preview?.kind === 'voice' ? stopPreview : previewVoice} disabled={!voiceOn || !voiceStatus?.available || !script.trim() || voicing} style={{ ...ghostBtn(theme), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>{voicing ? 'Recording…' : preview?.kind === 'voice' ? 'Stop' : voiceUrl ? 'Hear it' : 'Record & hear'}</button>
+                    <span style={{ fontSize: 11, color: theme.textMuted }}>~{Math.round(script.trim().split(/\s+/).filter(Boolean).length / 2.5)}s spoken</span>
+                  </div>
                 </div>
               </div>
               <div>

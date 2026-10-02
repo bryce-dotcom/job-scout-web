@@ -249,11 +249,22 @@ function drawImageKenBurns(ctx, img, W, H, t, motion) {
   ctx.drawImage(img, dx, dy, dw, dh)
 }
 
-export async function renderStoryboard({ storyboard, captures, brand = {}, aspect = 'vertical', fps = 30, onProgress = null, signal = null }) {
+// soundtrack: { music: AudioBuffer|null, musicGain: 0..1, voice: AudioBuffer|null }
+// The voice starts at the top; music ducks under it and fades out at the
+// end. If the voice runs past the picture, the closing card holds until
+// the narrator finishes.
+export async function renderStoryboard({ storyboard, captures, brand = {}, aspect = 'vertical', fps = 30, soundtrack = null, onProgress = null, signal = null }) {
   if (!canEditVideo()) throw new Error('This browser cannot make video. Try Safari on the phone or Chrome on a computer.')
   const { w: W, h: H } = ASPECTS[aspect] || ASPECTS.vertical
-  const { scenes, total } = normalizeStoryboard(storyboard, captures)
+  const norm = normalizeStoryboard(storyboard, captures)
+  let { scenes, total } = norm
   if (!scenes.length) throw new Error('The storyboard has no scenes.')
+  const voiceLen = soundtrack?.voice?.duration || 0
+  if (voiceLen > total - 0.3) {
+    // give the narrator room: stretch the last scene
+    const extra = Math.min(MAX_RESULT_SECONDS - total, voiceLen + 0.6 - total)
+    if (extra > 0) { scenes = scenes.map((sc, i) => (i === scenes.length - 1 ? { ...sc, seconds: +(sc.seconds + extra).toFixed(1) } : sc)); total = +(total + extra).toFixed(1) }
+  }
   const byId = Object.fromEntries((captures || []).map((c) => [c.id, c]))
   const color = brand?.color || '#5a6349'
   const logo = brand?.logo_url ? await loadImage(brand.logo_url) : null
@@ -288,6 +299,31 @@ export async function renderStoryboard({ storyboard, captures, brand = {}, aspec
   const stopped = new Promise((r) => { rec.onstop = r })
   rec.start(500)
 
+  // Soundtrack into the recording (not the speaker).
+  if (audio && dest && soundtrack) {
+    const t0 = audio.currentTime + 0.05
+    if (soundtrack.music) {
+      const src = audio.createBufferSource(); src.buffer = soundtrack.music
+      const g = audio.createGain()
+      const level = Math.max(0, Math.min(1, soundtrack.musicGain ?? 0.6))
+      const ducked = soundtrack.voice ? level * 0.35 : level
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(Math.max(0.0001, ducked), t0 + 0.8)
+      if (soundtrack.voice) {
+        // back up after the narrator finishes
+        g.gain.setValueAtTime(Math.max(0.0001, ducked), t0 + voiceLen + 0.3)
+        g.gain.linearRampToValueAtTime(level, t0 + voiceLen + 1.5)
+      }
+      g.gain.setValueAtTime(g.gain.value, t0 + Math.max(1, total - 1.5))
+      g.gain.linearRampToValueAtTime(0.0001, t0 + total)
+      src.connect(g); g.connect(dest); src.start(t0); src.stop(t0 + total + 0.1)
+    }
+    if (soundtrack.voice) {
+      const v = audio.createBufferSource(); v.buffer = soundtrack.voice
+      const vg = audio.createGain(); vg.gain.value = 1
+      v.connect(vg); vg.connect(dest); v.start(t0 + 0.4)
+    }
+  }
+
   let rendered = 0
   const videos = []
   const frameMs = Math.round(1000 / fps)
@@ -307,7 +343,7 @@ export async function renderStoryboard({ storyboard, captures, brand = {}, aspec
         v.src = c.url; v.load()
         if (!(await once(v, 'loadedmetadata', 15000))) throw new Error('Could not open a clip.')
         await once(v, 'loadeddata', 8000)
-        if (audio && dest) { try { audio.createMediaElementSource(v).connect(dest) } catch { /* ignore */ } } else v.muted = true
+        if (audio && dest) { try { const src = audio.createMediaElementSource(v); const g = audio.createGain(); g.gain.value = soundtrack?.voice ? 0.25 : 1; src.connect(g); g.connect(dest) } catch { /* ignore */ } } else v.muted = true
         if (Math.abs(v.currentTime - sc.start) > 0.05) { const s = once(v, 'seeked', 8000); v.currentTime = sc.start; await s }
         await v.play()
         await new Promise((resolve) => {
