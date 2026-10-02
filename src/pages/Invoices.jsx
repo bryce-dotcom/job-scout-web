@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { writeInvoiceLines, applySalesTaxToInvoice } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
+import { nextInvoiceNumber } from '../lib/invoiceNumber'
 import { useTheme } from '../components/Layout'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { isLegacyNetShape } from '../lib/arHelpers'
@@ -284,7 +285,7 @@ export default function Invoices() {
     setLoading(true)
     setError(null)
 
-    const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+    const invoiceNumber = await nextInvoiceNumber(supabase, companyId)
 
     // Default Net-30 due date so the invoice surfaces in the Due Soon /
     // Overdue quick filters. User can override later via InvoiceDetail edit.

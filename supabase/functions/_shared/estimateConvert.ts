@@ -359,7 +359,19 @@ export async function convertEstimate(r: Rest, companyId: number, quoteId: numbe
   // 5. The deposit invoice, and the deposit already taken on the estimate applied to it.
   let depositInvoice: Converted['depositInvoice'] = null
   if (plan.deposit) {
-    const number = `INV-DEP-${Date.now().toString(36).toUpperCase()}`
+    // Sequential, from the database — the browser twin is lib/invoiceNumber.
+    // next_invoice_number allocates atomically; the old base-36 Date.now()
+    // was unreadable over the phone (Christopher, 7d03fcec). Falls back to the
+    // old shape if the RPC is unavailable: a numbering hiccup must never be
+    // what stops an estimate converting.
+    let number = `INV-DEP-${Date.now().toString(36).toUpperCase()}`
+    try {
+      const nres = await fetch(`${r.url}/rest/v1/rpc/next_invoice_number`, { method: 'POST', headers: hdr(r), body: JSON.stringify({ p_company_id: Number(companyId) }) })
+      if (nres.ok) {
+        const n = Number(await nres.json())
+        if (Number.isFinite(n) && n > 0) number = `INV-DEP-${n}`
+      }
+    } catch { /* keep the fallback */ }
     const dins = await fetch(`${r.url}/rest/v1/invoices`, { method: 'POST', headers: { ...hdr(r), Prefer: 'return=representation' }, body: JSON.stringify({
       company_id: companyId, job_id: job.id, customer_id: customerId, invoice_id: number, amount: plan.deposit.amount, payment_status: 'Draft', invoice_type: 'deposit',
       business_unit: plan.businessUnit, job_description: `${plan.deposit.label} for ${est.quote.estimate_name || est.quote.quote_id || 'project'}`,

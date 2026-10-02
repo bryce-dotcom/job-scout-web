@@ -12,6 +12,7 @@ import { sendInvoice, markJobInvoicedAfterSend } from '../lib/invoiceSend'
 import { defaultUtilityProviderId } from '../lib/jobUtility'
 import { companyNotify } from '../lib/companyNotify'
 import { useStore } from '../lib/store'
+import { nextInvoiceNumber } from '../lib/invoiceNumber'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { toast } from '../lib/toast'
@@ -1482,7 +1483,7 @@ export default function FieldScout() {
           } catch {}
         }
 
-        const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+        const invoiceNumber = await nextInvoiceNumber(supabase, companyId)
         const { data: newInv } = await supabase
           .from('invoices')
           .insert({

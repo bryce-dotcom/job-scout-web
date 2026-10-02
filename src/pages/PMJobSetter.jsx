@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
+import { nextInvoiceNumber } from '../lib/invoiceNumber'
 import { useTheme } from '../components/Layout'
 import HelpBadge from '../components/HelpBadge'
 import { isManager as checkManager } from '../lib/accessControl'
@@ -1719,7 +1720,7 @@ export default function PMJobSetter() {
           .eq('job_id', jobForInvoice.id)
 
         const jobTotal = jobLines?.reduce((sum, l) => sum + (l.total || l.quantity * l.price || 0), 0) || jobForInvoice.job_total || 0
-        const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+        const invoiceNumber = await nextInvoiceNumber(supabase, companyId)
         // The utility incentive is the customer's credit. This path billed the
         // full project with no credit, so a rebate job dragged to Completed
         // invoiced the customer for the utility's share too. Same treatment

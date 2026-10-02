@@ -5,6 +5,7 @@ import { mergeJobHourSources } from '../lib/jobHours'
 import { validateTimeEntry } from '../lib/timeEntry'
 import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
+import { nextInvoiceNumber } from '../lib/invoiceNumber'
 import { leadStatusForJob } from '../lib/leadDeliveryStatus'
 import { jobEstimateDrift } from '../lib/jobEstimateDrift'
 import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
@@ -1544,7 +1545,7 @@ function JobDetailInner() {
 
     setSaving(true)
 
-    const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+    const invoiceNumber = await nextInvoiceNumber(supabase, companyId)
     // What the job bills for — the same number the footer and Field Scout
     // use, so a job priced without lines invoices for its price.
     const subtotal = jobGross(job, lineItems)
@@ -1677,7 +1678,7 @@ function JobDetailInner() {
       }
 
       setSaving(true)
-      const invNumber = `INV-DEP-${Date.now().toString(36).toUpperCase()}`
+      const invNumber = await nextInvoiceNumber(supabase, companyId, { deposit: true })
       const resolvedCustomerId = job.customer_id || job.quote?.customer_id || null
       const refId = sourceEst?.quote_id || job.job_id || `JOB-${job.id}`
       const { data: depositInvoice, error: insErr } = await supabase
@@ -1881,7 +1882,7 @@ function JobDetailInner() {
       // Use the shared number when one was passed in by createBothInvoices,
       // otherwise generate a fresh one. Caller can read invoice.invoice_id
       // from our return value to pass into createUtilityInvoice.
-      const invoiceNumber = sharedNumber || `INV-${Date.now().toString(36).toUpperCase()}`
+      const invoiceNumber = sharedNumber || await nextInvoiceNumber(supabase, companyId)
 
       // Invoice carries the FULL project cost as `amount`. Both the
       // utility rebate and any pre-paid deposit are rolled into
@@ -2156,7 +2157,7 @@ function JobDetailInner() {
   // invoices that reconcile to the same INV-XXXX line on the
   // utility's books.
   const createBothInvoices = async () => {
-    const sharedNumber = `INV-${Date.now().toString(36).toUpperCase()}`
+    const sharedNumber = await nextInvoiceNumber(supabase, companyId)
     const result = await createCustomerInvoice({ sharedNumber })
     if (!result) return  // customer invoice failed; abort utility side
     await createUtilityInvoice({
