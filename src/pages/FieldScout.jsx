@@ -564,7 +564,12 @@ export default function FieldScout() {
       // that's a separate feature-data gap, flagged, not a query error.)
       const { data: jobRows } = await supabase
         .from('jobs')
-        .select('id, job_id, job_title, customer_name, allotted_time_hours')
+        // business_unit: the verification exemption is read off it, the same
+        // way the clock-out gate above reads it. Without the column every job
+        // looked unclassified, which the policy keeps gated — so an HHH
+        // Building Services tech, told at clock-out that his unit needs no
+        // photos, opened this card and saw his bonus "Waiting on verification".
+        .select('id, job_id, job_title, customer_name, allotted_time_hours, business_unit')
         .in('id', myJobIds)
 
       // 5b. Victor verification gates: load completion + daily reports for these jobs.
@@ -599,10 +604,31 @@ export default function FieldScout() {
         payrollConfig,
         verifiedJobIds,
         dailyVerifiedJobDays,
+        // The company's exemption, same setting the clock-out gate uses. Never
+        // passed here, so this card held work that needs no verification.
+        // Read off the payroll_config this callback already fetched rather
+        // than the memo above, which the store may not have filled yet when
+        // the card first runs (and which is not in this callback's deps).
+        verificationExemptUnits: exemptUnitsFromPayrollConfig(payrollConfig),
       })
 
+      // The headline is what the LEDGER records, not what the daily-coverage
+      // ratio leaves behind. calculateEfficiencyBonus multiplies a released
+      // share by (job-days with a daily Victor report / job-days worked); with
+      // 31 daily reports against 300 completion checks that ratio is almost
+      // always zero, so a fully verified bonus showed as "$0.00 earned this
+      // pay period" while Payroll and My Pay carried the whole amount. The
+      // removed part is preserved as coveragePenalty and bonusRowAmount adds
+      // it back — the same rule syncJobBonuses stores, so the phone and the
+      // office now agree. Held rows stay out of the headline and keep their
+      // own "Waiting on verification" line underneath.
+      const earned = (result.details || []).reduce((s, d) => {
+        const { amount, held } = bonusRowAmount(d)
+        return held ? s : s + amount
+      }, 0)
+
       setBonusSummary({
-        bonus: result.bonus,
+        bonus: earned,
         details: result.details,
         loading: false,
         period: { periodStart, periodEnd },

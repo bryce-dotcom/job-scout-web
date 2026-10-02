@@ -773,9 +773,16 @@ export default function Payroll() {
         // Jobs needed for commission math: only those with a salesperson_id
         // OR a lead_id (commission ownership lives on one of those). Strips
         // ~30%+ of jobs that have neither and never produce commission.
+        //
+        // business_unit: the bonus ledger reads it to apply the verification
+        // exemption (lib/verificationPolicy). Left out of this select, every
+        // job arrived with business_unit undefined, which verificationRequiredFor
+        // treats as "unknown — stays gated", so the exemption HHH set on
+        // 2026-09-18 never once applied: 92 Building Services bonuses
+        // ($17,321.04) were flagged for a photo check that unit does not do.
         fetchAllPages(() => supabase
           .from('jobs')
-          .select('id, company_id, job_id, salesperson_id, lead_id, allotted_time_hours, status, customer_name, job_title, assigned_team, has_callback')
+          .select('id, company_id, job_id, salesperson_id, lead_id, allotted_time_hours, status, customer_name, job_title, assigned_team, business_unit, has_callback')
           .eq('company_id', companyId)
           .or('salesperson_id.not.is.null,lead_id.not.is.null')),
 
@@ -808,17 +815,23 @@ export default function Payroll() {
           .or(`and(pay_period_start.eq.${periodStartStr},pay_period_end.in.(${periodEndStr},${legacyPeriodEndStr})),recurring.eq.true`),
 
         // Victor verification reports — needed to gate efficiency bonus on
-        // completion + daily checks. We pull all reports in the period and
-        // bucket them in state; bonusCalc reads two Sets (verifiedJobIds +
+        // completion + daily checks. bonusCalc reads two Sets (verifiedJobIds +
         // dailyVerifiedJobDays) built from this below.
-        supabase
+        //
+        // NOT period-scoped. The bonus ledger is computed per JOB over the
+        // job's whole life (see the bonus sync below), so a completion check
+        // run in an earlier pay period has to keep counting. Bounded to the
+        // period, HHH's 300 passing completion checks shrank to the handful
+        // written since the 1st, and 24 bonuses ($5,812.20) were held as
+        // "no completion verification" on jobs Victor had already passed.
+        // Paged, because this now spans the company's whole history and
+        // PostgREST caps a response at 1000 rows.
+        fetchAllPages(() => supabase
           .from('verification_reports')
           .select('job_id, verification_type, score, created_at')
           .eq('company_id', companyId)
           .eq('voided', false)
-          .gte('score', 60)
-          .gte('created_at', periodStart.toISOString())
-          .lte('created_at', periodEnd.toISOString()),
+          .gte('score', 60)),
 
         // All leads — needed so commission calc can fall back to
         // lead.salesperson_id when jobs.salesperson_id is null (which is
