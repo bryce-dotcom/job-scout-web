@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useStore } from '../../lib/store'
 import { supabase } from '../../lib/supabase'
+import ScoutLoader from '../../components/ScoutLoader'
 import { canAccessDevTools } from '../../lib/accessControl'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import {
@@ -301,8 +302,8 @@ export default function DataConsole() {
           />
           {switching && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', color: theme.accent, fontSize: '11px' }}>
-              <RefreshCw size={12} className="animate-spin" />
-              Loading company data...
+              <ScoutLoader label="" size={24} style={{ padding: 0 }} />
+              Loading company data…
             </div>
           )}
           <style>{`@keyframes spin { to { transform: rotate(360deg) } } .animate-spin { animation: spin 1s linear infinite; }`}</style>

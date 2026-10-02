@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Component, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import ScoutLoader from '../components/ScoutLoader'
 import { mergeJobHourSources } from '../lib/jobHours'
 import { validateTimeEntry } from '../lib/timeEntry'
 import { writeInvoiceLines } from '../lib/invoiceLines'
@@ -7147,7 +7148,7 @@ function JobDetailInner() {
                   backgroundColor: '#dbeafe', border: '1px solid #93c5fd',
                   display: 'flex', alignItems: 'center', gap: '10px'
                 }}>
-                  <Loader size={16} color="#2563eb" style={{ animation: 'spin 1s linear infinite' }} />
+                  <ScoutLoader label="" size={28} style={{ padding: 0 }} />
                   <span style={{ fontSize: '14px', color: '#1e40af', fontWeight: '500' }}>{generateProgress}</span>
                 </div>
               )}
@@ -7399,7 +7400,7 @@ function JobDetailInner() {
                   backgroundColor: '#dbeafe', border: '1px solid #93c5fd',
                   display: 'flex', alignItems: 'center', gap: '10px'
                 }}>
-                  <Loader size={16} color="#2563eb" style={{ animation: 'spin 1s linear infinite' }} />
+                  <ScoutLoader label="" size={28} style={{ padding: 0 }} />
                   <span style={{ fontSize: '14px', color: '#1e40af', fontWeight: '500' }}>{submittalProgress}</span>
                 </div>
               )}

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import AddressAutocomplete from '../components/AddressAutocomplete'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import ScoutLoader from '../components/ScoutLoader'
 import { utilityFormsForJob } from '../lib/jobUtility'
 import { findMatchingCustomer, contactGapPatch } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
@@ -2438,7 +2439,7 @@ export default function LeadDetail() {
                   backgroundColor: '#dbeafe', border: '1px solid #93c5fd',
                   display: 'flex', alignItems: 'center', gap: '10px'
                 }}>
-                  <Loader size={16} color="#2563eb" style={{ animation: 'spin 1s linear infinite' }} />
+                  <ScoutLoader label="" size={28} style={{ padding: 0 }} />
                   <span style={{ fontSize: '14px', color: '#1e40af', fontWeight: '500' }}>{generateProgress}</span>
                 </div>
               )}

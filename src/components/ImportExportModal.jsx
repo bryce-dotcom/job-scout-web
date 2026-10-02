@@ -871,9 +871,7 @@ export default function ImportExportModal({
                 </div>
               ) : mappingLoading ? (
                 <div style={{ textAlign: 'center', padding: '32px' }}>
-                  <Loader size={28} style={{ color: '#3b82f6', animation: 'spin 1s linear infinite' }} />
-                  <div style={{ fontSize: '14px', color: theme.textSecondary, marginTop: '12px' }}>AI is analyzing your columns...</div>
-                  <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+                  <ScoutLoader theme={theme} label="Reading your columns…" />
                 </div>
               ) : (
                 <>
@@ -1145,8 +1143,7 @@ export default function ImportExportModal({
           {/* STEP 4: IMPORTING */}
           {step === 'importing' && (
             <div style={{ textAlign: 'center', padding: '20px' }}>
-              <Loader size={28} style={{ color: '#3b82f6', animation: 'spin 1s linear infinite', marginBottom: '12px' }} />
-              <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+              <ScoutLoader theme={theme} label={`Importing ${entityName.toLowerCase()}…`} />
               <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>
                 Importing {entityName.toLowerCase()}...
               </div>

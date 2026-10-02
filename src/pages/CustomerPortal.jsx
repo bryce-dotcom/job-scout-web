@@ -8,6 +8,7 @@ import { withAssets } from '../lib/productAssets'
 import { enabledWalletsFrom, displayHandle, walletGuidance } from '../lib/wallets'
 import { documentWord } from '../lib/documentVocabulary'
 import BidSchedule from '../components/proposal/BidSchedule'
+import ScoutLoader from '../components/ScoutLoader'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -219,8 +220,7 @@ export default function CustomerPortal() {
       <div style={styles.pageWrapper}>
         <div style={styles.container}>
           <div style={{ textAlign: 'center', padding: '80px 20px' }}>
-            <div style={styles.spinner} />
-            <p style={{ color: theme.textMuted, marginTop: '16px', fontSize: '15px' }}>Loading document...</p>
+            <ScoutLoader theme={theme} label="Loading document…" />
           </div>
         </div>
       </div>
@@ -386,8 +386,7 @@ export default function CustomerPortal() {
         <div style={styles.pageWrapper}>
           <div style={styles.container}>
             <div style={{ textAlign: 'center', padding: '80px 20px' }}>
-              <div style={styles.spinner} />
-              <p style={{ color: theme.textMuted, marginTop: '16px', fontSize: '15px' }}>Loading proposal...</p>
+              <ScoutLoader theme={theme} label="Loading proposal…" />
             </div>
           </div>
         </div>
@@ -414,8 +413,7 @@ export default function CustomerPortal() {
         <div style={styles.pageWrapper}>
           <div style={styles.container}>
             <div style={{ textAlign: 'center', padding: '80px 20px' }}>
-              <div style={styles.spinner} />
-              <p style={{ color: theme.textMuted, marginTop: '16px', fontSize: '15px' }}>Loading proposal...</p>
+              <ScoutLoader theme={theme} label="Loading proposal…" />
             </div>
           </div>
         </div>
