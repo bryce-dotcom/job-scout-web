@@ -80,11 +80,23 @@ export function invoiceDiscountBreakout(invoice, parentInvoice = null) {
   // `incentive` below, so JOB-MQZGV1FN printed "Utility Incentive
   // -$15,602.85" when the incentive was $13,652.85 and $1,950 was a down
   // payment — the customer could not follow the arithmetic.
-  const downPayment = Math.min(
-    Math.max(0, Number(invoice?.down_payment_applied) || 0),
-    Math.max(0, discountApplied - depositCredit - projectDiscountField)
-  )
-  const incentive = Math.max(0, discountApplied - depositCredit - projectDiscountField - downPayment)
+  //
+  // It is only a COMPONENT of discount_applied when it fits inside what is left
+  // of it. A down payment larger than the remaining discount was never in there
+  // — it has already been netted out of `amount` — and CLAMPING it, which is
+  // what this used to do, spent the whole utility incentive on the down-payment
+  // line and printed the incentive as $0.
+  //
+  // INV-MULJM26N: created with discount_applied 9,903.30 (incentive 4,895.00 +
+  // down payment 5,008.30) and correct lines, then edited to amount 10,151.65 /
+  // discount 4,895.00 with down_payment_applied still 5,008.30. The breakout
+  // clamped to 4,895.00 and the incentive line went to zero — Alayda:
+  // "it is grouping the down payment & the utility incentive together"
+  // (f9427a01). The customer total was right throughout; only the lines lied.
+  const downPaymentField = Math.max(0, Number(invoice?.down_payment_applied) || 0)
+  const deductionRoom = Math.max(0, discountApplied - depositCredit - projectDiscountField)
+  const downPayment = downPaymentField <= deductionRoom + 0.005 ? downPaymentField : 0
+  const incentive = Math.max(0, deductionRoom - downPayment)
   return { isLegacyNet, discountApplied, depositCredit, projectDiscountField, downPayment, incentive }
 }
 

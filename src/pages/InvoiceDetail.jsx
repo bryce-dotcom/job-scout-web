@@ -1058,10 +1058,22 @@ Add it anyway?`,
     // it is a whole-project discount for display breakout.
     const projDiscount = Math.max(0, parseFloat(editForm.project_discount) || 0)
     const otherDiscount = Math.max(0, parseFloat(editForm.discount_other) || 0)
+    const newDiscountTotal = Math.round((projDiscount + otherDiscount) * 100) / 100
+    // down_payment_applied is the OTHER breakout of discount_applied, and this
+    // form used to rewrite the total while leaving it behind. On INV-MULJM26N
+    // that left a 5,008.30 down payment recorded inside a 4,895.00 deduction, so
+    // the breakout attributed the whole thing to the down payment and printed the
+    // utility incentive as $0 — Alayda: "it is grouping the down payment & the
+    // utility incentive together" (f9427a01). If it no longer fits, it is no
+    // longer part of this deduction; the amount above already accounts for it.
+    const priorDownPayment = Math.max(0, parseFloat(invoice?.down_payment_applied) || 0)
+    const downPaymentStillFits = priorDownPayment > 0
+      && priorDownPayment <= Math.max(0, newDiscountTotal - projDiscount) + 0.005
     const payload = {
       amount: parseFloat(editForm.amount) || 0,
-      discount_applied: Math.round((projDiscount + otherDiscount) * 100) / 100,
+      discount_applied: newDiscountTotal,
       project_discount: projDiscount > 0 ? projDiscount : null,
+      down_payment_applied: downPaymentStillFits ? priorDownPayment : null,
       credit_card_fee: parseFloat(editForm.credit_card_fee) || 0,
       job_description: editForm.job_description || null,
       notes: editForm.notes || null,

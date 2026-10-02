@@ -162,11 +162,23 @@ describe('invoiceDiscountBreakout', () => {
   })
 
   it('never lets a down payment exceed what is left to attribute', () => {
+    // This used to assert downPayment 100 / incentive 0 — the down payment
+    // CLAMPED down to the discount, taking all of it. That is what hid a real
+    // $4,895 utility incentive on INV-MULJM26N (f9427a01), so the rule changed:
+    // a down payment that does not FIT inside the remaining discount was never a
+    // component of it, and has already been netted out of `amount`.
+    //
+    // Both readings honour the original intent — downPayment never exceeds the
+    // discount — but they differ on where the remainder goes, and misstating a
+    // utility deduction to a customer is the worse of the two errors.
     const b = invoiceDiscountBreakout({
       amount: 1000, discount_applied: 100, down_payment_applied: 5000,
     })
-    expect(b.downPayment).toBe(100)
-    expect(b.incentive).toBe(0)
+    expect(b.downPayment).toBe(0)
+    expect(b.incentive).toBe(100)
+    expect(b.downPayment).toBeLessThanOrEqual(b.discountApplied)
+    expect(b.depositCredit + b.projectDiscountField + b.downPayment + b.incentive)
+      .toBeCloseTo(b.discountApplied, 2)
   })
 
   it('leaves the incentive alone when there is no down payment', () => {
@@ -625,5 +637,56 @@ describe('an invoice from a priced job with an add-on still splits into its two 
     expect(s.outScopeSubtotal).toBe(165)
     expect(s.customerTotal).toBe(16200)
     expect(s.reconciles).toBe(true)
+  })
+})
+
+// ── A down payment must not eat the utility incentive ──────────────────────
+//
+// Alayda, f9427a01, INV-MULJM26N: "when working in the invoice to match the
+// tool it is grouping the 'down payment' & the utility incentive together."
+//
+// The invoice was created correctly — discount_applied 9,903.30, being a
+// 4,895.00 incentive plus a 5,008.30 down payment, with down_payment_applied
+// matching — and was then edited to amount 10,151.65 / discount_applied
+// 4,895.00 while down_payment_applied stayed 5,008.30. The breakout CLAMPED the
+// down payment to the 4,895.00 available and the incentive line fell to zero, so
+// one deduction had swallowed the other. The customer total was right all along;
+// only the lines lied.
+describe('invoiceDiscountBreakout: a down payment larger than the discount was never inside it', () => {
+  it('her invoice: the incentive survives and keeps its own figure', () => {
+    const b = invoiceDiscountBreakout({
+      amount: 10151.65, discount_applied: 4895.00, down_payment_applied: 5008.30,
+    })
+    expect(b.incentive).toBeCloseTo(4895.00, 2)
+    expect(b.downPayment).toBe(0)        // already netted out of `amount`
+  })
+
+  it('the shape it was CREATED with still breaks out into two honest lines', () => {
+    const b = invoiceDiscountBreakout({
+      amount: 15159.95, discount_applied: 9903.30, down_payment_applied: 5008.30,
+    })
+    expect(b.downPayment).toBeCloseTo(5008.30, 2)
+    expect(b.incentive).toBeCloseTo(4895.00, 2)
+    // And the two still add back to the whole deduction.
+    expect(b.downPayment + b.incentive).toBeCloseTo(9903.30, 2)
+  })
+
+  it('a down payment that exactly fills the discount leaves no incentive', () => {
+    const b = invoiceDiscountBreakout({ amount: 1000, discount_applied: 400, down_payment_applied: 400 })
+    expect(b.downPayment).toBe(400)
+    expect(b.incentive).toBe(0)
+  })
+
+  it('no down payment behaves as before', () => {
+    const b = invoiceDiscountBreakout({ amount: 1000, discount_applied: 400 })
+    expect(b.downPayment).toBe(0)
+    expect(b.incentive).toBe(400)
+  })
+
+  it('one cent over the available discount is treated as not-inside, not clamped', () => {
+    // The boundary is the whole point: clamping is what hid the incentive.
+    const b = invoiceDiscountBreakout({ amount: 1000, discount_applied: 400, down_payment_applied: 400.02 })
+    expect(b.downPayment).toBe(0)
+    expect(b.incentive).toBe(400)
   })
 })
