@@ -261,6 +261,33 @@ serve(async (req) => {
       return json({ ok: true, chosen: { facebook_page_id: next.facebook_page_id || null, facebook_page_name: next.facebook_page_name || null, linkedin_page_id: next.linkedin_page_id || null, linkedin_page_name: next.linkedin_page_name || null } })
     }
 
+    // ── profile_analytics: the networks' own 30-day numbers ──────────
+    // Followers, reach, views, likes per connected network, with a daily
+    // reach series. Facebook needs the Page id, LinkedIn the company URN;
+    // both are the brand's chosen pages. Google Business reports nothing.
+    if (action === 'profile_analytics') {
+      const platforms = (cfg.accounts || []).map((a: any) => a.platform).filter((p: string) => p !== 'google_business')
+      if (!platforms.length) return json({ ok: true, networks: {} })
+      const q = new URLSearchParams({ platforms: platforms.join(',') })
+      if (cfg.facebook_page_id) q.set('page_id', String(cfg.facebook_page_id))
+      if (cfg.linkedin_page_id && cfg.linkedin_page_id !== 'personal') q.set('page_urn', String(cfg.linkedin_page_id))
+      const r = await up('GET', `/analytics/${encodeURIComponent(username)}?${q}`)
+      if (!r.ok) return json({ ok: false, error: upError(r.data) }, 400)
+      const networks: Record<string, unknown> = {}
+      for (const [platform, v] of Object.entries(r.data || {})) {
+        if (!v || typeof v !== 'object' || (v as any).error) continue
+        const d: any = v
+        networks[platform] = {
+          followers: num(d.followers ?? d.followers_count ?? d.fan_count ?? d.subscribers),
+          reach: num(d.reach), views: num(d.views ?? d.impressions ?? d.plays), impressions: num(d.impressions),
+          likes: num(d.likes), comments: num(d.comments), shares: num(d.shares), saves: num(d.saves), profile_views: num(d.profileViews ?? d.profile_views),
+          reach_series: Array.isArray(d.reach_timeseries) ? d.reach_timeseries.map((x: any) => ({ date: x.date, value: num(x.value) || 0 })) : [],
+          error: d.error_message || null,
+        }
+      }
+      return json({ ok: true, networks, fetched_at: new Date().toISOString() })
+    }
+
     // ── analytics ─────────────────────────────────────────────────────
     if (action === 'analytics') {
       const q = new URLSearchParams({ user: username, limit: '200' })

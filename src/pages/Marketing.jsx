@@ -1499,18 +1499,25 @@ function CalendarTab({ theme, isMobile, posts, captureMap, kit, isManager, onCad
 // What the posts did. Metrics come from the publisher's cached analytics,
 // keyed to our posts by the native post id each network gave back.
 function PerformanceTab({ theme, isMobile, posts, captureMap, brand, invoke, publisher }) {
-  const [metrics, setMetrics] = useState(null)
+  const [metrics, setMetrics] = useState(null)      // per-post, from the vendor's snapshot cache (fills in over days)
+  const [networks, setNetworks] = useState(null)    // per-network 30-day numbers, live from the networks
   const [err, setErr] = useState(null)
   const [loading, setLoading] = useState(false)
   const load = useCallback(async () => {
-    if (!publisher?.profile_username) { setMetrics([]); return }
+    if (!publisher?.profile_username) { setMetrics([]); setNetworks({}); return }
     setLoading(true); setErr(null)
-    const r = await invoke('marketing-publish', { action: 'analytics', brand })
+    const [a, p] = await Promise.all([
+      invoke('marketing-publish', { action: 'analytics', brand }),
+      invoke('marketing-publish', { action: 'profile_analytics', brand }),
+    ])
     setLoading(false)
-    if (!r.ok) { setErr(r.error || 'Could not load'); setMetrics([]); return }
-    setMetrics(r.metrics || [])
+    if (!a.ok && !p.ok) { setErr(a.error || p.error || 'Could not load'); setMetrics([]); setNetworks({}); return }
+    setMetrics(a.ok ? (a.metrics || []) : [])
+    setNetworks(p.ok ? (p.networks || {}) : {})
   }, [invoke, brand, publisher])
   useEffect(() => { load() }, [load])
+  const netList = Object.entries(networks || {}).filter(([, v]) => v && !v.error)
+  const sum = (k) => netList.reduce((n, [, v]) => n + (v[k] || 0), 0)
 
   const byKey = useMemo(() => Object.fromEntries((metrics || []).map((m) => [`${m.platform}:${m.post_id}`, m])), [metrics])
   const posted = posts.filter((p) => p.status === 'posted' && p.ayrshare_id)
@@ -1531,13 +1538,45 @@ function PerformanceTab({ theme, isMobile, posts, captureMap, brand, invoke, pub
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'repeat(5, minmax(0,1fr))', gap: 10 }}>
         <Stat label="Posts" value={posted.length + handTotal} />
-        <Stat label="Views" value={totals.views} />
-        <Stat label="Likes" value={totals.likes} />
-        <Stat label="Comments" value={totals.comments} />
-        <Stat label="Shares" value={totals.shares} />
+        <Stat label="Followers" value={sum('followers')} />
+        <Stat label="Reach · 30 days" value={sum('reach')} />
+        <Stat label="Views · 30 days" value={sum('views')} />
+        <Stat label="Likes · 30 days" value={sum('likes')} />
       </div>
+
+      {/* Each network's own numbers, with the last 30 days of reach as bars */}
+      {netList.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+          {netList.map(([platform, v]) => {
+            const series = v.reach_series || []
+            const max = Math.max(1, ...series.map((x) => x.value || 0))
+            const peak = series.reduce((b, x) => (x.value > (b?.value || 0) ? x : b), null)
+            return (
+              <div key={platform} style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: theme.text, flex: 1 }}>{PLATFORM_BY_ID[platform]?.label || platform}</div>
+                  {v.followers != null && <div style={{ fontSize: 12, color: theme.textMuted }}>{v.followers.toLocaleString()} followers</div>}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 6, marginBottom: 8 }}>
+                  {[['reach', 'reach'], ['views', 'views'], ['likes', 'likes'], ['comments', 'cmts']].map(([k, l]) => (
+                    <div key={k}><div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>{v[k] != null ? v[k].toLocaleString() : '–'}</div><div style={{ fontSize: 10, color: theme.textMuted }}>{l}</div></div>
+                  ))}
+                </div>
+                {series.length > 0 && (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 36 }}>
+                      {series.map((x) => <div key={x.date} title={`${x.date}: ${x.value}`} style={{ flex: 1, height: `${Math.max(2, (x.value / max) * 100)}%`, background: x === peak ? MKT : theme.border, borderRadius: 2 }} />)}
+                    </div>
+                    <div style={{ fontSize: 10, color: theme.textMuted, marginTop: 4 }}>Daily reach, last 30 days{peak?.value ? ` · best ${fmtWhen(peak.date + 'T12:00:00').replace(/, .*$/, '')} (${peak.value})` : ''}</div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: theme.textMuted }}>
-        {loading ? 'Reading the networks…' : err ? <span style={{ color: '#ef4444' }}>{err}</span> : metrics && metrics.length === 0 && posted.length ? 'Numbers appear a few hours after a post goes out.' : handTotal ? `${handTotal} post${handTotal === 1 ? '' : 's'} went out by hand; those have no numbers here.` : ''}
+        {loading ? 'Reading the networks…' : err ? <span style={{ color: '#ef4444' }}>{err}</span> : metrics && metrics.length === 0 && posted.length ? 'Per-post numbers arrive from the networks over the first days after a post; the network totals above are live.' : handTotal ? `${handTotal} post${handTotal === 1 ? '' : 's'} went out by hand; those have no numbers here.` : ''}
         <button type="button" onClick={load} disabled={loading} style={{ ...ghostBtn(theme), marginLeft: 'auto', minHeight: 34, padding: '6px 10px' }}><RefreshCw size={13} /> Refresh</button>
       </div>
       {rows.length === 0 ? (
