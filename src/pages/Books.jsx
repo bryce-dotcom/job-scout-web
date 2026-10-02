@@ -1546,10 +1546,17 @@ export default function Books() {
       await supabase.from('transaction_job_allocations').delete().eq('transaction_id', txnId).eq('company_id', companyId)
     }
 
-    // Learn rule if category was overridden
+    // Offer this confirmation as evidence toward a merchant rule.
+    //
+    // This used to create a rule from THIS ONE confirmation, silently, and
+    // then write the category onto every unreviewed transaction at that
+    // merchant. One Home Depot receipt marked Transfer relabelled 38
+    // purchases that way. The server now requires several confirmations to
+    // agree before a rule is born, drops a rule this confirmation
+    // contradicts, and says which it did — so say it out loud.
     const txn = plaidTransactions.find(t => t.id === txnId)
     if (category && txn?.merchant_name) {
-      await supabase.functions.invoke('categorize-transactions', {
+      const { data: learned } = await supabase.functions.invoke('categorize-transactions', {
         body: {
           action: 'learn_rule',
           company_id: companyId,
@@ -1558,6 +1565,7 @@ export default function Books() {
           tax_category: taxCategory,
         }
       })
+      if (learned?.message) toast.success(learned.message)
     }
 
     await fetchPlaidTransactions()

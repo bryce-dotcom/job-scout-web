@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAnthropic } from "../_shared/anthropic.ts";
 import { resolveIsTransfer, isTransferCategory } from "../_shared/transferRule.ts";
+import { ruleDecision, RULE_EVIDENCE_THRESHOLD } from "../_shared/categoryRules.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -336,20 +337,36 @@ Return ONLY a JSON array with this structure for each transaction:
         });
       }
 
-      // Check if rule exists
       const { data: existing } = await supabase
         .from('category_rules')
-        .select('id')
+        .select('id, assigned_category')
         .eq('company_id', company_id)
         .ilike('merchant_pattern', pattern)
-        .single();
+        .maybeSingle();
 
-      if (existing) {
-        await supabase.from('category_rules').update({
-          assigned_category: category,
-          assigned_tax_category: tax_category || null,
-        }).eq('id', existing.id);
-      } else {
+      // The evidence: confirmed transactions at this merchant that ALREADY
+      // carry this category. One unusual receipt must not become a standing
+      // rule about every future receipt (_shared/categoryRules).
+      const { count: agreeing } = await supabase
+        .from('plaid_transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', company_id)
+        .ilike('merchant_name', `%${pattern}%`)
+        .eq('confirmed', true)
+        .ilike('user_category', category);
+
+      const decision = ruleDecision({
+        merchantLabel: merchant_name,
+        category,
+        existingCategory: existing?.assigned_category ?? null,
+        agreeingCount: agreeing ?? 0,
+      });
+
+      if (decision.action === 'drop' && existing) {
+        await supabase.from('category_rules').delete().eq('id', existing.id);
+      }
+
+      if (decision.action === 'create') {
         await supabase.from('category_rules').insert({
           company_id,
           merchant_pattern: pattern,
@@ -358,18 +375,26 @@ Return ONLY a JSON array with this structure for each transaction:
           match_type: 'contains',
           priority: 0,
         });
+
+        // Apply it to what is still unreviewed. This bulk write is how one
+        // confirm reached 38 Home Depot rows, so it now happens only when a
+        // rule has actually been earned.
+        await supabase.from('plaid_transactions').update({
+          user_category: category,
+          user_tax_category: tax_category || null,
+        })
+          .eq('company_id', company_id)
+          .ilike('merchant_name', `%${pattern}%`)
+          .eq('confirmed', false);
       }
 
-      // Also update all existing transactions with same merchant
-      await supabase.from('plaid_transactions').update({
-        user_category: category,
-        user_tax_category: tax_category || null,
-      })
-        .eq('company_id', company_id)
-        .ilike('merchant_name', `%${pattern}%`)
-        .eq('confirmed', false);
-
-      return jsonResponse({ success: true });
+      return jsonResponse({
+        success: true,
+        action: decision.action,
+        message: decision.message,
+        reason: decision.reason,
+        evidence: { agreeing: agreeing ?? 0, needed: RULE_EVIDENCE_THRESHOLD },
+      });
     }
 
     // ─── RECONCILE ───
