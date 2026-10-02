@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { totalSeconds, defaultTrim, ASPECTS, MAX_RESULT_SECONDS, normalizeStoryboard } from './videoEdit'
+import { totalSeconds, defaultTrim, ASPECTS, MAX_RESULT_SECONDS, normalizeStoryboard, stretchForVoice } from './videoEdit'
 
 describe('videoEdit planning', () => {
   it('adds up the kept stretches', () => {
@@ -40,5 +40,22 @@ describe('normalizeStoryboard', () => {
     const r = normalizeStoryboard(sb, [], { max: 12 })
     expect(r.scenes.length).toBe(2)
     expect(r.total).toBe(10)
+  })
+})
+
+describe('stretchForVoice', () => {
+  const scenes = [{ kind: 'photo', seconds: 4 }, { kind: 'card', seconds: 3 }]
+  it('leaves the picture alone when the narrator fits', () => {
+    expect(stretchForVoice(scenes, 7, 5)).toEqual({ scenes, total: 7 })
+  })
+  it('holds the last scene until the narrator finishes, plus a beat', () => {
+    const r = stretchForVoice(scenes, 7, 10)
+    expect(r.total).toBe(10.6)
+    expect(r.scenes[1].seconds).toBe(6.6)
+    expect(r.scenes[0]).toBe(scenes[0])
+  })
+  it('never runs past the cap', () => {
+    const r = stretchForVoice(scenes, 7, 200, 90)
+    expect(r.total).toBe(90)
   })
 })
