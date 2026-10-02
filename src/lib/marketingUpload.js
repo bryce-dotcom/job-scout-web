@@ -92,3 +92,34 @@ export function captureThumb(c) {
   if (!c) return null
   return c.media_type === 'video' ? (c.poster_url || (c.frames || [])[0] || null) : (c.url || null)
 }
+
+// A video that went up without a poster (HHH's first phone videos: the
+// iOS extraction failed) gets one made from its public URL on whatever
+// device opens the page next. Three at a time, newest first, so a page
+// open never turns into a batch job.
+export async function backfillVideoPosters(captures, { max = 3 } = {}) {
+  const todo = (captures || []).filter((c) => c?.media_type === 'video' && !c.poster_url && c.url && c.bucket === MEDIA_BUCKET).slice(0, max)
+  let fixed = 0
+  for (const c of todo) {
+    try {
+      const got = await extractVideoFrames(c.url)
+      if (!got.poster && !got.frames.length) continue
+      const stem = c.path.replace(/\.[^.]+$/, '')
+      const put = async (blob, name) => {
+        const p = `${stem}_${name}.jpg`
+        const { error } = await supabase.storage.from(MEDIA_BUCKET).upload(p, blob, { contentType: 'image/jpeg', upsert: true })
+        return error ? null : supabase.storage.from(MEDIA_BUCKET).getPublicUrl(p).data.publicUrl
+      }
+      const poster_url = got.poster ? await put(got.poster, 'poster') : null
+      const frames = []
+      for (const [i, b] of got.frames.entries()) { const u = await put(b, `f${i + 1}`); if (u) frames.push(u) }
+      const patch = { poster_url: poster_url || frames[0] || null, frames }
+      if (got.duration && !c.duration_s) patch.duration_s = got.duration
+      const { error } = await supabase.from('marketing_captures').update(patch).eq('id', c.id)
+      if (!error) fixed++
+    } catch (err) {
+      console.warn('[marketing] poster backfill failed', c.id, err)
+    }
+  }
+  return fixed
+}

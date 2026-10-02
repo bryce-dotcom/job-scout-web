@@ -12,7 +12,7 @@ import {
   brandsFrom, brandKey, brandForUnit, slugify,
   postsByDay, weekOf, weekProgress, monthGrid, postDay, profileLinks,
 } from '../lib/marketing'
-import { uploadCapture, captureThumb } from '../lib/marketingUpload'
+import { uploadCapture, captureThumb, backfillVideoPosters } from '../lib/marketingUpload'
 import ScoutLoader from '../components/ScoutLoader'
 import {
   Megaphone, Inbox, ListChecks, Palette, Link2, Mail, Sparkles, Upload, Camera, Check, X,
@@ -107,6 +107,7 @@ export default function Marketing() {
   // settings are the marketer's; a tech in the field never needs them.
   const [view, setView] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'capture' : 'full'))
   const noteRef = useRef('')
+  const backfillingRef = useRef(false)
   const [company, setCompany] = useState(null)
   const [eos, setEos] = useState({})
   // One company, possibly several brands (HHH: cleaning, lighting, JobScout).
@@ -177,7 +178,13 @@ export default function Marketing() {
     setPosts(p || [])
     setCaptures(c || [])
     setLoading(false)
-  }, [companyId])
+    // Videos that went up without a poster (the phone could not decode
+    // them at upload) get one now, from whatever device this is.
+    if (!backfillingRef.current && all.some((x) => x.media_type === 'video' && !x.poster_url)) {
+      backfillingRef.current = true
+      backfillVideoPosters(all).then((n) => { backfillingRef.current = false; if (n) load() })
+    }
+  }, [companyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load() }, [load])
 
@@ -796,7 +803,7 @@ function InboxTab({ theme, isMobile, captures, uploading, uploadPct = null, invo
                   {c.media_type === 'video'
                     ? (captureThumb(c)
                         ? <div style={{ position: 'relative' }}><img src={captureThumb(c)} alt={c.note || ''} style={{ width: '100%', height: 140, objectFit: 'cover', display: 'block' }} /><div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}><div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={15} /></div></div></div>
-                        : <video src={c.url} style={{ width: '100%', height: 140, objectFit: 'cover', display: 'block' }} muted playsInline />)
+                        : <VideoFrameTile src={c.url} size={140} />)
                     : <img src={c.url} alt={c.note || ''} style={{ width: '100%', height: 140, objectFit: 'cover', display: 'block' }} />}
                 </button>
                 <div style={{ position: 'absolute', top: 6, left: 6, width: 24, height: 24, borderRadius: '50%', background: on ? MKT : 'rgba(0,0,0,0.45)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
@@ -1156,7 +1163,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
               {mediaUrls.map((u, i) => (
                 <div key={u + i} style={{ position: 'relative' }}>
                   {videoCapture && videoCapture.url === u
-                    ? <video src={u} poster={captureThumb(videoCapture) || undefined} controls muted playsInline style={{ width: 168, height: 84, objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.border}`, background: '#000' }} />
+                    ? <video src={`${u}#t=1`} poster={captureThumb(videoCapture) || undefined} preload="metadata" controls muted playsInline style={{ width: 168, height: 84, objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.border}`, background: '#000' }} />
                     : <img src={u} alt="" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.border}` }} />}
                   <button type="button" onClick={() => { const id = captureIds.find((cid) => captureById[cid]?.url === u); if (id) setCaptureIds((xs) => xs.filter((x) => x !== id)); else setExtraMedia((xs) => xs.filter((x) => x !== u)) }}
                     style={{ position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#2c3530', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
@@ -1185,7 +1192,9 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
                           stills (texted in) gets a play glyph, not a broken image. */}
                       {captureThumb(c)
                         ? <img src={captureThumb(c)} alt="" style={{ width: '100%', height: 72, objectFit: 'cover', display: 'block' }} />
-                        : <div style={{ width: '100%', height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb' }}>{c.media_type === 'video' ? <Play size={18} /> : <ImageIcon size={18} />}</div>}
+                        : c.media_type === 'video' && c.url
+                          ? <VideoFrameTile src={c.url} size={72} />
+                          : <div style={{ width: '100%', height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb' }}><ImageIcon size={18} /></div>}
                       {c.media_type === 'video' && <div style={{ position: 'absolute', right: 4, bottom: 4, width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={10} /></div>}
                     </button>
                   )
@@ -1749,7 +1758,7 @@ function LibraryTab({ theme, isMobile, companyId, brands, brand, employees, isMa
                   <div style={{ padding: 10, fontSize: 12, color: theme.text, lineHeight: 1.4, minHeight: 120, maxHeight: 150, overflow: 'hidden', whiteSpace: 'pre-wrap' }}>{it.title}</div>
                 ) : (
                   <button type="button" onClick={() => toggle(it)} style={{ display: 'block', width: '100%', padding: 0, border: 'none', background: '#111', cursor: 'pointer', position: 'relative' }}>
-                    {it.thumb ? <img src={it.thumb} alt="" style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} /> : <div style={{ height: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888' }}>{it.kind === 'video' ? <Play size={20} /> : <ImageIcon size={20} />}</div>}
+                    {it.thumb ? <img src={it.thumb} alt="" style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} /> : it.kind === 'video' && it.url ? <VideoFrameTile src={it.url} size={130} /> : <div style={{ height: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888' }}><ImageIcon size={20} /></div>}
                     {it.kind === 'video' && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}><div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={14} /></div></div>}
                     {on && <div style={{ position: 'absolute', top: 6, left: 6, width: 22, height: 22, borderRadius: '50%', background: MKT, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Check size={13} /></div>}
                     {it.used && <div style={{ position: 'absolute', top: 6, right: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: 'rgba(34,197,94,0.85)', borderRadius: 999, padding: '2px 6px' }}>used</div>}
@@ -1921,6 +1930,11 @@ function HandPostSheet({ theme, isMobile, post, onClose, onMarked }) {
       </div>
     </div>
   )
+}
+
+// A tile for a video that has no poster (yet): the browser's own frame.
+function VideoFrameTile({ src, size = 72, style = {} }) {
+  return <video src={src ? `${src}#t=1` : undefined} preload="metadata" muted playsInline style={{ width: '100%', height: size, objectFit: 'cover', display: 'block', background: '#111', ...style }} />
 }
 
 // ── Bits ─────────────────────────────────────────────────────────────
