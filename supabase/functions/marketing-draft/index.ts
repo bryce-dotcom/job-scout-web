@@ -32,6 +32,81 @@ serve(async (req) => {
     const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
     const body = await req.json().catch(() => ({}))
 
+    // ── storyboard: a short vertical ad from photos, clips and a line ─
+    // The pattern Bryce showed (an Instagram lighting ad): the same room
+    // dark then lit with a bold headline over it, a brand card, a call to
+    // action. The AI plans scenes; the browser renders them (videoEdit.js).
+    if (body.mode === 'storyboard') {
+      const ids: number[] = Array.isArray(body.capture_ids) ? body.capture_ids.map(Number).filter(Boolean).slice(0, 10) : []
+      const description = String(body.description || body.caption || '').slice(0, 1500)
+      if (!ids.length && !description.trim()) return json({ ok: false, error: 'Give it photos, clips, or a line about what to say.' }, 400)
+      const brandId = body.brand ? String(body.brand) : ''
+      const [{ data: caps }, { data: settingRows }, { data: co }] = await Promise.all([
+        ids.length ? sb.from('marketing_captures').select('id, url, frames, poster_url, duration_s, note, media_type').eq('company_id', caller.companyId).in('id', ids) : Promise.resolve({ data: [] as any[] }),
+        sb.from('settings').select('key, value').eq('company_id', caller.companyId).in('key', ['marketing_brand_kit', brandId ? `marketing_brand_kit:${brandId}` : 'marketing_brand_kit', 'marketing_brands']),
+        sb.from('companies').select('company_name, phone, website').eq('id', caller.companyId).maybeSingle(),
+      ])
+      const parse = (k: string) => { try { return JSON.parse((settingRows || []).find((r: any) => r.key === k)?.value || 'null') } catch { return null } }
+      const kit = parse(brandId ? `marketing_brand_kit:${brandId}` : 'marketing_brand_kit') || parse('marketing_brand_kit') || {}
+      const brands = parse('marketing_brands') || []
+      const brand = (Array.isArray(brands) ? brands : []).find((b: any) => b.id === brandId) || null
+      const name = kit.company_name || brand?.name || co?.company_name || 'our company'
+      const maxTotal = Math.min(60, Math.max(10, Number(body.max_seconds) || 30))
+
+      const content: any[] = []
+      for (const c of caps || []) {
+        if (c.media_type === 'video') {
+          const frames: string[] = Array.isArray(c.frames) ? c.frames.filter(Boolean).slice(0, 3) : []
+          content.push({ type: 'text', text: `CLIP #${c.id}${c.duration_s ? ` (${Math.round(Number(c.duration_s))}s)` : ''}${c.note ? `, note: "${c.note}"` : ''}. ${frames.length ? 'Stills follow.' : 'No stills.'}` })
+          for (const u of frames) content.push({ type: 'image', source: { type: 'url', url: u } })
+        } else if (c.url) {
+          content.push({ type: 'text', text: `PHOTO #${c.id}${c.note ? `, note: "${c.note}"` : ''}:` })
+          content.push({ type: 'image', source: { type: 'url', url: c.url } })
+        }
+      }
+      content.push({ type: 'text', text: [
+        description ? `What to say: "${description}"` : 'No description; say what the photos show.',
+        `Brand: ${name}.${kit.tagline ? ` Tagline: ${kit.tagline}.` : ''}${kit.cta ? ` Call to action: ${kit.cta}.` : ''}${kit.voice ? ` Voice: ${kit.voice}` : ''}`,
+        `Plan a vertical social video under ${maxTotal} seconds. Scene kinds: "compare" (a BEFORE photo and an AFTER photo of the same place; the after is revealed over the before — use it whenever two photos show the same spot in two states), "photo" (one photo with slow motion), "clip" (a stretch of a video, start/end in seconds), "card" (text only on the brand colour: a punchy headline, optional sub line). Headlines are short and bold, under 8 words, the kind that stop a thumb ("Hard evidence that lighting is everything"). Open with the strongest visual and a headline; end with a card carrying the call to action. Use every strong photo once; leave out weak or repeated ones. 2 to 4 seconds per photo, 4 to 6 for a compare, 2 to 3 for a card.`,
+        'Return strict JSON: {"headline": string, "scenes": [{"kind":"compare","before":id,"after":id,"text":string,"seconds":n} | {"kind":"photo","capture":id,"text":string|null,"motion":"zoom_in"|"zoom_out"|"pan_left"|"pan_right","seconds":n} | {"kind":"clip","capture":id,"start":n,"end":n,"text":string|null,"seconds":n} | {"kind":"card","text":string,"sub":string|null,"seconds":n}], "cta": {"text": string, "sub": string|null}, "why": "one sentence for the marketer"}',
+      ].join('\n\n') })
+      const ai = await callAnthropic({ feature: 'marketing-storyboard', companyId: caller.companyId, req }, {
+        model: 'claude-sonnet-4-6', max_tokens: 1200,
+        system: 'You are a sharp social video director for a small field-services company. You plan short vertical ads from what you are given; you never invent what a photo shows and you never invent prices or results.',
+        messages: [{ role: 'user', content }],
+      })
+      if (!ai.ok) return json({ ok: false, error: ai.friendly, ai_unavailable: ai.unavailable === true }, 502)
+      const text = (ai.data?.content || []).map((c: any) => c.text || '').join('')
+      let sbd: any = null
+      try { const m = text.match(/\{[\s\S]*\}/); sbd = m ? JSON.parse(m[0]) : null } catch { sbd = null }
+      if (!sbd || !Array.isArray(sbd.scenes)) return json({ ok: false, error: 'The director did not return a usable storyboard. Try again.' }, 502)
+      const byId = Object.fromEntries((caps || []).map((c: any) => [c.id, c]))
+      const scenes: any[] = []
+      let total = 0
+      for (const sc of sbd.scenes) {
+        const secs = Math.max(1.5, Math.min(8, Number(sc.seconds) || 3))
+        if (total + secs > maxTotal) break
+        if (sc.kind === 'compare' && byId[sc.before] && byId[sc.after] && byId[sc.before].media_type !== 'video' && byId[sc.after].media_type !== 'video') {
+          scenes.push({ kind: 'compare', before: Number(sc.before), after: Number(sc.after), text: String(sc.text || '').slice(0, 80), seconds: Math.max(4, secs) })
+        } else if (sc.kind === 'photo' && byId[sc.capture] && byId[sc.capture].media_type !== 'video') {
+          scenes.push({ kind: 'photo', capture: Number(sc.capture), text: sc.text ? String(sc.text).slice(0, 80) : null, motion: ['zoom_in', 'zoom_out', 'pan_left', 'pan_right'].includes(sc.motion) ? sc.motion : 'zoom_in', seconds: secs })
+        } else if (sc.kind === 'clip' && byId[sc.capture]?.media_type === 'video') {
+          const d = Number(byId[sc.capture].duration_s) || 0
+          let start = Math.max(0, Number(sc.start) || 0), end = Number(sc.end)
+          if (!isFinite(end) || end <= start) end = start + secs
+          if (d) end = Math.min(end, d)
+          if (end - start < 1) continue
+          scenes.push({ kind: 'clip', capture: Number(sc.capture), start: +start.toFixed(1), end: +end.toFixed(1), text: sc.text ? String(sc.text).slice(0, 80) : null, seconds: +(end - start).toFixed(1) })
+        } else if (sc.kind === 'card' && sc.text) {
+          scenes.push({ kind: 'card', text: String(sc.text).slice(0, 90), sub: sc.sub ? String(sc.sub).slice(0, 90) : null, seconds: secs })
+        } else continue
+        total += scenes[scenes.length - 1].seconds
+      }
+      if (!scenes.length) return json({ ok: false, error: 'Nothing usable in that storyboard. Add a photo or two, or describe it differently.' }, 502)
+      const cta = { text: String(sbd.cta?.text || kit.cta || `Call ${co?.phone || ''}`.trim()).slice(0, 60), sub: sbd.cta?.sub ? String(sbd.cta.sub).slice(0, 80) : (kit.website || co?.website || co?.phone || null) }
+      return json({ ok: true, headline: String(sbd.headline || '').slice(0, 80), scenes, cta, why: String(sbd.why || ''), total: +total.toFixed(1), brand: { name, logo_url: kit.logo_url || brand?.logo_url || null, color: kit.primary_color || null } })
+    }
+
     // ── plan_cut: which clips, in what order, how much of each ───────
     // The editor cuts; this says what to cut. Reads each clip's stills and
     // length plus the caption or note, and returns an order, a stretch to

@@ -14,12 +14,12 @@ import {
 } from '../lib/marketing'
 import { uploadCapture, captureThumb, backfillVideoPosters } from '../lib/marketingUpload'
 import ScoutLoader from '../components/ScoutLoader'
-import { renderEdit, totalSeconds, defaultTrim, canEditVideo, ASPECTS, MAX_RESULT_SECONDS } from '../lib/videoEdit'
+import { renderEdit, renderStoryboard, normalizeStoryboard, totalSeconds, defaultTrim, canEditVideo, ASPECTS, MAX_RESULT_SECONDS } from '../lib/videoEdit'
 import {
   Megaphone, Inbox, ListChecks, Palette, Link2, Mail, Sparkles, Upload, Camera, Check, X,
   Send, Clock, ExternalLink, RefreshCw, ChevronRight, CircleCheck, Circle, Trash2, Pencil,
   Image as ImageIcon, AlertTriangle, Archive, CalendarClock, Hand, Copy, Download,
-  Play, CalendarDays, BarChart3, Globe, ChevronLeft, FolderOpen, Search, Film, FileText, RotateCcw, Scissors, ArrowUp, ArrowDown,
+  Play, CalendarDays, BarChart3, Globe, ChevronLeft, FolderOpen, Search, Film, FileText, RotateCcw, Scissors, ArrowUp, ArrowDown, Clapperboard,
 } from 'lucide-react'
 
 // Marketing — step 1 of the Sales Flow. Everything a company does to be found
@@ -509,7 +509,7 @@ export default function Marketing() {
           theme={theme} isMobile={isMobile} companyId={companyId} currentEmployee={currentEmployee} isManager={isManager}
           initialPost={composer.post || null} initialCaptureIds={composer.captureIds || []} initialScheduledFor={composer.scheduledFor || null}
           initialCaption={composer.caption || ''} initialHashtags={composer.hashtags || []}
-          captures={captures} captureMap={captureMap} linkedPlatforms={linkedPlatforms} invoke={invoke} brands={brands} brand={brandId} pubsByBrand={pubsByBrand}
+          captures={captures} captureMap={captureMap} linkedPlatforms={linkedPlatforms} invoke={invoke} brands={brands} brand={brandId} pubsByBrand={pubsByBrand} kitsByBrand={kitsByBrand} company={company}
           onClose={() => setComposer(null)} onSaved={() => { setComposer(null); load() }}
           onPublish={publishPost}
         />
@@ -1036,13 +1036,18 @@ function ChannelsTab({ theme, isMobile, publisher, brand = '', brandName, isMana
 }
 
 // ── Composer ─────────────────────────────────────────────────────────
-function Composer({ theme, isMobile, companyId, currentEmployee, isManager, initialPost, initialCaptureIds, initialScheduledFor = null, initialCaption = '', initialHashtags = [], captures, captureMap = {}, linkedPlatforms: linkedDefault, invoke, brands = [], brand: brandDefault = '', pubsByBrand = {}, onClose, onSaved, onPublish }) {
+function Composer({ theme, isMobile, companyId, currentEmployee, isManager, initialPost, initialCaptureIds, initialScheduledFor = null, initialCaption = '', initialHashtags = [], captures, captureMap = {}, linkedPlatforms: linkedDefault, invoke, brands = [], brand: brandDefault = '', pubsByBrand = {}, kitsByBrand = {}, company = null, onClose, onSaved, onPublish }) {
   const [captureIds, setCaptureIds] = useState(initialCaptureIds)
   // Which brand this post speaks for. The post's own, else the photo's, else
   // the brand selected on the page. Accounts follow the brand.
   const multi = brands.length > 1
   const [postBrand, setPostBrand] = useState(() => initialPost?.brand ?? (initialCaptureIds.map((id) => captureMap[id]?.brand).find((b) => b != null) ?? brandDefault ?? ''))
   const linkedPlatforms = useMemo(() => (multi ? new Set((pubsByBrand[postBrand]?.accounts || []).map((a) => a.platform)) : linkedDefault), [multi, pubsByBrand, postBrand, linkedDefault])
+  const brandInfo = useMemo(() => {
+    const b = brands.find((x) => x.id === (postBrand || '')) || brands[0] || {}
+    const kit = kitsByBrand[postBrand || ''] || {}
+    return { name: kit.company_name || b.name || company?.company_name || '', logo_url: kit.logo_url || b.logo_url || company?.logo_url || null, color: kit.primary_color || company?.primary_color || '#5a6349' }
+  }, [brands, postBrand, kitsByBrand, company])
   const [note, setNote] = useState('')
   // Where it goes: whatever the brand has connected that takes this kind of
   // post. Until the person hand-picks, the list follows the brand — switching
@@ -1065,6 +1070,14 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
   const [aiPick, setAiPick] = useState(null)   // the drafter's choice, shown as a hint
   const [splitting, setSplitting] = useState(false)
   const [editing, setEditing] = useState(false)        // the clip editor is open
+  const [directing, setDirecting] = useState(false)    // the AI video maker is open
+  const onDirected = (row) => {
+    // The made video stands in for whatever was selected.
+    setShot((xs) => [...xs, row])
+    setCaptureIds([row.id])
+    setPrimaryId(row.id)
+    setDirecting(false)
+  }
   // The editor's result replaces the post's videos with the one it made.
   const onEdited = (row) => {
     const keep = captureIds.filter((id) => captureById[id]?.media_type !== 'video')
@@ -1197,6 +1210,11 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
         <VideoEditor theme={theme} isMobile={isMobile} clips={videoCaptures} caption={caption} note={note} companyId={companyId} employeeId={currentEmployee?.id || null}
           brand={multi ? postBrand || null : null} jobId={initialPost?.job_id || null} invoke={invoke} onClose={() => setEditing(false)} onDone={onEdited} />
       )}
+      {directing && (
+        <StoryboardMaker theme={theme} isMobile={isMobile} captures={captureIds.map((id) => captureById[id]).filter(Boolean)} caption={caption} note={note}
+          companyId={companyId} employeeId={currentEmployee?.id || null} brand={multi ? postBrand || null : null} brandInfo={brandInfo} jobId={initialPost?.job_id || null}
+          invoke={invoke} onClose={() => setDirecting(false)} onDone={onDirected} />
+      )}
       <div onClick={(e) => e.stopPropagation()} style={{ background: theme.bgCard, width: isMobile ? '100%' : 720, maxHeight: isMobile ? '100%' : '92vh', overflowY: 'auto', borderRadius: isMobile ? 0 : 14, display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.border}`, position: 'sticky', top: 0, background: theme.bgCard, zIndex: 1 }}>
           <Sparkles size={18} color={MKT} />
@@ -1236,6 +1254,11 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
               <button type="button" onClick={() => setShowPicker((v) => !v)} style={{ width: 84, height: 84, borderRadius: 8, border: `1px dashed ${theme.border}`, background: theme.bg, color: theme.textMuted, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11 }}>
                 <ImageIcon size={18} /> From inbox
               </button>
+              {canEditVideo() && (
+                <button type="button" onClick={() => setDirecting(true)} title="The AI plans a short vertical video from these photos, clips and your note, and the app makes it" style={{ width: 84, height: 84, borderRadius: 8, border: `1px solid ${theme.border}`, background: '#2c3530', color: '#fff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
+                  <Clapperboard size={18} /> AI video
+                </button>
+              )}
               <input ref={camPhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onShot} />
               <input ref={camVideoRef} type="file" accept="video/*" capture="environment" style={{ display: 'none' }} onChange={onShot} />
             </div>
@@ -2038,6 +2061,145 @@ function VideoEditor({ theme, isMobile, clips, caption, note, companyId, employe
           <span style={{ fontSize: 12, color: over ? '#ef4444' : theme.textMuted, flex: 1 }}>{over ? `Trim ${Math.ceil(total - MAX_RESULT_SECONDS)}s to fit.` : 'Renders in real time, then goes on the post in place of the clips.'}</span>
           <button type="button" onClick={onClose} style={ghostBtn(theme)}>Cancel</button>
           <button type="button" onClick={make} disabled={over || !items.length || !!rendering} style={{ ...primaryBtn(MKT), opacity: over || !items.length ? 0.5 : 1 }}><Scissors size={15} /> Make the video</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── AI video maker ───────────────────────────────────────────────────
+// The pattern Bryce showed from an Instagram lighting ad: the same room
+// dark then lit with a bold headline over it, a brand card, a call to
+// action. The AI writes the storyboard from the selected photos, clips and
+// a line; each scene is editable; the browser renders it with the brand's
+// name, logo and colour; the result goes on the post.
+function StoryboardMaker({ theme, isMobile, captures, caption, note, companyId, employeeId, brand, brandInfo, jobId, invoke, onClose, onDone }) {
+  const [description, setDescription] = useState(caption || note || '')
+  const [sb, setSb] = useState(null)              // { headline, scenes, cta, why }
+  const [planning, setPlanning] = useState(false)
+  const [aspect, setAspect] = useState('vertical')
+  const [rendering, setRendering] = useState(null)
+  const abortRef = useRef(null)
+  const byId = useMemo(() => Object.fromEntries(captures.map((c) => [c.id, c])), [captures])
+  const norm = sb ? normalizeStoryboard(sb, captures) : null
+  const fmt = (n) => `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, '0')}`
+
+  const plan = async () => {
+    setPlanning(true)
+    const r = await invoke('marketing-draft', { mode: 'storyboard', capture_ids: captures.map((c) => c.id), description, brand: brand || '', max_seconds: 30 })
+    setPlanning(false)
+    if (!r.ok) { toast.error(r.error || 'Could not plan the video'); return }
+    setSb(r)
+  }
+  const setScene = (i, patch) => setSb((x) => ({ ...x, scenes: x.scenes.map((sc, j) => (j === i ? { ...sc, ...patch } : sc)) }))
+  const move = (i, d) => setSb((x) => { const y = [...x.scenes]; const j = i + d; if (j < 0 || j >= y.length) return x; [y[i], y[j]] = [y[j], y[i]]; return { ...x, scenes: y } })
+  const drop = (i) => setSb((x) => ({ ...x, scenes: x.scenes.filter((_, j) => j !== i) }))
+
+  const make = async () => {
+    const ac = new AbortController(); abortRef.current = ac
+    setRendering({ pct: 0, seconds: 0 })
+    try {
+      const out = await renderStoryboard({ storyboard: sb, captures, brand: { ...brandInfo, ...(sb.brand || {}) , logo_url: sb.brand?.logo_url || brandInfo.logo_url, color: sb.brand?.color || brandInfo.color }, aspect, onProgress: (pct, seconds) => setRendering({ pct: Math.round(pct * 100), seconds }), signal: ac.signal })
+      setRendering({ pct: 100, seconds: out.duration, uploading: true })
+      const row = await uploadCapture({ companyId, employeeId, jobId, file: out.file, note: `AI video: ${sb.headline || description.slice(0, 60)}`, source: 'generated', brand })
+      toast.success(`Made a ${Math.round(out.duration)}s video.`)
+      onDone(row)
+    } catch (err) {
+      if (!/Cancelled/.test(String(err?.message))) toast.error(err?.message || 'Could not make the video')
+      setRendering(null)
+    }
+  }
+
+  const thumbFor = (id) => captureThumb(byId[id])
+  const kindLabel = { compare: 'Before → after', photo: 'Photo', clip: 'Clip', card: 'Text card' }
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'center' }} onClick={() => !rendering && onClose()}>
+      {rendering && <ScoutLoader overlay theme={theme} label={rendering.uploading ? 'Sending the video…' : `Making it · ${fmt(rendering.seconds)} of ${fmt(norm?.total || 0)}`} pct={rendering.uploading ? null : rendering.pct} sub={rendering.uploading ? null : 'It plays through once while it records. Keep this screen open.'} />}
+      <div onClick={(e) => e.stopPropagation()} style={{ background: theme.bgCard, width: isMobile ? '100%' : 700, maxHeight: isMobile ? '100%' : '92vh', overflowY: 'auto', borderRadius: isMobile ? 0 : 14, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.border}`, position: 'sticky', top: 0, background: theme.bgCard, zIndex: 1 }}>
+          <Clapperboard size={18} color={MKT} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>Make a video with AI</div>
+            <div style={{ fontSize: 12, color: theme.textMuted }}>{captures.length ? `From ${captures.length} photo${captures.length === 1 ? '' : 's'}/clip${captures.length === 1 ? '' : 's'} and your line.` : 'From your line alone: bold text cards in the brand colour.'}</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ ...ghostBtn(theme), padding: 8 }}><X size={18} /></button>
+        </div>
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <div style={sectionLabel(theme)}>What should it say?</div>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Hard evidence that lighting is everything. Same warehouse, before and after our LED retrofit." style={{ ...inputStyle(theme), minHeight: 72, resize: 'vertical', fontFamily: 'inherit' }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" onClick={plan} disabled={planning || (!description.trim() && !captures.length)} style={primaryBtn(MKT)}><Sparkles size={15} /> {planning ? 'Directing…' : sb ? 'Plan it again' : 'Plan the video'}</button>
+              <span style={{ fontSize: 12, color: theme.textMuted }}>Two photos of the same spot become a before-and-after reveal.</span>
+            </div>
+          </div>
+          {planning && <ScoutLoader theme={theme} label="Looking at the photos…" size={44} />}
+
+          {sb && norm && (
+            <>
+              {sb.why && <div style={{ fontSize: 12, color: theme.textSecondary, background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 8, padding: '8px 10px' }}><Sparkles size={12} /> {sb.why}</div>}
+              <div>
+                <div style={sectionLabel(theme)}>Frame</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {Object.entries(ASPECTS).map(([id, a]) => <button key={id} type="button" onClick={() => setAspect(id)} style={chip(theme, aspect === id)}>{a.label}</button>)}
+                </div>
+              </div>
+              <div>
+                <div style={sectionLabel(theme)}>Scenes · {fmt(norm.total)}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {sb.scenes.map((sc, i) => (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: isMobile ? '64px minmax(0,1fr)' : '96px minmax(0,1fr) auto', gap: 10, alignItems: 'start', padding: 10, borderRadius: 10, background: theme.bg, border: `1px solid ${theme.border}` }}>
+                      <div style={{ position: 'relative' }}>
+                        {sc.kind === 'card'
+                          ? <div style={{ width: '100%', height: isMobile ? 64 : 72, borderRadius: 8, background: sb.brand?.color || brandInfo.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, padding: 4, textAlign: 'center', overflow: 'hidden' }}>{sc.text?.slice(0, 40)}</div>
+                          : sc.kind === 'compare'
+                            ? <div style={{ display: 'flex', width: '100%', height: isMobile ? 64 : 72, borderRadius: 8, overflow: 'hidden' }}>{[sc.before, sc.after].map((id) => thumbFor(id) ? <img key={id} src={thumbFor(id)} alt="" style={{ width: '50%', height: '100%', objectFit: 'cover' }} /> : <div key={id} style={{ width: '50%', background: '#111' }} />)}</div>
+                            : thumbFor(sc.capture) ? <img src={thumbFor(sc.capture)} alt="" style={{ width: '100%', height: isMobile ? 64 : 72, objectFit: 'cover', borderRadius: 8, display: 'block' }} /> : <div style={{ width: '100%', height: isMobile ? 64 : 72, borderRadius: 8, background: '#111' }} />}
+                        <div style={{ position: 'absolute', top: 4, left: 4, fontSize: 10, fontWeight: 700, color: '#fff', background: 'rgba(0,0,0,0.6)', borderRadius: 999, padding: '2px 6px' }}>{i + 1}</div>
+                      </div>
+                      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ fontSize: 11, color: theme.textMuted, display: 'flex', justifyContent: 'space-between', gap: 8 }}><span>{kindLabel[sc.kind]}{sc.kind === 'clip' ? ` ${fmt(sc.start)}–${fmt(sc.end)}` : ''}</span><span>{sc.seconds}s</span></div>
+                        <input value={sc.text || ''} onChange={(e) => setScene(i, { text: e.target.value })} placeholder={sc.kind === 'card' ? 'Headline' : 'Headline over the picture (optional)'} style={{ ...inputStyle(theme), minHeight: 36, padding: '6px 10px', fontSize: 13 }} />
+                        {sc.kind === 'card' && <input value={sc.sub || ''} onChange={(e) => setScene(i, { sub: e.target.value })} placeholder="Second line (optional)" style={{ ...inputStyle(theme), minHeight: 32, padding: '4px 10px', fontSize: 12 }} />}
+                        {sc.kind !== 'clip' && (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: theme.textMuted }}>Seconds
+                            <input type="range" min={1.5} max={8} step={0.5} value={sc.seconds} onChange={(e) => setScene(i, { seconds: Number(e.target.value) })} style={{ flex: 1 }} />
+                          </label>
+                        )}
+                        {isMobile && (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button type="button" onClick={() => move(i, -1)} disabled={i === 0} style={{ ...ghostBtn(theme), padding: 6, minHeight: 30 }}><ArrowUp size={14} /></button>
+                            <button type="button" onClick={() => move(i, 1)} disabled={i === sb.scenes.length - 1} style={{ ...ghostBtn(theme), padding: 6, minHeight: 30 }}><ArrowDown size={14} /></button>
+                            <button type="button" onClick={() => drop(i)} style={{ ...ghostBtn(theme), padding: 6, minHeight: 30, marginLeft: 'auto' }}><X size={14} /></button>
+                          </div>
+                        )}
+                      </div>
+                      {!isMobile && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <button type="button" onClick={() => move(i, -1)} disabled={i === 0} style={{ ...ghostBtn(theme), padding: 6, minHeight: 30 }}><ArrowUp size={14} /></button>
+                          <button type="button" onClick={() => move(i, 1)} disabled={i === sb.scenes.length - 1} style={{ ...ghostBtn(theme), padding: 6, minHeight: 30 }}><ArrowDown size={14} /></button>
+                          <button type="button" onClick={() => drop(i)} title="Leave this scene out" style={{ ...ghostBtn(theme), padding: 6, minHeight: 30 }}><X size={14} /></button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '64px minmax(0,1fr)' : '96px minmax(0,1fr)', gap: 10, alignItems: 'center', padding: 10, borderRadius: 10, background: theme.bg, border: `1px dashed ${theme.border}` }}>
+                    <div style={{ width: '100%', height: isMobile ? 64 : 72, borderRadius: 8, background: sb.brand?.color || brandInfo.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, padding: 4, textAlign: 'center' }}>{sb.cta?.text?.slice(0, 40)}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ fontSize: 11, color: theme.textMuted }}>Closing card · 3s · {brandInfo.name}</div>
+                      <input value={sb.cta?.text || ''} onChange={(e) => setSb((x) => ({ ...x, cta: { ...(x.cta || {}), text: e.target.value } }))} placeholder="Call to action" style={{ ...inputStyle(theme), minHeight: 36, padding: '6px 10px', fontSize: 13 }} />
+                      <input value={sb.cta?.sub || ''} onChange={(e) => setSb((x) => ({ ...x, cta: { ...(x.cta || {}), sub: e.target.value } }))} placeholder="Phone or website" style={{ ...inputStyle(theme), minHeight: 32, padding: '4px 10px', fontSize: 12 }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${theme.border}`, position: 'sticky', bottom: 0, background: theme.bgCard, alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: theme.textMuted, flex: 1 }}>{sb ? 'Renders in real time, then goes on the post.' : 'Plan first; every scene can be edited before it is made.'}</span>
+          <button type="button" onClick={onClose} style={ghostBtn(theme)}>Cancel</button>
+          <button type="button" onClick={make} disabled={!sb || !norm?.scenes.length || !!rendering} style={{ ...primaryBtn(MKT), opacity: sb && norm?.scenes.length ? 1 : 0.5 }}><Clapperboard size={15} /> Make the video</button>
         </div>
       </div>
     </div>
