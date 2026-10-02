@@ -34,6 +34,7 @@ import MyVehicleCard from '../components/MyVehicleCard'
 import { getCurrentPayPeriod, calculateEfficiencyBonus, timeClockToJobHours, bonusRowAmount } from '../lib/bonusCalc'
 import { computeAllottedHours } from '../lib/allottedHours'
 import { verificationRequiredFor, anyUnitRequiresVerification, exemptUnitsFromPayrollConfig } from '../lib/verificationPolicy'
+import { getDeliveredStatusIds } from '../lib/jobMetrics'
 import { wrongJobCorrection, correctionChoices, CORRECTION_NONE, CORRECTION_SWITCH } from '../lib/clockCorrection'
 import { splitOpenPunches, shouldQueueClockOut } from '../lib/openShifts'
 
@@ -219,6 +220,15 @@ export default function FieldScout() {
     if (!raw) return []
     try { return (typeof raw === 'string' ? JSON.parse(raw) : raw) || [] } catch { return [] }
   }, [settings])
+  // Which statuses mean the work is finished, from the company's own pipeline
+  // config — a bonus on a job still open is computed from hours that have not
+  // all happened yet. A plain function, read at bonus-calc time.
+  const resolveDeliveredStatusIds = () => {
+    const raw = (settings || []).find((s) => s.key === 'job_statuses')?.value
+    let parsed = null
+    try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw } catch { parsed = null }
+    return getDeliveredStatusIds(Array.isArray(parsed) ? parsed : null)
+  }
   // Does the job clocked into still need a passing verification?
   const jobRequiresVerification = (jobId) => {
     if (!jobId) return true
@@ -557,6 +567,29 @@ export default function FieldScout() {
         .not('clock_out', 'is', null)
       const allLogs = timeClockToJobHours(allClockRows || [])
 
+      // 4b. Days anyone on these jobs clocked time with NO job on it. Those
+      //     hours never reached a job, so the job reads cheaper than it was
+      //     worked and the gap shows up as "saved" — the bonus is held for
+      //     review until someone says where the time went.
+      const crewIds = [...new Set((allClockRows || []).map(r => r.employee_id).filter(Boolean))]
+      const { data: looseRows } = crewIds.length
+        ? await supabase
+          .from('time_clock')
+          .select('employee_id, clock_in, total_hours')
+          .eq('company_id', companyId)
+          .in('employee_id', crewIds)
+          .is('job_id', null)
+          .not('clock_out', 'is', null)
+          .gte('clock_in', periodStart.toISOString())
+        : { data: [] }
+      const unassignedHoursByCrewDay = new Map()
+      for (const r of looseRows || []) {
+        const hours = parseFloat(r.total_hours) || 0
+        if (!r.employee_id || !r.clock_in || hours <= 0) continue
+        const k = `${r.employee_id}|${new Date(r.clock_in).toISOString().split('T')[0]}`
+        unassignedHoursByCrewDay.set(k, (unassignedHoursByCrewDay.get(k) || 0) + hours)
+      }
+
       // 5. Load the jobs themselves (allotted_time_hours for the hours card).
       // NB: there is no jobs.has_callback column — selecting it 400'd this whole
       // query, so it returned nothing. Removed. (The bonus "callback" quality
@@ -569,7 +602,10 @@ export default function FieldScout() {
         // looked unclassified, which the policy keeps gated — so an HHH
         // Building Services tech, told at clock-out that his unit needs no
         // photos, opened this card and saw his bonus "Waiting on verification".
-        .select('id, job_id, job_title, customer_name, allotted_time_hours, business_unit')
+        // status + job_total: the same two backstops Payroll applies — a job
+        // that is not finished yet, and the %-of-price ceiling — so the card
+        // shows the tech the number the office will actually pay.
+        .select('id, job_id, job_title, customer_name, allotted_time_hours, business_unit, status, job_total')
         .in('id', myJobIds)
 
       // 5b. Victor verification gates: load completion + daily reports for these jobs.
@@ -610,6 +646,10 @@ export default function FieldScout() {
         // than the memo above, which the store may not have filled yet when
         // the card first runs (and which is not in this callback's deps).
         verificationExemptUnits: exemptUnitsFromPayrollConfig(payrollConfig),
+        // The hours backstops, same as Payroll: a job still open has hours to
+        // come, and General time on a job day means the job's hours are short.
+        deliveredStatusIds: resolveDeliveredStatusIds(),
+        unassignedHoursByCrewDay,
       })
 
       // The headline is what the LEDGER records, not what the daily-coverage
@@ -3186,12 +3226,17 @@ export default function FieldScout() {
                       Allotted {d.allottedHours}h · Actual {(Number(d.actualHours) || 0).toFixed(1)}h · Saved {(Number(d.savedHours) || 0).toFixed(1)}h
                       {d.crewSize > 1 && ` · Split ${d.crewSize} ways`}
                     </div>
-                    {/* A held bonus is real money waiting on a photo, not a
+                    {/* A held bonus is real money waiting on something, not a
                         zero. Saying nothing here is how a tech concludes the
-                        bonus was taken away. */}
+                        bonus was taken away — and saying the wrong thing is
+                        how he goes looking for a photo to take when what the
+                        money is actually waiting on is the job finishing. */}
                     {bonusRowAmount(d).held && bonusRowAmount(d).amount > 0 && (
                       <div style={{ fontSize: '11px', color: '#d4940a', marginTop: '3px', fontWeight: '600' }}>
-                        Waiting on verification
+                        {d.blockedReason === 'job_not_finished' ? 'Waiting on the job finishing'
+                          : d.blockedReason === 'unassigned_crew_hours' ? `Waiting on ${Number(d.unassignedHours || 0).toFixed(1)}h of crew time that is not on this job`
+                            : d.blockedReason === 'allotted_over_actual' ? 'Held for the office — allotted hours far over hours worked'
+                              : 'Waiting on verification'}
                       </div>
                     )}
                   </div>

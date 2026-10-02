@@ -352,6 +352,8 @@ export function computeJobBonusRows({
   jobPaymentStatus = null,
   bonusOverrides = [],
   verificationExemptUnits = null,
+  deliveredStatusIds = null,
+  unassignedHoursByCrewDay = null,
 }) {
   if (!job?.id) return []
   // Only this job's time, normalized the same way every other surface does.
@@ -375,6 +377,8 @@ export function computeJobBonusRows({
       jobPaymentStatus,
       bonusOverrides,
       verificationExemptUnits,
+      deliveredStatusIds,
+      unassignedHoursByCrewDay,
     })
     // calculateEfficiencyBonus returns one detail per job; we scoped to one.
     const d = details[0]
@@ -504,6 +508,13 @@ export function getCurrentPayPeriod(payrollConfig = {}, offset = 0) {
 }
 
 // Skill weight lookup — defaults to 1 so unlabeled crews still get a share.
+// Loose time on a crew member's job-day, as a share of the hours recorded on
+// the job, at which the bonus is held for somebody to look at. A quarter of
+// the job's time unaccounted for is the line: below it is ordinary shop and
+// drive time (HHH's median job-day is 5%), above it the job is being credited
+// with hours that went somewhere else.
+export const UNASSIGNED_HOURS_FLAG_RATIO = 0.25
+
 function getSkillWeight(empId, employees, skillLevels) {
   const emp = employees.find(e => e.id === empId)
   if (!emp?.skill_level) return 1
@@ -581,6 +592,32 @@ export function calculateEfficiencyBonus({
   // is NOT flagged for review, because no one was ever going to verify it.
   // Defaults to nothing exempt, so untouched callers behave exactly as before.
   verificationExemptUnits = null,
+  // ── Backstops against a bonus computed from hours that are not all in ──
+  //
+  // The allotment on a flat-priced job is price ÷ the default hourly rate
+  // (lib/allottedHours), not an estimate anyone made. So "hours saved" is
+  // really "money not yet spent on labour", and two things inflate it:
+  //
+  //   * the job is not finished — the rest of the hours have not happened
+  //     yet, so a job mid-flight always looks like it is saving time;
+  //   * somebody forgot to clock into the job — their hours went to General
+  //     or nowhere, so the job reads cheaper than it was worked.
+  //
+  // Both HOLD the bonus (needs_verification, with the amount still shown)
+  // rather than reduce it — verification is a flag, not a wipe, and Payroll
+  // can release any of them. Pass nothing and behaviour is exactly as before.
+  //
+  // Set of job statuses that mean the work is done. getDeliveredStatusIds
+  // (lib/jobMetrics) resolves it from the company's own job_statuses.
+  deliveredStatusIds = null,
+  // Map of `${employee_id}|YYYY-MM-DD` -> hours that person clocked with no
+  // job on them that day. A crew member with loose time on a day they worked
+  // this job is the "forgot to clock into the job" case — but only once there
+  // is enough of it to matter: across HHH's 97 jobs carrying an unpaid bonus
+  // the median day has 5% loose time (shop, driving, a meeting), while the
+  // real misses look like job 23296 — 0h on the job and 3.3h loose that day.
+  // Flagging any loose time at all held 76 rows; the ratio below holds 30.
+  unassignedHoursByCrewDay = null,
 }) {
   if (!payrollConfig.efficiency_bonus_enabled) return { bonus: 0, details: [] }
 
@@ -666,10 +703,60 @@ export function calculateEfficiencyBonus({
       }
     }
     const gateOff = gateMode === 'off'
+
+    // Is the work finished? Until it is, the hours are not all in and the
+    // saved-hours figure is just the part of the job that has not happened.
+    // Oquirh Mountain, 2 Oct 2026: $52,657 priced, 702h allotted (the price
+    // over $75), 330h punched, status In Progress — a $9,331 crew pool for a
+    // job still running.
+    const jobFinished = !deliveredStatusIds || !job?.status || deliveredStatusIds.has(job.status)
+
+    // Did anyone on this job have clocked time with no job on it, on a day
+    // they worked this one? Then the job's hours are understated by however
+    // long they were on the wrong clock, and every missing hour reads as a
+    // saved hour. Bryce: "if people forgot to clock into the job it really
+    // f***s it all up."
+    let unassignedHours = 0
+    if (unassignedHoursByCrewDay && Array.isArray(timeClockRows)) {
+      const counted = new Set()
+      for (const r of timeClockRows) {
+        if (!r?.employee_id || !r?.clock_in) continue
+        if (String(r.job_id) !== String(jobId)) continue
+        const key = `${r.employee_id}|${new Date(r.clock_in).toISOString().split('T')[0]}`
+        if (counted.has(key)) continue      // one person-day counts once
+        counted.add(key)
+        unassignedHours += Number(unassignedHoursByCrewDay.get(key)) || 0
+      }
+    }
+    const unassignedRatio = totalActualHours > 0 ? unassignedHours / totalActualHours : 0
+    const unassignedCrewHours = unassignedRatio >= UNASSIGNED_HOURS_FLAG_RATIO
+
+    // Cap: no job's crew pool may exceed this share of what the job sold for.
+    // The bonus is saved-hours x rate, and on flat-priced work the allotment
+    // is the price over the default hourly rate — so without a ceiling a
+    // small job can hand back a third of its own revenue (HHH's cleaning side
+    // ran a median of 13.1% of price against lighting's 4.1%, topping out at
+    // 32.4%). Off unless the company sets bonus_max_percent_of_job, and it
+    // caps the POOL, so a five-hand crew cannot multiply it. Computed before
+    // the gate so a HELD row shows the same money it would pay once released.
+    const rawPool = savedHours * rate
+    const uncappedCrewPool = rawPool - rawPool * (companyCut / 100)
+    const maxPct = parseFloat(payrollConfig.bonus_max_percent_of_job)
+    const jobPrice = parseFloat(job.job_total) || 0
+    let crewPool = uncappedCrewPool
+    let cappedBy = null
+    if (Number.isFinite(maxPct) && maxPct > 0 && jobPrice > 0) {
+      const ceiling = jobPrice * (maxPct / 100)
+      if (crewPool > ceiling) { crewPool = ceiling; cappedBy = maxPct }
+    }
+
     // An explicit admin override releases anything (the admin has said "pay it").
-    // Otherwise the bonus must clear the >3x allotted guard AND the verification
-    // gate before it can pay.
-    const passes = hasAdminOverride || (!suspiciousAllotted && (gateOff || passesVictor || paidOverrideApplies))
+    // Otherwise the bonus must clear the >3x allotted guard, both hours
+    // backstops AND the verification gate before it can pay.
+    const passes = hasAdminOverride || (
+      !suspiciousAllotted && jobFinished && !unassignedCrewHours &&
+      (gateOff || passesVictor || paidOverrideApplies)
+    )
 
     if (!passes) {
       // Compute what they WOULD have earned so the admin can override.
@@ -689,10 +776,9 @@ export function calculateEfficiencyBonus({
       )
       const myEffectiveWeightBlocked = myWeightBlocked * myHours
       const myShareBase = totalWeightedHoursBlocked > 0 ? (myEffectiveWeightBlocked / totalWeightedHoursBlocked) : 0
-      const rawPool = savedHours * rate
-      const companyPortion = rawPool * (companyCut / 100)
-      const crewPortion = rawPool - companyPortion
-      const myRawShare = crewPortion * myShareBase
+      // Same capped pool the released path uses — a held row must not show
+      // (or, once an admin releases it, pay) more than the ceiling allows.
+      const myRawShare = crewPool * myShareBase
       details.push({
         jobId: job.job_id || job.id,
         jobTitle: job.job_title || job.customer_name || 'Job',
@@ -703,8 +789,14 @@ export function calculateEfficiencyBonus({
         employeeShare: 0,
         wouldHaveEarned: +myRawShare.toFixed(2),
         blockedReason: suspiciousAllotted ? 'allotted_over_actual'
+          : !jobFinished ? 'job_not_finished'
+          : unassignedCrewHours ? 'unassigned_crew_hours'
           : !passesVictor ? 'no_completion_verification' : 'blocked',
         allottedRatio: allottedRatio === Infinity ? null : +allottedRatio.toFixed(1),
+        // How much crew time that day never reached this job, so the page
+        // can say what is missing instead of just "held".
+        unassignedHours: +unassignedHours.toFixed(2),
+        unassignedRatio: +unassignedRatio.toFixed(2),
         paidPercent: paidPercent != null ? +paidPercent.toFixed(1) : null,
         paidThresholdPct,
         gateMode,
@@ -737,9 +829,10 @@ export function calculateEfficiencyBonus({
       }
     }
 
-    const totalPool = savedHours * rate
-    const companyShare = totalPool * (companyCut / 100)
-    const crewPool = totalPool - companyShare
+    // totalPool / companyShare / crewPool were settled above the gate, with
+    // the %-of-price ceiling already applied, so held and released rows agree.
+    const totalPool = rawPool
+    const companyShare = totalPool - uncappedCrewPool
 
     // ── Crew share: skill weight × hours-on-job ─────────────────────
     // Older logic split the crew pool by skill weight alone, which
@@ -808,6 +901,9 @@ export function calculateEfficiencyBonus({
       crewPool,
       coverageRatio,
       coveragePenalty: coverageRatio < 1 ? rawBonusAmount - bonusAmount : 0,
+      // Set when the pool hit the % -of-price ceiling, so every surface can
+      // say WHY the number is smaller than saved-hours x rate would give.
+      cappedByPercentOfJob: cappedBy,
       releaseReason,
       paidPercent: paidPercent != null ? +paidPercent.toFixed(1) : null,
       gateMode,

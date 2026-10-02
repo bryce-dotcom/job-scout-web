@@ -39,7 +39,7 @@ import { companyNotify } from '../lib/companyNotify'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
 import { computeAllottedHours } from '../lib/allottedHours'
 import { jobTotalPolicy, adoptLinesTotal, jobGross } from '../lib/jobTotal'
-import { fetchJobBonuses, bonusStatusLabel } from '../lib/bonusLedger'
+import { fetchJobBonuses, bonusStatusLabel, heldReasonLabel } from '../lib/bonusLedger'
 import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
 import { selectPdfPages, pageIndicesFor, PAGES_FIRST } from '../lib/pdfPages'
@@ -6086,7 +6086,7 @@ function JobDetailInner() {
                           <span style={{ fontSize: '10px', fontWeight: 700, color: st.color, backgroundColor: `${st.color}1f`, padding: '2px 7px', borderRadius: '999px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>{st.label}</span>
                           {b.needs_verification && b.status !== 'paid' && (
                             <span style={{ fontSize: '10px', fontWeight: 700, color: '#b45309', backgroundColor: 'rgba(245,158,11,0.15)', padding: '2px 7px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                              <AlertCircle size={10} /> Needs verification
+                              <AlertCircle size={10} /> {heldReasonLabel(b) || 'Needs verification'}
                             </span>
                           )}
                           {/* Loud flag when allotted is wildly over hours worked

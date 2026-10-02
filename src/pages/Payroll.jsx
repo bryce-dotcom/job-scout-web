@@ -21,7 +21,7 @@ import {
   timeClockToJobHours,
   calculateInvoiceCommissions as sharedCalculateInvoiceCommissions,
 } from '../lib/bonusCalc'
-import { syncJobBonuses, bonusJobLabel } from '../lib/bonusLedger'
+import { syncJobBonuses, bonusJobLabel, heldReasonLabel } from '../lib/bonusLedger'
 import { toast } from '../lib/toast'
 import { splitPendingRequests, daysOverdue } from '../lib/timeOffRequests'
 import { previewTypedHourImpact, mergeJobHourSources, splitTypedHours, newestTypedRowId, TYPED_HOURS_COUNTED_KEY } from '../lib/jobHours'
@@ -36,6 +36,7 @@ import { commissionConfigIssues } from '../lib/commissionConfigIssues'
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 import { payDateForPeriod } from '../lib/payDate'
 import { VERIFICATION_EXEMPT_KEY } from '../lib/verificationPolicy'
+import { getDeliveredStatusIds } from '../lib/jobMetrics'
 import { needsAttention } from '../lib/openPunches'
 import { localDateStr, parseLocalDate } from '../lib/localDate'
 import { quarterDueDate } from '../lib/payrollQuarters'
@@ -160,7 +161,10 @@ const PAYROLL_GRID_MIN = '920px'
 
 // The bonus ledger as this page reads it, in one place: the sync effect and
 // the typed-hours apply both re-read it and must see the same columns.
-const LEDGER_SELECT = 'id, job_id, employee_id, amount, status, needs_verification, saved_hours, allotted_hours, actual_hours, crew_size, paid_at, queued_for_payroll, jobs(job_title, job_id, customer:customers!customer_id(name, business_name))'
+// release_reason: why a row is held (or why it released). Without it the page
+// could only say "Needs verification" for every kind of hold — including the
+// ones that are nothing to do with a photo.
+const LEDGER_SELECT = 'id, job_id, employee_id, amount, status, needs_verification, release_reason, saved_hours, allotted_hours, actual_hours, crew_size, paid_at, queued_for_payroll, jobs(job_title, job_id, customer:customers!customer_id(name, business_name))'
 
 // Federal deposit due date by schedule. Approximations — the IRS
 // semi-weekly rule has Wed/Fri shipping windows; v1 uses next Wednesday
@@ -284,6 +288,19 @@ export default function Payroll() {
       return Object.values(v).some(n => parseFloat(n) > 0)
     } catch { return false }
   })()
+
+  // Which statuses mean the work is finished — the company's own pipeline
+  // config, resolved by the one helper (lib/jobMetrics). A bonus on a job
+  // still open is computed from hours that have not all happened yet, so the
+  // ledger holds it until the job lands in one of these. Plain functions,
+  // called where they are needed: this component is at its conditional-hook
+  // ceiling (npm run guard), and both are read only at sync time.
+  const resolveDeliveredStatusIds = () => {
+    const row = allSettings.find(s => s.key === 'job_statuses')
+    let parsed = null
+    try { parsed = typeof row?.value === 'string' ? JSON.parse(row.value) : row?.value } catch { parsed = null }
+    return getDeliveredStatusIds(Array.isArray(parsed) ? parsed : null)
+  }
 
   // Data state
   const [timeEntries, setTimeEntries] = useState([])
@@ -703,11 +720,16 @@ export default function Payroll() {
         // carrying $1,166.93. It is also why "I changed the hours and the
         // bonus didn't move" kept coming back — the changed hours were
         // usually outside the loaded window.
+        //
+        // Punches with NO job on them come back too. They add nothing to the
+        // hours (timeClockToJobHours drops them), but they are the evidence
+        // for the other backstop: a crew member who clocked General time on
+        // a day they worked a job is the "forgot to clock into the job" case
+        // that makes the job read cheaper than it was worked.
         fetchAllPages(() => supabase
           .from('time_clock')
           .select('id, employee_id, job_id, clock_in, clock_out, total_hours, lunch_start, lunch_end')
           .eq('company_id', companyId)
-          .not('job_id', 'is', null)
           .not('clock_out', 'is', null)
           .order('id', { ascending: true })),
 
@@ -782,7 +804,8 @@ export default function Payroll() {
         // ($17,321.04) were flagged for a photo check that unit does not do.
         fetchAllPages(() => supabase
           .from('jobs')
-          .select('id, company_id, job_id, salesperson_id, lead_id, allotted_time_hours, status, customer_name, job_title, assigned_team, business_unit, has_callback')
+          // job_total: the bonus cap is a share of what the job sold for.
+          .select('id, company_id, job_id, salesperson_id, lead_id, allotted_time_hours, status, customer_name, job_title, assigned_team, business_unit, job_total, has_callback')
           .eq('company_id', companyId)
           .or('salesperson_id.not.is.null,lead_id.not.is.null')),
 
@@ -1360,6 +1383,21 @@ export default function Payroll() {
       .filter(r => r.verification_type === 'daily' && r.created_at && r.job_id)
       .map(r => `${r.job_id}|${new Date(r.created_at).toISOString().split('T')[0]}`)
   ), [verificationReports])
+  // Days a person clocked time with NO job on it. Cross-referenced against
+  // the days they worked a job: hours that went to General on a job day are
+  // hours the job did not get charged for, and every one of them reads as a
+  // saved hour. The bonus is held for review, not reduced.
+  const resolveUnassignedHoursByCrewDay = () => {
+    const m = new Map()
+    for (const r of bonusTimeEntries || []) {
+      if (r.job_id || !r.employee_id || !r.clock_in) continue
+      const hours = parseFloat(r.total_hours) || 0
+      if (hours <= 0) continue
+      const k = `${r.employee_id}|${new Date(r.clock_in).toISOString().split('T')[0]}`
+      m.set(k, (m.get(k) || 0) + hours)
+    }
+    return m
+  }
   // Build job -> { standardPaid, standardTotal, utilityPaid, utilityTotal }.
   // Used by the paid-threshold bonus gate.
   //
@@ -1475,6 +1513,8 @@ export default function Payroll() {
         employees, skillLevels: skillLevelSettings, payrollConfig: updatedConfig,
         verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides,
         verificationExemptUnits: updatedConfig?.[VERIFICATION_EXEMPT_KEY],
+        deliveredStatusIds: resolveDeliveredStatusIds(),
+        unassignedHoursByCrewDay: resolveUnassignedHoursByCrewDay(),
       })
       // Show the settled ledger and the saved decision together, so the
       // banner clears because the data says so — not because a flag hid it.
@@ -1526,6 +1566,8 @@ export default function Payroll() {
         jobPaymentStatus,
         bonusOverrides,
         verificationExemptUnits: payrollConfig?.[VERIFICATION_EXEMPT_KEY],
+        deliveredStatusIds: resolveDeliveredStatusIds(),
+        unassignedHoursByCrewDay: resolveUnassignedHoursByCrewDay(),
       }).catch(e => console.error('bonus ledger sync', e))
       // Re-read the ledger so the page shows exactly what techs are owed.
       const { data } = await supabase
@@ -2889,7 +2931,7 @@ export default function Payroll() {
                       <span style={{ fontSize: '10px', fontWeight: 700, color: statusMeta.color, backgroundColor: `${statusMeta.color}1f`, padding: '2px 7px', borderRadius: '999px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>{statusMeta.label}</span>
                       {b.needs_verification && b.status !== 'paid' && (
                         <span style={{ fontSize: '10px', fontWeight: 700, color: '#b45309', backgroundColor: 'rgba(245,158,11,0.15)', padding: '2px 7px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                          <AlertCircle size={10} /> Needs verification
+                          <AlertCircle size={10} /> {heldReasonLabel(b) || 'Needs verification'}
                         </span>
                       )}
                       {/* Loud flag when the allotted estimate is wildly over the
@@ -4838,6 +4880,25 @@ export default function Payroll() {
                     </div>
                     <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '6px' }}>
                       Faster work benefits <strong>both</strong> the company and the crew. The company keeps <strong>{payrollConfig.company_bonus_cut_percent}%</strong> of the pool as a margin boost, and the crew splits the remaining <strong>{100 - payrollConfig.company_bonus_cut_percent}%</strong>. Set to 0% if you want 100% to go to the crew.
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', border: `1px solid ${theme.border}` }}>
+                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>
+                      Most a Job Can Pay in Bonus
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <input
+                        type="number" min="0" max="100" step="1"
+                        placeholder="no cap"
+                        value={payrollConfig.bonus_max_percent_of_job ?? ''}
+                        onChange={(e) => setPayrollConfig({ ...payrollConfig, bonus_max_percent_of_job: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0) })}
+                        style={inputStyle}
+                      />
+                      <span style={{ fontSize: '14px', color: theme.textMuted }}>% of the job price</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px' }}>
+                      A ceiling on the whole crew&apos;s pool for one job, before it is split. On work priced as a flat number, allotted hours are the price divided by your hourly rate rather than an estimate anyone made — so a small job can hand back a third of what it sold for. Leave blank for no cap.
                     </div>
                   </div>
 

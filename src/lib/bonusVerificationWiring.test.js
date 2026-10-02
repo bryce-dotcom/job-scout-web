@@ -31,7 +31,7 @@ const fieldScout = read('src/pages/FieldScout.jsx')
 const queryFor = (src, table) => {
   const at = src.indexOf(`.from('${table}')`)
   expect(at, `no .from('${table}') in this page`).toBeGreaterThan(-1)
-  return src.slice(at, at + 700)
+  return src.slice(at, at + 1600)
 }
 
 describe('the ledger writer sees what the gate reads', () => {

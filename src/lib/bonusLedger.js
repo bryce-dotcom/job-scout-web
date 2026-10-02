@@ -140,6 +140,10 @@ export async function syncJobBonuses({
   // Business units exempt from photo/Victor verification. Defaults to none,
   // so callers that don't pass it behave exactly as before.
   verificationExemptUnits = null,
+  // Hold a bonus whose hours are not all in: the job is not finished, or a
+  // crew member clocked time with no job on it that day (lib/bonusCalc).
+  deliveredStatusIds = null,
+  unassignedHoursByCrewDay = null,
 }) {
   if (!companyId) return { upserted: 0, accruedTotal: 0, pendingTotal: 0 }
 
@@ -176,6 +180,8 @@ export async function syncJobBonuses({
       job, timeClockRows: jobTime, employees, skillLevels, payrollConfig,
       verifiedJobIds, dailyVerifiedJobDays, jobPaymentStatus, bonusOverrides,
       verificationExemptUnits,
+      deliveredStatusIds,
+      unassignedHoursByCrewDay,
     })
     const moneyIn = (jobPaymentStatus?.get?.(job.id)?.paid || 0) > 0.005
     for (const r of rows) {
@@ -253,6 +259,22 @@ export async function syncJobBonuses({
 }
 
 // ── Display helpers ────────────────────────────────────────────────────
+/**
+ * What a held bonus is waiting on. 'Needs verification' was the only thing
+ * any surface could say, which was wrong the moment a bonus could be held
+ * for something other than a photo — a job that is not finished, or crew
+ * time that never landed on the job (lib/bonusCalc's backstops).
+ */
+export function heldReasonLabel(row) {
+  if (!row?.needs_verification || row.status === 'paid') return null
+  switch (row.release_reason) {
+    case 'job_not_finished': return 'Held - job still open, hours not all in'
+    case 'unassigned_crew_hours': return 'Held - crew time not on the job that day'
+    case 'allotted_over_actual': return 'Held - allotted hours far over hours worked'
+    default: return 'Needs verification'
+  }
+}
+
 export function bonusStatusLabel(row) {
   if (row.status === 'paid') return { label: 'Paid', color: '#22c55e' }
   if (row.status === 'void') return { label: 'Void', color: '#7d8a7f' }

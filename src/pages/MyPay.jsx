@@ -10,7 +10,7 @@ import {
   calculateInvoiceCommissions,
   PERIODS_PER_YEAR,
 } from '../lib/bonusCalc'
-import { fetchUserBonuses, bonusStatusLabel, bonusJobLabel } from '../lib/bonusLedger'
+import { fetchUserBonuses, bonusStatusLabel, bonusJobLabel, heldReasonLabel } from '../lib/bonusLedger'
 import { payRowHeading, payRowSource } from '../lib/payRowLabel'
 import { groupHoursByDay } from '../lib/dailyHours'
 import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
@@ -913,7 +913,7 @@ export default function MyPay() {
                       <span style={{ fontSize: '10px', fontWeight: 700, color: st.color, backgroundColor: `${st.color}1f`, padding: '2px 7px', borderRadius: '999px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>{st.label}</span>
                       {b.needs_verification && (
                         <span style={{ fontSize: '10px', fontWeight: 700, color: '#b45309', backgroundColor: 'rgba(245,158,11,0.15)', padding: '2px 7px', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                          <AlertCircle size={10} /> Needs verification
+                          <AlertCircle size={10} /> {heldReasonLabel(b) || 'Needs verification'}
                         </span>
                       )}
                     </div>
