@@ -160,7 +160,19 @@ serve(async (req) => {
       company_id,
       invoice_id: invoice.id,
       customer_id: customer.id,
-      amount: balanceDue,
+      // The money that actually left the customer’s card, surcharge included.
+      //
+      // This recorded balanceDue alone while charging balanceDue + ccFeeAmount,
+      // so the surcharge was collected and never recorded anywhere. Every other
+      // card path (the portal, via stripe-webhook) records the full charge, and
+      // the invoice screen computes Balance Due as
+      //   customerTotal + credit_card_fee - totalPaid
+      // which is right for those. For these it left the fee permanently
+      // outstanding: 10 invoices showing a balance of exactly their own
+      // processing fee, which Tracy was clearing by hand with phantom cash
+      // payments until she was told to stop (47a189a0, 3255dc9b — INV-MULD1VBU
+      // and INV-MTBF76JY, $1.14 each).
+      amount: Math.round((balanceDue + ccFeeAmount) * 100) / 100,
       date: new Date().toISOString().split('T')[0],
       method: 'Credit Card',
       status: 'Completed',
@@ -177,8 +189,13 @@ serve(async (req) => {
     }
 
     // Update invoice payment status
-    const newTotalPaid = totalPaid + balanceDue;
-    const newStatus = newTotalPaid >= invoiceAmount ? 'Paid' : 'Partially Paid';
+    const newTotalPaid = Math.round((totalPaid + balanceDue + ccFeeAmount) * 100) / 100;
+    // Owed must include the surcharge now that the payment does, exactly as the
+    // invoice screen computes it. Comparing a fee-inclusive payment against a
+    // fee-exclusive total would read Paid on a short payment.
+    const priorFee = parseFloat(String(invoice.credit_card_fee)) || 0;
+    const owedWithFee = Math.round((invoiceAmount + priorFee + ccFeeAmount) * 100) / 100;
+    const newStatus = newTotalPaid >= owedWithFee - 0.01 ? 'Paid' : 'Partially Paid';
     await supabase.from('invoices').update({
       payment_status: newStatus,
       updated_at: new Date().toISOString(),

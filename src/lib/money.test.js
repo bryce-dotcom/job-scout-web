@@ -196,3 +196,49 @@ describe('buildInvoiceSections — the customer-facing breakdown', () => {
     expect(s.customerTotal).toBe(6159.60)
   })
 })
+
+// ── A card surcharge is money received, not money still owed ────────────────
+//
+// Tracy (47a189a0): "I processed the card on file… After the $60 is the payment.
+// $1.14 is what is left. You mentioned to not show the $1.14 process fee being
+// paid as cash. The system should be able to take care of this fee."
+//
+// charge-saved-card charged balanceDue + ccFeeAmount ($61.14) and recorded a
+// payment of balanceDue alone ($60), so the surcharge was collected and never
+// recorded. The invoice screen computes
+//     Balance Due = customerTotal + credit_card_fee - totalPaid
+// which is correct for every other card path — the portal records the whole
+// charge — so for these the fee sat outstanding for ever: 10 invoices showing a
+// balance of exactly their own processing fee, $76.67 in total.
+//
+// The convention these pin: a card payment row holds base + surcharge, and the
+// owed figure it is compared against includes the surcharge too. Flip either
+// one alone and the invoice reads Paid on a short payment, or never settles.
+describe('a collected card surcharge settles with the payment', () => {
+  const inv = { amount: 60, discount_applied: 0, tax_amount: 0 }
+
+  it('base + surcharge against total + surcharge reads Paid', () => {
+    expect(invoicePaymentStatus(inv, 61.14, 1.14)).toBe('Paid')
+  })
+
+  it('the bug: base only, with the surcharge still on the invoice, is NOT Paid', () => {
+    // Exactly the 10 invoices. The fee is owed and nothing ever pays it.
+    expect(invoicePaymentStatus(inv, 60, 1.14)).toBe('Partially Paid')
+  })
+
+  it('no surcharge behaves as before', () => {
+    expect(invoicePaymentStatus(inv, 60, 0)).toBe('Paid')
+    expect(invoicePaymentStatus(inv, 30, 0)).toBe('Partially Paid')
+  })
+
+  it('a short payment still reads short even with the fee counted', () => {
+    expect(invoicePaymentStatus(inv, 50, 1.14)).toBe('Partially Paid')
+  })
+
+  it('respects the incentive — the surcharge rides on the customer share', () => {
+    // $20,000 job, $17,500 utility incentive, customer owes $2,500 + 1.9%.
+    const es = { amount: 20000, discount_applied: 17500, tax_amount: 0 }
+    expect(invoicePaymentStatus(es, 2547.5, 47.5)).toBe('Paid')
+    expect(invoicePaymentStatus(es, 2500, 47.5)).toBe('Partially Paid')
+  })
+})
