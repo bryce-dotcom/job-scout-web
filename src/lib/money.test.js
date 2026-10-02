@@ -242,3 +242,53 @@ describe('a collected card surcharge settles with the payment', () => {
     expect(invoicePaymentStatus(es, 2500, 47.5)).toBe('Partially Paid')
   })
 })
+
+// ── Mark as Paid must insert what the customer owes, not the gross ─────────
+//
+// markAsPaid computed its own total as `amount + credit_card_fee`, ignoring
+// discount_applied and tax_amount, and inserted a payment row for the
+// difference. On an Energy Scout invoice that is the GROSS: a $20,000 job with a
+// $17,500 utility incentive would have recorded $20,000 of customer money
+// instead of $2,500 — $17,500 nobody paid, with commission computed on it.
+//
+// It never fired: no invoice carrying a discount has been Marked as Paid. Found
+// while fixing the card surcharge, so it is a latent hazard rather than damage.
+//
+// The property these pin is the one that was broken — the amount Mark as Paid
+// inserts has to be exactly what invoicePaymentStatus then measures against, or
+// the button leaves the invoice it just "paid" unpaid, or overpaid.
+describe('Mark as Paid settles the invoice it just paid', () => {
+  const owedNow = (inv, paid) =>
+    invoiceCustomerTotal(inv) + (Number(inv.credit_card_fee) || 0) - paid
+
+  const cases = [
+    ['plain invoice', { amount: 1000, discount_applied: 0, tax_amount: 0 }, 0],
+    ['utility incentive', { amount: 20000, discount_applied: 17500, tax_amount: 0 }, 0],
+    ['incentive, part paid', { amount: 20000, discount_applied: 17500, tax_amount: 0 }, 1000],
+    ['with sales tax', { amount: 1000, discount_applied: 0, tax_amount: 72.5 }, 0],
+    ['with a card surcharge', { amount: 60, discount_applied: 0, tax_amount: 0, credit_card_fee: 1.14 }, 0],
+    ['incentive + tax + fee', { amount: 20000, discount_applied: 17500, tax_amount: 181.25, credit_card_fee: 47.5 }, 0],
+    ['legacy net shape', { amount: 5000, discount_applied: 9000, tax_amount: 0 }, 0],
+  ]
+
+  for (const [name, inv, alreadyPaid] of cases) {
+    it(`${name}: inserting the outstanding amount reads Paid`, () => {
+      const outstanding = owedNow(inv, alreadyPaid)
+      const total = alreadyPaid + outstanding
+      expect(invoicePaymentStatus(inv, total, Number(inv.credit_card_fee) || 0)).toBe('Paid')
+    })
+  }
+
+  it('the incentive is NOT part of what it inserts', () => {
+    // The whole point: $2,500 of customer money, not $20,000.
+    const inv = { amount: 20000, discount_applied: 17500, tax_amount: 0 }
+    expect(owedNow(inv, 0)).toBeCloseTo(2500, 2)
+  })
+
+  it('the old formula would have invented the incentive', () => {
+    // Kept as a guard: if anyone reintroduces `amount + fee`, this is the gap.
+    const inv = { amount: 20000, discount_applied: 17500, tax_amount: 0 }
+    const oldWay = (Number(inv.amount) || 0) + (Number(inv.credit_card_fee) || 0)
+    expect(oldWay - owedNow(inv, 0)).toBeCloseTo(17500, 2)
+  })
+})

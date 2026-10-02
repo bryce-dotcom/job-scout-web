@@ -20,7 +20,7 @@ import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { buildInvoiceSections, buildInvoicePages, deductionLineLabel, invoiceDiscountBreakout, whoPaysWhat, invoiceUtilityName, lineAmount } from '../lib/invoiceSections'
 import { recordUtilityPayment, reopenUtilityPayment, correctUtilityPaidAt } from '../lib/utilitySettlement'
 import { defaultUtilityProviderId } from '../lib/jobUtility'
-import { isLegacyNetShape, invoicePaymentStatus } from '../lib/arHelpers'
+import { isLegacyNetShape, invoicePaymentStatus, invoiceCustomerTotal } from '../lib/arHelpers'
 import { creditBalance, applicableCredit, fmtMoney } from '../lib/creditLedger'
 import LoadingSpinner from '../components/LoadingSpinner'
 import InvoiceSplitPanel from '../components/InvoiceSplitPanel'
@@ -774,8 +774,20 @@ Add it anyway?`,
       // covers exactly what's owed. Without a payment row, the payroll
       // commission engine (payment_received trigger) sees no payment in the
       // pay period and silently awards $0 commission for this invoice.
+      //
+      // What the CUSTOMER owes, through the shared rule — not `amount`.
+      // This read amount + credit_card_fee and ignored discount_applied and
+      // tax_amount entirely, so on an Energy Scout invoice it would have
+      // inserted a payment for the gross: a $20,000 job with a $17,500
+      // utility incentive would record $20,000 of customer money instead of
+      // $2,500, inventing $17,500 that nobody paid and paying commission on
+      // it. No invoice with a discount has been Marked as Paid yet, so it
+      // never fired — found while fixing the card surcharge, not reported.
+      //
+      // The fee stays in the total: it is collected with the card payment and
+      // the balance shown on this page includes it (see the surcharge fix).
       const invoiceTotal =
-        (parseFloat(invoice?.amount) || 0) +
+        invoiceCustomerTotal(invoice) +
         (parseFloat(invoice?.credit_card_fee) || 0)
       const alreadyPaid = (payments || []).reduce(
         (sum, p) => sum + (parseFloat(p.amount) || 0), 0
