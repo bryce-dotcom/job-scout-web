@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  TRANSFER_CATEGORY, isTransferCategory, resolveIsTransfer, transferFields, needsCategories,
+  TRANSFER_CATEGORY, isTransferCategory, resolveIsTransfer, transferFields, needsCategories, displayCategory, isAiCategoryGuess,
   processorPayoutNote,
 } from '../../supabase/functions/_shared/transferRule.ts'
 
@@ -92,5 +92,57 @@ describe('why a processor payout is not income', () => {
   it('survives an empty description', () => {
     expect(processorPayoutNote('')).toBe(null)
     expect(processorPayoutNote(null)).toBe(null)
+  })
+})
+
+// ── What the screen shows for a transfer ───────────────────────────────────
+//
+// Tracy, f31332d3: "I made the wrong choice for a stripe transaction on 9/28
+// for the amount of $1496.74 by classifying it as a service… no matter how many
+// times I save it or refresh the system It will not default to what I chose…
+// It will tell you what's saving it but then when you look, it didn't save it.
+// It went back to what you very first chose."
+//
+// Nothing was failing to save. transferFields deliberately stores
+// user_category = null for a transfer (leaving 'Transfer' there would put the
+// money back in the P&L), and every display read `user_category || ai_category`
+// — so the row came back wearing the AI's first guess, "Service". The flag had
+// saved and the reports were right; only the screen lied.
+describe('displayCategory: a transfer shows as a transfer', () => {
+  it('shows Transfer when the flag is set, whatever the AI guessed', () => {
+    expect(displayCategory({ is_transfer: true, user_category: null, ai_category: 'Service' }))
+      .toBe(TRANSFER_CATEGORY)
+  })
+
+  it('is exactly what transferFields persists, round-tripped', () => {
+    // The two halves have to agree or the screen drifts from the data again.
+    const saved = transferFields({ category: TRANSFER_CATEGORY })
+    expect(displayCategory({ ...saved, ai_category: 'Service' })).toBe(TRANSFER_CATEGORY)
+  })
+
+  it('prefers the person over the AI for anything else', () => {
+    expect(displayCategory({ user_category: 'Fuel', ai_category: 'Service' })).toBe('Fuel')
+    expect(displayCategory({ user_category: null, ai_category: 'Service' })).toBe('Service')
+  })
+
+  it('is empty when there is nothing to show, never undefined', () => {
+    expect(displayCategory({})).toBe('')
+    expect(displayCategory(null)).toBe('')
+  })
+})
+
+describe('isAiCategoryGuess: a transfer is never an unconfirmed guess', () => {
+  it('a flagged transfer is a decision, not a guess', () => {
+    expect(isAiCategoryGuess({ is_transfer: true, user_category: null, ai_category: 'Service' })).toBe(false)
+  })
+
+  it('an AI category nobody has touched is a guess', () => {
+    expect(isAiCategoryGuess({ user_category: null, ai_category: 'Service' })).toBe(true)
+  })
+
+  it('a human category is not a guess', () => {
+    expect(isAiCategoryGuess({ user_category: 'Fuel', ai_category: 'Service' })).toBe(false)
+    expect(isAiCategoryGuess({})).toBe(false)
+    expect(isAiCategoryGuess(null)).toBe(false)
   })
 })

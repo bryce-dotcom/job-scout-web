@@ -53,7 +53,7 @@ import {
 import { toast } from '../lib/toast'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import {
-  isTransferCategory, resolveIsTransfer, transferFields, needsCategories,
+  isTransferCategory, resolveIsTransfer, transferFields, needsCategories, displayCategory, isAiCategoryGuess,
   processorPayoutNote,
 } from '../../supabase/functions/_shared/transferRule.ts'
 
@@ -1404,7 +1404,7 @@ export default function Books() {
   // Expand a transaction: load its job allocations
   const expandTransaction = async (txn) => {
     setExpandedTxn(txn.id)
-    setTxnEditCategory(txn.user_category || txn.ai_category || '')
+    setTxnEditCategory(displayCategory(txn))
     setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
     setTxnEditIsTransfer(!!txn.is_transfer)
     setTxnEditNotes(txn.notes || '')
@@ -2811,9 +2811,13 @@ export default function Books() {
             <div style={{ backgroundColor: theme.bgCard, borderRadius: '12px', border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
               {filteredTxns.slice(0, txnShowCount).map((txn, idx) => {
                 const isExpanded = expandedTxn === txn.id
-                const category = txn.user_category || txn.ai_category
+                // is_transfer answers first: a transfer stores user_category
+                // null on purpose, so reading user_category || ai_category put
+                // the AI’s original guess back on screen the moment the row
+                // reloaded (f31332d3). lib transferRule owns both rules.
+                const category = displayCategory(txn)
                 const taxCat = txn.user_tax_category || txn.ai_tax_category
-                const isAI = !txn.user_category && !!txn.ai_category
+                const isAI = isAiCategoryGuess(txn)
                 const amountNum = parseFloat(txn.amount) || 0
                 const isIncome = amountNum < 0
                 const jId = txn.job_id || txn.ai_job_id

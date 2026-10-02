@@ -63,6 +63,39 @@ export function transferFields(
 }
 
 /**
+ * What to SHOW in the category control for a transaction.
+ *
+ * The counterpart to transferFields, and it was missing. Because a transfer
+ * stores user_category = null on purpose, every screen that read
+ * `user_category || ai_category` fell straight back to the AI's original guess:
+ * pick "Transfer", and the dropdown snapped back to "Service" the instant the
+ * row reloaded. The flag had saved, the reports were right, and the screen said
+ * otherwise — so Tracy reasonably concluded nothing had saved and kept trying
+ * (f31332d3: "It will tell you what's saving it but then when you look, it
+ * didn't save it. It went back to what you very first chose."). Stripe payout
+ * 4740, $1,496.74, 28 Sep.
+ *
+ * is_transfer is the truth, so it answers first.
+ */
+export function displayCategory(
+  txn: { is_transfer?: unknown; user_category?: unknown; ai_category?: unknown } | null | undefined,
+): string {
+  if (txn?.is_transfer === true) return TRANSFER_CATEGORY
+  return (txn?.user_category as string) || (txn?.ai_category as string) || ''
+}
+
+/**
+ * Is the category on screen only the AI's guess — the thing worth styling as
+ * unconfirmed and chasing? A transfer never is: somebody, or a rule, decided it.
+ */
+export function isAiCategoryGuess(
+  txn: { is_transfer?: unknown; user_category?: unknown; ai_category?: unknown } | null | undefined,
+): boolean {
+  if (txn?.is_transfer === true) return false
+  return !txn?.user_category && !!txn?.ai_category
+}
+
+/**
  * A transfer needs no category and no tax category — there is no true answer to
  * either. Everything else needs both, or the books have a hole in them.
  */
