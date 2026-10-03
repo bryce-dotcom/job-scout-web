@@ -416,6 +416,9 @@ await run('settings', async () => {
     ['default_labor_warranty_months', JSON.stringify(12)],
     ['default_parts_warranty_months', JSON.stringify(60)],
     ['accounting_basis', JSON.stringify('cash')],
+    // Demos hear the real Arnie (ElevenLabs, HHH's credits) — Bryce's call 2026-10-03.
+    // arnie-tts allows ElevenLabs only for the platform company or a tenant opted in here.
+    ['arnie_voice', JSON.stringify({ enabled: true, voice_id: 'EJy0TYJK5mkEy22WufOP', note: 'Demo tenant opted in so sales demos hear Arnie' })],
     // Wallets, so demos show the Venmo / Cash App / Zelle flow end to end.
     ['payment_config', JSON.stringify({
       venmo_enabled: true, venmo_handle: 'SummitFieldCo', venmo_profile: 'business', venmo_instructions: 'Please put your invoice number in the note.',
