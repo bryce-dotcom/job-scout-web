@@ -364,7 +364,10 @@ export default function MyPay() {
         // Alayda-style roles show their processor commissions here.
         const empPromise = supabase
           .from('employees')
-          .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, commission_processor_rate, commission_processor_type, is_hourly, is_salary, hourly_rate, annual_salary')
+          // commission_min_job_total: the floor the live calc applies. Left
+          // out, this page would read undefined, show no floor, and promise a
+          // commission the ledger will not pay.
+          .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, commission_processor_rate, commission_processor_type, commission_min_job_total, is_hourly, is_salary, hourly_rate, annual_salary')
           .eq('id', effectiveUserId).maybeSingle()
 
         // Utility invoices on jobs the user might own — we fetch them all

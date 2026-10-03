@@ -8,6 +8,7 @@
 // 'Cannot find module' on every run while the frontend works fine.
 import { verificationRequiredFor } from './verificationPolicy.js'
 import { invoiceCustomerTotal } from './arHelpers.js'
+import { jobEarnsCommission } from './commissionEligibility.js'
 
 // Default bi-weekly anchor: a known Friday payday in 2024. Companies on
 // bi-weekly should set their own pay_anchor_date in payroll_config; this
@@ -107,7 +108,9 @@ export function calculateInvoiceCommissions({
     }
     return false
   }
-  const empJobs = (jobs || []).filter(ownsJob)
+  // A floor on job size, when the arrangement has one — the same rule the
+  // rep_commissions ledger applies, so the live figure and the money agree.
+  const empJobs = (jobs || []).filter(j => ownsJob(j) && jobEarnsCommission(j, employee))
   const empJobIds = empJobs.map(j => j.id)
   const empInvoices = (invoices || []).filter(inv => empJobIds.includes(inv.job_id))
   const trigger = payrollConfig?.commission_trigger || 'payment_received'

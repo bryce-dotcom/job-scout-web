@@ -83,6 +83,7 @@ const emptyEmployee = {
   commission_goods_rate: 0,
   commission_goods_type: 'percent',
   commission_services_rate: 0,
+  commission_min_job_total: '',
   commission_services_type: 'percent',
   commission_software_rate: 0,
   commission_software_type: 'percent',
@@ -431,6 +432,7 @@ export default function Employees() {
       commission_goods_rate: employee.commission_goods_rate || 0,
       commission_goods_type: employee.commission_goods_type || 'percent',
       commission_services_rate: employee.commission_services_rate || 0,
+      commission_min_job_total: employee.commission_min_job_total ?? '',
       commission_services_type: employee.commission_services_type || 'percent',
       commission_software_rate: employee.commission_software_rate || 0,
       commission_software_type: employee.commission_software_type || 'percent',
@@ -584,6 +586,7 @@ export default function Employees() {
       commission_goods_rate: parseFloat(formData.commission_goods_rate) || 0,
       commission_goods_type: formData.commission_goods_type,
       commission_services_rate: parseFloat(formData.commission_services_rate) || 0,
+      commission_min_job_total: formData.commission_min_job_total === '' || formData.commission_min_job_total == null ? null : (parseFloat(formData.commission_min_job_total) || null),
       commission_services_type: formData.commission_services_type,
       commission_software_rate: parseFloat(formData.commission_software_rate) || 0,
       commission_software_type: formData.commission_software_type,
@@ -867,6 +870,7 @@ export default function Employees() {
       commission_goods_rate: parseFloat(formData.commission_goods_rate) || 0,
       commission_goods_type: formData.commission_goods_type,
       commission_services_rate: parseFloat(formData.commission_services_rate) || 0,
+      commission_min_job_total: formData.commission_min_job_total === '' || formData.commission_min_job_total == null ? null : (parseFloat(formData.commission_min_job_total) || null),
       commission_services_type: formData.commission_services_type,
       commission_software_rate: parseFloat(formData.commission_software_rate) || 0,
       commission_software_type: formData.commission_software_type,
@@ -2381,6 +2385,30 @@ export default function Employees() {
                             typeName="commission_software_type"
                             disabled={!isEditing}
                           />
+                        </div>
+
+                        {/* A floor on job size. Christopher's arrangement —
+                            5% on jobs over 10k — had nowhere to live, and a
+                            flat rate on an import that credited him with
+                            5,961 jobs paid him on $40 window cleans. */}
+                        <div style={{ marginTop: '16px', maxWidth: isMobile ? '100%' : '50%' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: theme.textSecondary, marginBottom: '6px' }}>
+                            Only on jobs over
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '15px', fontWeight: '600', color: theme.textSecondary }}>$</span>
+                            <input
+                              type="number" min="0" step="500"
+                              placeholder="every job"
+                              value={formData.commission_min_job_total ?? ''}
+                              disabled={!isEditing}
+                              onChange={(e) => setFormData({ ...formData, commission_min_job_total: e.target.value })}
+                              style={{ ...inputStyle, maxWidth: '160px' }}
+                            />
+                          </div>
+                          <div style={{ fontSize: '11.5px', color: theme.textMuted, marginTop: '5px' }}>
+                            Jobs smaller than this earn them nothing. Measured on the job&apos;s total, so a big job still pays as the money comes in. Leave blank to pay on every job.
+                          </div>
                         </div>
 
                         <p style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginTop: '16px', marginBottom: '12px' }}>

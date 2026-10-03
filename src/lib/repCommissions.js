@@ -1,5 +1,6 @@
 import { buildLeadIndex, jobOwnedBy } from './jobOwnership'
 import { invoiceCustomerTotal } from './arHelpers'
+import { jobEarnsCommission } from './commissionEligibility'
 // Rep (%) commission ledger — read/sync helpers for the frozen rep_commissions
 // table (P2). The amount of a rep's services/goods commission is snapshotted
 // per payment when earned and never recomputed, so Payroll and My Pay stop
@@ -37,7 +38,8 @@ export function computeRepRows({ employees = [], jobs = [], leads = [], invoices
     const rateType = svc > 0 ? (e.commission_services_type || 'percent') : (e.commission_goods_type || 'percent')
     const kind = svc > 0 ? 'services' : 'goods'
     if (rate <= 0 || rateType !== 'percent') continue   // flat/processor handled by the live calc, not the ledger
-    const empJobIds = new Set((jobs || []).filter(j => ownsJob(j, e.id)).map(j => j.id))
+    // ...and big enough to count for this rep (lib/commissionEligibility).
+    const empJobIds = new Set((jobs || []).filter(j => ownsJob(j, e.id) && jobEarnsCommission(j, e)).map(j => j.id))
     const empInvoices = (invoices || []).filter(inv => empJobIds.has(inv.job_id) && (parseFloat(inv.amount) || 0) > 0)
     for (const inv of empInvoices) {
       const invPays = paysByInv.get(inv.id) || []
@@ -84,7 +86,7 @@ export function computeRepRows({ employees = [], jobs = [], leads = [], invoices
       const rate = svc > 0 ? svc : goods
       const rateType = svc > 0 ? (e.commission_services_type || 'percent') : (e.commission_goods_type || 'percent')
       if (rate <= 0 || rateType !== 'percent') continue
-      if (!job || !ownsJob(job, e.id)) continue
+      if (!job || !ownsJob(job, e.id) || !jobEarnsCommission(job, e)) continue
       const amt = incentive * (rate / 100)
       if (amt <= 0) continue
       rows.push({
