@@ -147,6 +147,7 @@ serve(async (req) => {
       token,
       approver_name,
       approver_email,
+      approver_title,
       // Formal proposal additions — all optional, interactive flow sends none of these
       signature_method,           // 'drawn' | 'typed'
       signature_image_base64,     // PNG data url or raw base64 for drawn signatures
@@ -239,6 +240,10 @@ serve(async (req) => {
         portal_token_id: tokenRow.id,
         approver_name: approver_name || null,
         approver_email: approver_email || null,
+        // Self-declared role. A forwarded link means a signature can come
+        // from someone we never emailed, so the record has to say who they
+        // are and whether they could approve it (Tracy, 0f05d2a5).
+        approver_title: approver_title || null,
         ip_address: ipAddress,
         user_agent: userAgent,
         document_hash: documentHash,
@@ -413,7 +418,7 @@ serve(async (req) => {
         html: repEmailShell(
           'Quote accepted 🎉',
           `<p style="font-size:15px;margin:0 0 10px"><b>${customerDisplayName}</b> just accepted estimate <b>${estimate.quote_id || 'EST-' + estimate.id}</b>${amountStr}.</p>`
-          + (approver_name ? `<p style="font-size:13px;color:#4d5a52;margin:0 0 6px">Signed by ${approver_name}.</p>` : '')
+          + (approver_name ? `<p style="font-size:13px;color:#4d5a52;margin:0 0 6px">Signed by ${approver_name}${approver_title ? `, ${approver_title}` : ''}.</p>` : '')
           + `<p style="font-size:13px;color:#4d5a52;margin:0">A job was created automatically — open it to schedule and follow up.</p>`,
           appLink(`/estimates/${estimate.id}`), 'Open the estimate',
         ),

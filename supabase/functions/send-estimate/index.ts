@@ -278,6 +278,11 @@ serve(async (req) => {
           ${ctaLabel}
         </a>
         ${isFormal ? `<p style="color:#7d8a7f;font-size:12px;margin:10px 0 0;">Secure signature and online payment. Link expires in 30 days.</p>` : ''}
+        <!-- Forwarding has always worked: the link is the credential and the
+             signer is whoever fills the form in. Nobody knew, so a client
+             whose approval needs a board member printed it, got a wet
+             signature and sent it back (Tracy, 0f05d2a5). Say it. -->
+        <p style="color:#7d8a7f;font-size:12px;margin:10px 0 0;">Someone else signs for you? Forward this email — whoever opens the link can review and sign it.</p>
       </div>
       ` : ''}
       ${extraLinksHtml}

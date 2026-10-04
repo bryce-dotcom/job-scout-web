@@ -71,6 +71,10 @@ export default function CustomerPortal() {
   const [showApproveModal, setShowApproveModal] = useState(false)
   const [approverName, setApproverName] = useState('')
   const [approverEmail, setApproverEmail] = useState('')
+  // Who is signing, in what capacity. A forwarded link means the signer may
+  // be someone we never emailed — a board member, a partner — and a name on
+  // its own does not say whether they could approve it (Tracy, 0f05d2a5).
+  const [approverTitle, setApproverTitle] = useState('')
   const [approving, setApproving] = useState(false)
   const [approvalSuccess, setApprovalSuccess] = useState(false)
 
@@ -119,6 +123,7 @@ export default function CustomerPortal() {
         token,
         approver_name: approverName,
         approver_email: approverEmail,
+        approver_title: approverTitle || null,
       }
       if (signature && signature.method) {
         body.signature_method = signature.method
@@ -142,6 +147,7 @@ export default function CustomerPortal() {
       token,
       approver_name: approver?.name || approverName,
       approver_email: approver?.email || approverEmail,
+      approver_title: approver?.title || approverTitle || null,
       signature_method: signature?.method,
       signature_image_base64: signature?.imageDataUrl || null,
       signature_typed_text: signature?.typedText || null,
@@ -1248,13 +1254,14 @@ export default function CustomerPortal() {
             <div style={{ padding: isMobile ? '20px 20px 0' : '24px 24px 0' }}>
               <h2 style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: '700', color: theme.text, margin: '0 0 4px' }}>Approve {word}</h2>
               <p style={{ color: theme.textMuted, fontSize: '14px', margin: '0 0 20px' }}>
-                Confirm your information to approve this {word.toLowerCase()}.
+                Whoever signs fills this in — it does not have to be the person we emailed.
+                Forward this link to them if someone else approves.
               </p>
             </div>
 
             <div style={{ padding: isMobile ? '0 20px' : '0 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={styles.label}>Your Name</label>
+                <label style={styles.label}>Signer's Name</label>
                 <input
                   type="text"
                   value={approverName}
@@ -1269,7 +1276,17 @@ export default function CustomerPortal() {
                   type="email"
                   value={approverEmail}
                   onChange={(e) => setApproverEmail(e.target.value)}
-                  placeholder="your@email.com"
+                  placeholder="name@company.com"
+                  style={styles.input}
+                />
+              </div>
+              <div>
+                <label style={styles.label}>Title or role <span style={{ fontWeight: 400, color: theme.textMuted }}>(optional)</span></label>
+                <input
+                  type="text"
+                  value={approverTitle}
+                  onChange={(e) => setApproverTitle(e.target.value)}
+                  placeholder="e.g. Board Treasurer, Owner"
                   style={styles.input}
                 />
               </div>
