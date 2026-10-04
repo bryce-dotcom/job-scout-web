@@ -55,6 +55,7 @@ import {
 import { seedSampleData, clearAllData } from '../lib/seedData'
 import BillingTab from '../components/BillingTab'
 import { toast } from '../lib/toast'
+import { twilioConfigProblem, normalizeTwilioConfig } from '../lib/twilioConfig'
 import { WALLETS } from '../lib/wallets'
 import { DOCUMENT_TYPES, DOCUMENT_TYPES_KEY, labelsFor, configFromSettings } from '../lib/documentVocabulary'
 
@@ -5079,12 +5080,24 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
 
   // ─── Twilio handlers ───
   const handleSaveTwilio = async () => {
+    // Twilio's shapes are fixed, so say what is wrong HERE rather than
+    // letting it fail at the API with nothing useful coming back. An
+    // 18-character Account SID beginning “br” and a 10-character auth token
+    // were accepted without a word, and the Test button then said only
+    // “Failed to send test SMS” (lib/twilioConfig).
+    const problem = twilioConfigProblem(twForm)
+    if (problem) { toast.error(problem); return }
+    // Stored in E.164, because “(385) 555-0100” is refused by Twilio.
+    const clean = normalizeTwilioConfig(twForm)
     setTwSaving(true)
-    const saved = await saveSetting('twilio_config', twForm)
+    const saved = await saveSetting('twilio_config', clean)
     setTwSaving(false)
     // Only say it saved if it saved. This said so unconditionally, which is
     // why the credentials were believed to be in the app and were not.
-    if (saved) toast.success('Twilio SMS settings saved')
+    if (saved) {
+      setTwForm(clean)
+      toast.success('Twilio SMS settings saved')
+    }
   }
 
   const handleTestSMS = async () => {
@@ -5102,9 +5115,20 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
         }
       })
       if (error || data?.error) {
-        toast.error(data?.error || 'Failed to send test SMS')
+        // send-sms returns Twilio's actual message, but with a non-2xx status,
+        // and functions.invoke turns that into `error` with data null — so the
+        // real explanation was thrown away and the screen said only “Failed to
+        // send test SMS”. Read the body off the error before giving up on it.
+        let detail = data?.error || null
+        if (!detail && error?.context && typeof error.context.json === 'function') {
+          try {
+            const body = await error.context.json()
+            detail = body?.error || body?.message || null
+          } catch { /* not JSON — fall through to the generic message */ }
+        }
+        toast.error(detail ? `Twilio: ${detail}` : 'Failed to send test SMS')
       } else {
-        toast.success('Test SMS sent successfully!')
+        toast.success('Test SMS sent')
       }
     } catch (e) {
       toast.error('Test failed: ' + e.message)
