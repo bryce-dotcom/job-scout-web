@@ -43,7 +43,8 @@ export async function normalizePhoto(file, maxEdge = 2048) {
   }
 }
 
-export async function uploadCapture({ companyId, employeeId = null, jobId = null, file: original, note = '', source = 'shared', brand = null, onProgress = null }) {
+// storyboard: for a video the AI made, the plan + soundtrack settings used, so it can be reopened and edited.
+export async function uploadCapture({ companyId, employeeId = null, jobId = null, file: original, note = '', source = 'shared', brand = null, storyboard = null, onProgress = null }) {
   if (!original) throw new Error('No file')
   if (original.size > MAX_UPLOAD_BYTES) throw new Error(`${original.name || 'That file'} is ${Math.round(original.size / 1024 / 1024)} MB; the limit is 500 MB. Trim the clip or pick a shorter one.`)
   const file = await normalizePhoto(original)
@@ -81,7 +82,7 @@ export async function uploadCapture({ companyId, employeeId = null, jobId = null
   const { data: row, error: dbErr } = await supabase.from('marketing_captures').insert({
     company_id: companyId, employee_id: employeeId, job_id: jobId, bucket: MEDIA_BUCKET, path, url: pub.publicUrl,
     media_type: isVideo ? 'video' : 'image', note: note?.trim() || null, source, brand,
-    poster_url, frames, duration_s,
+    poster_url, frames, duration_s, storyboard: storyboard || null,
   }).select('*').maybeSingle()
   if (dbErr) throw dbErr
   return row

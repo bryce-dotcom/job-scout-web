@@ -1078,6 +1078,40 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
     setCaptureIds([row.id])
     setPrimaryId(row.id)
     setDirecting(false)
+    setReopen(null)
+  }
+  // AI pictures made anywhere in the composer join the list and the selection.
+  const onPictures = (rows) => {
+    if (!rows?.length) return
+    setShot((xs) => [...xs, ...rows])
+    setCaptureIds((xs) => [...xs, ...rows.map((r) => r.id)].slice(-5))
+  }
+  // Reopen a video the AI made: its plan is on the capture; the source
+  // photos may no longer be in the inbox list, so fetch them by id.
+  const [reopen, setReopen] = useState(null)   // { initial, captures }
+  const [painting, setPainting] = useState(false)
+  const [paintSheet, setPaintSheet] = useState(false)
+  const reopenVideo = async (cap) => {
+    const sbd = cap?.storyboard
+    if (!sbd?.sb) return
+    const ids = (sbd.source_capture_ids || []).filter(Boolean)
+    const have = ids.map((id) => captureById[id]).filter(Boolean)
+    let rows = have
+    if (have.length < ids.length) {
+      const { data } = await supabase.from('marketing_captures').select('*').eq('company_id', companyId).in('id', ids)
+      rows = ids.map((id) => have.find((c) => c.id === id) || (data || []).find((c) => c.id === id)).filter(Boolean)
+    }
+    setReopen({ initial: sbd, captures: rows })
+    setDirecting(true)
+  }
+  const paintPictures = async (description, count) => {
+    setPainting(true)
+    const r = await invoke('marketing-image', { description, brand: multi ? postBrand || '' : '', count, aspect: 'vertical' })
+    setPainting(false)
+    if (!r.ok) { toast.error(r.error || 'Could not make pictures'); return false }
+    onPictures(r.captures || [])
+    toast.success(`Made ${(r.captures || []).length} picture${(r.captures || []).length === 1 ? '' : 's'}. They are in the inbox too.`)
+    return true
   }
   // The editor's result replaces the post's videos with the one it made.
   const onEdited = (row) => {
@@ -1212,9 +1246,13 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
           brand={multi ? postBrand || null : null} jobId={initialPost?.job_id || null} invoke={invoke} onClose={() => setEditing(false)} onDone={onEdited} />
       )}
       {directing && (
-        <StoryboardMaker theme={theme} isMobile={isMobile} captures={captureIds.map((id) => captureById[id]).filter(Boolean)} caption={caption} note={note}
+        <StoryboardMaker theme={theme} isMobile={isMobile} captures={reopen ? reopen.captures : captureIds.map((id) => captureById[id]).filter(Boolean)} caption={caption} note={note}
           companyId={companyId} employeeId={currentEmployee?.id || null} brand={multi ? postBrand || null : null} brandInfo={brandInfo} jobId={initialPost?.job_id || null}
-          invoke={invoke} onClose={() => setDirecting(false)} onDone={onDirected} />
+          invoke={invoke} initial={reopen?.initial || null} onPictures={onPictures} onClose={() => { setDirecting(false); setReopen(null) }} onDone={onDirected} />
+      )}
+      {paintSheet && (
+        <PictureMaker theme={theme} isMobile={isMobile} seed={note || caption || ''} busy={painting} onClose={() => setPaintSheet(false)}
+          onMake={async (description, count) => { const ok = await paintPictures(description, count); if (ok) setPaintSheet(false) }} />
       )}
       <div onClick={(e) => e.stopPropagation()} style={{ background: theme.bgCard, width: isMobile ? '100%' : 720, maxHeight: isMobile ? '100%' : '92vh', overflowY: 'auto', borderRadius: isMobile ? 0 : 14, display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.border}`, position: 'sticky', top: 0, background: theme.bgCard, zIndex: 1 }}>
@@ -1260,6 +1298,9 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
                   <Clapperboard size={18} /> AI video
                 </button>
               )}
+              <button type="button" onClick={() => setPaintSheet(true)} disabled={painting} title="Nothing from the field? The AI paints a picture from a line, in your brand's world. It is labelled AI." style={{ width: 84, height: 84, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
+                <Sparkles size={18} /> {painting ? 'Painting…' : 'AI picture'}
+              </button>
               <input ref={camPhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onShot} />
               <input ref={camVideoRef} type="file" accept="video/*" capture="environment" style={{ display: 'none' }} onChange={onShot} />
             </div>
@@ -1311,6 +1352,9 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
           )}
           {mediaType === 'video' && videoCaptures.length === 1 && canEditVideo() && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {videoCapture?.source === 'generated' && videoCapture?.storyboard?.sb && (
+                <button type="button" onClick={() => reopenVideo(videoCapture)} title="Reopen the plan: change the scenes, the script, the voice or the music, and make it again" style={primaryBtn(MKT)}><Clapperboard size={14} /> Edit this video</button>
+              )}
               <button type="button" onClick={() => setEditing(true)} style={ghostBtn(theme)}><Scissors size={14} /> Trim this clip</button>
               <span style={{ fontSize: 12, color: theme.textMuted }}>{videoCapture?.duration_s ? `${Math.round(videoCapture.duration_s)}s now. ` : ''}Reels do best under 60 seconds, vertical.</span>
             </div>
@@ -1948,15 +1992,15 @@ function LibraryTab({ theme, isMobile, companyId, brands, brand, employees, isMa
 // Mirrors VOICES in supabase/functions/marketing-voice; shown until the server answers.
 const STOCK_VOICES = [['Bill', 'pqHfZKP75CvOlQylNhV4'], ['Rachel', '21m00Tcm4TlvDq8ikWAM'], ['Adam', 'pNInz6obpgDQGcFmaJgB'], ['Sarah', 'EXAVITQu4vr4xnSDxMaL'], ['Brian', 'nPczCjzI2devNBz1zQrb'], ['Drew', '29vD33N1CtxCmqQRPOHJ'], ['Antoni', 'ErXwobaYiN019PkySvjV'], ['Domi', 'AZnzlk1XvdvUeBnXmlld'], ['Charlie', 'IKne3meq5aSn9XLyUdCD']].map(([name, id]) => ({ id, name, category: 'premade', preview_url: null }))
 
-function useSoundtrack({ invoke, brand, autoMood = 'calm', initialMusic = 'none', initialVoiceOn = false }) {
+function useSoundtrack({ invoke, brand, autoMood = 'calm', initialMusic = 'none', initialVoiceOn = false, initialMusicGain = 0.6, initialVoiceId = null, initialScript = '' }) {
   const [music, setMusic] = useState(initialMusic)      // auto | calm | upbeat | bold | own | none
-  const [musicGain, setMusicGain] = useState(0.6)
+  const [musicGain, setMusicGain] = useState(initialMusicGain)
   const [ownTrack, setOwnTrack] = useState(null)        // { name, arrayBuffer }
   const trackRef = useRef(null)
   const [voiceOn, setVoiceOn] = useState(initialVoiceOn)
   const [voiceStatus, setVoiceStatus] = useState(null)  // { available, voices:[{id,name,category,preview_url}], from }
-  const [voiceId, setVoiceId] = useState(STOCK_VOICES[0].id)
-  const [script, setScript] = useState('')
+  const [voiceId, setVoiceId] = useState(initialVoiceId || STOCK_VOICES[0].id)
+  const [script, setScript] = useState(initialScript || '')
   const [voiceUrl, setVoiceUrl] = useState(null)        // generated mp3 for the current script
   const [voicing, setVoicing] = useState(false)
   const [preview, setPreview] = useState(null)          // { kind: 'music'|'voice', pause }
@@ -2203,22 +2247,69 @@ function VideoEditor({ theme, isMobile, clips, caption, note, companyId, employe
   )
 }
 
+// ── AI pictures ──────────────────────────────────────────────────────
+// For a post with nothing from the field: a line becomes one to three
+// pictures in the brand's world (marketing-image, Gemini). They land in
+// the inbox like any photo, labelled AI, and go straight onto the post.
+function PictureMaker({ theme, isMobile, seed = '', busy, onMake, onClose }) {
+  const [description, setDescription] = useState(seed)
+  const [count, setCount] = useState(1)
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'center' }} onClick={() => !busy && onClose()}>
+      {busy && <ScoutLoader overlay theme={theme} label={`Painting ${count} picture${count === 1 ? '' : 's'}…`} sub="About twenty seconds each." />}
+      <div onClick={(e) => e.stopPropagation()} style={{ background: theme.bgCard, width: isMobile ? '100%' : 520, maxHeight: isMobile ? '100%' : '92vh', overflowY: 'auto', borderRadius: isMobile ? 0 : 14, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.border}` }}>
+          <Sparkles size={18} color={MKT} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>Make a picture with AI</div>
+            <div style={{ fontSize: 12, color: theme.textMuted }}>For when there is nothing from the field. It is labelled AI in the inbox.</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ ...ghostBtn(theme), padding: 8 }}><X size={18} /></button>
+        </div>
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <div style={sectionLabel(theme)}>What should it show?</div>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="A two-man crew pressure washing granite pavers at a building entrance, morning light." style={{ ...inputStyle(theme), minHeight: 72, resize: 'vertical', fontFamily: 'inherit' }} />
+            <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>Say the place, the work and the light. The brand's services and area are added for you. No text or logos are painted in.</div>
+          </div>
+          <div>
+            <div style={sectionLabel(theme)}>How many</div>
+            <div style={{ display: 'flex', gap: 6 }}>{[1, 2, 3].map((n) => <button key={n} type="button" onClick={() => setCount(n)} style={chip(theme, count === n)}>{n}</button>)}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${theme.border}`, alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: theme.textMuted, flex: 1 }}>Real photos from the crew always beat these. Use them for a service you have no photo of yet.</span>
+          <button type="button" onClick={onClose} style={ghostBtn(theme)}>Cancel</button>
+          <button type="button" onClick={() => onMake(description.trim(), count)} disabled={busy || !description.trim()} style={{ ...primaryBtn(MKT), opacity: description.trim() ? 1 : 0.5 }}><Sparkles size={15} /> Make {count === 1 ? 'it' : 'them'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── AI video maker ───────────────────────────────────────────────────
 // The pattern Bryce showed from an Instagram lighting ad: the same room
 // dark then lit with a bold headline over it, a brand card, a call to
 // action. The AI writes the storyboard from the selected photos, clips and
 // a line; each scene is editable; the browser renders it with the brand's
 // name, logo and colour; the result goes on the post.
-function StoryboardMaker({ theme, isMobile, captures, caption, note, companyId, employeeId, brand, brandInfo, jobId, invoke, onClose, onDone }) {
-  const [description, setDescription] = useState(caption || note || '')
-  const [sb, setSb] = useState(null)              // { headline, scenes, cta, why }
+// initial: a saved plan (marketing_captures.storyboard of a video the AI made)
+// so the maker opens where it left off — scenes, script, voice, music — and
+// Make replaces the old video instead of starting over. onPictures: new AI
+// pictures made here go back to the composer's inbox list too.
+function StoryboardMaker({ theme, isMobile, captures: given, caption, note, companyId, employeeId, brand, brandInfo, jobId, invoke, initial = null, onPictures = null, onClose, onDone }) {
+  const [description, setDescription] = useState(initial?.description || caption || note || '')
+  const [sb, setSb] = useState(initial?.sb || null)              // { headline, scenes, cta, why }
   const [planning, setPlanning] = useState(false)
-  const [aspect, setAspect] = useState('vertical')
+  const [aspect, setAspect] = useState(initial?.aspect || 'vertical')
   const [rendering, setRendering] = useState(null)
+  const [painting, setPainting] = useState(false)
+  const [made, setMade] = useState([])            // AI pictures made from this screen
   const abortRef = useRef(null)
+  const captures = useMemo(() => [...given, ...made.filter((m) => !given.some((g) => g.id === m.id))], [given, made])
   const byId = useMemo(() => Object.fromEntries(captures.map((c) => [c.id, c])), [captures])
   const norm = sb ? normalizeStoryboard(sb, captures) : null
-  const snd = useSoundtrack({ invoke, brand, autoMood: sb?.mood || 'calm', initialMusic: 'auto', initialVoiceOn: true })
+  const snd = useSoundtrack({ invoke, brand, autoMood: sb?.mood || 'calm', initialMusic: initial?.music || 'auto', initialVoiceOn: initial ? initial.voiceOn !== false : true, initialMusicGain: initial?.musicGain ?? 0.6, initialVoiceId: initial?.voiceId || null, initialScript: initial?.script || '' })
   useEffect(() => { if (sb?.voiceover && !snd.script) snd.setScript(sb.voiceover) }, [sb]) // eslint-disable-line react-hooks/exhaustive-deps
   const fmt = (n) => `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, '0')}`
 
@@ -2228,6 +2319,18 @@ function StoryboardMaker({ theme, isMobile, captures, caption, note, companyId, 
     setPlanning(false)
     if (!r.ok) { toast.error(r.error || 'Could not plan the video'); return }
     setSb(r)
+  }
+  // No photos? The AI paints two from the line, they join the inbox, then it plans.
+  const paint = async () => {
+    if (!description.trim()) { toast.error('Write a line about what the video should show first.'); return }
+    setPainting(true)
+    const r = await invoke('marketing-image', { description, brand: brand || '', count: 2, aspect: 'vertical' })
+    setPainting(false)
+    if (!r.ok) { toast.error(r.error || 'Could not make pictures'); return }
+    const rows = r.captures || []
+    setMade((xs) => [...xs, ...rows])
+    onPictures?.(rows)
+    toast.success(`Made ${rows.length} picture${rows.length === 1 ? '' : 's'}.`)
   }
   const setScene = (i, patch) => setSb((x) => ({ ...x, scenes: x.scenes.map((sc, j) => (j === i ? { ...sc, ...patch } : sc)) }))
   const move = (i, d) => setSb((x) => { const y = [...x.scenes]; const j = i + d; if (j < 0 || j >= y.length) return x; [y[i], y[j]] = [y[j], y[i]]; return { ...x, scenes: y } })
@@ -2242,7 +2345,8 @@ function StoryboardMaker({ theme, isMobile, captures, caption, note, companyId, 
       const soundtrack = await snd.buildSoundtrack(norm.total)
       const out = await renderStoryboard({ storyboard: sb, captures, brand: { ...brandInfo, ...(sb.brand || {}) , logo_url: sb.brand?.logo_url || brandInfo.logo_url, color: sb.brand?.color || brandInfo.color }, aspect, soundtrack, onProgress: (pct, seconds) => setRendering({ pct: Math.round(pct * 100), seconds }), signal: ac.signal })
       setRendering({ pct: 100, seconds: out.duration, uploading: true })
-      const row = await uploadCapture({ companyId, employeeId, jobId, file: out.file, note: `AI video: ${sb.headline || description.slice(0, 60)}`, source: 'generated', brand })
+      const storyboard = { description, sb, aspect, music: snd.music, musicGain: snd.musicGain, voiceId: snd.voiceId, voiceOn: snd.voiceOn, script: snd.script, source_capture_ids: captures.map((c) => c.id), made_at: new Date().toISOString() }
+      const row = await uploadCapture({ companyId, employeeId, jobId, file: out.file, note: `AI video: ${sb.headline || description.slice(0, 60)}`, source: 'generated', brand, storyboard })
       toast.success(`Made a ${Math.round(out.duration)}s video.`)
       onDone(row)
     } catch (err) {
@@ -2271,10 +2375,13 @@ function StoryboardMaker({ theme, isMobile, captures, caption, note, companyId, 
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Hard evidence that lighting is everything. Same warehouse, before and after our LED retrofit." style={{ ...inputStyle(theme), minHeight: 72, resize: 'vertical', fontFamily: 'inherit' }} />
             <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <button type="button" onClick={plan} disabled={planning || (!description.trim() && !captures.length)} style={primaryBtn(MKT)}><Sparkles size={15} /> {planning ? 'Directing…' : sb ? 'Plan it again' : 'Plan the video'}</button>
+              {!captures.length && <button type="button" onClick={paint} disabled={painting || !description.trim()} title="No photos? The AI paints two from your line and they join the inbox" style={{ ...ghostBtn(theme), minHeight: 40 }}><ImageIcon size={15} /> {painting ? 'Painting…' : 'Make pictures first'}</button>}
               <span style={{ fontSize: 12, color: theme.textMuted }}>Two photos of the same spot become a before-and-after reveal.</span>
             </div>
           </div>
           {planning && <ScoutLoader theme={theme} label="Looking at the photos…" size={44} />}
+          {painting && <ScoutLoader theme={theme} label="Painting two pictures…" size={44} sub="About twenty seconds each." />}
+          {!captures.length && !painting && <div style={{ fontSize: 12, color: theme.textMuted }}>Nothing from the field yet. Write the line, then Make pictures first; or go back and add photos.</div>}
 
           {sb && norm && (
             <>
