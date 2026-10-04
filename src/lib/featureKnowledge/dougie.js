@@ -59,7 +59,7 @@ export default {
     gotchas: [
       "Image input only (JPEG/PNG page photos); a PDF has to be rasterised by the caller first.",
       "Corrections are keyed per company (LENARD_COMPANY_ID in the function today), so they help HHH; other tenants get no replayed examples yet.",
-      "Not built: utility bills, receipts, W-9s, insurance certs, rebate forms, doc-type schemas, confidence scores — an earlier card claimed these; none exist.",
+      "He does not read utility bills, receipts, W-9s or insurance certificates, and he does not fill rebate forms; there are no document-type schemas or confidence scores. A receipt or bill photo dropped into any AI chat box is read into that conversation, not by a Dougie feature. Answer the question asked; do not recount what earlier cards claimed.",
     ],
 
     actions: {

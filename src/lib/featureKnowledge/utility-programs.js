@@ -60,8 +60,8 @@ export default {
       {
         icon: 'FileSignature',
         title: 'Bind the rebate form',
-        body: 'The utility PDF is attached to the program. Field map is configured — Lenard auto-fills it after each audit.',
-        narration: 'The utility PDF is bound. Lenard auto-fills it after each audit.',
+        body: 'Data Console → Utilities: upload the utility\'s PDF application for the provider, map its fields to audit data (AI suggests the mapping), publish it. Lenard fills it from the audit — Rocky Mountain Power today.',
+        narration: 'Upload the utility PDF, map its fields, publish. Lenard fills it after each audit.',
         baseDur: 5500,
       },
     ],
@@ -72,7 +72,7 @@ export default {
       "The catalog of rebate programs offered by utilities Job Scout supports. Each program record carries a source_year, an active flag, a measure table (rebate_measures), a custom-calc kWh rate, and the official utility PDF binding for auto-filled forms.",
 
     howItWorks:
-      "Backed by utility_programs table (multi-tenant via company_id, but core program records are global). source_year locks rebate values to the year the audit was performed (no drift). rebate_measures one-to-many. utility_form_bindings + utility_form_field_maps drive PDF auto-fill at proposal generation.",
+      "Backed by utility_programs table (multi-tenant via company_id, but core program records are global). source_year locks rebate values to the year the audit was performed (no drift). rebate_measures one-to-many. Forms: utility_forms rows per provider/program (form_file in the utility-pdfs bucket or form_url, status dev → published, field_mapping JSON edited in Data Console → Utilities). Lenard's RMP audit page fetches the published form of a type, resolves field_mapping against the audit, and fills it with pdf-lib (lib/pdfFormFiller) for the proposal. Document packages (Document Rules) can include utility forms too.",
 
     examples: [
       'RMP Wattsmart 2026 → 80 prescriptive measures + custom-calc fallback',
@@ -92,7 +92,7 @@ export default {
       },
       {
         q: 'What about the rebate form PDF?',
-        a: 'Bound to the program. Lenard auto-fills it after each audit and attaches it to the proposal.',
+        a: 'Uploaded and field-mapped in Data Console → Utilities, then published. Lenard fills it from the audit and attaches it to the proposal (Rocky Mountain Power today; other utilities\' forms are filled by hand). Dougie has nothing to do with it.',
       },
     ],
 

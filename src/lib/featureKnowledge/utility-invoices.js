@@ -54,8 +54,8 @@ export default {
       {
         icon: 'FileSignature',
         title: 'File with the utility',
-        body: 'Submit the rebate form to RMP / SRP / APS / your utility, filled by hand from the audit. The utility invoice page generates the utility-copy summary PDF to send with it.',
-        narration: 'File the form with the utility. Send the summary PDF with it.',
+        body: 'Submit the rebate application to RMP / SRP / APS / your utility. On a Rocky Mountain Power audit, Lenard fills the utility\'s own PDF application from the audit (the form and its field map live in Data Console → Utilities); for other utilities you fill their form by hand. The utility invoice page generates the utility-copy summary PDF to send with it.',
+        narration: 'File with the utility. Lenard fills the RMP application; the summary PDF goes with it.',
         baseDur: 5500,
       },
       {
@@ -90,7 +90,7 @@ export default {
     faqs: [
       {
         q: 'Does it auto-fill the utility\'s rebate form?',
-        a: 'No. The utility\'s own form is filled by hand. The utility invoice page generates the utility-copy summary PDF (project cost, incentive, parts/labor split, balance due) to attach to it. Dougie is not involved; he reads handwritten takeoff sheets for Lenard.',
+        a: 'Lenard does, on the audit, not this page: on a Rocky Mountain Power audit he fills the published utility PDF application (utility_forms, field_mapping set in Data Console → Utilities) from the audit data with pdf-lib and attaches it to the proposal. Other utilities\' forms are filled by hand. This page generates the utility-copy summary PDF (project cost, incentive, parts/labor split, balance due). Dougie is not involved; he reads handwritten takeoff sheets.',
       },
       {
         q: 'What if the utility shorts me on the rebate?',
