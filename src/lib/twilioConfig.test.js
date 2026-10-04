@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  normalizePhone, isE164, twilioConfigProblem, normalizeTwilioConfig,
+  normalizePhone, isE164, twilioConfigProblem, normalizeTwilioConfig, smsErrorHelp, smsTestOutcome,
   SID_LENGTH, TOKEN_LENGTH,
 } from './twilioConfig'
 
@@ -103,5 +103,50 @@ describe('what gets stored', () => {
     // The problem message already refuses the save; do not also discard what
     // they entered, or they cannot see what to correct.
     expect(normalizeTwilioConfig({ ...good, from_number: 'nonsense' }).from_number).toBe('nonsense')
+  })
+})
+
+// ── "the test said it sent but I didnt get it" ─────────────────────────────
+//
+// Twilio returned queued, the UI called that success, and the carrier then
+// rejected it with 30034 — the number is not registered for A2P 10DLC. Queued
+// is Twilio accepting a message, not anyone receiving one.
+describe('what to say after a test send', () => {
+  it('only delivered is success', () => {
+    expect(smsTestOutcome({ status: 'delivered' })).toEqual({ ok: true, message: 'Test message delivered.' })
+  })
+
+  it('queued is NOT success, and says why that matters', () => {
+    const r = smsTestOutcome({ status: 'queued' })
+    expect(r.ok).toBe(false)
+    expect(r.message).toMatch(/not the same as arriving/i)
+  })
+
+  it('his actual failure explains A2P 10DLC and what to do', () => {
+    const r = smsTestOutcome({ status: 'undelivered', error_code: 30034 })
+    expect(r.ok).toBe(false)
+    expect(r.message).toMatch(/30034/)
+    expect(r.message).toMatch(/A2P 10DLC/)
+    expect(r.message).toMatch(/Register a Brand and Campaign/)
+  })
+
+  it('names the code even when it has no translation', () => {
+    const r = smsTestOutcome({ status: 'failed', error_code: 99999 })
+    expect(r.message).toMatch(/99999/)
+    expect(r.message).toMatch(/Twilio console/)
+  })
+
+  it('translates the other codes people actually hit', () => {
+    expect(smsErrorHelp(21608)).toMatch(/trial/i)
+    expect(smsErrorHelp(30007)).toMatch(/spam/i)
+    expect(smsErrorHelp(21610)).toMatch(/STOP/)
+    expect(smsErrorHelp(null)).toBe(null)
+    expect(smsErrorHelp('nonsense')).toBe(null)
+  })
+
+  it('sent is good news but not a confirmation', () => {
+    const r = smsTestOutcome({ status: 'sent' })
+    expect(r.ok).toBe(true)
+    expect(r.message).toMatch(/carrier/i)
   })
 })

@@ -82,3 +82,52 @@ export function normalizeTwilioConfig(config = {}) {
     from_number: normalizePhone(config.from_number) || String(config.from_number ?? '').trim(),
   }
 }
+
+// ── What the carrier said, in English ──────────────────────────────────────
+//
+// Twilio accepting a message ("queued") is not the carrier delivering it. Bryce:
+// "the test said it sent but I didnt get it" — both his test and a probe went
+// queued and then undelivered with error 30034, and nothing ever looked past the
+// queue. These are the codes worth translating, because each has a different
+// thing the person has to go and do.
+const SMS_ERRORS = {
+  30034: 'That number is not registered for A2P 10DLC, so US carriers reject every message from it. Register a Brand and Campaign in Twilio (Messaging → Regulatory Compliance → A2P 10DLC) and attach this number. It is required for business texting in the US and takes a day or two to approve.',
+  30032: 'Twilio has blocked this account from sending. Check for a billing or compliance hold in the Twilio console.',
+  30007: 'The carrier filtered the message as spam. Shorter, plainer wording with no link usually gets through.',
+  30003: 'The handset is unreachable — switched off, or out of coverage.',
+  30005: 'That number does not exist, or cannot receive texts.',
+  30006: 'That is a landline, or a number that cannot receive texts.',
+  21211: 'That phone number is not a valid number Twilio can text.',
+  21608: 'On a Twilio trial you can only text numbers you have verified. Verify the number, or upgrade the account.',
+  21606: 'The From number cannot send texts. Check it is SMS-capable and on this account.',
+  21610: 'That person replied STOP, so Twilio will not text them again until they opt back in.',
+}
+
+/** Plain English for a Twilio delivery error code, or null if unmapped. */
+export function smsErrorHelp(code) {
+  const n = Number(code)
+  return Number.isFinite(n) ? (SMS_ERRORS[n] || null) : null
+}
+
+/**
+ * What to tell someone after a test send, given Twilio's final status.
+ *
+ * `delivered` is the only success. `sent` means it left Twilio and the carrier
+ * has not confirmed. `queued`/`accepted` mean nobody knows yet — which is what
+ * used to be reported as "sent successfully".
+ */
+export function smsTestOutcome({ status, error_code: errorCode } = {}) {
+  const s = String(status || '').toLowerCase()
+  const help = smsErrorHelp(errorCode)
+  const codeNote = errorCode ? ` (Twilio error ${errorCode})` : ''
+  if (s === 'delivered') return { ok: true, message: 'Test message delivered.' }
+  if (s === 'sent') return { ok: true, message: 'Sent to the carrier. It should arrive shortly.' }
+  if (s === 'undelivered' || s === 'failed') {
+    return { ok: false, message: `Not delivered${codeNote}. ${help || 'Check the message in the Twilio console for the reason.'}` }
+  }
+  // queued / accepted / sending / anything unexpected
+  return {
+    ok: false,
+    message: `Twilio accepted it but has not delivered it yet (${s || 'unknown'}). That is not the same as arriving — check the Twilio console if it does not turn up.`,
+  }
+}

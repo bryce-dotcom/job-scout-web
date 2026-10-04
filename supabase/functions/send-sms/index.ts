@@ -20,7 +20,7 @@ serve(async (req) => {
 
     // trigger / customer_id / employee_id: who and why, for the log. log:false
     // for a caller that writes its own richer row (Arnie's follow-up rail).
-    const { company_id, to, message, template, template_data, trigger, customer_id, employee_id, log } = await req.json();
+    const { company_id, to, message, template, template_data, trigger, customer_id, employee_id, log, verify } = await req.json();
 
     if (!company_id) {
       return new Response(JSON.stringify({ error: 'company_id is required' }),
@@ -99,11 +99,42 @@ serve(async (req) => {
       }), { status: twilioRes.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // "queued" is Twilio ACCEPTING the message, not the carrier delivering it.
+    //
+    // Bryce: "the test said it sent but I didnt get it." Both his test and a
+    // probe came back queued and then went undelivered with error 30034 — the
+    // number is not registered for US A2P 10DLC, so the carrier refuses every
+    // message. Nothing ever looked past the queue, so the screen said sent.
+    //
+    // With verify:true (the Test button) wait briefly and report what actually
+    // happened. Only for a test: a real send must not be held up to watch it.
+    let finalStatus = twilioData.status;
+    let errorCode = null;
+    if (verify === true && twilioData.sid) {
+      for (let i = 0; i < 4; i++) {
+        await new Promise((r) => setTimeout(r, 1200));
+        try {
+          const check = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${config.account_sid}/Messages/${twilioData.sid}.json`,
+            { headers: { Authorization: `Basic ${credentials}` } });
+          if (!check.ok) break;
+          const m = await check.json();
+          finalStatus = m.status || finalStatus;
+          errorCode = m.error_code ?? null;
+          if (['delivered', 'undelivered', 'failed', 'sent'].includes(finalStatus)) break;
+        } catch { break; }
+      }
+    }
+
     // The record. This insert used to name columns the table does not have
     // (direction, to_address, body…) and swallow the error, so no text this
     // function ever sent was on the communications log. These are the
     // columns communications_log actually has; a failure is logged, not hidden.
+    //
+    // Written AFTER the delivery check, so when we know the carrier refused it
+    // the log does not claim it was sent. Without verify we only know Twilio
+    // accepted it, which is what this has always recorded.
     if (log !== false) {
+      const rejected = finalStatus === 'undelivered' || finalStatus === 'failed';
       const { error: logErr } = await supabase.from('communications_log').insert({
         company_id,
         type: 'sms',
@@ -112,8 +143,8 @@ serve(async (req) => {
         employee_id: employee_id ?? null,
         recipient: cleanTo,
         sent_date: new Date().toISOString().slice(0, 10),
-        status: 'sent',
-        response: `${String(body).slice(0, 220)} [${twilioData.sid}]`,
+        status: rejected ? 'failed' : 'sent',
+        response: `${String(body).slice(0, 220)} [${twilioData.sid}${errorCode ? ` err ${errorCode}` : ''}]`,
       });
       if (logErr) console.error('[send-sms] communications_log insert failed:', logErr.message);
     }
@@ -121,7 +152,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       sid: twilioData.sid,
-      status: twilioData.status,
+      status: finalStatus,
+      error_code: errorCode,
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {

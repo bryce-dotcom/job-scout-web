@@ -55,7 +55,7 @@ import {
 import { seedSampleData, clearAllData } from '../lib/seedData'
 import BillingTab from '../components/BillingTab'
 import { toast } from '../lib/toast'
-import { twilioConfigProblem, normalizeTwilioConfig } from '../lib/twilioConfig'
+import { twilioConfigProblem, normalizeTwilioConfig, smsTestOutcome } from '../lib/twilioConfig'
 import { WALLETS } from '../lib/wallets'
 import { DOCUMENT_TYPES, DOCUMENT_TYPES_KEY, labelsFor, configFromSettings } from '../lib/documentVocabulary'
 
@@ -4884,6 +4884,10 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
   const [twSaving, setTwSaving] = useState(false)
   const [twTesting, setTwTesting] = useState(false)
   const [twTestPhone, setTwTestPhone] = useState('')
+  // What the carrier actually did with the test. Kept on screen rather than in
+  // a toast: “register a Brand and Campaign for A2P 10DLC” is not something
+  // anyone can read and act on in five seconds.
+  const [twTestResult, setTwTestResult] = useState(null)
   const [twExpanded, setTwExpanded] = useState(false)
 
   // ─── Plaid state ───
@@ -5106,12 +5110,20 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
       return
     }
     setTwTesting(true)
+    setTwTestResult(null)
     try {
       const { data, error } = await supabase.functions.invoke('send-sms', {
         body: {
           company_id: companyId,
           to: twTestPhone,
-          message: 'This is a test SMS from JobScout. Your Twilio integration is working!'
+          message: 'This is a test SMS from JobScout. Your Twilio integration is working!',
+          // Wait and ask Twilio what the carrier did with it. Bryce: “the test
+          // said it sent but I didnt get it” — Twilio returned `queued`, which
+          // is Twilio ACCEPTING the message, and this reported that as sent.
+          // The carrier then rejected it (error 30034, the number is not
+          // registered for A2P 10DLC) and nobody ever looked. Only the test
+          // waits; a real send must not be held up to watch it.
+          verify: true
         }
       })
       if (error || data?.error) {
@@ -5126,12 +5138,19 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
             detail = body?.error || body?.message || null
           } catch { /* not JSON — fall through to the generic message */ }
         }
-        toast.error(detail ? `Twilio: ${detail}` : 'Failed to send test SMS')
+        const msg = detail ? `Twilio: ${detail}` : 'Failed to send test SMS'
+        toast.error(msg)
+        setTwTestResult({ ok: false, message: msg })
       } else {
-        toast.success('Test SMS sent')
+        // What the CARRIER did, not what Twilio accepted (lib/twilioConfig).
+        const outcome = smsTestOutcome(data)
+        setTwTestResult(outcome)
+        if (outcome.ok) toast.success(outcome.message)
+        else toast.error('Test message was not delivered — see below')
       }
     } catch (e) {
       toast.error('Test failed: ' + e.message)
+      setTwTestResult({ ok: false, message: 'Test failed: ' + e.message })
     }
     setTwTesting(false)
   }
@@ -6030,6 +6049,28 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
                             {twTesting ? 'Sending...' : 'Send Test'}
                           </button>
                         </div>
+
+                        {twTesting && (
+                          <p style={{ fontSize: '12px', color: theme.textMuted, margin: '10px 0 0' }}>
+                            Waiting for the carrier to confirm delivery…
+                          </p>
+                        )}
+
+                        {twTestResult && !twTesting && (
+                          <div style={{
+                            display: 'flex', gap: '8px', alignItems: 'flex-start',
+                            marginTop: '12px', padding: '10px 12px', borderRadius: '8px',
+                            backgroundColor: twTestResult.ok ? 'rgba(34,197,94,0.10)' : 'rgba(239,68,68,0.10)',
+                            border: `1px solid ${twTestResult.ok ? 'rgba(34,197,94,0.30)' : 'rgba(239,68,68,0.30)'}`
+                          }}>
+                            {twTestResult.ok
+                              ? <CheckCircle size={15} color={theme.success} style={{ flexShrink: 0, marginTop: 1 }} />
+                              : <AlertTriangle size={15} color={theme.error} style={{ flexShrink: 0, marginTop: 1 }} />}
+                            <p style={{ fontSize: '12.5px', lineHeight: 1.5, color: theme.text, margin: 0 }}>
+                              {twTestResult.message}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
