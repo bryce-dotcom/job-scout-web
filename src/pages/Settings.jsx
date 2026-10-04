@@ -343,21 +343,37 @@ export default function Settings() {
     setSaving(false)
   }
 
+  // Save one setting, and SAY SO IF IT FAILS.
+  //
+  // This discarded the result of both the update and the insert, and its 21
+  // callers then announced success unconditionally — "Twilio SMS settings
+  // saved!" on a write that never landed. Bryce believed both his Twilio and
+  // his Wisetack credentials were in the app; neither was anywhere in the
+  // database. A save that cannot fail out loud is indistinguishable from one
+  // that works, and you find out when the feature does not.
+  //
+  // It is an upsert now, on the real (company_id, key) unique index. The old
+  // branch chose update-or-insert from the page’s own `settings` array, so
+  // whenever that was stale — a row added in another tab, a fetch not yet
+  // back — it chose INSERT against an existing row and took a unique
+  // violation, silently. Same shape as the 13 settings upserts that had been
+  // failing since forever before that index existed.
+  //
+  // Returns true when the value is actually stored, so a caller can stop
+  // claiming otherwise.
   const saveSetting = async (key, value) => {
-    const existing = settings.find(s => s.key === key)
-    const valueStr = JSON.stringify(value)
-
-    if (existing) {
-      await supabase
-        .from('settings')
-        .update({ value: valueStr })
-        .eq('id', existing.id)
-    } else {
-      await supabase
-        .from('settings')
-        .insert({ company_id: companyId, key, value: valueStr })
+    const { error } = await supabase
+      .from('settings')
+      .upsert(
+        { company_id: companyId, key, value: JSON.stringify(value) },
+        { onConflict: 'company_id,key' },
+      )
+    if (error) {
+      toast.error(`Could not save ${key}: ${error.message}`)
+      return false
     }
-    fetchSettings()
+    await fetchSettings()
+    return true
   }
 
   const addItem = (type, value) => {
@@ -5064,9 +5080,11 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
   // ─── Twilio handlers ───
   const handleSaveTwilio = async () => {
     setTwSaving(true)
-    await saveSetting('twilio_config', twForm)
+    const saved = await saveSetting('twilio_config', twForm)
     setTwSaving(false)
-    toast.success('Twilio SMS settings saved!')
+    // Only say it saved if it saved. This said so unconditionally, which is
+    // why the credentials were believed to be in the app and were not.
+    if (saved) toast.success('Twilio SMS settings saved')
   }
 
   const handleTestSMS = async () => {

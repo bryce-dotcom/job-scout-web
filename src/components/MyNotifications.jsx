@@ -30,6 +30,8 @@ const ICON = {
   fleet_request_declined: Wrench,
   marketing_capture: Megaphone,
   marketing_drafts_ready: Megaphone,
+  // A person telling the crew something, not a system event (d6a848b5).
+  crew_broadcast: Megaphone,
 }
 // Severity is colour, and only the two that need to interrupt are loud.
 const TONE = {

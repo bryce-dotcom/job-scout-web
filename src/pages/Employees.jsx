@@ -8,11 +8,12 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import {
   Plus, Minus, Pencil, X, User, Phone, Mail, Eye,
   DollarSign, Clock, Calendar, Briefcase, Lock,
-  Camera, FileText, Upload, Download, Settings, Trash2, Send, KeyRound, Zap, AlertTriangle
+  Camera, FileText, Upload, Download, Settings, Trash2, Send, KeyRound, Zap, AlertTriangle, Megaphone
 } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { employeesFields } from '../lib/importExportFields'
-import { isAdmin as checkAdmin, canAccessDevTools, canEditPipelineStages, canViewHR, canManageHRAccess } from '../lib/accessControl'
+import { isAdmin as checkAdmin, canAccessDevTools, canEditPipelineStages, canViewHR, canManageHRAccess, canManageTeam } from '../lib/accessControl'
+import CrewBroadcastModal from '../components/CrewBroadcastModal'
 import RankBadge from '../components/RankBadge'
 import OnboardingPanel from '../components/OnboardingPanel'
 import { w9Status, contractorsMissingW9 } from '../lib/w9Status'
@@ -189,6 +190,7 @@ export default function Employees() {
   const [resettingPassword, setResettingPassword] = useState(false)
   const [resetMessage, setResetMessage] = useState(null)
   const [showImportExport, setShowImportExport] = useState(false)
+  const [showBroadcast, setShowBroadcast] = useState(false)
   const [showCredentialsModal, setShowCredentialsModal] = useState(false)
   const [credEmail, setCredEmail] = useState('')
   const [credPassword, setCredPassword] = useState('')
@@ -1249,6 +1251,14 @@ export default function Employees() {
               <button onClick={() => exportToCSV(displayedEmployees || employees, employeesFields, 'employees_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
                 <Download size={18} /> Export
               </button>
+              {canManageTeam(currentUser) && (
+                <button
+                  onClick={() => setShowBroadcast(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', minHeight: '44px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}
+                >
+                  <Megaphone size={18} /> Message crew
+                </button>
+              )}
               <button
                 onClick={openAddModal}
                 style={{
@@ -3589,6 +3599,14 @@ export default function Employees() {
             </div>
           </div>
         </>
+      )}
+
+      {showBroadcast && (
+        <CrewBroadcastModal
+          theme={theme}
+          employees={employees}
+          onClose={() => setShowBroadcast(false)}
+        />
       )}
 
       {showImportExport && (
