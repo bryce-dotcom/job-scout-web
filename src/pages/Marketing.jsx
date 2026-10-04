@@ -263,9 +263,23 @@ export default function Marketing() {
   const videoCamRef = useRef(null)
   const [uploading, setUploading] = useState(false)
   const [uploadPct, setUploadPct] = useState(null)   // 0..100 while a large file goes up
+  // 'photo' | 'video' | 'library' while the camera or picker is open. On a
+  // phone the camera takes a few seconds to hand a video over, and nothing
+  // on screen said so — people pressed the button again. The hint under the
+  // buttons covers that gap; the scout takes over the moment the file lands.
+  const [picking, setPicking] = useState(null)
+  const pick = (kind, ref) => { setPicking(kind); ref.current?.click() }
+  useEffect(() => {
+    if (!picking) return
+    // Back in the app with nothing chosen (cancelled): clear the hint after a beat.
+    const onFocus = () => setTimeout(() => setPicking((p) => (p === picking ? null : p)), 3000)
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [picking])
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
+    setPicking(null)
     if (!files.length) return
     setUploading(true)
     let ok = 0
@@ -378,7 +392,7 @@ export default function Marketing() {
           links={profileLinks(publisher, brandKit)}
           waiting={posts.filter((p) => ['draft', 'approved'].includes(p.status)).length}
           scheduled={posts.filter((p) => p.status === 'scheduled').length}
-          onTakePhoto={() => photoCamRef.current?.click()} onRecordVideo={() => videoCamRef.current?.click()} onLibrary={() => uploadRef.current?.click()}
+          picking={picking} onTakePhoto={() => pick('photo', photoCamRef)} onRecordVideo={() => pick('video', videoCamRef)} onLibrary={() => pick('library', uploadRef)}
           onBack={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
           onOpenTab={(t) => { setTab(t); setView('full') }}
         />
@@ -463,7 +477,7 @@ export default function Marketing() {
           onHandPost={(p) => setHandPost(p)} onSync={syncPost} />
       ) : tab === 'inbox' ? (
         <InboxTab theme={theme} isMobile={isMobile} captures={captures} uploading={uploading} uploadPct={uploadPct} invoke={invoke} isManager={isManager} onChanged={load}
-          onUploadClick={() => uploadRef.current?.click()} onTakePhoto={() => photoCamRef.current?.click()} onRecordVideo={() => videoCamRef.current?.click()} onDismiss={dismissCapture}
+          picking={picking} onUploadClick={() => pick('library', uploadRef)} onTakePhoto={() => pick('photo', photoCamRef)} onRecordVideo={() => pick('video', videoCamRef)} onDismiss={dismissCapture}
           onMakePost={(ids) => setComposer({ captureIds: ids })} />
       ) : tab === 'brand' ? (
         <BrandTab theme={theme} isMobile={isMobile} kit={brandKit} company={company} eos={eos} onSave={saveBrandKit} onFill={fillFromEos} brands={brands} brand={currentBrand} businessUnits={businessUnits} isManager={isManager} onSaveBrands={saveBrands} />
@@ -525,7 +539,7 @@ export default function Marketing() {
 // the marketer; a tech never has to see them. Bryce: "if I'm in the field
 // and I press marketing the first thing I should see is how to add a video
 // from my phone or take one. Let the marketer deal with the posts."
-function CaptureFirst({ theme, isMobile, brands, brandId, onPickBrand, uploading, uploadPct, noteRef, isManager, captures, captureMap = {}, posts = [], employeeId, links = [], waiting = 0, scheduled = 0, onTakePhoto, onRecordVideo, onLibrary, onBack, onOpenTab }) {
+function CaptureFirst({ theme, isMobile, brands, brandId, onPickBrand, uploading, uploadPct, picking = null, noteRef, isManager, captures, captureMap = {}, posts = [], employeeId, links = [], waiting = 0, scheduled = 0, onTakePhoto, onRecordVideo, onLibrary, onBack, onOpenTab }) {
   const [note, setNote] = useState('')
   const [recent, setRecent] = useState(null)   // the viewer's last 20 captures, any status
   const multi = brands.length > 1
@@ -576,7 +590,13 @@ function CaptureFirst({ theme, isMobile, brands, brandId, onPickBrand, uploading
         <Upload size={24} /> <span>From my phone's library</span>
       </button>
       {uploading && (
-        <ScoutLoader theme={theme} label={uploadPct != null && uploadPct < 100 ? 'Sending' : 'Almost there…'} pct={uploadPct} sub="Keep the app open until he gets there." />
+        <ScoutLoader overlay theme={theme} label={uploadPct != null && uploadPct < 100 ? 'Sending' : 'Almost there…'} pct={uploadPct} sub="Keep the app open until he gets there. One tap is enough." />
+      )}
+      {picking && !uploading && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: MKT_BG, border: `1px solid ${MKT}`, fontSize: 13, color: theme.text }}>
+          <img src="/scout-walk.gif" alt="" width={28} height={28} style={{ borderRadius: 6 }} />
+          <span>{picking === 'video' ? 'Camera is open. When you stop recording, the phone takes a few seconds to hand the video over, then the scout walks while it sends. One tap is enough.' : picking === 'photo' ? 'Camera is open. Take the shot and the scout walks while it sends.' : 'Pick from your library and the scout walks while it sends.'}</span>
+        </div>
       )}
 
       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -781,7 +801,7 @@ function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands =
 }
 
 // ── Inbox ────────────────────────────────────────────────────────────
-function InboxTab({ theme, isMobile, captures, uploading, uploadPct = null, invoke, isManager, onChanged, onUploadClick, onTakePhoto, onRecordVideo, onDismiss, onMakePost }) {
+function InboxTab({ theme, isMobile, captures, uploading, uploadPct = null, picking = null, invoke, isManager, onChanged, onUploadClick, onTakePhoto, onRecordVideo, onDismiss, onMakePost }) {
   const sending = uploading ? (uploadPct != null && uploadPct < 100 ? `Sending ${uploadPct}%` : 'Sending…') : null
   const [selected, setSelected] = useState([])
   const [suggesting, setSuggesting] = useState(false)
@@ -809,7 +829,8 @@ function InboxTab({ theme, isMobile, captures, uploading, uploadPct = null, invo
         {isManager && <button type="button" onClick={suggestNow} disabled={suggesting} title="Draft posts from unused photos and yesterday's finished jobs" style={ghostBtn(theme)}><Sparkles size={15} /> {suggesting ? 'Drafting…' : 'Suggest posts now'}</button>}
         <span style={{ fontSize: 12, color: theme.textMuted, marginLeft: 'auto' }}>Every morning, unused photos and finished jobs become drafts in the queue.</span>
       </div>
-      {uploading && <ScoutLoader theme={theme} label={uploadPct != null && uploadPct < 100 ? 'Sending' : 'Almost there…'} pct={uploadPct} size={52} style={{ marginBottom: 12 }} />}
+      {uploading && <ScoutLoader overlay theme={theme} label={uploadPct != null && uploadPct < 100 ? 'Sending' : 'Almost there…'} pct={uploadPct} sub="Keep this open until he gets there. One tap is enough." />}
+      {picking && !uploading && <div style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 10 }}>{picking === 'video' ? 'Camera is open. After you stop recording, the phone takes a few seconds to hand the video over, then the scout walks while it sends.' : 'Pick the file and the scout walks while it sends.'}</div>}
       <TextInCard theme={theme} isMobile={isMobile} invoke={invoke} isManager={isManager} />
       {captures.length === 0 ? (
         <Empty theme={theme} icon={Camera} title="Inbox is empty" body="Photos and videos your crew shares from Field Scout land here. Or shoot one right now." action={<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}><button type="button" onClick={onTakePhoto} style={primaryBtn(MKT)}><Camera size={15} /> Take photo</button><button type="button" onClick={onRecordVideo} style={primaryBtn(MKT)}><Play size={15} /> Record video</button><button type="button" onClick={onUploadClick} style={ghostBtn(theme)}><Upload size={15} /> Upload</button></div>} />
