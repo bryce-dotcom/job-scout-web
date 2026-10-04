@@ -61,8 +61,8 @@ export default {
       {
         icon: 'Camera',
         title: 'Photo each area',
-        body: 'Tap Add Area, snap a wide shot. Lenard reads fixtures and counts bulbs. Override anything that looks off — Dougie learns the correction for next time.',
-        narration: 'Photo each area. Lenard reads fixtures, counts bulbs. Dougie learns your corrections.',
+        body: 'Tap Add Area, snap a wide shot. Lenard reads fixtures and counts bulbs. Override anything that looks off. Got a handwritten takeoff sheet instead? Hand it to Dougie and he reads it into the audit, learning your corrections.',
+        narration: 'Photo each area. Lenard reads fixtures, counts bulbs. Or hand Dougie the takeoff sheet.',
         baseDur: 6000,
       },
     ],
@@ -73,7 +73,7 @@ export default {
       "An AI-driven energy audit for lighting retrofits. Walk a building, snap photos per area, get an itemized inventory of existing fixtures with proposed LED replacements + rebate math, then produce a customer-signed proposal — all in one session.",
 
     howItWorks:
-      "Backed by lighting_audits, audit_areas, audit_area_fixtures tables. Photos uploaded to audit-photos bucket. Gemini Vision identifies fixture make/model + counts. Existing fixture types matched against fixture_types catalog. Proposed LED matched via fixture_types.replaces_fixture_type_id. Rebate math: rebate_measures table per utility_program, joined with quantity. Dougie OCR Corrections table feeds few-shot examples back into the prompt for per-company learning.",
+      "Backed by lighting_audits, audit_areas, audit_area_fixtures tables. Photos uploaded to audit-photos bucket. The lenard-analyze Edge Function identifies fixture make/model + counts from an area photo. Existing fixture types matched against fixture_types catalog. Proposed LED matched via fixture_types.replaces_fixture_type_id. Rebate math: rebate_measures table per utility_program, joined with quantity. Dougie (dougie-analyze) reads a handwritten takeoff sheet into the audit instead of area photos, and replays the company's past corrections (dougie_corrections) as examples on the next read.",
 
     examples: [
       'New audit at 60k sqft warehouse → walk 6 areas → 240 fixtures identified',

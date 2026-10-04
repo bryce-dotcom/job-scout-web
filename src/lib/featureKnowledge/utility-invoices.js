@@ -54,8 +54,8 @@ export default {
       {
         icon: 'FileSignature',
         title: 'File with the utility',
-        body: 'Submit the rebate form to RMP / SRP / APS / your utility. Dougie auto-fills the form from the audit. You confirm and submit.',
-        narration: 'File the form with the utility. Dougie auto-fills it.',
+        body: 'Submit the rebate form to RMP / SRP / APS / your utility, filled by hand from the audit. The utility invoice page generates the utility-copy summary PDF to send with it.',
+        narration: 'File the form with the utility. Send the summary PDF with it.',
         baseDur: 5500,
       },
       {
@@ -89,8 +89,8 @@ export default {
 
     faqs: [
       {
-        q: 'Does it auto-fill the utility PDF?',
-        a: 'Yes — Dougie auto-fills based on the audit. You confirm and submit. Per-utility form templates live in utility_form_bindings.',
+        q: 'Does it auto-fill the utility\'s rebate form?',
+        a: 'No. The utility\'s own form is filled by hand. The utility invoice page generates the utility-copy summary PDF (project cost, incentive, parts/labor split, balance due) to attach to it. Dougie is not involved; he reads handwritten takeoff sheets for Lenard.',
       },
       {
         q: 'What if the utility shorts me on the rebate?',

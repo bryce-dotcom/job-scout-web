@@ -62,7 +62,7 @@ const STATIC_BLOCK = `
 - **Freddy** — fleet maintenance scheduling + recommendations.
 - **Conrad Connect** — email marketing campaigns, templates, automations.
 - **Victor** — photo verification (before/after job photos, completeness checks).
-- **Dougie** — OCR/document understanding for utility bills, invoices, audit forms.
+- **Dougie** — reads a handwritten lighting takeoff sheet into a Lenard audit and learns the company's corrections. He is also the name on the paperclip in every AI chat box: a photo or PDF dropped there is read into that conversation. He does not read receipts on the Expenses page or fill utility rebate forms.
 - **Frankie** — AI CFO: AR/AP aging, expense anomalies, plain-English finance Q&A.
 
 ## Common workflows
