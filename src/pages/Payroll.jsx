@@ -27,6 +27,8 @@ import { splitPendingRequests, daysOverdue } from '../lib/timeOffRequests'
 import { previewTypedHourImpact, mergeJobHourSources, splitTypedHours, newestTypedRowId, TYPED_HOURS_COUNTED_KEY } from '../lib/jobHours'
 import { summarizePayrollRun } from '../lib/payrollRunTotals'
 import { pickAchAccount, achSettingsFromPlaidAccount, describeAchAccount } from '../lib/achFromPlaid'
+import { payrollSetupProblems, setupGateSummary } from '../lib/payrollSetupGate'
+import { payrollRunGuards } from '../lib/payrollRunGuards'
 import PlaidLink from '../components/PlaidLink'
 import { ptoDaysInPeriod, ptoAccrualPerPeriod, ptoPayForPeriod, ptoBankAfterRun } from '../lib/ptoThisPeriod'
 import TypedHoursReview from '../components/TypedHoursReview'
@@ -448,6 +450,27 @@ export default function Payroll() {
   //   loading · accounts (with routing/account) · needsRelink (items linked
   //   before Auth was asked for) · linkedItems · error
   const [bankPick, setBankPick] = useState({ loading: false, accounts: null, needsRelink: [], linkedItems: 0, error: null })
+  // Run guards need two things the page did not load: every prior run (to
+  // catch a period being run twice) and each employee's recent hours (to
+  // catch a period far outside their usual). Both small.
+  const [priorRuns, setPriorRuns] = useState([])
+  const [priorStubs, setPriorStubs] = useState([])
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    Promise.all([
+      supabase.from('payroll_runs').select('id, period_start, period_end, pay_date, created_at').eq('company_id', companyId),
+      supabase.from('paystubs').select('employee_id, period_start, regular_hours, overtime_hours, pay_date').eq('company_id', companyId).order('pay_date', { ascending: false }).limit(600),
+    ]).then(([r, s]) => {
+      if (cancelled) return
+      setPriorRuns(r.data || [])
+      setPriorStubs(s.data || [])
+    })
+    return () => { cancelled = true }
+  }, [companyId])
+  // "I know this period was already run / I have read the warnings" — per
+  // open of the modal, never remembered.
+  const [guardAck, setGuardAck] = useState({ duplicate: false, warnings: false })
   const [payMethod, setPayMethod] = useState('check')
   const [ddOnFile, setDdOnFile] = useState(null)
   useEffect(() => {
@@ -1897,6 +1920,47 @@ export default function Payroll() {
   const runPayDateStr = payDateForPeriod(periodEnd, payrollConfig) || localDateStr(nextPayDate)
   const runPayDate = parseLocalDate(runPayDateStr) || nextPayDate
 
+  // ── The gate and the guards ─────────────────────────────────────────
+  // Plain calls, not hooks (this sits after the access early-return).
+  // setupProblems: what the company is missing — nothing runs until empty.
+  // runGuards:     what looks wrong about THIS run — blocks and warnings.
+  const setupProblems = payrollSetupProblems({
+    company, payrollConfig, employees: activeEmployees,
+    w4Acknowledged: payrollConfig.w4_acknowledged || {},
+  })
+  const periodStartStr = localDateStr(periodStart), periodEndStr = localDateStr(periodEnd)
+  const runGuards = payrollRunGuards({
+    employees: activeEmployees, employeePayData,
+    periodPunches: timeEntries, openPunches: openEntries,
+    priorRuns,
+    periodStart: periodStartStr, periodEnd: periodEndStr,
+    ytdGrossByEmployee: Object.fromEntries(Object.entries(ytdPaystubsByEmployee || {}).map(([id, v]) => [id, v?.gross || 0])),
+    priorStubsByEmployee: priorStubs.reduce((m, s) => {
+      if (s.period_start === periodStartStr) return m   // not this period's own stubs
+      ;(m[s.employee_id] = m[s.employee_id] || []).push(s)
+      return m
+    }, {}),
+    suiWageBase: Number(company?.sui_wage_base) || null,
+  })
+  const hardBlocks = runGuards.blocks.filter(b => !(b.overridable && guardAck.duplicate))
+  const canProcess = setupProblems.length === 0 && hardBlocks.length === 0 && (runGuards.warnings.length === 0 || guardAck.warnings)
+
+  // A missing W-4 is allowed (withhold as single, the IRS rule) once a
+  // person has said so for that employee. Remembered in payroll_config.
+  const acknowledgeMissingW4 = async (employeeId) => {
+    const updated = { ...payrollConfig, w4_acknowledged: { ...(payrollConfig.w4_acknowledged || {}), [employeeId]: localDateStr(new Date()) } }
+    const { error } = await supabase.from('settings').upsert({ company_id: companyId, key: 'payroll_config', value: JSON.stringify(updated), updated_at: new Date().toISOString() }, { onConflict: 'company_id,key' })
+    if (error) { alert('Could not save: ' + error.message); return }
+    setPayrollConfig(updated)
+  }
+  const goFix = (p) => {
+    if (p.fix === 'tax') navigate('/settings?tab=tax')
+    else if (p.fix === 'company') navigate('/settings?tab=company')
+    else if (p.fix === 'payroll') { setShowRunPayrollModal(false); setShowSettingsModal(true) }
+    else if (p.fix === 'employee') navigate('/employees')
+    else if (p.fix === 'punch') navigate('/time-clock')
+  }
+
   const handleApproveRequest = async (requestId) => {
     try {
       await supabase.from('time_off_requests').update({
@@ -2144,6 +2208,9 @@ export default function Payroll() {
   }
 
   const handleRunPayroll = async () => {
+    // The button is disabled when the gate or a guard says no; this is the
+    // same check behind it, so nothing can process around the modal.
+    if (!canProcess) { alert('This payroll cannot run yet. Fix the items listed in the Run Payroll window first.'); return }
     setRunningPayroll(true)
     const payDate = runPayDate
     try {
@@ -2162,6 +2229,8 @@ export default function Payroll() {
         .single()
 
       if (runError) throw runError
+      // So a second press for the same period hits the duplicate guard at once.
+      setPriorRuns(prev => [...prev, payrollRun])
 
       const paystubs = activeEmployees.map(emp => {
         const data = employeePayData[emp.id]
@@ -5141,6 +5210,65 @@ export default function Payroll() {
             </div>
 
             <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+              {/* The gate: nothing processes until the company is set up. Then
+                  the guards: what looks wrong about this run. Both say where
+                  to fix it. Bryce: "get payroll right for everyone." */}
+              {setupProblems.length > 0 && (
+                <div style={{ padding: '14px 16px', borderRadius: '10px', border: '1px solid rgba(239,68,68,0.5)', backgroundColor: 'rgba(239,68,68,0.08)', marginBottom: '16px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#b91c1c', marginBottom: '8px' }}>{setupGateSummary(setupProblems)}</div>
+                  {setupProblems.map(p => (
+                    <div key={p.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', padding: '6px 0', borderTop: `1px solid ${theme.border}`, fontSize: '13px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ color: theme.text, fontWeight: 600 }}>{p.label}</div>
+                        <div style={{ color: theme.textMuted, fontSize: '12px' }}>{p.detail}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        {p.ackable && (
+                          <button type="button" onClick={() => acknowledgeMissingW4(p.employeeId)} style={{ padding: '5px 10px', background: 'none', border: `1px solid ${theme.border}`, color: theme.textSecondary, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 32 }}>Withhold as single for now</button>
+                        )}
+                        <button type="button" onClick={() => goFix(p)} style={{ padding: '5px 10px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 32 }}>Fix</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {runGuards.blocks.length > 0 && (
+                <div style={{ padding: '14px 16px', borderRadius: '10px', border: '1px solid rgba(239,68,68,0.5)', backgroundColor: 'rgba(239,68,68,0.08)', marginBottom: '16px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#b91c1c', marginBottom: '8px' }}>This run has {runGuards.blocks.length === 1 ? 'a problem' : `${runGuards.blocks.length} problems`} that would put wrong numbers on the books</div>
+                  {runGuards.blocks.map(b => (
+                    <div key={b.key} style={{ padding: '6px 0', borderTop: `1px solid ${theme.border}`, fontSize: '13px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ color: theme.text, fontWeight: 600 }}>{b.label}</div>
+                          <div style={{ color: theme.textMuted, fontSize: '12px' }}>{b.detail}</div>
+                        </div>
+                        {b.fix === 'punch' && <button type="button" onClick={() => goFix(b)} style={{ padding: '5px 10px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 32, flexShrink: 0 }}>Fix</button>}
+                      </div>
+                      {b.overridable && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: '12px', color: theme.text, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={guardAck.duplicate} onChange={(e) => setGuardAck(a => ({ ...a, duplicate: e.target.checked }))} />
+                          This is a correction or an off-cycle check for the same period. Process it anyway.
+                        </label>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {runGuards.warnings.length > 0 && (
+                <div style={{ padding: '14px 16px', borderRadius: '10px', border: '1px solid rgba(234,179,8,0.5)', backgroundColor: 'rgba(234,179,8,0.10)', marginBottom: '16px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#a16207', marginBottom: '8px' }}>Worth a look before you process</div>
+                  {runGuards.warnings.map(w => (
+                    <div key={w.key} style={{ padding: '6px 0', borderTop: `1px solid ${theme.border}`, fontSize: '13px' }}>
+                      <div style={{ color: theme.text, fontWeight: 600 }}>{w.label}</div>
+                      <div style={{ color: theme.textMuted, fontSize: '12px' }}>{w.detail}</div>
+                    </div>
+                  ))}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: '12px', color: theme.text, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={guardAck.warnings} onChange={(e) => setGuardAck(a => ({ ...a, warnings: e.target.checked }))} />
+                    I have looked at these.
+                  </label>
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
                 <div style={{ padding: '16px', backgroundColor: theme.bg, borderRadius: '10px', textAlign: 'center' }}>
                   <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Period</div>
@@ -5225,11 +5353,11 @@ export default function Payroll() {
                   flex: 1, padding: '14px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`,
                   borderRadius: '10px', color: theme.text, fontSize: '15px', fontWeight: '600', cursor: 'pointer'
                 }}>Cancel</button>
-                <button onClick={handleRunPayroll} disabled={runningPayroll} style={{
-                  flex: 1, padding: '14px', background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                  border: 'none', borderRadius: '10px', color: '#fff', fontSize: '15px', fontWeight: '600',
-                  cursor: runningPayroll ? 'wait' : 'pointer'
-                }}>{runningPayroll ? 'Processing...' : 'Process Payroll'}</button>
+                <button onClick={handleRunPayroll} disabled={runningPayroll || !canProcess} title={canProcess ? '' : 'Fix the items above first'} style={{
+                  flex: 1, padding: '14px', background: canProcess ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)' : theme.border,
+                  border: 'none', borderRadius: '10px', color: canProcess ? '#fff' : theme.textMuted, fontSize: '15px', fontWeight: '600',
+                  cursor: runningPayroll ? 'wait' : (canProcess ? 'pointer' : 'not-allowed')
+                }}>{runningPayroll ? 'Processing...' : (canProcess ? 'Process Payroll' : 'Fix the items above first')}</button>
               </div>
             </div>
           </div>
