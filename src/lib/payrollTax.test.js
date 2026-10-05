@@ -269,3 +269,81 @@ describe('calcPaystubTax — the whole-cheque contract', () => {
     }
   })
 })
+
+// ── Colorado, the dated tables, FAMLI ─────────────────────────────────
+import { calcColoradoFamli, federalFor, FEDERAL_YEARS, taxYearOf, WITHHOLDING_STATES } from './payrollTax'
+
+describe('Colorado withholding — DR 1098 (rev. 10/21/25)', () => {
+  const co = (gross, filingStatus, payFrequency = 'bi-weekly', extra = {}) =>
+    calcStateIncomeTax({ gross, state: 'CO', filingStatus, payFrequency, payDate: '2026-09-02', ...extra })
+
+  it('annualizes, subtracts the allowance, takes 4.4%, divides back: Sarah $2,615.38 bi-weekly single → $105.77', () => {
+    // 2,615.38 × 26 = 68,000 − 5,500 = 62,500 × 4.4% = 2,750 ÷ 26
+    expect(co(2615.38, 'single')).toBeCloseTo(105.77, 2)
+  })
+  it('married filing jointly gets the $11,000 allowance', () => {
+    // 68,000 − 11,000 = 57,000 × 4.4% = 2,508 ÷ 26
+    expect(co(2615.38, 'married_jointly')).toBeCloseTo(96.46, 2)
+  })
+  it('a DR 0004 allowance replaces the default, and line 3 extra is added per period', () => {
+    expect(co(2615.38, 'single', 'bi-weekly', { stateAllowance: 9000 })).toBeCloseTo((68000 - 9000) * 0.044 / 26, 2)
+    expect(co(2615.38, 'single', 'bi-weekly', { stateExtraPerPeriod: 25 })).toBeCloseTo(105.77 + 25, 2)
+  })
+  it('wages under the allowance owe nothing', () => {
+    expect(co(200, 'single')).toBe(0)
+  })
+  it('the engine names the states it withholds for', () => {
+    expect(WITHHOLDING_STATES).toEqual(['UT', 'CO'])
+    expect(calcStateIncomeTax({ gross: 1000, state: 'TX' })).toBe(0)
+  })
+})
+
+describe('Colorado FAMLI', () => {
+  it('0.88% in 2026 split evenly, on wages up to the Social Security cap', () => {
+    const f = calcColoradoFamli({ gross: 2615.38, employeeCount: 25, payDate: '2026-09-02' })
+    expect(f.employee).toBeCloseTo(11.51, 2)
+    expect(f.employer).toBeCloseTo(11.51, 2)
+    expect(f.rate).toBe(0.0088)
+  })
+  it('nine or fewer employees: the employee share is still withheld, the employer share is waived', () => {
+    const f = calcColoradoFamli({ gross: 2615.38, employeeCount: 5, payDate: '2026-09-02' })
+    expect(f.employee).toBeCloseTo(11.51, 2)
+    expect(f.employer).toBe(0)
+    expect(f.smallEmployer).toBe(true)
+  })
+  it('stops at the wage cap and used 0.90% in 2025', () => {
+    expect(calcColoradoFamli({ gross: 10000, ytdGrossBeforeThis: 180000, employeeCount: 25, payDate: '2026-09-02' }).employee).toBeCloseTo(4500 * 0.0088 / 2, 2)
+    expect(calcColoradoFamli({ gross: 1000, employeeCount: 25, payDate: '2025-06-01' }).rate).toBe(0.009)
+  })
+  it('flows through the paystub for a Colorado company and nowhere else', () => {
+    const base = { employee: { w4_filing_status: 'single' }, gross: 2615.38, ytd: { gross: 0, ssWages: 0, medicareWages: 0 }, payFrequency: 'bi-weekly', payDate: '2026-09-02', employeeCount: 25 }
+    const coStub = calcPaystubTax({ ...base, company: { state_employer_id_state: 'CO', sui_rate_pct: 1.7 } })
+    const utStub = calcPaystubTax({ ...base, company: { state_employer_id_state: 'UT', sui_rate_pct: 0.2 } })
+    expect(coStub.famliEmployee).toBeCloseTo(11.51, 2)
+    expect(coStub.famliEmployer).toBeCloseTo(11.51, 2)
+    expect(coStub.stateIncomeTax).toBeCloseTo(105.77, 2)
+    expect(coStub.netPay).toBeCloseTo(coStub.grossPay - coStub.federalIncomeTax - coStub.stateIncomeTax - coStub.socialSecurityEmployee - coStub.medicareEmployee - coStub.famliEmployee, 2)
+    expect(coStub.sui).toBeCloseTo(2615.38 * 0.017, 2)                      // Colorado's $30,600 base, not Utah's
+    expect(utStub.famliEmployee).toBe(0)
+    expect(utStub.famliEmployer).toBe(0)
+  })
+})
+
+describe('the dated federal tables', () => {
+  it('has the current tax year, and TAX_YEAR is that year', () => {
+    const years = Object.keys(FEDERAL_YEARS).map(Number)
+    expect(years).toContain(TAX_YEAR)
+    expect(Math.max(...years)).toBe(TAX_YEAR)
+  })
+  it('picks the pay date\'s year, and the latest year for one it does not have', () => {
+    expect(federalFor('2026-03-15').year).toBe(2026)
+    expect(federalFor('2031-01-15').year).toBe(TAX_YEAR)
+    expect(taxYearOf('2026-07-04')).toBe(2026)
+  })
+  it('every year carries the caps and rates the engine reads', () => {
+    for (const y of Object.keys(FEDERAL_YEARS)) {
+      const t = FEDERAL_YEARS[y]
+      for (const k of ['standard', 'step2', 'step1g', 'ssWageBase', 'ssRate', 'medicareRate', 'additionalMedicareThreshold', 'additionalMedicareRate', 'futaWageBase', 'futaRate']) expect(t[k], `${y}.${k}`).toBeDefined()
+    }
+  })
+})

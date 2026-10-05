@@ -40,6 +40,7 @@ export function computePaystubYtd(allStubs, paystub) {
     'federal_income_tax', 'state_income_tax', 'social_security_employee',
     'medicare_employee', 'additional_medicare',
     'social_security_employer', 'medicare_employer', 'futa', 'sui',
+    'famli_employee', 'famli_employer',
     'pre_tax_deductions', 'post_tax_deductions',
   ]
   const ytd = {}
@@ -346,12 +347,14 @@ export async function generatePaystubPdf({ paystub, employee, company, ytd }) {
     taxRow(lx, 'Medicare', p.medicare_employee, yt.medicare_employee)
     if (num(p.additional_medicare) > 0) taxRow(lx, 'Add’l Medicare', p.additional_medicare, yt.additional_medicare)
     taxRow(lx, 'State income tax', p.state_income_tax, yt.state_income_tax)
+    if (num(p.famli_employee) > 0 || num(yt.famli_employee) > 0) taxRow(lx, 'Colorado FAMLI', p.famli_employee, yt.famli_employee)
     const empEnd = ty
     ty = tyStart
     taxRow(rx, 'Social Security', p.social_security_employer, yt.social_security_employer)
     taxRow(rx, 'Medicare', p.medicare_employer, yt.medicare_employer)
     taxRow(rx, 'FUTA', p.futa, yt.futa)
     taxRow(rx, 'State unemployment', p.sui, yt.sui)
+    if (num(p.famli_employer) > 0 || num(yt.famli_employer) > 0) taxRow(rx, 'Colorado FAMLI', p.famli_employer, yt.famli_employer)
     y = Math.max(empEnd, ty) + 6
     rule(y); y += 16
 

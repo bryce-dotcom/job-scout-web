@@ -47,6 +47,14 @@ const BUCKETS = [
     where: 'Pay through your state workforce/UI agency’s portal.',
   },
   {
+    id: 'state_famli',
+    kinds: ['famli'],
+    label: 'Colorado FAMLI premiums',
+    detail: 'Paid family and medical leave: the employee half withheld plus the employer half. Quarterly with the wage report.',
+    method: 'State portal',
+    where: 'Pay through My FAMLI+ Employer at famli.colorado.gov.',
+  },
+  {
     id: 'local',
     kinds: ['local_income_tax', 'local'],
     label: 'Local taxes',

@@ -55,10 +55,21 @@ function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodE
   const stateSched = company?.state_deposit_schedule || fedSched
   const stateDue = computeDepositDueDate(payDate, stateSched)
 
+  // Who the state money goes to. Utah and Colorado are the states the
+  // engine withholds for (lib/payrollTax WITHHOLDING_STATES); anyone else
+  // gets the generic label until their state is added.
+  const stateCode = String(company?.state_employer_id_state || company?.state || 'UT').toUpperCase()
+  const AGENCIES = {
+    UT: { withholding: 'Utah State Tax Commission', ui: 'Utah DWS' },
+    CO: { withholding: 'Colorado Department of Revenue', ui: 'Colorado CDLE', famli: 'Colorado FAMLI Division' },
+  }
+  const agency = AGENCIES[stateCode] || { withholding: 'State', ui: 'State Unemployment' }
+
   // Sums across every employee on this payroll run
   let fit = 0, sit = 0
   let ssEE = 0, ssER = 0, medEE = 0, medER = 0, addMed = 0
   let futa = 0, sui = 0
+  let famliEE = 0, famliER = 0
   for (const emp of employees) {
     // Skip 1099s — no liabilities to deposit (their payments don't
     // generate withholding; 1099-NEC is filed once a year not per-period).
@@ -74,6 +85,8 @@ function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodE
     addMed += t.additionalMedicare     || 0
     futa   += t.futa                   || 0
     sui    += t.sui                    || 0
+    famliEE += t.famliEmployee         || 0
+    famliER += t.famliEmployer         || 0
   }
 
   const r2 = (n) => Math.round(n * 100) / 100
@@ -129,7 +142,7 @@ function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodE
     rows.push({
       company_id: companyId, payroll_run_id: payrollRunId,
       jurisdiction: 'state',
-      agency: (company?.state_employer_id_state || 'UT') === 'UT' ? 'Utah State Tax Commission' : 'State',
+      agency: agency.withholding,
       kind: 'state_income_tax',
       period_start: startStr, period_end: endStr, due_date: stateDue,
       amount_employee: r2(sit), amount_employer: 0,
@@ -141,11 +154,24 @@ function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodE
     rows.push({
       company_id: companyId, payroll_run_id: payrollRunId,
       jurisdiction: 'state',
-      agency: (company?.state_employer_id_state || 'UT') === 'UT' ? 'Utah DWS' : 'State Unemployment',
+      agency: agency.ui,
       kind: 'sui',
       period_start: startStr, period_end: endStr,
       due_date: nextQuarterEnd(payDate),
       amount_employee: 0, amount_employer: r2(sui),
+    })
+  }
+
+  // Colorado FAMLI — both halves, quarterly with the wage report.
+  if (famliEE > 0 || famliER > 0) {
+    rows.push({
+      company_id: companyId, payroll_run_id: payrollRunId,
+      jurisdiction: 'state',
+      agency: agency.famli || 'State paid leave',
+      kind: 'famli',
+      period_start: startStr, period_end: endStr,
+      due_date: nextQuarterEnd(payDate),
+      amount_employee: r2(famliEE), amount_employer: r2(famliER),
     })
   }
 
@@ -1774,6 +1800,8 @@ export default function Payroll() {
         // The payday this period is paid on decides which Utah Pub 14
         // revision applies (4.5% before 1 June 2026, 4.45% after).
         payDate: payDateForPeriod(cfpEnd, payrollConfig) || localDateStr(new Date()),
+        // Colorado's FAMLI employer share is waived at 9 or fewer employees.
+        employeeCount: employees.filter(e => e.active !== false && e.tax_classification !== '1099').length,
       })
       hasW4 = !!employee.w4_filing_status
     }
@@ -1940,7 +1968,7 @@ export default function Payroll() {
       ;(m[s.employee_id] = m[s.employee_id] || []).push(s)
       return m
     }, {}),
-    suiWageBase: Number(company?.sui_wage_base) || null,
+    suiWageBase: Number(company?.sui_wage_base) || suiWageBaseFor(company?.state_employer_id_state || company?.state, new Date().getFullYear()) || null,
   })
   const hardBlocks = runGuards.blocks.filter(b => !(b.overridable && guardAck.duplicate))
   const canProcess = setupProblems.length === 0 && hardBlocks.length === 0 && (runGuards.warnings.length === 0 || guardAck.warnings)
@@ -2264,6 +2292,8 @@ export default function Payroll() {
           additional_medicare:      t.additionalMedicare || 0,
           futa:                     t.futa || 0,
           sui:                      t.sui || 0,
+          famli_employee:           t.famliEmployee || 0,   // Colorado only
+          famli_employer:           t.famliEmployer || 0,
           pre_tax_deductions:       t.preTaxDeductions || 0,
           post_tax_deductions:      t.postTaxDeductions || 0,
           net_pay:                  t.netPay || data.grossPay,
@@ -4477,7 +4507,9 @@ export default function Payroll() {
               ['Employee checks', runTotals.checks, 'take-home after withholding; contractors at gross'],
               ['Federal deposit (IRS)', runTotals.federal, 'income tax withheld + Social Security and Medicare, both halves'],
               ['State withholding', runTotals.state, 'state income tax withheld'],
-              ['FUTA + state unemployment', runTotals.quarterly, 'employer only, deposited by quarter, not with this run'],
+              runTotals.famli > 0
+                ? ['FUTA, state unemployment + FAMLI', runTotals.quarterly, 'deposited by quarter, not with this run; FAMLI is the Colorado leave premium, both halves']
+                : ['FUTA + state unemployment', runTotals.quarterly, 'employer only, deposited by quarter, not with this run'],
             ].map(([label, amount, note]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', padding: '5px 0', fontSize: '13px', color: theme.textSecondary }}>
                 <div style={{ minWidth: 0 }}>
@@ -5306,7 +5338,7 @@ export default function Payroll() {
                     ['Employee checks', runTotals.checks],
                     ['Federal deposit (IRS)', runTotals.federal],
                     ['State withholding', runTotals.state],
-                    ['FUTA + state unemployment (quarterly)', runTotals.quarterly],
+                    [runTotals.famli > 0 ? 'FUTA, state unemployment + FAMLI (quarterly)' : 'FUTA + state unemployment (quarterly)', runTotals.quarterly],
                     ...(runTotals.deductions > 0 ? [['Deductions the business keeps', -runTotals.deductions], ['Cash out the door', runTotals.cashOut]] : []),
                   ].map(([label, amount]) => (
                     <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
@@ -5651,6 +5683,8 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
         medicare_employer: t.medicareEmployer || 0,
         futa: t.futa || 0,
         sui: t.sui || 0,
+        famli_employee: t.famliEmployee || 0,
+        famli_employer: t.famliEmployer || 0,
         pre_tax_deductions: t.preTaxDeductions || 0,
         post_tax_deductions: data.totalDeductions || 0,
         net_pay: t.netPay != null ? t.netPay : (data.netPay || 0),
@@ -5871,6 +5905,9 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
                 <tbody>
                   <tr><td style={{ padding: '4px 0' }}>Federal income tax</td><td style={{ padding: '4px 0', textAlign: 'right' }}>-{fmt(data.tax.federalIncomeTax)}</td></tr>
                   <tr><td style={{ padding: '4px 0' }}>State income tax</td><td style={{ padding: '4px 0', textAlign: 'right' }}>-{fmt(data.tax.stateIncomeTax)}</td></tr>
+                  {data.tax.famliEmployee > 0 && (
+                    <tr><td style={{ padding: '4px 0' }}>Colorado FAMLI (0.44%)</td><td style={{ padding: '4px 0', textAlign: 'right' }}>-{fmt(data.tax.famliEmployee)}</td></tr>
+                  )}
                   <tr><td style={{ padding: '4px 0' }}>Social Security (6.2%)</td><td style={{ padding: '4px 0', textAlign: 'right' }}>-{fmt(data.tax.socialSecurityEmployee)}</td></tr>
                   <tr><td style={{ padding: '4px 0' }}>Medicare (1.45%)</td><td style={{ padding: '4px 0', textAlign: 'right' }}>-{fmt(data.tax.medicareEmployee)}</td></tr>
                   {data.tax.additionalMedicare > 0 && (
@@ -5879,8 +5916,8 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
                 </tbody>
               </table>
               <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px dashed ${theme.border}`, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: theme.textMuted }}>
-                <span>Employer match (Social Security + Medicare + FUTA + SUI):</span>
-                <span>{fmt((data.tax.socialSecurityEmployer || 0) + (data.tax.medicareEmployer || 0) + (data.tax.futa || 0) + (data.tax.sui || 0))}</span>
+                <span>Employer match (Social Security + Medicare + FUTA + SUI{data.tax.famliEmployer > 0 ? ' + FAMLI' : ''}):</span>
+                <span>{fmt((data.tax.socialSecurityEmployer || 0) + (data.tax.medicareEmployer || 0) + (data.tax.futa || 0) + (data.tax.sui || 0) + (data.tax.famliEmployer || 0))}</span>
               </div>
               <div style={{ marginTop: 4, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: theme.textMuted }}>
                 <span>Total cost of this paycheck to the company:</span>

@@ -22,6 +22,8 @@
 // filing_status etc.).
 // =====================================================================
 
+import { suiWageBaseFor } from './suiRate'
+
 export const TAX_YEAR = 2026
 
 /**
@@ -156,17 +158,47 @@ const W4_STEP1G_OTHER           = 8600
 // consistent (every base amount equals the tax accumulated below it).
 export const FED_SCHEDULES = { standard: FED_BRACKETS_2026, step2: FED_BRACKETS_STEP2_2026 }
 
+// ---- Dated federal tables ---------------------------------------------
+// Bryce, 2026-10-05: "get payroll right for everyone, all tenants." The
+// brackets and wage bases above were loose constants pinned to one year; a
+// new year meant finding every one. They are now one table keyed by tax
+// year, picked by the pay date, and the tests fail when the current year is
+// missing. Adding 2027 is adding one entry here, not a hunt.
+//
+// A pay date in a year this table does not have uses the LATEST year it
+// does have, and taxTablesStale() says so on screen — paying with last
+// year's brackets is wrong, but refusing to pay is worse.
+export const FEDERAL_YEARS = {
+  2026: {
+    standard: FED_BRACKETS_2026,
+    step2: FED_BRACKETS_STEP2_2026,
+    step1g: { married_jointly: W4_STEP1G_MARRIED_JOINTLY, other: W4_STEP1G_OTHER },
+    ssWageBase: 184500,              // SSA, announced 2025-10-24
+    ssRate: 0.062,
+    medicareRate: 0.0145,
+    additionalMedicareThreshold: 200000,
+    additionalMedicareRate: 0.009,
+    futaWageBase: 7000,
+    futaRate: 0.006,                 // after the 5.4% state credit
+  },
+}
+export const taxYearOf = (payDate) => {
+  const s = payDate instanceof Date ? payDate.toISOString() : String(payDate || new Date().toISOString())
+  const y = Number(s.slice(0, 4))
+  return Number.isFinite(y) ? y : TAX_YEAR
+}
+/** The federal table for a pay date — the year's own, else the latest we have. */
+export function federalFor(payDate) {
+  const y = taxYearOf(payDate)
+  if (FEDERAL_YEARS[y]) return { year: y, ...FEDERAL_YEARS[y] }
+  const latest = Math.max(...Object.keys(FEDERAL_YEARS).map(Number))
+  return { year: latest, ...FEDERAL_YEARS[latest] }
+}
+
 // FICA constants — 2026. SSA announced the wage base 2025-10-24: $184,500
 // (2025 was $176,100; the "2025" file said $168,600, which was 2024's).
-const SS_WAGE_BASE_2026      = 184500
-const SS_RATE                = 0.062
-const MEDICARE_RATE          = 0.0145
-const ADD_MEDICARE_THRESHOLD = 200000  // employee-only, no employer match
-const ADD_MEDICARE_RATE      = 0.009
 
 // FUTA — 0.6% on first $7,000, employer only
-const FUTA_WAGE_BASE         = 7000
-const FUTA_RATE              = 0.006
 
 // Utah withholding — Publication 14, Withholding Tax Guide. NOT a flat rate.
 //
@@ -275,9 +307,11 @@ export function calcFederalIncomeTax(args) {
     otherIncomeAnnual = 0,
     deductionsAnnual = 0,
     extraPerPeriod = 0,
+    payDate = null,          // picks the tax year's brackets; latest year when omitted
   } = args
+  const fed = federalFor(payDate)
 
-  if (!FED_BRACKETS_2026[filingStatus]) {
+  if (!fed.standard[filingStatus]) {
     throw new Error(`Unknown filingStatus: ${filingStatus}`)
   }
 
@@ -287,13 +321,13 @@ export function calcFederalIncomeTax(args) {
   // Step 2 (Worksheet 1A, lines 1f–1i): subtract Step 4(b) deductions, and —
   // unless the Step 2 box is checked — line 1g. The STANDARD schedule's
   // thresholds assume 1g has been taken off; the checkbox schedule's do not.
-  const step1g = multipleJobs ? 0 : (filingStatus === 'married_jointly' ? W4_STEP1G_MARRIED_JOINTLY : W4_STEP1G_OTHER)
+  const step1g = multipleJobs ? 0 : (filingStatus === 'married_jointly' ? fed.step1g.married_jointly : fed.step1g.other)
   const taxableAnnual = Math.max(0, annualWages - (deductionsAnnual || 0) - step1g)
 
   // Step 3: Look up bracket — Step 2 schedule if multiple jobs checked.
   const brackets = multipleJobs
-    ? FED_BRACKETS_STEP2_2026[filingStatus]
-    : FED_BRACKETS_2026[filingStatus]
+    ? fed.step2[filingStatus]
+    : fed.standard[filingStatus]
   const tentativeAnnual = bracketTax(taxableAnnual, brackets)
 
   // Step 4: Subtract Step 3 tax credits (dependents).
@@ -309,27 +343,28 @@ export function calcFederalIncomeTax(args) {
  * FICA: Social Security + Medicare. Returns employee + employer halves
  * plus Additional Medicare (employee only) when YTD crosses $200k.
  */
-export function calcFICA({ gross, ytdGrossBeforeThis, ytdMedicareBeforeThis }) {
+export function calcFICA({ gross, ytdGrossBeforeThis, ytdMedicareBeforeThis, payDate = null }) {
   const grossN = Number(gross) || 0
   const ytdSS = Number(ytdGrossBeforeThis) || 0
   const ytdMed = Number(ytdMedicareBeforeThis) || 0
+  const fed = federalFor(payDate)
 
-  // Social Security — caps at wage base
-  const ssRoom = Math.max(0, SS_WAGE_BASE_2026 - ytdSS)
+  // Social Security — caps at the year's wage base
+  const ssRoom = Math.max(0, fed.ssWageBase - ytdSS)
   const ssTaxable = Math.min(grossN, ssRoom)
-  const ssEmployee = r2(ssTaxable * SS_RATE)
-  const ssEmployer = r2(ssTaxable * SS_RATE)
+  const ssEmployee = r2(ssTaxable * fed.ssRate)
+  const ssEmployer = r2(ssTaxable * fed.ssRate)
 
   // Medicare — uncapped, both halves
-  const medEmployee = r2(grossN * MEDICARE_RATE)
-  const medEmployer = r2(grossN * MEDICARE_RATE)
+  const medEmployee = r2(grossN * fed.medicareRate)
+  const medEmployer = r2(grossN * fed.medicareRate)
 
   // Additional Medicare (0.9% on wages OVER 200k YTD, employee only).
   let addMed = 0
   const ytdAfter = ytdMed + grossN
-  if (ytdAfter > ADD_MEDICARE_THRESHOLD) {
-    const addTaxable = ytdAfter - Math.max(ytdMed, ADD_MEDICARE_THRESHOLD)
-    addMed = r2(addTaxable * ADD_MEDICARE_RATE)
+  if (ytdAfter > fed.additionalMedicareThreshold) {
+    const addTaxable = ytdAfter - Math.max(ytdMed, fed.additionalMedicareThreshold)
+    addMed = r2(addTaxable * fed.additionalMedicareRate)
   }
 
   return {
@@ -346,23 +381,82 @@ export function calcFICA({ gross, ytdGrossBeforeThis, ytdMedicareBeforeThis }) {
  * FUTA: 0.6% on the first $7,000 of YTD wages, EMPLOYER ONLY.
  * Returns 0 once the employee has crossed $7k YTD.
  */
-export function calcFUTA({ gross, ytdGrossBeforeThis, ratePct }) {
+export function calcFUTA({ gross, ytdGrossBeforeThis, ratePct, payDate = null }) {
   const grossN = Number(gross) || 0
   const ytd = Number(ytdGrossBeforeThis) || 0
-  const room = Math.max(0, FUTA_WAGE_BASE - ytd)
+  const fed = federalFor(payDate)
+  const room = Math.max(0, fed.futaWageBase - ytd)
   const taxable = Math.min(grossN, room)
-  const rate = (Number(ratePct) || (FUTA_RATE * 100)) / 100
+  const rate = (Number(ratePct) || (fed.futaRate * 100)) / 100
   return r2(taxable * rate)
 }
+
+// ---- Colorado ----------------------------------------------------------
+// DR 1098 (rev. 10/21/25), the Colorado Withholding Worksheet for
+// Employers, read from the PDF on 2026-10-05:
+//   1c  annualize the period's taxable wages (× pay periods per year)
+//   2a  subtract the annual withholding allowance: the DR 0004 line 2 amount
+//       if the employee gave one, else $11,000 for married filing jointly or
+//       qualifying surviving spouse, $5,500 for every other W-4 status
+//   2c  × 4.40%     2d  ÷ pay periods     2e  + DR 0004 line 3 extra per period
+// The demo tenant is in Denver and got $0 state tax under the Utah-only
+// engine. Dated like Utah so a rate change is one new entry.
+const COLORADO_SCHEDULES = [
+  { effective: '2026-01-01', rate: 0.044, allowance: { married_jointly: 11000, other: 5500 } },
+]
+// FAMLI — Colorado's paid family and medical leave premium, famli.colorado.gov
+// (2026-10-05): "The 2026 premium rate is set at 0.88% of employees' wages,
+// 0.44% paid by the employer and 0.44% paid by the employee"; "premiums are
+// paid on wages up to the federal Social Security wage cap"; employers with
+// nine or fewer employees owe no employer share (the employee share is
+// still withheld). 2025 was 0.90%. Withheld after tax: it does not reduce
+// federal or state taxable wages.
+const FAMLI_SCHEDULES = [
+  { effective: '2026-01-01', rate: 0.0088, employeeShare: 0.5 },
+  { effective: '2025-01-01', rate: 0.0090, employeeShare: 0.5 },
+]
+const FAMLI_SMALL_EMPLOYER_MAX = 9
+const scheduleFor = (schedules, payDate) => {
+  const d = String(payDate instanceof Date ? payDate.toISOString() : (payDate || new Date().toISOString())).slice(0, 10)
+  return schedules.find((s) => d >= s.effective) || schedules[schedules.length - 1]
+}
+export function calcColoradoFamli({ gross, ytdGrossBeforeThis = 0, employeeCount = null, payDate = null }) {
+  const grossN = Number(gross) || 0
+  const ytd = Number(ytdGrossBeforeThis) || 0
+  const s = scheduleFor(FAMLI_SCHEDULES, payDate)
+  const cap = federalFor(payDate).ssWageBase
+  const taxable = Math.min(grossN, Math.max(0, cap - ytd))
+  const total = taxable * s.rate
+  const employee = r2(total * s.employeeShare)
+  const small = employeeCount != null && Number(employeeCount) <= FAMLI_SMALL_EMPLOYER_MAX
+  const employer = small ? 0 : r2(total - total * s.employeeShare)
+  return { employee, employer, rate: s.rate, smallEmployer: small }
+}
+
+// Which states this engine withholds for. Anything else needs ratePct from
+// the caller or returns 0 — and the setup gate / run guards should say so.
+export const WITHHOLDING_STATES = ['UT', 'CO']
 
 /**
  * Utah state income tax — 4.5% flat (2025–2026, per the Tax Commission).
  * Other states: route through this function with their own ratePct.
  */
-export function calcStateIncomeTax({ gross, state = 'UT', ratePct, filingStatus = 'single', payFrequency = 'bi-weekly', payDate = null }) {
+export function calcStateIncomeTax({ gross, state = 'UT', ratePct, filingStatus = 'single', payFrequency = 'bi-weekly', payDate = null, stateAllowance = null, stateExtraPerPeriod = 0 }) {
   const grossN = Number(gross) || 0
   if (ratePct != null) return r2(grossN * (ratePct / 100))   // another state's flat rate, caller-supplied
-  if (state !== 'UT') return 0                                // unknown state — caller must provide ratePct
+  const st = String(state || '').toUpperCase()
+  if (st === 'CO') {
+    // DR 1098, steps 1c → 2f.
+    const s = scheduleFor(COLORADO_SCHEDULES, payDate)
+    const periods = PAY_FREQUENCY_PERIODS[payFrequency] || PAY_FREQUENCY_PERIODS['bi-weekly']
+    const annual = grossN * periods
+    const allowance = stateAllowance != null && stateAllowance !== ''
+      ? Number(stateAllowance) || 0
+      : (/married_jointly|qualifying/i.test(String(filingStatus || '')) ? s.allowance.married_jointly : s.allowance.other)
+    const taxable = Math.max(0, annual - allowance)
+    return r2(Math.max(0, (taxable * s.rate) / periods + (Number(stateExtraPerPeriod) || 0)))
+  }
+  if (st !== 'UT') return 0                                   // unknown state — caller must provide ratePct
   const sched = utahScheduleFor(payDate)
   const period = sched[payFrequency] || sched['bi-weekly']
   const col = /married_jointly|^married$/i.test(String(filingStatus || '')) ? 'married' : 'single'
@@ -410,11 +504,13 @@ export function calcPaystubTax(input) {
     payFrequency = company?.pay_frequency || 'bi-weekly',
     preTaxDeductions = 0,
     postTaxDeductions = 0,
-    payDate = null,          // YYYY-MM-DD; picks the Utah Pub 14 revision. Today when omitted.
+    payDate = null,          // YYYY-MM-DD; picks the tax year and the state revision. Today when omitted.
+    employeeCount = null,    // W-2 headcount; Colorado's FAMLI employer share is waived at 9 or fewer
   } = input
 
   const grossN = Number(gross) || 0
   const taxableWages = Math.max(0, grossN - (Number(preTaxDeductions) || 0))
+  const state = String(company?.state_employer_id_state || company?.state || 'UT').toUpperCase()
 
   // Federal income tax (uses W-4)
   const fit = calcFederalIncomeTax({
@@ -426,6 +522,7 @@ export function calcPaystubTax(input) {
     otherIncomeAnnual: Number(employee?.w4_other_income) || 0,
     deductionsAnnual:  Number(employee?.w4_deductions) || 0,
     extraPerPeriod:    Number(employee?.w4_extra_withholding) || 0,
+    payDate,
   })
 
   // FICA (taxable wages, not gross — pre-tax 401k DOES reduce SS/Medicare
@@ -436,37 +533,47 @@ export function calcPaystubTax(input) {
     gross: taxableWages,
     ytdGrossBeforeThis:    Number(ytd.ssWages)       || 0,
     ytdMedicareBeforeThis: Number(ytd.medicareWages) || 0,
+    payDate,
   })
 
   // FUTA (employer)
   const futa = calcFUTA({
     gross: taxableWages,
     ytdGrossBeforeThis: Number(ytd.gross) || 0,
-    ratePct: Number(company?.futa_rate_pct) || (FUTA_RATE * 100),
-  })
-
-  // State income tax — Utah's Pub 14 schedule needs the W-4 status, the
-  // pay period and the pay date (which revision applies).
-  const sit = calcStateIncomeTax({
-    gross: taxableWages,
-    state: company?.state_employer_id_state || 'UT',
-    filingStatus: employee?.w4_filing_status || 'single',
-    payFrequency,
+    ratePct: Number(company?.futa_rate_pct) || 0,
     payDate,
   })
 
-  // SUI (employer)
+  // State income tax — the state's own method (Utah Pub 14, Colorado DR
+  // 1098) needs the W-4 status, the pay period and the pay date.
+  const sit = calcStateIncomeTax({
+    gross: taxableWages,
+    state,
+    filingStatus: employee?.w4_filing_status || 'single',
+    payFrequency,
+    payDate,
+    stateAllowance: employee?.state_withholding_allowance ?? null,
+    stateExtraPerPeriod: Number(employee?.state_extra_withholding) || 0,
+  })
+
+  // SUI (employer) — the company's wage base if entered, else the state's
+  // published one for the tax year (lib/suiRate).
   const sui = calcSUI({
     gross: taxableWages,
     ytdGrossBeforeThis: Number(ytd.gross) || 0,
     ratePct: Number(company?.sui_rate_pct) || 0,
-    wageBase: Number(company?.sui_wage_base) || UTAH_SUI_WAGE_BASE_2026,
+    wageBase: Number(company?.sui_wage_base) || suiWageBaseFor(state, taxYearOf(payDate)) || UTAH_SUI_WAGE_BASE_2026,
   })
+
+  // Colorado FAMLI — employee share withheld after tax, employer share a cost.
+  const famli = state === 'CO'
+    ? calcColoradoFamli({ gross: taxableWages, ytdGrossBeforeThis: Number(ytd.gross) || 0, employeeCount, payDate })
+    : { employee: 0, employer: 0 }
 
   // Net pay
   const totalEmployeeWithheld = r2(
     fit + fica.socialSecurityEmployee + fica.medicareEmployee +
-    fica.additionalMedicare + sit + (Number(postTaxDeductions) || 0)
+    fica.additionalMedicare + sit + famli.employee + (Number(postTaxDeductions) || 0)
   )
   const netPay = r2(grossN - (Number(preTaxDeductions) || 0) - totalEmployeeWithheld)
 
@@ -481,6 +588,7 @@ export function calcPaystubTax(input) {
     socialSecurityEmployee: fica.socialSecurityEmployee,
     medicareEmployee:       fica.medicareEmployee,
     additionalMedicare:     fica.additionalMedicare,
+    famliEmployee:          famli.employee,     // Colorado only; 0 elsewhere
     postTaxDeductions:      r2(Number(postTaxDeductions) || 0),
 
     // Employer-side (don't reduce net pay; tracked for liability ledger)
@@ -488,10 +596,11 @@ export function calcPaystubTax(input) {
     medicareEmployer:       fica.medicareEmployer,
     futa:                   futa,
     sui:                    sui,
+    famliEmployer:          famli.employer,     // Colorado only; 0 elsewhere and for 9-or-fewer employers
 
     // Total cost of employment for this period
     totalEmployerCost: r2(
-      grossN + fica.socialSecurityEmployer + fica.medicareEmployer + futa + sui
+      grossN + fica.socialSecurityEmployer + fica.medicareEmployer + futa + sui + famli.employer
     ),
 
     netPay,

@@ -43,6 +43,32 @@ export const SUI_STATES = {
     facts: '74% of Utah employers pay the 0.1% minimum — $50.70 per employee per year in 2026.',
     dueDates: 'Quarterly, with the wage report: April 30, July 31, October 31 and January 31.',
   },
+  // Colorado — added 2026-10-05 for the first Colorado tenant. Wage base per
+  // CDLE: $23,800 (2025), $30,600 (2026), indexed to the state average
+  // weekly wage from here on. No rate range is given: Colorado's schedule
+  // was not verified, and a made-up range is worse than none.
+  CO: {
+    code: 'CO',
+    name: 'Colorado',
+    agency: 'Colorado Department of Labor and Employment (CDLE), Unemployment Insurance',
+    agencyShort: 'Colorado CDLE',
+    wageBase: { 2025: 23800, 2026: 30600 },
+    newEmployerRatePct: null,
+    rateRange: null,
+    effectiveDay: 'January 1',
+    notice: {
+      name: 'Rate Notice',
+      field: 'the combined rate (base rate plus any surcharges), as printed',
+      when: 'mailed each November or December for the coming year',
+    },
+    portal: { label: 'MyUI Employer+', url: 'https://cdle.colorado.gov/employers' },
+    accountFormat: 'an 8-digit employer account number',
+    cautions: [
+      'Enter the combined rate from the notice. Colorado adds a support surcharge and a solvency surcharge to the base rate in some years.',
+    ],
+    facts: 'The taxable wage base rose from $23,800 in 2025 to $30,600 in 2026 and is now indexed every year.',
+    dueDates: 'Quarterly, with the wage report: April 30, July 31, October 31 and January 31.',
+  },
 }
 
 // Where a company that is switching providers will find the same number.

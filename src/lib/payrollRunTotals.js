@@ -42,7 +42,8 @@ export function summarizePayrollRun(employeePayData = {}) {
     federal: 0,
     state: 0,
     quarterly: 0,
-    employerTaxes: 0,  // SS + Medicare employer halves + FUTA + SUI
+    famli: 0,          // Colorado FAMLI, both halves; part of `quarterly`
+    employerTaxes: 0,  // SS + Medicare employer halves + FUTA + SUI + employer FAMLI
     totalCost: 0,
     cashOut: 0,        // totalCost less the deductions the business keeps
   }
@@ -66,12 +67,17 @@ export function summarizePayrollRun(employeePayData = {}) {
       const addMed = Number(t.additionalMedicare) || 0
       const futa = Number(t.futa) || 0
       const sui = Number(t.sui) || 0
+      // Colorado FAMLI: the employee half is withheld, the employer half is a
+      // cost; both are remitted to the state by quarter with unemployment.
+      const famliEE = Number(t.famliEmployee) || 0
+      const famliER = Number(t.famliEmployer) || 0
       out.checks += Number.isFinite(Number(t.netPay)) ? Number(t.netPay) : Number(d.netPay) || 0
-      out.withheld += fit + sit + ssEE + medEE + addMed
+      out.withheld += fit + sit + ssEE + medEE + addMed + famliEE
       out.federal += fit + ssEE + ssER + medEE + medER + addMed
       out.state += sit
-      out.quarterly += futa + sui
-      out.employerTaxes += ssER + medER + futa + sui
+      out.quarterly += futa + sui + famliEE + famliER
+      out.famli += famliEE + famliER
+      out.employerTaxes += ssER + medER + futa + sui + famliER
     } else {
       // 1099 — nothing withheld, nothing matched. The check is the gross.
       out.checks += Number(d.netPay) || 0

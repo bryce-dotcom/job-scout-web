@@ -17,7 +17,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import PayrollRemittancePanel from '../components/PayrollRemittancePanel'
-import { suiRateStatus } from '../lib/suiRate'
+import { suiRateStatus, suiStateFor } from '../lib/suiRate'
 import { parseLocalDate } from '../lib/localDate'
 import { quarterOf } from '../lib/payrollQuarters'
 import { canViewHR, isAdmin } from '../lib/accessControl'
@@ -400,7 +400,7 @@ export default function PayrollInbox() {
 
       {/* New hires needing report */}
       {newHires.length > 0 && (
-        <Section title="New hire reports to send to Utah DWS" theme={theme} tone={TONE.yellow}>
+        <Section title={`New hire reports to send to ${suiStateFor(company?.state_employer_id_state || company?.state)?.agencyShort || 'your state workforce agency'}`} theme={theme} tone={TONE.yellow}>
           {newHires.map(e => {
             const dueDate = new Date(new Date(e.hire_date).getTime() + 20 * 86400000)
             const overdueHire = dueDate < today
