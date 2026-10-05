@@ -2013,9 +2013,37 @@ function LibraryTab({ theme, isMobile, companyId, brands, brand, employees, isMa
 // Mirrors VOICES in supabase/functions/marketing-voice; shown until the server answers.
 const STOCK_VOICES = [['Bill', 'pqHfZKP75CvOlQylNhV4'], ['Rachel', '21m00Tcm4TlvDq8ikWAM'], ['Adam', 'pNInz6obpgDQGcFmaJgB'], ['Sarah', 'EXAVITQu4vr4xnSDxMaL'], ['Brian', 'nPczCjzI2devNBz1zQrb'], ['Drew', '29vD33N1CtxCmqQRPOHJ'], ['Antoni', 'ErXwobaYiN019PkySvjV'], ['Domi', 'AZnzlk1XvdvUeBnXmlld'], ['Charlie', 'IKne3meq5aSn9XLyUdCD']].map(([name, id]) => ({ id, name, category: 'premade', preview_url: null }))
 
-function useSoundtrack({ invoke, brand, autoMood = 'calm', initialMusic = 'none', initialVoiceOn = false, initialMusicGain = 0.6, initialVoiceId = null, initialScript = '' }) {
-  const [music, setMusic] = useState(initialMusic)      // auto | calm | upbeat | bold | own | none
+function useSoundtrack({ invoke, brand, autoMood = 'calm', initialMusic = 'none', initialVoiceOn = false, initialMusicGain = 0.6, initialVoiceId = null, initialScript = '', initialTrack = null, initialMusicPrompt = '' }) {
+  const [music, setMusic] = useState(initialMusic)      // track | auto | calm | upbeat | bold | own | none
   const [musicGain, setMusicGain] = useState(initialMusicGain)
+  // Real music: a track ElevenLabs composed for this video (or one from the
+  // company's library). The synthesised beds (auto/calm/upbeat/bold) are the
+  // fallback when the server has no key.
+  const [musicStatus, setMusicStatus] = useState(null)  // { available }
+  const [tracks, setTracks] = useState([])              // the company's library
+  const [track, setTrack] = useState(initialTrack)      // the chosen row { id, title, url, seconds }
+  const [musicPrompt, setMusicPrompt] = useState(initialMusicPrompt || '')
+  const [composing, setComposing] = useState(false)
+  const [musicError, setMusicError] = useState(null)
+  useEffect(() => {
+    invoke('marketing-music', { action: 'status' }).then((r) => setMusicStatus(r?.ok ? r : { available: false }))
+    invoke('marketing-music', { action: 'list' }).then((r) => { if (r?.ok) setTracks(r.tracks || []) })
+  }, [invoke])
+  const composeTrack = async (seconds, title = '') => {
+    setComposing(true); setMusicError(null)
+    const r = await invoke('marketing-music', { action: 'compose', prompt: musicPrompt.trim(), mood: ['calm', 'upbeat', 'bold'].includes(autoMood) && !musicPrompt.trim() ? autoMood : (musicPrompt.trim() ? 'custom' : 'calm'), seconds: Math.max(5, Math.ceil(seconds || 30)), brand: brand || '', title })
+    setComposing(false)
+    if (!r.ok) { setMusicError(r.error || 'Could not compose'); toast.error(r.error || 'Could not compose'); return null }
+    setTracks((xs) => [r.track, ...xs]); setTrack(r.track); setMusic('track')
+    toast.success(`Composed "${r.track.title}".`)
+    return r.track
+  }
+  const pickTrack = (row) => { setTrack(row); setMusic('track') }
+  const removeTrack = async (row) => {
+    const r = await invoke('marketing-music', { action: 'delete', id: row.id })
+    if (!r.ok) { toast.error(r.error || 'Could not remove'); return }
+    setTracks((xs) => xs.filter((t) => t.id !== row.id)); if (track?.id === row.id) { setTrack(null); setMusic('none') }
+  }
   const [ownTrack, setOwnTrack] = useState(null)        // { name, arrayBuffer }
   const trackRef = useRef(null)
   const [voiceOn, setVoiceOn] = useState(initialVoiceOn)
@@ -2036,6 +2064,13 @@ function useSoundtrack({ invoke, brand, autoMood = 'calm', initialMusic = 'none'
     stopPreview()
     const AC = window.AudioContext || window.webkitAudioContext
     const ac = new AC(); await ac.resume()
+    if (music === 'track' && track?.url) {
+      try { await ac.close() } catch { /* ignore */ }
+      const a = new Audio(track.url); a.volume = Math.max(0, Math.min(1, musicGain)); a.play().catch(() => {})
+      const p = { kind: 'music', pause: () => a.pause() }
+      setPreview(p); a.onended = () => setPreview((x) => (x === p ? null : x))
+      return
+    }
     const buf = music === 'own' && ownTrack ? await decodeTrack(ownTrack.arrayBuffer, 8) : await renderMusicBed({ mood: effectiveMood, seconds: 8 })
     const src = ac.createBufferSource(); src.buffer = buf; const g = ac.createGain(); g.gain.value = musicGain; src.connect(g); g.connect(ac.destination); src.start()
     const fake = { kind: 'music', pause: () => { try { src.stop(); ac.close() } catch { /* ignore */ } } }
@@ -2082,36 +2117,86 @@ function useSoundtrack({ invoke, brand, autoMood = 'calm', initialMusic = 'none'
     const len = Math.max(seconds, (voiceBuf?.duration || 0) + 0.6) + 2
     let musicBuf = null
     if (music !== 'none') {
-      if (music === 'own' && ownTrack) musicBuf = await decodeTrack(ownTrack.arrayBuffer, len)
+      if (music === 'track' && track?.url) {
+        try { musicBuf = await decodeTrack(await (await fetch(track.url)).arrayBuffer(), len) } catch { toast.error('The track could not be read; making it without music.') }
+      } else if (music === 'own' && ownTrack) musicBuf = await decodeTrack(ownTrack.arrayBuffer, len)
       else musicBuf = await renderMusicBed({ mood: effectiveMood, seconds: len })
     }
     return { music: musicBuf, musicGain, voice: voiceBuf }
   }
   const needsRecording = voiceOn && !!voiceStatus?.available && !!script.trim() && !voiceUrl
   const wantsSound = music !== 'none' || (voiceOn && !!voiceStatus?.available && !!script.trim())
-  return { music, setMusic, musicGain, setMusicGain, ownTrack, setOwnTrack, trackRef, voiceOn, setVoiceOn, voiceStatus, voices, voiceId, setVoiceId, sampleVoice, script, setScript, voiceUrl, voicing, preview, stopPreview, previewMusic, previewVoice, buildSoundtrack, needsRecording, wantsSound }
+  return { music, setMusic, musicGain, setMusicGain, ownTrack, setOwnTrack, trackRef, voiceOn, setVoiceOn, voiceStatus, voices, voiceId, setVoiceId, sampleVoice, script, setScript, voiceUrl, voicing, preview, stopPreview, previewMusic, previewVoice, buildSoundtrack, needsRecording, wantsSound,
+    musicStatus, tracks, track, pickTrack, removeTrack, musicPrompt, setMusicPrompt, composing, composeTrack, musicError }
 }
 
-function SoundtrackPanel({ theme, isMobile, snd, autoLabel = null, scriptPlaceholder = 'What the narrator says.' }) {
-  const { music, setMusic, musicGain, setMusicGain, ownTrack, setOwnTrack, trackRef, voiceOn, setVoiceOn, voiceStatus, voices, voiceId, setVoiceId, sampleVoice, script, setScript, voiceUrl, voicing, preview, stopPreview, previewMusic, previewVoice } = snd
+// seconds: how long the picture runs, so a composed track fits it.
+// moodLabel: what the AI picked ("Calm"), for the prompt box's hint.
+function SoundtrackPanel({ theme, isMobile, snd, autoLabel = null, scriptPlaceholder = 'What the narrator says.', seconds = 0, moodLabel = null }) {
+  const { music, setMusic, musicGain, setMusicGain, ownTrack, setOwnTrack, trackRef, voiceOn, setVoiceOn, voiceStatus, voices, voiceId, setVoiceId, sampleVoice, script, setScript, voiceUrl, voicing, preview, stopPreview, previewMusic, previewVoice,
+    musicStatus, tracks, track, pickTrack, removeTrack, musicPrompt, setMusicPrompt, composing, composeTrack, musicError } = snd
   const chosen = voices.find((v) => v.id === voiceId)
+  const real = !!musicStatus?.available
+  const [showLibrary, setShowLibrary] = useState(false)
+  const [showCompose, setShowCompose] = useState(false)
+  const fmtS = (n) => `${Math.round(Number(n) || 0)}s`
   return (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(2, minmax(0,1fr))', gap: 10 }}>
       <div style={{ padding: 12, borderRadius: 10, background: theme.bg, border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: theme.text }}><Music size={15} /> Music</div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {[...(autoLabel ? [['auto', autoLabel]] : []), ['calm', 'Calm'], ['upbeat', 'Upbeat'], ['bold', 'Bold'], ['own', 'Your track'], ['none', 'None']].map(([id, label]) => (
-            <button key={id} type="button" onClick={() => { setMusic(id); if (id === 'own' && !ownTrack) trackRef.current?.click() }} style={{ ...chip(theme, music === id), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>{label}</button>
-          ))}
-        </div>
+        {real ? (
+          <>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => { setShowCompose((v) => !v); setShowLibrary(false) }} style={{ ...chip(theme, music === 'track' && showCompose), minHeight: 32, padding: '6px 10px', fontSize: 12 }}><Sparkles size={13} /> Compose a track</button>
+              <button type="button" onClick={() => { setShowLibrary((v) => !v); setShowCompose(false) }} disabled={!tracks.length} style={{ ...chip(theme, showLibrary), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>Library{tracks.length ? ` (${tracks.length})` : ''}</button>
+              <button type="button" onClick={() => { setMusic('own'); if (!ownTrack) trackRef.current?.click() }} style={{ ...chip(theme, music === 'own'), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>Your track</button>
+              <button type="button" onClick={() => setMusic('none')} style={{ ...chip(theme, music === 'none'), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>None</button>
+            </div>
+            {showCompose && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRadius: 8, background: theme.bgCard, border: `1px solid ${theme.border}` }}>
+                <textarea value={musicPrompt} onChange={(e) => setMusicPrompt(e.target.value)} rows={2} placeholder={moodLabel ? `Leave empty for the AI's pick (${moodLabel}), or say what you hear: "warm acoustic guitar, hopeful, builds at the end".` : 'Say what you hear: "warm acoustic guitar, hopeful, builds at the end". Instrumental, no vocals.'} style={{ ...inputStyle(theme), minHeight: 52, resize: 'vertical', fontFamily: 'inherit', fontSize: 12 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => composeTrack(seconds)} disabled={composing} style={{ ...primaryBtn(MKT), minHeight: 32, padding: '6px 12px', fontSize: 12 }}><Sparkles size={13} /> {composing ? 'Composing…' : `Compose ${seconds ? fmtS(seconds + 2) : ''}`}</button>
+                  <span style={{ fontSize: 11, color: theme.textMuted }}>ElevenLabs Music, written for this video, cleared for your posts. About half a minute.</span>
+                </div>
+                {composing && <ScoutLoader theme={theme} label="Composing…" size={40} style={{ padding: 0 }} />}
+                {musicError && <div style={{ fontSize: 11, color: '#b45309' }}>{musicError}</div>}
+              </div>
+            )}
+            {showLibrary && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 180, overflowY: 'auto' }}>
+                {tracks.map((t) => (
+                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 8, background: track?.id === t.id && music === 'track' ? MKT_BG : theme.bgCard, border: `1px solid ${track?.id === t.id && music === 'track' ? MKT : theme.border}` }}>
+                    <button type="button" onClick={() => { pickTrack(t); setShowLibrary(false) }} style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: theme.text, fontSize: 12, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</div>
+                      <div style={{ fontSize: 11, color: theme.textMuted }}>{t.mood || 'custom'} · {fmtS(t.seconds)}{t.source === 'upload' ? ' · yours' : ''}</div>
+                    </button>
+                    <button type="button" onClick={() => { const a = new Audio(t.url); a.play().catch(() => {}); setTimeout(() => a.pause(), 12000) }} title="12-second taste" style={{ ...ghostBtn(theme), minHeight: 28, padding: '4px 8px', fontSize: 11 }}><Play size={12} /></button>
+                    <button type="button" onClick={() => removeTrack(t)} title="Remove from the library" style={{ ...ghostBtn(theme), minHeight: 28, padding: '4px 6px', fontSize: 11 }}><X size={12} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {music === 'track' && track && <div style={{ fontSize: 12, color: theme.text }}><span style={{ fontWeight: 600 }}>{track.title}</span> <span style={{ color: theme.textMuted }}>· {fmtS(track.seconds)} · sits under the voice</span></div>}
+            {music === 'none' && !showCompose && <div style={{ fontSize: 11, color: theme.textMuted }}>No music. Compose a track for this video, or pick one from the library.</div>}
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {[...(autoLabel ? [['auto', autoLabel]] : []), ['calm', 'Calm'], ['upbeat', 'Upbeat'], ['bold', 'Bold'], ['own', 'Your track'], ['none', 'None']].map(([id, label]) => (
+                <button key={id} type="button" onClick={() => { setMusic(id); if (id === 'own' && !ownTrack) trackRef.current?.click() }} style={{ ...chip(theme, music === id), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>{label}</button>
+              ))}
+            </div>
+            {music !== 'own' && music !== 'none' && <div style={{ fontSize: 11, color: theme.textMuted }}>Simple bed made by the app. Real composed tracks need the ElevenLabs key on the server.</div>}
+          </>
+        )}
         <input ref={trackRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; setOwnTrack({ name: f.name, arrayBuffer: await f.arrayBuffer() }); setMusic('own') }} />
         {music === 'own' && <div style={{ fontSize: 11, color: theme.textMuted }}>{ownTrack ? `${ownTrack.name} — use only music you have the rights to post.` : 'Pick an audio file you have the rights to.'}</div>}
-        {music !== 'own' && music !== 'none' && <div style={{ fontSize: 11, color: theme.textMuted }}>Made by the app, nothing to license. Sits under the voice.</div>}
         {music !== 'none' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Volume2 size={14} color={theme.textMuted} />
             <input type="range" min={0} max={1} step={0.05} value={musicGain} onChange={(e) => setMusicGain(Number(e.target.value))} style={{ flex: 1 }} />
-            <button type="button" onClick={preview?.kind === 'music' ? stopPreview : previewMusic} style={{ ...ghostBtn(theme), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>{preview?.kind === 'music' ? 'Stop' : 'Hear it'}</button>
+            <button type="button" onClick={preview?.kind === 'music' ? stopPreview : previewMusic} disabled={music === 'track' && !track} style={{ ...ghostBtn(theme), minHeight: 32, padding: '6px 10px', fontSize: 12 }}>{preview?.kind === 'music' ? 'Stop' : 'Hear it'}</button>
           </div>
         )}
       </div>
@@ -2216,7 +2301,7 @@ function VideoEditor({ theme, isMobile, clips, caption, note, companyId, employe
             </div>
           </div>
 
-          <SoundtrackPanel theme={theme} isMobile={isMobile} snd={snd} scriptPlaceholder="What the narrator says over the clips. Leave it empty for no narrator." />
+          <SoundtrackPanel theme={theme} isMobile={isMobile} snd={snd} seconds={total} scriptPlaceholder="What the narrator says over the clips. Leave it empty for no narrator." />
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {items.map((c, i) => {
@@ -2330,7 +2415,9 @@ function StoryboardMaker({ theme, isMobile, captures: given, caption, note, comp
   const captures = useMemo(() => [...given, ...made.filter((m) => !given.some((g) => g.id === m.id))], [given, made])
   const byId = useMemo(() => Object.fromEntries(captures.map((c) => [c.id, c])), [captures])
   const norm = sb ? normalizeStoryboard(sb, captures) : null
-  const snd = useSoundtrack({ invoke, brand, autoMood: sb?.mood || 'calm', initialMusic: initial?.music || 'auto', initialVoiceOn: initial ? initial.voiceOn !== false : true, initialMusicGain: initial?.musicGain ?? 0.6, initialVoiceId: initial?.voiceId || null, initialScript: initial?.script || '' })
+  const snd = useSoundtrack({ invoke, brand, autoMood: sb?.mood || 'calm', initialMusic: initial?.music || 'none', initialVoiceOn: initial ? initial.voiceOn !== false : true, initialMusicGain: initial?.musicGain ?? 0.6, initialVoiceId: initial?.voiceId || null, initialScript: initial?.script || '', initialTrack: initial?.track || null, initialMusicPrompt: initial?.musicPrompt || '' })
+  // Without a real composer the synth bed is the default; with one, music is a choice (Compose a track).
+  useEffect(() => { if (!initial && snd.musicStatus && !snd.musicStatus.available && snd.music === 'none') snd.setMusic('auto') }, [snd.musicStatus]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (sb?.voiceover && !snd.script) snd.setScript(sb.voiceover) }, [sb]) // eslint-disable-line react-hooks/exhaustive-deps
   const fmt = (n) => `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, '0')}`
 
@@ -2366,7 +2453,7 @@ function StoryboardMaker({ theme, isMobile, captures: given, caption, note, comp
       const soundtrack = await snd.buildSoundtrack(norm.total)
       const out = await renderStoryboard({ storyboard: sb, captures, brand: { ...brandInfo, ...(sb.brand || {}) , logo_url: sb.brand?.logo_url || brandInfo.logo_url, color: sb.brand?.color || brandInfo.color }, aspect, soundtrack, onProgress: (pct, seconds) => setRendering({ pct: Math.round(pct * 100), seconds }), signal: ac.signal })
       setRendering({ pct: 100, seconds: out.duration, uploading: true })
-      const storyboard = { description, sb, aspect, music: snd.music, musicGain: snd.musicGain, voiceId: snd.voiceId, voiceOn: snd.voiceOn, script: snd.script, source_capture_ids: captures.map((c) => c.id), made_at: new Date().toISOString() }
+      const storyboard = { description, sb, aspect, music: snd.music, musicGain: snd.musicGain, track: snd.music === 'track' && snd.track ? { id: snd.track.id, title: snd.track.title, url: snd.track.url, seconds: snd.track.seconds } : null, musicPrompt: snd.musicPrompt, voiceId: snd.voiceId, voiceOn: snd.voiceOn, script: snd.script, source_capture_ids: captures.map((c) => c.id), made_at: new Date().toISOString() }
       const row = await uploadCapture({ companyId, employeeId, jobId, file: out.file, note: `AI video: ${sb.headline || description.slice(0, 60)}`, source: 'generated', brand, storyboard })
       toast.success(`Made a ${Math.round(out.duration)}s video.`)
       onDone(row)
@@ -2413,7 +2500,7 @@ function StoryboardMaker({ theme, isMobile, captures: given, caption, note, comp
                   {Object.entries(ASPECTS).map(([id, a]) => <button key={id} type="button" onClick={() => setAspect(id)} style={chip(theme, aspect === id)}>{a.label}</button>)}
                 </div>
               </div>
-              <SoundtrackPanel theme={theme} isMobile={isMobile} snd={snd} autoLabel={`Auto (${MOODS[sb.mood || 'calm']?.label || 'Calm'})`} scriptPlaceholder="What the narrator says. The AI wrote a first pass when it planned the video." />
+              <SoundtrackPanel theme={theme} isMobile={isMobile} snd={snd} seconds={norm.total} moodLabel={MOODS[sb.mood || 'calm']?.label || 'Calm'} autoLabel={`Auto (${MOODS[sb.mood || 'calm']?.label || 'Calm'})`} scriptPlaceholder="What the narrator says. The AI wrote a first pass when it planned the video." />
               <div>
                 <div style={sectionLabel(theme)}>Scenes · {fmt(norm.total)}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
