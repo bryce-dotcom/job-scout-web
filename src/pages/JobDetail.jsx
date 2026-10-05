@@ -41,6 +41,7 @@ import { computeAllottedHours } from '../lib/allottedHours'
 import { jobTotalPolicy, adoptLinesTotal, jobGross } from '../lib/jobTotal'
 import { fetchJobBonuses, bonusStatusLabel, heldReasonLabel } from '../lib/bonusLedger'
 import SearchableSelect from '../components/SearchableSelect'
+import { salespersonOptions, hasHiddenSalespeople } from '../lib/salespeople'
 import useSmartBack from '../lib/useSmartBack'
 import { selectPdfPages, pageIndicesFor, PAGES_FIRST } from '../lib/pdfPages'
 import { localDateStr } from '../lib/localDate'
@@ -247,6 +248,9 @@ function JobDetailInner() {
   const [editingTime, setEditingTime] = useState({ hours: '', category: '', notes: '' })
   const [editMode, setEditMode] = useState(false)
   const [formData, setFormData] = useState({})
+  // The salesperson list starts at the people who earn commission on a job;
+  // this opens it to everyone when somebody genuinely needs a name off it.
+  const [showAllSalespeople, setShowAllSalespeople] = useState(false)
   const [editAssignedIds, setEditAssignedIds] = useState([])
   const [showCrewDropdown, setShowCrewDropdown] = useState(false)
   const [customerSearchText, setCustomerSearchText] = useState('')
@@ -4318,12 +4322,17 @@ function JobDetailInner() {
                 <div>
                   <label style={labelStyle}>Sales Owner</label>
                   <SearchableSelect
-                    options={employees.map(emp => ({ value: emp.id, label: emp.name }))}
+                    options={salespersonOptions(employees, formData.salesperson_id, showAllSalespeople)}
                     value={formData.salesperson_id || ''}
                     onChange={(val) => setFormData(prev => ({ ...prev, salesperson_id: val ? parseInt(val) : null }))}
                     placeholder="-- Select --"
                     theme={theme}
                   />
+                  {hasHiddenSalespeople(employees, formData.salesperson_id) && (
+                    <button type="button" onClick={() => setShowAllSalespeople(v => !v)} style={{ marginTop: 4, padding: 0, background: "none", border: "none", color: theme.textMuted, fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
+                      {showAllSalespeople ? "Show only people on commission" : "Not listed? Show everyone"}
+                    </button>
+                  )}
                 </div>
                 <div>
                   <label style={labelStyle}>Address</label>

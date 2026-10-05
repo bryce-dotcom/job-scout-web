@@ -28,6 +28,7 @@ import { jobYear, availableJobYears } from '../lib/jobYear'
 import { jobPaymentProgress, paymentsByInvoiceIndex } from '../lib/arHelpers'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
+import { salespersonOptions, hasHiddenSalespeople } from '../lib/salespeople'
 
 // Light theme fallback
 const defaultTheme = {
@@ -287,6 +288,9 @@ export default function Jobs() {
   const [showModal, setShowModal] = useState(false)
   const [editingJob, setEditingJob] = useState(null)
   const [formData, setFormData] = useState(emptyJob)
+  // The salesperson list starts at the people who earn commission on a job;
+  // this opens it to everyone when somebody genuinely needs a name off it.
+  const [showAllSalespeople, setShowAllSalespeople] = useState(false)
   // Region tz for the job being edited (its business unit -> Mountain default).
   // Anchors the start/end datetime inputs so they don't drift with the device.
   const formTz = resolveTimezone(formData.business_unit, businessUnits, DEFAULT_TZ)
@@ -1793,12 +1797,19 @@ export default function Jobs() {
                   <div>
                     <label style={labelStyle}>Salesperson</label>
                     <SearchableSelect
-                      options={employees.map(e => ({ value: e.id, label: e.name }))}
+                      // Only people set up to earn commission on a job, plus
+                      // whoever the job already names (lib/salespeople).
+                      options={salespersonOptions(employees, formData.salesperson_id, showAllSalespeople)}
                       value={formData.salesperson_id}
                       onChange={(val) => setFormData(prev => ({ ...prev, salesperson_id: val }))}
                       placeholder="Search salesperson..."
                       theme={theme}
                     />
+                    {hasHiddenSalespeople(employees, formData.salesperson_id) && (
+                      <button type="button" onClick={() => setShowAllSalespeople(v => !v)} style={{ marginTop: 4, padding: 0, background: "none", border: "none", color: theme.textMuted, fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
+                        {showAllSalespeople ? "Show only people on commission" : "Not listed? Show everyone"}
+                      </button>
+                    )}
                   </div>
                 </div>
 
