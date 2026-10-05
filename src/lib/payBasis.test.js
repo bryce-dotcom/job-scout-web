@@ -104,10 +104,16 @@ describe('the wiring', () => {
   })
 
   it('the run marks the settled commissions as covered by the salary', () => {
-    expect(payroll).toMatch(/covered_by_salary: true/)
-    expect(payroll).toMatch(/coveredBySalaryEmpIds/)
+    expect(payroll).toMatch(/covered: true/)   // the salary-won settle group
+    // the rows weighed are the rows settled — not whatever a date filter
+    // catches, because earned_at is a timestamp read as a local day
+    expect(payroll).toMatch(/weighedCommissionRows/)
+    expect(payroll).toMatch(/covered_by_salary: g\.covered/)
     // both commission tables, or a setter fee quietly pays twice
-    expect(payroll).toMatch(/\['rep_commissions', 'lead_commissions'\]/)
+    expect(payroll).toMatch(/from\('rep_commissions'\)[\s\S]{0,300}covered_by_salary/)
+    expect(payroll).toMatch(/from\('lead_commissions'\)[\s\S]{0,300}covered_by_salary/)
+    // and the whole period counts for them, staged or not
+    expect(payroll).toMatch(/greaterOf \? earnedSetter \+ earnedRep : queuedSetter \+ queuedRep/)
   })
 
   it('My Pay stops adding both halves together', () => {

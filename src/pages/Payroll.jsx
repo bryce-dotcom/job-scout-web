@@ -1741,17 +1741,30 @@ export default function Payroll() {
     const queuedRep = repCommissions
       .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && r.queued_for_payroll && (r.earned_at || '').slice(0, 10) >= cfpS && (r.earned_at || '').slice(0, 10) <= cfpE)
       .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
-    const commissionEarnedThisPeriod = queuedSetter + queuedRep
-
     // Salary or commission, whichever is more — for the employees on that
     // arrangement (Doug, Christopher). Every other pay type adds up; this one
     // is a floor the commission has to beat. lib/payBasis is the rule, and it
     // also hands back the sentence every surface shows, so the Payroll review,
     // the paystub and My Pay cannot drift into three different explanations.
+    //
+    // The comparison counts the period's WHOLE commission, staged or not.
+    // Everyone else is queue-driven on purpose — an admin stages the money
+    // that a run pays — but here the commission is not money being added, it
+    // is a number being weighed against the salary. Counted queued-only, a
+    // commission nobody staged would lose to the salary, stay "earned", and
+    // then pay on top of a later period's salary: the same money twice.
+    const greaterOf = paysGreaterOf(employee)
+    const earnedSetterRows = (leadComm.details || []).filter(c => c.id)
+    const earnedRepRows = repCommissions
+      .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) >= cfpS && (r.earned_at || '').slice(0, 10) <= cfpE)
+    const earnedSetter = earnedSetterRows.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
+    const earnedRep = earnedRepRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+    const commissionEarnedThisPeriod = greaterOf ? earnedSetter + earnedRep : queuedSetter + queuedRep
+
     const payBasis = greaterOfPay({
       salaryPay,
       commissionPay: commissionEarnedThisPeriod,
-      enabled: paysGreaterOf(employee),
+      enabled: greaterOf,
     })
     salaryPay = payBasis.salaryPaid
     const commissionPay = payBasis.commissionPaid
@@ -1826,6 +1839,9 @@ export default function Payroll() {
       // The greater-of comparison, for the review line and the run.
       payBasis,
       commissionEarnedThisPeriod,
+      // The exact rows the comparison weighed, so the run settles those and
+      // not whatever a date filter happens to catch.
+      weighedCommissionRows: greaterOf ? { rep: earnedRepRows.map(r => r.id).filter(Boolean), lead: earnedSetterRows.map(r => r.id).filter(Boolean) } : null,
       regularHours,
       overtimeHours,
       hourlyRate,
@@ -2383,43 +2399,38 @@ export default function Payroll() {
           if (bonusErr) { console.warn('[runPayroll] bonus mark-paid failed:', bonusErr); notMarkedPaid.push(`efficiency bonuses (${bonusErr.message})`) }
           else setLedgerBonuses(prev => prev.map(b => bonusPaid(b) ? { ...b, status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : b))
 
-          // Whose commission was settled by a salary that beat it, rather than
-          // paid on top (lib/payBasis). Their rows close the same way as
-          // everyone else's — the earning is finished either way — but they
-          // carry covered_by_salary so nobody reading the row later concludes
-          // they were paid twice, or never paid at all.
-          const coveredBySalaryEmpIds = paidEmpIds.filter((id) => {
+          // Greater-of employees: the period's commission is SETTLED whichever
+          // way the comparison went, staged or not. The statements above close
+          // only queued rows, which would leave an unstaged commission alive
+          // to be paid on top of a later salary - the same money twice.
+          //
+          // The rows settled are the ones the comparison actually weighed, not
+          // a date filter's best guess: earned_at is a timestamp that the
+          // comparison reads as a local day, so a UTC bound can miss the last
+          // evening of a period and pay it again next time.
+          const settleGroups = [{ covered: true, rep: [], lead: [] }, { covered: false, rep: [], lead: [] }]
+          for (const id of paidEmpIds) {
             const emp = activeEmployees.find(e => e.id === id)
-            if (!emp || !paysGreaterOf(emp)) return false
-            return calculateFullPay(emp)?.payBasis?.basis === 'salary'
-          })
-
-          // Setter/lead commissions: queued -> paid.
-          const { error: commErr } = await supabase.from('lead_commissions')
-            .update({ payment_status: 'paid', queued_for_payroll: false })
-            .eq('company_id', companyId).in('employee_id', paidEmpIds)
-            .eq('queued_for_payroll', true).neq('payment_status', 'paid')
-          if (commErr) { console.warn('[runPayroll] setter commission mark-paid failed:', commErr); notMarkedPaid.push(`setter commissions (${commErr.message})`) }
-          else setLeadCommissions(prev => prev.map(c => (paidEmpIds.includes(c.employee_id) && c.queued_for_payroll) ? { ...c, payment_status: 'paid', queued_for_payroll: false } : c))
-
-          // Rep (%) commissions: queued -> paid.
-          const { error: repErr } = await supabase.from('rep_commissions')
-            .update({ payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false })
-            .eq('company_id', companyId).in('employee_id', paidEmpIds)
-            .eq('queued_for_payroll', true).neq('payment_status', 'paid')
-          if (repErr) { console.warn('[runPayroll] rep commission mark-paid failed:', repErr); notMarkedPaid.push(`rep commissions (${repErr.message})`) }
-          else setRepCommissions(prev => prev.map(r => (paidEmpIds.includes(r.employee_id) && r.queued_for_payroll) ? { ...r, payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : r))
-
-          // ...and say which of the two settled them.
-          if (coveredBySalaryEmpIds.length) {
-            // Only this period's rows: an older one was settled by an older run.
-            const since = localDateStr(periodStart)
-            for (const table of ['rep_commissions', 'lead_commissions']) {
-              const { error: covErr } = await supabase.from(table)
-                .update({ covered_by_salary: true })
-                .eq('company_id', companyId).in('employee_id', coveredBySalaryEmpIds)
-                .eq('payment_status', 'paid').gte('created_at', since)
-              if (covErr) console.warn('[runPayroll] covered-by-salary stamp failed on ' + table + ':', covErr.message)
+            if (!emp || !paysGreaterOf(emp)) continue
+            const data = calculateFullPay(emp)
+            const rows = data?.weighedCommissionRows
+            if (!rows) continue
+            const group = settleGroups[data.payBasis?.basis === 'salary' ? 0 : 1]
+            group.rep.push(...rows.rep)
+            group.lead.push(...rows.lead)
+          }
+          for (const g of settleGroups) {
+            if (g.rep.length) {
+              const { error } = await supabase.from('rep_commissions')
+                .update({ payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false, covered_by_salary: g.covered })
+                .in('id', g.rep).eq('company_id', companyId)
+              if (error) { console.warn('[runPayroll] greater-of settle failed on rep_commissions:', error.message); notMarkedPaid.push('rep commissions settled by salary (' + error.message + ')') }
+            }
+            if (g.lead.length) {
+              const { error } = await supabase.from('lead_commissions')
+                .update({ payment_status: 'paid', queued_for_payroll: false, covered_by_salary: g.covered })
+                .in('id', g.lead).eq('company_id', companyId)
+              if (error) { console.warn('[runPayroll] greater-of settle failed on lead_commissions:', error.message); notMarkedPaid.push('setter commissions settled by salary (' + error.message + ')') }
             }
           }
         }
