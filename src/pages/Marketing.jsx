@@ -20,7 +20,7 @@ import {
   Megaphone, Inbox, ListChecks, Palette, Link2, Mail, Sparkles, Upload, Camera, Check, X,
   Send, Clock, ExternalLink, RefreshCw, ChevronRight, CircleCheck, Circle, Trash2, Pencil,
   Image as ImageIcon, AlertTriangle, Archive, CalendarClock, Hand, Copy, Download,
-  Play, CalendarDays, BarChart3, Globe, ChevronLeft, FolderOpen, Search, Film, FileText, RotateCcw, Scissors, ArrowUp, ArrowDown, Clapperboard, Music, Mic, Volume2,
+  Play, CalendarDays, BarChart3, Globe, ChevronLeft, FolderOpen, Search, Film, FileText, RotateCcw, Scissors, ArrowUp, ArrowDown, Clapperboard, Music, Mic, Volume2, Plus, Loader2,
 } from 'lucide-react'
 
 // Marketing — step 1 of the Sales Flow. Everything a company does to be found
@@ -1110,6 +1110,11 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
   // Reopen a video the AI made: its plan is on the capture; the source
   // photos may no longer be in the inbox list, so fetch them by id.
   const [reopen, setReopen] = useState(null)   // { initial, captures }
+  const [viewing, setViewing] = useState(null) // { url, video } — full-size preview with sound
+  const [addMenu, setAddMenu] = useState(false) // the one Add button's menu
+  // One door into editing a video: an AI-made one reopens its plan (scenes,
+  // music, voice); a clip from the field opens the clip editor (trim, music, voice).
+  const editVideo = () => { if (videoCapture?.source === 'generated' && videoCapture?.storyboard?.sb) reopenVideo(videoCapture); else setEditing(true) }
   const [painting, setPainting] = useState(false)
   const [paintSheet, setPaintSheet] = useState(false)
   const reopenVideo = async (cap) => {
@@ -1271,6 +1276,14 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
           companyId={companyId} employeeId={currentEmployee?.id || null} brand={multi ? postBrand || null : null} brandInfo={brandInfo} jobId={initialPost?.job_id || null}
           invoke={invoke} initial={reopen?.initial || null} onPictures={onPictures} onClose={() => { setDirecting(false); setReopen(null) }} onDone={onDirected} />
       )}
+      {viewing && (
+        <div onClick={() => setViewing(null)} style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+          <button type="button" onClick={() => setViewing(null)} style={{ position: 'absolute', top: 12, right: 12, width: 40, height: 40, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.15)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
+          {viewing.video
+            ? <video src={viewing.url} controls autoPlay playsInline onClick={(e) => e.stopPropagation()} style={{ maxWidth: '100%', maxHeight: '92vh', borderRadius: 10, background: '#000' }} />
+            : <img src={viewing.url} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '100%', maxHeight: '92vh', borderRadius: 10, objectFit: 'contain' }} />}
+        </div>
+      )}
       {paintSheet && (
         <PictureMaker theme={theme} isMobile={isMobile} seed={note || caption || ''} busy={painting} onClose={() => setPaintSheet(false)}
           onMake={async (description, count) => { const ok = await paintPictures(description, count); if (ok) setPaintSheet(false) }} />
@@ -1296,38 +1309,57 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
           <div>
             <div style={sectionLabel(theme)}>Photos</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {mediaUrls.map((u, i) => (
-                <div key={u + i} style={{ position: 'relative' }}>
-                  {videoCapture && videoCapture.url === u
-                    ? <video src={`${u}#t=1`} poster={captureThumb(videoCapture) || undefined} preload="metadata" controls muted playsInline style={{ width: 168, height: 84, objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.border}`, background: '#000' }} />
-                    : <img src={u} alt="" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: 8, border: `1px solid ${theme.border}` }} />}
-                  <button type="button" onClick={() => { const id = captureIds.find((cid) => captureById[cid]?.url === u); if (id) setCaptureIds((xs) => xs.filter((x) => x !== id)); else setExtraMedia((xs) => xs.filter((x) => x !== u)) }}
-                    style={{ position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#2c3530', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
-                </div>
-              ))}
-              <button type="button" onClick={() => camPhotoRef.current?.click()} disabled={shooting} style={{ width: 84, height: 84, borderRadius: 8, border: `1px solid ${MKT}`, background: MKT_BG, color: MKT, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
-                <Camera size={18} /> {shooting ? (shotPct != null && shotPct < 100 ? `${shotPct}%` : 'Sending…') : 'Take photo'}
-              </button>
-              <button type="button" onClick={() => camVideoRef.current?.click()} disabled={shooting} style={{ width: 84, height: 84, borderRadius: 8, border: `1px solid ${MKT}`, background: MKT_BG, color: MKT, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
-                <Play size={18} /> Record video
-              </button>
-              <button type="button" onClick={() => setShowPicker((v) => !v)} style={{ width: 84, height: 84, borderRadius: 8, border: `1px dashed ${theme.border}`, background: theme.bg, color: theme.textMuted, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11 }}>
-                <ImageIcon size={18} /> From inbox
-              </button>
+              {mediaUrls.map((u, i) => {
+                const isVid = !!videoCapture && videoCapture.url === u
+                return (
+                  <div key={u + i} style={{ position: 'relative' }}>
+                    <button type="button" onClick={() => setViewing({ url: u, video: isVid })} title={isVid ? 'Play it, with sound' : 'See it full size'} style={{ position: 'relative', padding: 0, border: `1px solid ${theme.border}`, borderRadius: 10, overflow: 'hidden', background: '#000', cursor: 'pointer', width: isVid ? 150 : 84, height: 84, display: 'block' }}>
+                      {isVid
+                        ? (captureThumb(videoCapture) ? <img src={captureThumb(videoCapture)} alt="" style={{ width: 150, height: 84, objectFit: 'cover', display: 'block', opacity: 0.85 }} /> : <VideoFrameTile src={u} size={84} style={{ width: 150 }} />)
+                        : <img src={u} alt="" style={{ width: 84, height: 84, objectFit: 'cover', display: 'block' }} />}
+                      {isVid && <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={16} /></span></span>}
+                      {isVid && videoCapture?.duration_s && <span style={{ position: 'absolute', bottom: 5, right: 6, fontSize: 10, fontWeight: 700, color: '#fff', background: 'rgba(0,0,0,0.65)', borderRadius: 999, padding: '2px 6px' }}>{Math.round(videoCapture.duration_s)}s</span>}
+                    </button>
+                    <button type="button" onClick={() => { const id = captureIds.find((cid) => captureById[cid]?.url === u); if (id) setCaptureIds((xs) => xs.filter((x) => x !== id)); else setExtraMedia((xs) => xs.filter((x) => x !== u)) }} title="Remove from the post"
+                      style={{ position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#2c3530', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
+                  </div>
+                )
+              })}
+              {/* One Add button; the ways in live in its menu. */}
+              <div style={{ position: 'relative' }}>
+                <button type="button" onClick={() => { setAddMenu((v) => !v); setShowPicker(false) }} disabled={shooting} style={{ width: 84, height: 84, borderRadius: 10, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 11, fontWeight: 600, border: `1px dashed ${MKT}`, background: MKT_BG, color: MKT }}>
+                  {shooting ? <><Loader2 size={18} /> {shotPct != null && shotPct < 100 ? `${shotPct}%` : 'Sending…'}</> : <><Plus size={20} /> Add</>}
+                </button>
+                {addMenu && (
+                  <div onMouseLeave={() => setAddMenu(false)} style={{ position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 5, background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.18)', minWidth: 220, padding: 6, display: 'flex', flexDirection: 'column' }}>
+                    {[
+                      ['Take a photo', Camera, () => camPhotoRef.current?.click()],
+                      ['Record a video', Play, () => camVideoRef.current?.click()],
+                      ['From the inbox', ImageIcon, () => setShowPicker(true)],
+                      ['AI picture, from a line', Sparkles, () => setPaintSheet(true)],
+                    ].map(([label, Icon, go]) => (
+                      <button key={label} type="button" onClick={() => { setAddMenu(false); go() }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: theme.text, fontSize: 13, borderRadius: 8 }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = theme.bgCardHover }} onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}>
+                        <Icon size={16} color={MKT} /> {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               {canEditVideo() && (
-                <button type="button" onClick={() => setDirecting(true)} title="The AI plans a short vertical video from these photos, clips and your note, and the app makes it" style={{ width: 84, height: 84, borderRadius: 8, border: `1px solid ${theme.border}`, background: '#2c3530', color: '#fff', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
-                  <Clapperboard size={18} /> AI video
+                <button type="button" onClick={() => setDirecting(true)} title="The AI plans a short vertical video from these photos and clips and your line, with music and a narrator; the app makes it" style={{ width: 84, height: 84, borderRadius: 10, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 11, fontWeight: 600, border: 'none', background: '#2c3530', color: '#fff' }}>
+                  <Clapperboard size={20} /> Make a video
                 </button>
               )}
-              <button type="button" onClick={() => setPaintSheet(true)} disabled={painting} title="Nothing from the field? The AI paints a picture from a line, in your brand's world. It is labelled AI." style={{ width: 84, height: 84, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, fontSize: 11, fontWeight: 600 }}>
-                <Sparkles size={18} /> {painting ? 'Painting…' : 'AI picture'}
-              </button>
               <input ref={camPhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={onShot} />
               <input ref={camVideoRef} type="file" accept="video/*" capture="environment" style={{ display: 'none' }} onChange={onShot} />
             </div>
             {showPicker && (
               <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 6, maxHeight: 200, overflowY: 'auto', padding: 8, background: theme.bg, borderRadius: 8 }}>
-                {captures.length === 0 && <div style={{ fontSize: 12, color: theme.textMuted, gridColumn: '1 / -1' }}>Inbox is empty. Upload from the Inbox tab.</div>}
+                <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: theme.textMuted }}>{captures.length ? 'Tap what goes on the post.' : 'Inbox is empty. Add from the camera or make a picture.'}</span>
+                  <button type="button" onClick={() => setShowPicker(false)} style={{ ...ghostBtn(theme), minHeight: 30, padding: '4px 10px', fontSize: 12 }}>Done</button>
+                </div>
                 {captures.map((c) => {
                   const on = captureIds.includes(c.id)
                   return (
@@ -1373,28 +1405,21 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
           )}
           {mediaType === 'video' && videoCaptures.length === 1 && canEditVideo() && (() => {
             const plan = videoCapture?.source === 'generated' ? videoCapture?.storyboard : null
-            const musicLabel = !plan ? null : plan.music === 'track' && plan.track?.title ? plan.track.title : plan.music === 'own' ? 'your own track' : plan.music === 'none' ? 'no music' : plan.music ? `${plan.music === 'auto' ? 'simple bed' : plan.music + ' bed'}` : null
-            const voiceLabel = !plan ? null : plan.voiceOn === false || !plan.script ? 'no narrator' : 'narrated'
+            const madeByAi = videoCapture?.source === 'generated'
+            const musicLabel = !plan ? 'its own sound' : plan.music === 'track' && plan.track?.title ? plan.track.title : plan.music === 'own' ? 'your track' : plan.music === 'none' ? 'no music' : plan.music ? 'simple bed' : 'no music'
+            const voiceLabel = !plan ? null : plan.voiceOn === false || !plan.script ? 'no narrator' : 'Arnie narrating'
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {plan?.sb && (
-                    <button type="button" onClick={() => reopenVideo(videoCapture)} title="Reopen the plan: change the scenes, the script, the voice or the music, and make it again" style={primaryBtn(MKT)}><Clapperboard size={14} /> Edit video, music & voice</button>
-                  )}
-                  <button type="button" onClick={() => setEditing(true)} style={ghostBtn(theme)}><Scissors size={14} /> Trim this clip</button>
-                  <span style={{ fontSize: 12, color: theme.textMuted }}>{videoCapture?.duration_s ? `${Math.round(videoCapture.duration_s)}s now. ` : ''}Reels do best under 60 seconds, vertical.</span>
+                  <button type="button" onClick={() => setViewing({ url: videoCapture.url, video: true })} style={ghostBtn(theme)}><Play size={14} /> Preview</button>
+                  <button type="button" onClick={editVideo} style={primaryBtn(MKT)}>{plan?.sb ? <Clapperboard size={14} /> : <Scissors size={14} />} Edit video, music & voice</button>
                 </div>
-                {plan?.sb && (
-                  <div style={{ fontSize: 12, color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <Music size={13} color={theme.textMuted} /> <span>{musicLabel}</span>
-                    <span style={{ color: theme.textMuted }}>·</span>
-                    <Mic size={13} color={theme.textMuted} /> <span>{voiceLabel}</span>
-                    <span style={{ color: theme.textMuted }}>· {plan.sb.scenes?.length || 0} scenes. Change any of it with the button above.</span>
-                  </div>
-                )}
-                {videoCapture?.source === 'generated' && !plan?.sb && (
-                  <div style={{ fontSize: 12, color: theme.textMuted }}>This video was made before plans were saved. Use AI video to make it again; the new one will be editable.</div>
-                )}
+                <div style={{ fontSize: 12, color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <Music size={13} color={theme.textMuted} /> <span>{musicLabel}</span>
+                  {voiceLabel && <><span style={{ color: theme.textMuted }}>·</span> <Mic size={13} color={theme.textMuted} /> <span>{voiceLabel}</span></>}
+                  {plan?.sb && <span style={{ color: theme.textMuted }}>· {plan.sb.scenes?.length || 0} scenes</span>}
+                  {madeByAi && !plan?.sb && <span style={{ color: theme.textMuted }}>· made before plans were saved; Make a video again to get an editable one</span>}
+                </div>
               </div>
             )
           })()}
@@ -2299,7 +2324,7 @@ function VideoEditor({ theme, isMobile, clips, caption, note, companyId, employe
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.border}`, position: 'sticky', top: 0, background: theme.bgCard, zIndex: 1 }}>
           <Scissors size={18} color={MKT} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>{clips.length > 1 ? 'Cut these into one video' : 'Trim this clip'}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>{clips.length > 1 ? 'Cut these into one video' : 'Edit this clip'}</div>
             <div style={{ fontSize: 12, color: theme.textMuted }}>{fmt(total)} total{over ? ` · over the ${MAX_RESULT_SECONDS}s limit` : total > 60 ? ' · Reels do best under 1:00' : ''}</div>
           </div>
           <button type="button" onClick={onClose} style={{ ...ghostBtn(theme), padding: 8 }}><X size={18} /></button>
