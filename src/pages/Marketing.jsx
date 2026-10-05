@@ -1371,15 +1371,33 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
               </div>
             </div>
           )}
-          {mediaType === 'video' && videoCaptures.length === 1 && canEditVideo() && (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              {videoCapture?.source === 'generated' && videoCapture?.storyboard?.sb && (
-                <button type="button" onClick={() => reopenVideo(videoCapture)} title="Reopen the plan: change the scenes, the script, the voice or the music, and make it again" style={primaryBtn(MKT)}><Clapperboard size={14} /> Edit this video</button>
-              )}
-              <button type="button" onClick={() => setEditing(true)} style={ghostBtn(theme)}><Scissors size={14} /> Trim this clip</button>
-              <span style={{ fontSize: 12, color: theme.textMuted }}>{videoCapture?.duration_s ? `${Math.round(videoCapture.duration_s)}s now. ` : ''}Reels do best under 60 seconds, vertical.</span>
-            </div>
-          )}
+          {mediaType === 'video' && videoCaptures.length === 1 && canEditVideo() && (() => {
+            const plan = videoCapture?.source === 'generated' ? videoCapture?.storyboard : null
+            const musicLabel = !plan ? null : plan.music === 'track' && plan.track?.title ? plan.track.title : plan.music === 'own' ? 'your own track' : plan.music === 'none' ? 'no music' : plan.music ? `${plan.music === 'auto' ? 'simple bed' : plan.music + ' bed'}` : null
+            const voiceLabel = !plan ? null : plan.voiceOn === false || !plan.script ? 'no narrator' : 'narrated'
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {plan?.sb && (
+                    <button type="button" onClick={() => reopenVideo(videoCapture)} title="Reopen the plan: change the scenes, the script, the voice or the music, and make it again" style={primaryBtn(MKT)}><Clapperboard size={14} /> Edit video, music & voice</button>
+                  )}
+                  <button type="button" onClick={() => setEditing(true)} style={ghostBtn(theme)}><Scissors size={14} /> Trim this clip</button>
+                  <span style={{ fontSize: 12, color: theme.textMuted }}>{videoCapture?.duration_s ? `${Math.round(videoCapture.duration_s)}s now. ` : ''}Reels do best under 60 seconds, vertical.</span>
+                </div>
+                {plan?.sb && (
+                  <div style={{ fontSize: 12, color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Music size={13} color={theme.textMuted} /> <span>{musicLabel}</span>
+                    <span style={{ color: theme.textMuted }}>·</span>
+                    <Mic size={13} color={theme.textMuted} /> <span>{voiceLabel}</span>
+                    <span style={{ color: theme.textMuted }}>· {plan.sb.scenes?.length || 0} scenes. Change any of it with the button above.</span>
+                  </div>
+                )}
+                {videoCapture?.source === 'generated' && !plan?.sb && (
+                  <div style={{ fontSize: 12, color: theme.textMuted }}>This video was made before plans were saved. Use AI video to make it again; the new one will be editable.</div>
+                )}
+              </div>
+            )
+          })()}
           {mediaType === 'video' && (
             <div>
               <div style={sectionLabel(theme)}>Format</div>
