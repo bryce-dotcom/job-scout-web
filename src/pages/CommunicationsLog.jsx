@@ -17,6 +17,7 @@ import {
   ArrowUpRight,
   X
 } from 'lucide-react'
+import { parseLocalDate } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -132,14 +133,13 @@ export default function CommunicationsLog() {
     }
   }
 
+  // sent_date is a calendar DAY, not an instant. new Date('2026-10-05') is
+  // UTC midnight, which is 6 PM on the 4th in Denver — every row read a day
+  // early, with a 6:00 PM on it that meant nothing. lib/localDate is the rule.
   const formatDateTime = (dateStr) => {
-    if (!dateStr) return '-'
-    return new Date(dateStr).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
-    })
+    const d = parseLocalDate(dateStr)
+    if (!d) return '-'
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
   const clearFilters = () => {

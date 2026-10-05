@@ -17,6 +17,7 @@ import { quoteStatusColors, invoiceStatusColors } from '../lib/statusColors'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
 import { statementModel } from '../lib/customerStatement'
 import { recordConsent, smsConsentState, smsTermsPath } from '../lib/smsConsent'
+import { parseLocalDate } from '../lib/localDate'
 import useSmartBack from '../lib/useSmartBack'
 import { creditTotals, fmtMoney, creditKindLabel } from '../lib/creditLedger'
 
@@ -2595,7 +2596,9 @@ export default function CustomerDetail() {
                             Received
                           </span>
                         )}
-                        {comm.status && (
+                        {/* 'received' would only repeat the badge above it.
+                            'failed' and 'undelivered' still need saying. */}
+                        {comm.status && comm.status !== 'received' && (
                           <span style={{
                             padding: '2px 8px',
                             backgroundColor: theme.accentBg,
@@ -2608,7 +2611,12 @@ export default function CustomerDetail() {
                           </span>
                         )}
                         <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}>
-                          {comm.sent_date ? new Date(comm.sent_date).toLocaleDateString() : comm.created_at ? new Date(comm.created_at).toLocaleDateString() : ''}
+                          {/* sent_date is a calendar day. new Date('2026-10-05')
+                              is UTC midnight, which is the 4th in Denver — this
+                              showed today's messages as yesterday. */}
+                          {parseLocalDate(comm.sent_date)?.toLocaleDateString()
+                            || parseLocalDate(comm.created_at)?.toLocaleDateString()
+                            || ''}
                         </span>
                       </div>
                       {comm.recipient && (
