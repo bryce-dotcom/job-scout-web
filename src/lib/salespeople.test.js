@@ -83,3 +83,26 @@ describe('both job forms use it', () => {
     })
   }
 })
+
+describe('a company that pays no job commission at all', () => {
+  // Caught on the demo tenant: nobody there has a goods or services rate, so
+  // the narrowed picker read "No matches found" and the only way to set a
+  // salesperson was to notice a small grey link. A list of nobody is not a
+  // safer list, it is a broken field.
+  const NOBODY_EARNS = [CREDITED_BUT_UNPAID, SETTER_ONLY, PROCESSOR_ONLY, CREW]
+
+  it('gets everyone, unlabelled', () => {
+    const opts = salespersonOptions(NOBODY_EARNS)
+    expect(opts).toHaveLength(NOBODY_EARNS.length)
+    expect(opts.map(o => o.label)).not.toContain('London Miller (no longer on commission)')
+  })
+
+  it('and is not offered a link that would change nothing', () => {
+    expect(hasHiddenSalespeople(NOBODY_EARNS)).toBe(false)
+  })
+
+  it('one person on commission is enough to narrow it again', () => {
+    expect(salespersonOptions([...NOBODY_EARNS, REP]).map(o => o.label)).toEqual(['Doug Webb'])
+    expect(hasHiddenSalespeople([...NOBODY_EARNS, REP])).toBe(true)
+  })
+})

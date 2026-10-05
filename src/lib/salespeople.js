@@ -36,15 +36,21 @@ export function earnsJobCommission(employee) {
  */
 export function salespersonOptions(employees = [], currentId = null, showEveryone = false) {
   const cur = currentId == null || currentId === '' ? null : String(currentId)
+  // A company where nobody is set up to earn commission on a job does not
+  // want a narrowed list — it wants a list. Without this the picker reads
+  // "No matches found" on every tenant that pays no commission at all, which
+  // is most of them before they configure one (caught on the demo tenant).
+  const anyEarner = (employees || []).some(earnsJobCommission)
+  const everyone = showEveryone || !anyEarner
   const out = []
   for (const e of employees || []) {
     if (!e?.id) continue
     const isCurrent = cur !== null && String(e.id) === cur
     const earns = earnsJobCommission(e)
-    if (!showEveryone && !earns && !isCurrent) continue
+    if (!everyone && !earns && !isCurrent) continue
     out.push({
       value: e.id,
-      label: !earns && isCurrent && !showEveryone ? `${e.name} (no longer on commission)` : e.name,
+      label: !earns && isCurrent && !everyone ? `${e.name} (no longer on commission)` : e.name,
     })
   }
   return out.sort((a, b) => String(a.label).localeCompare(String(b.label)))
