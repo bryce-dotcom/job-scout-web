@@ -137,6 +137,10 @@ serve(async (req) => {
       const rejected = finalStatus === 'undelivered' || finalStatus === 'failed';
       const { error: logErr } = await supabase.from('communications_log').insert({
         company_id,
+        // Twilio's own id for the message, so a sent text and anything that
+        // comes back about it can be lined up. Inbound rows carry theirs too.
+        communication_id: twilioData.sid || null,
+        direction: 'out',
         type: 'sms',
         trigger: trigger || 'sms',
         customer_id: customer_id ?? null,

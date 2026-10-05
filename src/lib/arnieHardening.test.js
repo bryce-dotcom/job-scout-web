@@ -13,15 +13,21 @@ const brief = read('../../supabase/functions/arnie-brief-push/index.ts')
 const nudge = read('../../supabase/functions/arnie-nudge/index.ts')
 const workflow = read('../../.github/workflows/arnie-eval.yml')
 
-// communications_log as it actually is (information_schema, 2026-09-17).
-const COLUMNS = ['id', 'company_id', 'communication_id', 'business_unit', 'type', 'trigger', 'customer_id', 'recipient', 'sent_date', 'status', 'response', 'employee_id', 'created_at', 'updated_at']
+// communications_log as it actually is (information_schema, 2026-10-05).
+//
+// `direction` was on the forbidden list below until inbound texts were built:
+// the insert naming columns the table did not have is why no text this app
+// sent reached the log for months. The column is real now (migration
+// 20261005140000) because a row has to say which way the message went. The
+// rest of that list stays forbidden — they are still invented.
+const COLUMNS = ['id', 'company_id', 'communication_id', 'business_unit', 'type', 'trigger', 'customer_id', 'recipient', 'sent_date', 'status', 'response', 'employee_id', 'direction', 'created_at', 'updated_at']
 
 describe('a text Arnie sends is a record', () => {
   it('send-sms logs with columns the table has, and says so when it cannot', () => {
     const insert = sms.slice(sms.indexOf("from('communications_log').insert({"), sms.indexOf('if (logErr)'))
     const keys = [...insert.matchAll(/^\s+(\w+)(?::| ,|,)/gm)].map((m) => m[1]).filter((k) => k !== 'company_id' || true)
     for (const k of keys) expect(COLUMNS).toContain(k)
-    expect(insert).not.toMatch(/direction|to_address|from_address|external_id|sent_at|body:/)
+    expect(insert).not.toMatch(/to_address|from_address|external_id|sent_at|body:/)
     expect(sms).toMatch(/if \(logErr\) console\.error\('\[send-sms\] communications_log insert failed:'/)
     expect(sms).not.toMatch(/Table might not exist yet/)
   })
