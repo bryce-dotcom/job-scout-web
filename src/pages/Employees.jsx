@@ -85,6 +85,7 @@ const emptyEmployee = {
   commission_goods_type: 'percent',
   commission_services_rate: 0,
   commission_min_job_total: '',
+  pay_greater_of_salary_commission: false,
   commission_services_type: 'percent',
   commission_software_rate: 0,
   commission_software_type: 'percent',
@@ -435,6 +436,7 @@ export default function Employees() {
       commission_goods_type: employee.commission_goods_type || 'percent',
       commission_services_rate: employee.commission_services_rate || 0,
       commission_min_job_total: employee.commission_min_job_total ?? '',
+      pay_greater_of_salary_commission: !!employee.pay_greater_of_salary_commission,
       commission_services_type: employee.commission_services_type || 'percent',
       commission_software_rate: employee.commission_software_rate || 0,
       commission_software_type: employee.commission_software_type || 'percent',
@@ -589,6 +591,7 @@ export default function Employees() {
       commission_goods_type: formData.commission_goods_type,
       commission_services_rate: parseFloat(formData.commission_services_rate) || 0,
       commission_min_job_total: formData.commission_min_job_total === '' || formData.commission_min_job_total == null ? null : (parseFloat(formData.commission_min_job_total) || null),
+      pay_greater_of_salary_commission: !!(formData.pay_greater_of_salary_commission && formData.is_salary && formData.is_commission),
       commission_services_type: formData.commission_services_type,
       commission_software_rate: parseFloat(formData.commission_software_rate) || 0,
       commission_software_type: formData.commission_software_type,
@@ -873,6 +876,7 @@ export default function Employees() {
       commission_goods_type: formData.commission_goods_type,
       commission_services_rate: parseFloat(formData.commission_services_rate) || 0,
       commission_min_job_total: formData.commission_min_job_total === '' || formData.commission_min_job_total == null ? null : (parseFloat(formData.commission_min_job_total) || null),
+      pay_greater_of_salary_commission: !!(formData.pay_greater_of_salary_commission && formData.is_salary && formData.is_commission),
       commission_services_type: formData.commission_services_type,
       commission_software_rate: parseFloat(formData.commission_software_rate) || 0,
       commission_software_type: formData.commission_software_type,
@@ -2267,6 +2271,36 @@ export default function Employees() {
                       <PayTypeToggle label="Salary" field="is_salary" icon={Briefcase} disabled={!isEditing} />
                       <PayTypeToggle label="Commission" field="is_commission" icon={DollarSign} disabled={!isEditing} />
                     </div>
+
+                    {/* The pay types above ADD UP. This is the other
+                        arrangement: the salary is a floor the commission has
+                        to beat, not a base it sits on top of. Only offered
+                        once both halves exist, because there is nothing to
+                        compare otherwise. */}
+                    {formData.is_salary && formData.is_commission && (
+                      <label style={{
+                        display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '16px',
+                        padding: '12px 14px', borderRadius: '10px', cursor: isEditing ? 'pointer' : 'default',
+                        backgroundColor: formData.pay_greater_of_salary_commission ? theme.accentBg : theme.bg,
+                        border: `1px solid ${formData.pay_greater_of_salary_commission ? theme.accent : theme.border}`,
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={!!formData.pay_greater_of_salary_commission}
+                          disabled={!isEditing}
+                          onChange={(e) => setFormData({ ...formData, pay_greater_of_salary_commission: e.target.checked })}
+                          style={{ marginTop: '2px' }}
+                        />
+                        <div>
+                          <div style={{ fontSize: '13.5px', fontWeight: '600', color: theme.text }}>
+                            Salary or commission — whichever is more
+                          </div>
+                          <div style={{ fontSize: '11.5px', color: theme.textMuted, marginTop: '3px', lineHeight: 1.45 }}>
+                            Each pay period, pay the bigger of the two instead of both. When the salary wins, that period&apos;s commission is settled by it — payroll shows the comparison and marks those commissions as covered, so they never pay a second time. Leave unticked to pay salary and commission on top of each other.
+                          </div>
+                        </div>
+                      </label>
+                    )}
 
                     {/* Overtime mode — per-employee override of company default.
                         Alayda's Energy Scout employees should be on 'bonus' so

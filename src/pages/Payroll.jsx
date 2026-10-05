@@ -37,6 +37,7 @@ import { setterCommissionSummary } from '../lib/setterCommissions'
 import { commissionConfigIssues } from '../lib/commissionConfigIssues'
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 import { payDateForPeriod } from '../lib/payDate'
+import { greaterOfPay, paysGreaterOf, greaterOfSummary } from '../lib/payBasis'
 import { VERIFICATION_EXEMPT_KEY } from '../lib/verificationPolicy'
 import { getDeliveredStatusIds } from '../lib/jobMetrics'
 import { needsAttention } from '../lib/openPunches'
@@ -1740,7 +1741,20 @@ export default function Payroll() {
     const queuedRep = repCommissions
       .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && r.queued_for_payroll && (r.earned_at || '').slice(0, 10) >= cfpS && (r.earned_at || '').slice(0, 10) <= cfpE)
       .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
-    const commissionPay = queuedSetter + queuedRep
+    const commissionEarnedThisPeriod = queuedSetter + queuedRep
+
+    // Salary or commission, whichever is more — for the employees on that
+    // arrangement (Doug, Christopher). Every other pay type adds up; this one
+    // is a floor the commission has to beat. lib/payBasis is the rule, and it
+    // also hands back the sentence every surface shows, so the Payroll review,
+    // the paystub and My Pay cannot drift into three different explanations.
+    const payBasis = greaterOfPay({
+      salaryPay,
+      commissionPay: commissionEarnedThisPeriod,
+      enabled: paysGreaterOf(employee),
+    })
+    salaryPay = payBasis.salaryPaid
+    const commissionPay = payBasis.commissionPaid
 
     // Efficiency bonus. The live calc still drives the per-job breakdown UI
     // (what was saved on each job, verification state), but the dollar amount
@@ -1809,6 +1823,9 @@ export default function Payroll() {
     return {
       hourlyPay,
       salaryPay,
+      // The greater-of comparison, for the review line and the run.
+      payBasis,
+      commissionEarnedThisPeriod,
       regularHours,
       overtimeHours,
       hourlyRate,
@@ -2366,6 +2383,17 @@ export default function Payroll() {
           if (bonusErr) { console.warn('[runPayroll] bonus mark-paid failed:', bonusErr); notMarkedPaid.push(`efficiency bonuses (${bonusErr.message})`) }
           else setLedgerBonuses(prev => prev.map(b => bonusPaid(b) ? { ...b, status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : b))
 
+          // Whose commission was settled by a salary that beat it, rather than
+          // paid on top (lib/payBasis). Their rows close the same way as
+          // everyone else's — the earning is finished either way — but they
+          // carry covered_by_salary so nobody reading the row later concludes
+          // they were paid twice, or never paid at all.
+          const coveredBySalaryEmpIds = paidEmpIds.filter((id) => {
+            const emp = activeEmployees.find(e => e.id === id)
+            if (!emp || !paysGreaterOf(emp)) return false
+            return calculateFullPay(emp)?.payBasis?.basis === 'salary'
+          })
+
           // Setter/lead commissions: queued -> paid.
           const { error: commErr } = await supabase.from('lead_commissions')
             .update({ payment_status: 'paid', queued_for_payroll: false })
@@ -2381,6 +2409,19 @@ export default function Payroll() {
             .eq('queued_for_payroll', true).neq('payment_status', 'paid')
           if (repErr) { console.warn('[runPayroll] rep commission mark-paid failed:', repErr); notMarkedPaid.push(`rep commissions (${repErr.message})`) }
           else setRepCommissions(prev => prev.map(r => (paidEmpIds.includes(r.employee_id) && r.queued_for_payroll) ? { ...r, payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : r))
+
+          // ...and say which of the two settled them.
+          if (coveredBySalaryEmpIds.length) {
+            // Only this period's rows: an older one was settled by an older run.
+            const since = localDateStr(periodStart)
+            for (const table of ['rep_commissions', 'lead_commissions']) {
+              const { error: covErr } = await supabase.from(table)
+                .update({ covered_by_salary: true })
+                .eq('company_id', companyId).in('employee_id', coveredBySalaryEmpIds)
+                .eq('payment_status', 'paid').gte('created_at', since)
+              if (covErr) console.warn('[runPayroll] covered-by-salary stamp failed on ' + table + ':', covErr.message)
+            }
+          }
         }
       } catch (payErr) {
         console.warn('[runPayroll] earnings mark-paid crashed:', payErr)
@@ -5833,6 +5874,20 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
                   <td style={{ padding: '8px 0', textAlign: 'right', color: '#22c55e' }}>+{fmt(adj.amount)}</td>
                 </tr>
               ))}
+              {/* Salary or commission, whichever is more: show the working.
+                  The loser's line reads $0 above, and without this the person
+                  reviewing payroll cannot tell a settled commission from a
+                  missing one. */}
+              {data.payBasis?.enabled && (
+                <tr style={{ backgroundColor: theme.accentBg }}>
+                  <td colSpan={3} style={{ padding: '10px 12px', fontSize: '12.5px', color: theme.textSecondary, lineHeight: 1.5 }}>
+                    <strong style={{ color: theme.text }}>
+                      {data.payBasis.basis === 'salary' ? 'Paid on salary' : 'Paid on commission'}
+                    </strong>{' — '}
+                    {greaterOfSummary(data.payBasis, fmt)}
+                  </td>
+                </tr>
+              )}
               <tr style={{ borderTop: `2px solid ${theme.text}` }}>
                 <td colSpan={2} style={{ padding: '10px 0', fontWeight: '700', color: theme.text }}>Gross Earnings</td>
                 <td style={{ padding: '10px 0', textAlign: 'right', fontWeight: '700', color: theme.text }}>{fmt(data.grossPay + data.totalAdditions)}</td>

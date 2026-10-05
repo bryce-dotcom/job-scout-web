@@ -11,6 +11,7 @@ import {
   PERIODS_PER_YEAR,
 } from '../lib/bonusCalc'
 import { fetchUserBonuses, bonusStatusLabel, bonusJobLabel, heldReasonLabel } from '../lib/bonusLedger'
+import { greaterOfPay, paysGreaterOf, greaterOfSummary } from '../lib/payBasis'
 import { payRowHeading, payRowSource } from '../lib/payRowLabel'
 import { groupHoursByDay } from '../lib/dailyHours'
 import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
@@ -367,7 +368,7 @@ export default function MyPay() {
           // commission_min_job_total: the floor the live calc applies. Left
           // out, this page would read undefined, show no floor, and promise a
           // commission the ledger will not pay.
-          .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, commission_processor_rate, commission_processor_type, commission_min_job_total, is_hourly, is_salary, hourly_rate, annual_salary')
+          .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, commission_processor_rate, commission_processor_type, commission_min_job_total, pay_greater_of_salary_commission, is_hourly, is_salary, hourly_rate, annual_salary')
           .eq('id', effectiveUserId).maybeSingle()
 
         // Utility invoices on jobs the user might own — we fetch them all
@@ -513,7 +514,11 @@ export default function MyPay() {
   // Owed bonuses (money already collected) count toward gross pay, and so do
   // setter commissions — leaving them out is what made this page disagree
   // with Payroll for anyone who books appointments.
-  const grossPay = hourlyPay + salaryPay + ptoPay + commAvailable + setterComm.total + accruedBonusTotal
+  // Salary or commission, whichever is more (lib/payBasis) — the one pay type
+  // that does NOT add up. Without this the page promised both halves to the
+  // two people on that arrangement.
+  const myPayBasis = greaterOfPay({ salaryPay, commissionPay: commAvailable + setterComm.total, enabled: paysGreaterOf(me) })
+  const grossPay = hourlyPay + myPayBasis.salaryPaid + ptoPay + myPayBasis.commissionPaid + accruedBonusTotal
 
   // What's been STAGED into the next payroll run (an admin added it) — so the
   // tech sees what's actually coming next run vs what's owed but not yet added.
@@ -729,6 +734,16 @@ export default function MyPay() {
             <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Commission</div>
             <div style={{ fontSize: '18px', fontWeight: '600', color: '#22c55e', marginTop: '2px' }}>{fmt(commAvailable)}</div>
             {commData.pending > 0 && <div style={{ fontSize: '11px', color: '#f59e0b' }}>{fmt(commData.pending)} pending</div>}
+            {/* On the greater-of arrangement this number is not added to the
+                salary — it has to beat it. Saying so here is the difference
+                between a rep reading their pay and a rep filing a ticket. */}
+            {myPayBasis.enabled && (
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px', lineHeight: 1.4 }}>
+                {myPayBasis.basis === 'commission'
+                  ? `more than your ${fmt(myPayBasis.salaryConsidered)} salary — this is what pays`
+                  : `your ${fmt(myPayBasis.salaryConsidered)} salary is higher, so it pays and this is settled by it`}
+              </div>
+            )}
           </div>
           {/* Setter commissions. Shown as its own tile rather than folded into
               Commission above, because it is a different kind of earning
