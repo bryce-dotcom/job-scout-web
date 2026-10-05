@@ -55,3 +55,40 @@ describe('the setup gate', () => {
     expect(setupGateSummary([])).toBe('')
   })
 })
+
+describe('a missing W-4 asks the employee first', () => {
+  // Bryce, 5 Oct 2026: "the w4 thing needs fixed, employees should fill that
+  // out." The form is theirs - filing status, dependents, a second job - and
+  // the office guessing at it is how somebody ends up owing in April. The gate
+  // marks the row askable, which is what puts "Ask <name> to fill it in" in
+  // front of the withhold-as-single shortcut.
+  const ready = { ...hhhBefore, federal_deposit_schedule: 'semiweekly', state_employer_id: '15116898-004-WTH' }
+  const w4Rows = (employees, w4Acknowledged) =>
+    payrollSetupProblems({ company: ready, payrollConfig: cfg, employees, w4Acknowledged }).filter(p => p.key.startsWith('w4:'))
+
+  it('is askable as well as acknowledgeable, and names who to ask', () => {
+    const [p] = w4Rows([aidan])
+    expect(p.askable).toBe(true)
+    expect(p.ackable).toBe(true)
+    expect(p.employeeId).toBe(57)
+    expect(p.employeeName).toBe('Aidan Burr')
+  })
+
+  it('says whose form it is, and what happens until it arrives', () => {
+    const [p] = w4Rows([aidan])
+    expect(p.detail).toMatch(/theirs to fill in/)
+    expect(p.detail).toMatch(/withholds as single/)
+  })
+
+  it('goes away once the W-4 is on the card', () => {
+    expect(w4Rows([{ ...aidan, w4_filing_status: 'married_jointly' }])).toHaveLength(0)
+  })
+
+  it('and once somebody acknowledged withholding as single', () => {
+    expect(w4Rows([aidan], { 57: '2026-10-05' })).toHaveLength(0)
+  })
+
+  it('never asks a 1099 contractor for one', () => {
+    expect(w4Rows([{ ...aidan, id: 99, tax_classification: '1099' }])).toHaveLength(0)
+  })
+})

@@ -134,3 +134,20 @@ describe('the wiring', () => {
     expect(sql).toMatch(/add column if not exists covered_by_salary/)
   })
 })
+
+// The W-4 gate's wiring: payroll has to OFFER the employee's own form first.
+describe('asking the employee for their W-4', () => {
+  const payroll = read('src/pages/Payroll.jsx')
+
+  it('payroll sends the onboarding link that collects it', () => {
+    expect(payroll).toMatch(/functions\/v1\/send-onboarding-link/)
+    expect(payroll).toMatch(/const askForW4 = async/)
+  })
+
+  it('and offers that before the withhold-as-single shortcut', () => {
+    const ask = payroll.indexOf('askForW4(p.employeeId')
+    const ack = payroll.indexOf('acknowledgeMissingW4(p.employeeId)', ask)
+    expect(ask).toBeGreaterThan(-1)
+    expect(ack).toBeGreaterThan(ask)   // the shortcut comes after it in the row
+  })
+})

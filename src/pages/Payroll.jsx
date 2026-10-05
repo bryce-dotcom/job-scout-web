@@ -369,6 +369,10 @@ export default function Payroll() {
   const [expandedEmployee, setExpandedEmployee] = useState(null)
   const [activeTab, setActiveTab] = useState('overview') // overview, detail
   const [selectedEmployee, setSelectedEmployee] = useState(null)
+  // Asking an employee for their own W-4 (lib/payrollSetupGate marks those
+  // rows askable) — which one is in flight, and which have been asked.
+  const [w4Asking, setW4Asking] = useState(null)
+  const [w4Asked, setW4Asked] = useState({})
   const [filterRole, setFilterRole] = useState('all')
   const [savingSettings, setSavingSettings] = useState(false)
   const [runningPayroll, setRunningPayroll] = useState(false)
@@ -2008,6 +2012,37 @@ export default function Payroll() {
 
   // A missing W-4 is allowed (withhold as single, the IRS rule) once a
   // person has said so for that employee. Remembered in payroll_config.
+  // Ask the employee for their own W-4, through the onboarding link that
+  // already collects it (send-onboarding-link → /onboarding/:token →
+  // employee-onboarding finalize writes w4_filing_status onto their card).
+  // Nothing new is built here; payroll just stops offering the office's guess
+  // as the only way forward.
+  const askForW4 = async (employeeId, employeeName) => {
+    setW4Asking(employeeId)
+    try {
+      let tok = (await supabase.auth.getSession())?.data?.session?.access_token
+      if (!tok) tok = (await supabase.auth.refreshSession())?.data?.session?.access_token
+      if (!tok) throw new Error('Your session has expired. Sign out and back in, then send it again.')
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-onboarding-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ employee_id: employeeId, channels: ['email', 'sms'] }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.status === 401) throw new Error('Your session has expired. Sign out and back in, then send it again.')
+      if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`)
+      const where = (data.sent_via || []).join(' and ')
+      setW4Asked(prev => ({ ...prev, [employeeId]: new Date().toISOString() }))
+      alert(where
+        ? `Sent to ${employeeName || 'them'} by ${where}. Their W-4 lands on their card as soon as they finish it.`
+        : `Link created for ${employeeName || 'them'}, but nothing was delivered — check their email and phone on the employee card.`)
+    } catch (err) {
+      alert('Could not send it: ' + (err?.message || err))
+    } finally {
+      setW4Asking(null)
+    }
+  }
+
   const acknowledgeMissingW4 = async (employeeId) => {
     const updated = { ...payrollConfig, w4_acknowledged: { ...(payrollConfig.w4_acknowledged || {}), [employeeId]: localDateStr(new Date()) } }
     const { error } = await supabase.from('settings').upsert({ company_id: companyId, key: 'payroll_config', value: JSON.stringify(updated), updated_at: new Date().toISOString() }, { onConflict: 'company_id,key' })
@@ -5306,11 +5341,27 @@ export default function Payroll() {
                         <div style={{ color: theme.text, fontWeight: 600 }}>{p.label}</div>
                         <div style={{ color: theme.textMuted, fontSize: '12px' }}>{p.detail}</div>
                       </div>
-                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                        {/* The W-4 belongs to the employee, so asking them for
+                            it is the first thing offered — the same onboarding
+                            link the employee card sends, which writes the form
+                            straight back onto their record. Withholding as
+                            single stays available underneath it, because
+                            payroll still has to run on Friday. */}
+                        {p.askable && (
+                          <button
+                            type="button"
+                            disabled={w4Asking === p.employeeId}
+                            onClick={() => askForW4(p.employeeId, p.employeeName)}
+                            style={{ padding: '5px 10px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 32, opacity: w4Asking === p.employeeId ? 0.6 : 1 }}
+                          >
+                            {w4Asking === p.employeeId ? 'Sending…' : w4Asked[p.employeeId] ? 'Ask again' : `Ask ${(p.employeeName || '').split(' ')[0] || 'them'} to fill it in`}
+                          </button>
+                        )}
                         {p.ackable && (
                           <button type="button" onClick={() => acknowledgeMissingW4(p.employeeId)} style={{ padding: '5px 10px', background: 'none', border: `1px solid ${theme.border}`, color: theme.textSecondary, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 32 }}>Withhold as single for now</button>
                         )}
-                        <button type="button" onClick={() => goFix(p)} style={{ padding: '5px 10px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 32 }}>Fix</button>
+                        <button type="button" onClick={() => goFix(p)} style={{ padding: '5px 10px', backgroundColor: p.askable ? 'none' : theme.accent, color: p.askable ? theme.textSecondary : '#fff', border: p.askable ? `1px solid ${theme.border}` : 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', minHeight: 32 }}>{p.askable ? 'Enter it myself' : 'Fix'}</button>
                       </div>
                     </div>
                   ))}

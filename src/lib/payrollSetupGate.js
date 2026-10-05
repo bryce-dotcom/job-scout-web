@@ -44,11 +44,28 @@ export function payrollSetupProblems({ company = {}, payrollConfig = {}, employe
     if (!paid) out.push({ key: `pay_type:${e.id}`, label: `${name}: no pay type`, detail: 'Not hourly and not salary, so hours are counted and nothing is paid.', fix: 'employee', employeeId: e.id, employeeName: name })
     else if (e.is_hourly && !(Number(e.hourly_rate) > 0)) out.push({ key: `rate:${e.id}`, label: `${name}: hourly with no rate`, detail: 'Hourly pay at $0.', fix: 'employee', employeeId: e.id, employeeName: name })
     else if (e.is_salary && !(Number(e.annual_salary) > 0)) out.push({ key: `salary:${e.id}`, label: `${name}: salary with no amount`, detail: 'Salary at $0.', fix: 'employee', employeeId: e.id, employeeName: name })
-    // No W-4: the IRS rule is to withhold as single with no adjustments. That
-    // is allowed, but it has to be a decision someone made, not a default
-    // nobody noticed. So it blocks until acknowledged for that employee.
+    // No W-4. The form is the EMPLOYEE's to fill in — their filing status,
+    // their dependents, their second job — and the office guessing at it is
+    // how somebody ends up under-withheld and owing in April. So the first
+    // thing offered is to ask them for it, through the onboarding link that
+    // already collects exactly this (employee-onboarding's finalize writes
+    // w4_filing_status back).
+    //
+    // The IRS rule for a missing W-4 is to withhold as single with no
+    // adjustments, which is allowed and keeps payroll runnable — but it stays
+    // the SECOND option, and an acknowledgement someone made deliberately
+    // rather than a default nobody noticed.
     if (blank(e.w4_filing_status) && !w4Acknowledged?.[e.id]) {
-      out.push({ key: `w4:${e.id}`, label: `${name}: no W-4 on file`, detail: 'Withholding as single with no adjustments until one is entered. Acknowledge that, or add the W-4 on their card.', fix: 'employee', employeeId: e.id, employeeName: name, ackable: true })
+      out.push({
+        key: `w4:${e.id}`,
+        label: `${name}: no W-4 on file`,
+        detail: 'The W-4 is theirs to fill in — send them the link and it lands on their card. Until then this payroll withholds as single with no adjustments.',
+        fix: 'employee',
+        employeeId: e.id,
+        employeeName: name,
+        ackable: true,
+        askable: true,
+      })
     }
   }
   return out
