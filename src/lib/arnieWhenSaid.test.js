@@ -51,7 +51,11 @@ describe('the rails take the words, the model is told not to count', () => {
   it('appointment: when as said, forward; a day without a time is a question', () => {
     expect(appt).toMatch(/const said = resolveWhenSaid\(f\.when, tz, 'forward'\)/)
     expect(appt).toMatch(/if \(!said\.time\) return \{ ok: false, error: `What time on/)
-    expect(chat).toMatch(/when: \{ type: 'string', description: 'EXACTLY as the user said it/)
+    // One shared `when` property serves appointment, schedule and
+    // meeting_agenda since 2026-10-05 — it used to be declared twice and the
+    // duplicate silently replaced this one. The appointment half still has to
+    // ask for a resolved date.
+    expect(chat).toMatch(/appointment wants it resolved to YYYY-MM-DD HH:MM/)
     expect(engine).toMatch(/EXACTLY as they said it — "Thursday at 2"/)
   })
   it('shift close: value as said, back; "now" still means now', () => {

@@ -5,6 +5,7 @@
 // Reads SUPABASE_SERVICE_ROLE_KEY from the repo-root .env. Run from repo root:
 //   node scripts/seed-demo.mjs
 import { readFileSync } from 'node:fs';
+import { eosDemo } from './seedEosDemo.mjs';
 
 const env = {};
 for (const line of readFileSync(new URL('../.env', import.meta.url), 'utf8').split(/\r?\n/)) {
@@ -427,6 +428,16 @@ await run('settings', async () => {
     })],
   ];
   const r = await ins('settings', S.map(([key, value]) => ({ company_id: cid, key, value })));
+  return r.length;
+});
+
+// ───────────────────────── EOS (V/TO, rocks, scorecard, L10) ─────────────────────────
+// The EOS page was blank on the demo, so "show me how the L10 works" had
+// nothing to show and the itinerary came out empty. Rows live in
+// scripts/seedEosDemo.mjs so the live demo can be topped up without a reset.
+await run('eos', async () => {
+  const rows = eosDemo(empId('Mike Sullivan'), empId('Sarah Chen'), empId('Carlos Rivera'));
+  const r = await ins('settings', Object.entries(rows).map(([key, value]) => ({ company_id: cid, key, value: JSON.stringify(value) })));
   return r.length;
 });
 

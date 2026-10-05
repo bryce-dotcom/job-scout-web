@@ -119,7 +119,13 @@ describe('apply and rollback are the page\'s write and its undo', () => {
   it('registered: manager+, when taken as said, the prompt hands the day to the server', () => {
     expect(create).toMatch(/schedule: \{\n\s+label: 'schedule',\n\s+table: 'jobs',\n\s+minLevel: 2,\n\s+verb: 'Schedule',/)
     expect(chat).toMatch(/'price_book', 'won', 'schedule'\]/)
-    expect(chat).toMatch(/when: \{ type: 'string', description: 'schedule: the day and time EXACTLY as said/)
+    // `when` is one shared property for appointment, schedule and
+    // meeting_agenda now — it used to be declared twice, and the second
+    // declaration silently replaced the first. What must hold is that the model
+    // is told to pass the day as said for THIS target and let the server
+    // resolve the weekday.
+    expect(chat).toMatch(/schedule and meeting_agenda want it EXACTLY as the user said it/)
+    expect(chat).toMatch(/the server resolves the weekday/)
     expect(engine).toMatch(/## Scheduling a job/)
     expect(engine).toMatch(/Never drop a person or move the day on your own/)
   })

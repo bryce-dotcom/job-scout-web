@@ -22,6 +22,7 @@ import { RECORD_TARGETS, activeJobId, resolveEntity } from './arnieRecords.ts'
 import { applyAppointment, prepareAppointment, rollbackAppointment } from './arnieAppointment.ts'
 import { applyQuote, prepareQuote, rollbackQuote } from './arnieQuote.ts'
 import { applyFollowup, prepareFollowup, rollbackFollowup } from './arnieFollowup.ts'
+import { applyAgenda, prepareAgenda, rollbackAgenda } from './arnieEos.ts'
 import { applyPayment, preparePayment, rollbackPayment } from './arniePayment.ts'
 import { prepareExpense } from './arnieExpense.ts'
 import { applyCompanySetup, prepareCompanySetup, rollbackCompanySetup } from './companySetup.ts'
@@ -227,6 +228,30 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     prepare: prepareFollowup,
     applyCustom: applyFollowup,
     rollbackCustom: rollbackFollowup,
+  },
+
+  // The L10 itinerary, out to the room — by email, in the app, or both. The
+  // document is a derivation of the EOS page (one builder, _shared/l10Agenda.ts,
+  // shared with the printed copy), so nobody types an agenda. Manager+, the
+  // same as the Management menu the EOS page sits in. Like a follow-up, this
+  // one leaves the building: apply cannot be undone and the card says Send.
+  // See arnieEos.ts.
+  meeting_agenda: {
+    label: 'meeting agenda',
+    table: 'employee_notifications',
+    minLevel: 2,
+    verb: 'Send',
+    done: 'Sent. It is in their inbox and on their notifications; the EOS page is where the numbers get graded.',
+    fields: {
+      when: { column: null, label: 'When', max: 60 },
+      to:   { column: null, label: 'To',   max: 300 },
+      how:  { column: null, label: 'How',  max: 5, oneOf: ['email', 'app', 'both'] },
+      unit: { column: null, label: 'Unit', max: 120 },
+    },
+    labelOf: (f) => `L10 agenda${f.when ? ` for ${f.when}` : ''}`.slice(0, 120),
+    prepare: prepareAgenda,
+    applyCustom: applyAgenda,
+    rollbackCustom: rollbackAgenda,
   },
 
   // "Halifax paid $3,200 by check." The Invoices page's Record Payment, by
