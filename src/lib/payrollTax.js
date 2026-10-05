@@ -168,10 +168,53 @@ const ADD_MEDICARE_RATE      = 0.009
 const FUTA_WAGE_BASE         = 7000
 const FUTA_RATE              = 0.006
 
-// State defaults (Utah). Other states will need their own rate tables.
-// Utah State Tax Commission, incometax.utah.gov/paying/tax-rates:
-// "January 1, 2025 – current: 4.5%". The file carried 4.55%, 2024's rate.
-const UTAH_SIT_RATE          = 0.045
+// Utah withholding — Publication 14, Withholding Tax Guide. NOT a flat rate.
+//
+// Bryce, 2026-10-05, Gusto's journal beside ours: Social Security, Medicare
+// and federal matched to the cent; Utah did not. Kayden's $361 check had
+// $16 of Utah tax here and $0 at Gusto. Pub 14's schedules take the rate
+// off the wages and then SUBTRACT a per-paycheck base allowance that phases
+// out at 1.3% of wages above a threshold — so a small check owes nothing and
+// a large one owes the full rate. The flat 4.5% was the "for simplicity v1"
+// note at the top of this file, and it over-withheld everyone under about
+// $50k a year.
+//
+// Schedule lines (identical in both revisions):
+//   1. wages   2. wages × rate   3. base allowance   4. wages − threshold
+//   (not below 0)   5. line 4 × 1.3%   6. line 3 − line 5 (not below 0)
+//   7. withholding = line 2 − line 6 (not below 0)
+// Filing status is the federal W-4's: married filing jointly → Married;
+// everything else → Single (Pub 14 has only the two columns).
+//
+// Rev. 04/26 (rate 4.45%, S.B. 60) applies to pay periods beginning on or
+// after 1 June 2026; the 2025 revision (4.5%) before that. Per-period base
+// allowances and thresholds are the published table values, not the annual
+// figure divided — Pub 14 rounds each schedule itself.
+const UTAH_SCHEDULES = [
+  {
+    effective: '2026-06-01', rate: 0.0445,
+    // [base allowance, threshold] by period, Single then Married
+    weekly:      { single: [9, 180],    married: [19, 360] },
+    'bi-weekly': { single: [19, 360],   married: [37, 719] },
+    semimonthly: { single: [20, 390],   married: [40, 779] },
+    monthly:     { single: [40, 779],   married: [81, 1558] },
+    annual:      { single: [485, 9348], married: [970, 18696] },
+  },
+  {
+    effective: '2025-06-01', rate: 0.045,
+    weekly:      { single: [9, 175],    married: [17, 350] },
+    'bi-weekly': { single: [17, 350],   married: [35, 701] },
+    semimonthly: { single: [19, 379],   married: [38, 759] },
+    monthly:     { single: [38, 759],   married: [75, 1518] },
+    annual:      { single: [450, 9107], married: [900, 18213] },
+  },
+]
+const UTAH_PHASE_OUT = 0.013
+// Which Pub 14 revision a pay date falls under.
+export function utahScheduleFor(payDate) {
+  const d = String(payDate instanceof Date ? payDate.toISOString() : (payDate || new Date().toISOString())).slice(0, 10)
+  return UTAH_SCHEDULES.find((s) => d >= s.effective) || UTAH_SCHEDULES[UTAH_SCHEDULES.length - 1]
+}
 // Utah DWS, jobs.utah.gov: "During 2026, the taxable wage base is $50,700."
 const UTAH_SUI_WAGE_BASE_2026 = 50700
 
@@ -316,17 +359,18 @@ export function calcFUTA({ gross, ytdGrossBeforeThis, ratePct }) {
  * Utah state income tax — 4.5% flat (2025–2026, per the Tax Commission).
  * Other states: route through this function with their own ratePct.
  */
-export function calcStateIncomeTax({ gross, state = 'UT', ratePct }) {
+export function calcStateIncomeTax({ gross, state = 'UT', ratePct, filingStatus = 'single', payFrequency = 'bi-weekly', payDate = null }) {
   const grossN = Number(gross) || 0
-  let rate
-  if (ratePct != null) {
-    rate = ratePct / 100
-  } else if (state === 'UT') {
-    rate = UTAH_SIT_RATE
-  } else {
-    return 0  // unknown state — caller must provide ratePct
-  }
-  return r2(grossN * rate)
+  if (ratePct != null) return r2(grossN * (ratePct / 100))   // another state's flat rate, caller-supplied
+  if (state !== 'UT') return 0                                // unknown state — caller must provide ratePct
+  const sched = utahScheduleFor(payDate)
+  const period = sched[payFrequency] || sched['bi-weekly']
+  const col = /married_jointly|^married$/i.test(String(filingStatus || '')) ? 'married' : 'single'
+  const [baseAllowance, threshold] = period[col]
+  const line2 = grossN * sched.rate
+  const line5 = Math.max(0, grossN - threshold) * UTAH_PHASE_OUT
+  const line6 = Math.max(0, baseAllowance - line5)
+  return r2(Math.max(0, line2 - line6))
 }
 
 /**
@@ -366,6 +410,7 @@ export function calcPaystubTax(input) {
     payFrequency = company?.pay_frequency || 'bi-weekly',
     preTaxDeductions = 0,
     postTaxDeductions = 0,
+    payDate = null,          // YYYY-MM-DD; picks the Utah Pub 14 revision. Today when omitted.
   } = input
 
   const grossN = Number(gross) || 0
@@ -400,10 +445,14 @@ export function calcPaystubTax(input) {
     ratePct: Number(company?.futa_rate_pct) || (FUTA_RATE * 100),
   })
 
-  // State income tax
+  // State income tax — Utah's Pub 14 schedule needs the W-4 status, the
+  // pay period and the pay date (which revision applies).
   const sit = calcStateIncomeTax({
     gross: taxableWages,
     state: company?.state_employer_id_state || 'UT',
+    filingStatus: employee?.w4_filing_status || 'single',
+    payFrequency,
+    payDate,
   })
 
   // SUI (employer)

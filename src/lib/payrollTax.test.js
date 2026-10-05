@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  calcFICA, calcFUTA, calcStateIncomeTax, calcSUI, calcPaystubTax,
+  calcFICA, calcFUTA, calcStateIncomeTax, calcSUI, calcPaystubTax, utahScheduleFor,
   calcFederalIncomeTax, FED_SCHEDULES, TAX_YEAR,
 } from './payrollTax'
 
@@ -69,9 +69,42 @@ describe('FUTA — employer only, first $7,000', () => {
   })
 })
 
-describe('State income tax', () => {
-  it('applies Utah\'s flat rate — 4.5% since 1 Jan 2025 (Tax Commission), not 2024\'s 4.55%', () => {
-    expect(calcStateIncomeTax({ gross: 1000, state: 'UT' })).toBeCloseTo(45, 2)
+describe('State income tax — Utah Publication 14, not a flat rate', () => {
+  // HHH's Gusto journal, Jul–Sep 2026 pay dates (Rev. 04/26 schedule:
+  // 4.45%, semimonthly single 20/390, married 40/779). FICA and federal
+  // match Gusto to the cent, so Gusto's Utah tax is its income tax minus
+  // our federal. These are the checks Bryce put side by side on 5 Oct 2026.
+  const ut = (gross, filingStatus, payDate = '2026-08-05') =>
+    calcStateIncomeTax({ gross, state: 'UT', filingStatus, payFrequency: 'semimonthly', payDate })
+
+  it('a small check owes nothing: Kayden $361.46 and $214.00 are $0 at Gusto', () => {
+    expect(ut(361.46, 'single')).toBe(0)
+    expect(ut(214.00, 'single')).toBe(0)
+  })
+
+  it('the allowance phases out at 1.3% above the threshold: Aidan $816.30 single → $21.87', () => {
+    // 816.30 × 4.45% = 36.33; allowance 20 − 1.3% × (816.30 − 390) = 14.46; 36.33 − 14.46
+    expect(ut(816.30, 'single')).toBeCloseTo(21.87, 2)
+  })
+
+  it('married uses the Married column: Tracy $1,762.40 MFJ → $51.21', () => {
+    expect(ut(1762.40, 'married_jointly')).toBeCloseTo(51.21, 2)
+  })
+
+  it('once the allowance is gone it is the full rate: Dusty $2,138.73 single → $95.17, Gusto to the cent', () => {
+    expect(ut(2138.73, 'single')).toBeCloseTo(95.17, 2)
+  })
+
+  it('pay dates before 1 June 2026 use the 2025 revision (4.5%, 19/379 single semimonthly)', () => {
+    // 1000 × 4.5% = 45; allowance 19 − 1.3% × (1000 − 379) = 10.93; 45 − 10.93
+    expect(ut(1000, 'single', '2026-01-15')).toBeCloseTo(34.07, 2)
+    expect(utahScheduleFor('2026-05-31').rate).toBe(0.045)
+    expect(utahScheduleFor('2026-06-01').rate).toBe(0.0445)
+  })
+
+  it('other filing statuses fall in the Single column, as Pub 14 says', () => {
+    expect(ut(816.30, 'head_of_household')).toBeCloseTo(ut(816.30, 'single'), 2)
+    expect(ut(816.30, 'married_separately')).toBeCloseTo(ut(816.30, 'single'), 2)
   })
 
   it('honours an explicit rate for another state', () => {

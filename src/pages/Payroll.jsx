@@ -1748,6 +1748,9 @@ export default function Payroll() {
         payFrequency: normalizePayFrequency(payrollConfig.pay_frequency),
         preTaxDeductions: 0,
         postTaxDeductions: totalDeductions,
+        // The payday this period is paid on decides which Utah Pub 14
+        // revision applies (4.5% before 1 June 2026, 4.45% after).
+        payDate: payDateForPeriod(cfpEnd, payrollConfig) || localDateStr(new Date()),
       })
       hasW4 = !!employee.w4_filing_status
     }
