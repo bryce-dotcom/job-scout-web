@@ -16,6 +16,7 @@ import EmptyState from '../components/EmptyState'
 import { quoteStatusColors, invoiceStatusColors } from '../lib/statusColors'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
 import { statementModel } from '../lib/customerStatement'
+import { recordConsent, smsConsentState, smsTermsPath } from '../lib/smsConsent'
 import useSmartBack from '../lib/useSmartBack'
 import { creditTotals, fmtMoney, creditKindLabel } from '../lib/creditLedger'
 
@@ -574,6 +575,7 @@ export default function CustomerDetail() {
       preferred_contact: customer?.preferred_contact || '',
       salesperson_id: customer?.salesperson_id || '',
       marketing_opt_in: customer?.marketing_opt_in || false,
+      sms_consent: customer?.sms_consent === true,
       calendar_display: customer?.calendar_display || 'person',
       utility_invoicing_enabled: customer?.utility_invoicing_enabled,
       preferred_invoice_format: customer?.preferred_invoice_format || '',
@@ -596,6 +598,9 @@ export default function CustomerDetail() {
     const optionalFields = ['business_name', 'job_title', 'phone', 'email', 'address', 'preferred_contact', 'secondary_contact_name', 'secondary_contact_role', 'secondary_contact_phone', 'secondary_contact_email', 'notes', 'preferred_invoice_format']
     optionalFields.forEach(f => { if (changes[f] === '') changes[f] = null })
     if (!changes.salesperson_id) changes.salesperson_id = null
+    // The yes alone is not the record a carrier asks for: the date and how
+    // it was obtained are. An existing consent keeps its original date.
+    Object.assign(changes, recordConsent({ on: editForm.sms_consent, source: 'office', existing: customer }))
 
     const { error } = await supabase
       .from('customers')
@@ -1330,6 +1335,16 @@ export default function CustomerDetail() {
                       </select>
                     </div>
                     <div>
+                      <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Agreed to texts</label>
+                      <select style={selectStyle} value={editForm.sms_consent ? 'yes' : 'no'} onChange={e => editField('sms_consent', e.target.value === 'yes')}>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </select>
+                      <p style={{ fontSize: '11px', color: theme.textMuted, margin: '4px 0 0', lineHeight: 1.4 }}>
+                        Saved with the date. <a href={smsTermsPath(company?.public_quote_slug)} target="_blank" rel="noreferrer" style={{ color: theme.accent }}>Terms</a>
+                      </p>
+                    </div>
+                    <div>
                       <label style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px', display: 'block' }}>Calendar Display</label>
                       <select style={selectStyle} value={editForm.calendar_display || 'person'} onChange={e => editField('calendar_display', e.target.value)}>
                         <option value="person">Person Name</option>
@@ -1388,6 +1403,10 @@ export default function CustomerDetail() {
                     <div>
                       <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Marketing Opt-in</div>
                       <div style={{ fontSize: '14px', color: theme.text }}>{customer.marketing_opt_in ? 'Yes' : 'No'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Agreed to texts</div>
+                      <div style={{ fontSize: '14px', color: theme.text }}>{smsConsentState(customer).label}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Calendar Display</div>

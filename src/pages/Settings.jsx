@@ -56,6 +56,7 @@ import { seedSampleData, clearAllData } from '../lib/seedData'
 import BillingTab from '../components/BillingTab'
 import { toast } from '../lib/toast'
 import { twilioConfigProblem, normalizeTwilioConfig, smsTestOutcome } from '../lib/twilioConfig'
+import { smsTermsPath, smsTermsUrl } from '../lib/smsConsent'
 import { WALLETS } from '../lib/wallets'
 import { DOCUMENT_TYPES, DOCUMENT_TYPES_KEY, labelsFor, configFromSettings } from '../lib/documentVocabulary'
 
@@ -4849,6 +4850,10 @@ function PlaidLinkInline({ token, companyId, onSuccess, onError, theme }) {
 }
 
 function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employees, setActiveTab }) {
+  // For the SMS terms URL below — A2P 10DLC registration asks for it, and it
+  // is per company because each tenant registers its own brand.
+  const company = useStore((state) => state.company)
+
   // ─── Google Calendar state ───
   const [gcalConnected, setGcalConnected] = useState(false)
   const [gcalLoading, setGcalLoading] = useState(true)
@@ -6009,6 +6014,58 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
                       <Save size={14} />
                       {twSaving ? 'Saving...' : 'Save SMS Settings'}
                     </button>
+
+                    {/* US carriers reject business texts from a number that is
+                        not registered for A2P 10DLC (error 30034 — the reason
+                        the first live test went undelivered). The registration
+                        form asks for a URL showing what recipients agreed to;
+                        this is it, per company. */}
+                    <div style={{
+                      padding: '14px 16px', borderRadius: '10px',
+                      backgroundColor: theme.bg, border: `1px solid ${theme.border}`
+                    }}>
+                      <p style={{ fontSize: '13px', fontWeight: 600, color: theme.text, margin: '0 0 4px' }}>
+                        Registering for A2P 10DLC
+                      </p>
+                      <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 10px', lineHeight: 1.5 }}>
+                        US carriers reject texts from unregistered numbers. When Twilio asks for your
+                        opt-in terms or privacy URL, use this page — it names your company and explains
+                        what customers agreed to.
+                      </p>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <code style={{
+                          flex: 1, minWidth: 0, fontSize: '12px', color: theme.text,
+                          backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                          borderRadius: '6px', padding: '8px 10px', overflowX: 'auto', whiteSpace: 'nowrap'
+                        }}>
+                          {smsTermsUrl(company?.public_quote_slug, window.location.origin)}
+                        </code>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard?.writeText(smsTermsUrl(company?.public_quote_slug, window.location.origin))
+                            toast.success('Copied')
+                          }}
+                          style={{
+                            padding: '8px 14px', minHeight: 36, backgroundColor: 'transparent',
+                            color: theme.textSecondary, border: `1px solid ${theme.border}`,
+                            borderRadius: '8px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', flexShrink: 0
+                          }}
+                        >
+                          Copy
+                        </button>
+                        <a
+                          href={smsTermsPath(company?.public_quote_slug)}
+                          target="_blank" rel="noreferrer"
+                          style={{
+                            padding: '8px 14px', minHeight: 36, color: theme.accent,
+                            border: `1px solid ${theme.border}`, borderRadius: '8px',
+                            fontSize: '12px', fontWeight: 500, textDecoration: 'none', flexShrink: 0
+                          }}
+                        >
+                          Open
+                        </a>
+                      </div>
+                    </div>
 
                     {/* Test SMS section */}
                     {twForm.account_sid && twForm.auth_token && twForm.from_number && (

@@ -478,3 +478,13 @@ verify_jwt = false
 
 [functions.marketing-suggest]
 verify_jwt = false
+
+# The SMS terms page (/sms-terms/:slug) is opened by a carrier reviewing an A2P
+# 10DLC campaign, who is not logged in and cannot send a Supabase JWT. Without
+# this pin a routine redeploy flips verify_jwt back to true, the page can no
+# longer name the business it speaks for, and the URL on the campaign form goes
+# dark. Safe to expose: exact match on public_quote_slug, returning only the
+# trading name, legal name, phone and website — what a business prints on its
+# own site. Deploy with --no-verify-jwt.
+[functions.public-company-card]
+verify_jwt = false

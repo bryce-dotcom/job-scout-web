@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
 import Terms from './pages/Terms'
 import Privacy from './pages/Privacy'
+import SmsTerms from './pages/SmsTerms'
 import Pricing from './pages/Pricing'
 import Onboarding from './pages/Onboarding'
 import Employees from './pages/Employees'
@@ -386,6 +387,10 @@ function App() {
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
+        {/* Opened by a carrier reviewing an A2P 10DLC campaign — must work
+            with no session. The slug-less form stays valid on purpose. */}
+        <Route path="/sms-terms" element={<SmsTerms />} />
+        <Route path="/sms-terms/:slug" element={<SmsTerms />} />
 
         {/* Dev-only: render any walkthrough by id without auth */}
         {import.meta.env.DEV && (

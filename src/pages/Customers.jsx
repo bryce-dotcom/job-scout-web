@@ -10,6 +10,7 @@ import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { customersFields } from '../lib/importExportFields'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
+import { recordConsent, consentDisclosure, smsTermsPath } from '../lib/smsConsent'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { matchPhoneOrTokens, buildBlob, tokenize } from '../lib/searchUtils'
 
@@ -28,13 +29,15 @@ const emptyCustomer = {
   secondary_contact_email: '',
   secondary_contact_phone: '',
   secondary_contact_role: '',
-  marketing_opt_in: false
+  marketing_opt_in: false,
+  sms_consent: false
 }
 
 export default function Customers() {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const companyId = useStore((state) => state.companyId)
+  const company = useStore((state) => state.company)
   const customers = useStore((state) => state.customers)
   const employees = useStore((state) => state.employees)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
@@ -175,7 +178,8 @@ export default function Customers() {
       secondary_contact_email: customer.secondary_contact_email || '',
       secondary_contact_phone: customer.secondary_contact_phone || '',
       secondary_contact_role: customer.secondary_contact_role || '',
-      marketing_opt_in: customer.marketing_opt_in || false
+      marketing_opt_in: customer.marketing_opt_in || false,
+      sms_consent: customer.sms_consent === true
     })
     setError(null)
     setShowModal(true)
@@ -209,6 +213,9 @@ export default function Customers() {
       ...trimmed,
       company_id: companyId,
       salesperson_id: formData.salesperson_id || null,
+      // The date and the how, not just the yes — that is what a carrier asks
+      // for. An existing consent keeps its original date (lib/smsConsent).
+      ...recordConsent({ on: trimmed.sms_consent, source: 'office', existing: editingCustomer }),
       updated_at: new Date().toISOString()
     }
 
@@ -867,6 +874,37 @@ export default function Customers() {
                 >
                   Marketing opt-in
                 </label>
+              </div>
+
+              {/* Text consent, recorded with the date and who recorded it.
+                  Separate from marketing opt-in on purpose: that one arrived
+                  true on most imported customers and is evidence of nothing,
+                  and a carrier asks specifically about texts. */}
+              <div style={{
+                display: 'flex', gap: '10px', alignItems: 'flex-start',
+                marginBottom: '16px', padding: '12px 14px',
+                backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px'
+              }}>
+                <input
+                  type="checkbox"
+                  name="sms_consent"
+                  id="sms_consent"
+                  checked={formData.sms_consent}
+                  onChange={handleChange}
+                  style={{ accentColor: theme.accent, marginTop: '3px', flexShrink: 0 }}
+                />
+                <div style={{ minWidth: 0 }}>
+                  <label htmlFor="sms_consent" style={{ fontSize: '14px', color: theme.text, fontWeight: 500, cursor: 'pointer' }}>
+                    Customer agreed to receive text messages
+                  </label>
+                  <p style={{ fontSize: '12px', color: theme.textMuted, margin: '4px 0 0', lineHeight: 1.5 }}>
+                    Only tick this if they said yes — it is saved with today&apos;s date as the record.
+                    They are agreeing that {consentDisclosure(company?.company_name)}{' '}
+                    <a href={smsTermsPath(company?.public_quote_slug)} target="_blank" rel="noreferrer" style={{ color: theme.accent }}>
+                      Full terms
+                    </a>
+                  </p>
+                </div>
               </div>
 
               <div style={{ marginBottom: '24px' }}>
