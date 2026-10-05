@@ -29,7 +29,9 @@ import { depositsHeld } from '../lib/depositsHeld'
 import { taxLiabilitySummary } from '../lib/payrollBooks'
 import { summarizePayroll, payrollJournalRows, isPayrollBankRow } from '../lib/payrollBooks'
 import { buildJournal, journalCsv, journalTotals, qboBankCsvs } from '../lib/journalExport'
-import { suggestExpensesForTransaction } from '../lib/expenseMatch'
+import { suggestExpensesForTransaction, autoLinkReceipts } from '../lib/expenseMatch'
+import { captureReceipt, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
+import { Receipt as ReceiptIcon } from 'lucide-react'
 import { computeRevenue, computeExpenses, collectedIncentives as incentivesCollectedIn } from '../lib/revenueBasis'
 import { inLocalRange, localDateStr } from '../lib/localDate'
 import { isLegacyNetShape, totalCustomerAR, totalUtilityAR, invoiceBalance, isInvoiceOpen, paymentsByInvoiceIndex } from '../lib/arHelpers'
@@ -507,6 +509,85 @@ export default function Books() {
     autoLinkWalletPayouts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plaidTransactions, companyId])
+
+  // Receipts snapped in the field, on the job or on the Expenses page: once
+  // the bank feed and the recorded expenses are both in, link the pairs that
+  // are unmistakably the same money (see expenseMatch.autoLinkReceipts). The
+  // receipt then rides on the bank row and the spend counts once. Once per
+  // load; a receipt saved later is matched by the page that saved it.
+  const receiptLinkRan = useRef(false)
+  useEffect(() => {
+    if (!companyId || (storeExpenses || []).length === 0) useStore.getState().fetchExpenses?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId])
+  useEffect(() => {
+    if (!companyId || receiptLinkRan.current) return
+    if ((plaidTransactions || []).length === 0 || (storeExpenses || []).length === 0) return
+    receiptLinkRan.current = true
+    const pairs = autoLinkReceipts(plaidTransactions, storeExpenses)
+    if (pairs.length === 0) return
+    ;(async () => {
+      let n = 0
+      for (const pair of pairs) {
+        const r = await reconcileTransaction(pair.transactionId, pair.expenseId)
+        if (r?.success) n++
+      }
+      if (n > 0) {
+        toast.success(`Matched ${n} receipt${n === 1 ? '' : 's'} to bank charges — counted once`)
+        useStore.getState().fetchExpenses?.()
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plaidTransactions, storeExpenses, companyId])
+
+  // A receipt handed to a bank row: Dougie reads it, it becomes the recorded
+  // expense for that row (same money, linked both ways), and if the row has
+  // no category yet his pick fills it in.
+  const txnReceiptInputRef = useRef(null)
+  const [txnReceiptBusy, setTxnReceiptBusy] = useState(false)
+  const handleTxnReceipt = async (e) => {
+    const file = e.target.files?.[0]
+    const txn = (plaidTransactions || []).find(t => t.id === expandedTxn)
+    if (!file || !txn) return
+    setTxnReceiptBusy(true)
+    try {
+      const cats = (expenseCategories || []).filter(c => c.type !== 'income')
+      const { receipt_url, receipt_storage_path, fields, read } = await captureReceipt(file, { companyId, categories: cats })
+      const category = txnEditCategory || fields.category || null
+      const taxCat = txnEditTaxCategory || fields.tax_category || null
+      const { data: row, error } = await supabase.from('expenses').insert([{
+        company_id: companyId,
+        amount: Math.abs(parseFloat(txn.amount) || 0),
+        date: txn.date,
+        merchant: fields.merchant || txn.merchant_name || txn.name || null,
+        vendor: fields.merchant || txn.merchant_name || txn.name || null,
+        category,
+        tax_category: taxCat,
+        description: fields.description || null,
+        receipt: fields.receipt || null,
+        receipt_url,
+        receipt_storage_path,
+        job_id: txnEditJobId || null,
+        plaid_transaction_id: txn.id,
+        source: 'receipt',
+      }]).select().single()
+      if (error) throw new Error(error.message)
+      const r = await reconcileTransaction(txn.id, row.id)
+      if (r?.error) throw new Error(r.error.message || String(r.error))
+      if (!txnEditCategory && fields.category) setTxnEditCategory(fields.category)
+      if (!txnEditTaxCategory && fields.tax_category) setTxnEditTaxCategory(fields.tax_category)
+      if (read && fields.amount != null && Math.abs(fields.amount - Math.abs(parseFloat(txn.amount) || 0)) > 0.009) {
+        toast.success(`Receipt on the row. Dougie read ${receiptSummary(fields)} — note the total differs from the bank charge`)
+      } else {
+        toast.success(read ? `Receipt on the row — Dougie read it: ${receiptSummary(fields)}` : 'Receipt on the row. Dougie could not read it.')
+      }
+      useStore.getState().fetchExpenses?.()
+    } catch (err) {
+      toast.error('Receipt not attached: ' + (err.message || err))
+    }
+    setTxnReceiptBusy(false)
+    if (txnReceiptInputRef.current) txnReceiptInputRef.current.value = ''
+  }
 
   const fetchAllBooksData = async () => {
     setLoading(true)
@@ -2550,7 +2631,7 @@ export default function Books() {
           <BudgetCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} manualExpenses={expenses} plaidTransactions={plaidTransactions} expenseCategories={expenseCategories} formatCurrency={formatCurrency} />
 
           <JobMarginsCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency}
-            jobs={jobs} payments={payments} invoices={invoices} manualExpenses={expenses} plaidTransactions={plaidTransactions} employees={employees}
+            jobs={jobs} payments={payments} invoices={invoices} manualExpenses={[...(expenses || []), ...(storeExpenses || [])]} plaidTransactions={plaidTransactions} employees={employees}
             onOpenReports={() => setActiveTab('tax')} />
 
           <FleetCostsCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency} isThisMonth={isThisMonth} navigate={navigate} />
@@ -3336,8 +3417,29 @@ export default function Books() {
                             </div>
                           )
                         })()}
-                        {txn.expense_id && (
-                          <div style={{ marginTop: '12px', fontSize: '12px', color: '#16a34a' }}>Linked to a recorded expense — counted once.</div>
+                        {txn.expense_id ? (() => {
+                          const linked = (storeExpenses || []).find(x => x.id === txn.expense_id)
+                          const hasReceipt = !!(linked?.receipt_url || linked?.receipt_storage_path)
+                          return (
+                            <div style={{ marginTop: '12px', fontSize: '12px', color: '#16a34a', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              <span>Linked to a recorded expense — counted once.{hasReceipt ? ' Receipt on file.' : ''}</span>
+                              {hasReceipt && linked?.receipt_url && (
+                                <a href={linked.receipt_url} target="_blank" rel="noreferrer" style={{ color: theme.accent, fontSize: '12px' }}>Open receipt</a>
+                              )}
+                            </div>
+                          )
+                        })() : (
+                          <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <input ref={txnReceiptInputRef} type="file" accept={RECEIPT_ACCEPT} style={{ display: 'none' }} onChange={handleTxnReceipt} />
+                            <button type="button" onClick={() => txnReceiptInputRef.current?.click()} disabled={txnReceiptBusy} style={{
+                              display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', borderRadius: '8px', minHeight: '40px',
+                              border: `1px solid ${theme.border}`, backgroundColor: 'transparent', color: theme.accent, fontSize: '12px', fontWeight: '600',
+                              cursor: txnReceiptBusy ? 'not-allowed' : 'pointer', opacity: txnReceiptBusy ? 0.6 : 1,
+                            }}>
+                              <ReceiptIcon size={14} /> {txnReceiptBusy ? 'Dougie is reading…' : 'Attach receipt — Dougie reads it'}
+                            </button>
+                            <span style={{ fontSize: '11px', color: theme.textMuted }}>Photo or PDF. It becomes the recorded expense for this charge.</span>
+                          </div>
                         )}
 
                         {/* Notes */}

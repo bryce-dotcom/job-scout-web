@@ -11,6 +11,7 @@ const create = read('../../supabase/functions/_shared/arnieCreate.ts')
 const config = read('../../supabase/functions/arnie-config/index.ts')
 const chat = read('../pages/agents/arnie/ArnieChat.jsx')
 const page = read('../pages/Expenses.jsx')
+const reader = read('./receiptReader.js')
 const engine = read('../pages/agents/arnie/arnieEngine.js')
 
 describe('what Arnie writes is what the page would', () => {
@@ -20,8 +21,11 @@ describe('what Arnie writes is what the page would', () => {
     expect(deno).toEqual(EXPENSE_CATEGORIES)
   })
   it('the receipt lands where the page puts receipts, in the same bucket', () => {
-    expect(page).toMatch(/const storagePath = `expenses\/receipts\/\$\{timestamp\}_\$\{safeName\}`/)
-    expect(page).toMatch(/\.from\('project-documents'\)/)
+    // The page hands its receipts to the shared reader (lib/receiptReader),
+    // whose default folder is the one Arnie and arnie-config agree on.
+    expect(page).toMatch(/await captureReceipt\(file, \{ companyId, categories: cats \}\)/)
+    expect(reader).toMatch(/export async function uploadReceipt\(file, pathPrefix = 'expenses\/receipts'\)/)
+    expect(reader).toMatch(/supabase\.storage\.from\('project-documents'\)\.upload\(receipt_storage_path/)
     expect(chat).toMatch(/const path = `expenses\/receipts\/arnie_\$\{Date\.now\(\)\}_\$\{safe\}\.\$\{ext\}`/)
     expect(chat).toMatch(/supabase\.storage\.from\('project-documents'\)\.upload\(path/)
   })

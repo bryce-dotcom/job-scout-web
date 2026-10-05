@@ -45,6 +45,9 @@ import { salespersonOptions, hasHiddenSalespeople } from '../lib/salespeople'
 import useSmartBack from '../lib/useSmartBack'
 import { selectPdfPages, pageIndicesFor, PAGES_FIRST } from '../lib/pdfPages'
 import { localDateStr } from '../lib/localDate'
+import { toast } from '../lib/toast'
+import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
+import { autoLinkReceipts } from '../lib/expenseMatch'
 
 const CATEGORY_COLORS = {
   CONTRACT: { bg: '#dcfce7', text: '#166534' },
@@ -924,43 +927,63 @@ function JobDetailInner() {
     }
   }
 
+  // A receipt snapped on the job: Dougie reads it and it lands on this job
+  // as a costed expense — merchant, total, date, category, tax line — so job
+  // costing sees it the moment it is taken, not after someone types it up.
+  // The photo is on file even when he cannot read it; that row says so and
+  // carries $0 until it is edited.
   const handleReceiptCapture = async (e) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0 || !job) return
     setReceiptUploading(true)
-
+    const cats = await loadExpenseCategories(companyId)
+    let saved = 0
+    const unread = []
     for (const file of files) {
-      const timestamp = Date.now()
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-      const storagePath = `jobs/${id}/receipts/${timestamp}_${safeName}`
-
-      const { error: uploadErr } = await supabase.storage
-        .from('project-documents')
-        .upload(storagePath, file, { contentType: file.type })
-
-      if (uploadErr) {
-        console.error('Receipt upload failed:', uploadErr)
-        continue
+      try {
+        const { receipt_url, receipt_storage_path, fields, read } = await captureReceipt(file, { companyId, categories: cats, pathPrefix: `jobs/${id}/receipts` })
+        const { data: row, error } = await supabase.from('expenses').insert([{
+          company_id: companyId,
+          job_id: parseInt(id),
+          amount: fields.amount ?? 0,
+          category: fields.category || 'Job Materials',
+          tax_category: fields.tax_category || null,
+          vendor: fields.merchant || null,
+          merchant: fields.merchant || null,
+          date: fields.date || localDateStr(new Date()),
+          description: fields.description || (read ? 'Receipt' : 'Receipt — Dougie could not read it, add the amount'),
+          receipt: fields.receipt || null,
+          receipt_url,
+          receipt_storage_path,
+          source: 'receipt',
+        }]).select().single()
+        if (error) { console.error('Receipt expense failed:', error); continue }
+        saved++
+        if (read) toast.success(`Dougie read it: ${receiptSummary(fields)}`)
+        else unread.push(file.name)
+        if (row) linkReceiptToBank(row)
+      } catch (err) {
+        console.error('Receipt capture failed:', err)
+        toast.error(err.message || 'Receipt upload failed')
       }
-
-      const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(storagePath)
-
-      await supabase.from('expenses').insert([{
-        company_id: companyId,
-        job_id: parseInt(id),
-        amount: 0,
-        category: 'Materials',
-        date: localDateStr(new Date()),
-        description: 'Receipt capture',
-        receipt_url: urlData.publicUrl,
-        receipt_storage_path: storagePath,
-        source: 'receipt'
-      }])
     }
-
-    await fetchJobExpenses()
+    if (unread.length) toast.error(`${unread.length} receipt${unread.length === 1 ? '' : 's'} attached but not read — add the amount by hand`)
+    if (saved) await fetchJobExpenses()
     setReceiptUploading(false)
     if (receiptInputRef.current) receiptInputRef.current.value = ''
+  }
+
+  // Books matches the receipt to the bank charge when the match is
+  // unmistakable; otherwise it waits for the charge to land.
+  const linkReceiptToBank = async (row) => {
+    try {
+      let txns = useStore.getState().plaidTransactions || []
+      if (txns.length === 0) { await useStore.getState().fetchPlaidTransactions?.(); txns = useStore.getState().plaidTransactions || [] }
+      const pair = autoLinkReceipts(txns, [row])[0]
+      if (!pair) return
+      const r = await useStore.getState().reconcileTransaction?.(pair.transactionId, pair.expenseId)
+      if (r?.success) toast.success('Matched to the bank charge — counted once')
+    } catch (err) { console.warn('[Job] bank match skipped:', err?.message) }
   }
 
   const handleAddJobExpense = async () => {
@@ -6437,7 +6460,7 @@ function JobDetailInner() {
                 <input
                   type="file"
                   ref={receiptInputRef}
-                  accept="image/*"
+                  accept={RECEIPT_ACCEPT}
                   multiple
                   style={{ display: 'none' }}
                   onChange={handleReceiptCapture}
@@ -6454,7 +6477,7 @@ function JobDetailInner() {
                   }}
                 >
                   <Camera size={14} />
-                  {receiptUploading ? 'Uploading...' : 'Receipt'}
+                  {receiptUploading ? 'Dougie is reading…' : 'Snap receipt'}
                 </button>
                 <button
                   onClick={() => setShowAddExpense(!showAddExpense)}

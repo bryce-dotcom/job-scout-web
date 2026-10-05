@@ -10,6 +10,9 @@ import { Plus, Pencil, Trash2, X, Receipt, Search, DollarSign, Upload, Download,
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { expensesFields } from '../lib/importExportFields'
 import { localDateStr } from '../lib/localDate'
+import { toast } from '../lib/toast'
+import { captureReceipt, loadExpenseCategories, fillBlanks, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
+import { autoLinkReceipts } from '../lib/expenseMatch'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -104,6 +107,13 @@ export default function Expenses() {
   const companyId = useStore((state) => state.companyId)
   const expenses = useStore((state) => state.expenses)
   const fetchExpenses = useStore((state) => state.fetchExpenses)
+  const fetchPlaidTransactions = useStore((state) => state.fetchPlaidTransactions)
+  const reconcileTransaction = useStore((state) => state.reconcileTransaction)
+  // The company's own category names, so the dropdown offers what Books
+  // offers and what Dougie picks from — on top of the fixed list.
+  const [catalogue, setCatalogue] = useState([])
+  useEffect(() => { if (companyId) loadExpenseCategories(companyId).then(setCatalogue) }, [companyId])
+  const categoryOptions = Array.from(new Set([...catalogue.map(c => c.name), ...EXPENSE_CATEGORIES]))
 
   const [showModal, setShowModal] = useState(false)
   const [editingExpense, setEditingExpense] = useState(null)
@@ -186,6 +196,7 @@ export default function Expenses() {
     setEditingExpense(null)
     setFormData(emptyExpense)
     setError(null)
+    setDougieNote('')
   }
 
   const handleChange = (e) => {
@@ -193,64 +204,61 @@ export default function Expenses() {
     setFormData(prev => ({ ...prev, [name]: value }))
   }
 
+  // Dougie reads the receipt. Upload first so the photo is on file whatever
+  // the read does; then fill whatever is still blank — merchant, amount,
+  // date, what it was for, the category and its tax line. Works on a new
+  // expense and on an edit, for a photo or a PDF.
+  const [dougieNote, setDougieNote] = useState('')
   const handleReceiptUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
     setReceiptUploading(true)
-
-    const timestamp = Date.now()
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const storagePath = `expenses/receipts/${timestamp}_${safeName}`
-
-    const { error: uploadErr } = await supabase.storage
-      .from('project-documents')
-      .upload(storagePath, file, { contentType: file.type })
-
-    if (uploadErr) {
-      setError('Receipt upload failed: ' + uploadErr.message)
-      setReceiptUploading(false)
-      return
-    }
-
-    const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(storagePath)
-
-    if (editingExpense) {
-      await supabase.from('expenses').update({
-        receipt_url: urlData.publicUrl,
-        receipt_storage_path: storagePath
-      }).eq('id', editingExpense.id)
-      setEditingExpense({ ...editingExpense, receipt_url: urlData.publicUrl, receipt_storage_path: storagePath })
-    } else {
-      setFormData(prev => ({ ...prev, _receipt_url: urlData.publicUrl, _receipt_storage_path: storagePath }))
-      // Read the receipt and fill whatever is still blank — the same
-      // scan-receipt function the deposit form uses. Silent on failure;
-      // the upload already succeeded.
-      if (file.type?.startsWith('image/')) {
-        try {
-          const base64 = await new Promise((resolve, reject) => {
-            const r = new FileReader()
-            r.onload = () => resolve(String(r.result).split(',')[1] || '')
-            r.onerror = reject
-            r.readAsDataURL(file)
-          })
-          const { data: scan } = await supabase.functions.invoke('scan-receipt', { body: { image: { base64, mediaType: file.type } } })
-          const ex = scan?.extracted
-          if (ex) {
-            setFormData(prev => ({
-              ...prev,
-              amount: prev.amount || (ex.amount != null ? String(ex.amount) : prev.amount),
-              date: ex.date || prev.date,
-              merchant: prev.merchant || ex.business_name || prev.merchant,
-              description: prev.description || ex.description || prev.description,
-              receipt: prev.receipt || ex.receipt_number || prev.receipt,
-            }))
-          }
-        } catch { /* the receipt is attached either way */ }
+    setDougieNote('Dougie is reading it…')
+    try {
+      const cats = await loadExpenseCategories(companyId)
+      const { receipt_url, receipt_storage_path, fields, read } = await captureReceipt(file, { companyId, categories: cats })
+      if (editingExpense) {
+        await supabase.from('expenses').update({ receipt_url, receipt_storage_path }).eq('id', editingExpense.id)
+        setEditingExpense({ ...editingExpense, receipt_url, receipt_storage_path })
+      } else {
+        setFormData(prev => ({ ...prev, _receipt_url: receipt_url, _receipt_storage_path: receipt_storage_path }))
       }
+      if (read) {
+        // The form opens with today as the date; a receipt's own date beats
+        // that default, but never a date a person changed.
+        setFormData(prev => fillBlanks(!editingExpense && prev.date === emptyExpense.date && fields.date ? { ...prev, date: '' } : prev, fields))
+        const summary = receiptSummary(fields)
+        setDougieNote(summary ? `Dougie read it: ${summary}` : 'Dougie read it, but found no figures to fill in.')
+      } else {
+        setDougieNote('Receipt attached. Dougie could not read it — fill the fields in by hand.')
+      }
+    } catch (err) {
+      setError(err.message || 'Receipt upload failed')
+      setDougieNote('')
     }
-
     setReceiptUploading(false)
     if (receiptInputRef.current) receiptInputRef.current.value = ''
+  }
+
+  // After a receipt is saved, Books looks for the charge on the bank feed. An
+  // unmistakable match (same cents, within days, one candidate each way) is
+  // linked on the spot so the money counts once; otherwise Books picks it up
+  // when the charge lands.
+  const linkToBank = async (savedExpense) => {
+    if (!savedExpense) return
+    try {
+      let txns = useStore.getState().plaidTransactions || []
+      if (txns.length === 0) { await fetchPlaidTransactions?.(); txns = useStore.getState().plaidTransactions || [] }
+      const pair = autoLinkReceipts(txns, [savedExpense])[0]
+      if (!pair) return
+      const r = await reconcileTransaction?.(pair.transactionId, pair.expenseId)
+      if (r?.success) {
+        const t = txns.find(x => x.id === pair.transactionId)
+        toast.success(`Matched to the bank charge${t?.date ? ' from ' + formatDate(t.date) : ''} — counted once`)
+      }
+    } catch (err) {
+      console.warn('[Expenses] bank match skipped:', err?.message)
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -286,9 +294,9 @@ export default function Expenses() {
 
     let result
     if (editingExpense) {
-      result = await supabase.from('expenses').update(payload).eq('id', editingExpense.id)
+      result = await supabase.from('expenses').update(payload).eq('id', editingExpense.id).select().single()
     } else {
-      result = await supabase.from('expenses').insert([payload])
+      result = await supabase.from('expenses').insert([payload]).select().single()
     }
 
     if (result.error) {
@@ -300,6 +308,7 @@ export default function Expenses() {
     await fetchExpenses()
     closeModal()
     setLoading(false)
+    if (result.data && !result.data.plaid_transaction_id) linkToBank(result.data)
   }
 
   const handleDelete = async (expense) => {
@@ -775,7 +784,7 @@ export default function Expenses() {
                       <input
                         ref={receiptInputRef}
                         type="file"
-                        accept="image/*"
+                        accept={RECEIPT_ACCEPT}
                         onChange={handleReceiptUpload}
                         style={{ display: 'none' }}
                       />
@@ -799,8 +808,11 @@ export default function Expenses() {
                         }}
                       >
                         <Upload size={14} />
-                        {receiptUploading ? 'Uploading...' : (editingExpense?.receipt_url || formData._receipt_url) ? 'Replace Photo' : 'Upload Receipt'}
+                        {receiptUploading ? 'Dougie is reading…' : (editingExpense?.receipt_url || formData._receipt_url) ? 'Replace receipt' : 'Snap or upload receipt'}
                       </button>
+                      {dougieNote && (
+                        <div style={{ marginTop: '6px', fontSize: '12px', color: dougieNote.startsWith('Dougie read it:') ? '#15803d' : theme.textMuted }}>{dougieNote}</div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -811,7 +823,7 @@ export default function Expenses() {
                     <label style={labelStyle}>Category</label>
                     <select name="category" value={formData.category} onChange={handleChange} style={inputStyle}>
                       <option value="">Select category</option>
-                      {EXPENSE_CATEGORIES.map(cat => (
+                      {categoryOptions.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
                     </select>

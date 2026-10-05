@@ -448,8 +448,13 @@ export function jobCosting({
     return result
   }
 
-  // Tagged expenses — Plaid debits + manual entries with job_id.
+  // Tagged expenses — Plaid debits with a job, plus recorded expenses with a
+  // job: Books' manual entries (expense_date) and the receipts snapped on the
+  // job page, in Field Scout or on the Expenses page (date). A receipt that
+  // has been matched to its bank row is the same money as that row, so when
+  // the row already counted toward a job the receipt does not count again.
   const expensesByJob = new Map()
+  const countedTxnIds = new Set()
   for (const t of plaidTransactions || []) {
     const amt = Number(t.amount) || 0
     if (amt <= 0) continue
@@ -458,10 +463,12 @@ export function jobCosting({
     if (!jid) continue
     if (from && !inRange(t.date, fromD, toD)) continue
     expensesByJob.set(jid, (expensesByJob.get(jid) || 0) + amt)
+    countedTxnIds.add(t.id)
   }
   for (const e of manualExpenses || []) {
     if (!e.job_id) continue
-    if (from && !inRange(e.expense_date, fromD, toD)) continue
+    if (e.plaid_transaction_id && countedTxnIds.has(e.plaid_transaction_id)) continue
+    if (from && !inRange(e.date || e.expense_date, fromD, toD)) continue
     expensesByJob.set(e.job_id, (expensesByJob.get(e.job_id) || 0) + (Number(e.amount) || 0))
   }
 

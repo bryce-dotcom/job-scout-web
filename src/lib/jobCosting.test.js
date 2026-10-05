@@ -55,3 +55,29 @@ describe('job costing follows a payment to its job', () => {
     expect(r.summary.totalRevenue).toBe(0)
   })
 })
+
+describe('a receipt snapped on the job is a cost of that job', () => {
+  // The receipt rows live on the expenses table with `date`, not
+  // `expense_date`; the window filter used to read only expense_date and
+  // dropped every one of them from a dated report.
+  const receipt = { id: 7, job_id: 11, amount: 389.42, date: '2026-08-05', receipt_storage_path: 'r.jpg' }
+
+  it('counts the receipt, inside the window, with no bank row yet', () => {
+    const r = jobCosting({ jobs, invoices, manualExpenses: [receipt], from: '2026-08-01', to: '2026-08-31' })
+    expect(r.rows.find(x => x.job === 'J-11').total_cost).toBe(389.42)
+    const out = jobCosting({ jobs, invoices, manualExpenses: [receipt], from: '2026-09-01', to: '2026-09-30' })
+    expect(out.rows.find(x => x.job === 'J-11')?.total_cost ?? null).toBeNull()
+  })
+
+  it('counts the money once after Books matches the receipt to its bank row', () => {
+    const bank = { id: 40, amount: 389.42, date: '2026-08-06', job_id: 11, expense_id: 7 }
+    const r = jobCosting({ jobs, invoices, manualExpenses: [{ ...receipt, plaid_transaction_id: 40 }], plaidTransactions: [bank] })
+    expect(r.rows.find(x => x.job === 'J-11').total_cost).toBe(389.42)
+  })
+
+  it('still counts a matched receipt when the bank row carries no job', () => {
+    const bank = { id: 40, amount: 389.42, date: '2026-08-06', expense_id: 7 }
+    const r = jobCosting({ jobs, invoices, manualExpenses: [{ ...receipt, plaid_transaction_id: 40 }], plaidTransactions: [bank] })
+    expect(r.rows.find(x => x.job === 'J-11').total_cost).toBe(389.42)
+  })
+})

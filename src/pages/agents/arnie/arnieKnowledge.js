@@ -62,7 +62,7 @@ const STATIC_BLOCK = `
 - **Freddy** — fleet maintenance scheduling + recommendations.
 - **Conrad Connect** — email marketing campaigns, templates, automations.
 - **Victor** — photo verification (before/after job photos, completeness checks).
-- **Dougie** — reads a handwritten lighting takeoff sheet into a Lenard audit and learns the company's corrections. He is also the name on the paperclip in every AI chat box: a photo or PDF dropped there is read into that conversation. He does not read receipts on the Expenses page or fill utility rebate forms.
+- **Dougie** — the document reader. Reads a receipt (photo or PDF) snapped on the job in Field Scout, on the job page, on the Expenses page, or attached to a bank row in Books: merchant, total, date, category and tax line from the company's own list; the expense lands on the job for job costing and Books matches it to the bank charge. Reads a handwritten lighting takeoff sheet into a Lenard audit and learns the company's corrections. Also the name on the paperclip in every AI chat box: a photo or PDF dropped there is read into that conversation. He does not fill utility rebate forms (Lenard fills the RMP application).
 - **Frankie** — AI CFO: AR/AP aging, expense anomalies, plain-English finance Q&A.
 
 ## Common workflows

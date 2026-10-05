@@ -61,6 +61,8 @@ import { enabledWalletsFrom, walletByMethod, displayHandle, walletGuidance, wall
 import { qrDataUrl } from '../lib/qr'
 import { businessUnitFor, logoUrlFrom, portalUrlFor } from '../lib/invoiceSend'
 import { localDateStr } from '../lib/localDate'
+import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
+import { autoLinkReceipts } from '../lib/expenseMatch'
 
 // Stripe card payment form (rendered inside Elements provider)
 function StripeCardForm({ theme, amount, onSuccess, onError }) {
@@ -1853,6 +1855,11 @@ export default function FieldScout() {
   }
 
   // Receipt capture — uploads photo to storage and creates expense record for job costing
+  // Receipt capture in the field: Dougie reads each photo and it lands on the
+  // job as a costed expense — merchant, total, date, category, tax line — so
+  // the office never types it up and job costing has it the same day. The
+  // photo is on file even when he cannot read it; that row carries $0 and
+  // says so until someone edits it. Each file is its own expense row.
   const handleReceiptCapture = async (e) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0 || !receiptJobId) return
@@ -1860,44 +1867,43 @@ export default function FieldScout() {
 
     let successCount = 0
     let failCount = 0
-    // Upload each file serially so we don't hammer Supabase and so one
-    // failure doesn't tank the rest. Each file becomes its own expense
-    // row — London can edit amounts afterward in the Expenses tab.
-    for (let idx = 0; idx < files.length; idx++) {
-      const file = files[idx]
+    let unread = 0
+    const cats = await loadExpenseCategories(companyId)
+    for (const file of files) {
       try {
-        // Stagger timestamps so multiple picks in the same click don't
-        // collide on storage paths.
-        const timestamp = Date.now() + idx
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-        const storagePath = `jobs/${receiptJobId}/receipts/${timestamp}_${safeName}`
-
-        const { error: uploadErr } = await supabase.storage
-          .from('project-documents')
-          .upload(storagePath, file, { contentType: file.type })
-
-        if (uploadErr) { failCount++; continue }
-
-        const { data: urlData } = supabase.storage.from('project-documents').getPublicUrl(storagePath)
-
-        const { error: insertErr } = await supabase.from('expenses').insert([{
+        const { receipt_url, receipt_storage_path, fields, read } = await captureReceipt(file, { companyId, categories: cats, pathPrefix: `jobs/${receiptJobId}/receipts` })
+        const { data: row, error: insertErr } = await supabase.from('expenses').insert([{
           company_id: companyId,
           job_id: receiptJobId,
-          amount: 0,
-          category: 'Materials',
-          date: localDateStr(new Date()),
-          description: 'Receipt capture — Field Scout',
-          receipt_url: urlData.publicUrl,
-          receipt_storage_path: storagePath,
-          source: 'receipt'
-        }])
-
-        if (insertErr) { failCount++ } else { successCount++ }
+          amount: fields.amount ?? 0,
+          category: fields.category || 'Job Materials',
+          tax_category: fields.tax_category || null,
+          vendor: fields.merchant || null,
+          merchant: fields.merchant || null,
+          date: fields.date || localDateStr(new Date()),
+          description: fields.description || (read ? 'Receipt — Field Scout' : 'Receipt — Dougie could not read it, add the amount'),
+          receipt: fields.receipt || null,
+          receipt_url,
+          receipt_storage_path,
+          source: 'receipt',
+        }]).select().single()
+        if (insertErr) { failCount++; continue }
+        successCount++
+        if (read) toast.success(`Dougie read it: ${receiptSummary(fields)}`)
+        else unread++
+        if (row) {
+          // Match to the bank charge when it is unmistakable; Books does the rest later.
+          try {
+            const txns = useStore.getState().plaidTransactions || []
+            const pair = autoLinkReceipts(txns, [row])[0]
+            if (pair) await useStore.getState().reconcileTransaction?.(pair.transactionId, pair.expenseId)
+          } catch { /* Books picks it up on its next load */ }
+        }
       } catch { failCount++ }
     }
 
     if (successCount > 0 && failCount === 0) {
-      toast.success(`${successCount} receipt${successCount === 1 ? '' : 's'} captured — edit amounts in Expenses`)
+      toast.success(unread ? `${successCount} saved to the job — ${unread} not readable, add the amount in Expenses` : `${successCount} receipt${successCount === 1 ? '' : 's'} on the job and costed`)
     } else if (successCount > 0 && failCount > 0) {
       toast.success(`${successCount} saved, ${failCount} failed — retry the failed ones`)
     } else {
@@ -2180,7 +2186,7 @@ export default function FieldScout() {
       <input
         ref={receiptInputRef}
         type="file"
-        accept="image/*"
+        accept={RECEIPT_ACCEPT}
         multiple
         onChange={handleReceiptCapture}
         style={{ display: 'none' }}

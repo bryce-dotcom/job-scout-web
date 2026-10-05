@@ -11,14 +11,14 @@ export default {
   route: '/lighting-audits',
 
   summary:
-    "Lenard's document reader. Photograph a handwritten lighting takeoff form and Dougie transcribes it, structures it into areas and fixture lines matched to the price book, and learns your corrections so the next form reads better.",
+    "The document reader. Snap a receipt on the job and Dougie reads it into the books — merchant, total, date, category, tax line — costed to the job and matched to the bank charge. Photograph a handwritten lighting takeoff form and he transcribes it into the Lenard audit, learning your corrections.",
 
-  replaces: ['retyping takeoff forms', 'manual data entry from field sheets'],
+  replaces: ['typing up receipts', 'retyping takeoff forms', 'manual data entry from field sheets'],
   highlights: [
+    'Receipt photo or PDF → costed expense on the job',
+    'Category + tax line from your own list',
     'Handwritten takeoff form → structured audit',
-    'Two-pass read: transcribe, then structure against the images',
-    'Per-company correction loop',
-    'Photo or PDF page in',
+    'Per-company correction loop on takeoffs',
   ],
 
   marketing: {
@@ -46,20 +46,21 @@ export default {
 
   agentKnowledge: {
     whatItIs:
-      "Dougie reads handwritten lighting takeoff forms for Lenard (dougie-analyze), called from the Lenard audit pages (LenardUTRMP, LenardAZSRP). He is not a general document reader and he does not do bids — that is Benny (benny-bid-intake).",
+      "Dougie reads two kinds of paper. Receipts: snapped in Field Scout on the job, on the job page, on the Expenses page, or attached to a bank row in Books (scan-receipt Edge Function in 'expense' mode, behind lib/receiptReader.js) — he returns merchant, total, date, what was bought, line items, and a category from the company's own list, and the expense lands on the job and in Books, where it is matched to the bank charge. Handwritten lighting takeoff forms for Lenard (dougie-analyze), from the Lenard audit pages. He is also the name on the paperclip in every AI chat box: a photo or PDF dropped there is read into that conversation. He does not do bids — that is Benny (benny-bid-intake).",
 
     howItWorks:
-      "dougie-analyze Edge Function: up to 5 page images → PASS 1 raw transcription (Claude through _shared/anthropic.ts) → PASS 2 structuring into { header, areas[] } with the images alongside so handwriting can be cross-checked. Recent rows from dougie_corrections (per company) are replayed as few-shot examples. Returns header, areas and the raw transcription.",
+      "Receipts: scan-receipt (Claude vision, image or PDF, one file per call) with the company's category names passed in; the pick is one of them or null. receiptReader uploads first, then reads, then fills only the blanks on the form. expenseMatch.autoLinkReceipts links the receipt to its bank row when the match is exact. Takeoffs: dougie-analyze, up to 5 page images → PASS 1 raw transcription → PASS 2 structuring into { header, areas[] } with the images alongside so handwriting can be cross-checked; recent dougie_corrections rows (per company) are replayed as few-shot examples.",
 
     examples: [
+      'Receipt photo on the job → Dougie: Lowes · $389.42 · 2026-09-12 · Job Materials (Line 2 - Cost of goods sold) → on the job\'s costing → Books links the Visa charge two days later',
       'Takeoff photo → Dougie: header (customer, site), 4 areas, 240 fixtures, T12/T8/HID types with heights and controls, matched to the price book',
-      'Correction: warehouse count 49 → 4 fixed by the user → replayed as an example on the next read',
+      'Correction: warehouse count 49 → 4 fixed by the user → replayed as an example on the next takeoff read',
     ],
 
     gotchas: [
-      "Image input only (JPEG/PNG page photos); a PDF has to be rasterised by the caller first.",
-      "Corrections are keyed per company (LENARD_COMPANY_ID in the function today), so they help HHH; other tenants get no replayed examples yet.",
-      "He does not read utility bills, receipts, W-9s or insurance certificates, and he does not fill rebate forms; there are no document-type schemas or confidence scores. A receipt or bill photo dropped into any AI chat box is read into that conversation, not by a Dougie feature. Answer the question asked; do not recount what earlier cards claimed.",
+      "Takeoffs take page images only (JPEG/PNG); receipts take a photo or a PDF.",
+      "Takeoff corrections are keyed per company (LENARD_COMPANY_ID in the function today), so they help HHH; other tenants get no replayed examples yet. Receipt reads have no correction loop.",
+      "He does not read utility bills into Utility Invoices, W-9s or insurance certificates, and he does not fill rebate forms (Lenard fills the RMP application). There are no document-type schemas or confidence scores. Answer the question asked; do not recount what earlier cards claimed.",
     ],
 
     actions: {

@@ -308,9 +308,9 @@ export const FEATURE_CATALOG = [
       {
         name: 'Dougie The Document Reader',
         icon: 'FileSearch',
-        summary: "Photograph the handwritten lighting takeoff sheet and Dougie reads it into the Lenard audit — areas, fixture lines, counts, heights, controls, matched to the price book. Fix anything he misread and he remembers it for your company, so the next sheet reads better.",
-        replaces: ['retyping takeoff forms', 'manual data entry from field sheets'],
-        highlights: ['Handwritten takeoff → structured audit', 'Learns your corrections per company'],
+        summary: "Snap a receipt on the job and Dougie reads it into the books — merchant, total, date, category, tax line — costed to the job and matched to the bank charge. Photograph a handwritten lighting takeoff sheet and he reads it into the Lenard audit, remembering your corrections.",
+        replaces: ['typing up receipts', 'retyping takeoff forms', 'manual data entry from field sheets'],
+        highlights: ['Receipt → costed expense on the job', 'Handwritten takeoff → structured audit'],
         route: null,
         walkthrough: 'dougie',
       },
