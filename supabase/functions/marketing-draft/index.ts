@@ -66,6 +66,7 @@ serve(async (req) => {
       }
       content.push({ type: 'text', text: [
         description ? `What to say: "${description}"` : 'No description; say what the photos show.',
+        (caps || []).length ? '' : 'There are NO photos or clips. Plan it from text cards only (kind "card"): 3 to 5 cards, each a short bold line with an optional sub line, the last one the call to action. Do not reference any capture id.',
         `Brand: ${name}.${kit.tagline ? ` Tagline: ${kit.tagline}.` : ''}${kit.cta ? ` Call to action: ${kit.cta}.` : ''}${kit.voice ? ` Voice: ${kit.voice}` : ''}`,
         `Plan a vertical social video under ${maxTotal} seconds. Scene kinds: "compare" (a BEFORE photo and an AFTER photo of the same place; the after is revealed over the before — use it whenever two photos show the same spot in two states), "photo" (one photo with slow motion), "clip" (a stretch of a video, start/end in seconds), "card" (text only on the brand colour: a punchy headline, optional sub line). Headlines are short and bold, under 8 words, the kind that stop a thumb ("Hard evidence that lighting is everything"). Open with the strongest visual and a headline; end with a card carrying the call to action. Use every strong photo once; leave out weak or repeated ones. 2 to 4 seconds per photo, 4 to 6 for a compare, 2 to 3 for a card.`,
         'Also write "voiceover": what a warm, plain-spoken narrator says over the whole video, in the brand voice, 2 to 4 short sentences, no more than about 2.5 words per second of video, ending on the call to action. No hashtags, no emojis, say numbers as words.',
@@ -79,7 +80,7 @@ serve(async (req) => {
       if (!ai.ok) return json({ ok: false, error: ai.friendly, ai_unavailable: ai.unavailable === true }, 502)
       const text = (ai.data?.content || []).map((c: any) => c.text || '').join('')
       let sbd: any = null
-      try { const m = text.match(/\{[\s\S]*\}/); sbd = m ? JSON.parse(m[0]) : null } catch { sbd = null }
+      try { const cleaned = text.replace(/```(?:json)?/g, ''); const m = cleaned.match(/\{[\s\S]*\}/); sbd = m ? JSON.parse(m[0]) : null } catch { sbd = null }
       if (!sbd || !Array.isArray(sbd.scenes)) return json({ ok: false, error: 'The director did not return a usable storyboard. Try again.' }, 502)
       const byId = Object.fromEntries((caps || []).map((c: any) => [c.id, c]))
       const scenes: any[] = []
