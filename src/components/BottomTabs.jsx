@@ -10,10 +10,10 @@
 // Layout already decided to render.
 
 import { NavLink } from 'react-router-dom'
-import { Menu } from 'lucide-react'
+import { Menu, Sparkles } from 'lucide-react'
 import { tabLabel } from '../lib/navTabs'
 
-export default function BottomTabs({ items, onMore, moreActive, theme }) {
+export default function BottomTabs({ items, onMore, moreActive, theme, onArnie, arnieName = 'Arnie' }) {
   if (!items?.length) return null
 
   const cell = (active) => ({
@@ -57,7 +57,34 @@ export default function BottomTabs({ items, onMore, moreActive, theme }) {
         padding: '4px 4px 0',
       }}
     >
-      {items.map((item) => {
+      {/* Arnie sits in the MIDDLE of the row, not at an end: it is the one
+          slot that is not a page, and the middle is where the thumb rests. */}
+      {items.slice(0, Math.ceil(items.length / 2)).map((item) => {
+        const Icon = item.icon
+        return (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.to === '/'}
+            style={({ isActive }) => cell(isActive && !moreActive)}
+          >
+            {Icon && <Icon size={21} />}
+            <span style={text}>{tabLabel(item)}</span>
+          </NavLink>
+        )
+      })}
+
+      <button
+        type="button"
+        onClick={onArnie}
+        aria-label={`Ask ${arnieName}`}
+        style={{ ...cell(false), border: 'none', cursor: 'pointer', font: 'inherit', color: theme.accent }}
+      >
+        <Sparkles size={21} />
+        <span style={text}>{arnieName}</span>
+      </button>
+
+      {items.slice(Math.ceil(items.length / 2)).map((item) => {
         const Icon = item.icon
         return (
           <NavLink

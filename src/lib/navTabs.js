@@ -16,7 +16,11 @@
 // /customers or /jobs at all, so neither a default nor a saved preference may
 // put one in their bar — it would be a tab that opens nothing.
 
-export const MAX_TABS = 4
+// Three, not four: Arnie sits in the middle of the bar as the fifth thing,
+// so the row is [tab][tab][Arnie][tab][More]. The wish lists below stay four
+// long — the fourth is a reserve for when one of the first three is a route
+// this person cannot see.
+export const MAX_TABS = 3
 
 /**
  * What each kind of person probably wants, best first.

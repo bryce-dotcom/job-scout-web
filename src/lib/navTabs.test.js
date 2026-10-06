@@ -11,6 +11,9 @@ describe('what each kind of person gets by default', () => {
     // Marketing is step 1 and is a company-level thing somebody sets up once.
     // A rep's day starts at Leads.
     expect(defaultTabWishlist({ role: 'Sales' })).toEqual(['/leads', '/lead-setter', '/pipeline', '/estimates'])
+    // and the three that actually reach the bar are steps 2, 3 and 4:
+    expect(resolveTabs({ wish: defaultTabWishlist({ role: 'Sales' }), available: ['/leads', '/lead-setter', '/pipeline', '/estimates'] }))
+      .toEqual(['/leads', '/lead-setter', '/pipeline'])
     expect(defaultTabWishlist({ role: 'Sales' })).not.toContain('/marketing')
   })
 
@@ -42,11 +45,14 @@ describe('what each kind of person gets by default', () => {
   it('falls back to access level when the title says nothing', () => {
     expect(defaultTabWishlist({ role: '' }, 3)[0]).toBe('/')
     expect(defaultTabWishlist({}, 0)).toContain('/field-scout')
-    expect(defaultTabWishlist(null, 0).length).toBe(MAX_TABS)
+    expect(defaultTabWishlist(null, 0).length).toBeGreaterThanOrEqual(MAX_TABS)
   })
 
-  it('always offers four', () => {
-    for (const list of Object.values(TAB_WISHLISTS)) expect(list).toHaveLength(MAX_TABS)
+  it('offers a reserve beyond the slots, for a route this person cannot see', () => {
+    // MAX_TABS is 3 (Arnie takes the middle slot) but each list carries four,
+    // so losing one to role filtering still fills the bar from the same list
+    // rather than falling through to the generic backfill.
+    for (const list of Object.values(TAB_WISHLISTS)) expect(list.length).toBeGreaterThan(MAX_TABS)
   })
 })
 

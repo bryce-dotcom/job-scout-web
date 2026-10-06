@@ -189,6 +189,14 @@ export default function Layout() {
   const docNav = navLabel(configFromSettings(settingsRows))
   const updateAgentPlacement = useStore((state) => state.updateAgentPlacement)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  // FeedbackButton owns the unread query; it broadcasts the count so the
+  // header badge does not duplicate the rule.
+  const [feedbackUnread, setFeedbackUnread] = useState(0)
+  useEffect(() => {
+    const onCount = (e) => setFeedbackUnread(Number(e.detail) || 0)
+    window.addEventListener('feedback:unread', onCount)
+    return () => window.removeEventListener('feedback:unread', onCount)
+  }, [])
   const [expandedMenus, setExpandedMenus] = useState({})
   const [showAgentSettings, setShowAgentSettings] = useState(false)
   const [editingAgent, setEditingAgent] = useState(null)
@@ -1509,6 +1517,29 @@ export default function Layout() {
               Job Scout
             </span>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+          {/* Feedback moved off the floating bubble and up here: the bubble
+              covered the More tab, and this is one tap from anywhere. */}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('feedback:open'))}
+            aria-label="Send feedback"
+            style={{
+              position: 'relative', padding: '8px', backgroundColor: 'transparent',
+              border: 'none', color: theme.textSecondary, cursor: 'pointer',
+              minHeight: '44px', minWidth: '44px',
+            }}
+          >
+            <MessageSquare size={22} />
+            {feedbackUnread > 0 && (
+              <span style={{
+                position: 'absolute', top: 2, right: 2,
+                minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9,
+                backgroundColor: '#dc2626', color: '#fff', fontSize: 11, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: `2px solid ${theme.bgCard}`,
+              }}>{feedbackUnread}</span>
+            )}
+          </button>
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             style={{
@@ -1521,6 +1552,7 @@ export default function Layout() {
           >
             {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
+          </div>
         </div>
 
         {/* Mobile Menu Overlay */}
@@ -2271,6 +2303,7 @@ export default function Layout() {
       <BottomTabs
         items={bottomTabs}
         onMore={() => setMobileMenuOpen(true)}
+        onArnie={() => window.dispatchEvent(new CustomEvent('arnie:open'))}
         moreActive={mobileMenuOpen}
         theme={theme}
       />
@@ -2287,7 +2320,7 @@ export default function Layout() {
           theme={theme}
         />
       )}
-      {!isDetailRoute && <FeedbackButton />}
+      <FeedbackButton hideLauncher={isDetailRoute} />
 
       {/* Responsive CSS */}
       <style>{`
@@ -2406,9 +2439,19 @@ export default function Layout() {
           box-sizing: border-box;
         }
 
-        /* Prevent horizontal scroll */
+        /* Prevent horizontal scroll.
+           clip, not hidden: hidden makes this a SCROLL CONTAINER, and on iOS
+           that moves the scroller onto body, at which point every
+           position:fixed element resolves against the document instead of
+           the viewport and drifts down the page as you scroll — the bottom
+           tab bar, Arnie and the feedback bubble all ended up mid-screen.
+           clip clips identically without creating a scroll container.
+           hidden stays first as the fallback for Safari under 16.
+           This duplicates index.css on purpose: it is declared later, so
+           without the same fix here it silently wins. */
         html, body {
           overflow-x: hidden;
+          overflow-x: clip;
           width: 100%;
           max-width: 100vw;
         }
