@@ -89,6 +89,7 @@ serve(async (req) => {
       const got = await paint(key, prompt + (i ? ` Variation ${i + 1}: a different angle of the same scene.` : ''), aspect)
       if ('error' in got) {
         if (got.status === 400 && /API key/i.test(got.error)) return json({ ok: false, needs_key: true, error: 'The Gemini API key on the server is not valid.' }, 400)
+        if (/prepayment credits|billing|RESOURCE_EXHAUSTED|quota/i.test(got.error)) return json({ ok: false, needs_billing: true, error: 'AI pictures are paused: the Google AI Studio project that paints them has run out of prepaid credits. The owner adds credits at ai.studio/projects (Billing); a small top-up covers hundreds of pictures. Real photos still work.' }, 402)
         if (!out.length) return json({ ok: false, error: got.error }, 502)
         break
       }
