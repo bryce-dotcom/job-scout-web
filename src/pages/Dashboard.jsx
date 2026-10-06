@@ -69,8 +69,8 @@ const STAGE_COLORS = { 'New': '#3b82f6', 'Contacted': '#8b5cf6', 'Scheduled': '#
 
 // All available metric card definitions
 const METRIC_DEFS = [
-  { id: 'mtdSalesWon', label: 'MTD Sales Won', icon: TrendingUp, color: '#16a34a', nav: '/pipeline', hint: 'Total $ value of jobs WON this month — counts every job whose created_at falls in the current month, regardless of current status. "Won" means the deal entered the work queue (estimate approved or job created directly). Pair with MTD Delivered for the delivery side.' },
-  { id: 'mtdDelivered', label: 'MTD Delivered', icon: Briefcase, color: '#10b981', nav: '/jobs', hint: 'Total $ value of jobs DELIVERED this month — sums job_total for every job whose status moved into a delivered category (Completed, Verified Complete, Invoiced, etc.) this month. A deal can be Won in one month and Delivered in another, so this and MTD Sales Won are intentionally separate.' },
+  { id: 'mtdSalesWon', label: 'MTD Sales Won', icon: TrendingUp, color: '#16a34a', nav: '/pipeline', hint: 'Total $ value of jobs WON this month — counts every job whose created_at falls in the current month, regardless of current status. "Won" means the deal entered the work queue (estimate approved or job created directly). Pair with MTD Delivered for the delivery side. The 90-Day Avg/mo is everything won in the trailing 90 days divided by three — a monthly run-rate, so it compares directly with the MTD figure above it rather than against a part-finished month.' },
+  { id: 'mtdDelivered', label: 'MTD Delivered', icon: Briefcase, color: '#10b981', nav: '/jobs', hint: 'Total $ value of jobs DELIVERED this month — sums job_total for every job whose status moved into a delivered category (Completed, Verified Complete, Invoiced, etc.) this month. A deal can be Won in one month and Delivered in another, so this and MTD Sales Won are intentionally separate. The 90-Day Avg/mo is everything won in the trailing 90 days divided by three — a monthly run-rate, so it compares directly with the MTD figure above it rather than against a part-finished month.' },
   { id: 'activeLeads', label: 'Active Leads', icon: UserPlus, color: null, nav: '/leads', hint: 'Leads currently in the pipeline (not Won, Lost, or Closed). These are prospects being worked.' },
   { id: 'openJobs', label: 'Open Jobs', icon: Briefcase, color: null, nav: '/jobs', hint: 'Jobs that are Scheduled, In Progress, or Chillin. Does not include Completed or Archived.' },
   { id: 'pendingInvoices', label: 'Pending Invoices', icon: Receipt, color: null, nav: '/invoices', hint: 'Invoices sent but not yet paid. The dollar amount is what customers owe you (accounts receivable).' },
@@ -481,6 +481,21 @@ export default function Dashboard() {
   // YTD — same definitions as MTD, just a wider window.
   const ytdWonJobs = wonJobsInRange(jobs, firstOfYear, null)
   const ytdSalesWon = sumJobTotal(ytdWonJobs, quoteAmountById)
+
+  // ─── 90-day rolling average ─────────────────────────────────────────────
+  //
+  // The headline is a PARTIAL month, so on the 3rd it reads near zero and on
+  // the 28th it reads high — neither tells you how the business is actually
+  // running. This is the trailing 90 days divided by three: a monthly
+  // run-rate sitting next to a monthly number, so the two compare directly.
+  //
+  // Same definition of won as everything else on this card (wonJobsInRange +
+  // sumJobTotal, lib/jobMetrics). "Sold" has had three competing meanings in
+  // this codebase before and will not get a fourth here.
+  const win90WonJobs = wonJobsInRange(jobs, daysAgo(90), null)
+  const avg90SalesWon = sumJobTotal(win90WonJobs, quoteAmountById) / 3
+  const win90DeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, daysAgo(90), null)
+  const avg90Delivered = sumJobTotal(win90DeliveredJobs, quoteAmountById) / 3
   const ytdDeposits = depositsYTD
   const ytdDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, firstOfYear, null)
   const completedJobsYTD = ytdDeliveredJobs.length
@@ -507,8 +522,8 @@ export default function Dashboard() {
 
   // Metric values map — subtitles explain exactly where each number comes from
   const metricValues = {
-    mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdWonJobs.length} job${mtdWonJobs.length !== 1 ? 's' : ''} won this month`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Sales Won', lastValue: formatCurrency(lastMonthSalesWon), lastLabel: lastMonthLabel },
-    mtdDelivered: { value: formatCurrency(mtdDelivered), subtitle: `${mtdDeliveredJobs.length} job${mtdDeliveredJobs.length !== 1 ? 's' : ''} delivered this month`, ytdValue: formatCurrency(ytdDelivered), ytdLabel: 'YTD Delivered', lastValue: formatCurrency(lastMonthDelivered), lastLabel: lastMonthLabel },
+    mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdWonJobs.length} job${mtdWonJobs.length !== 1 ? 's' : ''} won this month`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Sales Won', lastValue: formatCurrency(lastMonthSalesWon), lastLabel: lastMonthLabel, avgValue: formatCurrency(avg90SalesWon), avgLabel: '90-Day Avg/mo' },
+    mtdDelivered: { value: formatCurrency(mtdDelivered), subtitle: `${mtdDeliveredJobs.length} job${mtdDeliveredJobs.length !== 1 ? 's' : ''} delivered this month`, ytdValue: formatCurrency(ytdDelivered), ytdLabel: 'YTD Delivered', lastValue: formatCurrency(lastMonthDelivered), lastLabel: lastMonthLabel, avgValue: formatCurrency(avg90Delivered), avgLabel: '90-Day Avg/mo' },
     activeLeads: { value: activeLeads, subtitle: 'Leads in pipeline (not Won/Lost)' },
     openJobs: { value: openJobs, subtitle: 'Scheduled + In Progress + Chillin' },
     pendingInvoices: {
@@ -677,7 +692,7 @@ export default function Dashboard() {
   }
 
   // ── Reusable components ──
-  const MetricCard = ({ icon: Icon, label, value, color, onClick, subtitle, ytdLabel, ytdValue, lastLabel, lastValue, hint }) => (
+  const MetricCard = ({ icon: Icon, label, value, color, onClick, subtitle, ytdLabel, ytdValue, lastLabel, lastValue, avgLabel, avgValue, hint }) => (
     <div
       onClick={onClick}
       title={hint || ''}
@@ -714,7 +729,12 @@ export default function Dashboard() {
         // without a scrollbar at 375px.
         <div style={{
           marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${theme.border}`,
-          display: 'grid', gridTemplateColumns: lastValue !== undefined ? 'minmax(0,1fr) minmax(0,1fr)' : 'minmax(0,1fr)', gap: '10px',
+          display: 'grid',
+          // One track per number shown. minmax(0,1fr) throughout — plain 1fr
+          // lets a long currency string push the card past its track and the
+          // page clips it without a scrollbar at 375px.
+          gridTemplateColumns: `repeat(${1 + (lastValue !== undefined ? 1 : 0) + (avgValue !== undefined ? 1 : 0)}, minmax(0,1fr))`,
+          gap: '10px',
         }}>
           {lastValue !== undefined && (
             <div style={{ minWidth: 0 }}>
@@ -726,6 +746,12 @@ export default function Dashboard() {
             <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{ytdLabel || 'YTD'}</div>
             <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text, overflowWrap: 'anywhere' }}>{ytdValue}</div>
           </div>
+          {avgValue !== undefined && (
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{avgLabel || '90-Day Avg'}</div>
+              <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.textSecondary, overflowWrap: 'anywhere' }}>{avgValue}</div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -987,6 +1013,8 @@ export default function Dashboard() {
                 ytdLabel={mv.ytdLabel}
                 lastValue={mv.lastValue}
                 lastLabel={mv.lastLabel}
+                avgValue={mv.avgValue}
+                avgLabel={mv.avgLabel}
                 hint={def.hint}
               />
             )

@@ -153,7 +153,9 @@ export default function FeedbackButton() {
         onClick={() => { setIsOpen(true); setTab(unreadCount > 0 ? 'mine' : 'send') }}
         style={{
           position: 'fixed',
-          bottom: '24px',
+          // Clear of the mobile tab bar — this bubble sat squarely on top of
+          // the More tab. The variable is 0 above md, so desktop is unchanged.
+          bottom: 'calc(24px + var(--jobscout-tabbar-space, 0px))',
           right: '24px',
           width: '56px',
           height: '56px',

@@ -32,7 +32,7 @@ export const PROTECTED_ROUTES = ['/', '/settings']
 
 const KEY = (companyId, email) => `jobscout:navPrefs:${companyId || 'none'}:${(email || 'anon').toLowerCase()}`
 
-export const EMPTY_PREFS = { hidden: [], order: {} }
+export const EMPTY_PREFS = { hidden: [], order: {}, tabs: [] }
 
 const store = () => {
   try { return globalThis.localStorage } catch { return null }  // Safari private mode
@@ -46,6 +46,10 @@ export function loadNavPrefs(companyId, email) {
     return {
       hidden: Array.isArray(parsed?.hidden) ? parsed.hidden.filter(r => typeof r === 'string') : [],
       order: parsed?.order && typeof parsed.order === 'object' ? parsed.order : {},
+      // The four bottom tabs on mobile (lib/navTabs). Empty means "use the
+      // default for my job"; a saved list is still filtered by what this
+      // person may see before anything is drawn.
+      tabs: Array.isArray(parsed?.tabs) ? parsed.tabs.filter(r => typeof r === 'string') : [],
     }
   } catch {
     // A corrupt preference should cost you your customisation, not your menu.
@@ -58,6 +62,7 @@ export function saveNavPrefs(companyId, email, prefs) {
     store()?.setItem(KEY(companyId, email), JSON.stringify({
       hidden: prefs?.hidden || [],
       order: prefs?.order || {},
+      tabs: prefs?.tabs || [],
     }))
   } catch { /* quota or disabled storage — the menu just stays as it was */ }
   return prefs

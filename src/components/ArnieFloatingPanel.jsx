@@ -131,7 +131,8 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
           onClick={openPanel}
           style={{
             position: 'fixed',
-            bottom: 92,
+            // Above the mobile tab bar (0 on desktop).
+            bottom: 'calc(92px + var(--jobscout-tabbar-space, 0px))',
             right: 20,
             display: 'flex',
             flexDirection: 'column',

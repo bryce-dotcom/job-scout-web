@@ -7,6 +7,8 @@ import FeedbackButton from './FeedbackButton'
 import ArnieFloatingPanel from './ArnieFloatingPanel'
 import NavCustomizer from './NavCustomizer'
 import { applyNavPrefs, loadNavPrefs, resetNavPrefs, saveNavPrefs } from '../lib/navPrefs'
+import { defaultTabWishlist, resolveTabs } from '../lib/navTabs'
+import BottomTabs from './BottomTabs'
 import ArnieOnboardingBanner from './ArnieOnboardingBanner'
 import GlobalSearch from './GlobalSearch'
 import TrialBanner from './TrialBanner'
@@ -559,6 +561,53 @@ export default function Layout() {
 
   const [showNavCustomizer, setShowNavCustomizer] = useState(false)
   const visibleNavSections = useMemo(() => applyNavPrefs(navSections, navPrefs), [navSections, navPrefs])
+
+  // ─── Bottom tab bar (mobile) ──────────────────────────────────────────
+  //
+  // The four tabs are drawn ONLY from what this person can already reach:
+  // visibleNavSections is role-filtered and has their hidden items removed,
+  // and these inline links are the rest of what the sidebar renders. A Field
+  // Tech genuinely cannot open /customers, so nothing may put it in their
+  // bar. Same ordering rule as navPrefs: filter by role first, preference
+  // second, never the other way round.
+  // Not memoised on purpose: salesFlowItems and dashboardItem are rebuilt on
+  // every render, so a dependency array on them would never hit and would
+  // only hide that fact. Building a ~50-entry map is nothing.
+  const tabCandidates = (() => {
+    const byRoute = new Map()
+    const put = (item) => { if (item?.to && !byRoute.has(item.to)) byRoute.set(item.to, item) }
+    put(dashboardItem)
+    put({ to: '/company-calendar', icon: CalendarDays, label: 'Calendar' })
+    put({ to: '/company-map', icon: MapIcon, label: 'Map' })
+    if (!userIsFieldTech) {
+      put({ to: '/field-scout', icon: Compass, label: 'Field Scout' })
+      put({ to: '/customers', icon: Users, label: 'Customers' })
+      // Sales Flow is rendered inline rather than through navSections, so it
+      // has to be added by hand or no sales route could ever be a tab — and
+      // the sales default is the whole Leads → Setter → Pipeline → Estimates
+      // run. It sits behind the same !userIsFieldTech guard as the sidebar.
+      for (const item of salesFlowItems) {
+        put(item)
+        for (const child of item.children || []) put(child)
+      }
+    }
+    for (const section of visibleNavSections) {
+      for (const item of section.items || []) {
+        put(item)
+        for (const child of item.children || []) put(child)
+      }
+    }
+    return byRoute
+  })()
+
+  const bottomTabs = (() => {
+    const routes = resolveTabs({
+      saved: navPrefs?.tabs,
+      wish: defaultTabWishlist(user, userAccessLevel),
+      available: [...tabCandidates.keys()],
+    })
+    return routes.map((r) => tabCandidates.get(r)).filter(Boolean)
+  })()
 
   const saveNav = (next) => {
     setNavEdit({ identity: navIdentity, prefs: next })
@@ -1971,6 +2020,10 @@ export default function Layout() {
             // now includes its own safe-area padding — doesn't overlap
             // the first row of content.
             paddingTop: 'env(safe-area-inset-top, 0px)',
+            // Room for the bottom tab bar (mobile only — the variable is 0
+            // above md). Without it the last row of every page sits under
+            // the bar and cannot be tapped.
+            paddingBottom: 'var(--jobscout-tabbar-space, 0px)',
           }}
           className="main-content md:ml-[260px] ml-0 mt-[64px] md:mt-0"
         >
@@ -2213,12 +2266,23 @@ export default function Layout() {
           they don't cover the page's own action button on mobile. */}
       <ArnieFloatingPanel hideLauncher={isDetailRoute} />
 
+      {/* Four destinations at thumb height, phones only. Everything else is
+          still one tap away under More, which opens the same drawer. */}
+      <BottomTabs
+        items={bottomTabs}
+        onMore={() => setMobileMenuOpen(true)}
+        moreActive={mobileMenuOpen}
+        theme={theme}
+      />
+
       {showNavCustomizer && (
         <NavCustomizer
           sections={navSections}
           prefs={navPrefs}
           onChange={saveNav}
           onReset={resetNav}
+          tabCandidates={[...tabCandidates.values()]}
+          currentTabs={bottomTabs}
           onClose={() => setShowNavCustomizer(false)}
           theme={theme}
         />
@@ -2229,6 +2293,8 @@ export default function Layout() {
       <style>{`
         @media (max-width: 768px) {
           .hidden { display: none !important; }
+          /* Height of the bottom tab bar, so <main> can leave room for it. */
+          :root { --jobscout-tabbar-space: calc(64px + env(safe-area-inset-bottom, 0px)); }
           .md\\:hidden { display: flex !important; }
           .md\\:flex { display: none !important; }
           .md\\:ml-\\[260px\\] { margin-left: 0 !important; }
@@ -2303,6 +2369,8 @@ export default function Layout() {
 
         @media (min-width: 769px) {
           .hidden { display: flex !important; }
+          /* No bar above md, so no reserved space. */
+          :root { --jobscout-tabbar-space: 0px; }
           .md\\:hidden { display: none !important; }
           .md\\:flex { display: flex !important; }
           .md\\:ml-\\[260px\\] { margin-left: 260px !important; }

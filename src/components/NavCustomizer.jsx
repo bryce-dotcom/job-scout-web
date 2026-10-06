@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Eye, EyeOff, ChevronUp, ChevronDown, X, RotateCcw, Lock } from 'lucide-react'
 import { customisableSections, moveItem, toggleHidden } from '../lib/navPrefs'
+import { MAX_TABS, toggleTab, tabLabel } from '../lib/navTabs'
 
 /**
  * "Show me only what I actually use."
@@ -16,7 +17,7 @@ import { customisableSections, moveItem, toggleHidden } from '../lib/navPrefs'
  * and dragging a small row with a gloved thumb is a worse experience than two
  * obvious buttons, whatever it looks like in a demo.
  */
-export default function NavCustomizer({ sections, prefs, onChange, onReset, onClose, theme }) {
+export default function NavCustomizer({ sections, prefs, onChange, onReset, onClose, theme, tabCandidates = [], currentTabs = [] }) {
   const [draft, setDraft] = useState(prefs)
   const groups = customisableSections(sections, draft)
 
@@ -70,6 +71,56 @@ export default function NavCustomizer({ sections, prefs, onChange, onReset, onCl
         </div>
 
         <div style={{ overflowY: 'auto', padding: '8px 18px 4px' }}>
+          {/* The four at the bottom of the phone. Only offered from routes
+              this person can already reach, so a chosen tab always opens. */}
+          {tabCandidates.length > 0 && (
+            <div style={{ marginBottom: 18 }} className="md:hidden">
+              <div style={{
+                fontSize: 11, fontWeight: 700, letterSpacing: '0.07em',
+                textTransform: 'uppercase', color: muted, margin: '10px 0 4px',
+              }}>
+                Bottom bar
+              </div>
+              <p style={{ margin: '0 0 8px', fontSize: 12.5, color: sub, lineHeight: 1.45 }}>
+                The {MAX_TABS} you tap most, at the bottom of your phone. Pick {MAX_TABS};
+                everything else stays under More. Leave them all off to use the
+                default for your job.
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {tabCandidates.map((item) => {
+                  const on = (draft.tabs || []).includes(item.to)
+                  const full = (draft.tabs || []).length >= MAX_TABS && !on
+                  return (
+                    <button
+                      key={item.to}
+                      type="button"
+                      disabled={full}
+                      onClick={() => update(toggleTab(draft, item.to))}
+                      title={full ? `Turn one off first — you can have ${MAX_TABS}` : undefined}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '7px 11px', minHeight: 38, borderRadius: 999,
+                        border: `1px solid ${on ? accent : line}`,
+                        background: on ? accent : 'transparent',
+                        color: on ? '#fff' : sub,
+                        fontSize: 12.5, fontWeight: 600,
+                        cursor: full ? 'not-allowed' : 'pointer',
+                        opacity: full ? 0.4 : 1,
+                      }}
+                    >
+                      {item.icon && <item.icon size={14} />}
+                      {tabLabel(item)}
+                    </button>
+                  )
+                })}
+              </div>
+              {(draft.tabs || []).length === 0 && currentTabs.length > 0 && (
+                <p style={{ margin: '8px 0 0', fontSize: 12, color: muted }}>
+                  Using the default for your job: {currentTabs.map(tabLabel).join(' · ')}
+                </p>
+              )}
+            </div>
+          )}
           {groups.map(group => {
             const routes = group.items.map(i => i.to)
             return (
