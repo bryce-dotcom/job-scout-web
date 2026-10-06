@@ -1524,12 +1524,14 @@ export default function Layout() {
             onClick={() => window.dispatchEvent(new CustomEvent('feedback:open'))}
             aria-label="Send feedback"
             style={{
-              position: 'relative', padding: '8px', backgroundColor: 'transparent',
+              position: 'relative', display: 'flex', alignItems: 'center', gap: '5px',
+              padding: '8px 10px', backgroundColor: 'transparent',
               border: 'none', color: theme.textSecondary, cursor: 'pointer',
-              minHeight: '44px', minWidth: '44px',
+              minHeight: '44px',
             }}
           >
-            <MessageSquare size={22} />
+            <MessageSquare size={20} />
+            <span style={{ fontSize: '13px', fontWeight: 600 }}>Feedback</span>
             {feedbackUnread > 0 && (
               <span style={{
                 position: 'absolute', top: 2, right: 2,

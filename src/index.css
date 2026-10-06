@@ -28,11 +28,22 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Smooth flick-scrolling on iOS inside scrollable regions. WebKit
-   needs this hint for momentum scrolling. */
-* {
-  -webkit-overflow-scrolling: touch;
-}
+/* REMOVED: * { -webkit-overflow-scrolling: touch }
+
+   This is what pulled the bottom tab bar, Arnie and the feedback bubble into
+   the middle of the screen on iOS and made them travel with the scroll.
+
+   On iOS an element carrying -webkit-overflow-scrolling: touch becomes the
+   containing block for its position:fixed descendants, which then behave
+   like position:absolute. Applied with the universal selector, EVERY
+   ancestor did that, so a fixed element anchored to an ancestor box instead
+   of the viewport and scrolled away with the page.
+
+   Nothing is lost by deleting it: WebKit removed the property in iOS 13 and
+   momentum scrolling has been the default ever since, so on any phone made
+   this decade it did nothing except break fixed positioning. It is also a
+   -webkit- property, a no-op in Chrome — which is why the preview browser
+   showed a correctly pinned bar while the phone did not. */
 
 /* Make sure tap targets feel like tap targets — kill the iOS double-tap
    highlight + the 300ms tap delay (touch-action: manipulation handles

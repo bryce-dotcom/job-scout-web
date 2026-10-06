@@ -9,6 +9,7 @@
 // person is not allowed to open, because the routes handed to it are the ones
 // Layout already decided to render.
 
+import { createPortal } from 'react-dom'
 import { NavLink } from 'react-router-dom'
 import { Menu, Sparkles } from 'lucide-react'
 import { tabLabel } from '../lib/navTabs'
@@ -37,7 +38,15 @@ export default function BottomTabs({ items, onMore, moreActive, theme, onArnie, 
     maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   }
 
-  return (
+  // Rendered straight into <body>, deliberately.
+  //
+  // On iOS an ancestor with -webkit-overflow-scrolling, a transform, a filter
+  // or contain silently becomes the containing block for a position:fixed
+  // child, which then scrolls away with the page instead of staying put —
+  // this bar spent two attempts sitting in the middle of Bryce's screen. The
+  // offending rule is gone, but a portal means no ancestor CAN do it again,
+  // whatever anyone adds to the tree above us later.
+  return createPortal((
     <nav
       className="md:hidden"
       aria-label="Main"
@@ -78,7 +87,16 @@ export default function BottomTabs({ items, onMore, moreActive, theme, onArnie, 
         type="button"
         onClick={onArnie}
         aria-label={`Ask ${arnieName}`}
-        style={{ ...cell(false), border: 'none', cursor: 'pointer', font: 'inherit', color: theme.accent }}
+        // Our green, and visibly so: the accent on its own is close enough to
+        // the muted grey of the other tabs that it did not read as green at a
+        // glance. The tinted pill makes it the one slot that stands out, which
+        // is right — it is the only one that is not a page.
+        style={{
+          ...cell(false),
+          border: 'none', cursor: 'pointer', font: 'inherit',
+          color: theme.accent,
+          backgroundColor: theme.accentBg,
+        }}
       >
         <Sparkles size={21} />
         <span style={text}>{arnieName}</span>
@@ -110,5 +128,5 @@ export default function BottomTabs({ items, onMore, moreActive, theme, onArnie, 
         <span style={text}>More</span>
       </button>
     </nav>
-  )
+  ), document.body)
 }
