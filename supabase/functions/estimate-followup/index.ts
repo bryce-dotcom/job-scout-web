@@ -253,16 +253,39 @@ serve(async (req) => {
       // every other function already uses; there is one of it, and this is it.
       let portalUrl = '';
       if (est.portal_token) {
-        const { data: tokenRow } = await supabase
+        // An EXPIRED token is not a reason to send a buttonless email.
+        //
+        // This filtered on expires_at > now and, finding nothing, quietly sent
+        // a follow-up with no link in it at all — which happened to 56 of the
+        // 75 estimates ever followed up. Every one of those had a token; it had
+        // simply aged out.
+        //
+        // So refresh it, exactly as resending from the estimate page does
+        // (EstimateDetail, after Doug: "Can not resend proposal once expired —
+        // the link stays expired"). Extending the SAME token rather than
+        // minting a new one also revives the link already sitting in the
+        // customer's original email, instead of orphaning it.
+        const freshExpiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: refreshed } = await supabase
+          .from('customer_portal_tokens')
+          .update({ expires_at: freshExpiry, is_revoked: false })
+          .eq('document_type', 'estimate')
+          .eq('document_id', est.id)
+          .eq('token', est.portal_token)
+          .select('token')
+          .maybeSingle();
+
+        // Fall back to whatever token the estimate has, in case the row is
+        // keyed differently than expected — a link is the point of the email.
+        const tokenRow = refreshed || (await supabase
           .from('customer_portal_tokens')
           .select('token')
           .eq('document_type', 'estimate')
           .eq('document_id', est.id)
           .eq('is_revoked', false)
-          .gt('expires_at', now.toISOString())
           .order('created_at', { ascending: false })
           .limit(1)
-          .maybeSingle();
+          .maybeSingle()).data;
 
         if (tokenRow) {
           // An app_url setting still wins, for a tenant on their own domain.
