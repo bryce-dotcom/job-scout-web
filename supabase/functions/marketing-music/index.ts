@@ -20,6 +20,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/auth.ts'
 import { elevenKey } from '../_shared/elevenlabs.ts'
+import { checkCap, capMessage, recordMediaUsage, MEDIA_PRICES } from '../_shared/mediaMeter.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -47,7 +48,11 @@ serve(async (req) => {
     const key = elevenKey()
     const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
 
-    if (body.action === 'status') return json({ ok: true, available: !!key })
+    const meterEnv = { supabaseUrl: SUPABASE_URL, serviceKey: SERVICE_KEY }
+    if (body.action === 'status') {
+      const cap = await checkCap(meterEnv, caller.companyId, 'track', 0)
+      return json({ ok: true, available: !!key, used: cap.used, cap: cap.cap, unit: cap.unit })
+    }
 
     if (body.action === 'list') {
       const { data, error } = await sb.from('marketing_music').select('*').eq('company_id', caller.companyId).order('created_at', { ascending: false }).limit(100)
@@ -67,6 +72,8 @@ serve(async (req) => {
     if (body.action === 'compose') {
       if (!key) return json({ ok: false, needs_key: true, error: 'Music needs the ElevenLabs key on the server.' }, 400)
       const seconds = Math.max(3, Math.min(120, Math.round(Number(body.seconds) || 30)))
+      const cap = await checkCap(meterEnv, caller.companyId, 'track', 1)
+      if (!cap.allowed) return json({ ok: false, capped: true, used: cap.used, cap: cap.cap, error: capMessage(cap, 'track') }, 429)
       const mood = ['calm', 'upbeat', 'bold'].includes(body.mood) ? body.mood : 'custom'
       const asked = String(body.prompt || '').trim().slice(0, 1500)
       const brand = typeof body.brand === 'string' ? body.brand : ''
@@ -104,6 +111,7 @@ serve(async (req) => {
         company_id: caller.companyId, title, prompt, mood, url: pub.publicUrl, path, seconds, source: 'eleven', created_by: caller.employeeId,
       }).select('*').single()
       if (dbErr) return json({ ok: false, error: dbErr.message }, 500)
+      await recordMediaUsage(meterEnv, { companyId: caller.companyId, kind: 'track', model: 'eleven-music', units: seconds, costUsd: seconds * MEDIA_PRICES.music_per_second })
       return json({ ok: true, track: row, bytes: bytes.byteLength })
     }
 

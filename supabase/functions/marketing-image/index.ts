@@ -16,6 +16,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/auth.ts'
+import { checkCap, capMessage, recordMediaUsage, MEDIA_PRICES } from '../_shared/mediaMeter.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,7 +57,11 @@ serve(async (req) => {
     if (!caller?.companyId) return json({ ok: false, error: 'Sign in first.' }, 401)
     const body = await req.json().catch(() => ({}))
     const key = Deno.env.get('GEMINI_API_KEY') || ''
-    if (body.action === 'status') return json({ ok: true, available: !!key })
+    const meterEnv = { supabaseUrl: SUPABASE_URL, serviceKey: SERVICE_KEY }
+    if (body.action === 'status') {
+      const cap = await checkCap(meterEnv, caller.companyId, 'picture', 0)
+      return json({ ok: true, available: !!key, used: cap.used, cap: cap.cap, unit: cap.unit })
+    }
     if (!key) return json({ ok: false, needs_key: true, error: 'AI pictures need a Gemini API key on the server (GEMINI_API_KEY).' }, 400)
 
     const description = String(body.description || '').trim().slice(0, 600)
@@ -64,6 +69,8 @@ serve(async (req) => {
     const count = Math.max(1, Math.min(3, Number(body.count) || 1))
     const aspect = ['vertical', 'square', 'landscape'].includes(body.aspect) ? body.aspect : 'vertical'
     const brand = typeof body.brand === 'string' ? body.brand : ''
+    const cap = await checkCap(meterEnv, caller.companyId, 'picture', count)
+    if (!cap.allowed) return json({ ok: false, capped: true, used: cap.used, cap: cap.cap, error: capMessage(cap, 'picture') }, 429)
 
     const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
     const kitKey = brand ? `marketing_brand_kit:${brand}` : 'marketing_brand_kit'
@@ -103,6 +110,7 @@ serve(async (req) => {
         media_type: 'image', note: `AI picture: ${description.slice(0, 120)}`, status: 'new', source: 'generated', brand: brand || null,
       }).select('*').single()
       if (dbErr) return json({ ok: false, error: dbErr.message }, 500)
+      await recordMediaUsage(meterEnv, { companyId: caller.companyId, kind: 'picture', model: MODEL, units: 1, costUsd: MEDIA_PRICES.picture })
       out.push(row)
     }
     return json({ ok: true, captures: out })

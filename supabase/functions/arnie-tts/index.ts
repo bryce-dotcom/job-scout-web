@@ -17,6 +17,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 
 import { resolveCaller } from '../_shared/auth.ts'
 import { elevenKey, listVoices, stockList, findVoiceNamed, isVoiceId, synthesize } from '../_shared/elevenlabs.ts'
+import { checkCap, capMessage, recordMediaUsage, MEDIA_PRICES } from '../_shared/mediaMeter.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
@@ -271,7 +272,11 @@ Deno.serve(async (req) => {
       if (!allowed) return jsonRes({ error: 'This company is not set up for ElevenLabs voices.' }, 403)
       const id = voiceId.slice('eleven:'.length)
       if (!isVoiceId(id)) return jsonRes({ error: 'Unknown voice.' }, 400)
+      const meterEnv = { supabaseUrl: SUPABASE_URL, serviceKey: SERVICE_KEY }
+      const cap = await checkCap(meterEnv, caller!.companyId!, 'arnie_voice', truncated.length)
+      if (!cap.allowed) return jsonRes({ error: capMessage(cap, 'arnie_voice'), capped: true }, 429)
       audioBytes = await synthesize(key, id, truncated, { stability: 0.5, style: 0.15 })
+      await recordMediaUsage(meterEnv, { companyId: caller!.companyId!, kind: 'arnie_voice', model: 'eleven_flash_v2_5', units: truncated.length, costUsd: truncated.length * MEDIA_PRICES.voice_per_char })
     } else {
       audioBytes = await getEdgeTTSAudio(truncated, voiceId || 'edge_andrew')
     }
