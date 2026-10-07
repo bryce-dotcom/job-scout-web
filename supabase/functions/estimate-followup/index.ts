@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { replyAddress } from "../_shared/replyToken.ts";
+import { APP_URL } from "../_shared/notifyRep.ts";
+import { estimatePhrase, estimateSubject, type EstimateFacts } from "../_shared/estimateDescriptor.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,17 +23,19 @@ const corsHeaders = {
 
 const FOLLOWUP_DAYS = [3, 7, 14];
 
+// The subject names the WORK and the money. 'Estimate EST-MTVT2OBE' told the
+// customer nothing — it is an internal id that appears nowhere in their world.
 const FOLLOWUP_SUBJECTS = [
-  (estNum: string, company: string) => `Just checking in — Estimate ${estNum} from ${company}`,
-  (estNum: string, company: string) => `Following up on your estimate ${estNum} — ${company}`,
-  (estNum: string, company: string) => `Last chance to lock in your pricing — Estimate ${estNum}`,
+  (facts: EstimateFacts, company: string) => `${estimateSubject('Just checking in', facts)} · ${company}`,
+  (facts: EstimateFacts, company: string) => `${estimateSubject('Following up', facts)} · ${company}`,
+  (facts: EstimateFacts, company: string) => `${estimateSubject('Last chance to lock in your pricing', facts)}`,
 ];
 
 const FOLLOWUP_BODIES = [
   // Follow-up 1: Friendly check-in (3 days)
   (displayName: string, estNum: string, portalUrl: string, contactPhone: string, contactEmail: string) => `
     <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
-      Hi there! We wanted to follow up on Estimate <strong>${estNum}</strong> that we sent over a few days ago.
+      Hi there! We wanted to follow up on <strong>${estNum}</strong>, which we sent over a few days ago.
     </p>
     <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
       We know things get busy, so we just wanted to make sure you had a chance to review it.
@@ -53,7 +57,7 @@ const FOLLOWUP_BODIES = [
   // Follow-up 2: Value-focused (7 days)
   (displayName: string, estNum: string, portalUrl: string, contactPhone: string, contactEmail: string) => `
     <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
-      We're following up one more time on Estimate <strong>${estNum}</strong>. We want to make sure you don't miss out on this opportunity.
+      We're following up one more time on <strong>${estNum}</strong>. We want to make sure you don't miss out on this opportunity.
     </p>
     <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
       Our team is ready to get started as soon as you give the green light. The sooner we begin, the sooner you'll see results.
@@ -72,7 +76,7 @@ const FOLLOWUP_BODIES = [
   // Follow-up 3: Urgency / last touch (14 days)
   (displayName: string, estNum: string, portalUrl: string, contactPhone: string, contactEmail: string) => `
     <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
-      This is our final follow-up regarding Estimate <strong>${estNum}</strong>. We don't want you to lose out on the pricing and availability we quoted.
+      This is our final follow-up on <strong>${estNum}</strong>. We don't want you to lose out on the pricing and availability we quoted.
     </p>
     <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;">
       Pricing and material availability can shift, so we'd love to lock things in for you while everything is still current.
@@ -146,7 +150,7 @@ serve(async (req) => {
     // Find all "Sent" estimates that have a sent_date and haven't completed 3 follow-ups
     const { data: estimates, error: fetchErr } = await supabase
       .from('quotes')
-      .select('id, company_id, quote_id, sent_date, last_sent_at, sent_to_email, portal_token, followup_count, status, quote_amount, business_unit, lead_id, customer_id')
+      .select('id, company_id, quote_id, sent_date, last_sent_at, sent_to_email, portal_token, followup_count, status, quote_amount, service_type, business_unit, lead_id, customer_id')
       .eq('status', 'Sent')
       .not('sent_date', 'is', null)
       .not('sent_to_email', 'is', null)
@@ -225,14 +229,30 @@ serve(async (req) => {
       const contactPhone = buPhone;
       const contactEmail = buEmail;
       const estNum = est.quote_id || `EST-${est.id}`;
+      // What this estimate IS, in words the customer recognises
+      // (_shared/estimateDescriptor). The number alone meant nothing to them.
+      const { count: lineCount } = await supabase
+        .from('quote_lines')
+        .select('id', { count: 'exact', head: true })
+        .eq('quote_id', est.id);
+      const facts: EstimateFacts = {
+        quoteNumber: estNum,
+        serviceType: est.service_type,
+        amount: est.quote_amount,
+        lineCount: lineCount ?? null,
+      };
+      const estPhrase = estimatePhrase(facts);
 
-      // Build portal URL
+      // Build portal URL.
+      //
+      // This used to fall back to 'https://app.jobscout.appsannex.com' when the
+      // company had no app_url setting. NO company has ever had one, and that
+      // host does not resolve — so every follow-up link ever sent was dead and
+      // the customer got "this page can't load". 19 estimates went out that
+      // way. The app lives at APP_URL (_shared/notifyRep), which is the host
+      // every other function already uses; there is one of it, and this is it.
       let portalUrl = '';
       if (est.portal_token) {
-        // We don't know the origin here, so use a generic approach
-        // The portal token row has the origin baked into the email already
-        // For follow-ups, we'll construct it from the Supabase URL domain
-        // Actually, we need to store the app origin. For now, use the portal token.
         const { data: tokenRow } = await supabase
           .from('customer_portal_tokens')
           .select('token')
@@ -245,7 +265,9 @@ serve(async (req) => {
           .maybeSingle();
 
         if (tokenRow) {
-          // Use the app URL from settings or fallback
+          // An app_url setting still wins, for a tenant on their own domain.
+          // settings.value holds JSON, so a plain string arrives wrapped in
+          // quotes — strip them rather than building https://"host"/portal/...
           const { data: appUrlSetting } = await supabase
             .from('settings')
             .select('value')
@@ -253,7 +275,12 @@ serve(async (req) => {
             .eq('key', 'app_url')
             .maybeSingle();
 
-          const appUrl = appUrlSetting?.value || 'https://app.jobscout.appsannex.com';
+          let configured = '';
+          if (appUrlSetting?.value) {
+            try { configured = String(JSON.parse(appUrlSetting.value) ?? ''); }
+            catch { configured = String(appUrlSetting.value); }
+          }
+          const appUrl = (configured.trim() || APP_URL).replace(/\/+$/, '');
           portalUrl = `${appUrl}/portal/${tokenRow.token}`;
         }
       }
@@ -265,8 +292,8 @@ serve(async (req) => {
       if (buAddress) contactParts.push(buAddress);
       const contactLine = contactParts.join(' &nbsp;|&nbsp; ');
 
-      const subject = FOLLOWUP_SUBJECTS[nextFollowup](estNum, displayName);
-      const bodyContent = FOLLOWUP_BODIES[nextFollowup](displayName, estNum, portalUrl, contactPhone, contactEmail);
+      const subject = FOLLOWUP_SUBJECTS[nextFollowup](facts, displayName);
+      const bodyContent = FOLLOWUP_BODIES[nextFollowup](displayName, estPhrase, portalUrl, contactPhone, contactEmail);
 
       const htmlBody = `
 <!DOCTYPE html>
@@ -287,7 +314,7 @@ serve(async (req) => {
       <div style="text-align:center;margin-bottom:28px;">
         <h1 style="color:#3e4532;font-size:26px;margin:0 0 6px 0;font-weight:700;">${displayName}</h1>
         <div style="display:inline-block;background-color:rgba(90,99,73,0.1);padding:6px 16px;border-radius:20px;">
-          <span style="color:#5a6349;font-size:14px;font-weight:600;">Estimate ${estNum} — Follow-Up</span>
+          <span style="color:#5a6349;font-size:14px;font-weight:600;">${estNum} — Follow-Up</span>
         </div>
       </div>
 
