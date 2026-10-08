@@ -173,6 +173,8 @@ export default function MyPay() {
   // paycheck (paystubs); benefits are the employee's active enrollments
   // (employee_benefits). Both are READ-ONLY here.
   const [paystubs, setPaystubs] = useState([])
+  // Job titles for the pay-history breakdown, by id.
+  const [jobTitles, setJobTitles] = useState(new Map())
   const [benefits, setBenefits] = useState([])
   // Frozen rep (%) commissions (rep_commissions) for this employee — read-only
   // here; Payroll is the writer. Replaces the drifty live invoice-commission
@@ -260,6 +262,11 @@ export default function MyPay() {
       ])
       if (!cancelled) {
         setPaystubs(ps.data || []); setBenefits(bf.data || []); setRepCommissions(rc || [])
+        const jobIds = [...new Set((rc || []).map(r => r.job_id).filter(Boolean))]
+        if (jobIds.length) {
+          const { data: js } = await supabase.from('jobs').select('id, job_title, customer_name').in('id', jobIds)
+          if (!cancelled) setJobTitles(new Map((js || []).map(j => [j.id, j.job_title || j.customer_name || ('Job #' + j.id)])))
+        }
         setLeadCommissions(lc?.data || [])
         setSetterRule(co?.data?.setter_qualification_rule || 'appointment_set')
       }
@@ -537,8 +544,12 @@ export default function MyPay() {
   // the same list (lib/payHistory). A plain function, not a hook: this
   // component sits at its conditional-hook ceiling.
   const jobLabelFor = (jobId) => {
-    const row = [...repCommissions, ...ledgerBonuses].find(r => r.job_id === jobId)
-    return row?.jobs?.job_title || row?.job?.job_title || `Job #${jobId}`
+    // Bonuses carry the job embedded; commissions cannot (rep_commissions has
+    // no foreign key to jobs, so PostgREST will not embed it) and come through
+    // the lookup loaded above — otherwise a rep reads "Job #23508" on their
+    // own paycheck.
+    const bonus = ledgerBonuses.find(b => b.job_id === jobId)
+    return jobTitles.get(jobId) || bonus?.jobs?.job_title || bonus?.jobs?.customer_name || `Job #${jobId}`
   }
   const paycheckDetailFor = (stub) => paycheckDetail({
     stub: { ...stub, employee_id: effectiveUserId },
