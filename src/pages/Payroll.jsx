@@ -40,6 +40,7 @@ import { payDateForPeriod } from '../lib/payDate'
 import { greaterOfPay, paysGreaterOf, greaterOfSummary } from '../lib/payBasis'
 import { VERIFICATION_EXEMPT_KEY } from '../lib/verificationPolicy'
 import { getDeliveredStatusIds } from '../lib/jobMetrics'
+import { paycheckDetail, runsWithStubs } from '../lib/payHistory'
 import { needsAttention } from '../lib/openPunches'
 import { localDateStr, parseLocalDate } from '../lib/localDate'
 import { quarterDueDate } from '../lib/payrollQuarters'
@@ -371,6 +372,14 @@ export default function Payroll() {
   const [selectedEmployee, setSelectedEmployee] = useState(null)
   // Asking an employee for their own W-4 (lib/payrollSetupGate marks those
   // rows askable) — which one is in flight, and which have been asked.
+  // Pay history: which past run is open, and whether the list is expanded.
+  // Job titles for the history breakdown, built where it is used so this
+  // component adds no hook (npm run guard: it is at its ceiling).
+  const [historyRun, setHistoryRun] = useState(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  // Every paystub this company has written, for that history (the fetch above
+  // loads a narrow set for the hours columns; this one carries the money).
+  const [allPaystubs, setAllPaystubs] = useState([])
   const [w4Asking, setW4Asking] = useState(null)
   const [w4Asked, setW4Asked] = useState({})
   const [filterRole, setFilterRole] = useState('all')
@@ -492,10 +501,12 @@ export default function Payroll() {
     Promise.all([
       supabase.from('payroll_runs').select('id, period_start, period_end, pay_date, created_at').eq('company_id', companyId),
       supabase.from('paystubs').select('employee_id, period_start, regular_hours, overtime_hours, pay_date').eq('company_id', companyId).order('pay_date', { ascending: false }).limit(600),
-    ]).then(([r, s]) => {
+      supabase.from('paystubs').select('id, payroll_run_id, employee_id, period_start, period_end, pay_date, gross_pay, net_pay, salary_amount, commission_pay, bonus_pay').eq('company_id', companyId).order('pay_date', { ascending: false }).limit(600),
+    ]).then(([r, s, full]) => {
       if (cancelled) return
       setPriorRuns(r.data || [])
       setPriorStubs(s.data || [])
+      setAllPaystubs(full.data || [])
     })
     return () => { cancelled = true }
   }, [companyId])
@@ -1971,6 +1982,8 @@ export default function Payroll() {
   }
 
   const fmt = (amount) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+  // A stored date is a calendar day — read it as one, never through UTC.
+  const fmtDate = (d) => d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 
   const { periodStart, periodEnd } = getCurrentPeriod()
   const nextPayDate = getNextPayDate()
@@ -2434,6 +2447,25 @@ export default function Payroll() {
           if (bonusErr) { console.warn('[runPayroll] bonus mark-paid failed:', bonusErr); notMarkedPaid.push(`efficiency bonuses (${bonusErr.message})`) }
           else setLedgerBonuses(prev => prev.map(b => bonusPaid(b) ? { ...b, status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : b))
 
+          // Setter/lead commissions: queued -> paid. (Restored: a line-range
+          // edit on 5 Oct swallowed these two statements, which would have left
+          // every ordinary employee's staged commission sitting 'earned' and
+          // queued after its run — ready to be paid a second time by the next.)
+          const { error: commErr } = await supabase.from('lead_commissions')
+            .update({ payment_status: 'paid', queued_for_payroll: false, paid_payroll_run_id: payrollRun.id })
+            .eq('company_id', companyId).in('employee_id', paidEmpIds)
+            .eq('queued_for_payroll', true).neq('payment_status', 'paid')
+          if (commErr) { console.warn('[runPayroll] setter commission mark-paid failed:', commErr); notMarkedPaid.push(`setter commissions (${commErr.message})`) }
+          else setLeadCommissions(prev => prev.map(c => (paidEmpIds.includes(c.employee_id) && c.queued_for_payroll) ? { ...c, payment_status: 'paid', queued_for_payroll: false } : c))
+
+          // Rep (%) commissions: queued -> paid, tagged with the run that paid
+          // them so the pay history can say which jobs were in this cheque.
+          const { error: repErr } = await supabase.from('rep_commissions')
+            .update({ payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false, paid_payroll_run_id: payrollRun.id })
+            .eq('company_id', companyId).in('employee_id', paidEmpIds)
+            .eq('queued_for_payroll', true).neq('payment_status', 'paid')
+          if (repErr) { console.warn('[runPayroll] rep commission mark-paid failed:', repErr); notMarkedPaid.push(`rep commissions (${repErr.message})`) }
+          else setRepCommissions(prev => prev.map(r => (paidEmpIds.includes(r.employee_id) && r.queued_for_payroll) ? { ...r, payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : r))
           // Greater-of employees: the period's commission is SETTLED whichever
           // way the comparison went, staged or not. The statements above close
           // only queued rows, which would leave an unstaged commission alive
@@ -2457,13 +2489,13 @@ export default function Payroll() {
           for (const g of settleGroups) {
             if (g.rep.length) {
               const { error } = await supabase.from('rep_commissions')
-                .update({ payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false, covered_by_salary: g.covered })
+                .update({ payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false, covered_by_salary: g.covered, paid_payroll_run_id: payrollRun.id })
                 .in('id', g.rep).eq('company_id', companyId)
               if (error) { console.warn('[runPayroll] greater-of settle failed on rep_commissions:', error.message); notMarkedPaid.push('rep commissions settled by salary (' + error.message + ')') }
             }
             if (g.lead.length) {
               const { error } = await supabase.from('lead_commissions')
-                .update({ payment_status: 'paid', queued_for_payroll: false, covered_by_salary: g.covered })
+                .update({ payment_status: 'paid', queued_for_payroll: false, covered_by_salary: g.covered, paid_payroll_run_id: payrollRun.id })
                 .in('id', g.lead).eq('company_id', companyId)
               if (error) { console.warn('[runPayroll] greater-of settle failed on lead_commissions:', error.message); notMarkedPaid.push('setter commissions settled by salary (' + error.message + ')') }
             }
@@ -4630,6 +4662,101 @@ export default function Payroll() {
         )}
         </div>
       </div>
+
+      {/* Pay history — the runs that have already gone out.
+          Bryce: "I cant see history in payroll... which i should be able to
+          (pay stubs) but also what jobs hes has been paid for." Every run, the
+          cheque each person got, and the jobs behind the commission and bonus
+          lines (lib/payHistory, the same resolver My Pay uses so the office
+          and the employee read the same list). */}
+      {isAdmin && hasHR && (() => {
+        const jobTitleById = new Map((jobs || []).map(j => [j.id, j.job_title || j.customer_name || `Job #${j.id}`]))
+        const { groups, orphans } = runsWithStubs(priorRuns, allPaystubs)
+        if (!groups.length && !orphans.length) return null
+        const shown = historyOpen ? groups : groups.slice(0, 3)
+        return (
+          <div style={{ backgroundColor: theme.bgCard, borderRadius: '16px', border: `1px solid ${theme.border}`, marginBottom: '24px', overflow: 'hidden' }}>
+            <div style={{ padding: isMobile ? '16px' : '20px', borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: '16px', fontWeight: '700', color: theme.text }}>Pay History</div>
+              <div style={{ fontSize: '12.5px', color: theme.textMuted, marginTop: '2px' }}>
+                Payrolls already run. Open one for the cheques, and a cheque for the jobs it paid.
+              </div>
+            </div>
+            {shown.map(g => {
+              const open = historyRun === g.run.id
+              return (
+                <div key={g.run.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <button
+                    onClick={() => setHistoryRun(open ? null : g.run.id)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: isMobile ? '12px 16px' : '14px 20px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: theme.text }}>
+                        Paid {fmtDate(g.run.pay_date)}
+                      </span>
+                      <span style={{ display: 'block', fontSize: '12px', color: theme.textMuted }}>
+                        {fmtDate(g.run.period_start)} – {fmtDate(g.run.period_end)} · {g.stubs.length} {g.stubs.length === 1 ? 'person' : 'people'}
+                      </span>
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '10px', whiteSpace: 'nowrap' }}>
+                      <span style={{ textAlign: 'right' }}>
+                        <span style={{ display: 'block', fontSize: '14px', fontWeight: 700, color: theme.text, fontVariantNumeric: 'tabular-nums' }}>{fmt(g.net)}</span>
+                        <span style={{ display: 'block', fontSize: '10px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.4px' }}>net paid</span>
+                      </span>
+                      <ChevronDown size={16} style={{ color: theme.textMuted, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+                    </span>
+                  </button>
+                  {open && (
+                    <div style={{ padding: '0 20px 14px' }}>
+                      {g.stubs.map(st => {
+                        const emp = employees.find(e => e.id === st.employee_id)
+                        const d = paycheckDetail({
+                          stub: st,
+                          repCommissions: repCommissions.filter(r => r.employee_id === st.employee_id),
+                          leadCommissions: leadCommissions.filter(r => r.employee_id === st.employee_id),
+                          bonuses: ledgerBonuses.filter(b => b.employee_id === st.employee_id),
+                          jobLabel: (id) => jobTitleById.get(id) || `Job #${id}`,
+                        })
+                        return (
+                          <div key={st.id} style={{ padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '10px', marginTop: '8px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' }}>
+                              <span style={{ fontSize: '13.5px', fontWeight: 600, color: theme.text }}>{emp?.name || `Employee ${st.employee_id}`}</span>
+                              <span style={{ fontSize: '13px', color: theme.text, fontVariantNumeric: 'tabular-nums' }}>
+                                {fmt(st.net_pay)} <span style={{ color: theme.textMuted, fontSize: '11px' }}>net of {fmt(st.gross_pay)}</span>
+                              </span>
+                            </div>
+                            {d.lines.length > 0 ? (
+                              <div style={{ marginTop: '6px' }}>
+                                {d.lines.map((l, i) => (
+                                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', padding: '2px 0' }}>
+                                    <span style={{ minWidth: 0, color: theme.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {l.label} <span style={{ color: theme.textMuted }}>· {l.note}</span>
+                                    </span>
+                                    <span style={{ color: l.note === 'settled by your salary' ? theme.textMuted : theme.text, fontVariantNumeric: 'tabular-nums' }}>{fmt(l.amount)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div style={{ marginTop: '4px', fontSize: '11.5px', color: theme.textMuted }}>
+                                Salary and hours only — no commission, bonus or setter fee on this cheque.
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {groups.length > 3 && (
+              <button onClick={() => setHistoryOpen(o => !o)} style={{ width: '100%', padding: '10px', background: 'none', border: 'none', color: theme.textSecondary, fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}>
+                {historyOpen ? 'Show fewer' : `Show all ${groups.length} payrolls`}
+              </button>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Time Off Requests — always visible to HR users so they can find
           the feature even when nothing is pending. Pending get approve/
