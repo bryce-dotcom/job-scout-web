@@ -26,6 +26,8 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import InvoiceSplitPanel from '../components/InvoiceSplitPanel'
 import { enabledWalletsFrom, displayHandle } from '../lib/wallets'
 import { localDateStr } from '../lib/localDate'
+import { billToWarnings, deleteBlockers, deleteIsBlocked, deleteMessage, CHANGE_INSTEAD } from '../lib/invoiceLinks'
+import SearchableSelect from '../components/SearchableSelect'
 
 // Light theme fallback
 const defaultTheme = {
@@ -46,6 +48,7 @@ export default function InvoiceDetail() {
   const navigate = useNavigate()
   const goBack = useSmartBack('/invoices')
   const companyId = useStore((state) => state.companyId)
+  const customers = useStore((state) => state.customers)
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
@@ -78,6 +81,12 @@ export default function InvoiceDetail() {
   // priced into their components get split correctly.
   const [componentMaps, setComponentMaps] = useState({ productMap: new Map(), componentsByParent: new Map() })
   const [payments, setPayments] = useState([])
+  // Changing who an invoice is billed to. There was no way to do this at all,
+  // so correcting a billing entity meant deleting the invoice and rebuilding
+  // it — which is what put Tracy in front of a foreign-key error.
+  const [editingBillTo, setEditingBillTo] = useState(false)
+  const [billToChoice, setBillToChoice] = useState('')
+  const [savingBillTo, setSavingBillTo] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [sendingReceipt, setSendingReceipt] = useState(false)
@@ -1127,14 +1136,68 @@ Add it anyway?`,
     setSaving(false)
   }
 
+  // Bill a different company for the same work. The job keeps its own
+  // customer — billing a property manager for a tenant's site is ordinary,
+  // and is exactly the case Tracy was stuck on.
+  const handleChangeBillTo = async () => {
+    const nextId = parseInt(billToChoice)
+    if (!nextId || nextId === invoice?.customer_id) { setEditingBillTo(false); return }
+    const { toast } = await import('../lib/toast')
+    const to = customers.find((c) => c.id === nextId)
+    const warn = billToWarnings({ payments, from: invoice?.customer?.name, to: to?.name })
+    if (!confirm(`Bill this invoice to ${to?.name || 'this customer'}?\n\n${warn.join('\n\n')}`)) return
+
+    setSavingBillTo(true)
+    const { error } = await supabase.from('invoices')
+      .update({ customer_id: nextId }).eq('id', parseInt(id))
+    setSavingBillTo(false)
+    if (error) { toast.error('Could not change the billing customer: ' + error.message); return }
+    setEditingBillTo(false)
+    toast.success(`Now billed to ${to?.name || 'the new customer'}`)
+    await fetchInvoiceData()
+    await fetchInvoices()
+  }
+
   const handleDeleteInvoice = async () => {
-    if (!confirm('Are you sure you want to delete this invoice? This cannot be undone.')) return
+    const { toast } = await import('../lib/toast')
+    const invId = parseInt(id)
+
+    // Ask the database what is attached BEFORE deleting anything. Tracy got
+    // Postgres' own words on screen — "violates foreign key constraint
+    // plaid_transactions_matched_invoice_id_fkey" — which told her nothing
+    // she could act on. Two things block a delete, not one; see
+    // lib/invoiceLinks for the full list and why each is treated as it is.
+    const [{ count: bankMatches }, { count: leadPayments }] = await Promise.all([
+      supabase.from('plaid_transactions').select('id', { count: 'exact', head: true }).eq('matched_invoice_id', invId),
+      supabase.from('lead_payments').select('id', { count: 'exact', head: true }).eq('invoice_id', invId),
+    ])
+    const blockers = deleteBlockers({ bankMatches, leadPayments })
+
+    if (deleteIsBlocked(blockers)) {
+      alert(`${deleteMessage(blockers)}
+
+${CHANGE_INSTEAD}`)
+      return
+    }
+    if (!confirm(deleteMessage(blockers))) return
 
     setSaving(true)
-    const { toast } = await import('../lib/toast')
+
+    // A matched bank transaction is a LINK, not money — the transaction stays
+    // in Books and simply becomes unmatched. Clearing it here is what the
+    // confirmation above just described.
+    if (bankMatches > 0) {
+      const { error: unmatchErr } = await supabase.from('plaid_transactions')
+        .update({ matched_invoice_id: null }).eq('matched_invoice_id', invId)
+      if (unmatchErr) {
+        toast.error('Could not unmatch the bank transaction: ' + unmatchErr.message)
+        setSaving(false)
+        return
+      }
+    }
 
     // Delete associated payments first
-    await supabase.from('payments').delete().eq('invoice_id', parseInt(id))
+    await supabase.from('payments').delete().eq('invoice_id', invId)
 
     // Delete file attachments linked to this invoice's PDFs
     if (pdfHistory.length > 0) {
@@ -2470,9 +2533,44 @@ Add it anyway?`,
             border: `1px solid ${theme.border}`,
             padding: '20px'
           }}>
-            <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, marginBottom: '16px' }}>
-              Bill To
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                Bill To
+              </h3>
+              {!editingBillTo && (
+                <button
+                  type="button"
+                  onClick={() => { setBillToChoice(String(invoice?.customer_id || '')); setEditingBillTo(true) }}
+                  style={{ background: 'none', border: 'none', color: theme.accent, fontSize: '13px', fontWeight: 600, cursor: 'pointer', padding: '6px 4px', minHeight: '32px' }}
+                >
+                  Change
+                </button>
+              )}
+            </div>
+            {editingBillTo && (
+              <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px' }}>
+                <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 8px' }}>
+                  Bill this invoice to a different company. The job keeps its own customer.
+                </p>
+                <SearchableSelect
+                  options={[...customers].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))).map((c) => ({ value: c.id, label: c.business_name ? `${c.name} (${c.business_name})` : c.name }))}
+                  value={billToChoice}
+                  onChange={setBillToChoice}
+                  placeholder="-- Choose a customer --"
+                  theme={theme}
+                />
+                <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                  <button type="button" onClick={handleChangeBillTo} disabled={savingBillTo}
+                    style={{ padding: '8px 16px', minHeight: '40px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: savingBillTo ? 'not-allowed' : 'pointer', opacity: savingBillTo ? 0.6 : 1 }}>
+                    {savingBillTo ? 'Saving…' : 'Save'}
+                  </button>
+                  <button type="button" onClick={() => setEditingBillTo(false)}
+                    style={{ padding: '8px 16px', minHeight: '40px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <div>
                 <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Customer</p>
