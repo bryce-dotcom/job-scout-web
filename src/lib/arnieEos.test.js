@@ -243,3 +243,70 @@ describe('the page’s Send button cannot be used to email anything it likes', (
     expect(page).toMatch(/buildL10Agenda\(/)
   })
 })
+
+describe('a field the tool advertises must actually reach the server', () => {
+  // The quarterly came back as a weekly L10 on its first live try because
+  // `type` was in propose_create's schema but not in the target's `fields`,
+  // and anything not declared there is dropped before prepare ever sees it.
+  // Arnie noticed and said so in the reply, which is the only reason it was
+  // caught at all.
+  const target = create.slice(create.indexOf('meeting_agenda: {'), create.indexOf('labelOf:', create.indexOf('meeting_agenda: {')))
+
+  it('declares every meeting_agenda field the schema mentions', () => {
+    const schema = chat.slice(chat.indexOf("'meeting_agenda:"), chat.indexOf("'followup: quote"))
+    const advertised = ['type', 'days', 'ends', 'when', 'to', 'how', 'unit'].filter((f) => schema.includes(f))
+    expect(advertised).toContain('type')
+    // The registry aligns its columns, so collapse the padding first.
+    const flat = target.replace(/\s+/g, ' ')
+    for (const f of advertised) expect(flat, `${f} missing from the target's fields`).toContain(`${f}: {`)
+  })
+
+  it('pins the meeting type to the three EOS meetings', () => {
+    expect(target).toMatch(/oneOf: \['l10', 'weekly', 'quarterly', 'annual'\]/)
+  })
+
+  it('and the card says which meeting it is, so a wrong one is visible', () => {
+    const label = create.slice(create.indexOf('labelOf:', create.indexOf('meeting_agenda: {')), create.indexOf('prepare: prepareAgenda'))
+    expect(label).toMatch(/Quarterly session/)
+    expect(label).toMatch(/Annual session/)
+  })
+})
+
+describe('the quarterly rail', () => {
+  const eosSrc = read('../../supabase/functions/_shared/arnieEos.ts')
+
+  it('builds the session shape, not a longer L10', () => {
+    expect(eosSrc).toMatch(/from '\.\/quarterlyAgenda\.ts'/)
+    expect(eosSrc).toMatch(/buildSessionAgenda\(\{ type: kind as 'quarterly' \| 'annual'/)
+  })
+
+  it('refuses a meeting EOS does not have', () => {
+    expect(eosSrc).toMatch(/EOS has three meetings/)
+  })
+
+  it('asks for the day rather than guessing one — the EOS page only knows the L10 day', () => {
+    expect(eosSrc).toMatch(/Which day does the \$\{kind\} session start\?/)
+  })
+
+  it('takes the finish times as said, and reads a bare "3" as the afternoon', () => {
+    expect(eosSrc).toMatch(/function endTime/)
+    expect(eosSrc).toMatch(/nobody finishes at 3am/)
+  })
+
+  it('sends through the one session sender', () => {
+    expect(eosSrc).toMatch(/await sendSession\(/)
+    expect(send).toMatch(/export async function sendSession/)
+    expect(send).toMatch(/dedupe_key: `eos-session:/)
+  })
+})
+
+describe('the in-app copy is the whole document', () => {
+  it('does not cut a two-day session off before its scorecard', () => {
+    // 1800 characters suited a 90-minute L10 and truncated a six-page session
+    // at the V/TO — the eval caught it because "NO GOAL SET" never arrived.
+    const l10Slice = send.slice(send.indexOf('type: \'l10_agenda\''), send.indexOf('type: \'l10_agenda\'') + 400)
+    const sessionSlice = send.slice(send.indexOf('type: \'eos_session\''), send.indexOf('type: \'eos_session\'') + 700)
+    expect(l10Slice).toContain('text.slice(0, 1800)')
+    expect(sessionSlice).toContain('text.slice(0, 12000)')
+  })
+})

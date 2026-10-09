@@ -242,13 +242,23 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     minLevel: 2,
     verb: 'Send',
     done: 'Sent. It is in their inbox and on their notifications; the EOS page is where the numbers get graded.',
+    // A field that is not declared here never reaches prepare, whatever the
+    // tool schema says — which is how a request for a QUARTERLY silently came
+    // back as a weekly L10 on the first try (2026-10-09).
     fields: {
       when: { column: null, label: 'When', max: 60 },
       to:   { column: null, label: 'To',   max: 300 },
       how:  { column: null, label: 'How',  max: 5, oneOf: ['email', 'app', 'both'] },
       unit: { column: null, label: 'Unit', max: 120 },
+      type: { column: null, label: 'Meeting', max: 12, oneOf: ['l10', 'weekly', 'quarterly', 'annual'] },
+      days: { column: null, label: 'Days',  max: 4 },
+      ends: { column: null, label: 'Ends',  max: 60 },
     },
-    labelOf: (f) => `L10 agenda${f.when ? ` for ${f.when}` : ''}`.slice(0, 120),
+    labelOf: (f) => {
+      const kind = String(f.type || '').toLowerCase()
+      const what = kind === 'quarterly' ? 'Quarterly session' : kind === 'annual' ? 'Annual session' : 'L10 agenda'
+      return `${what}${f.when ? ` for ${f.when}` : ''}`.slice(0, 120)
+    },
     prepare: prepareAgenda,
     applyCustom: applyAgenda,
     rollbackCustom: rollbackAgenda,

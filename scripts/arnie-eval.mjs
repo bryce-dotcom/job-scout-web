@@ -877,6 +877,45 @@ const CASES = [
     },
     expect: { proposal: 'create', proposal_label: 'meeting agenda', text_match: [/agenda/i, /approve/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been|was) sent\b/i] } },
 
+  // A QUARTERLY is not a longer L10. Asked for one on 2026-10-06, Arnie had no
+  // rail to take and wrote his own — with a scorecard on it that did not exist.
+  // This case is that request, word for word.
+  { id: 'agenda.owner.quarterly.session.not.an.l10', as: 'owner',
+    run: async (ctx) => {
+      const before = await rest(`employee_notifications?select=id&company_id=eq.${DEMO.company}&type=eq.eos_session`)
+      const seen = new Set(before.map((n) => n.id))
+      let mine = []
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Our fourth-quarter meeting is coming up this Saturday and Sunday — write an itinerary for it and send it to the team in the app only. We want to be done by 3 on day one and 12 on day two.' }])
+        if (r.proposal?.preview?.label === 'meeting agenda') {
+          const f = Object.fromEntries((r.proposal.preview.fields || []).map((x) => [x.label, x.value]))
+          // The giveaway when it falls back to the weekly: a 90-minute meeting.
+          if (f['Meeting']) throw new Error('built a weekly L10 for a quarterly request: ' + f['Meeting'])
+          if (!/Quarterly Session/.test(f['Session'] || '')) throw new Error('not a quarterly session: ' + JSON.stringify(f))
+          if (!/Saturday/.test(f['Session'] || '') || !/Sunday/.test(f['Session'] || '')) throw new Error('days wrong: ' + f['Session'])
+          if (!/Set Next Quarter/i.test(f['Agenda'] || '')) throw new Error('agenda is not the quarterly shape: ' + f['Agenda'])
+          if (!/Reviewing/.test(Object.keys(f).join(' '))) throw new Error('nothing about the quarter being reviewed')
+          const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id)
+          if (!ap.body.ok) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+          const after = await rest(`employee_notifications?select=id,message,dedupe_key&company_id=eq.${DEMO.company}&type=eq.eos_session`)
+          mine = after.filter((n) => !seen.has(n.id))
+          if (!mine.length) throw new Error('the session did not land in the app')
+          const body = mine[0].message || ''
+          // Every row has to be the demo company's own.
+          if (!/QUARTERLY SESSION/.test(body)) throw new Error('not the session document')
+          if (!/NO GOAL SET/.test(body)) throw new Error('a metric without a goal must say so, not get one invented')
+          if (/Weekly revenue/i.test(body)) throw new Error('invented a metric')
+          const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id)
+          if (rb.body.ok) throw new Error('rollback claimed to unsend it')
+          r.proposal = { ...r.proposal, rolledBackByEval: true }
+        }
+        return r
+      } finally {
+        if (mine.length) await rest(`employee_notifications?id=in.(${mine.map((n) => n.id).join(',')})`, { method: 'DELETE' })
+      }
+    },
+    expect: { proposal: 'create', proposal_label: 'meeting agenda', text_match: [/quarter/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been|was) sent\b/i] } },
+
   { id: 'create.ticket.then.withdraw', as: 'owner',
     turns: ['The Open Invoices screen shows the full $18,650 on the Gym Interior Retrofit invoice, but the customer already paid half — it should show $9,325. Please file a bug for the team with those figures.'],
     expect: { proposal: 'create', proposal_label: 'ticket', text_match: [/approve/i] },

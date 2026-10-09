@@ -29,9 +29,10 @@
 
 import type { Caller, Prepared, Rest } from './arnieConfig.ts'
 import { readRecordList } from './arnieRest.ts'
-import { EOS_SETTING_KEYS, buildL10Agenda, calDay, nextMeetingDay } from './l10Agenda.ts'
+import { EOS_SETTING_KEYS, buildL10Agenda, calDay, dayStr, nextMeetingDay, parseDay } from './l10Agenda.ts'
+import { buildSessionAgenda } from './quarterlyAgenda.ts'
 import { agendaSubject } from './l10AgendaRender.ts'
-import { CHANNELS, sendAgenda, type Channel } from './l10Send.ts'
+import { CHANNELS, sendAgenda, sendSession, type Channel } from './l10Send.ts'
 import { resolveWhenSaid } from './arnieTime.ts'
 
 // deno-lint-ignore-file no-explicit-any
@@ -143,15 +144,38 @@ export function resolveRecipients(agenda: Any, employees: Any[], to: string): { 
   return { picked, missing }
 }
 
+/** 3pm, 15:00, "noon", "3" → minutes past midnight, or null. */
+function endTime(said: string): string | null {
+  const t = str(said).toLowerCase()
+  if (!t) return null
+  if (/noon|midday/.test(t)) return '12:00'
+  const m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/.exec(t)
+  if (!m) return null
+  let h = Number(m[1])
+  const min = m[2] || '00'
+  if (m[3] === 'pm' && h < 12) h += 12
+  if (m[3] === 'am' && h === 12) h = 0
+  // No am/pm on a meeting end: 1-7 means the afternoon, nobody finishes at 3am.
+  if (!m[3] && h >= 1 && h <= 7) h += 12
+  return `${String(h).padStart(2, '0')}:${min}`
+}
+
 export async function prepareAgenda(r: Rest, caller: Caller, f: Record<string, string>): Promise<Prepared> {
   const companyId = caller.companyId as number
   if ((caller.level as number) < MANAGER) {
-    return { ok: false, error: 'Sending the L10 agenda is manager and up — the EOS page it comes from is too.' }
+    return { ok: false, error: 'Sending the meeting agenda is manager and up — the EOS page it comes from is too.' }
   }
   const { eos, employees, company } = await readEosBundle(r, companyId)
 
   const channel = (str(f.how).toLowerCase() || 'both') as Channel
   if (!CHANNELS.includes(channel)) return { ok: false, error: `I can send it by email, in the app, or both — not "${f.how}".` }
+
+  // Which of the three EOS meetings. The weekly L10 is the default because it
+  // is the one that happens 50 times a year.
+  const kind = str(f.type).toLowerCase() || 'l10'
+  if (!['l10', 'weekly', 'quarterly', 'annual'].includes(kind)) {
+    return { ok: false, error: `EOS has three meetings: the weekly L10, the quarterly session and the annual. "${f.type}" is not one of them.` }
+  }
 
   // The day: taken AS SAID when they said one, else the team's own L10 day.
   const tz = str(company?.timezone) || 'America/Denver'
@@ -163,6 +187,53 @@ export async function prepareAgenda(r: Rest, caller: Caller, f: Record<string, s
   }
 
   const entity = str(f.unit) || null
+
+  // ── The quarterly and the annual are a different meeting, not a longer L10.
+  if (kind === 'quarterly' || kind === 'annual') {
+    if (!day) return { ok: false, error: `Which day does the ${kind} session start? The EOS page only knows the weekly L10 day.` }
+    const WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4 }
+    const saidDays = WORDS[str(f.days).toLowerCase()] || Number(str(f.days))
+    const dayCount = Math.min(Math.max(saidDays || (kind === 'annual' ? 2 : 1), 1), 4)
+    const ends = str(f.ends).split(/,| and | then /).map((x) => endTime(x)).filter(Boolean) as string[]
+    const start = parseDay(day) as Date
+    const windows = Array.from({ length: dayCount }, (_, i) => {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)
+      return { date: dayStr(d), start: '08:00', end: ends[i] || ends[ends.length - 1] || (kind === 'annual' ? '17:00' : '16:30') }
+    })
+    const session = buildSessionAgenda({ type: kind as 'quarterly' | 'annual', eos, employees, days: windows, entity })
+    // The room for a quarterly is the leadership team: the seats, plus anyone
+    // carrying a rock or a number. Same rule as the L10, same resolver.
+    const l10 = buildL10Agenda({ eos, employees, entity })
+    const { picked, missing } = resolveRecipients(l10, employees, str(f.to))
+    if (missing.length) return { ok: false, error: `I could not find ${missing.map((m) => `"${m}"`).join(', ')} on the team.` }
+    if (!picked.length) return { ok: false, error: 'Nobody on the EOS page owns a seat, a rock or a number, so I do not know who the session is for. Tell me who to send it to.' }
+
+    const dayLine = session.days.map((d: Any) => `${d.label} ${d.start}–${d.end}`).join('  |  ')
+    const display = [
+      { label: 'Session', value: `${session.title} — ${dayLine}` },
+      { label: 'Agenda', value: session.sections.map((s: Any) => `${s.title} ${s.minutes}m`).join(' · ') },
+      { label: 'To', value: `${picked.map((p: Any) => p.name).join(', ')} — ${channel === 'both' ? 'email and in the app' : channel === 'app' ? 'in the app' : 'email'}` },
+      { label: 'Reviewing', value: session.counts.rocks_closing ? `${session.counts.rocks_closing} rocks from ${session.reviewing}` : `nothing was set for ${session.reviewing}${session.counts.rocks_parked_elsewhere ? ` — the ${session.counts.rocks_parked_elsewhere} rocks on the board are from older quarters` : ''}` },
+      { label: 'Setting', value: session.counts.rocks_set_for_this_quarter ? `${session.counts.rocks_set_for_this_quarter} rocks already set for ${session.quarter}` : `no rocks set for ${session.quarter} yet — that is the main job` },
+      { label: 'Scorecard', value: `${session.counts.metrics} metrics, ${session.counts.metrics_without_goal} with no goal to grade against` },
+      { label: 'Issues', value: `${session.counts.issues_open} open, all of them on the list` },
+      ...(session.gaps.length ? [{ label: 'Worth fixing', value: session.gaps.join('; ') }] : []),
+      { label: 'Sending', value: 'Once it goes out it cannot be unsent.' },
+    ]
+    return {
+      ok: true,
+      columns: {
+        session,
+        kind,
+        channel,
+        recipients: picked.map((p: Any) => ({ employee_id: p.employee_id, name: p.name, email: p.email })),
+        subject: `${session.title} — ${session.days.map((d: Any) => d.label).join(' & ')}`,
+        company_name: company?.company_name || null,
+      },
+      display,
+    }
+  }
+
   const agenda = buildL10Agenda({ eos, employees, day, entity })
   if (!agenda.attendees.length && !str(f.to)) {
     return { ok: false, error: 'Nobody on the EOS page owns a scorecard number, a rock, a to-do or a seat, so I do not know who the meeting is for. Tell me who to send it to, or set the owners on Reports → EOS.' }
@@ -206,14 +277,22 @@ export async function prepareAgenda(r: Rest, caller: Caller, f: Record<string, s
 
 export async function applyAgenda(r: Rest, companyId: number, prop: Any): Promise<{ ok: true; id: number; label: string; created: Record<string, unknown> } | { ok: false; error: string }> {
   const cols = prop.payload?.columns || {}
-  const agenda = cols.agenda
   const recipients: Any[] = cols.recipients || []
   const channel = (cols.channel || 'both') as Channel
-  if (!agenda || !recipients.length) return { ok: false, error: 'The draft is missing its agenda or its recipients. Ask me to draft it again.' }
+  const company = cols.company_name ? { company_name: cols.company_name } : null
+  if (!recipients.length) return { ok: false, error: 'The draft is missing its recipients. Ask me to draft it again.' }
 
   // The send itself is _shared/l10Send.ts — the same code the EOS page's
   // button runs, so the email is the same email either way.
-  const sent = await sendAgenda(r, companyId, { agenda, recipients, channel, company: cols.company_name ? { company_name: cols.company_name } : null })
+  if (cols.session) {
+    const sent = await sendSession(r, companyId, { session: cols.session, recipients, channel, company, subject: cols.subject })
+    if (!sent.ok) return { ok: false, error: sent.error }
+    return { ok: true, id: 0, label: prop.payload?.entity_label || 'meeting agenda', created: { starts: cols.session.days?.[0]?.date || null, kind: cols.kind, ...sent.result } }
+  }
+
+  const agenda = cols.agenda
+  if (!agenda) return { ok: false, error: 'The draft is missing its agenda. Ask me to draft it again.' }
+  const sent = await sendAgenda(r, companyId, { agenda, recipients, channel, company })
   if (!sent.ok) return { ok: false, error: sent.error }
 
   return {

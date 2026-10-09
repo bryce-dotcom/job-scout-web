@@ -115,3 +115,111 @@ export function agendaHtml(agenda: Agenda, company: any = null): string {
   </td></tr>
 </table></body></html>`
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The Quarterly / Annual session as plain text.
+//
+// Bryce asked for it "in a format I can copy and paste via txt", which is also
+// the format a two-day session actually gets used in: printed, or pasted into
+// a message. Clock times when the days are known, the real rows underneath, and
+// the gaps named at the end rather than tidied away.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const rule = (c = '=') => c.repeat(72)
+//  is the one already defined at the top of this file.
+const goalPhrase = (m: any) => (m.goal == null ? 'NO GOAL SET — agree one today' : `${m.direction} ${Math.abs(m.goal) >= 1000 ? money(m.goal) : m.goal}`)
+
+export function sessionText(a: any, company: any = null): string {
+  const out: string[] = []
+  const name = company?.company_name ? String(company.company_name).toUpperCase() : ''
+  out.push(rule())
+  out.push(`${name ? name + ' — ' : ''}${a.title.toUpperCase()}`)
+  if (a.days?.length) out.push(a.days.map((d: any) => `${d.label}  ${d.start || '8:00'}–${d.end || ''}`).join('   |   '))
+  out.push(`${a.hours} hours of agenda · reviewing ${a.reviewing}${a.entity ? ` · ${a.entity}` : ''}`)
+  out.push(rule())
+
+  const byDay: Record<number, any[]> = {}
+  const all = [...(a.sections || []), ...(a.breaks || [])].filter((s: any) => s.start)
+  for (const s of all) (byDay[s.day] ||= []).push(s)
+  // By the clock, not by the label: "10:00 AM" sorts before "8:00 AM" as text.
+  for (const d of Object.keys(byDay)) byDay[Number(d)].sort((x, y) => (x.startMin ?? 0) - (y.startMin ?? 0))
+
+  const renderSection = (s: any) => {
+    const head = s.start ? `${s.start} — ${s.title.toUpperCase()} (${s.minutes} min)` : `${s.title.toUpperCase()} (${s.minutes} min)`
+    out.push('')
+    out.push(head)
+    if (s.note) out.push(wrapText(s.note, 70, '  '))
+    if (!s.rows) return
+    if (!s.rows.length) { out.push('  (nothing on the page yet)'); return }
+    out.push('')
+    for (const r of s.rows) {
+      if (s.key === 'vto') out.push(`  [${r.set ? 'x' : ' '}] ${r.field}${r.value ? `: ${String(r.value).slice(0, 90)}` : '  — EMPTY, fill it in this session'}`)
+      else if (s.key === 'team_health') out.push(`  ${r.seat}: ${r.person || 'VACANT'}${r.roles?.length ? `  (${r.roles.slice(0, 3).join('; ')})` : ''}`)
+      else if (s.key === 'issues') out.push(`  [ ] ${r.title}  — ${r.priority}, ${r.kind}${r.owners?.length ? `, ${r.owners.join(' & ')}` : ''}`)
+      else out.push(`  [ ] ${r.title}  — ${r.owner || 'NOBODY'}${r.due ? `, due ${r.due}` : ''}${r.status ? `, ${String(r.status).replace('-', ' ')}` : ''}${r.quarter ? ` (${r.quarter})` : ''}`)
+    }
+  }
+
+  const unplaced = (a.sections || []).filter((s: any) => !s.start)
+  const renderUnplaced = () => {
+    if (!unplaced.length) return
+    out.push('')
+    out.push(rule())
+    out.push('DID NOT FIT IN THE DAYS — DECIDE WHAT TO CUT OR ADD TIME')
+    out.push(rule())
+    for (const s of unplaced) renderSection(s)
+  }
+
+  if (Object.keys(byDay).length) {
+    for (const d of Object.keys(byDay).map(Number).sort()) {
+      out.push('')
+      out.push(rule())
+      out.push(`DAY ${d + 1} — ${(a.days[d]?.label || '').toUpperCase()}`)
+      out.push(rule())
+      for (const s of byDay[d]) {
+        if (s.key === 'lunch' || s.key === 'break') { out.push(''); out.push(`${s.start} — ${s.title.toUpperCase()} (${s.minutes} min)`); continue }
+        renderSection(s)
+      }
+    }
+    renderUnplaced()
+  } else {
+    for (const s of a.sections || []) renderSection(s)
+  }
+
+  // The scorecard belongs on the table for the review, in full.
+  if (a.scorecard?.length) {
+    out.push('')
+    out.push(rule())
+    out.push(`SCORECARD — ${a.scorecard.length} METRICS, AS THEY STAND ON THE EOS PAGE`)
+    out.push(rule())
+    out.push('Fill the quarter\'s numbers in as each owner reads them out.')
+    out.push('')
+    let owner = '\u0000'
+    for (const m of a.scorecard) {
+      if (m.owner !== owner) { owner = m.owner; out.push(`  ${owner || 'NOBODY ASSIGNED'}:`) }
+      out.push(`    ${m.metric}`)
+      out.push(`        ${goalPhrase(m)}        actual: ____________`)
+    }
+  }
+
+  if (a.gaps?.length) {
+    out.push('')
+    out.push(rule())
+    out.push('BEFORE YOU LEAVE — WHAT THE EOS PAGE IS MISSING')
+    out.push(rule())
+    for (const g of a.gaps) out.push(wrapText(`- ${g}`, 68, '', '  '))
+  }
+  out.push('')
+  return out.join('\n')
+}
+
+function wrapText(s: string, width: number, indent: string, hanging = indent): string {
+  const words = String(s).split(/\s+/)
+  const lines: string[] = []
+  let line = ''
+  for (const w of words) {
+    if ((line + ' ' + w).trim().length > width) { lines.push((lines.length ? hanging : indent) + line.trim()); line = w } else line += ' ' + w
+  }
+  if (line.trim()) lines.push((lines.length ? hanging : indent) + line.trim())
+  return lines.join('\n')
+}
