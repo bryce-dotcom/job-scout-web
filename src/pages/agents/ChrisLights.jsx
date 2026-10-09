@@ -12,8 +12,8 @@
 // The estimate goes out through createEstimateFromIntake like every other
 // agent that produces a bid. There is one writer of quotes and quote_lines.
 
-import { useState, useRef, useMemo } from 'react'
-import { MapPin, Sparkles, Trash2, Undo2, FileText, Loader2 } from 'lucide-react'
+import { useState, useRef, useMemo, useEffect } from 'react'
+import { MapPin, Sparkles, Trash2, Undo2, FileText, Loader2, Camera, Home, Wand2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useStore } from '../../lib/store'
 import { useTheme } from '../../components/Layout'
@@ -29,6 +29,7 @@ import {
   COVERAGE, FACES, feetPerPixel, runLengthFt, coverageFeet, coverageOptions,
   lightsPrice, quoteProblem, lightsIntakeLines,
 } from '../../lib/chrisLights'
+import { STOREYS, liftDecision, accessLines, accessWarning } from '../../lib/chrisAccess'
 
 
 const FACE_COLOR = { front: '#e11d48', side: '#f59e0b', back: '#3b82f6' }
@@ -56,6 +57,29 @@ export default function ChrisLights() {
   const [customerId, setCustomerId] = useState('')
   const [aiNote, setAiNote] = useState(null)
 
+  // Phase 2: how hard the roofline is to reach, read off a photo of the
+  // front. A plan view cannot show a storey count or a conservatory under
+  // the eave, which is the whole question.
+  const [photo, setPhoto] = useState(null)        // data URL of the front of the house
+  const [house, setHouse] = useState(null)        // { storeys, pitch, obstructions, notes }
+  const [checking, setChecking] = useState(false)
+  // Phase 3: the close — their own house at dusk with the lights on.
+  const [render, setRender] = useState(null)      // { url, label }
+  const [rendering, setRendering] = useState(false)
+
+  // The company's OWN hourly rate — never a number invented here. Antonino
+  // had none until this was built, which is why they were given one.
+  const [laborRate, setLaborRate] = useState(0)
+  useEffect(() => {
+    if (!companyId) return
+    let live = true
+    supabase.from('labor_rates').select('rate_per_hour, is_default')
+      .eq('company_id', companyId).eq('active', true)
+      .order('is_default', { ascending: false }).limit(1)
+      .then(({ data }) => { if (live) setLaborRate(Number(data?.[0]?.rate_per_hour) || 0) })
+    return () => { live = false }
+  }, [companyId])
+
   const canvasRef = useRef(null)
 
   // Per-foot price lives in settings so every tenant sets their own. No
@@ -75,6 +99,13 @@ export default function ChrisLights() {
   const feet = coverageFeet(runs, coverage)
   const priced = lightsPrice({ feet, perFootRate, minimumCharge })
   const problem = quoteProblem({ runs, coverage, perFootRate })
+
+  const decision = house ? liftDecision(house) : null
+  const access = house
+    ? accessLines({ feet, storeys: house.storeys, pitch: house.pitch, obstructions: house.obstructions, laborRate, rates: cfg })
+    : []
+  const accessTotal = access.reduce((a, l) => a + (Number(l.quantity) || 0) * (Number(l.price) || 0), 0)
+  const grandTotal = Math.round((priced.total + accessTotal) * 100) / 100
 
   // ── Find the house ──────────────────────────────────────────────────────
   const findAddress = async () => {
@@ -183,6 +214,48 @@ export default function ChrisLights() {
     setDraft([])
   }
 
+  // ── How hard is it to reach? ────────────────────────────────────────────
+  const onPhoto = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => { setPhoto(String(reader.result)); setHouse(null); setRender(null) }
+    reader.readAsDataURL(file)
+  }
+
+  const checkAccess = async () => {
+    if (!photo) return
+    setChecking(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('chris-house', {
+        body: { company_id: companyId, image_base64: photo, address: place?.matched || address },
+      })
+      if (error) throw error
+      setHouse(data)
+      toast.success(`${data.storeys === 'unsure' ? 'Height unclear' : data.storeys + ' storey'} · ${data.confidence} confidence`)
+    } catch (err) {
+      toast.error('Could not read the photo: ' + (err?.message || 'unknown error'))
+    }
+    setChecking(false)
+  }
+
+  // ── Show them the lights ────────────────────────────────────────────────
+  const drawLights = async () => {
+    if (!photo) return
+    setRendering(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('chris-render', {
+        body: { company_id: companyId, image_base64: photo, coverage, address: place?.matched || address },
+      })
+      if (error) throw error
+      if (!data?.ok) { toast.error(data?.error || 'No picture came back.'); setRendering(false); return }
+      setRender({ url: `data:${data.mime};base64,${data.image_base64}`, label: data.label })
+    } catch (err) {
+      toast.error('Could not draw the lights: ' + (err?.message || 'unknown error'))
+    }
+    setRendering(false)
+  }
+
   // ── Turn it into an estimate ────────────────────────────────────────────
   const createEstimate = async () => {
     if (problem) { toast.error(problem); return }
@@ -195,14 +268,17 @@ export default function ChrisLights() {
         salesperson_id: user?.id || null,
         service_type: 'Christmas Lighting',
         estimate_name: `Christmas lights — ${place?.matched || address}`,
-        summary: `${feet} ft of roofline · ${COVERAGE[coverage].label}`,
+        summary: `${feet} ft of roofline · ${COVERAGE[coverage].label}${house?.storeys && house.storeys !== 'unsure' ? ` · ${house.storeys} storey` : ''}${decision?.lift ? ' · lift' : ''}`,
         notes: [
           `Address: ${place?.matched || address}`,
           `Measured from aerial imagery at zoom ${zoom} (${feetPerPx?.toFixed(3)} ft/px).`,
           `${ATTRIBUTION}.`,
         ].join(String.fromCharCode(10)),
-        quote_amount: priced.total,
-        lines: lightsIntakeLines({ runs, coverage, perFootRate, minimumCharge, address: place?.matched }),
+        quote_amount: grandTotal,
+        lines: [
+          ...lightsIntakeLines({ runs, coverage, perFootRate, minimumCharge, address: place?.matched }),
+          ...access,
+        ],
       })
       toast.success('Estimate created')
       if (quote?.id) window.location.assign(`/estimates/${quote.id}`)
@@ -326,16 +402,84 @@ export default function ChrisLights() {
               </div>
             </div>
 
+            {/* A photo of the front answers what a plan view cannot: how many
+                storeys, and whether a ladder can be footed under the eave. */}
+            <div style={card}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: theme.text, margin: '0 0 4px' }}>The front of the house</h3>
+              <p style={{ fontSize: 11.5, color: theme.textMuted, margin: '0 0 10px' }}>
+                For the height, the access, and the picture you show them.
+              </p>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 12px', minHeight: 44, border: `1px dashed ${theme.border}`, borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: theme.textSecondary }}>
+                <Camera size={16} /> {photo ? 'Use a different photo' : 'Add a photo'}
+                <input type="file" accept="image/*" capture="environment" onChange={onPhoto} style={{ display: 'none' }} />
+              </label>
+
+              {photo && (
+                <>
+                  <img src={photo} alt="Front of the house" style={{ width: '100%', borderRadius: 8, marginTop: 10, display: 'block' }} />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                    <button type="button" onClick={checkAccess} disabled={checking}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', minHeight: 40, borderRadius: 8, border: `1px solid ${theme.accent}`, background: 'transparent', color: theme.accent, fontSize: 13, fontWeight: 600, cursor: checking ? 'not-allowed' : 'pointer', opacity: checking ? 0.6 : 1 }}>
+                      <Home size={15} /> {checking ? 'Looking…' : 'Check access'}
+                    </button>
+                    <button type="button" onClick={drawLights} disabled={rendering}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', minHeight: 40, borderRadius: 8, border: 'none', background: theme.accent, color: '#fff', fontSize: 13, fontWeight: 600, cursor: rendering ? 'not-allowed' : 'pointer', opacity: rendering ? 0.6 : 1 }}>
+                      <Wand2 size={15} /> {rendering ? 'Drawing…' : 'Show them the lights'}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {house && (
+                <div style={{ marginTop: 10, padding: '10px 12px', backgroundColor: theme.bg, borderRadius: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <select value={house.storeys} onChange={(e) => setHouse({ ...house, storeys: e.target.value })}
+                      style={{ ...input, padding: '6px 8px', fontSize: 12.5 }}>
+                      {STOREYS.map((v) => <option key={v} value={v}>{v === 'unsure' ? 'height unsure' : `${v} storey`}</option>)}
+                    </select>
+                    <span style={{ fontSize: 12, color: theme.textMuted }}>{house.pitch} pitch · {house.confidence} confidence</span>
+                  </div>
+                  {house.obstructions?.length > 0 && (
+                    <p style={{ fontSize: 12.5, color: theme.textSecondary, margin: '8px 0 0' }}>In the way: {house.obstructions.join(', ')}</p>
+                  )}
+                  {decision && (
+                    <p style={{ fontSize: 12.5, color: decision.lift ? theme.error : theme.textSecondary, margin: '8px 0 0', fontWeight: decision.lift ? 600 : 400 }}>
+                      {decision.why}
+                    </p>
+                  )}
+                  {accessWarning(decision) && (
+                    <p style={{ fontSize: 12, color: theme.warning, margin: '6px 0 0' }}>{accessWarning(decision)}</p>
+                  )}
+                  {house.notes && <p style={{ fontSize: 12, color: theme.textMuted, margin: '6px 0 0' }}>{house.notes}</p>}
+                </div>
+              )}
+
+              {render && (
+                <div style={{ marginTop: 12 }}>
+                  <img src={render.url} alt="The house at dusk with Christmas lights, an AI mock-up" style={{ width: '100%', borderRadius: 8, display: 'block' }} />
+                  {/* Said every time, next to the picture. It is a sales
+                      picture, not a promise about the work. */}
+                  <p style={{ fontSize: 11, color: theme.textMuted, margin: '6px 0 0', fontStyle: 'italic' }}>{render.label}</p>
+                </div>
+              )}
+            </div>
+
             <div style={card}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: theme.text, margin: '0 0 10px' }}>Price</h3>
               {perFootRate > 0 ? (
                 <>
                   <div style={{ fontSize: 30, fontWeight: 700, color: theme.text }}>
-                    ${priced.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   <p style={{ fontSize: 12.5, color: theme.textMuted, margin: '4px 0 0' }}>
                     {feet} ft × ${perFootRate}/ft{priced.minimum_applied ? ' · minimum applied' : ''}
                   </p>
+                  {access.map((l) => (
+                    <p key={l.item_name} style={{ fontSize: 12.5, color: theme.textSecondary, margin: '6px 0 0', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span>+ {l.item_name}</span>
+                      <span style={{ fontWeight: 600 }}>${(l.quantity * l.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </p>
+                  ))}
                 </>
               ) : (
                 <p style={{ fontSize: 13, color: theme.textSecondary, margin: 0 }}>
