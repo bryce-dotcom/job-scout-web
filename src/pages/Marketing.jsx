@@ -1285,7 +1285,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
         </div>
       )}
       {paintSheet && (
-        <PictureMaker theme={theme} isMobile={isMobile} seed={note || caption || ''} busy={painting} onClose={() => setPaintSheet(false)}
+        <PictureMaker theme={theme} isMobile={isMobile} seed={note || caption || ''} busy={painting} invoke={invoke} onClose={() => setPaintSheet(false)}
           onMake={async (description, count) => { const ok = await paintPictures(description, count); if (ok) setPaintSheet(false) }} />
       )}
       <div onClick={(e) => e.stopPropagation()} style={{ background: theme.bgCard, width: isMobile ? '100%' : 720, maxHeight: isMobile ? '100%' : '92vh', overflowY: 'auto', borderRadius: isMobile ? 0 : 14, display: 'flex', flexDirection: 'column' }}>
@@ -2200,7 +2200,7 @@ function SoundtrackPanel({ theme, isMobile, snd, autoLabel = null, scriptPlaceho
                 <textarea value={musicPrompt} onChange={(e) => setMusicPrompt(e.target.value)} rows={2} placeholder={moodLabel ? `Leave empty for the AI's pick (${moodLabel}), or say what you hear: "warm acoustic guitar, hopeful, builds at the end".` : 'Say what you hear: "warm acoustic guitar, hopeful, builds at the end". Instrumental, no vocals.'} style={{ ...inputStyle(theme), minHeight: 52, resize: 'vertical', fontFamily: 'inherit', fontSize: 12 }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <button type="button" onClick={() => composeTrack(seconds)} disabled={composing} style={{ ...primaryBtn(MKT), minHeight: 32, padding: '6px 12px', fontSize: 12 }}><Sparkles size={13} /> {composing ? 'Composing…' : `Compose ${seconds ? fmtS(seconds + 2) : ''}`}</button>
-                  <span style={{ fontSize: 11, color: theme.textMuted }}>ElevenLabs Music, written for this video, cleared for your posts. About half a minute.</span>
+                  <span style={{ fontSize: 11, color: theme.textMuted }}>ElevenLabs Music, written for this video, cleared for your posts. About half a minute.{quotaLine(musicStatus?.used, musicStatus?.cap, 'tracks') ? ` ${quotaLine(musicStatus.used, musicStatus.cap, 'tracks')}.` : ''}</span>
                 </div>
                 {composing && <ScoutLoader theme={theme} label="Composing…" size={40} style={{ padding: 0 }} />}
                 {musicError && <div style={{ fontSize: 11, color: '#b45309' }}>{musicError}</div>}
@@ -2249,6 +2249,7 @@ function SoundtrackPanel({ theme, isMobile, snd, autoLabel = null, scriptPlaceho
           <label style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 500, color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} /> on</label>
         </div>
         {voiceStatus && !voiceStatus.available && <div style={{ fontSize: 11, color: '#b45309' }}>Needs an ElevenLabs key on the server. The script is ready for when it is set.</div>}
+        {voiceStatus?.available && quotaLine(voiceStatus.used_chars, voiceStatus.cap_chars, 'narration characters') && <div style={{ fontSize: 11, color: theme.textMuted }}>{quotaLine(voiceStatus.used_chars, voiceStatus.cap_chars, 'narration characters')}.</div>}
         {voiceStatus?.available && voiceStatus.from === 'stock' && <div style={{ fontSize: 11, color: theme.textMuted }}>Stock voices. A key with Voices (read) lists your ElevenLabs My Voices here instead.</div>}
         <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={3} placeholder={scriptPlaceholder} style={{ ...inputStyle(theme), minHeight: 64, resize: 'vertical', fontFamily: 'inherit', fontSize: 13, opacity: voiceOn ? 1 : 0.6 }} />
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2396,13 +2397,23 @@ function VideoEditor({ theme, isMobile, clips, caption, note, companyId, employe
   )
 }
 
+// "12 of 60 pictures this month" — or nothing when the company is uncapped (the platform company).
+function quotaLine(used, cap, unit) {
+  if (cap == null) return null
+  const n = (x) => Number(x || 0).toLocaleString()
+  return `${n(used)} of ${n(cap)} ${unit} this month`
+}
+
 // ── AI pictures ──────────────────────────────────────────────────────
 // For a post with nothing from the field: a line becomes one to three
 // pictures in the brand's world (marketing-image, Gemini). They land in
 // the inbox like any photo, labelled AI, and go straight onto the post.
-function PictureMaker({ theme, isMobile, seed = '', busy, onMake, onClose }) {
+function PictureMaker({ theme, isMobile, seed = '', busy, onMake, onClose, invoke = null }) {
   const [description, setDescription] = useState(seed)
   const [count, setCount] = useState(1)
+  const [quota, setQuota] = useState(null)   // { used, cap, unit }
+  useEffect(() => { if (invoke) invoke('marketing-image', { action: 'status' }).then((r) => { if (r?.ok) setQuota({ used: r.used, cap: r.cap, unit: r.unit }) }) }, [invoke])
+  const left = quota?.cap == null ? null : Math.max(0, quota.cap - quota.used)
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'center' }} onClick={() => !busy && onClose()}>
       {busy && <ScoutLoader overlay theme={theme} label={`Painting ${count} picture${count === 1 ? '' : 's'}…`} sub="About twenty seconds each." />}
@@ -2427,9 +2438,9 @@ function PictureMaker({ theme, isMobile, seed = '', busy, onMake, onClose }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${theme.border}`, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: theme.textMuted, flex: 1 }}>Real photos from the crew always beat these. Use them for a service you have no photo of yet.</span>
+          <span style={{ fontSize: 12, color: theme.textMuted, flex: 1 }}>{quota && quotaLine(quota.used, quota.cap, 'pictures') ? `${quotaLine(quota.used, quota.cap, 'pictures')}. ` : ''}Real photos from the crew always beat these.</span>
           <button type="button" onClick={onClose} style={ghostBtn(theme)}>Cancel</button>
-          <button type="button" onClick={() => onMake(description.trim(), count)} disabled={busy || !description.trim()} style={{ ...primaryBtn(MKT), opacity: description.trim() ? 1 : 0.5 }}><Sparkles size={15} /> Make {count === 1 ? 'it' : 'them'}</button>
+          <button type="button" onClick={() => onMake(description.trim(), count)} disabled={busy || !description.trim() || (left != null && left < count)} title={left != null && left < count ? 'This month\'s pictures are used up' : ''} style={{ ...primaryBtn(MKT), opacity: description.trim() && !(left != null && left < count) ? 1 : 0.5 }}><Sparkles size={15} /> Make {count === 1 ? 'it' : 'them'}</button>
         </div>
       </div>
     </div>

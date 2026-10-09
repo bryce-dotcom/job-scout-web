@@ -61,8 +61,8 @@ export default {
       {
         icon: 'Search',
         title: 'Search anytime',
-        body: "Top of the Communications page has full-text search across every email and SMS. Filter by customer or date.",
-        narration: 'Full-text search at the top. Filter by customer or date.',
+        body: "Top of the Communications page searches every message, sent and received. Filter by customer or type.",
+        narration: 'Search at the top. Filter by customer or type.',
         baseDur: 5000,
       },
     ],
@@ -70,27 +70,28 @@ export default {
 
   agentKnowledge: {
     whatItIs:
-      "Unified per-company log of every outbound and inbound communication: emails, SMS, signature events, invoice email replies, and quote portal opens. Renders as a timeline on the customer detail page (Comms tab) and as a standalone Communications page.",
+      "Per-company log of text messages: the ones Job Scout sent, and the ones customers texted back. Renders as a timeline on the customer detail page (Comms tab) and as a standalone Communications page, where rows can also be logged by hand.",
 
     howItWorks:
-      "Backed by the communications_log table (company_id, customer_id, optional job_id and quote_id). Email opens land via tracking pixel at /api/email-open. SMS replies via Twilio webhook. Signature events from signing-capture Edge Function. Each row carries direction (in/out), channel (email/sms/portal), content snippet, metadata (open_count, click_count, IP for signatures).",
+      "Backed by communications_log (company_id, communication_id, direction, type, trigger, customer_id, employee_id, recipient, sent_date, status, response). Outbound rows are written by the send-sms Edge Function; inbound ones by inbound-sms, which Twilio posts an arriving text to. direction is 'in' or 'out'; recipient holds the other party's number whichever way it went; communication_id is Twilio's message id, which makes a webhook retry a no-op. An arriving text is matched to a customer, lead or employee by the last ten digits of the number and raises a notification for the rep who owns them.",
 
     examples: [
-      "Owner asks 'when was the last time we talked to Smith?' → Comms tab shows last email + open time",
-      "Customer claims they never got the invoice → log shows it sent, opened twice, link clicked",
-      "Setter logs in Monday → sees inbox of overnight SMS replies from prospects",
+      "Owner asks 'when did we last talk to Smith?' → Comms tab shows the texts both ways, newest first",
+      "Customer texts back 'can you come Thursday instead?' → it lands on their customer page and the rep gets a notification",
+      "Setter logs in Monday → overnight replies are in the bell and on /communications",
     ],
 
     gotchas: [
-      "Email opens under-count for customers on Gmail with privacy proxy — they show as 'unopened' even if they did open.",
-      "SMS log only captures messages sent through Job Scout — manual texts from a personal phone don't appear.",
-      "Signature events are read-only — they're audit records, not editable notes.",
+      "Texts only. Emails are NOT logged here — nothing writes an email row, so an empty log does not mean nobody was emailed.",
+      "Only messages that went through Job Scout. A text from someone's personal phone does not appear.",
+      "Inbound needs the company's Twilio number pointed at the inbound-sms webhook, and US numbers need an approved A2P 10DLC campaign before carriers deliver anything at all.",
+      "STOP, START and HELP are carrier keywords, not messages: they are recorded but raise no notification, and a STOP clears that customer's sms_consent.",
     ],
 
     faqs: [
       {
         q: 'Does this work with my Gmail / Outlook account directly?',
-        a: 'Not directly — we use SendGrid for outbound and parse replies via inbound webhook. The customer sees your branded From: address, not Gmail/Outlook.',
+        a: 'No. This log is text messages, through your own Twilio number. Email is sent elsewhere in Job Scout and is not recorded here.',
       },
     ],
 

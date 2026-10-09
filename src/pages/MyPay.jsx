@@ -12,6 +12,7 @@ import {
 } from '../lib/bonusCalc'
 import { fetchUserBonuses, bonusStatusLabel, bonusJobLabel, heldReasonLabel } from '../lib/bonusLedger'
 import { greaterOfPay, paysGreaterOf, greaterOfSummary } from '../lib/payBasis'
+import { paycheckDetail } from '../lib/payHistory'
 import { payRowHeading, payRowSource } from '../lib/payRowLabel'
 import { groupHoursByDay } from '../lib/dailyHours'
 import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
@@ -50,7 +51,7 @@ function CollapsibleCard({ cardStyle, theme, icon, title, summary, defaultOpen =
 
 // One past paycheck, expandable to its full gross → net breakdown. Reads the
 // paystubs row saved when a payroll run was finalized.
-function PaystubRow({ p, theme, onDownload }) {
+function PaystubRow({ p, theme, onDownload, detail }) {
   const [open, setOpen] = useState(false)
   const [dl, setDl] = useState(false)
   const d = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
@@ -89,6 +90,27 @@ function PaystubRow({ p, theme, onDownload }) {
           <div style={{ borderTop: `1px dashed ${theme.border}`, marginTop: 6, paddingTop: 6 }}>
             {line('Net pay', p.net_pay, { color: theme.accent })}
           </div>
+          {/* What this cheque was actually for. A stub that says "Commission
+              $1,194" and nothing else is the thing nobody can check — the job
+              is right there on the row (lib/payHistory). */}
+          {detail?.lines?.length > 0 && (
+            <div style={{ borderTop: `1px solid ${theme.border}`, marginTop: 8, paddingTop: 8 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 4 }}>
+                What this paid for
+              </div>
+              {detail.lines.map((l, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, padding: '3px 0' }}>
+                  <span style={{ minWidth: 0, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {l.label}
+                    <span style={{ color: theme.textMuted, fontSize: 11 }}> · {l.note}</span>
+                  </span>
+                  <span style={{ color: l.note === 'settled by your salary' ? theme.textMuted : theme.text, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                    {money(l.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           {onDownload && (
             <button
               onClick={async () => { setDl(true); try { await onDownload(p) } catch (e) { alert('Could not build paystub: ' + (e?.message || e)) } finally { setDl(false) } }}
@@ -151,6 +173,8 @@ export default function MyPay() {
   // paycheck (paystubs); benefits are the employee's active enrollments
   // (employee_benefits). Both are READ-ONLY here.
   const [paystubs, setPaystubs] = useState([])
+  // Job titles for the pay-history breakdown, by id.
+  const [jobTitles, setJobTitles] = useState(new Map())
   const [benefits, setBenefits] = useState([])
   // Frozen rep (%) commissions (rep_commissions) for this employee — read-only
   // here; Payroll is the writer. Replaces the drifty live invoice-commission
@@ -217,7 +241,8 @@ export default function MyPay() {
     ;(async () => {
       const [ps, bf, rc, lc, co] = await Promise.all([
         supabase.from('paystubs')
-          .select('id, period_start, period_end, pay_date, regular_hours, overtime_hours, pto_hours, gross_pay, net_pay, bonus_pay, commission_pay, reimbursement_pay, federal_income_tax, state_income_tax, social_security_employee, medicare_employee, additional_medicare, pre_tax_deductions, post_tax_deductions')
+          // payroll_run_id: which cheque a commission belongs to (lib/payHistory).
+          .select('id, payroll_run_id, period_start, period_end, pay_date, regular_hours, overtime_hours, pto_hours, gross_pay, net_pay, bonus_pay, commission_pay, reimbursement_pay, federal_income_tax, state_income_tax, social_security_employee, medicare_employee, additional_medicare, pre_tax_deductions, post_tax_deductions')
           .eq('company_id', companyId).eq('employee_id', effectiveUserId)
           .order('pay_date', { ascending: false }).limit(24),
         supabase.from('employee_benefits')
@@ -237,6 +262,11 @@ export default function MyPay() {
       ])
       if (!cancelled) {
         setPaystubs(ps.data || []); setBenefits(bf.data || []); setRepCommissions(rc || [])
+        const jobIds = [...new Set((rc || []).map(r => r.job_id).filter(Boolean))]
+        if (jobIds.length) {
+          const { data: js } = await supabase.from('jobs').select('id, job_title, customer_name').in('id', jobIds)
+          if (!cancelled) setJobTitles(new Map((js || []).map(j => [j.id, j.job_title || j.customer_name || ('Job #' + j.id)])))
+        }
         setLeadCommissions(lc?.data || [])
         setSetterRule(co?.data?.setter_qualification_rule || 'appointment_set')
       }
@@ -507,6 +537,27 @@ export default function MyPay() {
   const accruedBonuses = ledgerBonuses.filter(b => b.status === 'accrued')
   const pendingBonuses = ledgerBonuses.filter(b => b.status === 'pending')
   const paidBonuses = ledgerBonuses.filter(b => b.status === 'paid')
+
+  // What each past paycheck actually paid for — the jobs behind the
+  // commission and bonus lines. Same resolver Payroll's history uses, so a rep
+  // checking their own cheque and the office looking at the same cheque read
+  // the same list (lib/payHistory). A plain function, not a hook: this
+  // component sits at its conditional-hook ceiling.
+  const jobLabelFor = (jobId) => {
+    // Bonuses carry the job embedded; commissions cannot (rep_commissions has
+    // no foreign key to jobs, so PostgREST will not embed it) and come through
+    // the lookup loaded above — otherwise a rep reads "Job #23508" on their
+    // own paycheck.
+    const bonus = ledgerBonuses.find(b => b.job_id === jobId)
+    return jobTitles.get(jobId) || bonus?.jobs?.job_title || bonus?.jobs?.customer_name || `Job #${jobId}`
+  }
+  const paycheckDetailFor = (stub) => paycheckDetail({
+    stub: { ...stub, employee_id: effectiveUserId },
+    repCommissions,
+    leadCommissions,
+    bonuses: ledgerBonuses,
+    jobLabel: jobLabelFor,
+  })
   const accruedBonusTotal = accruedBonuses.reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
   const pendingBonusTotal = pendingBonuses.reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
   const needsVerCount = ledgerBonuses.filter(b => b.needs_verification && b.status !== 'paid').length
@@ -1083,7 +1134,7 @@ export default function MyPay() {
           summary={`${paystubs.length} paycheck${paystubs.length === 1 ? '' : 's'}`}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {paystubs.map(p => <PaystubRow key={p.id} p={p} theme={theme} onDownload={downloadPaystub} />)}
+            {paystubs.map(p => <PaystubRow key={p.id} p={p} theme={theme} onDownload={downloadPaystub} detail={paycheckDetailFor(p)} />)}
           </div>
           <div style={{ marginTop: 10, fontSize: 11, color: theme.textMuted }}>
             Your last {paystubs.length} pay period{paystubs.length === 1 ? '' : 's'} · tap a paycheck for the full breakdown.

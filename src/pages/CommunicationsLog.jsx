@@ -13,8 +13,11 @@ import {
   MessageCircle,
   FileText,
   Filter,
+  ArrowDownLeft,
+  ArrowUpRight,
   X
 } from 'lucide-react'
+import { parseLocalDate } from '../lib/localDate'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -130,14 +133,13 @@ export default function CommunicationsLog() {
     }
   }
 
+  // sent_date is a calendar DAY, not an instant. new Date('2026-10-05') is
+  // UTC midnight, which is 6 PM on the 4th in Denver — every row read a day
+  // early, with a 6:00 PM on it that meant nothing. lib/localDate is the rule.
   const formatDateTime = (dateStr) => {
-    if (!dateStr) return '-'
-    return new Date(dateStr).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
-    })
+    const d = parseLocalDate(dateStr)
+    if (!d) return '-'
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
   const clearFilters = () => {
@@ -295,7 +297,7 @@ export default function CommunicationsLog() {
               <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Date</th>
               <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Type</th>
               <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Customer</th>
-              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Recipient</th>
+              <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Contact</th>
               <th style={{ padding: '14px 16px', textAlign: 'center', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Status</th>
               <th style={{ padding: '14px 16px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>Logged By</th>
             </tr>
@@ -327,6 +329,11 @@ export default function CommunicationsLog() {
                       }}>
                         <TypeIcon size={14} />
                         <span style={{ fontSize: '12px', fontWeight: '500' }}>{comm.type}</span>
+                        {/* Which way it went. Every row used to be outbound by
+                            assumption; inbound texts arrive here now. */}
+                        {comm.direction === 'in'
+                          ? <ArrowDownLeft size={13} aria-label="Received" />
+                          : <ArrowUpRight size={13} aria-label="Sent" />}
                       </div>
                     </td>
                     <td style={{ padding: '14px 16px', fontSize: '14px', color: theme.text, fontWeight: '500' }}>

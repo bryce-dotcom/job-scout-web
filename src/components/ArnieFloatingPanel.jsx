@@ -129,9 +129,15 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
       {!open && !hideLauncher && (
         <div
           onClick={openPanel}
+          // Desktop only: on a phone Arnie is the middle slot of the bottom
+          // tab bar, so this would be a second way to open the same panel
+          // sitting on top of the page. `hidden` is Layout's class —
+          // display:none on mobile, flex above md.
+          className="hidden"
           style={{
             position: 'fixed',
-            bottom: 92,
+            // Above the mobile tab bar (0 on desktop).
+            bottom: 'calc(92px + var(--jobscout-tabbar-space, 0px))',
             right: 20,
             display: 'flex',
             flexDirection: 'column',

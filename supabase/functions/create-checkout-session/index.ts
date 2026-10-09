@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { wisetackKey, wisetackMerchantId } from "../_shared/financing.ts";
+import { APP_URL } from "../_shared/notifyRep.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -93,7 +94,10 @@ serve(async (req) => {
     // Resolve portal base URL: DB setting > env var > fallback
     const portalBaseUrl = paymentConfig?.portal_base_url
       || Deno.env.get('PORTAL_BASE_URL')
-      || 'https://app.jobscout.com';
+      // Not 'app.jobscout.com' — nobody owns that domain, so a tenant with
+      // neither the setting nor the env var got a dead Stripe return URL. Same
+      // mistake that made every estimate follow-up link unreachable.
+      || APP_URL;
     const portalUrl = `${portalBaseUrl}/portal/${token}`;
 
     // Get document info for description

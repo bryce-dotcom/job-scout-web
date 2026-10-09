@@ -23,7 +23,7 @@ const STATUS_COLORS = {
 // flip back on every page reload.
 const LAST_SEEN_KEY = (email) => `jobscout_feedback_lastseen_${email || 'anon'}`
 
-export default function FeedbackButton() {
+export default function FeedbackButton({ hideLauncher = false } = {}) {
   const user = useStore((state) => state.user)
   // The store exposes `companyId` — there is no `activeCompany`, so the old
   // read resolved to undefined and EVERY feedback row saved with a null
@@ -144,16 +144,34 @@ export default function FeedbackButton() {
     }
   }
 
+  // On mobile the trigger is the icon in the header, not this bubble, so the
+  // panel has to be openable from outside. Same pattern Arnie already uses.
+  useEffect(() => {
+    const open = () => { setIsOpen(true); setTab(unreadCount > 0 ? 'mine' : 'send') }
+    window.addEventListener('feedback:open', open)
+    return () => window.removeEventListener('feedback:open', open)
+  }, [unreadCount])
+
+  // The header badge reads this rather than running the query again.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('feedback:unread', { detail: unreadCount }))
+  }, [unreadCount])
+
   if (!user) return null
 
   return (
     <>
-      {/* Floating Button */}
+      {/* Floating button, DESKTOP ONLY. On a phone it covered the More tab,
+          and feedback now lives in the header beside the menu. `hidden` is
+          Layout's own class: display:none on mobile, flex above md. */}
       <button
+        className="hidden"
         onClick={() => { setIsOpen(true); setTab(unreadCount > 0 ? 'mine' : 'send') }}
         style={{
           position: 'fixed',
-          bottom: '24px',
+          // Clear of the mobile tab bar — this bubble sat squarely on top of
+          // the More tab. The variable is 0 above md, so desktop is unchanged.
+          bottom: 'calc(24px + var(--jobscout-tabbar-space, 0px))',
           right: '24px',
           width: '56px',
           height: '56px',
@@ -162,7 +180,7 @@ export default function FeedbackButton() {
           border: 'none',
           boxShadow: '0 4px 12px rgba(249, 115, 22, 0.4)',
           cursor: 'pointer',
-          display: 'flex',
+          display: hideLauncher ? 'none' : 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 1000,

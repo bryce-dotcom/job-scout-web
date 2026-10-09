@@ -19,6 +19,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/auth.ts'
 import { stockList, elevenKey, listVoices, resolveVoiceId, synthesize, STOCK_VOICES as VOICES } from '../_shared/elevenlabs.ts'
+import { checkCap, capMessage, recordMediaUsage, MEDIA_PRICES } from '../_shared/mediaMeter.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -52,7 +53,8 @@ serve(async (req) => {
         const v = cfg.voice_id
         if (typeof v === 'string' && !voices.some((x) => x.id === v)) voices.unshift({ id: v, name: 'Arnie', category: 'pinned', preview_url: null })
       } catch { /* no pin */ }
-      return json({ ok: true, available: !!key, voices, from: account ? 'account' : 'stock' })
+      const cap = await checkCap({ supabaseUrl: SUPABASE_URL, serviceKey: SERVICE_KEY }, caller.companyId, 'voice', 0)
+      return json({ ok: true, available: !!key, voices, from: account ? 'account' : 'stock', used_chars: cap.used, cap_chars: cap.cap })
     }
 
     const key = elevenKey()
@@ -61,6 +63,9 @@ serve(async (req) => {
     if (!text) return json({ ok: false, error: 'Nothing to say.' }, 400)
     const asked = String(body.voice || '')
     const voiceId = resolveVoiceId(asked)
+    const meterEnv = { supabaseUrl: SUPABASE_URL, serviceKey: SERVICE_KEY }
+    const cap = await checkCap(meterEnv, caller.companyId, 'voice', text.length)
+    if (!cap.allowed) return json({ ok: false, capped: true, used: cap.used, cap: cap.cap, error: capMessage(cap, 'voice') }, 429)
     const voiceName = Object.keys(VOICES).find((n) => VOICES[n] === voiceId) || asked.slice(0, 24) || 'voice'
 
     let bytes: Uint8Array
@@ -70,6 +75,7 @@ serve(async (req) => {
     const { error } = await sb.storage.from('marketing-media').upload(path, bytes, { contentType: 'audio/mpeg', upsert: false })
     if (error) return json({ ok: false, error: error.message }, 500)
     const { data: pub } = sb.storage.from('marketing-media').getPublicUrl(path)
+    await recordMediaUsage(meterEnv, { companyId: caller.companyId, kind: 'voice', model: 'eleven_flash_v2_5', units: text.length, costUsd: text.length * MEDIA_PRICES.voice_per_char })
     return json({ ok: true, url: pub.publicUrl, bytes: bytes.byteLength, voice: voiceName, path })
   } catch (err) {
     console.error('[marketing-voice]', err)

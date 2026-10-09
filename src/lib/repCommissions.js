@@ -165,7 +165,27 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
     const expectedKeys = new Set(expected.map(keyOf))
     const existingKeys = new Set((existing || []).map(keyOf))
     const missing = expected.filter(r => !existingKeys.has(keyOf(r)))
-    const stale = (existing || []).filter(r => r.payment_status !== 'paid' && !expectedKeys.has(keyOf(r)))
+
+    // A row is stale only when the thing it was earned on was actually LOADED
+    // and no longer produces it. Payroll fetches invoices that are unpaid or
+    // touched in the period, and payments inside the period — so a commission
+    // earned last month sits on an invoice this call cannot see, produces no
+    // expected row, and was being deleted as though the earning had been
+    // undone. Christopher Lyman lost his September commissions that way
+    // (JOB-MR2C9AT3, $23,883 collected 17 Sep): paid invoice, September
+    // updated_at, outside October's window, row gone — and because nothing
+    // reinserts a row whose invoice has aged out, it never came back.
+    //
+    // Delete only what we can prove is no longer earned.
+    const loadedPaymentIds = new Set((data?.payments || []).map(p => p.id).filter(v => v != null))
+    const loadedInvoiceIds = new Set((data?.invoices || []).map(i => i.id).filter(v => v != null))
+    const loadedUtilityIds = new Set((data?.utilityInvoices || []).map(u => u.id).filter(v => v != null))
+    const inView = (r) => {
+      if (r.payment_id != null) return loadedPaymentIds.has(r.payment_id)
+      if (r.utility_invoice_id != null) return loadedUtilityIds.has(r.utility_invoice_id)
+      return r.invoice_id != null && loadedInvoiceIds.has(r.invoice_id)
+    }
+    const stale = (existing || []).filter(r => r.payment_status !== 'paid' && inView(r) && !expectedKeys.has(keyOf(r)))
     let inserted = 0, deleted = 0
     if (stale.length) {
       const { error: delErr } = await supabase.from('rep_commissions').delete().in('id', stale.map(r => r.id))
@@ -183,7 +203,10 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
 }
 
 export async function fetchRepCommissions(supabase, companyId, employeeId = null) {
-  let q = supabase.from('rep_commissions').select('id, employee_id, invoice_id, job_id, payment_id, kind, amount, earned_at, payment_status, paid_at, queued_for_payroll').eq('company_id', companyId)
+  // rate, covered_by_salary and paid_payroll_run_id: the pay history shows
+  // which jobs a cheque paid for and at what rate, and whether a salary
+  // covered it instead (lib/payHistory).
+  let q = supabase.from('rep_commissions').select('id, employee_id, invoice_id, job_id, payment_id, kind, amount, rate, earned_at, payment_status, paid_at, paid_payroll_run_id, covered_by_salary, queued_for_payroll').eq('company_id', companyId)
   if (employeeId != null) q = q.eq('employee_id', employeeId)
   const { data, error } = await q
   if (error) { console.warn('[fetchRepCommissions] failed:', error.message); return [] }

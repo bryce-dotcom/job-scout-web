@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { APP_URL } from "../_shared/notifyRep.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -91,7 +92,8 @@ serve(async (req) => {
         body: new URLSearchParams({
           grant_type: 'authorization_code',
           code,
-          redirect_uri: redirect_uri || `${Deno.env.get('PORTAL_BASE_URL') || 'https://app.jobscout.com'}/settings?tab=integrations&qb_callback=true`,
+          // APP_URL, not 'app.jobscout.com' — that domain does not exist.
+          redirect_uri: redirect_uri || `${Deno.env.get('PORTAL_BASE_URL') || APP_URL}/settings?tab=integrations&qb_callback=true`,
         }),
       });
 

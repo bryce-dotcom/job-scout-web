@@ -17,6 +17,7 @@ import { quoteStatusColors, invoiceStatusColors } from '../lib/statusColors'
 import { getCustomerPrimary, getCustomerSecondary } from '../lib/customerDisplay'
 import { statementModel } from '../lib/customerStatement'
 import { recordConsent, smsConsentState, smsTermsPath } from '../lib/smsConsent'
+import { parseLocalDate } from '../lib/localDate'
 import useSmartBack from '../lib/useSmartBack'
 import { creditTotals, fmtMoney, creditKindLabel } from '../lib/creditLedger'
 
@@ -2584,7 +2585,20 @@ export default function CustomerDetail() {
                         <span style={{ fontSize: '13px', fontWeight: '600', color: theme.text, textTransform: 'capitalize' }}>
                           {comm.type || 'Message'}
                         </span>
-                        {comm.status && (
+                        {/* A customer reply is the thing a rep is looking for in
+                            this list, so it should not look like everything we
+                            sent them. */}
+                        {comm.direction === 'in' && (
+                          <span style={{
+                            padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
+                            backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6',
+                          }}>
+                            Received
+                          </span>
+                        )}
+                        {/* 'received' would only repeat the badge above it.
+                            'failed' and 'undelivered' still need saying. */}
+                        {comm.status && comm.status !== 'received' && (
                           <span style={{
                             padding: '2px 8px',
                             backgroundColor: theme.accentBg,
@@ -2597,17 +2611,31 @@ export default function CustomerDetail() {
                           </span>
                         )}
                         <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}>
-                          {comm.sent_date ? new Date(comm.sent_date).toLocaleDateString() : comm.created_at ? new Date(comm.created_at).toLocaleDateString() : ''}
+                          {/* sent_date is a calendar day. new Date('2026-10-05')
+                              is UTC midnight, which is the 4th in Denver — this
+                              showed today's messages as yesterday. */}
+                          {parseLocalDate(comm.sent_date)?.toLocaleDateString()
+                            || parseLocalDate(comm.created_at)?.toLocaleDateString()
+                            || ''}
                         </span>
                       </div>
                       {comm.recipient && (
                         <div style={{ fontSize: '13px', color: theme.textSecondary }}>
-                          To: {comm.recipient}
+                          {comm.direction === 'in' ? 'From' : 'To'}: {comm.recipient}
                         </div>
                       )}
                       {comm.response && (
-                        <div style={{ fontSize: '13px', color: theme.textMuted, marginTop: '4px' }}>
-                          {comm.response.length > 120 ? comm.response.substring(0, 120) + '...' : comm.response}
+                        // An inbound message IS the words the customer wrote, so
+                        // show them. 120 characters of a reply is no use to the
+                        // person deciding how to answer it.
+                        <div style={{
+                          fontSize: '13px', marginTop: '4px',
+                          color: comm.direction === 'in' ? theme.text : theme.textMuted,
+                          whiteSpace: comm.direction === 'in' ? 'pre-wrap' : 'normal',
+                        }}>
+                          {comm.direction === 'in' || comm.response.length <= 120
+                            ? comm.response
+                            : comm.response.substring(0, 120) + '...'}
                         </div>
                       )}
                       {comm.employee?.name && (

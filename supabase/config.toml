@@ -488,3 +488,12 @@ verify_jwt = false
 # own site. Deploy with --no-verify-jwt.
 [functions.public-company-card]
 verify_jwt = false
+
+# Twilio posts an arriving text here and cannot send a Supabase JWT, so this
+# must stay open. Unpinned, a routine redeploy flips verify_jwt back to true,
+# every inbound message 401s, and customer replies start vanishing again — the
+# exact failure that silenced estimate-followup and Resend before it. Safe to
+# expose: it verifies Twilio's HMAC signature with the receiving company's own
+# auth token before it writes anything. Deploy with --no-verify-jwt.
+[functions.inbound-sms]
+verify_jwt = false

@@ -293,3 +293,75 @@ describe('the ledger must not be written from half-loaded data', () => {
     expect(inserted[0].source).toBe('live')
   })
 })
+
+describe('a commission earned last month is not deleted for being out of view', () => {
+  // Christopher Lyman, Oct 2026: his September commissions vanished from the
+  // ledger. JOB-MR2C9AT3, $23,883 collected on 17 Sep, invoice Paid with a
+  // September updated_at. Payroll loads invoices that are unpaid OR touched in
+  // the current period, so by October that invoice is not in view: the
+  // recompute produces no row for it, and the reconcile deleted the existing
+  // one as "no longer earned". Nothing ever puts it back, because nothing
+  // reinserts a row whose invoice has aged out.
+  //
+  // Delete only what we can prove is no longer earned.
+  const earned = (over) => ({
+    id: 900, employee_id: 9, kind: 'services', payment_status: 'earned',
+    payment_id: null, invoice_id: 77, utility_invoice_id: null, ...over,
+  })
+
+  const clientWith = (existing) => {
+    const deleted = []
+    const client = {
+      from() { return this },
+      select() { return this },
+      eq() { return this },
+      in(_col, ids) { deleted.push(...ids); return Promise.resolve({ error: null }) },
+      insert() { return Promise.resolve({ error: null }) },
+      delete() { return this },
+      then(res) { return Promise.resolve({ data: existing, error: null }).then(res) },
+    }
+    return { client, deleted }
+  }
+
+  const liveData = (over = {}) => ({
+    employees: [], jobs: [], leads: [],
+    invoices: [{ id: 1, job_id: 1, amount: 100, discount_applied: 0, tax_amount: 0, payment_status: 'Pending' }],
+    payments: [{ id: 5, invoice_id: 1, amount: 10, date: '2026-10-02' }],
+    ...over,
+  })
+
+  it('keeps a row whose invoice is not in the loaded set', async () => {
+    const { client, deleted } = clientWith([earned()])        // invoice 77, not loaded
+    const out = await syncRepCommissions(client, 3, liveData())
+    expect(deleted).not.toContain(900)
+    expect(out.deleted).toBe(0)
+  })
+
+  it('keeps a row whose payment is not in the loaded set', async () => {
+    const { client, deleted } = clientWith([earned({ payment_id: 4242, invoice_id: 77 })])
+    await syncRepCommissions(client, 3, liveData())
+    expect(deleted).not.toContain(900)
+  })
+
+  it('keeps a utility row whose utility invoice is not in the loaded set', async () => {
+    const { client, deleted } = clientWith([earned({ invoice_id: null, utility_invoice_id: 55, kind: 'utility' })])
+    await syncRepCommissions(client, 3, liveData())
+    expect(deleted).not.toContain(900)
+  })
+
+  it('still deletes a row whose invoice IS loaded and no longer earns it', async () => {
+    // invoice 1 is in view and produces nothing for employee 9 (no jobs, no
+    // ownership), so this row really has been undone — that is the case the
+    // reconcile exists for.
+    const { client, deleted } = clientWith([earned({ invoice_id: 1 })])
+    const out = await syncRepCommissions(client, 3, liveData())
+    expect(deleted).toContain(900)
+    expect(out.deleted).toBe(1)
+  })
+
+  it('never deletes a row that has been paid, in view or not', async () => {
+    const { client, deleted } = clientWith([earned({ invoice_id: 1, payment_status: 'paid' })])
+    await syncRepCommissions(client, 3, liveData())
+    expect(deleted).not.toContain(900)
+  })
+})
