@@ -83,6 +83,7 @@ import FreddyTrips from './pages/agents/freddy/FreddyTrips'
 import FreddyCosts from './pages/agents/freddy/FreddyCosts'
 import FreddyDrivers from './pages/agents/freddy/FreddyDrivers'
 import FreddyAlerts from './pages/agents/freddy/FreddyAlerts'
+import ChrisLights from './pages/agents/ChrisLights'
 import ZachWorkspace from './pages/agents/zach/ZachWorkspace'
 import ZachProperties from './pages/agents/zach/ZachProperties'
 import ZachVisits from './pages/agents/zach/ZachVisits'
@@ -516,6 +517,9 @@ function App() {
           <Route path="/agents/benny" element={<BennyWorkspace />}>
             <Route index element={<BennyBids />} />
           </Route>
+          {/* Chris Christmas Lighting — roofline from the air, priced by the
+              foot. Zach's winter: same customers, same trucks, empty December. */}
+          <Route path="/agents/chris" element={<ChrisLights />} />
           {/* Sal Workspace (Solicitation Scout — finds bids, hands them to Benny) */}
           <Route path="/agents/sal" element={<SalWorkspace />}>
             <Route index element={<SalBoard />} />
