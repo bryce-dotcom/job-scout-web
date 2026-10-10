@@ -95,15 +95,17 @@ describe('yes means yes, and only to the card in hand', () => {
 
   it('clears what it is holding once it is decided, either way', () => {
     const applied = sms.slice(sms.indexOf('YES.test(said)'), sms.indexOf('NO.test(said)'))
-    expect(applied).toMatch(/setPending\(r, companyId, employeeId, employee\.email, null\)/)
+    expect(applied).toMatch(/setPending\(r, channel, companyId, employeeId, employee\.email, null\)/)
   })
 })
 
 describe('a text conversation remembers', () => {
   it('keeps turns where the chat history already lives, not in a silo', () => {
     expect(sms).toMatch(/ai_messages/)
-    expect(sms).toMatch(/session_id=eq\.\$\{SESSION\(employeeId\)\}/)
-    expect(sms).toMatch(/module_used: 'arnie-sms'/)
+    // Per person AND per channel: answering "yes" to a card you were emailed
+    // must not apply one you were texted.
+    expect(sms).toMatch(/session_id=eq\.\$\{SESSION\(channel, employeeId\)\}/)
+    expect(sms).toContain('module_used: `arnie-${channel.key}`')
   })
 
   it('reads them oldest first, so "that one too" means something', () => {
@@ -176,5 +178,46 @@ describe('the card survives the round trip', () => {
 
   it('a card that cannot be parsed is treated as no card, not as a broken one', () => {
     expect(sms).toMatch(/catch \{ return null \}/)
+  })
+})
+
+describe('the same Arnie, by email', () => {
+  const email = read('../../supabase/functions/inbound-email/index.ts')
+  const webhook2 = read('../../supabase/functions/_shared/inboundWebhook.ts')
+
+  it('mail to arnie@ is a conversation, not something to file', () => {
+    expect(webhook2).toMatch(/if \(local === 'arnie' \|\| local\.startsWith\('arnie\+'\)\) return 'arnie'/)
+    expect(email).toMatch(/if \(kindEarly === 'arnie'\)/)
+  })
+
+  it('only an active employee gets an answer — the address is the whole credential', () => {
+    expect(email).toMatch(/employeeByContact\(rest, \{ email: sender \}\)/)
+    expect(email).toMatch(/arnie_unknown_sender/)
+  })
+
+  it('everything else the webhook does is left alone', () => {
+    // The branch returns before any of the filing below it.
+    expect(email.indexOf("kindEarly === 'arnie'")).toBeLessThan(email.indexOf('isAutoReply(mail.subject'))
+    expect(email).toMatch(/estimates/)
+    expect(email).toMatch(/feedback/)
+  })
+
+  it('answers the question, not the quoted thread below it', () => {
+    expect(email).toMatch(/On \.\+ wrote:/)
+    expect(email).toMatch(/Original Message/)
+  })
+
+  it('shares the handshake with text rather than repeating it', () => {
+    expect(sms).toMatch(/export function arnieByEmail/)
+    expect(sms).toMatch(/export async function arnieConverse/)
+    // One core; the channel only decides the thread and the length.
+    expect(sms).toMatch(/export const EMAIL_CHANNEL: Channel = \{ key: 'email', max: 6000/)
+    expect(sms).toMatch(/export const SMS_CHANNEL: Channel = \{ key: 'sms', max: SMS_MAX/)
+  })
+
+  it('an email is not truncated to a text message', () => {
+    const long = mod.fit(mod.EMAIL_CHANNEL, 'x'.repeat(3000))
+    expect(long.length).toBe(3000)
+    expect(mod.fit(mod.SMS_CHANNEL, 'x'.repeat(3000)).length).toBeLessThanOrEqual(mod.SMS_MAX)
   })
 })

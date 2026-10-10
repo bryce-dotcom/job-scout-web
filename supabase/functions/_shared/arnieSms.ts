@@ -53,7 +53,24 @@ export function cardAsText(preview: Any): string {
   return [head, ...lines].join('\n')
 }
 
-const SESSION = (employeeId: number) => `sms:${employeeId}`
+/**
+ * One thread per person per channel. Texts and emails are different
+ * conversations — answering "yes" to a card you were emailed should not apply
+ * one you were texted — but both live in ai_messages so they show up in
+ * Arnie's history like any other.
+ */
+export interface Channel {
+  /** 'sms' | 'email' — the session prefix and what the reply may look like. */
+  key: string
+  /** Longest reply this channel should carry. */
+  max: number
+  /** How approving is described, in the words of that medium. */
+  approveHint: string
+}
+export const SMS_CHANNEL: Channel = { key: 'sms', max: SMS_MAX, approveHint: 'Reply YES to approve, NO to drop it.' }
+export const EMAIL_CHANNEL: Channel = { key: 'email', max: 6000, approveHint: 'Reply YES to approve this, or NO to drop it.' }
+
+const SESSION = (channel: Channel, employeeId: number) => `${channel.key}:${employeeId}`
 
 export interface SmsRest { url: string; key: string; internalKey?: string }
 // REST reads go with the service key; a call to another FUNCTION goes with
@@ -62,9 +79,9 @@ const H = (r: SmsRest) => ({ apikey: r.key, Authorization: `Bearer ${r.key}`, 'C
 const FH = (r: SmsRest) => ({ apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json', ...(r.internalKey ? { 'x-arnie-internal': r.internalKey } : {}) })
 
 /** The last few turns, oldest first. Enough for "do that one too" to mean something. */
-export async function recentTurns(r: SmsRest, companyId: number, employeeId: number, limit = 8): Promise<{ role: string; content: string }[]> {
+export async function recentTurns(r: SmsRest, channel: Channel, companyId: number, employeeId: number, limit = 8): Promise<{ role: string; content: string }[]> {
   const res = await fetch(
-    `${r.url}/rest/v1/ai_messages?select=role,content,created_at&company_id=eq.${companyId}&session_id=eq.${SESSION(employeeId)}&order=created_at.desc&limit=${limit}`,
+    `${r.url}/rest/v1/ai_messages?select=role,content,created_at&company_id=eq.${companyId}&session_id=eq.${SESSION(channel, employeeId)}&order=created_at.desc&limit=${limit}`,
     { headers: H(r) },
   )
   if (!res.ok) return []
@@ -72,25 +89,25 @@ export async function recentTurns(r: SmsRest, companyId: number, employeeId: num
   return rows.reverse().map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: str(m.content) })).filter((m) => m.content)
 }
 
-export async function rememberTurn(r: SmsRest, companyId: number, employeeId: number, role: 'user' | 'assistant', content: string) {
+export async function rememberTurn(r: SmsRest, channel: Channel, companyId: number, employeeId: number, role: 'user' | 'assistant', content: string) {
   await fetch(`${r.url}/rest/v1/ai_messages`, {
     method: 'POST',
     headers: H(r),
     body: JSON.stringify({
       company_id: companyId,
-      session_id: SESSION(employeeId),
-      message_id: `${SESSION(employeeId)}-${Date.now()}-${role}`,
+      session_id: SESSION(channel, employeeId),
+      message_id: `${SESSION(channel, employeeId)}-${Date.now()}-${role}`,
       role,
       content: str(content).slice(0, 8000),
-      module_used: 'arnie-sms',
+      module_used: `arnie-${channel.key}`,
     }),
   }).catch(() => {})
 }
 
 /** The card waiting on a "yes", held on the person's own session row. */
-export async function pendingProposal(r: SmsRest, companyId: number, employeeId: number): Promise<Any | null> {
+export async function pendingProposal(r: SmsRest, channel: Channel, companyId: number, employeeId: number): Promise<Any | null> {
   const res = await fetch(
-    `${r.url}/rest/v1/ai_sessions?select=id,pending_action,pending_data&company_id=eq.${companyId}&session_id=eq.${SESSION(employeeId)}&limit=1`,
+    `${r.url}/rest/v1/ai_sessions?select=id,pending_action,pending_data&company_id=eq.${companyId}&session_id=eq.${SESSION(channel, employeeId)}&limit=1`,
     { headers: H(r) },
   )
   if (!res.ok) return null
@@ -105,8 +122,8 @@ export async function pendingProposal(r: SmsRest, companyId: number, employeeId:
   return data && typeof data === 'object' ? { ...data, sessionRowId: row.id } : null
 }
 
-export async function setPending(r: SmsRest, companyId: number, employeeId: number, email: string, data: Any | null) {
-  const sid = SESSION(employeeId)
+export async function setPending(r: SmsRest, channel: Channel, companyId: number, employeeId: number, email: string, data: Any | null) {
+  const sid = SESSION(channel, employeeId)
   const existing = await fetch(`${r.url}/rest/v1/ai_sessions?select=id&company_id=eq.${companyId}&session_id=eq.${sid}&limit=1`, { headers: H(r) })
   const row = existing.ok ? (await existing.json().catch(() => []))?.[0] : null
   // Written as a string deliberately: the column is text, and a round trip
@@ -126,45 +143,45 @@ export async function setPending(r: SmsRest, companyId: number, employeeId: numb
  * One inbound text from a known employee, start to finish.
  * Returns the words to send back — the caller decides how (TwiML, the API).
  */
-export async function arnieBySms(r: SmsRest, employee: Any, bodyText: string): Promise<string> {
+export async function arnieConverse(r: SmsRest, channel: Channel, employee: Any, bodyText: string): Promise<string> {
   const companyId = employee.company_id as number
   const employeeId = employee.id as number
   const said = str(bodyText)
   if (!said) return ''
 
   // ── "yes" to the card he is already holding ────────────────────────────
-  const pending = await pendingProposal(r, companyId, employeeId)
+  const pending = await pendingProposal(r, channel, companyId, employeeId)
   if (pending?.id && YES.test(said)) {
     if (APPROVE_IN_APP_ONLY.includes(str(pending.target))) {
-      return forSms(`That one moves money, so it needs approving in the app — open Arnie and it is waiting there. I have left it drafted.`)
+      return fit(channel, `That one moves money, so it needs approving in the app — open Arnie and it is waiting there. I have left it drafted.`)
     }
     const res = await fetch(`${r.url}/functions/v1/arnie-config`, {
       method: 'POST', headers: FH(r),
       body: JSON.stringify({ action: 'apply', proposal_id: pending.id, as_employee_id: employeeId }),
     })
     const out = await res.json().catch(() => ({}))
-    await setPending(r, companyId, employeeId, employee.email, null)
+    await setPending(r, channel, companyId, employeeId, employee.email, null)
     const reply = out?.ok ? `Done — ${str(pending.label) || 'that'} is applied.` : `It did not go through: ${str(out?.error) || 'something stopped it'}.`
-    await rememberTurn(r, companyId, employeeId, 'assistant', reply)
-    return forSms(reply)
+    await rememberTurn(r, channel, companyId, employeeId, 'assistant', reply)
+    return fit(channel, reply)
   }
   if (pending?.id && NO.test(said)) {
     await fetch(`${r.url}/functions/v1/arnie-config`, {
       method: 'POST', headers: FH(r),
       body: JSON.stringify({ action: 'reject', proposal_id: pending.id, as_employee_id: employeeId }),
     }).catch(() => {})
-    await setPending(r, companyId, employeeId, employee.email, null)
+    await setPending(r, channel, companyId, employeeId, employee.email, null)
     const reply = 'Dropped it.'
-    await rememberTurn(r, companyId, employeeId, 'assistant', reply)
+    await rememberTurn(r, channel, companyId, employeeId, 'assistant', reply)
     return reply
   }
 
   // ── an ordinary turn ───────────────────────────────────────────────────
-  const history = await recentTurns(r, companyId, employeeId)
-  await rememberTurn(r, companyId, employeeId, 'user', said)
+  const history = await recentTurns(r, channel, companyId, employeeId)
+  await rememberTurn(r, channel, companyId, employeeId, 'user', said)
 
   const turn = await runArnieTurn(r, { employee, messages: [...history, { role: 'user', content: said }] })
-  if (turn.error) return forSms(`I could not get to that just now — ${turn.error}`)
+  if (turn.error) return fit(channel, `I could not get to that just now — ${turn.error}`)
 
   let reply = turn.text
   const preview = turn.proposal?.preview
@@ -172,15 +189,33 @@ export async function arnieBySms(r: SmsRest, employee: Any, bodyText: string): P
 
   if (preview && proposalId) {
     const money = APPROVE_IN_APP_ONLY.includes(str(turn.proposal?.proposal?.target))
-    await setPending(r, companyId, employeeId, employee.email, {
+    await setPending(r, channel, companyId, employeeId, employee.email, {
       id: proposalId,
       target: turn.proposal?.proposal?.target,
       label: preview?.label,
     })
-    reply = [reply, cardAsText(preview), money ? 'Approve this one in the app — it moves money.' : 'Reply YES to approve, NO to drop it.']
+    reply = [reply, cardAsText(preview), money ? 'Approve this one in the app — it moves money.' : channel.approveHint]
       .filter(Boolean).join('\n\n')
   }
 
-  await rememberTurn(r, companyId, employeeId, 'assistant', reply)
-  return forSms(reply)
+  await rememberTurn(r, channel, companyId, employeeId, 'assistant', reply)
+  return fit(channel, reply)
+}
+
+
+/** Fit a reply to the channel: a text gets cut, an email does not need to be. */
+export function fit(channel: Channel, text: string): string {
+  const t = plainText(text)
+  if (t.length <= channel.max) return t
+  return t.slice(0, channel.max - 24).trimEnd() + '…\n(more in the app)'
+}
+
+/** One inbound TEXT from a known employee. */
+export function arnieBySms(r: SmsRest, employee: Any, bodyText: string): Promise<string> {
+  return arnieConverse(r, SMS_CHANNEL, employee, bodyText)
+}
+
+/** One inbound EMAIL from a known employee. */
+export function arnieByEmail(r: SmsRest, employee: Any, bodyText: string): Promise<string> {
+  return arnieConverse(r, EMAIL_CHANNEL, employee, bodyText)
 }
