@@ -15,7 +15,8 @@
 //
 // Secret: GEMINI_API_KEY (Google AI Studio), the same one marketing-image uses.
 // Input  : { company_id, image_base64, coverage?, bulb?, address? }
-// Output : { ok, image_base64, mime, label }   or   { ok:false, error, needs_key?, wrong_view? }
+// Output : { ok, image_base64, mime, label, coverage_note, checked, redrawn }
+//          or { ok:false, error, needs_key?, wrong_view?, unfaithful? }
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { resolveCaller } from '../_shared/auth.ts'
@@ -39,16 +40,75 @@ const COVERAGE_TEXT: Record<string, string> = {
   full: 'along every eave and gable line, all the way round',
 }
 
-function prompt(coverage: string, bulb: string) {
-  return `Edit this photograph of a house so it shows the same house on a winter evening with Christmas lights installed.
+// A street view shows the front and maybe a corner — so Front, Half and Full
+// look nearly alike in the picture. The difference is the feet and the price,
+// and the customer is told that rather than left wondering.
+const COVERAGE_NOTE: Record<string, string> = {
+  front: 'Front only — what you see here is what gets lit.',
+  half: 'Front view shown — both sides are lit too, and priced in the estimate.',
+  full: 'Front view shown — the sides and back are lit too, and priced in the estimate.',
+}
 
-Keep everything that is actually there: the same roof shape, the same windows, the same door, the same driveway, the same trees and the same parked cars. Do not add, remove or move any part of the building. Do not add people, reindeer, inflatables, snow that is not already there, or a wreath. This is a quote for a lighting install, not a greeting card.
+// Said as "winter evening", the model took it as licence to snow on the lawn
+// and strip the leaves off the trees (Highland, 10-10). The customer has to
+// recognise their own yard, so the season is pinned to the photo's own, and
+// the one place bulbs may go is said as a hard rule rather than a style.
+function prompt(coverage: string, bulb: string, retryNote = '') {
+  return `Edit this photograph of a house to show the SAME scene at dusk with Christmas lights installed on the roofline.
+
+THE SCENE DOES NOT CHANGE. Same season as the photo: if the trees have leaves, they keep every leaf; if the grass is green, it stays green; if there is no snow, there is no snow, frost or ice. Same roof shape, windows, door, driveway, trees, bushes, parked cars, kerb and pavement, all in the same place. Do not add people, decorations, inflatables, wreaths or garlands.
 
 Change exactly two things:
-1. Time of day — dusk. Deep blue sky, the house in soft shadow, warm light in one or two windows.
-2. Add a neat single run of ${bulb} bulbs, evenly spaced about 12 inches apart, following the roofline ${COVERAGE_TEXT[coverage] || COVERAGE_TEXT.full}. The bulbs sit tight to the fascia in a straight, professional line that follows the real roof edges in the photo. A gentle glow on the surface beneath each run. No lights on trees, bushes, fences or the ground unless they are already lit in the photo.
+1. Light only — dusk. Deep blue sky, the house in soft shadow, warm light in one or two windows. This is a lighting change, not a weather or season change.
+2. Add a neat single run of ${bulb} bulbs, evenly spaced about 12 inches apart, ${COVERAGE_TEXT[coverage] || COVERAGE_TEXT.full}. The bulbs sit tight to the fascia in a straight, professional line on the real roof edges in the photo, with a gentle glow on the wall beneath.
 
-Photographic, not illustrated. The result should look like a photo taken of this house after the crew went home.`
+HARD RULE: bulbs go ONLY on the roof edge of the house. None in trees, on branches, in bushes, on fences, railings, posts or the ground — even where a tree stands in front of the roof, the tree stays unlit and simply hides that part of the run.
+
+Photographic, not illustrated: a photo taken of this house after the crew went home.${retryNote ? `\n\nA previous attempt got this wrong — do not repeat it: ${retryNote}` : ''}`
+}
+
+// The model does not always do what it is told, and a customer who sees snow
+// on their summer lawn or lights in a tree they are not buying stops trusting
+// the picture. So every render is compared with the photo it came from before
+// anyone sees it, and redrawn once if it drifted.
+const FAITHFUL_PROMPT = `The first image is a real photo of a house. The second is an edit meant to change ONLY the time of day to dusk and add Christmas lights along the roof edge.
+
+Compare them and answer each strictly:
+- season_changed: snow, frost or ice appears that is not in the first image, or trees lost or gained leaves, or green grass turned brown/white.
+- lights_off_roof: any bulbs appear anywhere other than the roof edge of the house — in a tree, bush, on a fence, post or the ground.
+- house_changed: the building's shape, windows, doors or garage are different, or a car, tree or other object was added, removed or moved.
+
+Reply with JSON only: {"season_changed":false,"lights_off_roof":false,"house_changed":false,"note":"one short sentence on what is wrong, or empty"}`
+
+/** null = faithful; a sentence = what drifted; 'unchecked' = the check itself could not run. */
+async function drift(key: string, mime: string, original: string, outMime: string, out: string): Promise<string | null> {
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${VIEW_MODEL}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        contents: [{ parts: [
+          { inlineData: { mimeType: mime, data: original } },
+          { inlineData: { mimeType: outMime, data: out } },
+          { text: FAITHFUL_PROMPT },
+        ] }],
+        generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+      }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { console.error('[chris-render] faithful check error:', j?.error?.message || r.status); return 'unchecked' }
+    const text = String(j.candidates?.[0]?.content?.parts?.[0]?.text || '')
+    const v = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || '{}')
+    const wrong: string[] = []
+    if (v.season_changed === true) wrong.push('the season changed (snow, frost or bare trees that are not in the photo)')
+    if (v.lights_off_roof === true) wrong.push('bulbs were put somewhere other than the roof edge')
+    if (v.house_changed === true) wrong.push('the house or yard was changed')
+    if (!wrong.length) return null
+    return wrong.join('; ') + (v.note ? ` — ${String(v.note).slice(0, 160)}` : '')
+  } catch (e) {
+    console.error('[chris-render] faithful check failed:', e)
+    return 'unchecked'
+  }
 }
 
 // The edit only stays honest when it starts from a street-level photo of the
@@ -129,42 +189,66 @@ serve(async (req) => {
       return json({ ok: false, capped: true, error: capMessage(cap, 'picture') }, 200)
     }
 
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            // The photo first: this is an EDIT of their house, not a painting
-            // of a house like theirs.
-            { inlineData: { mimeType: mime, data: clean } },
-            { text: prompt(String(coverage), String(bulb).slice(0, 60)) },
-          ],
-        }],
-        generationConfig: { responseModalities: ['IMAGE'] },
-      }),
-    })
-
-    const j = await r.json().catch(() => ({}))
-    if (!r.ok) {
-      const msg = j?.error?.message || `Gemini ${r.status}`
-      console.error('[chris-render] gemini error:', msg)
-      return json({ ok: false, error: msg, needs_key: r.status === 400 || r.status === 403 }, 200)
+    const draw = async (retryNote = '') => {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              // The photo first: this is an EDIT of their house, not a painting
+              // of a house like theirs.
+              { inlineData: { mimeType: mime, data: clean } },
+              { text: prompt(String(coverage), String(bulb).slice(0, 60), retryNote) },
+            ],
+          }],
+          generationConfig: { responseModalities: ['IMAGE'] },
+        }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        const msg = j?.error?.message || `Gemini ${r.status}`
+        console.error('[chris-render] gemini error:', msg)
+        return { error: msg, needs_key: r.status === 400 || r.status === 403 }
+      }
+      const part = (j.candidates?.[0]?.content?.parts || []).find((p: Record<string, unknown>) => p.inlineData)
+      if (!part) {
+        const why = j.candidates?.[0]?.finishReason
+        return { error: why ? `No picture came back (${why}).` : 'No picture came back.' }
+      }
+      // Every picture drawn is a picture paid for, including a redraw.
+      await recordMediaUsage(meterEnv, { companyId, kind: 'picture', model: MODEL, units: 1, costUsd: MEDIA_PRICES.picture }).catch(() => {})
+      return { data: String(part.inlineData.data), mime: String(part.inlineData.mimeType || 'image/png') }
     }
 
-    const part = (j.candidates?.[0]?.content?.parts || []).find((p: Record<string, unknown>) => p.inlineData)
-    if (!part) {
-      const why = j.candidates?.[0]?.finishReason
-      return json({ ok: false, error: why ? `No picture came back (${why}).` : 'No picture came back.' }, 200)
+    // Draw, compare with their photo, and redraw ONCE telling the model what
+    // it got wrong. Two misses are refused rather than shown: a picture of the
+    // customer's yard in the wrong season is worse than no picture.
+    let shot = await draw()
+    if (!shot.data) return json({ ok: false, error: shot.error, needs_key: shot.needs_key }, 200)
+    let wrong = await drift(key, mime, clean, shot.mime!, shot.data)
+    let redrawn = false
+    if (wrong && wrong !== 'unchecked') {
+      console.warn('[chris-render] redrawing:', wrong)
+      shot = await draw(wrong)
+      if (!shot.data) return json({ ok: false, error: shot.error, needs_key: shot.needs_key }, 200)
+      redrawn = true
+      wrong = await drift(key, mime, clean, shot.mime!, shot.data)
+      if (wrong && wrong !== 'unchecked') {
+        return json({ ok: false, unfaithful: true, error: `Chris drew it twice and both changed the house (${wrong.split(' — ')[0]}). Try again, or try a different photo.` }, 200)
+      }
     }
-
-    await recordMediaUsage(meterEnv, { companyId, kind: 'picture', model: MODEL, units: 1, costUsd: MEDIA_PRICES.picture }).catch(() => {})
 
     return json({
       ok: true,
-      image_base64: part.inlineData.data,
-      mime: part.inlineData.mimeType || 'image/png',
+      image_base64: shot.data,
+      mime: shot.mime,
       label: RENDER_LABEL,
+      coverage_note: COVERAGE_NOTE[String(coverage)] || COVERAGE_NOTE.full,
+      // 'unchecked' = the comparison could not run; the picture is still an
+      // edit of their own street-level photo, so it is shown, but said so.
+      checked: wrong === 'unchecked' ? false : true,
+      redrawn,
       address: address || null,
     })
 

@@ -272,7 +272,7 @@ export default function ChrisLights() {
       })
       if (error) throw error
       if (!data?.ok) { toast.error(data?.error || 'No picture came back.'); setRendering(false); return }
-      setRender({ url: `data:${data.mime};base64,${data.image_base64}`, label: data.label })
+      setRender({ url: `data:${data.mime};base64,${data.image_base64}`, label: data.label, note: data.coverage_note, coverage })
     } catch (err) {
       toast.error('Could not draw the lights: ' + (err?.message || 'unknown error'))
     }
@@ -487,6 +487,12 @@ export default function ChrisLights() {
                   <img src={render.url} alt="The house at dusk with Christmas lights, an AI mock-up" style={{ width: '100%', borderRadius: 8, display: 'block' }} />
                   {/* Said every time, next to the picture. It is a sales
                       picture, not a promise about the work. */}
+                  {/* A front view looks much the same for Front, Half and Full —
+                      the difference is in the feet, so say where it went. */}
+                  {render.note && <p style={{ fontSize: 12, color: theme.textSecondary, margin: '6px 0 0' }}>{render.note}</p>}
+                  {render.coverage !== coverage && (
+                    <p style={{ fontSize: 11, color: theme.warning || '#eab308', margin: '4px 0 0' }}>Drawn for a different coverage — draw it again to match.</p>
+                  )}
                   <p style={{ fontSize: 11, color: theme.textMuted, margin: '6px 0 0', fontStyle: 'italic' }}>{render.label}</p>
                 </div>
               )}
