@@ -190,6 +190,9 @@ export default function MyPay() {
   const [ddForm, setDdForm] = useState({ routing: '', account: '', account2: '', type: 'checking', name: '' })
   const [ddBusy, setDdBusy] = useState(false)
   const [ddMsg, setDdMsg] = useState(null)
+  // Year-end forms for this person: the W-2 (or 1099-NEC) the office
+  // generated, downloadable here instead of asked for by text in January.
+  const [taxDocs, setTaxDocs] = useState([])
   // Frozen rep (%) commissions (rep_commissions) for this employee — read-only
   // here; Payroll is the writer. Replaces the drifty live invoice-commission
   // amount so My Pay and Payroll always agree.
@@ -244,6 +247,18 @@ export default function MyPay() {
       const rows = await fetchUserBonuses(supabase, companyId, effectiveUserId)
       if (!cancelled) setLedgerBonuses(rows)
     })()
+    return () => { cancelled = true }
+  }, [companyId, effectiveUserId])
+
+  useEffect(() => {
+    if (!companyId || !effectiveUserId) { setTaxDocs([]); return }
+    let cancelled = false
+    supabase.from('payroll_tax_filings')
+      .select('id, form_kind, period_start, period_end, pdf_storage_path, status, created_at')
+      .eq('company_id', companyId).eq('employee_id', effectiveUserId)
+      .in('form_kind', ['W-2', '1099-NEC']).neq('status', 'superseded')
+      .order('period_start', { ascending: false })
+      .then(({ data }) => { if (!cancelled) setTaxDocs(data || []) })
     return () => { cancelled = true }
   }, [companyId, effectiveUserId])
 
@@ -1318,6 +1333,31 @@ export default function MyPay() {
           <div style={{ marginTop: 10, fontSize: 11, color: theme.textMuted }}>
             Submit new requests on the Time Clock page.
           </div>
+        </div>
+      )}
+
+      {/* Tax documents — the W-2 / 1099-NEC the office generated for this person. */}
+      {taxDocs.length > 0 && (
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <FileText size={18} style={{ color: theme.accent }} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: theme.text }}>Tax documents</span>
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {taxDocs.map(d => (
+              <button key={d.id}
+                onClick={async () => {
+                  const { data, error } = await supabase.storage.from('project-documents').createSignedUrl(d.pdf_storage_path, 300)
+                  if (error || !data?.signedUrl) { alert('Could not open that form: ' + (error?.message || 'no link')); return }
+                  window.open(data.signedUrl, '_blank')
+                }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: 13, cursor: 'pointer', textAlign: 'left' }}>
+                <span><strong>{d.form_kind}</strong> · tax year {String(d.period_start || '').slice(0, 4)}{d.status === 'draft' ? ' · draft' : ''}</span>
+                <Download size={14} style={{ color: theme.accent }} />
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 8 }}>A draft can still change until the office files it. The final one is what you use for your return.</div>
         </div>
       )}
 
