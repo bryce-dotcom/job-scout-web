@@ -9,7 +9,12 @@ import { Landmark } from 'lucide-react'
 // settings when a bank was linked for Books before Auth was asked for.
 // relink: update mode for a bank whose login broke (ITEM_LOGIN_REQUIRED) —
 // re-authenticate only, do not ask Plaid to add Auth on the way through.
-export default function PlaidLink({ companyId, onSuccess, onError, theme, style, updateItemId = null, relink = false, label = null }) {
+//
+// createToken / onPublicToken: a caller that is not linking the COMPANY's
+// bank — an employee putting their own account on file from My Pay —
+// supplies how to get the link token and what to do with the public token.
+// The company Books exchange is skipped entirely.
+export default function PlaidLink({ companyId, onSuccess, onError, theme, style, updateItemId = null, relink = false, label = null, createToken = null, onPublicToken = null }) {
   const [linkToken, setLinkToken] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -17,17 +22,22 @@ export default function PlaidLink({ companyId, onSuccess, onError, theme, style,
     if (!companyId) return
     let cancelled = false
 
-    const createToken = async () => {
+    const makeToken = async () => {
       setLoading(true)
       try {
-        const { data, error } = await supabase.functions.invoke('plaid-link', {
-          body: { action: 'create_link_token', company_id: companyId, ...(updateItemId ? { update_item_id: updateItemId } : {}), ...(relink ? { relink: true } : {}) }
-        })
-        if (!cancelled) {
-          if (error || data?.error) {
-            onError?.(data?.error || 'Failed to create link token')
-          } else {
-            setLinkToken(data.link_token)
+        if (createToken) {
+          const tok = await createToken()
+          if (!cancelled) { if (tok) setLinkToken(tok); else onError?.('Could not start the bank link') }
+        } else {
+          const { data, error } = await supabase.functions.invoke('plaid-link', {
+            body: { action: 'create_link_token', company_id: companyId, ...(updateItemId ? { update_item_id: updateItemId } : {}), ...(relink ? { relink: true } : {}) }
+          })
+          if (!cancelled) {
+            if (error || data?.error) {
+              onError?.(data?.error || 'Failed to create link token')
+            } else {
+              setLinkToken(data.link_token)
+            }
           }
         }
       } catch (e) {
@@ -36,7 +46,7 @@ export default function PlaidLink({ companyId, onSuccess, onError, theme, style,
       if (!cancelled) setLoading(false)
     }
 
-    createToken()
+    makeToken()
     return () => { cancelled = true }
   }, [companyId, updateItemId, relink])
 
@@ -46,6 +56,11 @@ export default function PlaidLink({ companyId, onSuccess, onError, theme, style,
     if (updateItemId) { onSuccess?.({ updated_item_id: updateItemId, institution: metadata?.institution || null }); return }
     setLoading(true)
     try {
+      if (onPublicToken) {
+        await onPublicToken(publicToken, metadata)
+        setLoading(false)
+        return
+      }
       const { data, error } = await supabase.functions.invoke('plaid-link', {
         body: {
           action: 'exchange_public_token',
@@ -63,7 +78,7 @@ export default function PlaidLink({ companyId, onSuccess, onError, theme, style,
       onError?.(e.message)
     }
     setLoading(false)
-  }, [companyId, onSuccess, onError, updateItemId])
+  }, [companyId, onSuccess, onError, updateItemId, onPublicToken])
 
   const { open, ready } = usePlaidLink({
     token: linkToken,

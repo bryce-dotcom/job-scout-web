@@ -22,6 +22,7 @@ import { localDateStr } from '../lib/localDate'
 import { ptoDaysInPeriod, ptoPayForPeriod, ptoAccrualPerPeriod, ptoBalanceDays } from '../lib/ptoThisPeriod'
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 import { payDateForPeriod } from '../lib/payDate'
+import PlaidLink from '../components/PlaidLink'
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const BENEFIT_LABELS = { health: 'Health', dental: 'Dental', vision: 'Vision', life: 'Life', disability: 'Disability', retirement_401k: '401(k)', hsa: 'HSA', fsa: 'FSA', other: 'Other' }
@@ -182,6 +183,13 @@ export default function MyPay() {
   // and whether a signed direct-deposit authorization is on file.
   const [taxCompany, setTaxCompany] = useState(null)
   const [ddOnFile, setDdOnFile] = useState(null)   // null = unknown, false = none, { mask } = on file
+  // Bryce, 2026-10-10: "as good as Gusto." The employee puts their own bank
+  // on file here — link it through Plaid, or type it — instead of the
+  // office keying account numbers. Writes a signed authorization.
+  const [ddEdit, setDdEdit] = useState(false)
+  const [ddForm, setDdForm] = useState({ routing: '', account: '', account2: '', type: 'checking', name: '' })
+  const [ddBusy, setDdBusy] = useState(false)
+  const [ddMsg, setDdMsg] = useState(null)
   // Frozen rep (%) commissions (rep_commissions) for this employee — read-only
   // here; Payroll is the writer. Replaces the drifty live invoice-commission
   // amount so My Pay and Payroll always agree.
@@ -904,24 +912,110 @@ export default function MyPay() {
         </div>
       )}
 
-      {/* How you get paid. */}
-      {ddOnFile !== null && !is1099 && (
-        <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Shield size={16} style={{ color: ddOnFile ? '#16a34a' : '#b45309' }} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
-                {ddOnFile ? `Direct deposit on file · ${ddOnFile.type} ending ${ddOnFile.mask}` : 'Paid by check'}
+      {/* How you get paid — and change it yourself. */}
+      {ddOnFile !== null && !is1099 && (() => {
+        const inp = { width: '100%', padding: '10px 12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 8, color: theme.text, fontSize: 15, boxSizing: 'border-box' }
+        const lbl = { display: 'block', fontSize: 12, color: theme.textMuted, marginBottom: 4 }
+        const signedName = ddForm.name.trim()
+        const finish = (saved) => {
+          setDdOnFile({ mask: saved.mask, type: saved.type, signedAt: saved.signed_at })
+          setDdEdit(false); setDdBusy(false)
+          setDdForm({ routing: '', account: '', account2: '', type: 'checking', name: '' })
+          setDdMsg({ ok: true, text: `Done. Your pay goes to ${saved.bank_name ? saved.bank_name + ' ' : ''}${saved.type} ending ${saved.mask} starting with the next payroll.` })
+        }
+        const call = async (body) => {
+          setDdBusy(true); setDdMsg(null)
+          const { data, error } = await supabase.functions.invoke('employee-direct-deposit', { body: { company_id: companyId, employee_id: effectiveUserId, ...body } })
+          if (error || data?.error) { setDdBusy(false); setDdMsg({ ok: false, text: data?.error || error?.message || 'That did not save.' }); return null }
+          return data
+        }
+        const saveManual = async () => {
+          if (ddForm.account !== ddForm.account2) { setDdMsg({ ok: false, text: 'The two account numbers do not match.' }); return }
+          if (!signedName) { setDdMsg({ ok: false, text: 'Type your full name to sign the authorization.' }); return }
+          const d = await call({ action: 'manual', routing_number: ddForm.routing, account_number: ddForm.account, account_type: ddForm.type, signature_typed_name: signedName })
+          if (d) finish(d)
+        }
+        return (
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Shield size={16} style={{ color: ddOnFile ? '#16a34a' : '#b45309' }} />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+                    {ddOnFile ? `Direct deposit on file · ${ddOnFile.type} ending ${ddOnFile.mask}` : 'Paid by check'}
+                  </div>
+                  <div style={{ fontSize: 11, color: theme.textMuted }}>
+                    {ddOnFile
+                      ? `Authorized ${ddOnFile.signedAt ? new Date(ddOnFile.signedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}.`
+                      : 'Add your bank and your pay lands in your account on payday instead of a paper check.'}
+                  </div>
+                </div>
               </div>
-              <div style={{ fontSize: 11, color: theme.textMuted }}>
-                {ddOnFile
-                  ? `Authorized ${ddOnFile.signedAt ? new Date(ddOnFile.signedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}. Tell the office if the account changes.`
-                  : 'No direct-deposit authorization on file. The office can send you the onboarding link to add your bank.'}
-              </div>
+              {!isImpersonating && (
+                <button onClick={() => { setDdEdit(e => !e); setDdMsg(null) }}
+                  style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${theme.accent}`, background: ddOnFile ? 'transparent' : theme.accent, color: ddOnFile ? theme.accent : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  {ddEdit ? 'Cancel' : (ddOnFile ? 'Change account' : 'Set up direct deposit')}
+                </button>
+              )}
             </div>
+            {ddMsg && (
+              <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, fontSize: 13, background: ddMsg.ok ? 'rgba(34,197,94,0.10)' : 'rgba(239,68,68,0.10)', color: ddMsg.ok ? '#15803d' : '#b91c1c' }}>{ddMsg.text}</div>
+            )}
+            {ddEdit && (
+              <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+                <div>
+                  <label style={lbl}>Your full name, typed, is your signature</label>
+                  <input value={ddForm.name} onChange={e => setDdForm(f => ({ ...f, name: e.target.value }))} placeholder="First Last" style={inp} autoComplete="name" />
+                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                    By continuing you authorize {useStore.getState().company?.company_name || 'your employer'} to deposit your pay into this account and to reverse a deposit made in error, until you change or cancel it in writing.
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
+                  <div style={{ padding: 12, borderRadius: 10, border: `1px solid ${theme.border}` }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 4 }}>Connect your bank</div>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>Log in to your bank once. The routing and account numbers come straight from the bank, so nothing can be mistyped. JobScout keeps the numbers, not a connection to your account.</div>
+                    <PlaidLink companyId={companyId} theme={theme} label={ddBusy ? 'Saving…' : 'Connect your bank'}
+                      style={{ opacity: signedName && !ddBusy ? 1 : 0.5, pointerEvents: signedName && !ddBusy ? 'auto' : 'none' }}
+                      createToken={async () => {
+                        const { data, error } = await supabase.functions.invoke('employee-direct-deposit', { body: { action: 'link_token', company_id: companyId, employee_id: effectiveUserId } })
+                        if (error || data?.error) { setDdMsg({ ok: false, text: data?.error || error?.message || 'Bank linking is not available right now. Enter the account by hand.' }); return null }
+                        return data?.link_token || null
+                      }}
+                      onPublicToken={async (publicToken, metadata) => {
+                        const d = await call({ action: 'exchange', public_token: publicToken, account_id: metadata?.accounts?.[0]?.id || null, institution_name: metadata?.institution?.name || null, signature_typed_name: signedName })
+                        if (d) finish(d)
+                      }}
+                      onError={(m) => setDdMsg({ ok: false, text: String(m) })} />
+                    {!signedName && <div style={{ fontSize: 11, color: '#b45309', marginTop: 6 }}>Type your name above first.</div>}
+                  </div>
+                  <div style={{ padding: 12, borderRadius: 10, border: `1px solid ${theme.border}` }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 4 }}>Or enter it from a check</div>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <div><label style={lbl}>Routing number (9 digits, bottom left of a check)</label>
+                        <input inputMode="numeric" maxLength={9} value={ddForm.routing} onChange={e => setDdForm(f => ({ ...f, routing: e.target.value.replace(/\D/g, '') }))} style={inp} /></div>
+                      <div><label style={lbl}>Account number</label>
+                        <input inputMode="numeric" maxLength={17} value={ddForm.account} onChange={e => setDdForm(f => ({ ...f, account: e.target.value.replace(/\D/g, '') }))} style={inp} /></div>
+                      <div><label style={lbl}>Account number again</label>
+                        <input inputMode="numeric" maxLength={17} value={ddForm.account2} onChange={e => setDdForm(f => ({ ...f, account2: e.target.value.replace(/\D/g, '') }))} style={inp} /></div>
+                      <div style={{ display: 'flex', gap: 14, fontSize: 13, color: theme.text }}>
+                        {['checking', 'savings'].map(t => (
+                          <label key={t} style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+                            <input type="radio" name="ddType" checked={ddForm.type === t} onChange={() => setDdForm(f => ({ ...f, type: t }))} />{t[0].toUpperCase() + t.slice(1)}
+                          </label>
+                        ))}
+                      </div>
+                      <button onClick={saveManual} disabled={ddBusy || ddForm.routing.length !== 9 || ddForm.account.length < 4 || !signedName}
+                        style={{ padding: '10px 14px', borderRadius: 8, border: 'none', background: theme.accent, color: '#fff', fontSize: 14, fontWeight: 600, cursor: ddBusy ? 'wait' : 'pointer', opacity: (ddBusy || ddForm.routing.length !== 9 || ddForm.account.length < 4 || !signedName) ? 0.5 : 1 }}>
+                        {ddBusy ? 'Saving…' : 'Save and sign'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* In your next paycheck — what an admin has staged (added to the run). */}
       {inNextPaycheck > 0 && (
