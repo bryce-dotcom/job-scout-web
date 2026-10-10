@@ -10,6 +10,7 @@ import { jsPDF } from 'jspdf'
 import { useStore } from '../lib/store'
 import { supabase } from '../lib/supabase'
 import { groupRemittance, remittanceTotal, buildDepositWorksheet } from '../lib/payrollRemittance'
+import { deliverPaystubs, deliverySummary } from '../lib/paystubDelivery'
 
 const fmt = (n) => ((Number(n) || 0) < 0 ? '−' : '') + '$' + Math.abs(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtDate = (d) => {
@@ -134,10 +135,29 @@ export default function PayrollRemittancePanel({ liabilities = [], theme, onChan
     } catch (err) { alert('Could not build the ACH file: ' + err.message) } finally { setBusy(null) }
   }
 
+  // Email (and text, if Twilio is set up) every stub of a run that has not
+  // gone out yet. A second press offers to resend to everyone.
+  const emailStubs = async (g) => {
+    if (!g.run?.id) return
+    setBusy('stubs-' + g.key)
+    try {
+      let r = await deliverPaystubs({ companyId, runId: g.run.id, company, channels: { email: true, sms: true } })
+      if (!r.emailed && !r.texted && !r.failed.length && !r.skipped.length
+          && window.confirm('Every stub for this run was already sent. Send them all again?')) {
+        r = await deliverPaystubs({ companyId, runId: g.run.id, company, channels: { email: true, sms: true }, force: true })
+      }
+      alert(deliverySummary(r))
+    } catch (err) { alert('Could not send paystubs: ' + err.message) } finally { setBusy(null) }
+  }
+
   const markPaid = async (bucket) => {
+    // The agency gives a confirmation number; keep it with the payment so
+    // an IRS or state notice can be answered from this screen.
+    const conf = bucket.credit ? '' : window.prompt('Confirmation number from EFTPS or the state portal (optional):', '')
+    if (conf === null) return
     setBusy(bucket.liabilityIds.join(','))
     const { error } = await supabase.from('payroll_tax_liabilities')
-      .update({ paid_at: new Date().toISOString(), paid_via: paidViaFor(bucket.id), updated_at: new Date().toISOString() })
+      .update({ paid_at: new Date().toISOString(), paid_via: paidViaFor(bucket.id), confirmation_number: String(conf || '').trim() || null, updated_at: new Date().toISOString() })
       .in('id', bucket.liabilityIds).eq('company_id', companyId)
     setBusy(null)
     if (error) { alert('Could not mark remitted: ' + error.message); return }
@@ -186,6 +206,14 @@ export default function PayrollRemittancePanel({ liabilities = [], theme, onChan
                   style={{ background: 'transparent', color: t.accent || '#55613c', border: `1px solid ${t.accent || '#55613c'}`,
                     borderRadius: 9, padding: '9px 14px', fontSize: 13, fontWeight: 650, cursor: 'pointer', minHeight: 40, whiteSpace: 'nowrap' }}>
                   {busy === 'ach-' + g.key ? '…' : 'ACH file for the bank'}
+                </button>
+              )}
+              {g.key !== 'unassigned' && (
+                <button onClick={() => emailStubs(g)} disabled={busy === 'stubs-' + g.key}
+                  title="Email every employee their stub for this run (and text a link if Twilio is set up)"
+                  style={{ background: 'transparent', color: t.accent || '#55613c', border: `1px solid ${t.accent || '#55613c'}`,
+                    borderRadius: 9, padding: '9px 14px', fontSize: 13, fontWeight: 650, cursor: 'pointer', minHeight: 40, whiteSpace: 'nowrap' }}>
+                  {busy === 'stubs-' + g.key ? 'Sending…' : 'Email paystubs'}
                 </button>
               )}
               <button onClick={() => printWorksheet(g)} style={{ background: t.accent || '#55613c', color: '#fff', border: 0,

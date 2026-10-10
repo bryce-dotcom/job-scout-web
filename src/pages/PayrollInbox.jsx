@@ -126,6 +126,13 @@ export default function PayrollInbox() {
       const data = await res.json()
       if (!res.ok || data?.error) throw new Error(data?.error || `HTTP ${res.status}`)
       await refresh()
+      // A W-2 or SSA file with a missing SSN or address is a form that will
+      // be rejected. Say exactly whose, now, while there is time to fix it.
+      if (Array.isArray(data?.problems) && data.problems.length) {
+        alert(`Generated, but fix these before filing:\n\n${data.problems.map(p => '• ' + p).join('\n')}\n\nSSNs and addresses live on the employee card (Employees → the person → HR).`)
+      } else if (kind === 'efw2') {
+        alert(`SSA file ready: ${data.employees} employee${data.employees === 1 ? '' : 's'}, ${data.records} records. Before uploading, run it through SSA AccuWage Online (free, inside Business Services Online) — it catches layout problems without filing anything.`)
+      }
     } catch (err) {
       setGenError(`${key}: ${err.message}`)
     } finally {
@@ -683,6 +690,7 @@ export default function PayrollInbox() {
         const taxYear = month === 0 ? now.getFullYear() - 1 : now.getFullYear()
         const w2Filings   = filings.filter(f => f.form_kind === 'W-2'      && f.period_start?.startsWith(String(taxYear)))
         const w3Filing    = filings.find(  f => f.form_kind === 'W-3'      && f.period_start?.startsWith(String(taxYear)))
+        const efw2Filing  = filings.find(  f => f.form_kind === 'EFW2'     && f.period_start?.startsWith(String(taxYear)) && f.status !== 'superseded')
         const necFilings  = filings.filter(f => f.form_kind === '1099-NEC' && f.period_start?.startsWith(String(taxYear)))
         const f1096       = filings.find(  f => f.form_kind === '1096'     && f.period_start?.startsWith(String(taxYear)))
         const tone = isUrgent ? TONE.yellow : TONE.gray
@@ -716,10 +724,26 @@ export default function PayrollInbox() {
                       <Send size={14} /> {emailing === 'W-2' ? 'Sending…' : `Email all (${w2Filings.length})`}
                     </button>
                   )}
+                  {w2Filings.length > 0 && (
+                    <button
+                      onClick={() => generateForms('efw2', taxYear)}
+                      disabled={generating === 'efw2'}
+                      title="The file SSA Business Services Online takes for Copy A (and Utah TAP for its W-2 upload)"
+                      style={btn(theme)}
+                    >
+                      <Sparkles size={14} /> {generating === 'efw2' ? 'Building…' : 'SSA file (EFW2)'}
+                    </button>
+                  )}
                 </div>
               </div>
-              {(w2Filings.length > 0 || w3Filing) && (
+              {(w2Filings.length > 0 || w3Filing || efw2Filing) && (
                 <div style={{ display: 'grid', gap: 4, marginTop: 8 }}>
+                  {efw2Filing && (
+                    <button onClick={() => downloadFiling(efw2Filing.pdf_storage_path)} style={pillBtn(theme)}
+                      title={efw2Filing.values_snapshot?.problems?.length ? `${efw2Filing.values_snapshot.problems.length} problem(s) to fix before upload` : 'Ready for AccuWage / BSO upload'}>
+                      <Download size={12} /> SSA file W2REPORT.txt{efw2Filing.values_snapshot?.problems?.length ? ` · ${efw2Filing.values_snapshot.problems.length} to fix` : ' · ready'}
+                    </button>
+                  )}
                   {w3Filing && (
                     <button onClick={() => downloadFiling(w3Filing.pdf_storage_path)} style={pillBtn(theme)}>
                       <Download size={12} /> W-3 transmittal

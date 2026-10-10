@@ -27,7 +27,12 @@
 //    That also means no revenue figure ever leaves through this tool, which is
 //    narrower than the page, not wider.
 
-import type { Caller, Prepared, Rest } from './arnieConfig.ts'
+// Caller and Prepared moved out of arnieConfig while this branch sat unmerged
+// (main was 14 commits further on). Rest is still there; the other two now come
+// from where every sibling arnie module takes them.
+import type { Rest } from './arnieConfig.ts'
+import type { Caller } from './auth.ts'
+import type { Prepared } from './arnieCreate.ts'
 import { readRecordList } from './arnieRest.ts'
 import { EOS_SETTING_KEYS, buildL10Agenda, calDay, dayStr, nextMeetingDay, parseDay } from './l10Agenda.ts'
 import { buildSessionAgenda } from './quarterlyAgenda.ts'

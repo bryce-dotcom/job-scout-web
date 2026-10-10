@@ -29,6 +29,7 @@ import { summarizePayrollRun } from '../lib/payrollRunTotals'
 import { pickAchAccount, achSettingsFromPlaidAccount, describeAchAccount } from '../lib/achFromPlaid'
 import { payrollSetupProblems, setupGateSummary } from '../lib/payrollSetupGate'
 import { payrollRunGuards } from '../lib/payrollRunGuards'
+import { deliverPaystubs, deliverySummary } from '../lib/paystubDelivery'
 import PlaidLink from '../components/PlaidLink'
 import { ptoDaysInPeriod, ptoAccrualPerPeriod, ptoPayForPeriod, ptoBankAfterRun } from '../lib/ptoThisPeriod'
 import TypedHoursReview from '../components/TypedHoursReview'
@@ -514,6 +515,9 @@ export default function Payroll() {
   // open of the modal, never remembered.
   const [guardAck, setGuardAck] = useState({ duplicate: false, warnings: false })
   const [payMethod, setPayMethod] = useState('check')
+  // Bryce, 2026-10-10: "as good as Gusto." Gusto's employees get their stub on
+  // payday. Email is on by default; text needs the company's Twilio.
+  const [sendStubs, setSendStubs] = useState({ email: true, sms: false })
   const [ddOnFile, setDdOnFile] = useState(null)
   useEffect(() => {
     if (!companyId) return
@@ -2529,10 +2533,21 @@ export default function Payroll() {
       }
 
       setShowRunPayrollModal(false)
+      // Render the stubs and send them. The run is already written above;
+      // a delivery problem is said, not thrown, and the Inbox can resend.
+      let stubNote = ''
+      if (sendStubs.email || sendStubs.sms) {
+        try {
+          const r = await deliverPaystubs({ companyId, runId: payrollRun.id, company, channels: sendStubs })
+          stubNote = deliverySummary(r)
+        } catch (e) {
+          stubNote = 'Paystubs were not sent (' + (e.message || e) + '). Send them from the Payroll Inbox.'
+        }
+      }
       const ddNext = payMethod === 'dd'
         ? '\n\nNext: open the Payroll Inbox, download the ACH file for this run, and upload it to your bank. Employees without direct deposit on file are marked pay by check in that file.'
         : ''
-      if (notMarkedPaid.length || ptoNote || ddNext) {
+      if (notMarkedPaid.length || ptoNote || ddNext || stubNote) {
         // The paystubs are written and the money is going out. What did not
         // happen is the ledger update, so these will still show as owed and
         // would be paid AGAIN on the next run unless someone marks them paid.
@@ -2543,7 +2558,7 @@ export default function Payroll() {
               notMarkedPaid.map(s => '  • ' + s).join('\n') +
               '\n\nThe paystubs already include them. Use "Mark paid" on each one on this page so they are not paid twice next run.'
             : '.') +
-          (ptoNote ? '\n\n' + ptoNote : '') + ddNext
+          (ptoNote ? '\n\n' + ptoNote : '') + (stubNote ? '\n\n' + stubNote : '') + ddNext
         )
       } else {
         alert('Payroll processed successfully!')
@@ -5609,6 +5624,19 @@ export default function Payroll() {
                   </div>
                 )
               })()}
+
+              {/* Paystubs go out with the run, like Gusto. */}
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Paystubs</div>
+                <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', fontSize: '13px', color: theme.text, cursor: 'pointer', marginBottom: '6px' }}>
+                  <input type="checkbox" checked={sendStubs.email} onChange={e => setSendStubs(s => ({ ...s, email: e.target.checked }))} style={{ marginTop: 2 }} />
+                  <span>Email each employee their paystub (PDF attached) as soon as this run is processed.<br /><span style={{ color: theme.textMuted, fontSize: '12px' }}>Anyone without an email on the card is listed afterwards. Stubs are always in My Pay too.</span></span>
+                </label>
+                <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', fontSize: '13px', color: theme.text, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={sendStubs.sms} onChange={e => setSendStubs(s => ({ ...s, sms: e.target.checked }))} style={{ marginTop: 2 }} />
+                  <span>Also text a link to the stub.<br /><span style={{ color: theme.textMuted, fontSize: '12px' }}>Needs Twilio under Settings → Integrations. The link works for seven days.</span></span>
+                </label>
+              </div>
 
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button onClick={() => setShowRunPayrollModal(false)} style={{

@@ -49,11 +49,13 @@ import {
   Phone,
   Send,
   Zap,
+  Sparkles,
   Bell,
   PartyPopper
 } from 'lucide-react'
 import { seedSampleData, clearAllData } from '../lib/seedData'
 import BillingTab from '../components/BillingTab'
+import ChrisLightsSettings from '../components/settings/ChrisLightsSettings'
 import { toast } from '../lib/toast'
 import { twilioConfigProblem, normalizeTwilioConfig, smsTestOutcome } from '../lib/twilioConfig'
 import { smsTermsPath, smsTermsUrl } from '../lib/smsConsent'
@@ -201,13 +203,20 @@ export default function Settings() {
   const getSettingList = useStore((state) => state.getSettingList)
 
   const isAdmin = checkAdmin(user)
-  const tabs = isAdmin
-    ? [...baseTabs, { id: 'developer_tools', label: 'Developer Tools', icon: Code }]
+  // Christmas Lighting only for a company that has Chris — every other tenant
+  // would see a tab for a service they do not sell.
+  const aiModules = useStore((state) => state.aiModules)
+  const hasChris = (aiModules || []).some((m) => m.module_name === 'chris-christmas-lighting' && m.status === 'active')
+  const withAgents = hasChris
+    ? [...baseTabs.slice(0, baseTabs.findIndex(t => t.id === 'estimate_packages') + 1), { id: 'christmas_lighting', label: 'Christmas Lighting', icon: Sparkles }, ...baseTabs.slice(baseTabs.findIndex(t => t.id === 'estimate_packages') + 1)]
     : baseTabs
+  const tabs = isAdmin
+    ? [...withAgents, { id: 'developer_tools', label: 'Developer Tools', icon: Code }]
+    : withAgents
 
   // Check URL for tab param (used by QuickBooks OAuth callback)
   const urlTab = new URLSearchParams(window.location.search).get('tab')
-  const [activeTab, setActiveTab] = useState(urlTab && baseTabs.some(t => t.id === urlTab) ? urlTab : 'company')
+  const [activeTab, setActiveTab] = useState(urlTab && (baseTabs.some(t => t.id === urlTab) || urlTab === 'christmas_lighting') ? urlTab : 'company')
   const [seeding, setSeeding] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -685,6 +694,9 @@ export default function Settings() {
 
       case 'estimate_packages':
         return <EstimatePackagesTab theme={theme} companyId={companyId} settings={settings} saveSetting={saveSetting} />
+
+      case 'christmas_lighting':
+        return <ChrisLightsSettings theme={theme} companyId={companyId} settings={settings} saveSetting={saveSetting} />
 
       case 'billing':
         return <BillingTab theme={theme} companyId={companyId} />

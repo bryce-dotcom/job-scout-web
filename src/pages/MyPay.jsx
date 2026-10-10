@@ -19,7 +19,10 @@ import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '..
 import { setterCommissionSummary } from '../lib/setterCommissions'
 import { canViewHR } from '../lib/accessControl'
 import { localDateStr } from '../lib/localDate'
-import { ptoDaysInPeriod, ptoPayForPeriod } from '../lib/ptoThisPeriod'
+import { ptoDaysInPeriod, ptoPayForPeriod, ptoAccrualPerPeriod, ptoBalanceDays } from '../lib/ptoThisPeriod'
+import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
+import { payDateForPeriod } from '../lib/payDate'
+import PlaidLink from '../components/PlaidLink'
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const BENEFIT_LABELS = { health: 'Health', dental: 'Dental', vision: 'Vision', life: 'Life', disability: 'Disability', retirement_401k: '401(k)', hsa: 'HSA', fsa: 'FSA', other: 'Other' }
@@ -176,6 +179,20 @@ export default function MyPay() {
   // Job titles for the pay-history breakdown, by id.
   const [jobTitles, setJobTitles] = useState(new Map())
   const [benefits, setBenefits] = useState([])
+  // For the take-home estimate: the company's tax setup (state, SUI rate)
+  // and whether a signed direct-deposit authorization is on file.
+  const [taxCompany, setTaxCompany] = useState(null)
+  const [ddOnFile, setDdOnFile] = useState(null)   // null = unknown, false = none, { mask } = on file
+  // Bryce, 2026-10-10: "as good as Gusto." The employee puts their own bank
+  // on file here — link it through Plaid, or type it — instead of the
+  // office keying account numbers. Writes a signed authorization.
+  const [ddEdit, setDdEdit] = useState(false)
+  const [ddForm, setDdForm] = useState({ routing: '', account: '', account2: '', type: 'checking', name: '' })
+  const [ddBusy, setDdBusy] = useState(false)
+  const [ddMsg, setDdMsg] = useState(null)
+  // Year-end forms for this person: the W-2 (or 1099-NEC) the office
+  // generated, downloadable here instead of asked for by text in January.
+  const [taxDocs, setTaxDocs] = useState([])
   // Frozen rep (%) commissions (rep_commissions) for this employee — read-only
   // here; Payroll is the writer. Replaces the drifty live invoice-commission
   // amount so My Pay and Payroll always agree.
@@ -233,13 +250,25 @@ export default function MyPay() {
     return () => { cancelled = true }
   }, [companyId, effectiveUserId])
 
+  useEffect(() => {
+    if (!companyId || !effectiveUserId) { setTaxDocs([]); return }
+    let cancelled = false
+    supabase.from('payroll_tax_filings')
+      .select('id, form_kind, period_start, period_end, pdf_storage_path, status, created_at')
+      .eq('company_id', companyId).eq('employee_id', effectiveUserId)
+      .in('form_kind', ['W-2', '1099-NEC']).neq('status', 'superseded')
+      .order('period_start', { ascending: false })
+      .then(({ data }) => { if (!cancelled) setTaxDocs(data || []) })
+    return () => { cancelled = true }
+  }, [companyId, effectiveUserId])
+
   // Pay history + benefits — not period-scoped, so loaded on their own (small,
   // additive; never touches the commission/bonus math above).
   useEffect(() => {
     if (!companyId || !effectiveUserId) { setPaystubs([]); setBenefits([]); return }
     let cancelled = false
     ;(async () => {
-      const [ps, bf, rc, lc, co] = await Promise.all([
+      const [ps, bf, rc, lc, co, dd] = await Promise.all([
         supabase.from('paystubs')
           // payroll_run_id: which cheque a commission belongs to (lib/payHistory).
           .select('id, payroll_run_id, period_start, period_end, pay_date, regular_hours, overtime_hours, pto_hours, gross_pay, net_pay, bonus_pay, commission_pay, reimbursement_pay, federal_income_tax, state_income_tax, social_security_employee, medicare_employee, additional_medicare, pre_tax_deductions, post_tax_deductions')
@@ -258,7 +287,12 @@ export default function MyPay() {
           .eq('company_id', companyId).eq('employee_id', effectiveUserId),
         // The qualification rule lives on the company row and decides whether
         // a booked appointment is payable yet.
-        supabase.from('companies').select('setter_qualification_rule').eq('id', companyId).maybeSingle(),
+        supabase.from('companies').select('setter_qualification_rule, state, state_employer_id_state, sui_rate_pct, sui_wage_base, futa_rate_pct, pay_frequency').eq('id', companyId).maybeSingle(),
+        // The latest signed direct-deposit authorization, if any — only the
+        // account's last four come to the screen.
+        supabase.from('signed_documents').select('values_snapshot, signed_at')
+          .eq('company_id', companyId).eq('employee_id', effectiveUserId).eq('document_kind', 'direct_deposit_auth').eq('status', 'signed')
+          .order('created_at', { ascending: false }).limit(1),
       ])
       if (!cancelled) {
         setPaystubs(ps.data || []); setBenefits(bf.data || []); setRepCommissions(rc || [])
@@ -269,6 +303,10 @@ export default function MyPay() {
         }
         setLeadCommissions(lc?.data || [])
         setSetterRule(co?.data?.setter_qualification_rule || 'appointment_set')
+        setTaxCompany(co?.data || null)
+        const ddRow = dd?.data?.[0]
+        const acct = String(ddRow?.values_snapshot?.account_number || '')
+        setDdOnFile(ddRow && acct ? { mask: acct.slice(-4), type: ddRow.values_snapshot?.account_type || 'checking', signedAt: ddRow.signed_at } : false)
       }
     })()
     return () => { cancelled = true }
@@ -398,7 +436,7 @@ export default function MyPay() {
           // commission_min_job_total: the floor the live calc applies. Left
           // out, this page would read undefined, show no floor, and promise a
           // commission the ledger will not pay.
-          .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, commission_processor_rate, commission_processor_type, commission_min_job_total, pay_greater_of_salary_commission, is_hourly, is_salary, hourly_rate, annual_salary')
+          .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, commission_processor_rate, commission_processor_type, commission_min_job_total, pay_greater_of_salary_commission, is_hourly, is_salary, hourly_rate, annual_salary, tax_classification, w4_filing_status, w4_multiple_jobs, w4_dependents_amount, w4_other_income, w4_deductions, w4_extra_withholding, pto_accrued, pto_used, pto_days_per_year')
           .eq('id', effectiveUserId).maybeSingle()
 
         // Utility invoices on jobs the user might own — we fetch them all
@@ -570,6 +608,39 @@ export default function MyPay() {
   // two people on that arrangement.
   const myPayBasis = greaterOfPay({ salaryPay, commissionPay: commAvailable + setterComm.total, enabled: paysGreaterOf(me) })
   const grossPay = hourlyPay + myPayBasis.salaryPaid + ptoPay + myPayBasis.commissionPaid + accruedBonusTotal
+
+  // ── Take-home, year to date, PTO bank ───────────────────────────────
+  // Bryce, 2026-10-09: "do all 5" — the page headlined gross, and gross is
+  // not what lands in the account. The same engine Payroll runs, with this
+  // person's own W-4, on the gross shown above. An estimate until payroll
+  // runs: a commission or bonus still waiting on an admin changes it.
+  const thisYear = String(new Date().getFullYear())
+  const stubsThisYear = paystubs.filter(p => String(p.pay_date || '').slice(0, 4) === thisYear)
+  const ytd = stubsThisYear.reduce((a, p) => {
+    a.gross += Number(p.gross_pay) || 0
+    a.net += Number(p.net_pay) || 0
+    a.taxes += (Number(p.federal_income_tax) || 0) + (Number(p.state_income_tax) || 0) + (Number(p.social_security_employee) || 0) + (Number(p.medicare_employee) || 0) + (Number(p.additional_medicare) || 0)
+    return a
+  }, { gross: 0, net: 0, taxes: 0, checks: stubsThisYear.length })
+  const is1099 = me.tax_classification === '1099'
+  const w2Count = (useStore.getState().employees || []).filter(e => e.active !== false && e.tax_classification !== '1099').length || null
+  let takeHomeEst = null
+  if (!is1099 && grossPay > 0 && empRow) {
+    try {
+      takeHomeEst = calcPaystubTax({
+        employee: empRow,
+        company: taxCompany || {},
+        gross: grossPay,
+        ytd: { gross: ytd.gross, ssWages: ytd.gross, medicareWages: ytd.gross },
+        payFrequency: normalizePayFrequency(payrollConfig.pay_frequency),
+        payDate: payDateForPeriod(periodEnd, payrollConfig) || localDateStr(new Date()),
+        employeeCount: w2Count,
+      })
+    } catch { takeHomeEst = null }
+  }
+  const takeHome = is1099 ? grossPay : (takeHomeEst ? takeHomeEst.netPay : null)
+  const ptoBank = ptoBalanceDays(me)
+  const ptoAccruing = ptoAccrualPerPeriod(me, payrollConfig.pay_frequency)
 
   // What's been STAGED into the next payroll run (an admin added it) — so the
   // tech sees what's actually coming next run vs what's owed but not yet added.
@@ -759,6 +830,16 @@ export default function MyPay() {
           <div>
             <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gross this period</div>
             <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text, marginTop: '2px' }}>{fmt(grossPay)}</div>
+            <div style={{ fontSize: '11px', color: theme.textMuted }}>before taxes</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{is1099 ? 'You receive' : 'Take-home (est.)'}</div>
+            <div style={{ fontSize: '22px', fontWeight: '700', color: '#16a34a', marginTop: '2px' }}>{takeHome == null ? '—' : fmt(takeHome)}</div>
+            <div style={{ fontSize: '11px', color: theme.textMuted }}>
+              {is1099 ? 'no tax withheld, you file your own'
+                : takeHomeEst ? `after ${fmt(takeHomeEst.federalIncomeTax + takeHomeEst.stateIncomeTax + takeHomeEst.socialSecurityEmployee + takeHomeEst.medicareEmployee + takeHomeEst.additionalMedicare + (takeHomeEst.famliEmployee || 0))} in taxes`
+                : 'estimated when there is pay this period'}
+            </div>
           </div>
           {hourlyPay > 0 && (
             <div>
@@ -818,8 +899,138 @@ export default function MyPay() {
             <div style={{ fontSize: '18px', fontWeight: '600', color: '#8b5cf6', marginTop: '2px' }}>{fmt(accruedBonusTotal)}</div>
             {pendingBonusTotal > 0 && <div style={{ fontSize: '11px', color: '#f59e0b' }}>{fmt(pendingBonusTotal)} upcoming</div>}
           </div>
+          {!is1099 && (
+            <div>
+              <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>PTO bank</div>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: '#8b5cf6', marginTop: '2px' }}>{ptoBank.toFixed(1)} days</div>
+              <div style={{ fontSize: '11px', color: theme.textMuted }}>{ptoAccruing > 0 ? `+${ptoAccruing.toFixed(2)} each payday` : 'no accrual set up'}</div>
+            </div>
+          )}
+        </div>
+        {/* The plain words. This is the page people read before they call the office. */}
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${theme.border}`, fontSize: 12, color: theme.textMuted, lineHeight: 1.5 }}>
+          {is1099
+            ? 'As a contractor you are paid the full amount shown; nothing is withheld. You settle your own income and self-employment tax when you file.'
+            : <>Gross is everything you earned this period before taxes. Take-home is what lands in your account after federal and state withholding, Social Security and Medicare{takeHomeEst?.famliEmployee > 0 ? ' and the Colorado FAMLI premium' : ''}. It is an estimate until payroll runs: a commission or bonus still waiting on the office can change it.</>}
         </div>
       </div>
+
+      {/* Year to date, from the paychecks already paid. */}
+      {ytd.checks > 0 && (
+        <div style={{ ...cardStyle, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{thisYear} so far · {ytd.checks} paycheck{ytd.checks === 1 ? '' : 's'}</div>
+          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 13, color: theme.text }}>
+            <span><span style={{ color: theme.textMuted }}>Gross </span><strong>{fmt(ytd.gross)}</strong></span>
+            {!is1099 && <span><span style={{ color: theme.textMuted }}>Taxes </span><strong>{fmt(ytd.taxes)}</strong></span>}
+            <span><span style={{ color: theme.textMuted }}>{is1099 ? 'Paid ' : 'Take-home '}</span><strong style={{ color: '#16a34a' }}>{fmt(ytd.net)}</strong></span>
+          </div>
+        </div>
+      )}
+
+      {/* How you get paid — and change it yourself. */}
+      {ddOnFile !== null && !is1099 && (() => {
+        const inp = { width: '100%', padding: '10px 12px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 8, color: theme.text, fontSize: 15, boxSizing: 'border-box' }
+        const lbl = { display: 'block', fontSize: 12, color: theme.textMuted, marginBottom: 4 }
+        const signedName = ddForm.name.trim()
+        const finish = (saved) => {
+          setDdOnFile({ mask: saved.mask, type: saved.type, signedAt: saved.signed_at })
+          setDdEdit(false); setDdBusy(false)
+          setDdForm({ routing: '', account: '', account2: '', type: 'checking', name: '' })
+          setDdMsg({ ok: true, text: `Done. Your pay goes to ${saved.bank_name ? saved.bank_name + ' ' : ''}${saved.type} ending ${saved.mask} starting with the next payroll.` })
+        }
+        const call = async (body) => {
+          setDdBusy(true); setDdMsg(null)
+          const { data, error } = await supabase.functions.invoke('employee-direct-deposit', { body: { company_id: companyId, employee_id: effectiveUserId, ...body } })
+          if (error || data?.error) { setDdBusy(false); setDdMsg({ ok: false, text: data?.error || error?.message || 'That did not save.' }); return null }
+          return data
+        }
+        const saveManual = async () => {
+          if (ddForm.account !== ddForm.account2) { setDdMsg({ ok: false, text: 'The two account numbers do not match.' }); return }
+          if (!signedName) { setDdMsg({ ok: false, text: 'Type your full name to sign the authorization.' }); return }
+          const d = await call({ action: 'manual', routing_number: ddForm.routing, account_number: ddForm.account, account_type: ddForm.type, signature_typed_name: signedName })
+          if (d) finish(d)
+        }
+        return (
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Shield size={16} style={{ color: ddOnFile ? '#16a34a' : '#b45309' }} />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: theme.text }}>
+                    {ddOnFile ? `Direct deposit on file · ${ddOnFile.type} ending ${ddOnFile.mask}` : 'Paid by check'}
+                  </div>
+                  <div style={{ fontSize: 11, color: theme.textMuted }}>
+                    {ddOnFile
+                      ? `Authorized ${ddOnFile.signedAt ? new Date(ddOnFile.signedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}.`
+                      : 'Add your bank and your pay lands in your account on payday instead of a paper check.'}
+                  </div>
+                </div>
+              </div>
+              {!isImpersonating && (
+                <button onClick={() => { setDdEdit(e => !e); setDdMsg(null) }}
+                  style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${theme.accent}`, background: ddOnFile ? 'transparent' : theme.accent, color: ddOnFile ? theme.accent : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  {ddEdit ? 'Cancel' : (ddOnFile ? 'Change account' : 'Set up direct deposit')}
+                </button>
+              )}
+            </div>
+            {ddMsg && (
+              <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, fontSize: 13, background: ddMsg.ok ? 'rgba(34,197,94,0.10)' : 'rgba(239,68,68,0.10)', color: ddMsg.ok ? '#15803d' : '#b91c1c' }}>{ddMsg.text}</div>
+            )}
+            {ddEdit && (
+              <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+                <div>
+                  <label style={lbl}>Your full name, typed, is your signature</label>
+                  <input value={ddForm.name} onChange={e => setDdForm(f => ({ ...f, name: e.target.value }))} placeholder="First Last" style={inp} autoComplete="name" />
+                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                    By continuing you authorize {useStore.getState().company?.company_name || 'your employer'} to deposit your pay into this account and to reverse a deposit made in error, until you change or cancel it in writing.
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
+                  <div style={{ padding: 12, borderRadius: 10, border: `1px solid ${theme.border}` }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 4 }}>Connect your bank</div>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>Log in to your bank once. The routing and account numbers come straight from the bank, so nothing can be mistyped. JobScout keeps the numbers, not a connection to your account.</div>
+                    <PlaidLink companyId={companyId} theme={theme} label={ddBusy ? 'Saving…' : 'Connect your bank'}
+                      style={{ opacity: signedName && !ddBusy ? 1 : 0.5, pointerEvents: signedName && !ddBusy ? 'auto' : 'none' }}
+                      createToken={async () => {
+                        const { data, error } = await supabase.functions.invoke('employee-direct-deposit', { body: { action: 'link_token', company_id: companyId, employee_id: effectiveUserId } })
+                        if (error || data?.error) { setDdMsg({ ok: false, text: data?.error || error?.message || 'Bank linking is not available right now. Enter the account by hand.' }); return null }
+                        return data?.link_token || null
+                      }}
+                      onPublicToken={async (publicToken, metadata) => {
+                        const d = await call({ action: 'exchange', public_token: publicToken, account_id: metadata?.accounts?.[0]?.id || null, institution_name: metadata?.institution?.name || null, signature_typed_name: signedName })
+                        if (d) finish(d)
+                      }}
+                      onError={(m) => setDdMsg({ ok: false, text: String(m) })} />
+                    {!signedName && <div style={{ fontSize: 11, color: '#b45309', marginTop: 6 }}>Type your name above first.</div>}
+                  </div>
+                  <div style={{ padding: 12, borderRadius: 10, border: `1px solid ${theme.border}` }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 4 }}>Or enter it from a check</div>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <div><label style={lbl}>Routing number (9 digits, bottom left of a check)</label>
+                        <input inputMode="numeric" maxLength={9} value={ddForm.routing} onChange={e => setDdForm(f => ({ ...f, routing: e.target.value.replace(/\D/g, '') }))} style={inp} /></div>
+                      <div><label style={lbl}>Account number</label>
+                        <input inputMode="numeric" maxLength={17} value={ddForm.account} onChange={e => setDdForm(f => ({ ...f, account: e.target.value.replace(/\D/g, '') }))} style={inp} /></div>
+                      <div><label style={lbl}>Account number again</label>
+                        <input inputMode="numeric" maxLength={17} value={ddForm.account2} onChange={e => setDdForm(f => ({ ...f, account2: e.target.value.replace(/\D/g, '') }))} style={inp} /></div>
+                      <div style={{ display: 'flex', gap: 14, fontSize: 13, color: theme.text }}>
+                        {['checking', 'savings'].map(t => (
+                          <label key={t} style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+                            <input type="radio" name="ddType" checked={ddForm.type === t} onChange={() => setDdForm(f => ({ ...f, type: t }))} />{t[0].toUpperCase() + t.slice(1)}
+                          </label>
+                        ))}
+                      </div>
+                      <button onClick={saveManual} disabled={ddBusy || ddForm.routing.length !== 9 || ddForm.account.length < 4 || !signedName}
+                        style={{ padding: '10px 14px', borderRadius: 8, border: 'none', background: theme.accent, color: '#fff', fontSize: 14, fontWeight: 600, cursor: ddBusy ? 'wait' : 'pointer', opacity: (ddBusy || ddForm.routing.length !== 9 || ddForm.account.length < 4 || !signedName) ? 0.5 : 1 }}>
+                        {ddBusy ? 'Saving…' : 'Save and sign'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* In your next paycheck — what an admin has staged (added to the run). */}
       {inNextPaycheck > 0 && (
@@ -1122,6 +1333,31 @@ export default function MyPay() {
           <div style={{ marginTop: 10, fontSize: 11, color: theme.textMuted }}>
             Submit new requests on the Time Clock page.
           </div>
+        </div>
+      )}
+
+      {/* Tax documents — the W-2 / 1099-NEC the office generated for this person. */}
+      {taxDocs.length > 0 && (
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <FileText size={18} style={{ color: theme.accent }} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: theme.text }}>Tax documents</span>
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {taxDocs.map(d => (
+              <button key={d.id}
+                onClick={async () => {
+                  const { data, error } = await supabase.storage.from('project-documents').createSignedUrl(d.pdf_storage_path, 300)
+                  if (error || !data?.signedUrl) { alert('Could not open that form: ' + (error?.message || 'no link')); return }
+                  window.open(data.signedUrl, '_blank')
+                }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.bg, color: theme.text, fontSize: 13, cursor: 'pointer', textAlign: 'left' }}>
+                <span><strong>{d.form_kind}</strong> · tax year {String(d.period_start || '').slice(0, 4)}{d.status === 'draft' ? ' · draft' : ''}</span>
+                <Download size={14} style={{ color: theme.accent }} />
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 8 }}>A draft can still change until the office files it. The final one is what you use for your return.</div>
         </div>
       )}
 

@@ -16,7 +16,19 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const { recipient_email, subject, original_message, reply_message, feedback_type, feedback_id } = await req.json();
+    const { recipient_email, subject, original_message, reply_message, feedback_type, feedback_id, attachments } = await req.json();
+
+    // Optional pictures — "here is what you asked for" is often a screenshot.
+    // Images only, a handful, and small enough that Resend takes the lot.
+    const files = (Array.isArray(attachments) ? attachments : [])
+      .filter((a: { filename?: string; content?: string }) =>
+        a && typeof a.content === 'string' && /\.(png|jpe?g)$/i.test(String(a.filename || '')))
+      .slice(0, 8)
+      .map((a: { filename: string; content: string }) => ({ filename: String(a.filename).slice(0, 80), content: a.content }));
+    if (files.reduce((n: number, a: { content: string }) => n + a.content.length, 0) > 25_000_000) {
+      return new Response(JSON.stringify({ success: false, error: 'Attachments are too large — keep them under about 18 MB in total.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     if (!recipient_email || !reply_message) {
       return new Response(JSON.stringify({ success: false, error: 'recipient_email and reply_message are required' }),
@@ -86,6 +98,7 @@ serve(async (req) => {
         ...(reply_to ? { reply_to } : {}),
         subject: `Re: Your ${typeLabel}${subject ? ' - ' + subject : ''} — JobScout`,
         html,
+        ...(files.length ? { attachments: files } : {}),
       }),
     });
 

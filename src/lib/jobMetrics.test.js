@@ -109,6 +109,15 @@ describe('deliveredJobsInRange', () => {
     expect(r.map(j => j.id)).toEqual([9])
   })
 
+  it('dates a delivered job by completed_at, not by its latest status move', () => {
+    // Completed 24 Aug, moved to Post Inspection 14 Sep. It was delivered in
+    // August; invoicing it later must not pull it into September.
+    const job = { id: 7, status: 'Post Inspection (Req)', completed_at: '2026-08-24T20:00:00Z', last_status_change_at: '2026-09-14T15:00:00Z' }
+    const st = [...statuses, { id: 'Post Inspection (Req)', category: 'delivered' }]
+    expect(deliveredJobsInRange([job], st, '2026-08-17T06:00:00Z', '2026-08-31T06:00:00Z').map(j => j.id)).toEqual([7])
+    expect(deliveredJobsInRange([job], st, '2026-09-14T06:00:00Z', '2026-09-21T06:00:00Z')).toEqual([])
+  })
+
   it('still finds delivered jobs when the tenant configured no categories', () => {
     const r = deliveredJobsInRange(
       [{ id: 5, status: 'Invoiced', last_status_change_at: '2026-07-10T00:00:00Z' }],

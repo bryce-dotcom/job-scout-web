@@ -1587,6 +1587,13 @@ export default function Layout() {
                 display: 'flex',
                 flexDirection: 'column',
                 overflowY: 'auto',
+                // Room for the bottom tab bar, the same way <main> leaves it.
+                // The drawer runs to bottom: 0 and the bar is fixed on top of
+                // it at z-index 48, so without this its last 64px — the user
+                // card, with Refresh and Sign Out — sits under the bar.
+                // Tapping Refresh on a phone opened Arnie instead, which is
+                // how a crew ends up unable to update their app.
+                paddingBottom: 'var(--jobscout-tabbar-space, 0px)',
                 boxShadow: theme.shadowLg
               }}
               className="md:hidden"
