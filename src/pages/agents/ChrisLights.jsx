@@ -219,8 +219,31 @@ export default function ChrisLights() {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = () => { setPhoto(String(reader.result)); setHouse(null); setRender(null) }
+    reader.onload = () => { setPhoto(String(reader.result)); setHouse(null); setRender(null); setStreetNote(null) }
     reader.readAsDataURL(file)
+  }
+
+  // Street View first: it is their house from the road without anyone driving
+  // there. The rep's own photo stays as the fallback for drives the car never
+  // went down.
+  const [streetLoading, setStreetLoading] = useState(false)
+  const [streetNote, setStreetNote] = useState(null)
+  const fetchStreetView = async () => {
+    if (!place) { toast.error('Find the address first.'); return }
+    setStreetLoading(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('chris-streetview', {
+        body: { lat: place.lat, lng: place.lng, address: place.matched },
+      })
+      if (error) throw error
+      if (!data?.ok) { toast.error(data?.error || 'No Street View here.'); setStreetLoading(false); return }
+      setPhoto(`data:${data.mime};base64,${data.image_base64}`)
+      setHouse(null); setRender(null)
+      setStreetNote(`Street View${data.pano_date ? `, ${data.pano_date}` : ''} — check it is the right house`)
+    } catch (err) {
+      toast.error('Could not get Street View: ' + (err?.message || 'unknown error'))
+    }
+    setStreetLoading(false)
   }
 
   const checkAccess = async () => {
@@ -409,14 +432,19 @@ export default function ChrisLights() {
               <p style={{ fontSize: 11.5, color: theme.textMuted, margin: '0 0 10px' }}>
                 For the height, the access, and the picture you show them.
               </p>
+              <button type="button" onClick={fetchStreetView} disabled={streetLoading || !place}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 12px', minHeight: 44, borderRadius: 8, border: 'none', background: theme.accent, color: '#fff', fontSize: 13, fontWeight: 600, cursor: streetLoading || !place ? 'not-allowed' : 'pointer', opacity: streetLoading || !place ? 0.6 : 1, marginBottom: 8 }}>
+                {streetLoading ? <Loader2 size={16} /> : <MapPin size={16} />} {streetLoading ? 'Getting Street View…' : 'Get Street View'}
+              </button>
               <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 12px', minHeight: 44, border: `1px dashed ${theme.border}`, borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: theme.textSecondary }}>
-                <Camera size={16} /> {photo ? 'Use a different photo' : 'Add a photo'}
+                <Camera size={16} /> {photo ? 'Use my own photo instead' : 'Or add a photo'}
                 <input type="file" accept="image/*" capture="environment" onChange={onPhoto} style={{ display: 'none' }} />
               </label>
 
               {photo && (
                 <>
                   <img src={photo} alt="Front of the house" style={{ width: '100%', borderRadius: 8, marginTop: 10, display: 'block' }} />
+                  {streetNote && <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>{streetNote}</div>}
                   <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                     <button type="button" onClick={checkAccess} disabled={checking}
                       style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', minHeight: 40, borderRadius: 8, border: `1px solid ${theme.accent}`, background: 'transparent', color: theme.accent, fontSize: 13, fontWeight: 600, cursor: checking ? 'not-allowed' : 'pointer', opacity: checking ? 0.6 : 1 }}>

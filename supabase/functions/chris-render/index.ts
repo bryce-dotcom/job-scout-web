@@ -15,7 +15,7 @@
 //
 // Secret: GEMINI_API_KEY (Google AI Studio), the same one marketing-image uses.
 // Input  : { company_id, image_base64, coverage?, bulb?, address? }
-// Output : { ok, image_base64, mime, label }   or   { ok:false, error, needs_key? }
+// Output : { ok, image_base64, mime, label }   or   { ok:false, error, needs_key?, wrong_view? }
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { resolveCaller } from '../_shared/auth.ts'
@@ -51,6 +51,50 @@ Change exactly two things:
 Photographic, not illustrated. The result should look like a photo taken of this house after the crew went home.`
 }
 
+// The edit only stays honest when it starts from a street-level photo of the
+// front. Handed an aerial, the model does not edit it — it paints a whole new
+// house from the ground, cars and trees included, and the result looks like
+// the customer's home and is not. That happened on 10168 N 6580 W, Highland
+// (2026-10-09). So the picture is looked at before anything is drawn, and
+// anything that is not the front of a house from the ground is refused.
+const VIEW_MODEL = 'gemini-3.8-flash'
+
+const VIEW_PROMPT = `Look at this image and say where it was taken from.
+
+"ground": the front or side WALL of a house is visible — its windows, door or garage door — with the roofline above it. Taken from the street, driveway or yard, or from a little above (a raised angle, a ladder, a low drone) still counts, as long as you can see the face of the house.
+"overhead": looking straight down at the roof, so the walls, windows and doors cannot be seen — satellite or aerial imagery, a top-down drone shot, or a map.
+"other": anything else — no house, a screenshot, a drawing, an interior, a close-up of one detail.
+
+Reply with JSON only: {"view":"ground"}`
+
+const VIEW_REFUSAL: Record<string, string> = {
+  overhead: 'That picture looks down on the house from above. Chris needs a photo of the front taken from the street — from overhead it would have to invent a house that is not theirs.',
+  other: 'That does not look like a photo of the front of a house. Take one from the street or driveway with the roofline in view.',
+  unchecked: 'Could not check the photo just now, so nothing was drawn. Try again in a moment.',
+}
+
+/** 'ground' | 'overhead' | 'other' | 'unchecked'. Anything unreadable is 'unchecked' — refused, never waved through. */
+async function viewOf(key: string, mime: string, data: string): Promise<{ view: string, detail?: string }> {
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${VIEW_MODEL}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        contents: [{ parts: [{ inlineData: { mimeType: mime, data } }, { text: VIEW_PROMPT }] }],
+        generationConfig: { responseMimeType: 'application/json', temperature: 0 },
+      }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { const detail = String(j?.error?.message || r.status); console.error('[chris-render] view check error:', detail); return { view: 'unchecked', detail } }
+    const text = String(j.candidates?.[0]?.content?.parts?.[0]?.text || '')
+    const view = String(JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || '{}').view || '')
+    return ['ground', 'overhead', 'other'].includes(view) ? { view } : { view: 'unchecked', detail: 'unreadable reply: ' + text.slice(0, 120) }
+  } catch (e) {
+    console.error('[chris-render] view check failed:', e)
+    return { view: 'unchecked', detail: (e as Error)?.message }
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -65,6 +109,15 @@ serve(async (req) => {
     const companyId = Number(company_id ?? caller?.companyId ?? 0)
     if (!companyId) return json({ ok: false, error: 'company_id is required' }, 400)
 
+    const clean = String(image_base64).replace(/^data:image\/\w+;base64,/, '')
+    const mime = clean.startsWith('/9j/') ? 'image/jpeg' : 'image/png'
+
+    // Before the cap: a refused photo should not use up a picture.
+    const { view, detail } = await viewOf(key, mime, clean)
+    if (view !== 'ground') {
+      return json({ ok: false, wrong_view: view, error: VIEW_REFUSAL[view] || VIEW_REFUSAL.unchecked, detail: detail || null }, 200)
+    }
+
     // Pictures cost money, so they go through the same cap every other
     // generated image goes through rather than inventing a second meter.
     const meterEnv = {
@@ -75,9 +128,6 @@ serve(async (req) => {
     if (!cap.allowed) {
       return json({ ok: false, capped: true, error: capMessage(cap, 'picture') }, 200)
     }
-
-    const clean = String(image_base64).replace(/^data:image\/\w+;base64,/, '')
-    const mime = clean.startsWith('/9j/') ? 'image/jpeg' : 'image/png'
 
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
       method: 'POST',
