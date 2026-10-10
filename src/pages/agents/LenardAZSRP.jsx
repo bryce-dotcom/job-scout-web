@@ -669,9 +669,13 @@ export default function LenardAZSRP() {
 
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
       const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      // The signed-in user's token, not the anon key: lenard-analyze learns
+      // from the CALLER's company corrections, and with no caller it fell back
+      // to one hardwired tenant for everybody.
+      const { data: { session: analyzeSession } } = await supabase.auth.getSession();
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/lenard-analyze`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${analyzeSession?.access_token || SUPABASE_ANON}` },
         body: JSON.stringify({ imageBase64: base64, mediaType: 'image/jpeg' }),
       });
       const data = await resp.json();

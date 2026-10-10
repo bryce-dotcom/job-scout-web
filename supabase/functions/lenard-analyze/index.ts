@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callAnthropic } from "../_shared/anthropic.ts";
+import { internalCaller, resolveCaller } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,7 +11,8 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { imageBase64, mediaType } = await req.json();
+    const body = await req.json();
+    const { imageBase64, mediaType } = body;
     if (!imageBase64) {
       return new Response(JSON.stringify({ error: 'No image data provided' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -18,7 +20,18 @@ serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const companyId = Deno.env.get('LENARD_COMPANY_ID');
+
+    // Whose corrections to learn from — the CALLER's company.
+    //
+    // This read LENARD_COMPANY_ID, one hardwired tenant, because the audit
+    // pages called it with the anon key and there was no caller to ask. So
+    // every company's fixture identification was being taught by HHH's
+    // corrections, or by nobody's. Fixed 2026-10-10 while giving Arnie a way
+    // to call Lenard: identity comes from the token, and the env var is only
+    // the fallback for a call that still arrives without one.
+    const caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY)
+      ?? await internalCaller(req, body, SUPABASE_URL!, SERVICE_KEY!);
+    const companyId = caller?.companyId != null ? String(caller.companyId) : Deno.env.get('LENARD_COMPANY_ID');
 
     // Fetch recent corrections for few-shot learning
     let correctionsBlock = '';

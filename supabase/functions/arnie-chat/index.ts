@@ -10,6 +10,7 @@ import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_share
 import { dailyBrief } from '../_shared/arnieBrief.ts'
 import { accountSummary } from "../_shared/arnieAccount.ts";
 import { eosOverview } from "../_shared/arnieEos.ts";
+import { analyseFixturePhoto, lightingCatalogue } from "../_shared/arnieLighting.ts";
 import { crewDay } from '../_shared/arnieDispatch.ts'
 import { FRANKIE_MODEL, FRANKIE_MAX_TOKENS, frankieToolsFor, execFrankieTool } from '../_shared/frankieTools.ts'
 
@@ -234,6 +235,16 @@ const TOOLS = [
       },
       required: ['customer'],
     },
+  },
+  {
+    name: 'query_lighting_products',
+    description: "What this company sells for lighting — the price-book sections configured for Lenard, and the products on them. Use this for 'what do we put on a 400W wall pack', 'what high bays do we sell', 'what does the cobra head cost'. Products come from the configured section ONLY, never from a name search, because that is the shelf the company has chosen to quote from.",
+    input_schema: { type: 'object', properties: { like: { type: 'string', description: 'Narrow by name if they named a kind of fixture (\"high bay\", \"wall pack\").' } } },
+  },
+  {
+    name: 'analyse_fixture_photo',
+    description: "Hand a photo to LENARD, the lighting specialist, to identify the fixtures in it: what is there, how many, existing wattage and a proposed LED. Use this whenever someone sends a picture of lighting and wants to know what it is or what replaces it. It learns from this company's own past corrections. It identifies; it does not price or quote.",
+    input_schema: { type: 'object', properties: {}, description: 'Takes the photo attached to this conversation; no arguments.' },
   },
   {
     name: 'query_eos',
@@ -597,7 +608,28 @@ function cardsFor(body: Record<string, unknown>): string[] {
 // Compare on a squashed form instead: lowercase, letters and digits only.
 const squash = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 
-async function execTool(name: string, input: any, caller: Caller) {
+/**
+ * The most recent image on the conversation, as Lenard wants it.
+ *
+ * Attachments arrive as Anthropic content blocks; the newest one wins, because
+ * "what is this?" means the photo just sent, not one from four turns ago.
+ */
+function lastImageOf(messages: any[] = []): { imageBase64: string; mediaType: string } | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const content = messages[i]?.content
+    if (!Array.isArray(content)) continue
+    for (let j = content.length - 1; j >= 0; j--) {
+      const block = content[j]
+      const src = block?.source
+      if (block?.type === 'image' && src?.type === 'base64' && src?.data) {
+        return { imageBase64: String(src.data), mediaType: String(src.media_type || 'image/jpeg') }
+      }
+    }
+  }
+  return null
+}
+
+async function execTool(name: string, input: any, caller: Caller, messages: any[] = []) {
   const { companyId, role, email, employeeId } = caller
   const sb = (path: string) => `${SUPABASE_URL}/rest/v1/${path}`
   const hdr = { 'apikey': SUPABASE_SERVICE_ROLE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
@@ -854,6 +886,23 @@ async function execTool(name: string, input: any, caller: Caller) {
     if (name === 'query_account') {
       // A tech gets the work; the money needs an admin, the same line every other read draws.
       return await accountSummary({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, input, isAdmin)
+    }
+
+    if (name === 'query_lighting_products') {
+      return await lightingCatalogue({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, input)
+    }
+
+    if (name === 'analyse_fixture_photo') {
+      // The photo rides on the conversation, not in the tool input — the model
+      // cannot pass an image through a tool call, so the turn handler stashes
+      // the most recent one for Lenard to look at.
+      const photo = lastImageOf(messages)
+      if (!photo) return { error: 'There is no photo on this conversation for me to look at. Send the picture and ask again.' }
+      return await analyseFixturePhoto(
+        { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY, internalKey: Deno.env.get('ARNIE_INTERNAL_KEY') || undefined },
+        caller,
+        photo,
+      )
     }
 
     if (name === 'query_eos') {
@@ -1339,7 +1388,7 @@ function jsonError(msg: string, status: number, extra?: Record<string, unknown>)
 
 // Per-agent: which tools are advertised, how a call is executed, which
 // model answers, and which feature the usage is logged under.
-function agentSetup(agent: Agent, caller: Caller, cards: string[]) {
+function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any[] = []) {
   const rest = { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }
   if (agent === 'frankie') {
     return {
@@ -1356,7 +1405,7 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[]) {
     maxTokens: 4096,
     feature: 'arnie-chat',
     tools: toolsFor(caller.role, cards),
-    exec: (name: string, input: any) => execTool(name, input, caller),
+    exec: (name: string, input: any) => execTool(name, input, caller, messages),
     tangled: 'Sorry boss, I got tangled up trying to look that up. Try asking me a different way.',
   }
 }
@@ -1381,7 +1430,7 @@ ${lines.join('\n')}`
 async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie'): Promise<string> {
   const { companyId } = caller
   let convo = [...messages]
-  const setup = agentSetup(agent, caller, cards)
+  const setup = agentSetup(agent, caller, cards, messages)
   // Only advertise tools if we have a companyId to scope queries safely
   const includeTools = !!companyId && setup.tools.length > 0
   for (let i = 0; i < 5; i++) { // up to 5 tool rounds
@@ -1422,7 +1471,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
 async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie') {
   const { companyId } = caller
   const encoder = new TextEncoder()
-  const setup = agentSetup(agent, caller, cards)
+  const setup = agentSetup(agent, caller, cards, messages)
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: any) => {
