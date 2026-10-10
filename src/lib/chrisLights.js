@@ -199,3 +199,48 @@ export const BULB_COLORS = [
 export function bulbLabel(key) {
   return (BULB_COLORS.find((c) => c.key === key) || BULB_COLORS[0]).label
 }
+
+// ── The company's Christmas-lighting settings (settings key chris_lights_config)
+//
+// One reader for the Chris page and the Settings screen, so the two can never
+// disagree about what a saved value means. The access-rate keys are the same
+// ones lib/chrisAccess reads (ACCESS_DEFAULTS); a blank one falls back to the
+// starter there.
+export const LIGHTS_CONFIG_KEY = 'chris_lights_config'
+
+export const LIGHTS_CONFIG_FIELDS = [
+  { key: 'per_foot_rate', label: 'Price per foot', unit: '$/ft', required: true, hint: 'Supply and install, per foot of roofline.' },
+  { key: 'minimum_charge', label: 'Minimum charge', unit: '$', hint: 'Added as its own line when a small job comes in under it.' },
+  { key: 'install_ft_per_hour', label: 'Install speed', unit: 'ft/hr', hint: 'Feet a crew hangs in an hour on a single-storey eave. Drives the extra-time line on tall or steep houses.' },
+  { key: 'two_storey_factor', label: 'Two-storey slow-down', unit: '×', hint: 'How much longer a second storey takes (1.6 = 60% longer).' },
+  { key: 'steep_pitch_factor', label: 'Steep-roof slow-down', unit: '×', hint: 'How much longer a steep pitch takes.' },
+  { key: 'lift_day_rate', label: 'Lift hire, per day', unit: '$' },
+  { key: 'lift_delivery', label: 'Lift delivery', unit: '$' },
+]
+
+/** Parse whatever is stored (string or object) into numbers; junk → {}. */
+export function readLightsConfig(raw) {
+  let v = raw
+  try { if (typeof v === 'string') v = JSON.parse(v) } catch { v = {} }
+  if (typeof v === 'string') { try { v = JSON.parse(v) } catch { v = {} } } // double-encoded
+  if (!v || typeof v !== 'object') return {}
+  const out = {}
+  for (const f of LIGHTS_CONFIG_FIELDS) {
+    const n = Number(v[f.key])
+    if (v[f.key] !== '' && v[f.key] != null && Number.isFinite(n)) out[f.key] = n
+  }
+  return out
+}
+
+/** Why this config cannot be saved, or null. */
+export function lightsConfigProblem(cfg = {}) {
+  if (!(Number(cfg.per_foot_rate) > 0)) return 'Set a price per foot above $0.'
+  for (const f of LIGHTS_CONFIG_FIELDS) {
+    if (cfg[f.key] != null && Number(cfg[f.key]) < 0) return `${f.label} cannot be negative.`
+  }
+  for (const k of ['two_storey_factor', 'steep_pitch_factor']) {
+    if (cfg[k] != null && Number(cfg[k]) < 1) return 'A slow-down of less than 1 would make tall houses cheaper — use 1 for no change.'
+  }
+  if (cfg.install_ft_per_hour != null && !(Number(cfg.install_ft_per_hour) > 0)) return 'Install speed must be above 0 ft/hr.'
+  return null
+}

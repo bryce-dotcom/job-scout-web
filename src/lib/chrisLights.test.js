@@ -195,3 +195,22 @@ describe('bulb colours', () => {
     expect(bulbLabel(undefined)).toBe('Warm white')
   })
 })
+
+describe('lights config', () => {
+  it('reads the stored string, double-encoded strings and junk', async () => {
+    const { readLightsConfig } = await import('./chrisLights')
+    expect(readLightsConfig('{"per_foot_rate": 6.5, "minimum_charge": 450}')).toEqual({ per_foot_rate: 6.5, minimum_charge: 450 })
+    expect(readLightsConfig(JSON.stringify(JSON.stringify({ per_foot_rate: 7 })))).toEqual({ per_foot_rate: 7 })
+    expect(readLightsConfig({ per_foot_rate: '8', lift_day_rate: '' })).toEqual({ per_foot_rate: 8 })
+    expect(readLightsConfig('not json')).toEqual({})
+    expect(readLightsConfig(null)).toEqual({})
+  })
+  it('refuses a config that would misprice', async () => {
+    const { lightsConfigProblem } = await import('./chrisLights')
+    expect(lightsConfigProblem({})).toMatch(/price per foot/)
+    expect(lightsConfigProblem({ per_foot_rate: 6.5 })).toBeNull()
+    expect(lightsConfigProblem({ per_foot_rate: 6.5, minimum_charge: -1 })).toMatch(/negative/)
+    expect(lightsConfigProblem({ per_foot_rate: 6.5, two_storey_factor: 0.8 })).toMatch(/cheaper/)
+    expect(lightsConfigProblem({ per_foot_rate: 6.5, install_ft_per_hour: 0 })).toMatch(/speed/)
+  })
+})

@@ -27,7 +27,7 @@ import {
 } from '../../lib/aerialTile'
 import {
   COVERAGE, FACES, feetPerPixel, runLengthFt, coverageFeet, coverageOptions,
-  lightsPrice, quoteProblem, lightsIntakeLines, BULB_COLORS, bulbLabel,
+  lightsPrice, quoteProblem, lightsIntakeLines, BULB_COLORS, bulbLabel, readLightsConfig, LIGHTS_CONFIG_KEY,
 } from '../../lib/chrisLights'
 import { STOREYS, liftDecision, accessLines, accessWarning } from '../../lib/chrisAccess'
 
@@ -86,12 +86,7 @@ export default function ChrisLights() {
   // Per-foot price lives in settings so every tenant sets their own. No
   // default rate is invented here — a made-up number that reaches a customer
   // is worse than a page that says it needs configuring.
-  const cfg = useMemo(() => {
-    try {
-      const raw = getSettingValue?.('chris_lights_config')
-      return typeof raw === 'string' ? JSON.parse(raw) : (raw || {})
-    } catch { return {} }
-  }, [getSettingValue])
+  const cfg = useMemo(() => readLightsConfig(getSettingValue?.(LIGHTS_CONFIG_KEY)), [getSettingValue])
   const perFootRate = Number(cfg?.per_foot_rate) || 0
   const minimumCharge = Number(cfg?.minimum_charge) || 0
 
@@ -532,7 +527,7 @@ export default function ChrisLights() {
                 </>
               ) : (
                 <p style={{ fontSize: 13, color: theme.textSecondary, margin: 0 }}>
-                  Set a price per foot in Settings → Christmas Lighting before quoting.
+                  Set a price per foot in <a href="/settings?tab=christmas_lighting" style={{ color: theme.accent }}>Settings → Christmas Lighting</a> before quoting.
                 </p>
               )}
             </div>
