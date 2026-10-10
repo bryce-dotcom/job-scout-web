@@ -17,7 +17,8 @@
 // The key stays on the server. A Maps key in the bundle is a key anybody can
 // lift and bill to us.
 //
-// Secret: GOOGLE_MAPS_API_KEY (Street View Static API enabled on it).
+// Secret: GOOGLE_MAPS_API_KEY, else the GOOGLE_PLACES_API_KEY Freddy and
+// company setup already use — one Google key, Street View Static API enabled.
 // Input  : { lat, lng, address? }
 // Output : { ok, image_base64, mime, heading, pano_date, distance_m }
 //          or { ok:false, error, needs_key?, no_imagery? }
@@ -50,7 +51,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const key = Deno.env.get('GOOGLE_MAPS_API_KEY')
+    const key = Deno.env.get('GOOGLE_MAPS_API_KEY') || Deno.env.get('GOOGLE_PLACES_API_KEY')
     if (!key) return json({ ok: false, needs_key: true, error: 'Street View is not set up yet — add a photo of the front instead.' })
 
     // Every picture is billed to us, and the anon key is public — so a real
@@ -58,8 +59,13 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
     const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
-    const caller = token === serviceKey ? null : await resolveCaller(req, supabaseUrl, serviceKey).catch(() => null)
-    if (token !== serviceKey && !caller?.companyId) return json({ ok: false, error: 'Sign in to use Street View.' }, 401)
+    // The gateway (verify_jwt on) has already checked the signature, so the
+    // role claim can be read — a rotated service key still matches by role.
+    let role = ''
+    try { role = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role || '' } catch { /* not a JWT */ }
+    const isService = token === serviceKey || role === 'service_role'
+    const caller = isService ? null : await resolveCaller(req, supabaseUrl, serviceKey).catch(() => null)
+    if (!isService && !caller?.companyId) return json({ ok: false, error: 'Sign in to use Street View.' }, 401)
 
     const { lat, lng } = await req.json()
     const la = Number(lat), ln = Number(lng)
