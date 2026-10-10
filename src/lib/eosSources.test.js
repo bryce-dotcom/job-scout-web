@@ -22,7 +22,7 @@ const compute = (key, data, entity = null) =>
 const EMPTY = {
   jobs: [], leads: [], invoices: [], utilityInvoices: [], payments: [], appointments: [],
   timeLogs: [], hourEntries: [], expenses: [], plaidTransactions: [], quotes: [],
-  quoteAmountById: new Map(), leadPayments: [], submittals: [], jobStatuses: [], tz: 'America/Denver',
+  leadPayments: [], submittals: [], jobStatuses: [], tz: 'America/Denver',
 }
 
 describe('every live metric survives an empty tenant', () => {
@@ -134,12 +134,14 @@ describe('money', () => {
     expect(compute('cash_collected', data, null)).toBe(2500)
   })
 
-  it('Dollar Amount Sold values an unpriced job by its estimate', () => {
+  it('Dollar Amount Sold does NOT let an estimate stand in for a job total', () => {
+    // lib/soldTotals.soldValue is the rule and it dropped that fallback on
+    // purpose: HHH has an approved estimate of $1,651,117.14 against a
+    // $16,299.20 job. An unpriced job is worth what it says it is worth.
     const data = {
       ...EMPTY,
       jobs: [{ id: 1, created_at: '2026-09-15T17:00:00Z', job_total: null, quote_id: 42, business_unit: 'Energy Scout' }],
-      quoteAmountById: new Map([[42, 8200]]),
     }
-    expect(compute('sales_won', data)).toBe(8200)
+    expect(compute('sales_won', data)).toBe(0)
   })
 })

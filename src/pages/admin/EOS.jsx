@@ -105,9 +105,10 @@ export const AUTO_SOURCES = {
     // (estimate-approval OR fresh job). Sums job_total in the window.
     compute: (d, s, e, sd, ed, ent) => {
       const inRange = wonJobsInRange(filterByEntity(d.jobs, ent), s, e)
-      // A job converted before it was priced has a blank job_total; value
-      // it by its estimate rather than counting the sale as $0.
-      return sumJobTotal(inRange, d.quoteAmountById)
+      // No estimate fallback: lib/soldTotals.soldValue is the rule, and it
+      // dropped that fallback on purpose — HHH has an approved estimate of
+      // $1,651,117.14 standing against a $16,299.20 job.
+      return sumJobTotal(inRange)
     },
   },
   leads_created: {
@@ -2807,7 +2808,8 @@ export default function EOS() {
   const leadPayments = useStore(s => s.leadPayments) || []
   const businessUnits = useStore(s => s.businessUnits) || []
   const jobStatuses = useStore(s => s.jobStatuses) || []
-  const company = useStore(s => s.company)
+  // company is read at the top of this component; a clock-in is bucketed in
+  // the company's timezone, not the viewer's.
   const tz = company?.timezone || DEFAULT_TZ
   const themeContext = useTheme()
   const theme = themeContext?.theme || defaultTheme
@@ -2853,12 +2855,9 @@ export default function EOS() {
 
   // Punches plus legacy typed rows, each hour counted once (see jobHours.js).
   const hourEntries = useMemo(() => mergeJobHourSources({ timeClock, timeLog: timeLogs }), [timeClock, timeLogs])
-  // Estimate value by quote id, so an unpriced converted job isn't a $0 sale.
-  const quoteAmountById = useMemo(() => new Map(quotes.map(q => [q.id, q.quote_amount])), [quotes])
-
   const storeData = useMemo(() => ({
-    jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, quoteAmountById, leadPayments, submittals, jobStatuses, tz,
-  }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, quoteAmountById, leadPayments, submittals, jobStatuses, tz])
+    jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses, tz,
+  }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses, tz])
 
   // Build entity list from service types + business units (deduplicated)
   const entities = useMemo(() => {
