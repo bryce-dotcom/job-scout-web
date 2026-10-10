@@ -15,9 +15,16 @@ import {
   Save, AlertCircle, BarChart3, MessageSquare, Layers,
   Award, Compass, Flag, ArrowRight, RefreshCw, GripVertical,
   Timer, Play, Pause, Check, Circle, Minus, ListChecks,
-  Activity, Link2, Database, BookOpen, UserCheck
+  Activity, Link2, Database, BookOpen, UserCheck,
+  Printer, Send, Mail, Bell, FileText
 } from 'lucide-react'
 import { localDateStr } from '../../lib/localDate'
+// The itinerary is built by ONE definition, shared with the PDF, the email and
+// Arnie — see supabase/functions/_shared/l10Agenda.ts. The page's only special
+// power is that it HAS the week's numbers, so it passes them in.
+import { buildL10Agenda } from '../../lib/l10Agenda'
+import { generateL10AgendaPdf, l10AgendaFilename } from '../../lib/l10AgendaPdf'
+import { agendaSubject } from '../../lib/l10AgendaEmail'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', border: '#d6cdb8',
@@ -1424,7 +1431,163 @@ function IssuesTab({ data, save, theme, employees, isMobile }) {
 // MEETINGS — L10, QUARTERLY, ANNUAL
 // ════════════════════════════════════════════════════════════════════
 
-function L10Tab({ data, save, theme, employees, storeData, entities, isMobile }) {
+// ─── The itinerary: preview it, print it, send it ─────────────────
+//
+// Everything on it comes from buildL10Agenda. The page's one contribution is
+// the week's scorecard numbers, which only exist here (AUTO_SOURCES runs
+// against the loaded store), so they are passed in and the document says it is
+// the graded kind. Sending goes through the send-l10-agenda function, which
+// rebuilds the agenda server-side from the same settings — the browser never
+// hands anybody's inbox a document it composed.
+function ItineraryModal({ agenda, theme, companyName, onClose }) {
+  const [channel, setChannel] = useState('both')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(null)
+
+  const withEmail = agenda.attendees.filter(a => a.email)
+  const withoutEmail = agenda.attendees.filter(a => !a.email)
+
+  const print = () => {
+    const doc = generateL10AgendaPdf(agenda, companyName ? { company_name: companyName } : null)
+    doc.save(l10AgendaFilename(agenda))
+  }
+
+  const send = async () => {
+    setSending(true)
+    try {
+      const numbers = {}
+      for (const s of agenda.sections) {
+        if (s.key !== 'scorecard') continue
+        for (const r of s.rows || []) if (r.value != null) numbers[r.id] = { thisWeek: r.value, lastWeek: r.previous }
+      }
+      const { data, error } = await supabase.functions.invoke('send-l10-agenda', {
+        body: { how: channel, when: agenda.meeting_on, unit: agenda.entity || undefined, numbers },
+      })
+      if (error) throw new Error(error.message)
+      if (!data?.success) throw new Error(data?.error || 'It did not go out.')
+      setSent(data)
+      toast.success(`Agenda sent — ${data.emailed ? `${data.emailed} by email` : ''}${data.emailed && data.notified ? ', ' : ''}${data.notified ? `${data.notified} in the app` : ''}`)
+    } catch (e) {
+      toast.error(e.message || 'The agenda did not send.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const Btn = ({ onClick, children, primary, disabled }) => (
+    <button onClick={onClick} disabled={disabled} style={{
+      padding: '10px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', minHeight: '44px',
+      border: primary ? 'none' : `1px solid ${theme.border}`, cursor: disabled ? 'default' : 'pointer',
+      backgroundColor: primary ? '#8b5cf6' : theme.bgCard, color: primary ? '#fff' : theme.text,
+      opacity: disabled ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: '7px',
+    }}>{children}</button>
+  )
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100,
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '16px', overflowY: 'auto',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '12px',
+        width: '100%', maxWidth: '720px', margin: '24px 0', padding: '20px',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '4px' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '18px', fontWeight: '800', color: theme.text }}>{agenda.title}</div>
+            <div style={{ fontSize: '13px', fontWeight: '600', color: '#8b5cf6' }}>{agenda.when_label} · {agenda.minutes} min</div>
+            <div style={{ fontSize: '11px', color: theme.textMuted }}>
+              {[companyName, agenda.quarter, agenda.entity].filter(Boolean).join('  ·  ')}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: '4px' }}><X size={18} /></button>
+        </div>
+
+        {agenda.attendees.length > 0 && (
+          <div style={{ fontSize: '12px', color: theme.textSecondary, margin: '10px 0 4px' }}>
+            <b style={{ color: theme.text }}>In the room:</b> {agenda.attendees.map(a => a.name).join(', ')}
+          </div>
+        )}
+
+        <div style={{ margin: '12px 0', borderTop: `1px solid ${theme.border}` }}>
+          {agenda.sections.map(s => (
+            <div key={s.key} style={{ padding: '10px 0', borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                <div style={{ fontSize: '13px', fontWeight: '700', color: theme.text }}>{s.title}</div>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: theme.accent, whiteSpace: 'nowrap' }}>{s.minutes} min</div>
+              </div>
+              {s.note && <div style={{ fontSize: '11px', fontStyle: 'italic', color: theme.textMuted, marginTop: '2px' }}>{s.note}</div>}
+              {s.rows && (
+                <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  {s.rows.length === 0 && <div style={{ fontSize: '12px', color: theme.textMuted }}>Nothing here.</div>}
+                  {s.rows.map((r, i) => (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: '8px', fontSize: '12px', color: theme.textSecondary }}>
+                      <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                        {s.key === 'scorecard' ? r.metric : s.key === 'todos' ? r.text : r.title}
+                        <span style={{ color: r.owner ? theme.textMuted : '#ef4444' }}>{r.owner !== undefined ? ` — ${r.owner || 'unassigned'}` : ''}</span>
+                      </div>
+                      <div style={{ whiteSpace: 'nowrap', fontWeight: '700', color: r.overdue || r.status === 'off-track' || r.on_goal === false ? '#ef4444' : r.on_goal ? '#22c55e' : theme.textMuted }}>
+                        {s.key === 'scorecard' ? (r.value == null ? '____' : Number(r.value).toLocaleString('en-US', { maximumFractionDigits: 2 }))
+                          : s.key === 'rocks' ? String(r.status || '').replace('-', ' ')
+                          : s.key === 'todos' ? (r.due ? (r.overdue ? 'overdue' : r.due) : '')
+                          : r.priority || ''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {agenda.gaps.length > 0 && (
+          <div style={{ padding: '10px', borderRadius: '8px', backgroundColor: '#ef444410', marginBottom: '12px' }}>
+            <div style={{ fontSize: '10px', fontWeight: '800', color: '#ef4444', marginBottom: '3px' }}>WORTH FIXING BEFORE NEXT WEEK</div>
+            {agenda.gaps.map((g, i) => <div key={i} style={{ fontSize: '11px', color: theme.textSecondary }}>· {g}</div>)}
+          </div>
+        )}
+
+        {sent ? (
+          <div style={{ fontSize: '12px', color: theme.textSecondary }}>
+            Sent{sent.emailed ? ` — emailed ${sent.emailed}` : ''}{sent.notified ? `${sent.emailed ? ',' : ' —'} ${sent.notified} in the app` : ''}.
+            {sent.email_failed && <span style={{ color: '#ef4444' }}> The email failed: {sent.email_failed}.</span>}
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+              {[['both', 'Email + app', Send], ['email', 'Email only', Mail], ['app', 'App only', Bell]].map(([id, label, Icon]) => (
+                <button key={id} onClick={() => setChannel(id)} style={{
+                  padding: '7px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '700', minHeight: '36px',
+                  border: `1px solid ${channel === id ? '#8b5cf6' : theme.border}`, cursor: 'pointer',
+                  backgroundColor: channel === id ? '#8b5cf615' : 'transparent', color: channel === id ? '#8b5cf6' : theme.textMuted,
+                  display: 'inline-flex', alignItems: 'center', gap: '5px',
+                }}><Icon size={12} /> {label}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '10px' }}>
+              {channel !== 'app' && withEmail.length === 0
+                ? 'Nobody in the room has an email address on file — add one on the Employees page, or send it in the app only.'
+                : `${channel === 'both' ? `Goes to ${agenda.attendees.length} ${agenda.attendees.length === 1 ? 'person' : 'people'} — ${withEmail.length} by email, ${agenda.attendees.filter(a => a.employee_id).length} in the app.`
+                    : channel === 'email' ? `Emails ${withEmail.length} ${withEmail.length === 1 ? 'person' : 'people'}.`
+                    : `In the app for ${agenda.attendees.filter(a => a.employee_id).length} ${agenda.attendees.filter(a => a.employee_id).length === 1 ? 'person' : 'people'}.`}${channel !== 'app' && withoutEmail.length ? ` ${withoutEmail.map(a => a.name).join(', ')} ${withoutEmail.length === 1 ? 'has' : 'have'} no email${channel === 'both' ? ' and only gets the app copy' : ''}.` : ''} Once it goes out it cannot be unsent.`}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <Btn onClick={print}><Printer size={14} /> Print / Save PDF</Btn>
+              <Btn onClick={send} primary disabled={sending || (channel !== 'app' && withEmail.length === 0 && agenda.attendees.length === 0)}>
+                <Send size={14} /> {sending ? 'Sending…' : 'Send it'}
+              </Btn>
+            </div>
+            <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '8px' }}>
+              Subject: {agendaSubject(agenda)}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function L10Tab({ data, save, theme, employees, storeData, entities, isMobile, companyName }) {
   const meetings = data.meetings || { l10_day: '', l10_time: '', quarterly_next: '', annual_next: '' }
   const scorecard = data.scorecard || []
   const rocks = data.rocks || []
@@ -1435,6 +1598,7 @@ function L10Tab({ data, save, theme, employees, storeData, entities, isMobile })
   const [timerRunning, setTimerRunning] = useState(false)
   const [meetingRating, setMeetingRating] = useState(0)
   const [entityFilter, setEntityFilter] = useState('')
+  const [showItinerary, setShowItinerary] = useState(false)
 
   const quarter = getCurrentQuarter()
   const year = getCurrentYear()
@@ -1483,6 +1647,25 @@ function L10Tab({ data, save, theme, employees, storeData, entities, isMobile })
   const quarterRocks = rocks.filter(r => r.quarter === quarter && r.year === year)
   const openIssues = issues.filter(i => !i.resolved)
   const activeTodos = todos.filter(t => !t.done)
+
+  // The itinerary, with the numbers. getMetricValues already computes the last
+  // completed week and the one before it for every automatic metric, so the
+  // page can hand the builder real figures — the one thing an edge function
+  // cannot do without a second copy of all twelve money rules.
+  const itinerary = useMemo(() => {
+    const numbers = {}
+    for (const m of scorecard) {
+      const v = getMetricValues(m)
+      if (Number.isFinite(v.thisWeek)) numbers[m.id] = { thisWeek: v.thisWeek, lastWeek: v.lastWeek, label: v.format || null }
+    }
+    return buildL10Agenda({
+      eos: { meetings, scorecard, rocks, issues, todos, accountability: data.accountability || [] },
+      employees,
+      numbers: Object.keys(numbers).length ? numbers : null,
+      entity: entityFilter || null,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scorecard, rocks, issues, todos, meetings, employees, entityFilter, data.accountability, storeData])
 
   const statusLabels = { 'on-track': 'On Track', 'at-risk': 'At Risk', 'off-track': 'Off Track', done: 'Done' }
   const statusColors = { 'on-track': '#22c55e', 'at-risk': '#f59e0b', 'off-track': '#ef4444', done: '#22c55e' }
@@ -1678,14 +1861,34 @@ function L10Tab({ data, save, theme, employees, storeData, entities, isMobile })
             <div style={{ fontSize: '10px', color: theme.textMuted }}>To-Dos</div>
           </div>
         </div>
-        <button onClick={() => { setMeetingMode(true); setMeetingSeconds(90 * 60); setMeetingRating(0) }} style={{
-          padding: '12px 32px', borderRadius: '10px', fontSize: '15px', fontWeight: '700',
-          border: 'none', cursor: 'pointer', backgroundColor: '#8b5cf6', color: '#fff',
-          display: 'inline-flex', alignItems: 'center', gap: '8px',
-        }}>
-          <Play size={16} /> Start L10 Meeting
-        </button>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button onClick={() => { setMeetingMode(true); setMeetingSeconds(90 * 60); setMeetingRating(0) }} style={{
+            padding: '12px 32px', borderRadius: '10px', fontSize: '15px', fontWeight: '700', minHeight: '44px',
+            border: 'none', cursor: 'pointer', backgroundColor: '#8b5cf6', color: '#fff',
+            display: 'inline-flex', alignItems: 'center', gap: '8px',
+          }}>
+            <Play size={16} /> Start L10 Meeting
+          </button>
+          {/* The same agenda the meeting runs, as a document: print it, or send
+              it to the room ahead of time. */}
+          <button onClick={() => setShowItinerary(true)} style={{
+            padding: '12px 24px', borderRadius: '10px', fontSize: '15px', fontWeight: '700', minHeight: '44px',
+            border: `1px solid ${theme.border}`, cursor: 'pointer', backgroundColor: theme.bgCard, color: theme.text,
+            display: 'inline-flex', alignItems: 'center', gap: '8px',
+          }}>
+            <FileText size={16} /> Itinerary
+          </button>
+        </div>
       </Card>
+
+      {showItinerary && (
+        <ItineraryModal
+          agenda={itinerary}
+          theme={theme}
+          companyName={companyName}
+          onClose={() => setShowItinerary(false)}
+        />
+      )}
 
       {/* Meeting Settings */}
       <Card theme={theme}>
@@ -2529,6 +2732,7 @@ const TABS = [
 
 export default function EOS() {
   const companyId = useStore(s => s.companyId)
+  const company = useStore(s => s.company)
   const employees = useStore(s => s.employees) || []
   const settings = useStore(s => s.settings) || []
   const fetchSettings = useStore(s => s.fetchSettings)
@@ -2692,7 +2896,7 @@ export default function EOS() {
       {activeTab === 'rocks' && <RocksTab data={eosData} save={save} theme={theme} employees={employees} entities={entities} isMobile={isMobile} />}
       {activeTab === 'scorecard' && <ScorecardTab data={eosData} save={save} theme={theme} employees={employees} storeData={storeData} entities={entities} isMobile={isMobile} />}
       {activeTab === 'issues' && <IssuesTab data={eosData} save={save} theme={theme} employees={employees} isMobile={isMobile} />}
-      {activeTab === 'l10' && <L10Tab data={eosData} save={save} theme={theme} employees={employees} storeData={storeData} entities={entities} isMobile={isMobile} />}
+      {activeTab === 'l10' && <L10Tab data={eosData} save={save} theme={theme} employees={employees} storeData={storeData} entities={entities} isMobile={isMobile} companyName={company?.company_name || null} />}
       {activeTab === 'people' && <PeopleTab data={eosData} save={save} theme={theme} employees={employees} isMobile={isMobile} />}
       {activeTab === 'toolbox' && <ToolboxTab theme={theme} isMobile={isMobile} />}
     </div>

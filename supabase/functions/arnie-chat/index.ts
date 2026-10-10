@@ -9,6 +9,7 @@ import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_shared/arnieMoney.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
 import { accountSummary } from "../_shared/arnieAccount.ts";
+import { eosOverview } from "../_shared/arnieEos.ts";
 import { crewDay } from '../_shared/arnieDispatch.ts'
 import { FRANKIE_MODEL, FRANKIE_MAX_TOKENS, frankieToolsFor, execFrankieTool } from '../_shared/frankieTools.ts'
 
@@ -232,6 +233,17 @@ const TOOLS = [
         customer: { type: 'string', description: 'The customer as the user named them — a business or a person ("Halifax Flooring", "Ben Rowe").' },
       },
       required: ['customer'],
+    },
+  },
+  {
+    name: 'query_eos',
+    description: "What is on the EOS page (Reports → EOS): the weekly Scorecard (what is measured, by whom, against what goal), this quarter's Rocks and whether each is on track, the open Issues list, the outstanding To-Dos, the accountability chart seats, the V/TO, and when the Level 10 meeting is. Use this for \"how are we doing on our rocks\", \"what's on the scorecard\", \"what issues are open\", \"when is our L10\", \"who owns what\". It does NOT return the week's scorecard FIGURES — those are computed on the EOS page itself; this is the shape of the scorecard, not the numbers. Manager and up.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        part: { type: 'string', description: 'One part only, when they asked for one: scorecard | rocks | issues | todos | vto | l10. Leave out for everything.' },
+        unit: { type: 'string', description: 'One business unit only, exactly as the company spells it.' },
+      },
     },
   },
   {
@@ -466,15 +478,16 @@ const PROPOSE_CREATE_TOOL = {
           'ticket: message (required — what was seen, the exact record ids/numbers involved, what was expected, what you checked), subject, feedback_type (bug|feature|question|feedback). ' +
           'appointment: lead (required — describe it in words, never an id), when (required — YYYY-MM-DD HH:MM in the user\'s zone; work "Tuesday at 2" out from Today in Current User), timezone (from Current User), salesperson (name; omit to use the rep already on the lead), duration_minutes (default 60), location (defaults to the lead\'s address), notes. ' +
           'quote: quote (optional — an existing EMPTY Draft estimate to fill instead of creating one, as the user names it: "#5112", "EST-5112", or its name; when given, lead/customer may be omitted), lead OR customer (one required unless quote is given, in words), lines (required — an ARRAY of { item, quantity, price? }: item is the product as the user said it and the server finds it in the price book; give price ONLY if the user said one, otherwise the book price is used), estimate_name, service_type, salesperson, notes. ' +
+          'meeting_agenda: type (l10 | quarterly | annual — l10 is the weekly meeting and the default; a "quarterly", "Q4 meeting" or "planning session" is quarterly; two days at year end is annual), days and ends for a quarterly/annual ("Saturday and Sunday, done by 3 and by noon" → days 2, ends "3pm, noon"), when (only if they named a day — otherwise the team\'s own L10 day is used), to (only if they named people), how (email|app|both, default both), unit (one business unit only). The agenda itself is BUILT from the EOS page — the seven L10 sections, this quarter\'s rocks, the open issues, the outstanding to-dos, the scorecard with a blank per metric. Never compose or pass agenda content. ' +
           'followup: quote (required — the number, the estimate name, or who it is for, in words), message (required — the note AS THE REP WOULD SAY IT, first person, short, one clear ask, mentioning what the estimate is for; never invent a discount, deadline or price), subject (email only), channel (email|sms, default email). The server finds the recipient on the quote, lead or customer; you never supply an address.',
         properties: {
           customer_name: { type: 'string' }, business_name: { type: 'string' }, phone: { type: 'string' },
           email: { type: 'string' }, address: { type: 'string' }, service_type: { type: 'string' },
           lead_source: { type: 'string' }, notes: { type: 'string' },
           equipment: { type: 'string' }, symptom: { type: 'string' }, cause: { type: 'string' }, fix: { type: 'string' },
-          parts: { type: 'string' }, outcome: { type: 'string' }, trade: { type: 'string' }, job: { type: 'string' },
+          parts: { type: 'string' }, outcome: { type: 'string' }, job: { type: 'string' },
           subject: { type: 'string' }, message: { type: 'string' }, feedback_type: { type: 'string' },
-          lead: { type: 'string' }, when: { type: 'string', description: 'EXACTLY as the user said it ("Thursday at 2", "tomorrow 9:30am") or YYYY-MM-DD HH:MM if they gave a date; never convert a weekday yourself' }, timezone: { type: 'string' }, salesperson: { type: 'string' }, duration_minutes: { type: 'string' }, location: { type: 'string' },
+          lead: { type: 'string' }, timezone: { type: 'string' }, salesperson: { type: 'string' }, duration_minutes: { type: 'string' }, location: { type: 'string' },
           customer: { type: 'string' }, estimate_name: { type: 'string' },
           quote: { type: 'string' }, channel: { type: 'string' },
           invoice: { type: 'string' }, amount: { type: 'string' }, method: { type: 'string' }, date: { type: 'string' }, reference: { type: 'string' },
@@ -484,7 +497,13 @@ const PROPOSE_CREATE_TOOL = {
           text: { type: 'string', description: 'memory: the one line to remember, written as a fact about the user in the third person, e.g. "Calls the Riverside Apartments job (JOB-2214) the gym", "Wants the morning brief by text"' },
           lines: { type: 'array', items: { type: 'object', properties: { item: { type: 'string' }, quantity: { type: 'number' }, price: { type: 'number' }, description: { type: 'string' } }, required: ['item'] } },
           role: { type: 'string', description: 'employee: job title as said (Field Tech, Installer, Sales, Setter, Office, Manager)' }, user_role: { type: 'string', description: 'employee: access level — User, Team Lead, Manager or Admin; User unless they said otherwise' }, hourly_rate: { type: 'string', description: 'employee: only if they gave an hourly rate, e.g. "28"' }, annual_salary: { type: 'string', description: 'employee: only if they gave a yearly salary' }, hire_date: { type: 'string', description: 'employee: the start day AS SAID ("Monday", "October 1") — the server resolves it' }, tax_classification: { type: 'string', description: 'employee: "1099" if they said contractor/1099, else omit' }, business_unit: { type: 'string' }, invite: { type: 'string', description: 'employee: "no" only if they said not to send the login invite; otherwise omit' },
-          when: { type: 'string', description: 'schedule: the day and time EXACTLY as said ("Thursday at 8", "October 1 at 7:30", "tomorrow") — never resolve it yourself' }, duration: { type: 'string', description: 'schedule: how long, if said ("4 hours", "all day") — omit otherwise' }, crew: { type: 'string', description: 'schedule: the people as said, comma-separated ("Jordan and Mike Sullivan") — omit if none named' },
+          // ONE `when`, because this properties map is shared by every target
+          // and a second declaration silently replaced the first — the
+          // appointment target's guidance was dead code from the day schedule
+          // was added, and the two contradicted each other.
+          when: { type: 'string', description: 'The day, and the time if they gave one. Follow the per-target note above, because the targets differ: appointment wants it resolved to YYYY-MM-DD HH:MM in the user\'s zone, while schedule and meeting_agenda want it EXACTLY as the user said it ("Thursday at 8", "tomorrow 9:30am") and the server resolves the weekday in the company\'s zone.' },
+          duration: { type: 'string', description: 'schedule: how long, if said ("4 hours", "all day") — omit otherwise' }, crew: { type: 'string', description: 'schedule: the people as said, comma-separated ("Jordan and Mike Sullivan") — omit if none named' },
+          type: { type: 'string', description: 'meeting_agenda: which EOS meeting — l10 (the weekly, default), quarterly, or annual' }, days: { type: 'string', description: 'meeting_agenda: how many days the quarterly/annual runs, if they said ("two days" = 2)' }, ends: { type: 'string', description: 'meeting_agenda: what time each day finishes, as said, comma separated ("3pm, noon")' }, to: { type: 'string', description: 'meeting_agenda: who it goes to, as said ("Doug and Cole") — omit for the people the agenda itself asks something of, which is the usual case' }, how: { type: 'string', description: 'meeting_agenda: email, app or both — omit for both' }, unit: { type: 'string', description: 'meeting_agenda / query_eos: one business unit only, spelt as the company spells it — omit for all of them' },
           deposit_amount: { type: 'string', description: 'won: only if they said a deposit was collected today, the amount' }, deposit_method: { type: 'string', description: 'won: how the deposit was paid, if said (check, cash, card)' },
           items: { type: 'array', description: 'price_book: one row per item read off the attached price list, photo, PDF or sheet — never invented, never rounded. Skip header/total rows.', items: { type: 'object', properties: { name: { type: 'string' }, unit_price: { type: 'number', description: 'the figure in the PRICE / SELL / RATE column ONLY. If that cell is blank for a row, OMIT unit_price for that row (send the name and the cost) — the server will skip it and say why. Never put a COST figure here.' }, cost: { type: 'number', description: 'the figure in the COST / OUR COST / WHOLESALE column, only if the document shows one. Never the price.' }, type: { type: 'string', description: 'Product or Service (labor, hourly, per-visit = Service)' }, description: { type: 'string' }, sku: { type: 'string' }, manufacturer: { type: 'string' }, model_number: { type: 'string' }, category: { type: 'string' } }, required: ['name', 'unit_price'] } }, source: { type: 'string', description: 'price_book: where the list came from, e.g. "Graybar price sheet" or the file name' },
         },
@@ -834,6 +853,11 @@ async function execTool(name: string, input: any, caller: Caller) {
     if (name === 'query_account') {
       // A tech gets the work; the money needs an admin, the same line every other read draws.
       return await accountSummary({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, input, isAdmin)
+    }
+
+    if (name === 'query_eos') {
+      // Manager+ inside — the gate the EOS page's own menu section draws.
+      return await eosOverview({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, input)
     }
 
     if (name === 'query_employees') {
