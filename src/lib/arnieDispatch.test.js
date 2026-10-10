@@ -11,7 +11,7 @@ const time = read('../../supabase/functions/_shared/arnieTime.ts')
 const chat = read('../../supabase/functions/arnie-chat/index.ts')
 const records = read('../../supabase/functions/_shared/arnieRecords.ts')
 const page = read('../pages/JobDetail.jsx')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 
 const propose = d.slice(d.indexOf('export async function proposeSectionAssign'), d.indexOf('export async function applySectionAssign'))
 const apply = d.slice(d.indexOf('export async function applySectionAssign'), d.indexOf('export async function rollbackSectionAssign'))

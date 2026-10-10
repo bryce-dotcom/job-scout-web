@@ -16,7 +16,7 @@ const statesSrc = read('../../supabase/functions/_shared/stateProfiles.ts')
 const setupSrc = read('../../supabase/functions/_shared/companySetup.ts')
 const create = read('../../supabase/functions/_shared/arnieCreate.ts')
 const chat = read('../../supabase/functions/arnie-chat/index.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 const onboarding = read('../pages/Onboarding.jsx')
 const arnieChat = read('../pages/agents/arnie/ArnieChat.jsx')
 

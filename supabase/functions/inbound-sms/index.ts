@@ -23,10 +23,21 @@ import {
   inboundNotification, inboundRecipients, signatureBase, safeEqual, type Match,
 } from "../_shared/inboundSms.ts";
 import { managerIds } from "../_shared/marketing.ts";
+import { arnieBySms } from "../_shared/arnieSms.ts";
 
 // Twilio reads the status code, not the body. Always answer 200 with empty
 // TwiML once the request is proven genuine: a non-2xx makes Twilio retry, and
 // a retry of something we already stored is just noise.
+// Twilio sends whatever TwiML we answer with, so a reply needs no outbound
+// API call and no second credential.
+const twimlSay = (text: string) =>
+  new Response(
+    '<?xml version="1.0" encoding="UTF-8"?><Response><Message>'
+      + String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      + '</Message></Response>',
+    { status: 200, headers: { 'Content-Type': 'text/xml' } },
+  );
+
 const twiml = (status = 200) =>
   new Response(EMPTY_TWIML, { status, headers: { 'Content-Type': 'text/xml' } });
 
@@ -124,6 +135,29 @@ serve(async (req) => {
       .rpc('inbound_sms_match', { p_company_id: companyId, p_phone: from });
     if (matchErr) console.error('[inbound-sms] match failed:', matchErr.message);
     const match: Match = pickMatch(matchRows || []);
+
+    // A known, ACTIVE employee texting this number is talking to ARNIE, not
+    // leaving a message for the office. Same number, two jobs: everything
+    // below this is untouched for customers and leads.
+    //
+    // pickMatch deliberately prefers a customer over an employee when one
+    // number is both, so a crew member who is also a customer keeps the old
+    // behaviour. That is the rarer case and the safer default.
+    if (match.kind === 'employee' && match.id && !keywordOf(body)) {
+      const { data: emp } = await sb.from('employees')
+        .select('id,company_id,email,phone,name,role,user_role,is_admin,is_developer,has_hr_access')
+        .eq('id', match.id).eq('active', true).maybeSingle();
+      if (emp) {
+        let reply = '';
+        try {
+          reply = await arnieBySms({ url: SUPABASE_URL, key: SERVICE_ROLE_KEY, internalKey: Deno.env.get('ARNIE_INTERNAL_KEY') || undefined }, emp, body);
+        } catch (e) {
+          console.error('[inbound-sms] arnie failed:', (e as Error)?.message);
+          reply = 'Something went wrong on my end — try me again in a minute.';
+        }
+        return reply ? twimlSay(reply) : twiml(200);
+      }
+    }
 
     // The record. A failure is logged, never swallowed — an insert that names
     // columns the table does not have is how outbound texts went unlogged for

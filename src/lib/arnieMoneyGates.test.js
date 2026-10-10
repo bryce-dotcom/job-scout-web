@@ -7,7 +7,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n')
 const money = read('../../supabase/functions/_shared/arnieMoney.ts')
 const chatTs = read('../../supabase/functions/arnie-chat/index.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 
 // Some money is only for admins. These assert the shape that keeps it that
 // way: the gate is decided from the JWT inside the tool, and there is no

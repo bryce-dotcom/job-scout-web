@@ -8,7 +8,7 @@ const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n'
 const fu = read('../../supabase/functions/_shared/arnieFollowup.ts')
 const create = read('../../supabase/functions/_shared/arnieCreate.ts')
 const chatJsx = read('../pages/agents/arnie/ArnieChat.jsx')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 const auto = read('../../supabase/functions/estimate-followup/index.ts')
 const deploy = read('../../scripts/arnie-deploy.mjs')
 const pkg = JSON.parse(read('../../package.json'))

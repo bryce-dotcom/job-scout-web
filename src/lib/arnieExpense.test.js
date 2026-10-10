@@ -12,7 +12,7 @@ const config = read('../../supabase/functions/arnie-config/index.ts')
 const chat = read('../pages/agents/arnie/ArnieChat.jsx')
 const page = read('../pages/Expenses.jsx')
 const reader = read('./receiptReader.js')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 
 describe('what Arnie writes is what the page would', () => {
   it('the categories are the page\'s list, exactly', () => {

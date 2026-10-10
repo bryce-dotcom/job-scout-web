@@ -9,7 +9,7 @@ const shift = read('../../supabase/functions/_shared/arnieShift.ts')
 const records = read('../../supabase/functions/_shared/arnieRecords.ts')
 const field = read('../pages/FieldScout.jsx')
 const timeClock = read('./timeClock.js')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 const card = read('./featureKnowledge/arnie.js')
 
 const propose = shift.slice(shift.indexOf('export async function proposeShiftOpen'), shift.indexOf('export async function applyShiftOpen'))

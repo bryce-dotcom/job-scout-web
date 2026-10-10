@@ -13,7 +13,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { applyToList, proposeChange, readList, writeList } from "../_shared/arnieConfig.ts";
-import { resolveCaller, type Caller } from "../_shared/auth.ts";
+import { internalCaller, resolveCaller, type Caller } from "../_shared/auth.ts";
 import { isRecordTarget } from "../_shared/arnieRecords.ts";
 import { applyRecordProposal, mayChange, rollbackRecordProposal } from "../_shared/arnieRecordPropose.ts";
 import { applyBulkProposal, BULK_TARGETS, isBulkTarget, rollbackBulkProposal } from "../_shared/arnieBulk.ts";
@@ -79,13 +79,16 @@ serve(async (req) => {
     const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY);
+    // Body first: a server-side run (a text, a routine) names the employee it
+    // is acting for, and only the service key may do that — see internalCaller.
+    const body = await req.json().catch(() => ({}));
+    let caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY);
+    if (!caller) caller = await internalCaller(req, body, SUPABASE_URL, SERVICE_KEY);
     if (!caller || caller.companyId == null) {
       return json({ error: 'Sign in with a company account to change settings.' }, 403);
     }
     const companyId = caller.companyId;
 
-    const body = await req.json().catch(() => ({}));
     const action = body.action;
 
     // ── PROPOSE: shared with arnie-chat, so a change asked for in conversation

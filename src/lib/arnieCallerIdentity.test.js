@@ -74,7 +74,35 @@ describe('arnie-chat takes identity from the token, not from the caller', () => 
   })
 
   it('resolves the caller and refuses when there is no user token at all', () => {
-    expect(chatTs).toMatch(/const caller = await resolveCaller\(req,/)
+    expect(chatTs).toMatch(/caller = await resolveCaller\(req,/)
+  })
+
+  // Since 2026-10-10 Arnie also runs headless — a text, an email, a routine —
+  // where there IS no JWT and the server says who it is running as. That is a
+  // hole unless the guard is exact, so pin the guard itself.
+  it('only lets the SERVICE KEY name an employee, and only an active one', () => {
+    // The guard is written ONCE, in _shared/auth.ts, because three entry
+    // points need it (chat, config, and anything else headless) and a
+    // security check copied is a security check that drifts.
+    const auth = readFileSync(resolve(here, '../../supabase/functions/_shared/auth.ts'), 'utf8')
+    // Two credentials can be "us" — the key Supabase injects into a function
+    // and the one scripts and crons hold are different strings — and the
+    // explicit secret rides in its OWN header, because a gateway checks the
+    // bearer is a real JWT before our code is ever reached.
+    expect(auth).toMatch(/const isUs = \(!!serviceKey && token === serviceKey\) \|\| \(!!internal && presented === internal\)/)
+    expect(auth).toMatch(/req\.headers\.get\('x-arnie-internal'\)/)
+    expect(auth).toMatch(/if \(!token \|\| !isUs\) return null/)
+    // The employee must be active — a leaver's bot stops being a bot.
+    expect(auth).toMatch(/active=eq\.true&id=eq\.\$\{id\}/)
+    expect(auth).toMatch(/if \(!emp \|\| emp\.company_id == null\) return null/)
+    // It narrows the service key rather than granting anything: the level is
+    // the employee's own, through the one shared mapping.
+    expect(auth).toMatch(/return callerFor\(emp\)/)
+    // And it is reached only where resolveCaller found nobody — it can never
+    // widen a real session, only fill the gap where there was none.
+    expect(chatTs).toMatch(/if \(!caller\) caller = await internalCaller\(req, body, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY\)/)
+    const configTs = readFileSync(resolve(here, '../../supabase/functions/arnie-config/index.ts'), 'utf8')
+    expect(configTs).toMatch(/if \(!caller\) caller = await internalCaller\(req, body, SUPABASE_URL, SERVICE_KEY\)/)
     expect(chatTs).toMatch(/if \(!caller\) return jsonError\([^)]*401\)/)
     expect(chatTs).toMatch(/const companyId = caller\.companyId/)
     expect(chatTs).toMatch(/const role = caller\.role/)

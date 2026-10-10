@@ -15,7 +15,7 @@ const src = read('../../supabase/functions/_shared/arnieSchedule.ts')
 const page = read('../pages/PMJobSetter.jsx')
 const create = read('../../supabase/functions/_shared/arnieCreate.ts')
 const chat = read('../../supabase/functions/arnie-chat/index.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 
 const load = (s, deps) => { const m = { exports: {} }; new Function('module', 'exports', 'require', transformSync(s, { loader: 'ts', format: 'cjs' }).code)(m, m.exports, (p) => deps[p]); return m.exports }
 const time = load(read('../../supabase/functions/_shared/arnieTime.ts'), {})

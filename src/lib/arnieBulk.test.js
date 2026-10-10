@@ -206,7 +206,10 @@ describe('re-filing the books', () => {
 
 describe('the tool and the prompt say how to aim it', () => {
   const chat = src('arnie-chat/index.ts')
+  // The prompt moved to _shared/arniePrompt.ts so a text or an email can build
+  // it too; read both, so a rule counts wherever it lives.
   const engine = readFileSync(resolve(here, '../pages/agents/arnie/arnieEngine.js'), 'utf8')
+    + '\n' + readFileSync(resolve(here, '../../supabase/functions/_shared/arniePrompt.ts'), 'utf8')
   it('the tool offers expense_category and explains "text"', () => {
     expect(chat).toMatch(/product_active or expense_category/)
     expect(chat).toMatch(/"text" \(a word anywhere in the vendor, merchant or description/)

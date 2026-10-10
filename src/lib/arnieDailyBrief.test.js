@@ -7,7 +7,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n')
 const brief = read('../../supabase/functions/_shared/arnieBrief.ts')
 const chatTs = read('../../supabase/functions/arnie-chat/index.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 const chatJsx = read('../pages/agents/arnie/ArnieChat.jsx')
 
 describe('the brief is one call, and "today" is the user\'s day', () => {

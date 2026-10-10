@@ -7,7 +7,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n')
 const create = read('../../supabase/functions/_shared/arnieCreate.ts')
 const widget = read('../components/FeedbackButton.jsx')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 
 // Arnie files the ticket. Tracy's three tickets in September were all his
 // diagnosis copied by hand into the Feedback widget, and he was right every

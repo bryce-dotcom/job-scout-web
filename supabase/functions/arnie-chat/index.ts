@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { callAnthropic, reportAnthropicFailure, logAnthropicSuccess } from '../_shared/anthropic.ts'
-import { resolveCaller, type Caller } from '../_shared/auth.ts'
+import { internalCaller, resolveCaller, type Caller } from '../_shared/auth.ts'
 import { proposeChange, targetsSentence } from '../_shared/arnieConfig.ts'
 import { recordTargetsSentence } from '../_shared/arnieRecords.ts'
 import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
@@ -1252,7 +1252,23 @@ Deno.serve(async (req) => {
     // service-role queries below, so any signed-in user could retarget them
     // at another tenant by editing two fields in devtools. Whatever the
     // client sends for these is now ignored outright.
-    const caller = await resolveCaller(req, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    let caller = await resolveCaller(req, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+    // The one exception, and it can only ever REDUCE privilege.
+    //
+    // Arnie has to be able to think outside a browser tab — a text message, an
+    // email, a routine on a schedule. Those arrive with no JWT, so the server
+    // says who it is running as. This is safe in the one direction that
+    // matters: the caller must already hold the SERVICE ROLE KEY, which is
+    // total access to every tenant. Naming an employee here takes that
+    // omnipotence and narrows it to one person's company and one person's
+    // level. It cannot grant anything the bare key did not already have.
+    //
+    // resolveCaller deliberately returns null for a service-key bearer, so
+    // this never widens a real user's session — it only fills the gap where
+    // there was no user at all. The employee must still be ACTIVE.
+    if (!caller) caller = await internalCaller(req, body, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
     // No user token at all (anon key, or none) — refuse rather than burn
     // model spend for an unauthenticated caller.
     if (!caller) return jsonError('Sign in to talk to Arnie.', 401)

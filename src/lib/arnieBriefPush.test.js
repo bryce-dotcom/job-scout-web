@@ -37,8 +37,15 @@ describe('the schedule lives where a failure is visible', () => {
 
 describe('who gets what, when', () => {
   it('the brief is built as THAT employee — the same role mapping the JWT path uses', () => {
-    expect(fn).toMatch(/function callerFor\(emp: any\): Caller/)
-    expect(fn).toMatch(/Math\.max\(accessLevel\(emp\), emp\.is_admin === true \? 3 : 0\)/)
+    // The mapping moved to _shared/auth.ts on 2026-10-10, because the brief,
+    // a texted question and a routine on a schedule all need the same one and
+    // an identity rule written twice is how somebody gets the wrong level.
+    expect(fn).toMatch(/import \{ callerFor, type Caller \} from '\.\.\/_shared\/auth\.ts'/)
+    expect(fn).toMatch(/callerFor\(/)
+    const auth = read('../../supabase/functions/_shared/auth.ts')
+    expect(auth).toMatch(/export function callerFor\(emp: Record<string, unknown>\): Caller/)
+    expect(auth).toMatch(/Math\.max\(accessLevel\(emp\), emp\.is_admin === true \? 3 : 0\)/)
+    expect(fn).toMatch(/const caller = callerFor\(emp\)/)
     expect(fn).toMatch(/dailyBrief\(r, caller, \{ date, timezone: s\.timezone \}\)/)
   })
 

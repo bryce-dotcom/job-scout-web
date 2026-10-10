@@ -8,7 +8,7 @@ const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n'
 const create = read('../../supabase/functions/_shared/arnieCreate.ts')
 const records = read('../../supabase/functions/_shared/arnieRecords.ts')
 const chatTs = read('../../supabase/functions/arnie-chat/index.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 const migration = read('../../supabase/migrations/20260911150000_job_diagnoses.sql')
 
 // Diagnose slice 2: what fixed it is kept, and asked for first next time.

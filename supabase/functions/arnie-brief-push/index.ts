@@ -16,7 +16,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { callAnthropic } from '../_shared/anthropic.ts'
-import { accessLevel, LEVEL_ROLE, type Caller } from '../_shared/auth.ts'
+import { callerFor, type Caller } from '../_shared/auth.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
 import { tzOffsetMinutes } from '../_shared/arnieTime.ts'
 import { readRecordList } from '../_shared/arnieRest.ts'
@@ -34,11 +34,6 @@ const localNow = (tz: string) => {
   return { date: shifted.toISOString().slice(0, 10), hour: shifted.getUTCHours(), dow: shifted.getUTCDay() }
 }
 
-/** The employee as a Caller — the same mapping resolveCaller does from a JWT. */
-function callerFor(emp: any): Caller {
-  const level = Math.max(accessLevel(emp), emp.is_admin === true ? 3 : 0)
-  return { email: emp.email, companyId: emp.company_id, employeeId: emp.id, role: LEVEL_ROLE[level] || 'user', level }
-}
 
 // ── rendering ──────────────────────────────────────────────────────────────
 

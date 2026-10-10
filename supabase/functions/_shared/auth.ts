@@ -129,3 +129,75 @@ export async function resolveCaller(
     return null
   }
 }
+
+/**
+ * An employee row as a Caller — the same mapping resolveCaller makes from a
+ * JWT, for the paths that have no JWT to read: the morning brief, a text
+ * message, a routine running on a schedule. One mapping, because an identity
+ * rule written twice is how somebody ends up with the wrong access level.
+ */
+export function callerFor(emp: Record<string, unknown>): Caller {
+  const level = Math.max(accessLevel(emp), emp.is_admin === true ? 3 : 0)
+  return {
+    email: String(emp.email || ''),
+    companyId: (emp.company_id as number) ?? null,
+    employeeId: (emp.id as number) ?? null,
+    role: LEVEL_ROLE[level] || 'user',
+    level,
+  }
+}
+
+/**
+ * The caller for a server-side run: a text message, an email, a routine on a
+ * schedule. There is no JWT on those paths, so the SERVER says who it is
+ * running as — and this is the only place that is allowed.
+ *
+ * The guard is the whole thing, so it is written once, here, rather than in
+ * every function that needs it:
+ *
+ *   • the bearer must BE the service role key. That key already holds every
+ *     tenant, so naming an employee can only ever NARROW it to one company and
+ *     one access level. It cannot grant what the bare key did not have.
+ *   • a normal user's token can never reach this path, so nobody retargets
+ *     Arnie by editing a request body.
+ *   • the employee must be ACTIVE. A leaver's bot stops being a bot.
+ *
+ * Returns null when any of that fails; callers refuse rather than degrade.
+ */
+export async function internalCaller(
+  req: Request,
+  body: Record<string, unknown>,
+  supabaseUrl: string,
+  serviceKey: string,
+): Promise<Caller | null> {
+  const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
+  // Two credentials can be "us", and they are not the same string.
+  //
+  // This project carries both a legacy service_role JWT and a new-style
+  // sb_secret_ key. Supabase injects one of them as SUPABASE_SERVICE_ROLE_KEY
+  // inside a function, while .env and the Vercel crons hold the other — so a
+  // bare equality check passes between two edge functions and silently 401s
+  // every script and scheduled job. Found the hard way on 2026-10-10.
+  //
+  // ARNIE_INTERNAL_KEY is the explicit answer: one secret that means "this came
+  // from our own server", independent of which key format is in play, and
+  // narrower than handing anything the omnipotent service key.
+  // It rides in its OWN header, not the bearer. Functions run behind a gateway
+  // that verifies the Authorization token is a real JWT before our code is
+  // reached, so a random secret in that slot is rejected with a bare 401 we
+  // never see. The bearer stays a service key; this says which of us sent it.
+  const internal = (Deno.env.get('ARNIE_INTERNAL_KEY') || '').trim()
+  const presented = (req.headers.get('x-arnie-internal') || '').trim()
+  const isUs = (!!serviceKey && token === serviceKey) || (!!internal && presented === internal)
+  if (!token || !isUs) return null
+  const id = Number(body?.as_employee_id)
+  if (!Number.isFinite(id) || id <= 0) return null
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/employees?select=id,company_id,email,role,user_role,is_admin,is_developer,has_hr_access&active=eq.true&id=eq.${id}&limit=1`,
+    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
+  )
+  if (!res.ok) return null
+  const emp = (await res.json().catch(() => []))?.[0]
+  if (!emp || emp.company_id == null) return null
+  return callerFor(emp)
+}

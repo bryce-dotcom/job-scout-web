@@ -10,7 +10,7 @@ const time = read('../../supabase/functions/_shared/arnieTime.ts')
 const appt = read('../../supabase/functions/_shared/arnieAppointment.ts')
 const shift = read('../../supabase/functions/_shared/arnieShift.ts')
 const chat = read('../../supabase/functions/arnie-chat/index.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 
 // The real module, types stripped by esbuild — no regex surgery.
 const mod = (() => { const m = { exports: {} }; new Function('module', 'exports', transformSync(time, { loader: 'ts', format: 'cjs' }).code)(m, m.exports); return m.exports })()

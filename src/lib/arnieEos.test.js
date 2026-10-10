@@ -16,7 +16,7 @@ const send = read('../../supabase/functions/_shared/l10Send.ts')
 const pageFn = read('../../supabase/functions/send-l10-agenda/index.ts')
 const create = read('../../supabase/functions/_shared/arnieCreate.ts')
 const chat = read('../../supabase/functions/arnie-chat/index.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 
 // The module, types stripped, with its imports faked so the pure parts run.
 const mod = (() => {
