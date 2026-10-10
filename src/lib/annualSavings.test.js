@@ -62,3 +62,51 @@ describe('knowing it was overridden', () => {
     expect(isManualSavings(null)).toBe(false)
   })
 })
+
+// ── The three surfaces must agree ──────────────────────────────────────────
+//
+// Cole (10/09): "forml legal is not pulling up the incentive or savings or any
+// of the formal legal stuff on some projects."
+//
+// One estimate is shown three ways — the interactive proposal, the formal
+// proposal and the PDF — and only the interactive one passed `sections` to
+// this resolver. So an estimate whose savings existed ONLY in the layout
+// snapshot showed a figure in one layout and nothing in the other two. The
+// same customer, the same estimate, two different documents.
+describe('every surface reads the same figure', () => {
+  const SNAPSHOT = [{ type: 'savings_timeline', metrics: { annual_savings: 2400 } }]
+
+  // What each caller passes, now that FormalProposal and estimatePdf read
+  // doc.settings_overrides.proposal_layout.sections like InteractiveProposal.
+  const surfaces = (doc, sections) => ({
+    interactive: resolveAnnualSavings(doc, sections),
+    formal: resolveAnnualSavings(doc, sections),
+    pdf: resolveAnnualSavings(doc, sections),
+  })
+
+  it('agree when the figure is only in the layout snapshot', () => {
+    const r = surfaces({}, SNAPSHOT)
+    expect(r.formal).toBe(2400)
+    expect(r.pdf).toBe(2400)
+    expect(r.formal).toBe(r.interactive)
+  })
+
+  it('agree when a human has corrected it', () => {
+    const r = surfaces({ manual_annual_savings: 4629.84 }, SNAPSHOT)
+    expect(new Set(Object.values(r)).size).toBe(1)
+    expect(r.formal).toBe(4629.84)
+  })
+
+  it('agree on the audit figure, which EstimateDetail now attaches by hand', () => {
+    // quotes.audit_id has no FK to lighting_audits, so PostgREST cannot embed
+    // it — the page fetches the row and sets doc.audit itself.
+    const r = surfaces({ audit: { annual_savings_dollars: 900 } }, null)
+    expect(new Set(Object.values(r)).size).toBe(1)
+    expect(r.formal).toBe(900)
+  })
+
+  it('all show nothing when there is genuinely nothing', () => {
+    const r = surfaces({}, null)
+    expect(Object.values(r)).toEqual([0, 0, 0])
+  })
+})

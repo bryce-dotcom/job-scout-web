@@ -82,7 +82,14 @@ export default function FormalProposal({
     // Annual savings — pull from the manual override first, fall back to the
     // linked audit's projected savings. Mirrors estimatePdf.js + InteractiveProposal.
     // Same rule as the PDF and the interactive proposal — lib/annualSavings.
-    const annualSavings = resolveAnnualSavings(doc)
+    // The SAME snapshot the interactive proposal reads. These two layouts
+    // describe one estimate, and until now only one of them could find a
+    // savings figure: the resolver takes sections as a last resort and the
+    // interactive proposal passed them while this did not. A customer sent
+    // the interactive version saw savings; the same customer sent the formal
+    // version saw none. Cole: "not pulling up the incentive or savings".
+    const sections = doc?.settings_overrides?.proposal_layout?.sections || null
+    const annualSavings = resolveAnnualSavings(doc, sections)
     return { subtotal, discount, incentive, total: contractTotal, netAfterIncentive, annualSavings }
   }, [lineItems, doc])
 

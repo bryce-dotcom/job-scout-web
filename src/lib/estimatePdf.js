@@ -642,7 +642,10 @@ function drawTotals(doc, estimate, lineItems, startY, m, pw, ph, settings) {
   // being silently overridden. The interactive proposal carries the full case
   // either way, so nobody loses the argument, they just pick a mode.
   const showSavings = showsSavingsOnPdf(settings)
-  const annualSavings = showSavings ? resolveAnnualSavings(estimate) : 0
+  // Same snapshot the two on-screen proposals read, so the PDF cannot be the
+  // odd one out. (showSavings is the company's own setting and still wins.)
+  const pdfSections = estimate?.settings_overrides?.proposal_layout?.sections || null
+  const annualSavings = showSavings ? resolveAnnualSavings(estimate, pdfSections) : 0
   if (annualSavings > 0) {
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')

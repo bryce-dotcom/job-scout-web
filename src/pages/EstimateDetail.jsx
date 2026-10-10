@@ -14,11 +14,12 @@ import { useTheme } from '../components/Layout'
 import { PAYMENT_METHODS, EXPENSE_CATEGORIES } from '../lib/schema'
 import ProductPickerModal from '../components/ProductPickerModal'
 import LoadingSpinner from '../components/LoadingSpinner'
-import { AlertTriangle, ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image, Upload, ShieldCheck, Mic } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Plus, Trash2, Send, CheckCircle, XCircle, Briefcase, Calculator, FileText, Download, Settings, Mail, X, UserPlus, Paperclip, Copy, Camera, ChevronDown, ChevronRight, DollarSign, Eye, Receipt, Image, Upload, ShieldCheck, Mic, Printer } from 'lucide-react'
 import FlowIndicator from '../components/FlowIndicator'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { quoteStatusColors as statusColors } from '../lib/statusColors'
 import { fillPdfForm, downloadPdf } from '../lib/pdfFormFiller'
+import { printElement, printTitle } from '../lib/printDocument'
 import { resolveAllMappings } from '../lib/dataPathResolver'
 import { generateEstimatePdf, showsSavingsOnPdf } from '../lib/estimatePdf'
 import { DOCUMENT_TYPES, configFromSettings, labelsFor, documentType, documentWord } from '../lib/documentVocabulary'
@@ -539,6 +540,20 @@ function EstimateDetailInner() {
         .single()
       if (e2) console.error('[EstimateDetail] Fallback query also failed:', e2.message, e2)
       estimateData = d2
+    }
+
+    // Attach the linked audit, because lib/annualSavings falls back to it and
+    // that branch could never fire here: quotes.audit_id has NO foreign key to
+    // lighting_audits, so PostgREST cannot embed it however the select is
+    // written. A savings figure living only on the audit was invisible on
+    // every proposal built from this page. One extra read, only when linked.
+    if (estimateData?.audit_id) {
+      const { data: auditRow } = await supabase
+        .from('lighting_audits')
+        .select('id, annual_savings_dollars, annual_savings_kwh')
+        .eq('id', estimateData.audit_id)
+        .maybeSingle()
+      if (auditRow) estimateData = { ...estimateData, audit: auditRow }
     }
 
     if (estimateData) {
@@ -5584,6 +5599,8 @@ function EstimateDetailInner() {
 // preview (what the customer will see). Right pane = editor for down payment
 // label/amount and legal terms. Saves on blur via onSettingsUpdate.
 function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, customer, settings, onSettingsUpdate }) {
+  // What Print copies: the rendered proposal, nothing around it.
+  const printRef = useRef(null)
   const formal = settings?.formal_proposal || {}
   const [label, setLabel] = useState(formal.down_payment_label || DEFAULT_DOWN_PAYMENT_LABEL)
   const [amount, setAmount] = useState(formal.down_payment_amount ?? '')
@@ -5707,6 +5724,31 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
     <div style={{ display: 'flex', gap: 0, height: '100%', minHeight: 420 }}>
       {/* Left: live preview with a floating Edit Contract pill */}
       <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, backgroundColor: '#f7f5ef', position: 'relative' }}>
+        {/* Noah: "need to be able to print out formal legal docs or save as
+            pdf". The browser's own dialog does both, and prints exactly what
+            the customer sees rather than a second drawing of it. */}
+        <button
+          type="button"
+          onClick={() => {
+            const problem = printElement(printRef.current, printTitle({
+              docWord: 'Proposal',
+              reference: estimate?.quote_id || `EST-${estimate?.id}`,
+              customer: customer?.business_name || customer?.name,
+            }))
+            if (problem) toast.error(problem)
+          }}
+          style={{
+            position: 'absolute', top: 12, right: 12, zIndex: 5,
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '8px 14px', minHeight: 38, borderRadius: 999,
+            border: `1px solid ${theme.border}`, backgroundColor: '#fff',
+            color: theme.textSecondary, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(44,53,48,0.12)',
+          }}
+        >
+          <Printer size={15} /> Print / PDF
+        </button>
+        <div ref={printRef}>
         <Suspense fallback={<div style={{ textAlign: 'center', padding: '40px', color: theme.textMuted }}>Loading formal proposal...</div>}>
           <FormalProposal
             key={rev}
@@ -5720,6 +5762,7 @@ function FormalPreviewPane({ theme, estimate, lineItems, company, businessUnit, 
             onPay={() => {}}
           />
         </Suspense>
+        </div>
         {/* Floating Edit Contract pill — always visible while scrolling the preview */}
         <button
           type="button"
