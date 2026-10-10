@@ -28,8 +28,15 @@
 //     $229,006 that month, nine of those jobs through estimates sent in August.
 //     Closed now counts in the window the deal closed — the job's creation
 //     (the dashboard's "won" date) or the estimate's approval — so the two
-//     pages describe the same month. Estimates sent stay by their sent date;
-//     close rate is closed-this-window over sent-this-window.
+//     pages describe the same month. Estimates sent stay by their sent date.
+//   - Close rate was closed-this-window over sent-this-window, and those are
+//     two different sets of estimates: a month where a rep closes last month's
+//     bids against a few new ones reads over 100% (Doug Webb, October 2026).
+//     Close rate is now a cohort rate — of the estimates SENT in the window,
+//     the share that have closed by now (`sentClosed`). It cannot exceed 100,
+//     and it answers the question a manager is asking: how many of the bids we
+//     wrote turned into jobs. `closed` / `closedValue` stay by close date,
+//     because "what did we win this month" is a different question.
 //   - And the dashboard counts EVERY job as a sale, estimate or not: 604 of
 //     HHH's 695 jobs this year never had one (service calls, recurring visits,
 //     jobs booked directly). salesWonBridge shows the dashboard's number
@@ -85,7 +92,7 @@ export function computeSalesFunnel(
       rows.set(k, {
         repId: id == null ? null : id,
         repName: id == null ? 'Unattributed' : empName.get(id) || `#${id}`,
-        meetings: 0, takeoffs: 0, closed: 0, closedValue: 0,
+        meetings: 0, takeoffs: 0, sentClosed: 0, closed: 0, closedValue: 0,
       })
     }
     return rows.get(k)
@@ -109,7 +116,10 @@ export function computeSalesFunnel(
     const closedHere = isClosed && inWindow(closeDateOf(q, job))
     if (!sentHere && !closedHere) continue
     const r = row(quoteRep(q, leadIndex, jobsByQuote, jobsById))
-    if (sentHere) r.takeoffs++
+    if (sentHere) {
+      r.takeoffs++
+      if (isClosed) r.sentClosed++ // sent in this window and closed by now, whenever that was
+    }
     if (closedHere) {
       r.closed++
       // What was sold: the job's total once there is one, the estimate until then.
@@ -122,11 +132,17 @@ export function computeSalesFunnel(
     .map((r) => ({
       ...r,
       closedValue: Math.round(r.closedValue * 100) / 100,
-      closeRate: r.takeoffs ? Math.round((r.closed / r.takeoffs) * 100) : 0,
+      closeRate: closeRateOf(r),
       takeoffRate: r.meetings ? Math.min(100, Math.round((r.takeoffs / r.meetings) * 100)) : 0,
     }))
     // Reps by results; the unattributed row always last.
     .sort((a, b) => (a.repId == null) - (b.repId == null) || b.closed - a.closed || b.takeoffs - a.takeoffs || b.meetings - a.meetings)
+}
+
+/** Close rate = of the estimates sent in the window, the share closed by now. Never above 100. */
+export function closeRateOf({ takeoffs = 0, sentClosed = 0 } = {}) {
+  if (!takeoffs) return 0
+  return Math.min(100, Math.round((sentClosed / takeoffs) * 100))
 }
 
 /** The day a deal closed, for windowing: job creation, else approval, else the estimate's own date. */
@@ -158,10 +174,10 @@ export function salesWonBridge({ jobs = [], quotes = [] } = {}, { sinceIso = nul
 
 export function funnelTotals(rows) {
   const t = (rows || []).reduce(
-    (s, r) => ({ meetings: s.meetings + r.meetings, takeoffs: s.takeoffs + r.takeoffs, closed: s.closed + r.closed, closedValue: s.closedValue + (r.closedValue || 0) }),
-    { meetings: 0, takeoffs: 0, closed: 0, closedValue: 0 },
+    (s, r) => ({ meetings: s.meetings + r.meetings, takeoffs: s.takeoffs + r.takeoffs, sentClosed: s.sentClosed + (r.sentClosed || 0), closed: s.closed + r.closed, closedValue: s.closedValue + (r.closedValue || 0) }),
+    { meetings: 0, takeoffs: 0, sentClosed: 0, closed: 0, closedValue: 0 },
   )
-  return { ...t, closedValue: Math.round(t.closedValue * 100) / 100, closeRate: t.takeoffs ? Math.round((t.closed / t.takeoffs) * 100) : 0 }
+  return { ...t, closedValue: Math.round(t.closedValue * 100) / 100, closeRate: closeRateOf(t) }
 }
 
 // The window for a named range: a start, and an end of "now" so nothing

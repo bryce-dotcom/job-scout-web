@@ -35,6 +35,7 @@ import {
   Boxes
 } from 'lucide-react'
 import { localDateStr } from '../lib/localDate'
+import { computeSalesFunnel, funnelTotals } from '../lib/salesFunnel'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -500,7 +501,7 @@ export default function Reports() {
   const renderReport = () => {
     switch (reportType) {
       case 'standard': return <ReportsPanel theme={theme} isMobile={isMobile} />
-      case 'sales': return <SalesReport theme={theme} companyId={companyId} leads={leads} employees={employees} salesPipeline={salesPipeline} formatCurrency={formatCurrency} inputStyle={inputStyle} pillStyle={pillStyle} exportCSV={exportCSV} />
+      case 'sales': return <SalesReport theme={theme} companyId={companyId} leads={leads} jobs={jobs} employees={employees} salesPipeline={salesPipeline} formatCurrency={formatCurrency} inputStyle={inputStyle} pillStyle={pillStyle} exportCSV={exportCSV} />
       case 'jobs': return <JobsReport theme={theme} companyId={companyId} jobs={jobs} employees={employees} formatCurrency={formatCurrency} inputStyle={inputStyle} pillStyle={pillStyle} exportCSV={exportCSV} />
       case 'financial': return renderFinancialReport()
       case 'employee': return renderEmployeeReport()
@@ -725,7 +726,7 @@ const FALLBACK_STATUSES = [
 ]
 
 // ── Sales Report Component ────────────────────────────────────────
-function SalesReport({ theme, companyId, leads, employees, salesPipeline, formatCurrency, inputStyle, pillStyle, exportCSV }) {
+function SalesReport({ theme, companyId, leads, jobs, employees, salesPipeline, formatCurrency, inputStyle, pillStyle, exportCSV }) {
   const navigate = useNavigate()
   const quotes = useStore((state) => state.quotes)
   const [statusFilters, setStatusFilters] = useState([])
@@ -828,13 +829,26 @@ function SalesReport({ theme, companyId, leads, employees, salesPipeline, format
     return n
   })
 
-  // Summary stats
+  // Summary stats.
+  //
+  // Close rate used to be "converted leads / leads", where converted meant a
+  // lead whose status was literally Won, Converted, Job Scheduled or
+  // Completed. Converted leads carry the company's own stage names (Closed,
+  // Scheduled, Invoiced, Paid), so on HHH it matched 16 of 1,997 leads and
+  // read 0.8%. It is now the estimate funnel's rule (lib/salesFunnel, the
+  // same one Sales Performance uses): of the estimates sent in the date
+  // range, the share that closed — approved, or turned into a job.
   const totalLeads = enrichedLeads.length
-  const convertedLeads = enrichedLeads.filter(l => ['Won', 'Converted', 'Job Scheduled', 'Completed'].includes(l.status)).length
-  const conversionRate = totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0
+  const funnel = useMemo(() => {
+    const sinceIso = dateStart ? new Date(dateStart + 'T00:00:00').toISOString() : null
+    const untilIso = dateEnd ? new Date(dateEnd + 'T23:59:59').toISOString() : new Date().toISOString()
+    return funnelTotals(computeSalesFunnel({ quotes: quotes || [], leads: leads || [], employees: employees || [], jobs: jobs || [] }, { sinceIso, untilIso }))
+  }, [quotes, leads, employees, jobs, dateStart, dateEnd])
+  const closeRate = funnel.closeRate
   const totalQuoteValue = enrichedLeads.reduce((s, l) => s + l.quoteAmount, 0)
   const pipelineValue = salesPipeline.filter(d => !['Won', 'Lost', 'Completed'].includes(d.stage)).reduce((sum, d) => sum + (parseFloat(d.quote_amount) || 0), 0)
-  const avgDealSize = convertedLeads > 0 ? totalQuoteValue / convertedLeads : 0
+  // What a close was worth: the jobs behind the estimates that closed in the range.
+  const avgDealSize = funnel.closed > 0 ? funnel.closedValue / funnel.closed : 0
 
   const SortHeader = ({ field, children, align }) => (
     <th
@@ -939,11 +953,12 @@ function SalesReport({ theme, companyId, leads, employees, salesPipeline, format
         <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
           <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Leads</div>
           <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text }}>{totalLeads}</div>
-          <div style={{ fontSize: '11px', color: theme.textMuted }}>{convertedLeads} converted</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted }}>{funnel.takeoffs} estimates sent</div>
         </div>
         <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
-          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Conversion Rate</div>
-          <div style={{ fontSize: '22px', fontWeight: '700', color: conversionRate >= 30 ? '#22c55e' : conversionRate >= 15 ? '#eab308' : '#ef4444' }}>{conversionRate.toFixed(1)}%</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Close Rate</div>
+          <div style={{ fontSize: '22px', fontWeight: '700', color: closeRate >= 30 ? '#22c55e' : closeRate >= 15 ? '#eab308' : '#ef4444' }}>{funnel.takeoffs ? `${closeRate}%` : '—'}</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted }}>{funnel.sentClosed} of {funnel.takeoffs} estimates sent became jobs</div>
         </div>
         <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
           <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Estimate Value</div>

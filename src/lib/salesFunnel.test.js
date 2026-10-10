@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeSalesFunnel, funnelTotals, funnelWindow, funnelSince, closeDateOf, salesWonBridge, UNATTRIBUTED } from './salesFunnel'
+import { computeSalesFunnel, funnelTotals, funnelWindow, funnelSince, closeDateOf, closeRateOf, salesWonBridge, UNATTRIBUTED } from './salesFunnel'
 
 // ─────────────────────────────────────────────────────────────────────────
 // The Sales Performance page, against what the real data does (HHH 2026):
@@ -88,8 +88,10 @@ describe('estimates and closes', () => {
     expect(noah.closedValue).toBe(5400 + 16299.2)
     expect(cole.closedValue).toBe(450)
   })
-  it('close rate = closed / estimates', () => {
+  it('close rate = of the estimates sent in the window, the share closed by now', () => {
+    expect(noah.sentClosed).toBe(2)   // 100 and 107 of his three sent
     expect(noah.closeRate).toBe(67)
+    expect(cole.sentClosed).toBe(1)   // 106 of his three
     expect(cole.closeRate).toBe(33)
   })
   it('orders reps by results and puts Unattributed last', () => {
@@ -100,7 +102,7 @@ describe('estimates and closes', () => {
 
 describe('totals', () => {
   it('are the whole company, unattributed included', () => {
-    expect(funnelTotals(rows)).toMatchObject({ meetings: 5, takeoffs: 7, closed: 4, closeRate: 57 })
+    expect(funnelTotals(rows)).toMatchObject({ meetings: 5, takeoffs: 7, sentClosed: 4, closed: 4, closeRate: 57 })
     expect(funnelTotals(rows).closedValue).toBe(5400 + 16299.2 + 450 + 3000)
   })
 })
@@ -158,7 +160,11 @@ describe('a close counts in the month it closed, and the page can be read agains
     expect(noah.takeoffs).toBe(1)          // only 202 was sent in September
     expect(noah.closed).toBe(2)            // 200 (job created Sep 3) and 201 (approved Sep 2)
     expect(noah.closedValue).toBe(13500)
-    expect(noah.closeRate).toBe(200)       // closed this window over sent this window; can exceed 100 when last month's estimates land
+    // Close rate is NOT closed-this-window over sent-this-window (that read
+    // 200% here, and Doug Webb's October 2026 row went over 100%). It is the
+    // cohort: of the one estimate sent in September, none has closed.
+    expect(noah.sentClosed).toBe(0)
+    expect(noah.closeRate).toBe(0)
   })
 
   it('August: three estimates sent, one close — the one with no close date counts when it was written', () => {
@@ -167,6 +173,17 @@ describe('a close counts in the month it closed, and the page can be read agains
     expect(noah.takeoffs).toBe(3)          // 200, 201, 203
     expect(noah.closed).toBe(1)            // 203
     expect(noah.closedValue).toBe(1200)
+    // ...but all three August estimates have closed by now (two of them in
+    // September), so August's close rate is 100%, not 33%.
+    expect(noah.sentClosed).toBe(3)
+    expect(noah.closeRate).toBe(100)
+  })
+
+  it('closeRateOf never exceeds 100 and is 0 with nothing sent', () => {
+    expect(closeRateOf({ takeoffs: 0, sentClosed: 0 })).toBe(0)
+    expect(closeRateOf({ takeoffs: 4, sentClosed: 1 })).toBe(25)
+    expect(closeRateOf({ takeoffs: 2, sentClosed: 5 })).toBe(100) // cannot happen by construction; clamped anyway
+    expect(closeRateOf()).toBe(0)
   })
 
   it("the bridge is the dashboard's number, split into through-an-estimate and created-without-one", () => {
@@ -191,7 +208,7 @@ describe('junk', () => {
   it('survives empty and missing inputs', () => {
     expect(computeSalesFunnel()).toEqual([])
     expect(computeSalesFunnel({ appointments: [null], quotes: [null], leads: [null], employees: [null], jobs: [null] })).toEqual([])
-    expect(funnelTotals([])).toMatchObject({ meetings: 0, takeoffs: 0, closed: 0, closedValue: 0, closeRate: 0 })
+    expect(funnelTotals([])).toMatchObject({ meetings: 0, takeoffs: 0, sentClosed: 0, closed: 0, closedValue: 0, closeRate: 0 })
   })
   it(`exports the unattributed key (${UNATTRIBUTED})`, () => {
     expect(UNATTRIBUTED).toBe('unattributed')
