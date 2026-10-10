@@ -27,7 +27,7 @@ import {
 } from '../../lib/aerialTile'
 import {
   COVERAGE, FACES, feetPerPixel, runLengthFt, coverageFeet, coverageOptions,
-  lightsPrice, quoteProblem, lightsIntakeLines,
+  lightsPrice, quoteProblem, lightsIntakeLines, BULB_COLORS, bulbLabel,
 } from '../../lib/chrisLights'
 import { STOREYS, liftDecision, accessLines, accessWarning } from '../../lib/chrisAccess'
 
@@ -54,6 +54,7 @@ export default function ChrisLights() {
   const [draft, setDraft] = useState([])             // points of the run being drawn
   const [face, setFace] = useState('front')
   const [coverage, setCoverage] = useState('full')
+  const [bulb, setBulb] = useState('warm_white')
   const [customerId, setCustomerId] = useState('')
   const [aiNote, setAiNote] = useState(null)
 
@@ -268,11 +269,11 @@ export default function ChrisLights() {
     setRendering(true)
     try {
       const { data, error } = await supabase.functions.invoke('chris-render', {
-        body: { company_id: companyId, image_base64: photo, coverage, address: place?.matched || address },
+        body: { company_id: companyId, image_base64: photo, coverage, bulb, address: place?.matched || address },
       })
       if (error) throw error
       if (!data?.ok) { toast.error(data?.error || 'No picture came back.'); setRendering(false); return }
-      setRender({ url: `data:${data.mime};base64,${data.image_base64}`, label: data.label, note: data.coverage_note, coverage })
+      setRender({ url: `data:${data.mime};base64,${data.image_base64}`, label: data.label, note: data.coverage_note, coverage, bulb })
     } catch (err) {
       toast.error('Could not draw the lights: ' + (err?.message || 'unknown error'))
     }
@@ -291,9 +292,10 @@ export default function ChrisLights() {
         salesperson_id: user?.id || null,
         service_type: 'Christmas Lighting',
         estimate_name: `Christmas lights — ${place?.matched || address}`,
-        summary: `${feet} ft of roofline · ${COVERAGE[coverage].label}${house?.storeys && house.storeys !== 'unsure' ? ` · ${house.storeys} storey` : ''}${decision?.lift ? ' · lift' : ''}`,
+        summary: `${feet} ft of roofline · ${COVERAGE[coverage].label} · ${bulbLabel(bulb)}${house?.storeys && house.storeys !== 'unsure' ? ` · ${house.storeys} storey` : ''}${decision?.lift ? ' · lift' : ''}`,
         notes: [
           `Address: ${place?.matched || address}`,
+          `Bulbs: ${bulbLabel(bulb)}`,
           `Measured from aerial imagery at zoom ${zoom} (${feetPerPx?.toFixed(3)} ft/px).`,
           `${ATTRIBUTION}.`,
         ].join(String.fromCharCode(10)),
@@ -441,6 +443,19 @@ export default function ChrisLights() {
                 <input type="file" accept="image/*" capture="environment" onChange={onPhoto} style={{ display: 'none' }} />
               </label>
 
+              {/* Colour is the customer's to choose, so it sits by the picture. */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                {BULB_COLORS.map((c) => (
+                  <button key={c.key} type="button" onClick={() => setBulb(c.key)} aria-pressed={bulb === c.key}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', minHeight: 36, borderRadius: 999, border: `1px solid ${bulb === c.key ? theme.accent : theme.border}`, background: bulb === c.key ? theme.accentBg : 'transparent', color: theme.text, fontSize: 12.5, fontWeight: bulb === c.key ? 600 : 500, cursor: 'pointer' }}>
+                    <span style={{ display: 'flex', gap: 2 }}>
+                      {c.swatch.map((hex, i) => <span key={i} style={{ width: 9, height: 9, borderRadius: '50%', background: hex, boxShadow: '0 0 0 1px rgba(0,0,0,.15)' }} />)}
+                    </span>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+
               {photo && (
                 <>
                   <img src={photo} alt="Front of the house" style={{ width: '100%', borderRadius: 8, marginTop: 10, display: 'block' }} />
@@ -490,8 +505,8 @@ export default function ChrisLights() {
                   {/* A front view looks much the same for Front, Half and Full —
                       the difference is in the feet, so say where it went. */}
                   {render.note && <p style={{ fontSize: 12, color: theme.textSecondary, margin: '6px 0 0' }}>{render.note}</p>}
-                  {render.coverage !== coverage && (
-                    <p style={{ fontSize: 11, color: theme.warning || '#eab308', margin: '4px 0 0' }}>Drawn for a different coverage — draw it again to match.</p>
+                  {(render.coverage !== coverage || render.bulb !== bulb) && (
+                    <p style={{ fontSize: 11, color: theme.warning || '#eab308', margin: '4px 0 0' }}>Drawn for a different {render.coverage !== coverage ? 'coverage' : 'colour'} — draw it again to match.</p>
                   )}
                   <p style={{ fontSize: 11, color: theme.textMuted, margin: '6px 0 0', fontStyle: 'italic' }}>{render.label}</p>
                 </div>

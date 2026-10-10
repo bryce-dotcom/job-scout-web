@@ -180,3 +180,18 @@ describe('the estimate lines', () => {
     expect(lightsIntakeLines({ runs: HOUSE, coverage: 'full', perFootRate: 6.5, minimumCharge: 450 })).toHaveLength(1)
   })
 })
+
+describe('bulb colours', () => {
+  it('has unique keys and a label for each', async () => {
+    const { BULB_COLORS } = await import('./chrisLights')
+    const keys = BULB_COLORS.map((c) => c.key)
+    expect(new Set(keys).size).toBe(keys.length)
+    BULB_COLORS.forEach((c) => { expect(c.label).toBeTruthy(); expect(c.swatch.length).toBeGreaterThan(0) })
+  })
+  it('falls back to warm white for an unknown key', async () => {
+    const { bulbLabel } = await import('./chrisLights')
+    expect(bulbLabel('multicolor')).toBe('Multicolor')
+    expect(bulbLabel('plaid')).toBe('Warm white')
+    expect(bulbLabel(undefined)).toBe('Warm white')
+  })
+})

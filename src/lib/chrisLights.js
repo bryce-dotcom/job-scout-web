@@ -179,3 +179,23 @@ export function lightsIntakeLines({ runs = [], coverage = 'full', perFootRate, m
   }
   return lines
 }
+
+// Bulb colours the customer can see drawn. Antonino asked for "options of
+// different colors" in the same breath as the picture. Colour changes the
+// picture and the estimate wording, never the price per foot — a tenant who
+// charges more for multicolour sets that in their own rate, not here.
+// chris-render holds the matching prompt wording under the same keys; an
+// unknown key draws warm white rather than failing.
+export const BULB_COLORS = [
+  { key: 'warm_white', label: 'Warm white', swatch: ['#ffd27a'] },
+  { key: 'cool_white', label: 'Cool white', swatch: ['#e8f1ff'] },
+  { key: 'multicolor', label: 'Multicolor', swatch: ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b'] },
+  { key: 'red_green', label: 'Red & green', swatch: ['#ef4444', '#22c55e'] },
+  { key: 'red_white', label: 'Red & white', swatch: ['#ef4444', '#f5f5f5'] },
+  { key: 'blue', label: 'Blue', swatch: ['#3b82f6'] },
+]
+
+/** The label for a colour key; unknown → warm white, same as the render. */
+export function bulbLabel(key) {
+  return (BULB_COLORS.find((c) => c.key === key) || BULB_COLORS[0]).label
+}

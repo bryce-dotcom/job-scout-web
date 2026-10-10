@@ -14,7 +14,7 @@
 // label next to it. It is a sales picture, not a promise about the work.
 //
 // Secret: GEMINI_API_KEY (Google AI Studio), the same one marketing-image uses.
-// Input  : { company_id, image_base64, coverage?, bulb?, address? }
+// Input  : { company_id, image_base64, coverage?, bulb? (BULB_COLORS key), address? }
 // Output : { ok, image_base64, mime, label, coverage_note, checked, redrawn }
 //          or { ok:false, error, needs_key?, wrong_view?, unfaithful? }
 
@@ -38,6 +38,17 @@ const COVERAGE_TEXT: Record<string, string> = {
   front: 'along the street-facing eaves and the front gable only — the sides and back stay dark',
   half: 'along the front eaves, the front gable and both side eaves — the back stays dark',
   full: 'along every eave and gable line, all the way round',
+}
+
+// Bulb colours, keyed the same as BULB_COLORS in src/lib/chrisLights.js.
+// Unknown → warm white: a picture in the wrong colour is still their house.
+const BULB_TEXT: Record<string, string> = {
+  warm_white: 'warm white C9',
+  cool_white: 'cool white C9 (crisp bluish-white)',
+  multicolor: 'classic multicolour C9 (red, green, blue, orange and yellow repeating in that order)',
+  red_green: 'C9 alternating red and green',
+  red_white: 'C9 alternating red and white',
+  blue: 'blue C9',
 }
 
 // A street view shows the front and maybe a corner — so Front, Half and Full
@@ -162,7 +173,8 @@ serve(async (req) => {
     const key = Deno.env.get('GEMINI_API_KEY')
     if (!key) return json({ ok: false, needs_key: true, error: 'No GEMINI_API_KEY set, so Chris cannot draw the house yet.' }, 200)
 
-    const { company_id, image_base64, coverage = 'full', bulb = 'warm white C9', address } = await req.json()
+    const { company_id, image_base64, coverage = 'full', bulb = 'warm_white', address } = await req.json()
+    const bulbText = BULB_TEXT[String(bulb)] || BULB_TEXT.warm_white
     if (!image_base64) return json({ ok: false, error: 'image_base64 is required' }, 400)
 
     const caller = await resolveCaller(req).catch(() => null)
@@ -199,7 +211,7 @@ serve(async (req) => {
               // The photo first: this is an EDIT of their house, not a painting
               // of a house like theirs.
               { inlineData: { mimeType: mime, data: clean } },
-              { text: prompt(String(coverage), String(bulb).slice(0, 60), retryNote) },
+              { text: prompt(String(coverage), bulbText, retryNote) },
             ],
           }],
           generationConfig: { responseModalities: ['IMAGE'] },
