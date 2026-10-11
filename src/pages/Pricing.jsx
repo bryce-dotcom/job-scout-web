@@ -17,8 +17,8 @@ import { PLANS as BILLING_PLANS } from '../lib/billingPlans'
 
 const CREW = [
   { ab: 'AR', name: 'OG Arnie', free: true, role: 'Your right hand',
-    hook: 'Ask anything about your business in plain English. Arnie answers from your live numbers — then drafts the change and waits for your OK. Every morning, your day in one message.',
-    hi: ['Answers from live data — money, jobs, hours, stock, customers', 'Acts on your OK: book the appointment, draft the quote, chase the quiet estimate, move the job, merge the duplicate lead — nothing changes till you approve', 'Morning brief pushed by email or text at your hour — the schedule, the money, what is stuck', 'Rides shotgun in the field — hands-free, closes a missed clock-out, talks a tech through a fault in any trade'],
+    hook: 'Ask anything about your business in plain English — in the app, by text, by email, or out loud. Arnie answers from your live numbers, drafts the change, and waits for your OK. Set a routine in one sentence and it runs every week.',
+    hi: ['Answers from your live data — money, jobs, hours, stock, customers', 'Drafts almost any change on your OK — book, quote, schedule, take a payment — and every one rolls back', 'Text or email the company number and he answers; reply YES to approve', 'Routines: “every weekday at 7am, text me the Rocks that slipped”'],
     rep: ['a business analyst', 'an office manager', 'hours of admin busywork'],
     out: { kicker: 'answered + drafted', head: '“When’s the Drinkle job — can we push it to Friday?”', rows: ['JOB-2214 · Drinkle Insurance · Thu 8:00 AM', 'Found from your schedule — no ID, no digging'], done: 'Drafted: move it to Friday — nothing changes till you approve' } },
   { ab: 'ZA', name: 'Zach', role: 'Landscaping',
@@ -750,6 +750,25 @@ export default function Pricing() {
               <div className="step rv"><Icon id="i-cal" /><h3>Schedule it</h3><p>Dispatch crews to jobs and days, optimize routes, and track a GPS time clock.</p><div className="was">replaces <b>Calendly, When I Work</b></div></div>
               <div className="step rv"><Icon id="i-wrench" /><h3>Run the work</h3><p>Photos, checklists, and signatures from the field — fully offline, synced when you’re back on signal.</p><div className="was">replaces <b>CompanyCam</b></div></div>
               <div className="step rv"><Icon id="i-dollar" /><h3>Get paid</h3><p>Invoice with a pay link, take card or ACH, and reconcile it against the bank automatically.</p><div className="was">replaces <b>QuickBooks invoicing</b></div></div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div className="wrap">
+            <div className="prospect rv">
+              <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> Arnie · free on every plan</span>
+              <h3>Text him. He runs the business.</h3>
+              <p className="say">Arnie lives in the app, your texts, your email, and out loud. Ask anything about your numbers; tell him to book the job, draft the quote, take the payment — he drafts it and waits for your OK, and every change rolls back. Set a routine in one sentence and it runs every week. He only shows what your role is allowed to see, and over text, money is drafted — never sent — until you approve it in the app.</p>
+              <div className="term">
+                <div className="top"><i /><i /><i /><span style={{ color: '#6b7160', marginLeft: 6 }}>text message · Arnie</span></div>
+                <div className="res">
+                  <div className="row"><span>Every weekday 7am, text me the Rocks that slipped</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> routine set</span></div>
+                  <div className="row"><span>Book the Drinkle job Friday 8am, Mike’s crew</span><span style={{ color: '#f2913f', fontSize: 10.5 }}>drafted · reply YES</span></div>
+                  <div className="row"><span>YES</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> booked · undo anytime</span></div>
+                </div>
+              </div>
+              <div className="repl">replaces <b>a business analyst, an office manager</b> — and the app you’d have to stop and open. Owners get an <b>Arnie at work</b> view: every draft, the approval rate, and what he cost.</div>
             </div>
           </div>
         </section>
