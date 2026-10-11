@@ -1,12 +1,10 @@
 import { Outlet } from 'react-router-dom'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import AgentRequired from '../../../components/AgentRequired'
 import AgentHeader from '../../../components/AgentHeader'
 import { useStore } from '../../../lib/store'
 import { myComputer } from '../../../lib/arnieComputer'
 import { computerState } from '../../../lib/agentStatus'
-import { loadPersona, assistantName } from '../../../lib/arniePersonaClient'
-import { setPersona } from './arnieEngine'
 
 const ARNIE_TABS = [
   { path: '/agents/arnie', label: 'Chat', icon: 'MessageCircle', end: true },
@@ -19,23 +17,7 @@ const ARNIE_TABS = [
 
 export default function ArnieWorkspace() {
   const user = useStore((s) => s.user)
-  const getAgent = useStore((s) => s.getAgent)
-  const getCompanyAgent = useStore((s) => s.getCompanyAgent)
   const [status, setStatus] = useState(null)
-  const [personaRow, setPersonaRow] = useState(null)
-
-  // Who this person's assistant is. Loaded once here and handed to the engine,
-  // so the name on the header and the name in the prompt are the same one.
-  // Being greeted as Jenny under a header that says Arnie would be worse than
-  // having no personas at all.
-  const refreshPersona = useCallback(async () => {
-    if (!user?.id) return
-    const row = await loadPersona(user.id).catch(() => null)
-    setPersonaRow(row)
-    setPersona(row)
-  }, [user?.id])
-
-  useEffect(() => { refreshPersona() }, [refreshPersona])
 
   // The header badge is the ambient signal — a dot, a colour, the detail on
   // hover — and it is the only place a person finds out Arnie is stuck waiting
@@ -61,18 +43,12 @@ export default function ArnieWorkspace() {
     return () => { alive = false; clearTimeout(timer) }
   }, [user?.id])
 
-  const name = assistantName({
-    personaRow,
-    companyCustomName: getCompanyAgent?.('arnie-og')?.custom_name,
-    agentFullName: getAgent?.('arnie-og')?.full_name,
-  })
-
   return (
     <AgentRequired slug="arnie-og">
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <AgentHeader slug="arnie-og" tabs={ARNIE_TABS} status={status} displayName={name} />
+        <AgentHeader slug="arnie-og" tabs={ARNIE_TABS} status={status} />
         <div style={{ flex: 1, overflow: 'auto' }}>
-          <Outlet context={{ personaRow, refreshPersona }} />
+          <Outlet />
         </div>
       </div>
     </AgentRequired>

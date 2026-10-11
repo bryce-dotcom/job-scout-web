@@ -6,12 +6,11 @@ import { sendMessageStream, createSession, saveMessage, updateSessionTitle, load
 import { getUserRole, isClockedIn } from './arnieTools'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X, Wrench, Sun, Bot } from 'lucide-react'
+import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X, Wrench, Sun } from 'lucide-react'
 import { readAttachment, attachmentNote, describeAttachments, ACCEPT_ATTR, MAX_ATTACHMENTS } from '../../../lib/chatAttachments'
 import { DougieButton, composerTone } from '../../../components/ai/AiComposerTools'
 import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, getVoices, loadArnieVoices, rememberVoice, unlockAudio } from './arnieVoice'
 import { arnieTextNumber, ARNIE_EMAIL } from '../../../lib/arnieReach'
-import AssistantAvatar, { useAssistant } from '../../../components/AssistantAvatar'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { localDateStr } from '../../../lib/localDate'
 
@@ -79,28 +78,15 @@ const QUICK_ACTIONS = {
 // one record. They need different cards, and this is how a message says which.
 const pv0 = (msg) => msg.proposal?.preview || {}
 
-/**
- * The face in the chat, which belongs to whoever this person chose.
- *
- * Arnie has had a real photo since August, so a persona that changed the name
- * and the voice and kept his face would be plainly wrong. The picture travels
- * with the rest of the identity.
- *
- * A persona whose artwork does not exist yet falls back to the agent's icon
- * rather than showing a broken image — so a persona can ship before its
- * picture does, and dropping the file into public/ later is all it takes.
- */
-// The chat keeps its own orange ring; the face itself comes from the one
-// shared avatar, so a new persona does not need finding in four files.
-function ArnieAvatar({ size = 36, persona }) {
+function ArnieAvatar({ size = 36 }) {
   return (
-    <AssistantAvatar
-      size={size}
-      persona={persona}
-      border={`2.5px solid ${dark.orange}`}
-      glow={`0 0 8px ${dark.orangeGlow}`}
-      background={dark.bgChat}
-    />
+    <div style={{
+      width: size, height: size, borderRadius: '50%',
+      border: `2.5px solid ${dark.orange}`, overflow: 'hidden', flexShrink: 0,
+      boxShadow: `0 0 8px ${dark.orangeGlow}`, backgroundColor: dark.bgChat,
+    }}>
+      <img src="/og-arnie.png" alt="OG Arnie" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+    </div>
   )
 }
 
@@ -122,14 +108,6 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   const isMobile = useIsMobile()
   const company = useStore(s => s.company)
   const textNumber = useStore(s => arnieTextNumber(s.settings))
-  // Whose face. Read here rather than taken from the route's outlet context,
-  // because this component is also mounted as the floating corner panel,
-  // where there is no outlet to read from — it would work on the workspace
-  // page and be undefined everywhere else.
-  // Name, face and greeting all come from the one assistant hook, so a
-  // fourth copy of this logic cannot drift from the other three.
-  const assistant = useAssistant()
-  const personaRow = assistant.personaRow
 
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -696,19 +674,19 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         {/* Welcome state */}
         {messages.length === 0 && !loading && (
           <div style={{ textAlign: 'center', padding: '32px 12px' }}>
-            <ArnieAvatar size={80} persona={personaRow?.persona} />
+            <ArnieAvatar size={80} />
             <div style={{ marginTop: 16 }} />
-            <h2 style={{ color: dark.text, fontSize: 20, fontWeight: 600, margin: '0 0 4px' }}>{assistant.name}</h2>
+            <h2 style={{ color: dark.text, fontSize: 20, fontWeight: 600, margin: '0 0 4px' }}>OG Arnie</h2>
             <p style={{ color: dark.textSecondary, fontSize: 13, margin: '0 0 6px' }}>
               AI Assistant{company?.name ? ` \u2022 ${company.name}` : ''}
             </p>
             <p style={{ color: dark.orange, fontSize: 14, margin: '12px 0 16px', fontStyle: 'italic' }}>
-              &ldquo;{assistant.persona.greeting}&rdquo;
+              "Ay, what's good? O.G. Arnie here. You need somethin', I got you."
             </p>
             {/* Where else he answers. People never found this on their own. */}
             <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, margin: '0 0 22px', padding: '10px 14px', borderRadius: 10, border: `1px solid ${dark.borderLight}`, backgroundColor: dark.inputBg, color: dark.textSecondary, fontSize: 12.5, textAlign: 'left' }}>
-              {textNumber && <div><span style={{ color: dark.text, fontWeight: 600 }}>Text them:</span> <a href={`sms:${textNumber.raw}`} style={{ color: dark.orange, textDecoration: 'none' }}>{textNumber.pretty}</a> <span style={{ color: dark.textMuted }}>· the card comes back, reply YES to approve</span></div>}
-              <div><span style={{ color: dark.text, fontWeight: 600 }}>Email them:</span> <a href={`mailto:${ARNIE_EMAIL}`} style={{ color: dark.orange, textDecoration: 'none' }}>{ARNIE_EMAIL}</a> <span style={{ color: dark.textMuted }}>· from your work address</span></div>
+              {textNumber && <div><span style={{ color: dark.text, fontWeight: 600 }}>Text him:</span> <a href={`sms:${textNumber.raw}`} style={{ color: dark.orange, textDecoration: 'none' }}>{textNumber.pretty}</a> <span style={{ color: dark.textMuted }}>· he reads the card back, reply YES to approve</span></div>}
+              <div><span style={{ color: dark.text, fontWeight: 600 }}>Email him:</span> <a href={`mailto:${ARNIE_EMAIL}`} style={{ color: dark.orange, textDecoration: 'none' }}>{ARNIE_EMAIL}</a> <span style={{ color: dark.textMuted }}>· from your work address</span></div>
               <div><span style={{ color: dark.text, fontWeight: 600 }}>Standing work:</span> <span style={{ color: dark.textMuted }}>say "every weekday at 7am, text me which rocks are off track" and he sets up the routine</span></div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
@@ -748,7 +726,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
             display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
             gap: 10, alignItems: 'flex-start',
           }}>
-            {msg.role === 'assistant' && <ArnieAvatar size={32} persona={personaRow?.persona} />}
+            {msg.role === 'assistant' && <ArnieAvatar size={32} />}
             <div className="arnie-msg-wrapper" style={{ maxWidth: isPanel ? '85%' : (isMobile ? '88%' : '70%'), position: 'relative' }}>
               <div style={{
                 padding: '10px 14px',
@@ -1035,7 +1013,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
         {loading && (
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <ArnieAvatar size={32} persona={personaRow?.persona} />
+            <ArnieAvatar size={32} />
             <div style={{
               padding: '10px 14px', borderRadius: '16px 16px 16px 4px',
               backgroundColor: dark.bgBubbleArnie, border: `1px solid ${dark.border}`,

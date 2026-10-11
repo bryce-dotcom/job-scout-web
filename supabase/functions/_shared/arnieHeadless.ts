@@ -77,25 +77,12 @@ export async function runArnieTurn(
   // caller tells us, because only it knows (a clock-in, an SMS, a cron).
   const mode = o.mode || (level <= 1 ? 'field' : 'office')
 
-  // Whoever they chose. A text message and a browser tab must greet them as
-  // the same assistant — being Arnie on the screen and Jenny over SMS would
-  // be worse than having no personas at all.
-  let persona: { persona?: string; display_name?: string } | null = null
-  if (emp?.id != null) {
-    const res = await fetch(`${r.url}/rest/v1/arnie_personas?select=persona,display_name&employee_id=eq.${emp.id}&limit=1`, {
-      headers: { apikey: r.key, Authorization: `Bearer ${r.key}` },
-    }).catch(() => null)
-    persona = res?.ok ? ((await res.json().catch(() => []))?.[0] || null) : null
-  }
-
   const systemPrompt = buildArniePrompt(
     { email: emp?.email },
     { company_name: company?.company_name },
     role,
     mode,
     ARNIE_STATIC_KNOWLEDGE,
-    persona?.persona,
-    persona?.display_name,
   )
 
   // Through arnie-chat, not around it: the tools, the rails, the money gates

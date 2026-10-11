@@ -62,10 +62,7 @@ describe('scope widens with the login, never with the question', () => {
 describe('it is reachable in one tap and reads like a brief', () => {
   it('a chip in field mode and at every desk role', () => {
     expect((chatJsx.match(/icon: Sun/g) || []).length).toBeGreaterThanOrEqual(4)
-    // The point is that Sun is imported, not what happens to sit beside it —
-    // pinning the end of the import line broke the day another icon was added.
-    const lucide = chatJsx.match(/^import \{([^}]*)\} from 'lucide-react'/m)?.[1] || ''
-    expect(lucide.split(',').map((s) => s.trim())).toContain('Sun')
+    expect(chatJsx).toMatch(/Wrench, Sun \} from 'lucide-react'/)
   })
 
   it('the prompt orders by action and skips empty sections', () => {

@@ -42,17 +42,8 @@ export function detectMode(role, userId) {
 // a browser tab. Do not reimplement any of it here; the knowledge CATALOGUE is
 // still ours to supply, because it is generated from the feature cards.
 
-// The persona is whoever this person chose — Arnie or Jenny, under whatever
-// name they gave them. Cached on the module because every turn builds a
-// prompt and nobody changes their assistant mid-conversation.
-let personaRow = null
-export function setPersona(row) { personaRow = row || null }
-
 function buildSystemPrompt(user, company, role, mode = 'office') {
-  return buildArniePrompt(
-    user, company, role, mode, JOBSCOUT_KNOWLEDGE,
-    personaRow?.persona, personaRow?.display_name,
-  )
+  return buildArniePrompt(user, company, role, mode, JOBSCOUT_KNOWLEDGE)
 }
 
 // Keyword-based intent detection to determine which data domains to fetch

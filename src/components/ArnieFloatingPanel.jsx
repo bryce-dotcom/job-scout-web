@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import AssistantAvatar, { useAssistant } from './AssistantAvatar'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import ArnieChat from '../pages/agents/arnie/ArnieChat'
@@ -23,9 +22,6 @@ const dark = {
 // estimate). Before this the panel was unmounted on those routes and the
 // event fired into nothing.
 export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
-  // Whose face and name — the corner panel renders outside the Arnie
-  // workspace, so it reads the persona itself.
-  const assistant = useAssistant()
   const hasAgent = useStore(s => s.hasAgent)
   const user = useStore(s => s.user)
   const company = useStore(s => s.company)
@@ -182,7 +178,11 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
             boxShadow: `0 0 14px ${dark.orangeGlow}, 0 4px 12px rgba(0,0,0,0.3)`,
             backgroundColor: dark.bgHeader,
           }}>
-            <AssistantAvatar size="100%" style={{ width: '100%', height: '100%' }} />
+            <img
+              src="/og-arnie.png"
+              alt="OG Arnie"
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
           </div>
         </div>
       )}
@@ -235,10 +235,14 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
                   boxShadow: `0 0 8px ${dark.orangeGlow}`,
                   backgroundColor: dark.bg,
                 }}>
-                  <AssistantAvatar size="100%" style={{ width: '100%', height: '100%' }} />
+                  <img
+                    src="/og-arnie.png"
+                    alt="OG Arnie"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
                 </div>
                 <div>
-                  <div style={{ color: dark.text, fontSize: 15, fontWeight: 600 }}>{assistant.name}</div>
+                  <div style={{ color: dark.text, fontSize: 15, fontWeight: 600 }}>OG Arnie</div>
                   <div style={{ color: dark.textMuted, fontSize: 12 }}>
                     AI Assistant{company?.name ? ` \u2022 ${company.name}` : ''}
                   </div>
