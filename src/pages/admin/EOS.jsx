@@ -2873,14 +2873,18 @@ export default function EOS() {
     if (!companyId) return
     let cancelled = false
     ;(async () => {
-      const since = getWeekRange(14).start
+      // EVERY punch, not just the weeks on the dashboard. An Energy Scout
+      // project finished this week may have been worked for months, and
+      // costing it against a 14-week slice of its own labour overstates the
+      // profit on it — HHH's read $1,513 against a true $1,050 that way. The
+      // weekly hours metrics filter by date themselves, so the extra rows
+      // cost them nothing.
       let rows = []
       let from = 0
       while (true) {
         const { data, error } = await supabase.from('time_clock')
           .select('id, employee_id, job_id, clock_in, clock_out, total_hours')
           .eq('company_id', companyId)
-          .gte('clock_in', since)
           .order('id', { ascending: true })
           .range(from, from + 999)
         if (error || !data) break
