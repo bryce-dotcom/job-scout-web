@@ -165,10 +165,14 @@ const startRecorder = (skillId, name) => {
   if (rec || !capabilities.record) return
   const ctl = join(tmpdir(), `jobscout-rec-${process.pid}-${skillId}.txt`)
   try { writeFileSync(ctl, '') } catch { show('!!', 'could not open a control file for the recorder'); return }
-  const proc = spawn('powershell.exe',
-    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(HERE, 'agent', 'recorder.ps1'), '-ControlFile', ctl],
-    { stdio: ['pipe', 'pipe', 'pipe'] })
-  rec = { proc, skillId, held: false, ctl }
+  // Two recorders, one output format, so nothing below cares which ran.
+  const proc = process.platform === 'darwin'
+    ? spawn('osascript', ['-l', 'JavaScript', join(HERE, 'agent', 'recorder.jxa.js'), ctl],
+      { stdio: ['pipe', 'pipe', 'pipe'] })
+    : spawn('powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(HERE, 'agent', 'recorder.ps1'), '-ControlFile', ctl],
+      { stdio: ['pipe', 'pipe', 'pipe'] })
+  rec = { proc, skillId, held: false, ctl, startedAt: Date.now(), seen: 0, warned: false }
   proc.stdout.on('data', (buf) => {
     recTail += buf.toString()
     const lines = recTail.split('\n')
@@ -176,7 +180,19 @@ const startRecorder = (skillId, name) => {
     for (const line of lines) {
       const s = line.trim()
       if (!s) continue
-      try { pending.push(JSON.parse(s)) } catch { /* a partial line; dropped */ }
+      let o
+      try { o = JSON.parse(s) } catch { continue /* a partial line */ }
+      // A recorder that cannot watch the screen says so, and the person is
+      // told rather than left with an empty recording. This is the whole
+      // point of the grant check on macOS — a silent nothing is the failure
+      // we are guarding against.
+      if (o.kind === 'error') {
+        show('!!', o.message || 'the recorder could not start')
+        stopRecorder()
+        return
+      }
+      pending.push(o)
+      if (rec && !['started', 'paused', 'resumed', 'stopped'].includes(o.kind)) rec.seen++
     }
   })
   proc.on('exit', () => { if (rec?.proc === proc) rec = null })
@@ -205,8 +221,27 @@ const holdRecorder = (hold) => {
     : 'recorder going again')
 }
 
+/**
+ * Belt as well as braces for the silent-nothing failure.
+ *
+ * macOS reports a missing grant through AXIsProcessTrusted, but that check
+ * fails OPEN — if it throws we carry on rather than refusing to record. So if
+ * a recording has been running a while and the recorder has seen literally
+ * nothing, say so once. A person who has been demonstrating for half a minute
+ * deserves to know it is not landing.
+ */
+const nudgeIfDeaf = () => {
+  if (!rec || rec.warned || rec.held) return
+  if (rec.seen > 0 || Date.now() - rec.startedAt < 25_000) return
+  rec.warned = true
+  show('!!', process.platform === 'darwin'
+    ? 'nothing recorded yet. macOS probably has not been allowed to watch — System Settings → Privacy & Security → Accessibility and Input Monitoring, then start the recording again.'
+    : 'nothing recorded yet — if you have been clicking, the recorder is not seeing it.')
+}
+
 /** Send what the recorder saw, with a screenshot for the moments worth one. */
 const flushObservations = async () => {
+  nudgeIfDeaf()
   if (!rec || !pending.length) return
   const batch = pending.splice(0, 25)
   for (const o of batch) {
