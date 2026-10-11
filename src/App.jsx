@@ -117,6 +117,7 @@ import ArnieChatPage from './pages/agents/arnie/ArnieChatPage'
 import ArnieHistory from './pages/agents/arnie/ArnieHistory'
 import ArnieComputer from './pages/agents/arnie/ArnieComputer'
 import ArnieRoutines from './pages/agents/arnie/ArnieRoutines'
+import ArnieSkills from './pages/agents/arnie/ArnieSkills'
 import ArnieSetup from './pages/agents/arnie/ArnieSetup'
 import VictorDashboard from './pages/agents/victor/VictorDashboard'
 import VictorVerify from './pages/agents/victor/VictorVerify'
@@ -564,6 +565,7 @@ function App() {
             <Route index element={<ArnieChatPage />} />
             <Route path="computer" element={<ArnieComputer />} />
             <Route path="routines" element={<ArnieRoutines />} />
+            <Route path="taught" element={<ArnieSkills />} />
             <Route path="history" element={<ArnieHistory />} />
             <Route path="settings" element={<ArnieSetup />} />
           </Route>
