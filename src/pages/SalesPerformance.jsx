@@ -234,7 +234,7 @@ export default function SalesPerformance() {
                   <th style={{ ...th, textAlign: 'right' }}>Avg&nbsp;deal</th>
                   <th style={{ ...th, textAlign: 'right' }}>Meetings</th>
                   <th style={{ ...th, textAlign: 'right' }}>Estimates</th>
-                  <th style={{ ...th, textAlign: 'right' }}>Close&nbsp;%</th>
+                  <th style={{ ...th, textAlign: 'right' }} title="Of the estimates sent in this range, the share that closed (approved or became a job)">Close&nbsp;%</th>
                 </tr>
               </thead>
               <tbody>

@@ -19,7 +19,7 @@
 //          or { ok:false, error, needs_key?, wrong_view?, unfaithful? }
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { resolveCaller } from '../_shared/auth.ts'
+import { resolveBillableCompany } from '../_shared/auth.ts'
 import { checkCap, capMessage, recordMediaUsage, MEDIA_PRICES } from '../_shared/mediaMeter.ts'
 
 const corsHeaders = {
@@ -177,9 +177,11 @@ serve(async (req) => {
     const bulbText = BULB_TEXT[String(bulb)] || BULB_TEXT.warm_white
     if (!image_base64) return json({ ok: false, error: 'image_base64 is required' }, 400)
 
-    const caller = await resolveCaller(req).catch(() => null)
-    const companyId = Number(company_id ?? caller?.companyId ?? 0)
-    if (!companyId) return json({ ok: false, error: 'company_id is required' }, 400)
+    // Pictures are billed to a company — so the company comes from who is
+    // signed in, never from the body alone (see resolveBillableCompany).
+    const who = await resolveBillableCompany(req, company_id, Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '')
+    if ('error' in who) return json({ ok: false, error: who.error }, who.status)
+    const companyId = who.companyId
 
     const clean = String(image_base64).replace(/^data:image\/\w+;base64,/, '')
     const mime = clean.startsWith('/9j/') ? 'image/jpeg' : 'image/png'

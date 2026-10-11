@@ -9,9 +9,11 @@ import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../../lib/job
 import { arAsOf } from '../../lib/arHelpers'
 import { getWeekRange } from '../../lib/eosWeek'
 import { mergeJobHourSources } from '../../lib/jobHours'
+import { jobCosting } from '../../lib/reports'
+import { buildJobCostIndex, profitOnJobs } from '../../lib/eosProfit'
 import { DEFAULT_TZ } from '../../lib/dateTz'
 import {
-  inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity, filterHoursWithNoUnit,
+  inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity, filterHoursWithNoUnit, jobWorkersInWindow,
   isSetMeeting, isAttendedMeeting, filterAppointmentsByEntity, filterPaymentsByEntity,
 } from '../../lib/eosMetrics'
 import {
@@ -151,14 +153,52 @@ export const AUTO_SOURCES = {
     compute: (d, s, e, sd, ed, ent) => sumJobTotal(deliveredJobsInRange(filterByEntity(d.jobs, ent), d.jobStatuses, s, e)),
   },
   dollars_per_hour: {
-    label: 'Dollars / Hour',
+    label: 'Revenue Delivered / Hour Clocked',
     category: 'Operations',
     format: 'currency',
+    // NOT a labour rate, and the name now says so. The jobs in the numerator
+    // were worked in earlier weeks; the hours in the denominator went into
+    // jobs that are not finished. On HHH's last full week the overlap between
+    // the two was ZERO in both units, which is why it read $27 against
+    // $1,317. Kept because a throughput ratio has its uses. For "what did we
+    // make on the work we finished", use Profit on Jobs Completed.
     compute: (d, s, e, sd, ed, ent) => {
       const rev = sumJobTotal(deliveredJobsInRange(filterByEntity(d.jobs, ent), d.jobStatuses, s, e))
       const hrs = hoursIn(d, sd, ed, ent)
       return hrs > 0 ? Math.round(rev / hrs) : 0
     },
+  },
+  job_profit: {
+    label: 'Profit on Jobs Completed',
+    category: 'Operations',
+    format: 'currency',
+    // What the week's finished work was worth, less what it cost: materials
+    // from the price book, labour from the real punches at each person's
+    // rate, tagged receipts and bank debits, and crew bonuses. One set of
+    // jobs, asked one question. See lib/eosProfit.
+    compute: (d, s, e, sd, ed, ent) =>
+      profitOnJobs(deliveredJobsInRange(filterByEntity(d.jobs, ent), d.jobStatuses, s, e), d.jobCostIndex).profit,
+  },
+  profit_per_hour: {
+    label: 'Profit / Hour',
+    category: 'Operations',
+    format: 'currency',
+    // That profit over the hours clocked ON THOSE JOBS — the question the old
+    // Dollars / Hour was trying and failing to answer.
+    compute: (d, s, e, sd, ed, ent) =>
+      Math.round(profitOnJobs(deliveredJobsInRange(filterByEntity(d.jobs, ent), d.jobStatuses, s, e), d.jobCostIndex).profitPerHour),
+  },
+  jobs_missing_cost: {
+    label: 'Completed Jobs With No Cost',
+    category: 'Operations',
+    format: 'number',
+    // The honesty check on the two rows above. A finished job with no
+    // materials, no hours and no receipts against it would otherwise read as
+    // pure profit — 9 of HHH's 23 jobs one week, worth $21,728 between the
+    // four Energy Scout ones. Those jobs sit OUT of the profit figure and are
+    // counted here instead. Lower is better; zero means the profit is real.
+    compute: (d, s, e, sd, ed, ent) =>
+      profitOnJobs(deliveredJobsInRange(filterByEntity(d.jobs, ent), d.jobStatuses, s, e), d.jobCostIndex).uncosted,
   },
   man_hours: {
     label: 'Total Man Hours',
@@ -167,18 +207,27 @@ export const AUTO_SOURCES = {
     compute: (d, s, e, sd, ed, ent) => hoursIn(d, sd, ed, ent),
   },
   man_hours_no_unit: {
-    label: 'Man Hours — No Unit',
+    label: 'Crew Hours Not On a Job',
     category: 'Operations',
     format: 'number',
-    // Hours clocked with no job picked, so no business unit can claim them.
-    // Every unit-scoped row drops these, which is why the unit totals came
-    // to 277 in a week the crews clocked 591. With this row the week adds
-    // up, and the number is the one to drive down: it goes to zero when
-    // everyone picks a job at clock-in.
+    // Loose time belonging to people who DID clock onto a job that week —
+    // the "forgot to pick the job" case, which is the only kind anyone can
+    // act on.
     //
-    // Deliberately ignores the entity argument — this IS the bucket that
-    // belongs to no entity, so the Business Unit picker is hidden for it.
-    compute: (d, s, e, sd, ed) => hoursInWindow(filterHoursWithNoUnit(d.hourEntries, d.jobs), sd, ed, d.tz),
+    // It counted every loose hour until 2026-10-10, and 70 of HHH's 116 that
+    // week were Alayda's and Tracy's: they do not work jobs, so their time is
+    // correctly off-job and no habit will ever move it. Charging it to the
+    // crew made the row unreachable and the diagnosis wrong — field crews run
+    // about 15% loose, not 45%.
+    //
+    // Deliberately ignores the entity argument: an hour with no job has no
+    // business unit either, so the picker is hidden for it.
+    compute: (d, s, e, sd, ed) => {
+      const crew = jobWorkersInWindow(d.hourEntries, sd, ed, d.tz)
+      const loose = filterHoursWithNoUnit(d.hourEntries, d.jobs)
+        .filter(x => x?.employee_id != null && crew.has(String(x.employee_id)))
+      return hoursInWindow(loose, sd, ed, d.tz)
+    },
   },
   callbacks: {
     label: 'Lead Callbacks Due',
@@ -2833,14 +2882,18 @@ export default function EOS() {
     if (!companyId) return
     let cancelled = false
     ;(async () => {
-      const since = getWeekRange(14).start
+      // EVERY punch, not just the weeks on the dashboard. An Energy Scout
+      // project finished this week may have been worked for months, and
+      // costing it against a 14-week slice of its own labour overstates the
+      // profit on it — HHH's read $1,513 against a true $1,050 that way. The
+      // weekly hours metrics filter by date themselves, so the extra rows
+      // cost them nothing.
       let rows = []
       let from = 0
       while (true) {
         const { data, error } = await supabase.from('time_clock')
           .select('id, employee_id, job_id, clock_in, clock_out, total_hours')
           .eq('company_id', companyId)
-          .gte('clock_in', since)
           .order('id', { ascending: true })
           .range(from, from + 999)
         if (error || !data) break
@@ -2853,11 +2906,53 @@ export default function EOS() {
     return () => { cancelled = true }
   }, [companyId])
 
+  // What each job cost. Materials come from the price book (a bundle's own
+  // cost is $0 — the real figures live in its components), so the catalogue
+  // has to be here too. All four are small: ~2,700 rows for HHH.
+  const [costing, setCosting] = useState({ jobLines: [], products: [], productComponents: [], jobBonuses: [] })
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    const all = async (table, select, scoped = true) => {
+      let rows = []
+      for (let from = 0; ; from += 1000) {
+        let q = supabase.from(table).select(select).order('id', { ascending: true }).range(from, from + 999)
+        if (scoped) q = q.eq('company_id', companyId)
+        const { data, error } = await q
+        if (error || !data) break
+        rows = rows.concat(data)
+        if (data.length < 1000) break
+      }
+      return rows
+    }
+    ;(async () => {
+      const [jobLines, products, productComponents, jobBonuses] = await Promise.all([
+        all('job_lines', 'id, job_id, item_id, quantity, labor_cost'),
+        all('products_services', 'id, cost, material_or_labor'),
+        // product_components is a global catalogue table — no company_id.
+        all('product_components', 'id, parent_product_id, component_product_id, quantity', false),
+        all('job_bonuses', 'id, job_id, amount, status'),
+      ])
+      if (!cancelled) setCosting({ jobLines, products, productComponents, jobBonuses })
+    })()
+    return () => { cancelled = true }
+  }, [companyId])
+
   // Punches plus legacy typed rows, each hour counted once (see jobHours.js).
   const hourEntries = useMemo(() => mergeJobHourSources({ timeClock, timeLog: timeLogs }), [timeClock, timeLogs])
+
+  // Cost per job, computed ONCE from lib/reports.jobCosting — the one cost
+  // rule in the app. No date window: a job finished this week was worked in
+  // earlier ones, and every hour and receipt on it is a cost of it.
+  const jobCostIndex = useMemo(() => buildJobCostIndex(jobCosting({
+    jobs, jobLines: costing.jobLines, products: costing.products,
+    productComponents: costing.productComponents, jobBonuses: costing.jobBonuses,
+    payments, invoices, plaidTransactions, manualExpenses: expenses,
+    timeClock, employees,
+  }).rows), [jobs, costing, payments, invoices, plaidTransactions, expenses, timeClock, employees])
   const storeData = useMemo(() => ({
-    jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses, tz,
-  }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses, tz])
+    jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses, jobCostIndex, tz,
+  }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses, jobCostIndex, tz])
 
   // Build entity list from service types + business units (deduplicated)
   const entities = useMemo(() => {

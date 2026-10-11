@@ -201,3 +201,41 @@ export async function internalCaller(
   if (!emp || emp.company_id == null) return null
   return callerFor(emp)
 }
+
+// ── Who pays for this call? ─────────────────────────────────────────────
+// For functions that spend money (an AI picture, a vision read, a Maps
+// frame) and bill it to a company. The chris-* functions used to take
+// company_id from the BODY with no sign-in check, so anyone holding the
+// public anon key could run paid calls and charge them to any tenant —
+// found 2026-10-10 by calling chris-render as company 3 with the anon key.
+//
+// Rules, from the JWT only (the gateway's verify_jwt has already checked
+// the signature, so the role claim can be read):
+//   service_role → our own scripts; the body's company_id is taken as given.
+//   a developer  → may act for the body's company (support, testing).
+//   an employee  → their own company; a body naming another is refused.
+//   anything else (anon key, no employee row) → refused.
+// Requires verify_jwt = true on the function.
+export async function resolveBillableCompany(
+  req: Request,
+  bodyCompanyId: unknown,
+  supabaseUrl: string,
+  serviceKey: string,
+): Promise<{ companyId: number; caller: Caller | null } | { error: string; status: number }> {
+  const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
+  let role = ''
+  try {
+    const b64 = (token.split('.')[1] || '').replace(/-/g, '+').replace(/_/g, '/')
+    role = JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)))?.role || ''
+  } catch { /* not a JWT */ }
+  const asked = Number(bodyCompanyId) || null
+
+  if (token === serviceKey || role === 'service_role') {
+    return asked ? { companyId: asked, caller: null } : { error: 'company_id is required', status: 400 }
+  }
+  const caller = await resolveCaller(req, supabaseUrl, serviceKey)
+  if (!caller?.companyId) return { error: 'Sign in to use this.', status: 401 }
+  if (caller.level >= 5 && asked) return { companyId: asked, caller }
+  if (asked && asked !== caller.companyId) return { error: 'That is not your company.', status: 403 }
+  return { companyId: caller.companyId, caller }
+}

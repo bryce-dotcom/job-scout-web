@@ -11,6 +11,8 @@ import 'dotenv/config'
 import { AUTO_SOURCES } from '../src/pages/admin/EOS.jsx'
 import { getWeekRange } from '../src/lib/eosWeek.js'
 import { mergeJobHourSources } from '../src/lib/jobHours.js'
+import { jobCosting } from '../src/lib/reports.js'
+import { buildJobCostIndex } from '../src/lib/eosProfit.js'
 import { DEFAULT_TZ } from '../src/lib/dateTz.js'
 
 const sb = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -28,11 +30,10 @@ async function page(table, cols = '*', tweak = (q) => q) {
   return out
 }
 
-const since = getWeekRange(14).start
 const [jobs, leads, invoices, payments, appointments, timeLogs, timeClock, expenses, plaidTransactions, quotes, leadPayments, submittals, settings] = await Promise.all([
   page('jobs', '*', q => q.neq('status', 'Archived')),
   page('leads'), page('invoices'), page('payments'), page('appointments'), page('time_log'),
-  page('time_clock', 'id, employee_id, job_id, clock_in, clock_out, total_hours', q => q.gte('clock_in', since)),
+  page('time_clock', 'id, employee_id, job_id, clock_in, clock_out, total_hours'),
   page('expenses'), page('plaid_transactions'), page('quotes', 'id, quote_amount'), page('lead_payments'),
   page('file_attachments', 'id, job_id, created_at', q => q.eq('photo_context', 'submittal')),
   sb.from('settings').select('key, value').eq('company_id', C).then(r => r.data || []),
@@ -41,15 +42,28 @@ const setting = (k) => { try { return JSON.parse(settings.find(s => s.key === k)
 const jobStatuses = setting('job_statuses') || []
 const scorecard = setting('eos_scorecard') || []
 const chart = setting('eos_accountability_chart') || []
-const { data: employees } = await sb.from('employees').select('id, name').eq('company_id', C)
+const { data: employees } = await sb.from('employees').select('id, name, hourly_rate').eq('company_id', C)
 const nameOf = (id) => employees.find(e => String(e.id) === String(id))?.name || '—'
 
+// Every input the page assembles. Leave one out and the metric that needs it
+// reports zero and says nothing — which is the whole failure this page had.
+const [jobLines, products, productComponents, jobBonuses, utilityInvoices] = await Promise.all([
+  page('job_lines', 'id, job_id, item_id, quantity, labor_cost'),
+  page('products_services', 'id, cost, material_or_labor'),
+  sb.from('product_components').select('id, parent_product_id, component_product_id, quantity').then(r => r.data || []),
+  page('job_bonuses', 'id, job_id, amount, status'),
+  page('utility_invoices'),
+])
+const jobCostIndex = buildJobCostIndex(jobCosting({
+  jobs, jobLines, products, productComponents, jobBonuses,
+  payments, invoices, plaidTransactions, manualExpenses: expenses, timeClock, employees,
+}).rows)
+
 const storeData = {
-  jobs, leads, invoices, utilityInvoices: await page('utility_invoices'), payments, appointments, timeLogs,
+  jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs,
   hourEntries: mergeJobHourSources({ timeClock, timeLog: timeLogs }),
   expenses, plaidTransactions, quotes,
-  quoteAmountById: new Map(quotes.map(q => [q.id, q.quote_amount])),
-  leadPayments, submittals, jobStatuses, tz: DEFAULT_TZ,
+  leadPayments, submittals, jobStatuses, jobCostIndex, tz: DEFAULT_TZ,
 }
 
 console.log('=== DATA LOADED (as the page sees it) ===')
