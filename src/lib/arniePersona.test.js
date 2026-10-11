@@ -16,6 +16,10 @@ const headless = read('../../supabase/functions/_shared/arnieHeadless.ts')
 const setup = read('../pages/agents/arnie/ArnieSetup.jsx')
 const workspace = read('../pages/agents/arnie/ArnieWorkspace.jsx')
 const header = read('../components/AgentHeader.jsx')
+const chat = read('../pages/agents/arnie/ArnieChat.jsx')
+const panel = read('../components/ArnieFloatingPanel.jsx')
+const banner = read('../components/ArnieOnboardingBanner.jsx')
+const avatar = read('../components/AssistantAvatar.jsx')
 
 const U = { email: 'mike@x.com' }
 const C = { company_name: 'Summit Field Co' }
@@ -151,6 +155,33 @@ describe('per seat, and no free-text personality anywhere', () => {
   it('RLS is on', () => {
     expect(migration).toMatch(/alter table public\.arnie_personas enable row level security/)
     expect(migration).toMatch(/create policy tenant_isolation on public\.arnie_personas/)
+  })
+})
+
+describe('the face belongs to the persona too', () => {
+  it("each persona names its own picture", () => {
+    expect(PERSONAS.arnie.avatar).toBe("/og-arnie.png")
+    expect(PERSONAS.jenny.avatar).toBe("/jenny-jobscouter.png")
+  })
+
+  it('nothing hardcodes the photo any more', () => {
+    // It was in four components: the chat, the corner panel twice, and the
+    // onboarding banner. Offering a choice of assistant while three of them
+    // kept Arnie's face would be worse than offering no choice at all.
+    for (const f of [chat, panel, banner]) {
+      expect(f).not.toContain('/og-arnie.png')
+    }
+    expect(avatar).toMatch(/src=\{p\.avatar\}/)
+  })
+
+  it('a missing picture falls back to an icon, not a broken image', () => {
+    expect(avatar).toMatch(/onError=\{\(\) => setBroken\(true\)\}/)
+    expect(avatar).toMatch(/\{broken \? \(/)
+    expect(avatar).toMatch(/<Bot size=/)
+  })
+
+  it('and a new persona gets a fresh attempt at its own picture', () => {
+    expect(avatar).toMatch(/setBroken\(false\) \}, \[p\.key\]\)/)
   })
 })
 

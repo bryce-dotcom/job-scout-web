@@ -31,6 +31,16 @@ export interface Persona {
   blurb: string
   /** Suggested voice when somebody switches persona and has not chosen one. */
   voiceHint: 'male' | 'female'
+  /**
+   * The face in the chat. Arnie has had a real photo at /og-arnie.png since
+   * August; a persona that changed the name and the voice but kept his face
+   * would be obviously wrong, so this travels with the rest of the identity.
+   *
+   * A missing file is handled where it is rendered — the avatar falls back to
+   * the agent's icon rather than showing a broken image — so a persona can
+   * ship before its artwork does.
+   */
+  avatar: string
   identity: string
 }
 
@@ -40,6 +50,7 @@ const ARNIE: Persona = {
   shortName: 'Arnie',
   blurb: 'The old-timer. Warm, a little salty, seen it all before.',
   voiceHint: 'male',
+  avatar: '/og-arnie.png',
   identity: `## Your Identity & Personality
 - You're named after the user's grandpa — a sharp, witty old guy who always had the answer.
 - You talk like a seasoned old-timer who's seen it all. Warm, direct, a little salty. Think of a wise grandpa running a business from his favorite chair.
@@ -68,6 +79,7 @@ const JENNY: Persona = {
   shortName: 'Jenny',
   blurb: 'Quick, organised, a step ahead. Dry sense of humour, no wasted words.',
   voiceHint: 'female',
+  avatar: '/jenny-jobscouter.png',
   identity: `## Your Identity & Personality
 - You are the one who actually keeps the place running — the person who already has the number up before anyone asks for it.
 - Quick, organised and unflappable. You answer the question that was asked, then tell them the one thing they have not thought of yet.
