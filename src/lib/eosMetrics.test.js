@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  dayKeyOf, inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity, filterHoursWithNoUnit,
+  dayKeyOf, inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity, filterHoursWithNoUnit, jobWorkersInWindow,
   isSetMeeting, isAttendedMeeting, filterAppointmentsByEntity, filterPaymentsByEntity,
 } from './eosMetrics'
 
@@ -113,6 +113,34 @@ describe('filterHoursWithNoUnit — the hours that fall between the columns', ()
   it('returns nothing for an empty or null list', () => {
     expect(filterHoursWithNoUnit([], jobs)).toEqual([])
     expect(filterHoursWithNoUnit(null, jobs)).toEqual([])
+  })
+})
+
+describe('jobWorkersInWindow — a miss is not a desk', () => {
+  // Alayda and Tracy are off-job every hour because they do not work jobs.
+  // Counting them put 70 of HHH's 116 loose hours at the crew's door.
+  const entries = [
+    { employee_id: 'tech', job_id: 10, clock_in: '2026-09-15T13:00:00Z', total_hours: 8 },
+    { employee_id: 'tech', job_id: null, clock_in: '2026-09-16T13:00:00Z', total_hours: 3 },
+    { employee_id: 'office', job_id: null, clock_in: '2026-09-16T13:00:00Z', total_hours: 8 },
+  ]
+
+  it('names only the people who clocked onto a job that week', () => {
+    const crew = jobWorkersInWindow(entries, SD, ED)
+    expect(crew.has('tech')).toBe(true)
+    expect(crew.has('office')).toBe(false)
+  })
+
+  it('ignores a job clocked in a different week', () => {
+    const crew = jobWorkersInWindow([{ employee_id: 'tech', job_id: 10, clock_in: '2026-09-28T13:00:00Z', total_hours: 8 }], SD, ED)
+    expect(crew.size).toBe(0)
+  })
+
+  it('the loose hours that remain are the crew\'s, not the office\'s', () => {
+    const crew = jobWorkersInWindow(entries, SD, ED)
+    const loose = filterHoursWithNoUnit(entries, [{ id: 10, business_unit: 'Energy Scout' }])
+      .filter(e => crew.has(String(e.employee_id)))
+    expect(hoursInWindow(loose, SD, ED)).toBe(3)
   })
 })
 

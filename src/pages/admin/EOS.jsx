@@ -13,7 +13,7 @@ import { jobCosting } from '../../lib/reports'
 import { buildJobCostIndex, profitOnJobs } from '../../lib/eosProfit'
 import { DEFAULT_TZ } from '../../lib/dateTz'
 import {
-  inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity, filterHoursWithNoUnit,
+  inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity, filterHoursWithNoUnit, jobWorkersInWindow,
   isSetMeeting, isAttendedMeeting, filterAppointmentsByEntity, filterPaymentsByEntity,
 } from '../../lib/eosMetrics'
 import {
@@ -207,18 +207,27 @@ export const AUTO_SOURCES = {
     compute: (d, s, e, sd, ed, ent) => hoursIn(d, sd, ed, ent),
   },
   man_hours_no_unit: {
-    label: 'Man Hours — No Unit',
+    label: 'Crew Hours Not On a Job',
     category: 'Operations',
     format: 'number',
-    // Hours clocked with no job picked, so no business unit can claim them.
-    // Every unit-scoped row drops these, which is why the unit totals came
-    // to 277 in a week the crews clocked 591. With this row the week adds
-    // up, and the number is the one to drive down: it goes to zero when
-    // everyone picks a job at clock-in.
+    // Loose time belonging to people who DID clock onto a job that week —
+    // the "forgot to pick the job" case, which is the only kind anyone can
+    // act on.
     //
-    // Deliberately ignores the entity argument — this IS the bucket that
-    // belongs to no entity, so the Business Unit picker is hidden for it.
-    compute: (d, s, e, sd, ed) => hoursInWindow(filterHoursWithNoUnit(d.hourEntries, d.jobs), sd, ed, d.tz),
+    // It counted every loose hour until 2026-10-10, and 70 of HHH's 116 that
+    // week were Alayda's and Tracy's: they do not work jobs, so their time is
+    // correctly off-job and no habit will ever move it. Charging it to the
+    // crew made the row unreachable and the diagnosis wrong — field crews run
+    // about 15% loose, not 45%.
+    //
+    // Deliberately ignores the entity argument: an hour with no job has no
+    // business unit either, so the picker is hidden for it.
+    compute: (d, s, e, sd, ed) => {
+      const crew = jobWorkersInWindow(d.hourEntries, sd, ed, d.tz)
+      const loose = filterHoursWithNoUnit(d.hourEntries, d.jobs)
+        .filter(x => x?.employee_id != null && crew.has(String(x.employee_id)))
+      return hoursInWindow(loose, sd, ed, d.tz)
+    },
   },
   callbacks: {
     label: 'Lead Callbacks Due',

@@ -73,24 +73,42 @@ describe('hours come from the time clock, not the legacy typed table', () => {
     expect(compute('man_hours', data, 'HHH Building Services')).toBe(0)
   })
 
-  it('Man Hours — No Unit catches the time no unit can claim', () => {
-    // More than half of HHH's clocked hours had no job picked, so every
-    // unit-scoped row dropped them and the week did not add up.
+  it('Crew Hours Not On a Job catches a tech who forgot to pick one', () => {
+    // The same person clocked onto job 10 this week AND has loose time.
     const withStray = {
       ...data,
       hourEntries: [
-        ...data.hourEntries,
-        { job_id: null, clock_in: '2026-09-17T13:00:00Z', clock_out: '2026-09-17T20:00:00Z', total_hours: 7 },
+        ...data.hourEntries.map(e => ({ ...e, employee_id: 'tech' })),
+        { employee_id: 'tech', job_id: null, clock_in: '2026-09-17T13:00:00Z', clock_out: '2026-09-17T20:00:00Z', total_hours: 7 },
       ],
     }
     expect(compute('man_hours_no_unit', withStray)).toBe(7)
-    // unit total + no-unit total = every hour clocked
+    // unit total + crew loose total = every hour that person clocked
     expect(compute('man_hours', withStray, 'Energy Scout') + compute('man_hours_no_unit', withStray))
       .toBe(compute('man_hours', withStray))
   })
 
-  it('Man Hours — No Unit ignores a business unit rather than lying about one', () => {
-    const withStray = { ...data, hourEntries: [{ job_id: null, clock_in: '2026-09-17T13:00:00Z', clock_out: '2026-09-17T20:00:00Z', total_hours: 7 }] }
+  it('does NOT charge the office with hours they were never meant to job-code', () => {
+    // Alayda and Tracy never clock onto a job, so their time is correctly
+    // off-job. Counting it put 70 of HHH's 116 loose hours at the crew's door.
+    const withOffice = {
+      ...data,
+      hourEntries: [
+        ...data.hourEntries.map(e => ({ ...e, employee_id: 'tech' })),
+        { employee_id: 'office', job_id: null, clock_in: '2026-09-17T13:00:00Z', clock_out: '2026-09-17T21:00:00Z', total_hours: 8 },
+      ],
+    }
+    expect(compute('man_hours_no_unit', withOffice)).toBe(0)
+  })
+
+  it('ignores a business unit rather than lying about one', () => {
+    const withStray = {
+      ...data,
+      hourEntries: [
+        ...data.hourEntries.map(e => ({ ...e, employee_id: 'tech' })),
+        { employee_id: 'tech', job_id: null, clock_in: '2026-09-17T13:00:00Z', clock_out: '2026-09-17T20:00:00Z', total_hours: 7 },
+      ],
+    }
     expect(compute('man_hours_no_unit', withStray, 'Energy Scout')).toBe(7)
     expect(compute('man_hours_no_unit', withStray, 'HHH Building Services')).toBe(7)
   })

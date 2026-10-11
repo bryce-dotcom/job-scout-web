@@ -97,6 +97,25 @@ export function filterHoursByEntity(entries, jobs, entity) {
  * clocked. A job the page cannot see (archived) lands here too, which is
  * honest — if we cannot name its unit we must not pretend we can.
  */
+/**
+ * Who clocked onto a job at all inside this window.
+ *
+ * It is the difference between a miss and a desk. Alayda and Tracy spend
+ * every hour off-job because they do not work jobs — counting their time as
+ * "nobody picked a job" put 70 of last week's 116 loose hours at the crew's
+ * door, and set a goal of zero that the office can never reach. Someone who
+ * clocked onto a job that week and ALSO has loose time is the real case.
+ */
+export function jobWorkersInWindow(entries, sd, ed, tz = DEFAULT_TZ) {
+  const ids = new Set()
+  for (const e of entries || []) {
+    if (!e?.job_id || e.employee_id == null) continue
+    if (!inDayWindow(e.clock_in || e.date, sd, ed, tz)) continue
+    ids.add(String(e.employee_id))
+  }
+  return ids
+}
+
 export function filterHoursWithNoUnit(entries, jobs) {
   const unitOf = new Map((jobs || []).map(j => [String(j.id), j.business_unit]))
   return (entries || []).filter(e => {
