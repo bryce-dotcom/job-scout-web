@@ -150,7 +150,7 @@ export async function syncJobBonuses({
   // Existing ledger so we can freeze `paid` rows and preserve accrued_at.
   const { data: existing } = await supabase
     .from('job_bonuses')
-    .select('job_id, employee_id, status, accrued_at, needs_verification, verification_overridden_by, verification_overridden_at')
+    .select('job_id, employee_id, status, accrued_at, needs_verification, verification_overridden_by, verification_overridden_at, override_reason')
     .eq('company_id', companyId)
   const existingByKey = new Map((existing || []).map(r => [`${r.job_id}|${r.employee_id}`, r]))
 
@@ -207,6 +207,10 @@ export async function syncJobBonuses({
         needs_verification: overridden ? false : !!r.needs_verification,
         verification_overridden_by: overridden ? ex.verification_overridden_by : null,
         verification_overridden_at: overridden ? ex.verification_overridden_at : null,
+        // The admin's own sentence travels with the override it explains. If
+        // the recompute re-flags the row, the old reason no longer applies to
+        // it and goes with the flag.
+        override_reason: overridden ? (ex.override_reason ?? null) : null,
         status,
         accrued_at: status === 'accrued' ? (ex?.accrued_at || nowIso) : null,
         updated_at: nowIso,

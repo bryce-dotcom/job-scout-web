@@ -30,6 +30,7 @@ import { pickAchAccount, achSettingsFromPlaidAccount, describeAchAccount } from 
 import { payrollSetupProblems, setupGateSummary } from '../lib/payrollSetupGate'
 import { payrollRunGuards } from '../lib/payrollRunGuards'
 import { deliverPaystubs, deliverySummary } from '../lib/paystubDelivery'
+import { isUsableOverrideReason, hrRecipients, overrideEmail } from '../lib/bonusOverride'
 import PlaidLink from '../components/PlaidLink'
 import { ptoDaysInPeriod, ptoAccrualPerPeriod, ptoPayForPeriod, ptoBankAfterRun } from '../lib/ptoThisPeriod'
 import TypedHoursReview from '../components/TypedHoursReview'
@@ -2285,12 +2286,29 @@ export default function Payroll() {
       return
     }
     const jobLabel = bonusRow.jobs?.job_title || `Job ${bonusRow.job_id}`
-    if (!confirm(`Mark this bonus as verified?\n\n${jobLabel} — ${fmt(parseFloat(bonusRow.amount) || 0)}\n\nThe amount is already owed; this clears the "needs verification" flag.`)) return
+    // A reason, not a click. The hold fires because the recorded hours do not
+    // support the bonus; HHH job 8747 was allotted 181.2 hours, had zero
+    // clocked, and paid $4,235 on a bare confirm. The money may well have been
+    // owed — the record could not say. Sixty-seven have gone this way.
+    const allotted = bonusRow.allotted_hours == null ? 'not recorded' : `${bonusRow.allotted_hours}h`
+    const actual = bonusRow.actual_hours == null ? 'not recorded' : `${bonusRow.actual_hours}h`
+    const reason = window.prompt(
+      `Release this bonus?\n\n${jobLabel} — ${fmt(parseFloat(bonusRow.amount) || 0)}\n` +
+      `Allotted ${allotted}, actually clocked ${actual}.\n\n` +
+      'Say why it should be paid anyway. This is kept on the bonus and emailed to HR.',
+      ''
+    )
+    if (reason === null) return   // cancelled
+    if (!isUsableOverrideReason(reason)) {
+      alert('That reason is too short to be useful later.\n\nWrite a sentence a person could read in six months — what the hours really were, or why the allotment is wrong.')
+      return
+    }
     try {
       const { error } = await supabase.from('job_bonuses')
         .update({
           needs_verification: false,
           release_reason: 'admin_override',
+          override_reason: reason.trim(),
           verification_overridden_by: adminEmp?.id || null,
           verification_overridden_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -2299,9 +2317,40 @@ export default function Payroll() {
       if (error) throw error
       // Optimistic local update so the flag clears immediately.
       setLedgerBonuses(prev => prev.map(b => b.id === bonusRow.id
-        ? { ...b, needs_verification: false, release_reason: 'admin_override' }
+        ? { ...b, needs_verification: false, release_reason: 'admin_override', override_reason: reason.trim() }
         : b))
+      await notifyHrOfOverride(bonusRow, reason.trim(), adminEmp, jobLabel)
     } catch (err) { alert('Verify failed: ' + err.message) }
+  }
+
+  // Tell HR a hold was cleared. The release already happened and is recorded,
+  // so a mail failure must never look like the override failed — it warns and
+  // leaves the bonus released.
+  const notifyHrOfOverride = async (bonusRow, reason, adminEmp, jobLabel) => {
+    try {
+      const to = hrRecipients(employees)
+      if (!to.length) {
+        toast('Bonus released. No one has HR access, so nobody was emailed.')
+        return
+      }
+      const crew = employees.find(e => String(e.id) === String(bonusRow.employee_id))
+      const companyName = company?.company_name || 'Job Scout'
+      const { subject, html } = overrideEmail({
+        bonus: bonusRow,
+        jobLabel,
+        crewName: crew?.name,
+        actorName: adminEmp?.name || user?.email,
+        reason,
+        companyName,
+      })
+      const { data, error } = await supabase.functions.invoke('send-email', {
+        body: { to, subject, html, from: `${companyName} <payroll@appsannex.com>` },
+      })
+      if (error || data?.success === false) throw new Error(error?.message || data?.error || 'send failed')
+      toast(`Bonus released. HR notified (${to.length}).`)
+    } catch (err) {
+      toast(`Bonus released, but the HR email failed: ${err.message}`)
+    }
   }
 
   // Manual "paid" for bonuses — the "pay outside the app" path. Parity with the
