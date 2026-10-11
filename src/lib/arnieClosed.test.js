@@ -16,7 +16,11 @@ const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n'
 const src = read('../../supabase/functions/_shared/arnieClosed.ts')
 const chat = read('../../supabase/functions/arnie-chat/index.ts')
 const convert = read('../../supabase/functions/_shared/estimateConvert.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+// The RULES moved to _shared/arniePrompt.ts on 2026-10-10, so a text message
+// and a browser tab build the same prompt. A path-anchored assertion is exactly
+// what breaks silently when a prompt relocates — the eval harness spent a whole
+// run grading an Arnie with no rules for this reason. Read it where it lives.
+const engine = read('../../supabase/functions/_shared/arniePrompt.ts')
 const funnel = read('./salesFunnel.js')
 
 const load = (s, deps) => { const m = { exports: {} }; new Function('module', 'exports', 'require', transformSync(s, { loader: 'ts', format: 'cjs' }).code)(m, m.exports, (p) => deps[p]); return m.exports }
