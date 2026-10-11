@@ -1,0 +1,419 @@
+// Arnie → Computer. The surface for the hands.
+//
+// Four things, in the order they matter: is Arnie on a computer, what may he
+// touch, what has he done, and stop him. The kill switch is on screen at all
+// times and never behind a menu — a person who wants to stop an agent should
+// not have to go looking.
+//
+// Grok's principle here is "delegation over operation": the agent's computer is
+// its workspace, not a surface that invites constant supervision. Ours goes
+// further, because it is the person's OWN machine — they can already see it.
+// So there is no remote screen here. What there is instead is a record: the
+// last thing he looked at, and every action with its verdict.
+
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { supabase } from '../../../lib/supabase'
+import { useStore } from '../../../lib/store'
+import {
+  Monitor, ShieldCheck, Ban, Eye, MousePointerClick, Keyboard, Plus, Trash2,
+  AlertTriangle, Power, Copy, Check, GraduationCap, RefreshCw,
+} from 'lucide-react'
+import { myComputer, myGrants, grant as addGrant, revoke as dropGrant, stop as stopSession } from '../../../lib/arnieComputer'
+import { computerState, agentState, describeAction } from '../../../lib/agentStatus'
+
+const t = {
+  bg: '#f7f5ef', card: '#ffffff', card2: '#f0ebdd', ink: '#2c3530', sub: '#4d5a52',
+  muted: '#7d8a7f', line: '#d6cdb8', accent: '#5a6349', accentHover: '#4a5239',
+  accentBg: 'rgba(90,99,73,0.10)', add: '#2f7d4e', addBg: 'rgba(47,125,78,0.10)',
+  rm: '#b91c1c', rmBg: 'rgba(185,28,28,0.08)', amber: '#b45309', amberBg: 'rgba(180,83,9,0.10)',
+}
+
+const TIERS = [
+  { id: 'watch', label: 'Watch only', icon: Eye, blurb: 'He can look at it. Nothing else.' },
+  { id: 'click', label: 'Click, never type', icon: MousePointerClick, blurb: 'For anything where a stray keystroke would be worse than a click — a terminal, an editor.' },
+  { id: 'full', label: 'Full', icon: Keyboard, blurb: 'Look, click and type. Still never a password, and never an irreversible button.' },
+]
+
+// Every decision the database can hold. A missing key here falls through to
+// 'failed', which is how an action merely WAITING on somebody read "Failed" in
+// the log — found by looking at the rendered page, not by reading the code.
+const DECISION = {
+  allowed: { c: t.add, bg: t.addBg, label: 'Done' },
+  queued: { c: '#1d4ed8', bg: 'rgba(59,130,246,0.10)', label: 'Waiting on the agent' },
+  refused: { c: t.rm, bg: t.rmBg, label: 'Refused' },
+  awaiting_human: { c: t.amber, bg: t.amberBg, label: 'Needs you' },
+  needs_approval: { c: t.amber, bg: t.amberBg, label: 'Asking you' },
+  expired: { c: t.muted, bg: 'rgba(125,138,127,0.10)', label: 'Lapsed' },
+  failed: { c: t.muted, bg: 'rgba(125,138,127,0.10)', label: 'Failed' },
+}
+
+const ago = (iso) => {
+  if (!iso) return ''
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000))
+  if (s < 60) return `${s}s ago`
+  if (s < 3600) return `${Math.round(s / 60)}m ago`
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`
+  return new Date(iso).toLocaleDateString()
+}
+
+export default function ArnieComputer() {
+  const user = useStore((s) => s.user)
+  const companyId = useStore((s) => s.companyId)
+  // user.id IS the employees row id in this app — the same thing every other
+  // Arnie page uses as employee_id.
+  const employeeId = user?.id || null
+
+  const [data, setData] = useState({ session: null, latest: null, actions: [] })
+  const [grants, setGrants] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [showConnect, setShowConnect] = useState(false)
+  const [token, setToken] = useState('')
+  const [revealed, setRevealed] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [draft, setDraft] = useState({ app: '', host: '', tier: 'watch' })
+
+  const load = useCallback(async () => {
+    if (!employeeId) return
+    try {
+      const [c, g] = await Promise.all([myComputer(employeeId), myGrants(employeeId)])
+      setData(c); setGrants(g); setErr('')
+    } catch (e) { setErr(String(e.message || e)) }
+  }, [employeeId])
+
+  useEffect(() => { load() }, [load])
+  // While he is working, the log is the only way to follow along, so it has to
+  // keep up. Idle sessions do not need a poll every three seconds.
+  useEffect(() => {
+    const live = data.session?.status === 'live'
+    const id = setInterval(load, live ? 4000 : 20000)
+    return () => clearInterval(id)
+  }, [load, data.session?.status])
+
+  const status = useMemo(() => computerState({ session: data.session, latest: data.latest, actions: data.actions }), [data])
+  const st = agentState(status.state)
+
+  const connect = async () => {
+    setBusy(true); setErr('')
+    try {
+      // The agent gets a REFRESH token and exchanges it for access tokens
+      // itself, exactly as any desktop client would. An access token lasts an
+      // hour, which would make the agent stop working over lunch.
+      const { data: s } = await supabase.auth.getSession()
+      const rt = s?.session?.refresh_token
+      if (!rt) throw new Error('No session to hand over — sign in again.')
+      setToken(rt); setShowConnect(true); setRevealed(false); setCopied(false)
+    } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
+  }
+
+  const doStop = async () => {
+    if (!data.session) return
+    if (!window.confirm('Stop Arnie on this computer? Anything he is waiting to do will be refused, and the agent has to be started again from the machine.')) return
+    setBusy(true)
+    try { await stopSession(data.session.id); await load() }
+    catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
+  }
+
+  const saveGrant = async () => {
+    const app = draft.app.trim().toLowerCase()
+    if (!app) { setErr('Which program?'); return }
+    setBusy(true); setErr('')
+    try {
+      await addGrant({ app, host: draft.host.trim().toLowerCase() || '*', tier: draft.tier })
+      setDraft({ app: '', host: '', tier: 'watch' }); setAdding(false); await load()
+    } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
+  }
+
+  const removeGrant = async (g) => {
+    setBusy(true)
+    try { await dropGrant({ app: g.app, host: g.host }); await load() }
+    catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
+  }
+
+  const cmd = `JOBSCOUT_AGENT_TOKEN=${revealed ? token : '•'.repeat(28)} node scripts/jobscout-agent.mjs`
+
+  return (
+    <div style={{ maxWidth: 940, margin: '0 auto', padding: '20px 16px 40px' }}>
+      <header style={{ marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 9 }}>
+          <Monitor size={20} style={{ color: t.accent }} /> Arnie on your computer
+        </h2>
+        <p style={{ margin: '5px 0 0', fontSize: 13.5, color: t.sub, lineHeight: 1.55 }}>
+          He can only touch programs you have allowed here, he never types a password,
+          and he never clicks anything that cannot be taken back. Everything he does is listed below.
+        </p>
+      </header>
+
+      {err && (
+        <div style={{ background: t.rmBg, border: `1px solid ${t.rm}33`, color: t.rm, borderRadius: 10, padding: '10px 12px', fontSize: 13, marginBottom: 14 }}>
+          {err}
+        </div>
+      )}
+
+      {/* ── 1. This computer ─────────────────────────────────────────── */}
+      <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: st.colour, flexShrink: 0 }} />
+              <strong style={{ fontSize: 15, color: t.ink }}>{st.label}</strong>
+              {data.session?.device_label && (
+                <span style={{ fontSize: 13, color: t.muted }}>· {data.session.device_label}</span>
+              )}
+            </div>
+            <div style={{ fontSize: 13, color: t.sub, marginTop: 4 }}>{status.detail}</div>
+            {data.session?.last_seen_at && data.session.status === 'live' && (
+              <div style={{ fontSize: 12, color: t.muted, marginTop: 2 }}>checked in {ago(data.session.last_seen_at)}</div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={load} disabled={busy} style={btn(t.card2, t.sub)}>
+              <RefreshCw size={14} /> Refresh
+            </button>
+            <button onClick={connect} disabled={busy} style={btn(t.accent, '#fff')}>
+              <Monitor size={14} /> Connect this computer
+            </button>
+            {data.session?.status === 'live' && (
+              <button onClick={doStop} disabled={busy} style={btn(t.rmBg, t.rm, t.rm)}>
+                <Power size={14} /> Stop Arnie here
+              </button>
+            )}
+          </div>
+        </div>
+
+        {showConnect && (
+          <div style={{ marginTop: 14, borderTop: `1px solid ${t.line}`, paddingTop: 14 }}>
+            <div style={{ fontSize: 13.5, color: t.ink, fontWeight: 600, marginBottom: 6 }}>Run this on the computer you want Arnie to use</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <code style={{
+                flex: 1, minWidth: 260, background: t.card2, border: `1px solid ${t.line}`, borderRadius: 8,
+                padding: '9px 11px', fontSize: 12, color: t.ink, overflowX: 'auto', whiteSpace: 'nowrap',
+              }}>{cmd}</code>
+              <button onClick={() => setRevealed((v) => !v)} style={btn(t.card2, t.sub)}>
+                {revealed ? 'Hide' : 'Reveal'}
+              </button>
+              <button
+                onClick={async () => {
+                  await navigator.clipboard?.writeText(`JOBSCOUT_AGENT_TOKEN=${token} node scripts/jobscout-agent.mjs`)
+                  setCopied(true); setTimeout(() => setCopied(false), 1800)
+                }}
+                style={btn(t.accent, '#fff')}
+              >
+                {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: t.amber, marginTop: 8, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>
+                This is a key to your own account. It belongs on your computer and nowhere else —
+                do not paste it into a message, a ticket or a shared document.
+              </span>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ── 2. What he may touch ─────────────────────────────────────── */}
+      <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <ShieldCheck size={17} style={{ color: t.accent }} /> What Arnie may touch
+          </h3>
+          <button onClick={() => setAdding((v) => !v)} style={btn(t.card2, t.sub)}>
+            <Plus size={14} /> Allow a program
+          </button>
+        </div>
+
+        {!grants.length && !adding && (
+          <p style={{ margin: 0, fontSize: 13, color: t.muted }}>
+            Nothing yet — so Arnie can do nothing at all on your computer. Allow one program to start.
+          </p>
+        )}
+
+        {grants.map((g) => {
+          const tier = TIERS.find((x) => x.id === g.tier) || TIERS[0]
+          const Icon = tier.icon
+          return (
+            <div key={g.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0',
+              borderTop: `1px solid ${t.line}55`,
+            }}>
+              <Icon size={16} style={{ color: t.accent, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, color: t.ink, fontWeight: 600 }}>
+                  {g.app}{g.host && g.host !== '*' ? <span style={{ color: t.sub, fontWeight: 400 }}> on {g.host}</span> : ''}
+                </div>
+                <div style={{ fontSize: 12, color: t.muted }}>
+                  {tier.label}{g.duration === 'once' ? ' · once only' : ''} · allowed {ago(g.granted_at)}
+                </div>
+              </div>
+              <button onClick={() => removeGrant(g)} disabled={busy} title="Revoke" style={btn(t.rmBg, t.rm)}>
+                <Trash2 size={14} /> Revoke
+              </button>
+            </div>
+          )
+        })}
+
+        {adding && (
+          <div style={{ borderTop: `1px solid ${t.line}`, marginTop: 10, paddingTop: 12 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+              <input
+                value={draft.app} onChange={(e) => setDraft({ ...draft, app: e.target.value })}
+                placeholder="Program (chrome, excel, outlook)"
+                style={input} />
+              <input
+                value={draft.host} onChange={(e) => setDraft({ ...draft, host: e.target.value })}
+                placeholder="Site, if it is a browser (optional)"
+                style={input} />
+            </div>
+            <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+              {TIERS.map((x) => {
+                const Icon = x.icon
+                const on = draft.tier === x.id
+                return (
+                  <label key={x.id} style={{
+                    display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer',
+                    background: on ? t.accentBg : t.card2, border: `1px solid ${on ? t.accent : t.line}`,
+                    borderRadius: 9, padding: '9px 11px',
+                  }}>
+                    <input type="radio" name="tier" checked={on} onChange={() => setDraft({ ...draft, tier: x.id })} style={{ marginTop: 3 }} />
+                    <Icon size={16} style={{ color: t.accent, flexShrink: 0, marginTop: 1 }} />
+                    <div>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: t.ink }}>{x.label}</div>
+                      <div style={{ fontSize: 12, color: t.sub, lineHeight: 1.45 }}>{x.blurb}</div>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+            <div style={{ fontSize: 12, color: t.sub, marginBottom: 10, lineHeight: 1.5 }}>
+              For a browser, name the site as well. “Chrome” on its own means every page you have open,
+              which is almost never what anyone means.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={saveGrant} disabled={busy} style={btn(t.accent, '#fff')}>Allow it</button>
+              <button onClick={() => { setAdding(false); setDraft({ app: '', host: '', tier: 'watch' }) }} style={btn(t.card2, t.sub)}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ── 3. Teach him something ───────────────────────────────────── */}
+      <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+        <h3 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <GraduationCap size={17} style={{ color: t.accent }} /> Teach Arnie a task
+        </h3>
+        <p style={{ margin: '0 0 10px', fontSize: 13, color: t.sub, lineHeight: 1.55 }}>
+          Do a job once with the recorder on and he writes the steps down. You read them back in plain
+          English and fix what he misunderstood before it is ever used on a real customer.
+        </p>
+        <TeachButton employeeId={employeeId} companyId={companyId} session={data.session} onDone={load} />
+      </section>
+
+      {/* ── 4. What he has done ──────────────────────────────────────── */}
+      <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16 }}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: t.ink }}>What Arnie has done</h3>
+        <p style={{ margin: '0 0 10px', fontSize: 12.5, color: t.muted }}>
+          Refusals are listed too — if he tried something he was not allowed to do, it is here.
+        </p>
+        {!data.actions.length && <p style={{ margin: 0, fontSize: 13, color: t.muted }}>Nothing yet.</p>}
+        {data.actions.map((a) => {
+          const d = DECISION[a.decision] || DECISION.failed
+          return (
+            <div key={a.id} style={{ display: 'flex', gap: 10, padding: '9px 0', borderTop: `1px solid ${t.line}55`, alignItems: 'flex-start' }}>
+              <span style={{
+                fontSize: 11, fontWeight: 700, color: d.c, background: d.bg,
+                borderRadius: 11, padding: '2px 8px', flexShrink: 0, whiteSpace: 'nowrap', marginTop: 1,
+              }}>{d.label}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, color: t.ink }}>{describeAction(a)}</div>
+                {a.reason && <div style={{ fontSize: 12.5, color: d.c, marginTop: 2, lineHeight: 1.45 }}>{a.reason}</div>}
+                {a.target?.text_length !== undefined && (
+                  <div style={{ fontSize: 11.5, color: t.muted, marginTop: 2 }}>
+                    {a.target.text_length} characters typed — what they were is not recorded
+                  </div>
+                )}
+              </div>
+              <span style={{ fontSize: 11.5, color: t.muted, flexShrink: 0, marginTop: 2 }}>{ago(a.created_at)}</span>
+            </div>
+          )
+        })}
+      </section>
+    </div>
+  )
+}
+
+/**
+ * Teaching is one button here and the real work in the agent. The agent is the
+ * only thing that can watch a screen, so this records an intent and the agent
+ * picks it up on its next poll.
+ */
+function TeachButton({ employeeId, companyId, session, onDone }) {
+  const [outcome, setOutcome] = useState('')
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const live = session?.status === 'live'
+
+  const start = async () => {
+    setBusy(true); setMsg('')
+    try {
+      const { error } = await supabase.from('arnie_skills').insert({
+        company_id: companyId,
+        employee_id: employeeId,
+        name: outcome.trim().slice(0, 120),
+        outcome: outcome.trim(),
+        status: 'recording',
+      })
+      if (error) throw error
+      setMsg('Recording. Go and do the job once on your computer, then come back and stop it.')
+      setOpen(false); setOutcome(''); onDone?.()
+    } catch (e) { setMsg(String(e.message || e)) } finally { setBusy(false) }
+  }
+
+  if (!live) {
+    return <p style={{ margin: 0, fontSize: 13, color: t.muted }}>
+      Connect a computer first — there is nothing to record on yet.
+    </p>
+  }
+
+  return (
+    <div>
+      {!open && <button onClick={() => setOpen(true)} style={btn(t.accent, '#fff')}><GraduationCap size={14} /> Start teaching</button>}
+      {open && (
+        <div>
+          <label style={{ display: 'block', fontSize: 13, color: t.ink, fontWeight: 600, marginBottom: 5 }}>
+            What will you be showing him?
+          </label>
+          <input
+            value={outcome} onChange={(e) => setOutcome(e.target.value)}
+            placeholder="File a finished SRP job in TrakSmart"
+            style={{ ...input, width: '100%', maxWidth: 440, marginBottom: 10 }} />
+          <div style={{ fontSize: 12, color: t.sub, marginBottom: 10, lineHeight: 1.5 }}>
+            Ten minutes at most, and nothing is recorded while he is waiting on you to sign in —
+            so a password can never end up in the steps.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={start} disabled={busy || !outcome.trim()} style={btn(t.accent, '#fff')}>Start recording</button>
+            <button onClick={() => setOpen(false)} style={btn(t.card2, t.sub)}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {msg && <p style={{ margin: '10px 0 0', fontSize: 13, color: t.sub }}>{msg}</p>}
+    </div>
+  )
+}
+
+const btn = (bg, fg, border) => ({
+  display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+  background: bg, color: fg, border: `1px solid ${border || 'transparent'}`,
+  borderRadius: 8, padding: '7px 11px', fontSize: 12.5, fontWeight: 600,
+  minHeight: 36,
+})
+
+const input = {
+  flex: 1, minWidth: 180, background: '#fff', border: `1px solid ${t.line}`,
+  borderRadius: 8, padding: '8px 10px', fontSize: 13, color: t.ink, minHeight: 38,
+}

@@ -26,6 +26,7 @@ import { useStore } from '../lib/store'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { useTheme } from './Layout'
 import * as Icons from 'lucide-react'
+import { agentState } from '../lib/agentStatus'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', bgCardHover: '#eef2eb', border: '#d6cdb8',
@@ -40,7 +41,14 @@ const PRIMARY_ON_MOBILE = 4
 
 export const MOBILE_TABBAR_HEIGHT = 64
 
-export default function AgentHeader({ slug, tabs = [] }) {
+/**
+ * `status` is optional: { state, detail }. Without it the badge reads Active,
+ * exactly as it always did, so every other agent page is unchanged. See
+ * lib/agentStatus.js for why the signal is ambient and only one state is loud.
+ */
+export default function AgentHeader({ slug, tabs = [], status = null }) {
+  const st = agentState(status?.state)
+  const hover = status?.detail || st.label
   const { getAgent, getCompanyAgent } = useStore()
   const isMobile = useIsMobile()
   const themeCtx = useTheme?.()
@@ -103,8 +111,16 @@ export default function AgentHeader({ slug, tabs = [] }) {
           <div style={{ fontSize: 15, fontWeight: 700, color: theme.text, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {displayName}
           </div>
-          {/* A dot, not a badge. "Active" is reassurance, not information. */}
-          <span title="Active" style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
+          {/* A dot, not a badge — until something needs the person, which is
+              the one state worth spending a word on at this width. */}
+          {st.loud ? (
+            <span title={hover} style={{
+              padding: '3px 8px', borderRadius: 11, fontSize: 11, fontWeight: 700,
+              background: st.tint, color: st.ink, flexShrink: 0, whiteSpace: 'nowrap',
+            }}>{st.label}</span>
+          ) : (
+            <span title={hover} style={{ width: 8, height: 8, borderRadius: '50%', background: st.colour, flexShrink: 0 }} />
+          )}
         </div>
 
         {moreOpen && (
@@ -217,10 +233,14 @@ export default function AgentHeader({ slug, tabs = [] }) {
           <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: theme.text }}>{displayName}</h1>
           <p style={{ margin: '2px 0 0', fontSize: 13, color: theme.textMuted }}>{agent.tagline}</p>
         </div>
-        <span style={{
-          padding: '3px 9px', borderRadius: 12, fontSize: 11, fontWeight: 600,
-          background: 'rgba(34,197,94,0.14)', color: '#15803d',
-        }}>Active</span>
+        <span title={hover} style={{
+          padding: '3px 9px', borderRadius: 12, fontSize: 11, fontWeight: st.loud ? 700 : 600,
+          background: st.tint, color: st.ink,
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+        }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.colour }} />
+          {st.label}
+        </span>
         <span style={{
           padding: '3px 9px', borderRadius: 12, fontSize: 11, fontWeight: 600,
           background: theme.bg, color: theme.textMuted, border: `1px solid ${theme.border}`,
