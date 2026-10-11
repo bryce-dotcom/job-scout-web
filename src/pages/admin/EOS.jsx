@@ -5,7 +5,8 @@ import { useTheme } from '../../components/Layout'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { toast } from '../../lib/toast'
 import HelpBadge from '../../components/HelpBadge'
-import { wonJobsInRange, deliveredJobsInRange, sumJobTotal } from '../../lib/jobMetrics'
+import { deliveredJobsInRange, sumJobTotal } from '../../lib/jobMetrics'
+import { soldJobsInRange, soldValue } from '../../lib/soldTotals'
 import { arAsOf } from '../../lib/arHelpers'
 import { getWeekRange } from '../../lib/eosWeek'
 import { mergeJobHourSources } from '../../lib/jobHours'
@@ -105,13 +106,16 @@ export const AUTO_SOURCES = {
     format: 'currency',
     // Source of truth: src/lib/jobMetrics.js. WON = a job was created
     // (estimate-approval OR fresh job). Sums job_total in the window.
-    compute: (d, s, e, sd, ed, ent) => {
-      const inRange = wonJobsInRange(filterByEntity(d.jobs, ent), s, e)
-      // No estimate fallback: lib/soldTotals.soldValue is the rule, and it
-      // dropped that fallback on purpose — HHH has an approved estimate of
-      // $1,651,117.14 standing against a $16,299.20 job.
-      return sumJobTotal(inRange)
-    },
+    // The SAME rule the Sales Report runs on: lib/soldTotals. It was
+    // wonJobsInRange, which counts a cancelled job as a sale — soldJobsInRange
+    // does not, and that was one of two reasons the scorecard and the report
+    // disagreed. The other is structural and no code can fix it: a job with no
+    // business unit belongs to neither unit row, so the two rows cannot add up
+    // to the report's total. Add a Dollar Amount Sold with no unit set to see
+    // the company figure the report shows.
+    compute: (d, s, e, sd, ed, ent) =>
+      soldJobsInRange(filterByEntity(d.jobs, ent), { start: s, end: e })
+        .reduce((sum, j) => sum + soldValue(j), 0),
   },
   leads_created: {
     label: 'New Leads',

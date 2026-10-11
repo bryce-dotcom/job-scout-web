@@ -202,3 +202,26 @@ describe('money', () => {
     expect(compute('sales_won', data)).toBe(0)
   })
 })
+
+describe('Dollar Amount Sold runs on the same rule as the Sales Report', () => {
+  // The scorecard and the report disagreed partly because this metric counted
+  // a cancelled job as a sale. lib/soldTotals is the one definition of "sold".
+  const base = { created_at: '2026-09-15T17:00:00Z', business_unit: 'Energy Scout' }
+
+  it('does not count a cancelled or void job as a sale', () => {
+    const data = {
+      ...EMPTY,
+      jobs: [
+        { id: 1, ...base, status: 'Waiting Product', job_total: 5000 },
+        { id: 2, ...base, status: 'Cancelled', job_total: 9000 },
+        { id: 3, ...base, status: 'Void', job_total: 7000 },
+      ],
+    }
+    expect(compute('sales_won', data)).toBe(5000)
+  })
+
+  it('counts a job that has moved well past Won', () => {
+    const data = { ...EMPTY, jobs: [{ id: 4, ...base, status: 'Paid', job_total: 2500 }] }
+    expect(compute('sales_won', data)).toBe(2500)
+  })
+})
