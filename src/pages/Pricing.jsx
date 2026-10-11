@@ -17,8 +17,8 @@ import { PLANS as BILLING_PLANS } from '../lib/billingPlans'
 
 const CREW = [
   { ab: 'AR', name: 'OG Arnie', free: true, role: 'Your right hand',
-    hook: 'Ask anything about your business in plain English — in the app, by text, by email, or out loud. Arnie answers from your live numbers, drafts the change, and waits for your OK. Set a routine in one sentence and it runs every week.',
-    hi: ['Answers from your live data — money, jobs, hours, stock, customers', 'Drafts almost any change on your OK — book, quote, schedule, take a payment — and every one rolls back', 'Text or email the company number and he answers; reply YES to approve', 'Routines: “every weekday at 7am, text me the Rocks that slipped”'],
+    hook: 'Ask anything about your business in plain English — in the app, by text, or by email. Arnie answers from your live numbers, drafts the change, and waits for your OK. Set a routine in one sentence and it runs every morning.',
+    hi: ['Answers from your live data — money, jobs, hours, stock, customers', 'Drafts almost any change on your OK — book a job, build a quote, schedule a crew — and you can undo it; a sent message or a recorded payment can’t be, and he says so first', 'Text the company number or email arnie@ and he answers; reply YES — money always waits for the app', 'Routines: “every weekday at 7am, text me the Rocks that slipped”'],
     rep: ['a business analyst', 'an office manager', 'hours of admin busywork'],
     out: { kicker: 'answered + drafted', head: '“When’s the Drinkle job — can we push it to Friday?”', rows: ['JOB-2214 · Drinkle Insurance · Thu 8:00 AM', 'Found from your schedule — no ID, no digging'], done: 'Drafted: move it to Friday — nothing changes till you approve' } },
   { ab: 'ZA', name: 'Zach', role: 'Landscaping',
@@ -759,7 +759,7 @@ export default function Pricing() {
             <div className="prospect rv">
               <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> Arnie · free on every plan</span>
               <h3>Text him. He runs the business.</h3>
-              <p className="say">Arnie lives in the app, your texts, your email, and out loud. Ask anything about your numbers; tell him to book the job, draft the quote, take the payment — he drafts it and waits for your OK, and every change rolls back. Set a routine in one sentence and it runs every week. He only shows what your role is allowed to see, and over text, money is drafted — never sent — until you approve it in the app.</p>
+              <p className="say">Arnie lives in the app, your texts, and your email. Ask anything about your numbers; tell him to book the job, build the quote, schedule the crew — he drafts it, waits for your OK, and you can undo it. The few that can’t be pulled back — a message that went to a customer, an agenda you sent, a payment you recorded — he flags before you approve, not after. He shows only what your role may see; over text, money is drafted, never sent, until you approve it in the app. Set a routine in one sentence and it runs every morning.</p>
               <div className="term">
                 <div className="top"><i /><i /><i /><span style={{ color: '#6b7160', marginLeft: 6 }}>text message · Arnie</span></div>
                 <div className="res">
