@@ -18,7 +18,7 @@ import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import PayrollRemittancePanel from '../components/PayrollRemittancePanel'
 import { suiRateStatus, suiStateFor } from '../lib/suiRate'
-import { parseLocalDate } from '../lib/localDate'
+import { parseLocalDate, localDateStr } from '../lib/localDate'
 import { quarterOf } from '../lib/payrollQuarters'
 import { canViewHR, isAdmin } from '../lib/accessControl'
 import {
@@ -132,12 +132,39 @@ export default function PayrollInbox() {
         alert(`Generated, but fix these before filing:\n\n${data.problems.map(p => '• ' + p).join('\n')}\n\nSSNs and addresses live on the employee card (Employees → the person → HR).`)
       } else if (kind === 'efw2') {
         alert(`SSA file ready: ${data.employees} employee${data.employees === 1 ? '' : 's'}, ${data.records} records. Before uploading, run it through SSA AccuWage Online (free, inside Business Services Online) — it catches layout problems without filing anything.`)
+      } else if (kind === 'dws_wages') {
+        alert(`Wage list ready: ${data.employees} employee${data.employees === 1 ? '' : 's'}, ${fmtMoney(data.total)} in wages. Upload it with Form 33H on the DWS employer portal.`)
+      } else if (kind === '1099_csv') {
+        alert(`1099-NEC data ready: ${data.contractors} contractor${data.contractors === 1 ? '' : 's'}, ${fmtMoney(data.total)} paid. Key each row into the IRS IRIS portal (free) or hand the file to your preparer.`)
       }
     } catch (err) {
       setGenError(`${key}: ${err.message}`)
     } finally {
       setGenerating(null)
     }
+  }
+
+  // The checklist's "Mark filed": the filing row gets the date, how it was
+  // sent and the agency's confirmation number, so the question "did we
+  // file the Q4 941?" is answered here and not from memory.
+  const markFiled = async (item, filing) => {
+    const conf = window.prompt(`${item.title}\n\nConfirmation or tracking number from ${item.method} (optional):`, '')
+    if (conf === null) return
+    // filed_method is constrained to mail / efile / hand_deliver / portal; the
+    // agency's name is on the checklist row, not in the column.
+    const stamp = { status: 'filed', filed_at: new Date().toISOString(), filed_method: item.filedMethod || 'portal', confirmation_number: String(conf || '').trim() || null, updated_at: new Date().toISOString() }
+    let error
+    if (filing) {
+      ;({ error } = await supabase.from('payroll_tax_filings').update(stamp).eq('id', filing.id).eq('company_id', companyId))
+      // The W-2 set and the 1099 set are each one filing: the transmittal row
+      // is the marker and the per-person rows follow it.
+      const follow = item.kind === 'W-3' ? 'W-2' : item.kind === '1096' ? '1099-NEC' : null
+      if (!error && follow) await supabase.from('payroll_tax_filings').update(stamp).eq('company_id', companyId).eq('form_kind', follow).eq('period_start', item.period).neq('status', 'superseded')
+    } else {
+      ;({ error } = await supabase.from('payroll_tax_filings').insert({ company_id: companyId, form_kind: item.kind, jurisdiction: item.jurisdiction, period_start: item.period, period_end: item.periodEnd, values_snapshot: {}, ...stamp }))
+    }
+    if (error) { alert('Could not mark it filed: ' + error.message); return }
+    await refresh()
   }
 
   const downloadFiling = async (path) => {
@@ -673,6 +700,85 @@ export default function PayrollInbox() {
                     <Sparkles size={14} />
                     {generating === '940' ? '…' : (filing ? 'Regenerate' : 'Generate')}
                   </button>
+                </div>
+              )
+            })}
+          </Section>
+        )
+      })()}
+
+      {/* Q4 and year-end filing checklist. Bryce, 2026-10-11: "start the Q4
+          filing pack." Everything January asks for, in order, with its due
+          date, what to generate, where it goes, and whether it is done.
+          Gusto did this on its own; here it is one screen. */}
+      {(() => {
+        const now = new Date()
+        const Y = now.getMonth() <= 2 ? now.getFullYear() - 1 : now.getFullYear()
+        const ys = `${Y}-01-01`, ye = `${Y}-12-31`, q4s = `${Y}-10-01`
+        const jan31 = (() => { const d = new Date(Y + 1, 0, 31); while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1); return localDateStr(d) })()
+        const today = localDateStr(now)
+        const find = (kind, ps) => filings.find(f => f.form_kind === kind && f.period_start === ps && f.status !== 'superseded')
+        const stateId = company?.state_employer_id || 'not set'
+        const items = [
+          { key: '941q4', title: `Form 941 for Q4 ${Y}, with Schedule B`, how: 'IRS — e-file through a provider or mail it; the deposits were made through EFTPS', due: jan31, kind: '941', jurisdiction: 'federal', period: q4s, periodEnd: ye, gen: [{ kind: '941', quarter: 4, label: 'Generate 941' }], method: 'IRS', filedMethod: 'efile' },
+          { key: '940', title: `Form 940 for ${Y} (federal unemployment)`, how: 'IRS — a balance over $500 is paid through EFTPS first', due: jan31, kind: '940', jurisdiction: 'federal', period: ys, periodEnd: ye, gen: [{ kind: '940', label: 'Generate 940' }], method: 'IRS', filedMethod: 'efile' },
+          { key: 'tc941', title: `Utah TC-941E for Q4 ${Y}`, how: `Utah TAP (tap.utah.gov) · withholding account ${stateId}`, due: jan31, kind: 'TC-941', jurisdiction: 'state', period: q4s, periodEnd: ye, gen: [{ kind: 'tc941', quarter: 4, label: 'Generate TC-941' }], method: 'Utah TAP' },
+          { key: '33h', title: `Utah Form 33H for Q4 ${Y}, with the wage list`, how: 'DWS employer portal (jobs.utah.gov) · upload the wage list CSV with the return', due: jan31, kind: 'Form-33H', jurisdiction: 'state', period: q4s, periodEnd: ye, gen: [{ kind: 'form33h', quarter: 4, label: 'Generate 33H' }, { kind: 'dws_wages', quarter: 4, label: 'Wage list (CSV)', fileKind: 'DWS-wages' }], method: 'DWS portal' },
+          { key: 'w2emp', title: `W-2s to every employee`, how: 'Email all from the year-end section below; employees also see them in My Pay', due: jan31, kind: 'W-3', jurisdiction: 'federal', period: ys, periodEnd: ye, gen: [{ kind: 'w2', label: 'Generate W-2s' }], method: 'Email / My Pay', filedMethod: 'efile' },
+          { key: 'ssa', title: `W-2 Copy A to the Social Security Administration`, how: 'Business Services Online · run the file through AccuWage, then upload', due: jan31, kind: 'EFW2', jurisdiction: 'federal', period: ys, periodEnd: ye, gen: [{ kind: 'efw2', label: 'SSA file (EFW2)' }], method: 'SSA BSO' },
+          { key: 'utw2', title: `Utah W-2 upload and annual withholding reconciliation`, how: 'Utah TAP · upload the same EFW2 file (it carries the Utah records) and reconcile the year', due: jan31, kind: 'UT-W2', jurisdiction: 'state', period: ys, periodEnd: ye, gen: [], method: 'Utah TAP' },
+          { key: '1099', title: `1099-NEC to contractors and the IRS`, how: 'IRS IRIS portal (free), keyed from the data file · contractors get Copy B by email', due: jan31, kind: '1096', jurisdiction: 'federal', period: ys, periodEnd: ye, gen: [{ kind: '1099_nec', label: 'Generate 1099s' }, { kind: '1099_csv', label: 'Data file (CSV)', fileKind: '1099-CSV' }], method: 'IRS IRIS', filedMethod: 'efile' },
+        ]
+        const done = items.filter(i => find(i.kind, i.period)?.status === 'filed').length
+        const urgent = now.getMonth() === 11 || now.getMonth() <= 1
+        return (
+          <Section title={`Q4 and year-end filing checklist — tax year ${Y} · ${done} of ${items.length} filed`} theme={theme} tone={urgent ? TONE.yellow : TONE.gray}>
+            <div style={{ padding: '10px 16px', fontSize: 12, color: theme.textMuted, borderBottom: `1px solid ${theme.border}` }}>
+              All eight are due {fmtDate(jan31)}. Generate each from its payroll data, send it where it says, then mark it filed with the agency's confirmation number. The deposits themselves are in the sections above.
+            </div>
+            {items.map((item, i) => {
+              const filing = find(item.kind, item.period)
+              const filed = filing?.status === 'filed'
+              const overdue = !filed && item.due < today
+              const tone = filed ? TONE.green : overdue ? TONE.red : filing ? TONE.yellow : TONE.gray
+              const sub = filed
+                ? `Filed ${fmtDate(filing.filed_at)} via ${item.method}${filing.confirmation_number ? ` · #${filing.confirmation_number}` : ''}`
+                : `${overdue ? 'OVERDUE — was due' : 'Due'} ${fmtDate(item.due)} · ${filing ? `draft generated ${fmtDate(filing.created_at)}` : 'not started'} · ${item.how}`
+              return (
+                <div key={item.key} style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 999, backgroundColor: tone.dot, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>{i + 1}. {item.title}</div>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{sub}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {item.gen.map(g => {
+                      const k = g.quarter ? `${g.kind}-Q${g.quarter}` : g.kind
+                      const file = g.fileKind ? find(g.fileKind, item.period) : null
+                      return (
+                        <span key={k} style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => generateForms(g.kind, Y, g.quarter)} disabled={generating === k} style={btn(theme)}>
+                            <Sparkles size={14} /> {generating === k ? '…' : g.label}
+                          </button>
+                          {file?.pdf_storage_path && (
+                            <button onClick={() => downloadFiling(file.pdf_storage_path)} style={pillBtn(theme)} title={file.values_snapshot?.problems?.length ? `${file.values_snapshot.problems.length} problem(s) to fix` : ''}>
+                              <Download size={12} />{file.values_snapshot?.problems?.length ? ` ${file.values_snapshot.problems.length} to fix` : ''}
+                            </button>
+                          )}
+                        </span>
+                      )
+                    })}
+                    {filing?.pdf_storage_path && (
+                      <button onClick={() => downloadFiling(filing.pdf_storage_path)} style={pillBtn(theme)}>
+                        <Download size={12} /> Download
+                      </button>
+                    )}
+                    {!filed && (
+                      <button onClick={() => markFiled(item, filing)} style={{ ...btn(theme), backgroundColor: '#16a34a' }}>
+                        <CheckCircle2 size={14} /> Mark filed
+                      </button>
+                    )}
+                  </div>
                 </div>
               )
             })}

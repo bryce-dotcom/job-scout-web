@@ -79,6 +79,20 @@ serve(async (req) => {
       const result = await generateEFW2({ supabase, company_id, company, year, ssnFor });
       return json(result);
     }
+    if (kind === 'dws_wages') {
+      if (!quarter || quarter < 1 || quarter > 4) return json({ error: 'dws_wages requires quarter (1-4)' }, 400);
+      const result = await generateDwsWageList({ supabase, company_id, company, year, quarter, ssnFor });
+      return json(result);
+    }
+    if (kind === '1099_csv') {
+      const einFor = async (employeeId: number): Promise<string | null> => {
+        const { data, error } = await userSb.rpc('decrypt_ein_for_payroll_admin', { p_employee_id: employeeId });
+        if (error) { console.warn('ein decrypt', employeeId, error.message); return null; }
+        return data ? String(data) : null;
+      };
+      const result = await generate1099Csv({ supabase, company_id, company, year, ssnFor, einFor });
+      return json(result);
+    }
     if (kind === '1099_nec') {
       const result = await generate1099Set({ supabase, company_id, company, year });
       return json(result);
@@ -338,7 +352,7 @@ async function generateEFW2({ supabase, company_id, company, year, ssnFor }: any
     period_start: yearStart, period_end: yearEnd,
     pdf_storage_path: path,
     values_snapshot: { totals: tot, records: lines.length, problems: all },
-    status: all.length ? 'draft' : 'ready',
+    status: all.length ? 'draft' : 'ready_to_file',
   });
   return { ok: true, path, employees: tot.n, records: lines.length, totals: tot, problems: all };
 }
@@ -1337,3 +1351,108 @@ function money(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(n) || 0);
 }
 function safeName(s: string) { return s.replace(/[^a-z0-9._-]/gi, '_'); }
+
+// =====================================================================
+// Utah DWS wage list — the per-employee file the DWS employer portal
+// takes with Form 33H (SSN, name, wages for the quarter). One CSV, one
+// row per W-2 employee paid in the quarter.
+// =====================================================================
+async function generateDwsWageList({ supabase, company_id, company, year, quarter, ssnFor }: any) {
+  const startMonth = (quarter - 1) * 3;
+  const periodStart = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`;
+  const periodEnd = new Date(Date.UTC(year, startMonth + 3, 0)).toISOString().slice(0, 10);
+  const { data: emps } = await supabase.from('employees')
+    .select('id, name, ssn_encrypted, tax_classification').eq('company_id', company_id);
+  const w2 = (emps || []).filter((e: any) => e.tax_classification !== '1099');
+  const { data: stubs } = await supabase.from('paystubs').select('employee_id, gross_pay, taxable_wages')
+    .eq('company_id', company_id).in('employee_id', w2.length ? w2.map((e: any) => e.id) : [-1])
+    .gte('pay_date', periodStart).lte('pay_date', periodEnd);
+  const wages: Record<number, number> = {};
+  for (const s of stubs || []) wages[s.employee_id] = (wages[s.employee_id] || 0) + (Number(s.taxable_wages || s.gross_pay) || 0);
+  const problems: string[] = [];
+  const csvCell = (v: any) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const lines = ['SSN,Last Name,First Name,Middle Initial,Total Wages'];
+  let total = 0, n = 0;
+  for (const e of w2) {
+    const w = round2(wages[e.id] || 0);
+    if (w <= 0) continue;
+    const parts = String(e.name || '').trim().split(/\s+/);
+    const first = parts[0] || '', last = parts.length > 1 ? parts[parts.length - 1] : '', mi = parts.length > 2 ? parts[1][0] : '';
+    let ssn = '';
+    if (e.ssn_encrypted) { ssn = String((ssnFor ? await ssnFor(e.id) : '') || '').replace(/\D/g, ''); if (!ssn) problems.push(`${e.name}: SSN on file but not readable`); }
+    else problems.push(`${e.name}: no SSN on file`);
+    lines.push([ssn, last, first, mi, w.toFixed(2)].map(csvCell).join(','));
+    total += w; n++;
+  }
+  if (!n) return { ok: false, error: 'No W-2 wages in that quarter.' };
+  const text = lines.join('\r\n') + '\r\n';
+  const path = `tax-filings/${company_id}/${year}/DWS-wages-Q${quarter}-${year}-${Date.now()}.csv`;
+  const { error: upErr } = await supabase.storage.from('project-documents').upload(path, new TextEncoder().encode(text), { contentType: 'text/csv', upsert: true });
+  if (upErr) return { ok: false, error: 'Could not store the file: ' + upErr.message };
+  await supabase.from('payroll_tax_filings').update({ status: 'superseded' })
+    .eq('company_id', company_id).eq('form_kind', 'DWS-wages').eq('period_start', periodStart).neq('status', 'superseded');
+  await supabase.from('payroll_tax_filings').insert({
+    company_id, form_kind: 'DWS-wages', jurisdiction: 'state', period_start: periodStart, period_end: periodEnd,
+    pdf_storage_path: path, values_snapshot: { employees: n, total: round2(total), problems }, status: 'draft',
+  });
+  return { ok: true, path, employees: n, total: round2(total), problems };
+}
+
+// =====================================================================
+// 1099-NEC data file — one row per contractor paid $600 or more, with the
+// payer and recipient fields IRIS asks for and box 1. Key it into the IRS
+// IRIS portal or hand it to the preparer; the PDFs are the copies.
+// =====================================================================
+async function generate1099Csv({ supabase, company_id, company, year, ssnFor, einFor }: any) {
+  const yearStart = `${year}-01-01`, yearEnd = `${year}-12-31`;
+  const { data: contractors } = await supabase.from('employees')
+    .select('id, name, email, ssn_encrypted, w9_ein_encrypted, w9_tin_type, w9_legal_name, w9_business_name, home_address, home_city, home_state, home_zip')
+    .eq('company_id', company_id).eq('tax_classification', '1099');
+  if (!contractors?.length) return { ok: false, error: 'No contractors on file.' };
+  const ids = contractors.map((c: any) => c.id);
+  const { data: stubs } = await supabase.from('paystubs').select('employee_id, gross_pay')
+    .eq('company_id', company_id).in('employee_id', ids).gte('pay_date', yearStart).lte('pay_date', yearEnd);
+  const { data: directPays } = await supabase.from('manual_expenses').select('payee_employee_id, amount')
+    .eq('company_id', company_id).in('payee_employee_id', ids).gte('expense_date', yearStart).lte('expense_date', yearEnd);
+  const paid: Record<number, number> = {};
+  for (const s of stubs || []) paid[s.employee_id] = (paid[s.employee_id] || 0) + (Number(s.gross_pay) || 0);
+  for (const x of directPays || []) paid[x.payee_employee_id] = (paid[x.payee_employee_id] || 0) + (Number(x.amount) || 0);
+  const problems: string[] = [];
+  const csvCell = (v: any) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const payer = {
+    tin: String(company.ein || '').replace(/\D/g, ''), name: company.legal_name || company.company_name || '',
+    address: company.address || '', city: company.city || '', state: company.state || company.state_employer_id_state || '', zip: company.zip || '',
+    phone: String(company.phone || '').replace(/\D/g, ''),
+  };
+  const lines = ['Tax Year,Form,Payer TIN,Payer Name,Payer Address,Payer City,Payer State,Payer ZIP,Payer Phone,Recipient TIN Type,Recipient TIN,Recipient Name,Recipient Business Name,Recipient Address,Recipient City,Recipient State,Recipient ZIP,Recipient Email,Box 1 Nonemployee Compensation,Box 4 Federal Income Tax Withheld'];
+  let n = 0, total = 0;
+  for (const c of contractors) {
+    const amt = round2(paid[c.id] || 0);
+    if (amt < 600) continue;
+    const name = String(c.name || '').trim();
+    let tinType = '', tin = '';
+    if (c.w9_tin_type === 'ein' || (!c.ssn_encrypted && c.w9_ein_encrypted)) {
+      tinType = 'EIN'; tin = String((einFor ? await einFor(c.id) : '') || '').replace(/\D/g, '');
+    } else if (c.ssn_encrypted) {
+      tinType = 'SSN'; tin = String((ssnFor ? await ssnFor(c.id) : '') || '').replace(/\D/g, '');
+    }
+    if (!tin) problems.push(`${name}: no ${tinType || 'TIN'} on file (W-9)`);
+    if (!c.home_address || !c.home_city || !c.home_zip) problems.push(`${name}: address is incomplete`);
+    lines.push([year, '1099-NEC', payer.tin, payer.name, payer.address, payer.city, payer.state, payer.zip, payer.phone,
+      tinType, tin, c.w9_legal_name || name, c.w9_business_name || '', c.home_address || '', c.home_city || '', c.home_state || '', c.home_zip || '', c.email || '',
+      amt.toFixed(2), '0.00'].map(csvCell).join(','));
+    n++; total += amt;
+  }
+  if (!n) return { ok: false, error: 'No contractor was paid $600 or more this year.' };
+  const text = lines.join('\r\n') + '\r\n';
+  const path = `tax-filings/${company_id}/${year}/1099NEC-data-${year}-${Date.now()}.csv`;
+  const { error: upErr } = await supabase.storage.from('project-documents').upload(path, new TextEncoder().encode(text), { contentType: 'text/csv', upsert: true });
+  if (upErr) return { ok: false, error: 'Could not store the file: ' + upErr.message };
+  await supabase.from('payroll_tax_filings').update({ status: 'superseded' })
+    .eq('company_id', company_id).eq('form_kind', '1099-CSV').eq('period_start', yearStart).neq('status', 'superseded');
+  await supabase.from('payroll_tax_filings').insert({
+    company_id, form_kind: '1099-CSV', jurisdiction: 'federal', period_start: yearStart, period_end: yearEnd,
+    pdf_storage_path: path, values_snapshot: { contractors: n, total: round2(total), problems }, status: 'draft',
+  });
+  return { ok: true, path, contractors: n, total: round2(total), problems };
+}
