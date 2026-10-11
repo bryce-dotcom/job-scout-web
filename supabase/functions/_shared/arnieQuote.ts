@@ -24,6 +24,7 @@ import { RECORD_TARGETS, resolveEntity } from './arnieRecords.ts'
 import type { Prepared } from './arnieCreate.ts'
 import { createEstimateFromIntakeRest, fillEstimateFromIntakeRest, IntakeWriteError } from './estimateIntakeRest.ts'
 import type { EstimateIntake, IntakeLine } from './estimateIntake.ts'
+import { labourRate, sourcePrices } from './bennySource.ts'
 
 const squash = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 const money = (n: number) => Math.round(n * 100) / 100
@@ -123,6 +124,8 @@ export async function prepareQuote(r: Rest, caller: Caller, f: Record<string, st
   const products = await readRecordList(r, `products_services?select=id,name,unit_price,product_category,manufacturer,model_number&company_id=eq.${companyId}&active=eq.true&limit=3000`)
   const lines: IntakeLine[] = []
   const display: { label: string; value: string }[] = []
+  // Lines the price book has never heard of, kept in order for Benny.
+  const misses: { i: number; w: any }[] = []
   for (const [i, w] of wanted.entries()) {
     const want = squash(w.item)
     let hits = products.filter((p: any) => squash(p.name) === want)
@@ -133,7 +136,10 @@ export async function prepareQuote(r: Rest, caller: Caller, f: Record<string, st
         message: `"${w.item}" matches ${hits.length} products. Ask which one, then call again with the product named exactly as listed.` }
     }
     if (!hits.length) {
-      if (w.price === undefined) return { ok: false, error: `Nothing in the price book matches "${w.item}". Give me a price and I will add it as a custom line, or name the product as it appears on the Products page.` }
+      // Not in the book and no price given: Benny goes and finds it rather
+      // than the estimate stopping here (Bryce, 2026-09-29). Gathered now,
+      // priced in one search below.
+      if (w.price === undefined) { misses.push({ i, w }); lines.push(null as unknown as IntakeLine); display.push(null as unknown as { label: string; value: string }); continue }
       lines.push({ item_name: w.item, description: w.description ?? null, item_id: null, quantity: w.quantity, price: money(w.price), kind: 'custom' })
       display.push({ label: `Line ${i + 1}`, value: `${w.quantity} × ${w.item} @ ${usd(w.price)} = ${usd(w.quantity! * w.price)} (custom — not in the price book)` })
       continue
@@ -143,6 +149,56 @@ export async function prepareQuote(r: Rest, caller: Caller, f: Record<string, st
     lines.push({ item_name: p.name, description: w.description ?? null, item_id: p.id, quantity: w.quantity, price })
     display.push({ label: `Line ${i + 1}`, value: `${w.quantity} × ${p.name} @ ${usd(price)} = ${usd(w.quantity! * price)}${w.price !== undefined && Number(p.unit_price) !== price ? ` (book price ${usd(Number(p.unit_price) || 0)})` : ''}` })
   }
+  // ── What the catalog does not carry: Benny prices it, with the page ──
+  const sourced: { label: string; value: string }[] = []
+  if (misses.length) {
+    const [co] = await readRecordList(r, `companies?select=industry&id=eq.${companyId}&limit=1`)
+    const rate = await labourRate(r, companyId)
+    const { found } = await sourcePrices(
+      misses.map((m) => ({ key: String(m.i), description: m.w.item, quantity: m.w.quantity ?? 1, unit: null, spec: m.w.description ?? null })),
+      { feature: 'arnie-quote-source', companyId, withLabour: true, trade: co?.industry || null },
+    )
+    const stuck: string[] = []
+    for (const m of misses) {
+      const hit = found[String(m.i)]
+      if (!hit) { stuck.push(m.w.item); continue }
+      const qty = m.w.quantity ?? 1
+      lines[m.i] = {
+        item_name: m.w.item, description: m.w.description ?? null, item_id: null, quantity: qty,
+        price: money(hit.unit_price), kind: 'custom',
+        // The redline: priced by a machine, from a page, unverified. The send
+        // gate (_shared/sourcedPricing.ts) will not let this estimate go out
+        // until a person opens that page and ticks verified.
+        price_source: 'ai_sourced', sourced_price: money(hit.unit_price),
+        source_url: hit.source_url, source_note: [hit.source_title, hit.note].filter(Boolean).join(' — ').slice(0, 600) || null,
+        match_kind: 'must_source', match_note: 'Not in the price book — Benny sourced this price from the web.',
+      }
+      display[m.i] = { label: `Line ${m.i + 1}`, value: `${qty} × ${m.w.item} @ ${usd(hit.unit_price)} = ${usd(qty * hit.unit_price)} — Benny sourced this (${hit.source_title || 'supplier page'}); it stays redlined until someone opens the page and verifies it` }
+      sourced.push({ label: `Line ${m.i + 1} — where the price came from`, value: hit.source_url })
+      // The time, priced by the tenant's own labour rate.
+      if (hit.hours && rate) {
+        const hours = Math.round(hit.hours * qty * 100) / 100
+        // Deliberately NOT price_source 'ai_sourced': the price on this line is
+        // the tenant's own labour rate, and asking a rep to "verify" their own
+        // rate against a web page is nonsense. Benny's guess is the HOURS, and
+        // match_note says so. The material line above already raises the send
+        // warning, so the estimate cannot go out unnoticed either way.
+        lines.push({
+          item_name: `${rate.name} — ${m.w.item}`, description: hit.hours_note || `${hit.hours} hr per unit to fit`,
+          item_id: null, quantity: hours, price: rate.rate, kind: 'custom',
+          match_kind: 'must_source', match_note: `Benny's estimate of the time; the rate is your own ${rate.name} rate.`,
+        })
+        display.push({ label: `Line ${lines.length}`, value: `${hours} hr × ${usd(rate.rate)} = ${usd(hours * rate.rate)} — Benny's estimate of the labour to fit ${m.w.item}` })
+      } else if (hit.hours && !rate) {
+        sourced.push({ label: `Line ${m.i + 1} — labour`, value: `Benny reckons ${hit.hours} hr per unit, but there is no labour rate set up, so no labour line. Add one on Settings → Labor Rates.` })
+      }
+    }
+    if (stuck.length) return { ok: false, error: `I could not find a price for ${stuck.map((x) => `"${x}"`).join(', ')} — Benny searched and did not come back with a supplier page he could stand behind. Give me a price and I will put it on as a custom line.` }
+  }
+  // Drop the placeholders for any line that never got filled.
+  for (let k = lines.length - 1; k >= 0; k--) if (!lines[k]) { lines.splice(k, 1); display.splice(k, 1) }
+  if (sourced.length) display.push(...sourced)
+
   const total = lines.reduce((s, l) => s + money((l.quantity || 1) * (l.price || 0)), 0)
 
   const intake: EstimateIntake = {

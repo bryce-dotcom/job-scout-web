@@ -50,7 +50,7 @@ export default {
       "Benny turns a buyer's bid package (invitation to bid, RFQ, bid form — PDF or photos) into a priced bid in the buyer's format, through the estimate-intake contract. Not Dougie: Dougie reads handwritten lighting takeoff forms inside Lenard.",
 
     howItWorks:
-      "benny-bid-intake Edge Function (Claude through _shared/anthropic.ts, metered as 'benny'). The browser uploads the package to the project-documents bucket; the function makes three passes: READ (buyer's format + schedule of items as JSON), MATCH (each item against the tenant's own catalog candidates → exact | equivalent | must_source with justification), and PRICE (server-side web_search for must-source items → a current supplier price and the exact page URL). Matched lines take the CATALOG price; sourced lines take the web price as sourced_price with price_source='ai_sourced', source_url set, and no price_verified_at — redlined. Writes go through _shared/estimateIntakeRest (header + lines or nothing). quotes.bid_intake holds the buyer's format; presentation_mode 'bid' renders lib/bidSchedule on the portal and lib/bidPdf for the buyer's portal. send-estimate refuses a bid with an unverified sourced price (409) and asks on an estimate/proposal (_shared/sourcedPricing.ts; lib/sourcedPricing.js is the browser twin).",
+      "benny-bid-intake Edge Function (Claude through _shared/anthropic.ts, metered as 'benny'). The browser uploads the package to the project-documents bucket; the function makes three passes: READ (buyer's format + schedule of items as JSON), MATCH (each item against the tenant's own catalog candidates → exact | equivalent | must_source with justification), and PRICE (server-side web_search for must-source items → a current supplier price and the exact page URL). The PRICE pass itself moved to _shared/bennySource.ts on 2026-09-29, because Arnie's quote rail needed the same hand for an estimate line the price book does not carry — one sourcing module, two callers, each metered under its own feature name; Arnie additionally asks it for the install HOURS and prices them off the tenant's labor_rates. Matched lines take the CATALOG price; sourced lines take the web price as sourced_price with price_source='ai_sourced', source_url set, and no price_verified_at — redlined. Writes go through _shared/estimateIntakeRest (header + lines or nothing). quotes.bid_intake holds the buyer's format; presentation_mode 'bid' renders lib/bidSchedule on the portal and lib/bidPdf for the buyer's portal. send-estimate refuses a bid with an unverified sourced price (409) and asks on an estimate/proposal (_shared/sourcedPricing.ts; lib/sourcedPricing.js is the browser twin).",
 
     examples: [
       'ITB 2026-114 PDF (3 pages) → Benny: 10 items in Base Bid + Alternate 1, due Oct 14 2:00 PM, 4 exact, 3 equivalent with reasoning, 3 must-source priced from Zoro / Pole Base / a labor-rate page — redlined with links',
@@ -75,6 +75,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-09-26',
+  lastVerified: '2026-09-29',
   freshUntil: 90,
 }
