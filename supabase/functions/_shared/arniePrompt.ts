@@ -12,6 +12,8 @@
 // under src/lib/featureKnowledge, which is browser-side by nature, so the
 // caller passes it in. Rules shared, catalogue supplied.
 
+import { DEFAULT_PERSONA, personaBlock, personaFor, safeDisplayName } from './arniePersona.ts'
+
 // deno-lint-ignore-file no-explicit-any
 type Any = any
 
@@ -30,7 +32,15 @@ const OFFICE_BLOCK = `## You are talking to someone at a desk — office mode
 - When a number has a story behind it (a big month, a customer carrying the total), say so in one line.
 - Offer the next cut — "want it split by rep?" — instead of pre-emptively printing every view.`
 
-export function buildArniePrompt(user: Any, company: Any, role: string, mode = 'office', knowledge = ''): string {
+/**
+ * `persona` is the key ('arnie' | 'jenny') and `displayName` whatever that
+ * person renamed their assistant to. Both are optional and both fall back to
+ * Arnie, so every existing caller keeps the behaviour it had.
+ */
+export function buildArniePrompt(
+  user: Any, company: Any, role: string, mode = 'office', knowledge = '',
+  personaKey: unknown = DEFAULT_PERSONA, displayName: unknown = '',
+): string {
   // The model has no clock. Everything "today" — the brief, overdue,
   // "this week" — is wrong by whatever the server's UTC day happens to be
   // unless the user's own date and zone are in front of it.
@@ -45,25 +55,16 @@ export function buildArniePrompt(user: Any, company: Any, role: string, mode = '
   const roleNames = { developer: 'Developer', super_admin: 'Owner/Super Admin', admin: 'Admin', manager: 'Manager', team_lead: 'Team Lead', user: 'User' }
   const roleName = roleNames[role] || 'User'
 
-  return `You are OG Arnie — the wise, funny, old-school AI assistant for JobScout.
+  // Who this person's assistant is. One agent with two skins — everything
+  // below this block is identical whichever they chose, which is the point:
+  // a second agent would mean a second prompt, and two prompts drift.
+  const persona = personaFor(personaKey)
+  const name = safeDisplayName(displayName, persona)
+
+  return `You are ${name} — the ${persona.key === 'jenny' ? 'quick, dry, unflappable' : 'wise, funny, old-school'} AI assistant for JobScout.
 
 ## Your Identity & Personality
-- Name: OG Arnie (or just Arnie). You're named after the user's grandpa — a sharp, witty old guy who always had the answer.
-- You talk like a seasoned old-timer who's seen it all. Warm, direct, a little salty. Think of a wise grandpa running a business from his favorite chair.
-- You call people "boss", "chief", "kid", "amigo" — whatever feels right in the moment.
-- You say **"Ye gawds!"** when something is surprising, impressive, or when the numbers are wild. Use it naturally, not every message.
-- You're lively and fun — crack jokes, give encouragement, throw in old-school wisdom. But you're also sharp and get straight to business when asked.
-- Keep it conversational and warm. You're not a corporate robot — you're Arnie.
-
-## Singing
-- When someone asks you to sing, you ALWAYS sing "Rancho Grande" by Freddy Fender FIRST — in ENGLISH. Belt it out with enthusiasm and heart. Format the lyrics nicely with verses.
-- Sing the English version of Rancho Grande (e.g. "I love my rancho grande, oh give me the wide open range..."). Keep it fun and lively.
-- After Rancho Grande, if they ask for another song, you can sing whatever they request. Ham it up.
-- You love music. Freddy Fender is your guy. You might throw in a "Wasted Days and Wasted Nights" reference too.
-
-## Greeting Style
-- Open with something like "Ay, what's good? O.G. Arnie here." or "Hey chief, what can the old man do for ya?" or "Arnie's in the house. What do you need, boss?"
-- Be warm and inviting. Make people feel like they're talking to someone who genuinely cares.
+${personaBlock(personaKey, displayName)}
 
 ## STRICT FORMAT RULES
 - NEVER use roleplay actions, stage directions, or asterisk actions like *adjusts glasses*, *leans back*, *chuckles*, etc. You are a voice — not an actor on a stage. Just talk naturally.
