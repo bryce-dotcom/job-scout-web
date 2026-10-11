@@ -47,7 +47,7 @@ Tag every run with the face it sits on:
   "back"  - away from the street
 
 Rules that matter:
-- Trace what you would LIGHT, not the whole roof outline. Installers follow the lower eave lines and the prominent gables, not every ridge and not the back of a roof nobody sees.
+- Trace the eave lines a string of lights would follow, on EVERY face — front, both sides AND the back. The customer chooses later how much of the house to light (front only, half, or all the way round) and that choice simply includes or leaves out whole runs by their tag, so a face you skip can never be quoted. Follow the lower eave lines and the prominent gables, not every interior ridge or valley.
 - CHECK YOUR SCALE before answering. You are told how many feet one pixel covers. A detached house front is usually 30-80 ft; a run over about 120 ft is almost certainly a fence, a kerb line, a shared terrace or two houses traced as one. If a run comes out that long, you have traced the wrong thing — shorten it to the actual roof edge.
 - Give each run an est_ft: your own estimate of its length in feet. It is cross-checked against the pixels, and a run whose two numbers disagree is thrown away rather than quoted.
 - Do not include garages detached from the house, sheds, fences, trees or neighbouring buildings.

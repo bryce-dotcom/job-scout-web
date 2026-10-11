@@ -18,6 +18,26 @@
 // a while is reloaded straight away (nothing half-typed to lose); anyone
 // mid-session gets a banner with a Refresh button instead of losing a form.
 
+// ── Holding the reload while someone has unsaved work ─────────────────────
+// "Away for two minutes" is not the same as "nothing to lose". On 10-11 a
+// Chris quote — roofline read, Street View, access check and a paid picture —
+// was wiped because the tab sat hidden for two minutes while another commit
+// shipped. On a phone that is a rep switching to the camera. A page with work
+// in hand holds updates; the person gets the banner and chooses when.
+const holds = new Set()
+
+/** Hold automatic reloads until the returned function is called. */
+export function holdAppUpdate(reason = 'unsaved work') {
+  const token = { reason }
+  holds.add(token)
+  return () => { holds.delete(token) }
+}
+
+/** True while any page holds updates. */
+export function appUpdateHeld() {
+  return holds.size > 0
+}
+
 /** How long away counts as "not in the middle of anything". */
 export const AWAY_MS = 2 * 60 * 1000
 /** Re-check cadence while the app stays in the foreground. */
@@ -30,15 +50,17 @@ export const POLL_MS = 15 * 60 * 1000
  * @param {string|null} a.served  build id /version.json reports (null = unknown)
  * @param {number} a.hiddenForMs  how long the page was hidden before this check (0 = still visible)
  * @param {string|null} a.reloadedFor  build id this tab already reloaded for
+ * @param {boolean} a.held  a page has unsaved work (holdAppUpdate)
  * @returns {'reload'|'banner'|'none'}
  */
-export function updateDecision({ running, served, hiddenForMs = 0, reloadedFor = null }) {
+export function updateDecision({ running, served, hiddenForMs = 0, reloadedFor = null, held = false }) {
   if (!running || !served || typeof served !== 'string') return 'none'
   if (served === running) return 'none'
   // Reloading once for a build that still reads as different afterwards means
   // the served file and the bundle disagree (a CDN edge mid-deploy). Do not
   // loop — show the banner and let the person decide.
   if (reloadedFor === served) return 'banner'
+  if (held) return 'banner'
   return hiddenForMs >= AWAY_MS ? 'reload' : 'banner'
 }
 
@@ -61,7 +83,7 @@ function reloadFor(build) {
 }
 
 /** A plain-DOM banner: works even when React is the thing that is stale. */
-function showBanner(build) {
+export function showBanner(build) {
   if (document.getElementById('app-update-banner')) return
   const bar = document.createElement('div')
   bar.id = 'app-update-banner'
@@ -78,7 +100,7 @@ function showBanner(build) {
   btn.type = 'button'
   btn.textContent = 'Refresh'
   btn.style.cssText = 'min-height:44px;padding:0 18px;border:0;border-radius:10px;background:#5a6349;color:#fff;font:600 14px system-ui,sans-serif;cursor:pointer'
-  btn.onclick = () => reloadFor(build)
+  btn.onclick = () => (build ? reloadFor(build) : window.location.reload())
   bar.append(text, btn)
   document.body.appendChild(bar)
 }
@@ -104,7 +126,7 @@ export function installAppUpdateCheck({ running } = {}) {
       const served = await servedBuild()
       let reloadedFor = null
       try { reloadedFor = sessionStorage.getItem(RELOADED_KEY) } catch { /* private mode */ }
-      const d = updateDecision({ running, served, hiddenForMs, reloadedFor })
+      const d = updateDecision({ running, served, hiddenForMs, reloadedFor, held: appUpdateHeld() })
       if (d === 'reload') reloadFor(served)
       else if (d === 'banner') showBanner(served)
     } finally {

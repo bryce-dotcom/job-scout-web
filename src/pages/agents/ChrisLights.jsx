@@ -18,6 +18,7 @@ import { supabase } from '../../lib/supabase'
 import { useStore } from '../../lib/store'
 import { useTheme } from '../../components/Layout'
 import { toast } from '../../lib/toast'
+import { holdAppUpdate } from '../../lib/appUpdate'
 import PageHeader from '../../components/PageHeader'
 import SearchableSelect from '../../components/SearchableSelect'
 import { createEstimateFromIntake } from '../../lib/estimateIntake'
@@ -95,6 +96,12 @@ export default function ChrisLights() {
   const feet = coverageFeet(runs, coverage)
   const priced = lightsPrice({ feet, perFootRate, minimumCharge })
   const problem = quoteProblem({ runs, coverage, perFootRate })
+  const blocker = problem || (!customerId ? 'Choose the customer this estimate is for.' : null)
+
+  // A quote in progress — runs traced, a photo, a paid picture — must not be
+  // wiped by the app updating itself while the rep is in the camera app.
+  const inProgress = runs.length > 0 || !!photo
+  useEffect(() => (inProgress ? holdAppUpdate('Chris quote in progress') : undefined), [inProgress])
 
   const decision = house ? liftDecision(house) : null
   const access = house
@@ -301,7 +308,7 @@ export default function ChrisLights() {
 
   // ── Turn it into an estimate ────────────────────────────────────────────
   const createEstimate = async () => {
-    if (problem) { toast.error(problem); return }
+    if (blocker) { toast.error(blocker); return }
     setSaving(true)
     try {
       const { quote } = await createEstimateFromIntake(supabase, {
@@ -504,7 +511,9 @@ export default function ChrisLights() {
                   {house.obstructions?.length > 0 && (
                     <p style={{ fontSize: 12.5, color: theme.textSecondary, margin: '8px 0 0' }}>In the way: {house.obstructions.join(', ')}</p>
                   )}
-                  {decision && (
+                  {/* A sure read states the decision; an unsure one shows the
+                      warning, which already contains the same sentence. */}
+                  {decision && !accessWarning(decision) && (
                     <p style={{ fontSize: 12.5, color: decision.lift ? theme.error : theme.textSecondary, margin: '8px 0 0', fontWeight: decision.lift ? 600 : 400 }}>
                       {decision.why}
                     </p>
@@ -525,7 +534,7 @@ export default function ChrisLights() {
                       the difference is in the feet, so say where it went. */}
                   {render.note && <p style={{ fontSize: 12, color: theme.textSecondary, margin: '6px 0 0' }}>{render.note}</p>}
                   {(render.coverage !== coverage || render.bulb !== bulb) && (
-                    <p style={{ fontSize: 11, color: theme.warning || '#eab308', margin: '4px 0 0' }}>Drawn for a different {render.coverage !== coverage ? 'coverage' : 'colour'} — draw it again to match.</p>
+                    <p style={{ fontSize: 11, color: theme.warning || '#eab308', margin: '4px 0 0' }}>Drawn for a different {render.coverage !== coverage ? 'coverage' : 'color'} — draw it again to match.</p>
                   )}
                   <p style={{ fontSize: 11, color: theme.textMuted, margin: '6px 0 0', fontStyle: 'italic' }}>{render.label}</p>
                 </div>
@@ -557,21 +566,24 @@ export default function ChrisLights() {
             </div>
 
             <div style={card}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: theme.text, margin: '0 0 10px' }}>Customer</h3>
+              {/* Required: estimate intake refuses an estimate that belongs to
+                  nobody, and the box used to say "Optional" — so the button
+                  silently did nothing (live test, 10-11). */}
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: theme.text, margin: '0 0 10px' }}>Customer <span style={{ color: theme.error }}>*</span></h3>
               <SearchableSelect
                 options={[...(customers || [])].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
                   .map((c) => ({ value: c.id, label: c.business_name ? `${c.name} (${c.business_name})` : c.name }))}
                 value={customerId}
                 onChange={setCustomerId}
-                placeholder="-- Optional --"
+                placeholder="Choose the customer"
                 theme={theme}
               />
-              <button type="button" onClick={createEstimate} disabled={!!problem || saving}
-                title={problem || undefined}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', marginTop: 12, padding: '12px 16px', minHeight: 46, backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: (problem || saving) ? 'not-allowed' : 'pointer', opacity: (problem || saving) ? 0.5 : 1 }}>
+              <button type="button" onClick={createEstimate} disabled={!!blocker || saving}
+                title={blocker || undefined}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', marginTop: 12, padding: '12px 16px', minHeight: 46, backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: (blocker || saving) ? 'not-allowed' : 'pointer', opacity: (blocker || saving) ? 0.5 : 1 }}>
                 <FileText size={16} /> {saving ? 'Creating…' : 'Create estimate'}
               </button>
-              {problem && <p style={{ fontSize: 12, color: theme.textMuted, margin: '8px 0 0' }}>{problem}</p>}
+              {blocker && <p style={{ fontSize: 12, color: theme.textMuted, margin: '8px 0 0' }}>{blocker}</p>}
             </div>
 
             {runs.length > 0 && (

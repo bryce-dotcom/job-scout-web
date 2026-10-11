@@ -21,3 +21,20 @@ describe('what an open app does when the server has a newer build', () => {
     expect(updateDecision({ running: 'a1', served: 'c3', hiddenForMs: AWAY_MS, reloadedFor: 'b2' })).toBe('reload')
   })
 })
+
+describe('holding the reload for unsaved work', () => {
+  it('a held page gets the banner even after a long absence', async () => {
+    const { updateDecision } = await import('./appUpdate')
+    expect(updateDecision({ running: 'a', served: 'b', hiddenForMs: 10 * 60 * 1000, held: true })).toBe('banner')
+    expect(updateDecision({ running: 'a', served: 'b', hiddenForMs: 10 * 60 * 1000, held: false })).toBe('reload')
+    expect(updateDecision({ running: 'a', served: 'a', held: true })).toBe('none')
+  })
+  it('holds release independently', async () => {
+    const { holdAppUpdate, appUpdateHeld } = await import('./appUpdate')
+    const a = holdAppUpdate('chris'); const b = holdAppUpdate('other')
+    expect(appUpdateHeld()).toBe(true)
+    a(); expect(appUpdateHeld()).toBe(true)
+    b(); expect(appUpdateHeld()).toBe(false)
+    a(); expect(appUpdateHeld()).toBe(false)
+  })
+})
