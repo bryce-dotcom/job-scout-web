@@ -104,6 +104,14 @@ describe('logging one by hand', () => {
     expect(submittalRow({ companyId: 3, jobId: 1, submittedAt: '2026-10-10', method: 'pigeon' }).method).toBe('other')
   })
 
+  it('carries the note through', () => {
+    const row = submittalRow({
+      companyId: 3, jobId: 1, submittedAt: '2026-10-10',
+      note: 'second submission, revised cut sheets',
+    })
+    expect(row.note).toBe('second submission, revised cut sheets')
+  })
+
   it('keeps blank text out of the row', () => {
     const row = submittalRow({ companyId: 3, jobId: 1, submittedAt: '2026-10-10', recipient: '   ', note: '' })
     expect(row.recipient).toBe(null)

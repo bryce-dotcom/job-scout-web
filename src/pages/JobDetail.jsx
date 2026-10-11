@@ -358,7 +358,7 @@ function JobDetailInner() {
   // numbers" — the Scorecard only ever saw the ones attached here.
   const [loggedSubmittals, setLoggedSubmittals] = useState([])
   const [loggingSubmittal, setLoggingSubmittal] = useState(false)
-  const [logForm, setLogForm] = useState({ submitted_at: localDateStr(new Date()), method: 'email', recipient: '' })
+  const [logForm, setLogForm] = useState({ submitted_at: localDateStr(new Date()), method: 'email', recipient: '', note: '' })
 
   // Bonus hours state
   const [bonusConfig, setBonusConfig] = useState(null) // payroll_config from settings
@@ -8096,7 +8096,7 @@ function JobDetailInner() {
                       setLoggingSubmittal(true)
                       const row = submittalRow({
                         companyId, jobId: parseInt(id), submittedAt: when,
-                        method: logForm.method, recipient: logForm.recipient,
+                        method: logForm.method, recipient: logForm.recipient, note: logForm.note,
                         employeeId: (employees || []).find(e => e.email === user?.email)?.id ?? null,
                       })
                       const { data, error } = await supabase.from('job_submittals').insert(row).select().single()
@@ -8110,17 +8110,25 @@ function JobDetailInner() {
                         return
                       }
                       setLoggedSubmittals(prev => [data, ...prev])
-                      setLogForm({ submitted_at: localDateStr(new Date()), method: 'email', recipient: '' })
+                      setLogForm({ submitted_at: localDateStr(new Date()), method: 'email', recipient: '', note: '' })
                       toast.success('Logged — the Scorecard counts it now')
                     }}
                     style={{ padding: '7px 14px', fontSize: '12px', fontWeight: 600, backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', cursor: loggingSubmittal ? 'not-allowed' : 'pointer', opacity: loggingSubmittal ? 0.6 : 1 }}>
                     {loggingSubmittal ? 'Logging…' : 'Log submittal'}
                   </button>
                 </div>
+                <input placeholder="What went out, or anything worth remembering (optional)" value={logForm.note}
+                  onChange={e => setLogForm({ ...logForm, note: e.target.value })}
+                  style={{ width: '100%', boxSizing: 'border-box', marginTop: '6px', padding: '6px 8px', fontSize: '12px', border: `1px solid ${theme.border}`, borderRadius: '6px', backgroundColor: theme.bgCard, color: theme.text }} />
                 {loggedSubmittals.map(l => (
-                  <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 12px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}`, marginTop: '6px', fontSize: '12px' }}>
-                    <span style={{ color: theme.text }}>{SUBMITTAL_METHODS[l.method] || l.method}{l.recipient ? ` — ${l.recipient}` : ''}</span>
-                    <span style={{ color: theme.textMuted }}>{l.submitted_at}</span>
+                  <div key={l.id} style={{ padding: '8px 12px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}`, marginTop: '6px', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ color: theme.text }}>{SUBMITTAL_METHODS[l.method] || l.method}{l.recipient ? ` — ${l.recipient}` : ''}</span>
+                      <span style={{ color: theme.textMuted, flexShrink: 0 }}>{l.submitted_at}</span>
+                    </div>
+                    {l.note && (
+                      <div style={{ color: theme.textMuted, marginTop: '3px', whiteSpace: 'pre-wrap' }}>{l.note}</div>
+                    )}
                   </div>
                 ))}
               </div>
