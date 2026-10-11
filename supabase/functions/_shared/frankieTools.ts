@@ -72,6 +72,45 @@ const DATE_PROPS = {
   end_date: { type: 'string', description: 'YYYY-MM-DD, inclusive' },
 }
 
+// What query_table may read: table → columns. Money and names, never
+// credentials, tokens or anything private to a person. Every read is
+// scoped to the caller's company.
+const TABLE_ALLOWLIST: Record<string, string[]> = {
+  customers: ['id', 'name', 'business_name', 'email', 'phone', 'city', 'state', 'status', 'created_at'],
+  jobs: ['id', 'job_id', 'job_title', 'status', 'job_total', 'customer_id', 'business_unit', 'start_date', 'end_date', 'created_at', 'expense_amount', 'incentive_amount', 'incentive_status', 'invoice_status'],
+  invoices: ['id', 'invoice_id', 'amount', 'discount_applied', 'credit_card_fee', 'payment_status', 'payment_method', 'business_unit', 'due_date', 'invoice_date', 'created_at', 'customer_id', 'job_id', 'utility_owes', 'utility_paid_at'],
+  payments: ['id', 'amount', 'date', 'method', 'status', 'invoice_id', 'job_id', 'customer_id', 'is_deposit', 'refunded_amount', 'paid_by'],
+  quotes: ['id', 'quote_id', 'estimate_name', 'status', 'quote_amount', 'calculated_quote_amount', 'customer_id', 'job_id', 'business_unit', 'created_at', 'approved_date', 'expiration_date', 'deposit_amount'],
+  leads: ['id', 'customer_name', 'business_name', 'status', 'computed_status', 'lead_source', 'business_unit', 'created_at', 'converted_at', 'salesperson_id', 'setter_id'],
+  lead_payments: ['id', 'amount', 'payment_method', 'payment_status', 'date_created', 'lead_id', 'job_id', 'invoice_id', 'description'],
+  utility_invoices: ['id', 'utility_invoice_id', 'utility_name', 'customer_name', 'job_id', 'invoice_id', 'project_cost', 'incentive_amount', 'amount', 'payment_status', 'paid_at', 'created_at'],
+  expenses: ['id', 'date', 'amount', 'category', 'tax_category', 'merchant', 'vendor', 'description', 'job_id', 'status', 'source', 'plaid_transaction_id'],
+  manual_expenses: ['id', 'expense_date', 'amount', 'vendor', 'description', 'category_id', 'job_id', 'paid_from'],
+  bills: ['id', 'bill_number', 'amount', 'balance_due', 'bill_date', 'due_date', 'status', 'vendor_id'],
+  bill_payments: ['id', 'bill_id', 'amount', 'paid_at'],
+  purchase_orders: ['id', 'po_number', 'vendor_id', 'job_id', 'status', 'subtotal', 'tax', 'shipping', 'total', 'expected_delivery_date', 'sent_at', 'received_at', 'created_at'],
+  purchase_order_lines: ['id', 'po_id', 'product_id', 'description', 'quantity_ordered', 'quantity_received', 'unit_cost', 'line_total'],
+  vendors: ['id', 'name', 'business_name', 'default_payment_terms', 'is_1099', 'active'],
+  liabilities: ['id', 'name', 'lender', 'liability_type', 'current_balance', 'monthly_payment', 'interest_rate', 'next_payment_due', 'next_payment_amount', 'original_principal', 'origination_date', 'term_months', 'status'],
+  loan_payments: ['id', 'liability_id', 'date', 'amount', 'principal', 'interest', 'source'],
+  assets: ['id', 'name', 'asset_type', 'purchase_price', 'current_value', 'purchase_date', 'in_service_date', 'useful_life_years', 'salvage_value', 'depreciation_method', 'status'],
+  fleet: ['id', 'name', 'type', 'make', 'model', 'model_year', 'status', 'mileage_hours', 'last_pm_date', 'next_pm_due', 'purchase_price', 'purchase_date', 'repair_cost', 'assigned_to', 'business_unit'],
+  fleet_maintenance: ['id', 'asset_id', 'type', 'date', 'mileage_hours', 'description', 'cost'],
+  fleet_rentals: ['id', 'asset_id', 'rental_customer', 'start_date', 'end_date', 'rental_rate', 'status'],
+  inventory: ['id', 'name', 'quantity', 'min_quantity', 'available', 'allocated_qty', 'location', 'condition', 'product_id', 'inventory_type'],
+  products_services: ['id', 'name', 'type', 'category', 'price', 'cost', 'sku', 'manufacturer', 'active'],
+  job_lines: ['id', 'job_id', 'item_id', 'item_name', 'quantity', 'price', 'total', 'labor_cost'],
+  time_clock: ['id', 'employee_id', 'job_id', 'clock_in', 'clock_out', 'total_hours', 'flagged_for_review'],
+  employees: ['id', 'name', 'role', 'business_unit', 'hourly_rate', 'status', 'hire_date', 'crew'],
+  payroll_runs: ['id', 'period_start', 'period_end', 'pay_date', 'status', 'total_gross', 'employee_count'],
+  payroll_tax_liabilities: ['id', 'jurisdiction', 'agency', 'kind', 'period_start', 'period_end', 'amount_employee', 'amount_employer', 'amount_total', 'due_date', 'paid_at'],
+  job_bonuses: ['id', 'job_id', 'employee_id', 'amount', 'status', 'allotted_hours', 'actual_hours', 'saved_hours', 'accrued_at', 'paid_at'],
+  customer_memberships: ['id', 'customer_id', 'plan_name', 'status', 'price_cents', 'billing_interval', 'started_at', 'canceled_at', 'current_period_end'],
+  payment_plans: ['id', 'status', 'frequency', 'installment_amount', 'total_installments', 'installments_completed', 'next_charge_date'],
+  appointments: ['id', 'lead_id', 'customer_id', 'employee_id', 'status', 'scheduled_at', 'created_at'],
+}
+const PRIVATE_TABLES = new Set(['employees', 'payroll_runs', 'payroll_tax_liabilities', 'time_clock', 'job_bonuses', 'liabilities', 'loan_payments', 'bills', 'bill_payments'])
+
 export const FRANKIE_TOOLS: any[] = [
   {
     name: 'query_bank_transactions',
@@ -249,44 +288,6 @@ export const FRANKIE_TOOLS: any[] = [
   },
 ]
 
-// What query_table may read: table → columns. Money and names, never
-// credentials, tokens or anything private to a person. Every read is
-// scoped to the caller's company.
-const TABLE_ALLOWLIST: Record<string, string[]> = {
-  customers: ['id', 'name', 'business_name', 'email', 'phone', 'city', 'state', 'status', 'created_at'],
-  jobs: ['id', 'job_id', 'job_title', 'status', 'job_total', 'customer_id', 'business_unit', 'start_date', 'end_date', 'created_at', 'expense_amount', 'incentive_amount', 'incentive_status', 'invoice_status'],
-  invoices: ['id', 'invoice_id', 'amount', 'discount_applied', 'credit_card_fee', 'payment_status', 'payment_method', 'business_unit', 'due_date', 'invoice_date', 'created_at', 'customer_id', 'job_id', 'utility_owes', 'utility_paid_at'],
-  payments: ['id', 'amount', 'date', 'method', 'status', 'invoice_id', 'job_id', 'customer_id', 'is_deposit', 'refunded_amount', 'paid_by'],
-  quotes: ['id', 'quote_id', 'estimate_name', 'status', 'quote_amount', 'calculated_quote_amount', 'customer_id', 'job_id', 'business_unit', 'created_at', 'approved_date', 'expiration_date', 'deposit_amount'],
-  leads: ['id', 'customer_name', 'business_name', 'status', 'computed_status', 'lead_source', 'business_unit', 'created_at', 'converted_at', 'salesperson_id', 'setter_id'],
-  lead_payments: ['id', 'amount', 'payment_method', 'payment_status', 'date_created', 'lead_id', 'job_id', 'invoice_id', 'description'],
-  utility_invoices: ['id', 'utility_invoice_id', 'utility_name', 'customer_name', 'job_id', 'invoice_id', 'project_cost', 'incentive_amount', 'amount', 'payment_status', 'paid_at', 'created_at'],
-  expenses: ['id', 'date', 'amount', 'category', 'tax_category', 'merchant', 'vendor', 'description', 'job_id', 'status', 'source', 'plaid_transaction_id'],
-  manual_expenses: ['id', 'expense_date', 'amount', 'vendor', 'description', 'category_id', 'job_id', 'paid_from'],
-  bills: ['id', 'bill_number', 'amount', 'balance_due', 'bill_date', 'due_date', 'status', 'vendor_id'],
-  bill_payments: ['id', 'bill_id', 'amount', 'paid_at'],
-  purchase_orders: ['id', 'po_number', 'vendor_id', 'job_id', 'status', 'subtotal', 'tax', 'shipping', 'total', 'expected_delivery_date', 'sent_at', 'received_at', 'created_at'],
-  purchase_order_lines: ['id', 'po_id', 'product_id', 'description', 'quantity_ordered', 'quantity_received', 'unit_cost', 'line_total'],
-  vendors: ['id', 'name', 'business_name', 'default_payment_terms', 'is_1099', 'active'],
-  liabilities: ['id', 'name', 'lender', 'liability_type', 'current_balance', 'monthly_payment', 'interest_rate', 'next_payment_due', 'next_payment_amount', 'original_principal', 'origination_date', 'term_months', 'status'],
-  loan_payments: ['id', 'liability_id', 'date', 'amount', 'principal', 'interest', 'source'],
-  assets: ['id', 'name', 'asset_type', 'purchase_price', 'current_value', 'purchase_date', 'in_service_date', 'useful_life_years', 'salvage_value', 'depreciation_method', 'status'],
-  fleet: ['id', 'name', 'type', 'make', 'model', 'model_year', 'status', 'mileage_hours', 'last_pm_date', 'next_pm_due', 'purchase_price', 'purchase_date', 'repair_cost', 'assigned_to', 'business_unit'],
-  fleet_maintenance: ['id', 'asset_id', 'type', 'date', 'mileage_hours', 'description', 'cost'],
-  fleet_rentals: ['id', 'asset_id', 'rental_customer', 'start_date', 'end_date', 'rental_rate', 'status'],
-  inventory: ['id', 'name', 'quantity', 'min_quantity', 'available', 'allocated_qty', 'location', 'condition', 'product_id', 'inventory_type'],
-  products_services: ['id', 'name', 'type', 'category', 'price', 'cost', 'sku', 'manufacturer', 'active'],
-  job_lines: ['id', 'job_id', 'item_id', 'item_name', 'quantity', 'price', 'total', 'labor_cost'],
-  time_clock: ['id', 'employee_id', 'job_id', 'clock_in', 'clock_out', 'total_hours', 'flagged_for_review'],
-  employees: ['id', 'name', 'role', 'business_unit', 'hourly_rate', 'status', 'hire_date', 'crew'],
-  payroll_runs: ['id', 'period_start', 'period_end', 'pay_date', 'status', 'total_gross', 'employee_count'],
-  payroll_tax_liabilities: ['id', 'jurisdiction', 'agency', 'kind', 'period_start', 'period_end', 'amount_employee', 'amount_employer', 'amount_total', 'due_date', 'paid_at'],
-  job_bonuses: ['id', 'job_id', 'employee_id', 'amount', 'status', 'allotted_hours', 'actual_hours', 'saved_hours', 'accrued_at', 'paid_at'],
-  customer_memberships: ['id', 'customer_id', 'plan_name', 'status', 'price_cents', 'billing_interval', 'started_at', 'canceled_at', 'current_period_end'],
-  payment_plans: ['id', 'status', 'frequency', 'installment_amount', 'total_installments', 'installments_completed', 'next_charge_date'],
-  appointments: ['id', 'lead_id', 'customer_id', 'employee_id', 'status', 'scheduled_at', 'created_at'],
-}
-const PRIVATE_TABLES = new Set(['employees', 'payroll_runs', 'payroll_tax_liabilities', 'time_clock', 'job_bonuses', 'liabilities', 'loan_payments', 'bills', 'bill_payments'])
 
 
 export function frankieToolsFor(caller: Caller): any[] {
