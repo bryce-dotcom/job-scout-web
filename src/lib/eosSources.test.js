@@ -121,6 +121,45 @@ describe('meetings', () => {
   })
 })
 
+describe('profit on the jobs finished this week', () => {
+  // The question the old Dollars / Hour could not answer: these numbers all
+  // describe the SAME jobs.
+  const jobs = [
+    { id: 10, job_id: 'J-10', business_unit: 'Energy Scout', status: 'Completed', completed_at: '2026-09-16T18:00:00Z', job_total: 6000 },
+    { id: 11, job_id: 'J-11', business_unit: 'Energy Scout', status: 'Completed', completed_at: '2026-09-17T18:00:00Z', job_total: 4000 },
+    { id: 12, job_id: 'J-12', business_unit: 'Energy Scout', status: 'Completed', completed_at: '2026-09-17T18:00:00Z', job_total: 9549 },
+  ]
+  const data = {
+    ...EMPTY,
+    jobs,
+    jobStatuses: [{ id: 'Completed', category: 'delivered' }],
+    jobCostIndex: new Map([
+      ['J-10', { cost: 3000, hours: 40, hasCost: true }],
+      ['J-11', { cost: 2000, hours: 60, hasCost: true }],
+      ['J-12', { cost: null, hours: 0, hasCost: false }],
+    ]),
+  }
+
+  it('profit is what the finished work was worth less what it cost', () => {
+    expect(compute('job_profit', data)).toBe(5000)
+  })
+
+  it('profit per hour uses the hours on those same jobs', () => {
+    expect(compute('profit_per_hour', data)).toBe(50)
+  })
+
+  it('a job with no cost recorded is counted, not treated as pure profit', () => {
+    // J-12 is worth $9,549 and would otherwise inflate the margin to 80%.
+    expect(compute('jobs_missing_cost', data)).toBe(1)
+    expect(compute('job_profit', data)).toBe(5000)
+  })
+
+  it('scopes to a business unit like every other operations metric', () => {
+    expect(compute('job_profit', data, 'Energy Scout')).toBe(5000)
+    expect(compute('job_profit', data, 'HHH Building Services')).toBe(0)
+  })
+})
+
 describe('money', () => {
   it('Cash Collected finds a payment that only names its invoice', () => {
     // 5,729 of HHH's 5,980 payments have no job_id.
