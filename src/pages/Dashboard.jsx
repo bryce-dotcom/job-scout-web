@@ -8,7 +8,7 @@ import WhosWorking from '../components/WhosWorking'
 import MissedShiftSheet from '../components/MissedShiftSheet'
 import { checkCanClockIn } from '../lib/timeClock'
 import { canViewHR } from '../lib/accessControl'
-import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
+import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, isOpenJobStatus, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
 import { computeSalesFunnel, funnelTotals } from '../lib/salesFunnel'
 import { isOpenLead } from '../lib/leadDeliveryStatus'
@@ -74,7 +74,7 @@ const METRIC_DEFS = [
   { id: 'mtdSalesWon', label: 'MTD Sales Won', icon: TrendingUp, color: '#16a34a', nav: '/pipeline', hint: 'Total $ value of jobs WON this month — counts every job whose created_at falls in the current month, regardless of current status. "Won" means the deal entered the work queue (estimate approved or job created directly). Pair with MTD Delivered for the delivery side. The 90-Day Avg/mo is everything won in the trailing 90 days divided by three — a monthly run-rate, so it compares directly with the MTD figure above it rather than against a part-finished month.' },
   { id: 'mtdDelivered', label: 'MTD Delivered', icon: Briefcase, color: '#10b981', nav: '/jobs', hint: 'Total $ value of jobs DELIVERED this month — sums job_total for every job whose status moved into a delivered category (Completed, Verified Complete, Invoiced, etc.) this month. A deal can be Won in one month and Delivered in another, so this and MTD Sales Won are intentionally separate. The 90-Day Avg/mo is everything won in the trailing 90 days divided by three — a monthly run-rate, so it compares directly with the MTD figure above it rather than against a part-finished month.' },
   { id: 'activeLeads', label: 'Active Leads', icon: UserPlus, color: null, nav: '/leads', hint: 'Leads still in the sales funnel: not won, lost or closed, and not yet a job. A lead that converted carries one of your job statuses (Scheduled, Completed, Paid…) and is not counted here.' },
-  { id: 'openJobs', label: 'Open Jobs', icon: Briefcase, color: null, nav: '/jobs', hint: 'Jobs that are Scheduled, In Progress, or Chillin. Does not include Completed or Archived.' },
+  { id: 'openJobs', label: 'Open Jobs', icon: Briefcase, color: null, nav: '/jobs', hint: 'Jobs in one of your open statuses (category = open in /settings): Chillin, Scheduled, In Progress, Need To Order, On Hold and so on. Delivered, cancelled and archived jobs are not counted.' },
   { id: 'pendingInvoices', label: 'Pending Invoices', icon: Receipt, color: null, nav: '/invoices', hint: 'Invoices sent but not yet paid. The dollar amount is what customers owe you (accounts receivable).' },
   { id: 'mtdRevenue', label: 'MTD Revenue', icon: DollarSign, color: '#4a7c59', nav: null, hint: 'Cash collected this month (cash basis): actual payments recorded against invoices + lead/job deposits + collected utility incentives. Counts real money in once — no double-counting of bank deposits, no internal transfers.' },
   { id: 'mtdDeposits', label: 'MTD Deposits', icon: TrendingUp, color: '#4a7c59', nav: '/lead-payments', hint: 'Lead and job deposits collected this month within JobScout. These are pre-job payments logged in the system.' },
@@ -367,10 +367,11 @@ export default function Dashboard() {
   // (Closed, Paid, Invoiced, Scheduled…), so on HHH about 200 finished deals
   // read as prospects being worked. isOpenLead knows the company's statuses.
   const activeLeads = leads.filter(l => isOpenLead(l, jobStatuses)).length
-  const openJobs = jobs.filter(j => {
-    const s = (j.status || '').toLowerCase()
-    return ['scheduled', 'in progress', 'needs scheduling', 'chillin', 'waiting product'].includes(s)
-  }).length
+  // Open work = the company's open-category statuses (lib/jobMetrics), not
+  // a literal list: that list skipped HHH's Need To Order, Pre Inspection
+  // (Req) and On Hold jobs.
+  const isOpenJob = (j) => isOpenJobStatus(j.status, jobStatuses)
+  const openJobs = jobs.filter(isOpenJob).length
   const unpaidInvoices = invoices.filter(i => ['Pending', 'Sent', 'Partial', 'Overdue'].includes(i.payment_status))
   const pendingInvoices = unpaidInvoices.length
   // AR = customer balance (gross − discount − applied payments) PLUS what
@@ -676,12 +677,12 @@ export default function Dashboard() {
       }
       case 'openJobs': return {
         title: 'Open jobs', total: null, page: '/jobs',
-        items: jobs.filter(j => ['scheduled', 'in progress', 'needs scheduling', 'chillin', 'waiting product'].includes((j.status || '').toLowerCase()))
+        items: jobs.filter(isOpenJob)
           .map(j => ({ primary: j.job_title || j.job_id, secondary: j.status, amount: '', nav: `/jobs/${j.id}` })),
       }
       case 'activeLeads': return {
         title: 'Active leads', total: null, page: '/leads',
-        items: leads.filter(l => !['Won', 'Lost', 'Converted', 'Not Qualified'].includes(l.status))
+        items: leads.filter(l => isOpenLead(l, jobStatuses))
           .map(l => ({ primary: l.customer_name || l.business_name || 'Lead', secondary: l.status, amount: '', nav: '/leads' })),
       }
       default: return null

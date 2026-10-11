@@ -61,6 +61,24 @@ export function getOpenStatusIds(jobStatuses) {
   )
 }
 
+// What "open work" meant before companies had status categories: the
+// dashboard's literal list. Kept only as the fallback for a company with no
+// job_statuses configured.
+const LEGACY_OPEN = new Set(['scheduled', 'in progress', 'needs scheduling', 'chillin', 'waiting product'])
+
+/**
+ * Is a job in one of the company's OPEN statuses (not delivered)? The
+ * dashboard's Open Jobs used the literal list above, so HHH's Need To Order,
+ * Pre Inspection (Req) and On Hold jobs were not "open" to it (2026-10-11).
+ * Cancelled and Archived are never open: they are not in any category.
+ */
+export function isOpenJobStatus(status, jobStatuses) {
+  if (!status) return false
+  const open = getOpenStatusIds(jobStatuses)
+  if (open.size > 0) return open.has(status)
+  return LEGACY_OPEN.has(String(status).toLowerCase())
+}
+
 /** Convert a Date|string|null to ms, or null. Defensive against bad data. */
 function ms(d) {
   if (!d) return null

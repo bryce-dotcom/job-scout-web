@@ -924,7 +924,10 @@ export default function Leads() {
                 <div>
                   <label style={labelStyle}>Status</label>
                   <select name="status" value={formData.status} onChange={handleChange} style={inputStyle}>
-                    {LEAD_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
+                    {/* A converted lead carries one of the company's job statuses
+                        (Scheduled, Paid…). Without it in the list the select showed
+                        "New" over a status it had not changed. */}
+                    {[...(formData.status && !LEAD_STATUSES.includes(formData.status) ? [formData.status] : []), ...LEAD_STATUSES].map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
                   </select>
                 </div>
               </div>

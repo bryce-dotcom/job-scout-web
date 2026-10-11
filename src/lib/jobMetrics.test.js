@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  getDeliveredStatusIds, getOpenStatusIds, wonJobsInRange,
+  getDeliveredStatusIds, getOpenStatusIds, isOpenJobStatus, wonJobsInRange,
   deliveredJobsInRange, jobValue, sumJobTotal, startOfMonth, startOfYear, daysAgo,
 } from './jobMetrics'
 
@@ -195,3 +195,22 @@ describe('date windows are local, not UTC', () => {
 
 // 'sold is cumulative' moved wholesale to soldTotals.test.js when the fourth
 // unused sold rule was deleted from jobMetrics.
+
+describe("isOpenJobStatus: the company's open statuses, not a literal list", () => {
+  const hhh = [
+    { id: 'Chillin', category: 'open' }, { id: 'Need To Order', category: 'open' }, { id: 'Pre Inspection (Req)', category: 'open' },
+    { id: 'Scheduled', category: 'open' }, { id: 'On Hold', category: 'open' },
+    { id: 'Completed', category: 'delivered' }, { id: 'Paid', name: 'Payments', category: 'delivered' },
+  ]
+  it('every open-category status counts, including the ones the old literal list missed', () => {
+    for (const s of ['Chillin', 'Need To Order', 'Pre Inspection (Req)', 'Scheduled', 'On Hold']) expect(isOpenJobStatus(s, hhh)).toBe(true)
+  })
+  it('delivered, cancelled, archived and unknown statuses do not', () => {
+    for (const s of ['Completed', 'Paid', 'Payments', 'Cancelled', 'Archived', 'Nope', null, '']) expect(isOpenJobStatus(s, hhh)).toBe(false)
+  })
+  it('falls back to the legacy list only when nothing is configured', () => {
+    expect(isOpenJobStatus('In Progress', [])).toBe(true)
+    expect(isOpenJobStatus('in progress', undefined)).toBe(true)
+    expect(isOpenJobStatus('Need To Order', [])).toBe(false)
+  })
+})
