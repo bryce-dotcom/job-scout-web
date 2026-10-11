@@ -221,3 +221,32 @@ describe('the same Arnie, by email', () => {
     expect(mod.fit(mod.SMS_CHANNEL, 'x'.repeat(3000)).length).toBeLessThanOrEqual(mod.SMS_MAX)
   })
 })
+
+describe('how anyone finds out he can be texted', () => {
+  const send = read('../../supabase/functions/_shared/arnieSend.ts')
+
+  it('every brief and nudge invites a reply, on the channel where replying now works', () => {
+    // The capability shipped and nobody could have known. These messages
+    // already land in the one place a reply reaches him, so they say so.
+    expect(send).toMatch(/export const REPLY_HINT_SMS/)
+    expect(send).toMatch(/export const REPLY_HINT_EMAIL/)
+    expect(send).toMatch(/withHint = text\.includes\(REPLY_HINT_SMS\) \? text/)
+    expect(send).toMatch(/esc\(REPLY_HINT_EMAIL\)/)
+  })
+
+  it('does not repeat itself when the caller already said it', () => {
+    expect(send).toMatch(/text\.includes\(REPLY_HINT_SMS\)/)
+  })
+
+  it('the brief comes FROM an address that reaches him', () => {
+    // A reply to invoices@ went nowhere; recipientKind routes arnie@ to the
+    // conversation branch.
+    expect(send).toMatch(/from: 'OG Arnie <arnie@appsannex\.com>', reply_to: 'arnie@appsannex\.com'/)
+    expect(send).not.toMatch(/from: 'OG Arnie <invoices@/)
+  })
+
+  it('and the comment no longer claims inbound SMS does not exist', () => {
+    expect(send).not.toMatch(/there is no inbound SMS/)
+    expect(send).toMatch(/As of 2026-10-10 there is/)
+  })
+})
