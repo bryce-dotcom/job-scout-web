@@ -40,7 +40,6 @@ export default function ChrisLights() {
   const companyId = useStore((s) => s.companyId)
   const customers = useStore((s) => s.customers)
   const user = useStore((s) => s.user)
-  const getSettingValue = useStore((s) => s.getSettingValue)
 
   const [address, setAddress] = useState('')
   const [place, setPlace] = useState(null)          // { lat, lng, matched }
@@ -87,7 +86,11 @@ export default function ChrisLights() {
   // Per-foot price lives in settings so every tenant sets their own. No
   // default rate is invented here — a made-up number that reaches a customer
   // is worse than a page that says it needs configuring.
-  const cfg = useMemo(() => readLightsConfig(getSettingValue?.(LIGHTS_CONFIG_KEY)), [getSettingValue])
+  // Subscribe to the stored VALUE, not the getter: settings arrive after the
+  // page mounts on a fresh load, and a memo keyed on the (stable) getter read
+  // them once, empty, and told the rep to set a price that was already set.
+  const rawLightsCfg = useStore((s) => s.settings?.find((x) => x.key === LIGHTS_CONFIG_KEY)?.value)
+  const cfg = useMemo(() => readLightsConfig(rawLightsCfg), [rawLightsCfg])
   const perFootRate = Number(cfg?.per_foot_rate) || 0
   const minimumCharge = Number(cfg?.minimum_charge) || 0
 
