@@ -57,7 +57,14 @@ try {
     moved.push(f)
   }
   console.log(`held back ${moved.length}; pushing…`)
-  execFileSync('npx', ['supabase', 'db', 'push', '--linked'], { stdio: 'inherit', shell: true })
+  // --include-all is normally the thing never to do here: it would replay the
+  // 25 files above, which this database already has. With them held back the
+  // pending list is exactly one file — the CLI prints it, and it is this one —
+  // so the flag only says "yes, insert my migration even though its timestamp
+  // sorts before a migration another session pushed an hour ago".
+  const args = ['supabase', 'db', 'push', '--linked']
+  if (process.argv.includes('--include-all')) args.push('--include-all')
+  execFileSync('npx', args, { stdio: 'inherit', shell: true })
   console.log('\npush finished')
 } finally {
   for (const f of moved) {
