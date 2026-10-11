@@ -184,12 +184,34 @@ would have matched nobody and denied everybody.
 Still open: re-teaching a single step that has drifted, and recording on macOS
 (see below).
 
-**Phase 1b — macOS.** *Partly built.* The agent now RUNS on macOS — screenshots
-via `screencapture`, pointer and keyboard via System Events, with a readable
-sentence instead of an osascript error number when the grants are missing.
-**Recording is still Windows-only**: a global input hook on macOS wants a signed
-helper with the Accessibility grant, not a shell command. The agent says so at
-startup rather than recording nothing.
+**Phase 1b — macOS.** *Built 2026-10-11.* The agent runs on macOS —
+screenshots via `screencapture`, pointer and keyboard via System Events — and
+now **records** there too: `scripts/agent/recorder.jxa.js` reaches `NSEvent`'s
+global monitor through JXA's ObjC bridge.
+
+JXA rather than a compiled helper on purpose: a global event monitor otherwise
+needs a binary, which would put teaching behind a certificate purchase before
+anyone could try it. `osascript -l JavaScript` is on every Mac, needs no
+compiler and no install, and wants the same grants a compiled helper would.
+
+Both recorders emit the same NDJSON vocabulary, so nothing above them has a
+platform branch. Three traps are written down in the file because each one
+fails *silently*: the bridge can return `undefined` for an `NSEventMask*` enum
+(making the mask `NaN` and the monitor watch nothing), `console.log` in JXA
+goes to **stderr** so stdout must be written by hand, and macOS screen space
+has its origin bottom-left while the screenshots and the clicker use top-left.
+
+Missing grants are the big one — a global monitor installs happily and then
+never fires. `AXIsProcessTrusted` is checked and reported, and because that
+check fails open, the agent also says something if a recording has run 25
+seconds having seen nothing at all.
+
+**Not verified on a real Mac.** It is written, parses, and its contract is
+pinned by tests, but this was built on Windows: the first run on an actual Mac
+is still ahead, and the grant prompts in particular can only be seen there.
+One honest gap either way — the Windows recorder does not capture the scroll
+wheel, because `GetAsyncKeyState` has no virtual key for it; macOS gets scrolls
+free from `NSEvent`, and Arnie handles whichever arrives.
 
 **Phase 2 — ship it as a JobScout feature.** Signed and notarised installers,
 auto-update, onboarding, tenant-scoped step libraries.

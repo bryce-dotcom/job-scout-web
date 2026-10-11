@@ -15,6 +15,12 @@
 # this box"), and the boundary is a click, a Tab, an Enter, or the window
 # changing — which is exactly where one field ends and the next begins.
 #
+# NOT CAPTURED HERE: the scroll wheel. GetAsyncKeyState has no virtual key for
+# it, so catching one would mean a resident low-level mouse hook and a message
+# loop — a lot of fragility for an event that almost never defines a step. The
+# macOS recorder gets scrolls for free from NSEvent and emits them; Arnie
+# handles whichever arrives. An honest gap rather than a faked one.
+#
 # CONTROL IS A FILE, not stdin, and OUTPUT IS FLUSHED BY HAND. Both of those
 # are scars. PowerShell block-buffers stdout when it is redirected, so events
 # sat in a buffer and only appeared when the process was killed; and

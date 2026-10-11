@@ -152,11 +152,79 @@ describe('a recording is somebody’s screen', () => {
   })
 })
 
+describe('macOS records too, through the ObjC bridge', () => {
+  const jxa = read('../../scripts/agent/recorder.jxa.js')
+
+  it('both recorders speak the same vocabulary, so nothing above needs a branch', () => {
+    const kinds = (src, re) => new Set([...src.matchAll(re)].map((m) => m[1]))
+    const win = kinds(recorder, /Emit '([a-z_]+)'/g)
+    const mac = kinds(jxa, /emit\('([a-z_]+)'/g)
+    for (const k of ['started', 'paused', 'resumed', 'stopped', 'type', 'key', 'app_change', 'right_click']) {
+      expect(win.has(k), `windows is missing ${k}`).toBe(true)
+      expect(mac.has(k), `macOS is missing ${k}`).toBe(true)
+    }
+  })
+
+  it('macOS counts characters too, and never keeps them', () => {
+    expect(jxa).toMatch(/emit\('type', \{ text_length: typed \}\)/)
+    expect(jxa).toMatch(/typed\+\+/)
+    // NSEvent.characters is right there and must never be read
+    expect(code(jxa)).not.toMatch(/\.characters|fromCharCode/)
+  })
+
+  it('enum values are written out, because one the bridge misses is undefined', () => {
+    // An unsurfaced NSEventMask* comes back undefined, which makes the mask
+    // NaN and the recorder watch nothing at all — silently.
+    expect(jxa).toMatch(/var MASK_LEFT_DOWN = 1 << 1/)
+    expect(code(jxa)).not.toMatch(/\$\.NSEventMask/)
+  })
+
+  it('screen coordinates are flipped, and read from the right place', () => {
+    // macOS screen space has its origin bottom-left; the screenshots and the
+    // clicker both use top-left.
+    expect(jxa).toMatch(/screenHeight - p\.y/)
+    // locationInWindow is meaningless for another application's window
+    expect(jxa).toMatch(/\$\.NSEvent\.mouseLocation/)
+    expect(code(jxa)).not.toMatch(/locationInWindow/)
+  })
+
+  it('a missing grant is reported, never a silent empty recording', () => {
+    expect(jxa).toMatch(/AXIsProcessTrusted/)
+    expect(jxa).toMatch(/emit\('error'/)
+    expect(jxa).toMatch(/Privacy & Security/)
+    // and the agent turns it into a line the person sees, then stops
+    expect(agent).toMatch(/if \(o\.kind === 'error'\)/)
+  })
+
+  it('stdout is written by hand — console.log in JXA goes to stderr', () => {
+    expect(jxa).toMatch(/fileHandleWithStandardOutput/)
+    expect(code(jxa)).not.toMatch(/console\.log/)
+  })
+
+  it('control is a file on macOS too', () => {
+    expect(jxa).toMatch(/readControl/)
+    expect(code(jxa)).not.toMatch(/stdin/)
+  })
+
+  it('the agent starts the right recorder for the platform', () => {
+    expect(agent).toMatch(/process\.platform === 'darwin'/)
+    expect(agent).toMatch(/recorder\.jxa\.js/)
+    expect(agent).toMatch(/recorder\.ps1/)
+  })
+
+  it('and recording is no longer advertised as Windows-only', () => {
+    expect(hands).toMatch(/record: WIN \|\| MAC/)
+    expect(code(hands)).not.toMatch(/Windows-only/)
+  })
+})
+
 describe('the agent says what this platform cannot do', () => {
-  it('recording is Windows-only and admits it rather than recording nothing', () => {
-    expect(hands).toMatch(/record: WIN/)
-    expect(hands).toMatch(/Teaching by demonstration is Windows-only/)
+  it('a platform that cannot record admits it rather than recording nothing', () => {
+    // Windows and macOS both record now. The branch still has to exist and
+    // still has to be honest: anything else gets told, not quietly ignored.
+    expect(hands).toMatch(/record: WIN \|\| MAC/)
     expect(agent).toMatch(/a recording is running but this platform cannot watch a screen yet/)
+    expect(hands).toMatch(/This agent does not run on \$\{process\.platform\} yet/)
   })
 
   it('macOS gets a usable sentence, not an osascript error number', () => {

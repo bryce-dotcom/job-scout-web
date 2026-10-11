@@ -205,11 +205,11 @@ function macHint(err) {
  */
 export const capabilities = {
   perform: WIN || MAC,
-  record: WIN,
+  record: WIN || MAC,
   notes: WIN
     ? []
     : MAC
-      ? ['Teaching by demonstration is Windows-only for now — Arnie can do the work on this Mac, but cannot watch you do it yet.',
-         'macOS will ask you to allow Screen Recording and Accessibility in System Settings the first time. Neither can be granted from here.']
+      ? ['macOS will ask you to allow Screen Recording, Accessibility and Input Monitoring in System Settings. None of those can be granted from here — they are switches you flip yourself.',
+         'Without them Arnie cannot see or touch anything, and a recording would come back empty. He checks, and says so rather than recording nothing.']
       : [`This agent does not run on ${process.platform} yet.`],
 }
