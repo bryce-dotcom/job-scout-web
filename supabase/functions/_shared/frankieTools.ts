@@ -181,7 +181,113 @@ export const FRANKIE_TOOLS: any[] = [
       },
     },
   },
+  {
+    name: 'query_estimates',
+    description: 'Estimates (quotes) with status, amount, customer, dates. Totals by status. Use for "what is out for approval", "estimates older than two weeks", "what did we quote X", win rate for a period.',
+    input_schema: { type: 'object', properties: { ...DATE_PROPS, status: { type: 'string', description: 'Draft, Sent, Negotiation, Approved, Rejected, or all (default all)' }, customer_name: { type: 'string' }, min_amount: { type: 'number' }, limit: { type: 'integer', description: 'Rows to list (default 25, max 100)' } } },
+  },
+  {
+    name: 'query_leads',
+    description: 'Leads with status, source, business unit, dates, and counts by status and by source. Use for "how many leads this month", "where are leads coming from", "leads stuck in New".',
+    input_schema: { type: 'object', properties: { ...DATE_PROPS, status: { type: 'string' }, source: { type: 'string' }, limit: { type: 'integer', description: 'Rows to list (default 25, max 100)' } } },
+  },
+  {
+    name: 'query_utility_incentives',
+    description: 'Utility incentive (rebate) invoices: utility, job, incentive amount, status, paid date. Totals filed, paid, outstanding. Use for "what does RMP owe us", "rebates still out", "incentives paid this year".',
+    input_schema: { type: 'object', properties: { ...DATE_PROPS, status: { type: 'string', description: 'open (default), paid, or all' }, utility: { type: 'string' }, limit: { type: 'integer' } } },
+  },
+  {
+    name: 'query_bills_and_pos',
+    description: 'Accounts payable: vendor bills (amount, balance due, due date, status) and purchase orders (vendor, job, total, status). Use for "what do we owe vendors", "bills due this week", "open POs", "what is on order for job X".',
+    input_schema: { type: 'object', properties: { ...DATE_PROPS, status: { type: 'string', description: 'open (default) or all' }, vendor_name: { type: 'string' }, limit: { type: 'integer' } } },
+  },
+  {
+    name: 'query_liabilities',
+    description: 'Loans and other debt (balance, payment, rate, lender, next due), the payments made on them, and fixed assets (purchase price, current value). Use for "how much debt", "what are the loan payments", "what do we own", "the truck loan".',
+    input_schema: { type: 'object', properties: { ...DATE_PROPS, limit: { type: 'integer' } } },
+  },
+  {
+    name: 'query_fleet',
+    description: 'Fleet units (name, type, status, mileage, maintenance due, purchase price), maintenance records with cost, and rentals. Use for "what did the trucks cost us", "which units are overdue for service", "rental income".',
+    input_schema: { type: 'object', properties: { ...DATE_PROPS, limit: { type: 'integer' } } },
+  },
+  {
+    name: 'query_inventory',
+    description: 'Inventory on hand: item, quantity, minimum, location, value at product cost. Low-stock list. Use for "what is in stock", "what are we low on", "inventory value".',
+    input_schema: { type: 'object', properties: { search: { type: 'string' }, low_stock_only: { type: 'boolean' }, limit: { type: 'integer' } } },
+  },
+  {
+    name: 'query_time_clock',
+    description: 'Crew hours from the time clock: hours by employee and by job for a date range, with labor cost at hourly rates. Use for "how many hours on the Anderson job", "who worked the most last week", "labor cost this month".',
+    input_schema: { type: 'object', properties: { ...DATE_PROPS, employee_name: { type: 'string' }, job: { type: 'string', description: 'Job title or number' }, limit: { type: 'integer' } } },
+  },
+  {
+    name: 'query_bonuses',
+    description: 'Crew efficiency bonuses by job and employee: accrued, paid, hours saved. Use for "what bonuses are owed", "what did we pay in bonuses".',
+    input_schema: { type: 'object', properties: { ...DATE_PROPS, status: { type: 'string', description: 'accrued, paid, or all (default all)' }, limit: { type: 'integer' } } },
+  },
+  {
+    name: 'query_backlog',
+    description: 'Every job in a range walked from sold to collected: status, sold value, invoiced, collected, still owed. Use for "which delivered jobs were never invoiced", "what is in progress", "jobs we finished but have not been paid for", the backlog by status.',
+    input_schema: { type: 'object', properties: { ...DATE_PROPS, status: { type: 'string', description: 'A job status, or "delivered", "in_progress", "not_started", "delivered_not_invoiced", "owed" (default all)' }, limit: { type: 'integer', description: 'Jobs to list (default 25, max 100)' } } },
+  },
+  {
+    name: 'query_table',
+    description: 'Read any other ledger in the app when none of the lookups above fits: rows with filters, a sort, totals of numeric columns. Tables: ' + Object.keys(TABLE_ALLOWLIST).join(', ') + '. Use it rather than saying a question cannot be answered.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        table: { type: 'string', description: 'One of the tables listed' },
+        columns: { type: 'array', items: { type: 'string' }, description: 'Columns to return (default all allowed)' },
+        filters: { type: 'array', items: { type: 'object', properties: { column: { type: 'string' }, op: { type: 'string', enum: ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'ilike', 'is', 'in'] }, value: { type: 'string' } }, required: ['column', 'op', 'value'] } },
+        order_by: { type: 'string' }, descending: { type: 'boolean' },
+        sum: { type: 'array', items: { type: 'string' }, description: 'Numeric columns to total across every matching row' },
+        limit: { type: 'integer', description: 'Rows to list (default 25, max 200)' },
+      },
+      required: ['table'],
+    },
+  },
 ]
+
+// What query_table may read: table → columns. Money and names, never
+// credentials, tokens or anything private to a person. Every read is
+// scoped to the caller's company.
+const TABLE_ALLOWLIST: Record<string, string[]> = {
+  customers: ['id', 'name', 'business_name', 'email', 'phone', 'city', 'state', 'status', 'created_at'],
+  jobs: ['id', 'job_id', 'job_title', 'status', 'job_total', 'customer_id', 'business_unit', 'start_date', 'end_date', 'created_at', 'expense_amount', 'incentive_amount', 'incentive_status', 'invoice_status'],
+  invoices: ['id', 'invoice_id', 'amount', 'discount_applied', 'credit_card_fee', 'payment_status', 'payment_method', 'business_unit', 'due_date', 'invoice_date', 'created_at', 'customer_id', 'job_id', 'utility_owes', 'utility_paid_at'],
+  payments: ['id', 'amount', 'date', 'method', 'status', 'invoice_id', 'job_id', 'customer_id', 'is_deposit', 'refunded_amount', 'paid_by'],
+  quotes: ['id', 'quote_id', 'estimate_name', 'status', 'quote_amount', 'calculated_quote_amount', 'customer_id', 'job_id', 'business_unit', 'created_at', 'approved_date', 'expiration_date', 'deposit_amount'],
+  leads: ['id', 'customer_name', 'business_name', 'status', 'computed_status', 'lead_source', 'business_unit', 'created_at', 'converted_at', 'salesperson_id', 'setter_id'],
+  lead_payments: ['id', 'amount', 'payment_method', 'payment_status', 'date_created', 'lead_id', 'job_id', 'invoice_id', 'description'],
+  utility_invoices: ['id', 'utility_invoice_id', 'utility_name', 'customer_name', 'job_id', 'invoice_id', 'project_cost', 'incentive_amount', 'amount', 'payment_status', 'paid_at', 'created_at'],
+  expenses: ['id', 'date', 'amount', 'category', 'tax_category', 'merchant', 'vendor', 'description', 'job_id', 'status', 'source', 'plaid_transaction_id'],
+  manual_expenses: ['id', 'expense_date', 'amount', 'vendor', 'description', 'category_id', 'job_id', 'paid_from'],
+  bills: ['id', 'bill_number', 'amount', 'balance_due', 'bill_date', 'due_date', 'status', 'vendor_id'],
+  bill_payments: ['id', 'bill_id', 'amount', 'paid_at'],
+  purchase_orders: ['id', 'po_number', 'vendor_id', 'job_id', 'status', 'subtotal', 'tax', 'shipping', 'total', 'expected_delivery_date', 'sent_at', 'received_at', 'created_at'],
+  purchase_order_lines: ['id', 'po_id', 'product_id', 'description', 'quantity_ordered', 'quantity_received', 'unit_cost', 'line_total'],
+  vendors: ['id', 'name', 'business_name', 'default_payment_terms', 'is_1099', 'active'],
+  liabilities: ['id', 'name', 'lender', 'liability_type', 'current_balance', 'monthly_payment', 'interest_rate', 'next_payment_due', 'next_payment_amount', 'original_principal', 'origination_date', 'term_months', 'status'],
+  loan_payments: ['id', 'liability_id', 'date', 'amount', 'principal', 'interest', 'source'],
+  assets: ['id', 'name', 'asset_type', 'purchase_price', 'current_value', 'purchase_date', 'in_service_date', 'useful_life_years', 'salvage_value', 'depreciation_method', 'status'],
+  fleet: ['id', 'name', 'type', 'make', 'model', 'model_year', 'status', 'mileage_hours', 'last_pm_date', 'next_pm_due', 'purchase_price', 'purchase_date', 'repair_cost', 'assigned_to', 'business_unit'],
+  fleet_maintenance: ['id', 'asset_id', 'type', 'date', 'mileage_hours', 'description', 'cost'],
+  fleet_rentals: ['id', 'asset_id', 'rental_customer', 'start_date', 'end_date', 'rental_rate', 'status'],
+  inventory: ['id', 'name', 'quantity', 'min_quantity', 'available', 'allocated_qty', 'location', 'condition', 'product_id', 'inventory_type'],
+  products_services: ['id', 'name', 'type', 'category', 'price', 'cost', 'sku', 'manufacturer', 'active'],
+  job_lines: ['id', 'job_id', 'item_id', 'item_name', 'quantity', 'price', 'total', 'labor_cost'],
+  time_clock: ['id', 'employee_id', 'job_id', 'clock_in', 'clock_out', 'total_hours', 'flagged_for_review'],
+  employees: ['id', 'name', 'role', 'business_unit', 'hourly_rate', 'status', 'hire_date', 'crew'],
+  payroll_runs: ['id', 'period_start', 'period_end', 'pay_date', 'status', 'total_gross', 'employee_count'],
+  payroll_tax_liabilities: ['id', 'jurisdiction', 'agency', 'kind', 'period_start', 'period_end', 'amount_employee', 'amount_employer', 'amount_total', 'due_date', 'paid_at'],
+  job_bonuses: ['id', 'job_id', 'employee_id', 'amount', 'status', 'allotted_hours', 'actual_hours', 'saved_hours', 'accrued_at', 'paid_at'],
+  customer_memberships: ['id', 'customer_id', 'plan_name', 'status', 'price_cents', 'billing_interval', 'started_at', 'canceled_at', 'current_period_end'],
+  payment_plans: ['id', 'status', 'frequency', 'installment_amount', 'total_installments', 'installments_completed', 'next_charge_date'],
+  appointments: ['id', 'lead_id', 'customer_id', 'employee_id', 'status', 'scheduled_at', 'created_at'],
+}
+const PRIVATE_TABLES = new Set(['employees', 'payroll_runs', 'payroll_tax_liabilities', 'time_clock', 'job_bonuses', 'liabilities', 'loan_payments', 'bills', 'bill_payments'])
+
 
 export function frankieToolsFor(caller: Caller): any[] {
   const a = accessFor(caller)
@@ -206,6 +312,17 @@ export async function execFrankieTool(name: string, input: any, caller: Caller, 
       case 'query_payroll_runs': return a.full ? await payrollRuns(r, co, input) : RESTRICTED
       case 'query_bank_balances': return a.full ? await bankBalances(r, co) : RESTRICTED
       case 'query_sales': return a.jobs ? await sales(r, co, input) : RESTRICTED
+      case 'query_estimates': return a.jobs ? await estimates(r, co, input) : RESTRICTED
+      case 'query_leads': return a.jobs ? await leads(r, co, input) : RESTRICTED
+      case 'query_utility_incentives': return a.jobs ? await utilityIncentives(r, co, input) : RESTRICTED
+      case 'query_bills_and_pos': return a.full ? await billsAndPos(r, co, input) : RESTRICTED
+      case 'query_liabilities': return a.full ? await liabilitiesAndAssets(r, co, input) : RESTRICTED
+      case 'query_fleet': return a.jobs ? await fleetTool(r, co, input) : RESTRICTED
+      case 'query_inventory': return a.jobs ? await inventoryTool(r, co, input) : RESTRICTED
+      case 'query_time_clock': return a.full ? await timeClock(r, co, input) : RESTRICTED
+      case 'query_bonuses': return a.full ? await bonuses(r, co, input) : RESTRICTED
+      case 'query_backlog': return a.jobs ? await backlog(r, co, input) : RESTRICTED
+      case 'query_table': return (PRIVATE_TABLES.has(String(input?.table)) ? a.full : a.jobs) ? await queryTable(r, co, input) : RESTRICTED
       default: return { error: `Unknown tool: ${name}` }
     }
   } catch (e: any) {
@@ -378,6 +495,274 @@ async function sales(r: Rest, co: string, input: any) {
     out.by_month = Object.fromEntries(Object.entries(bm).sort(([a], [b]) => a.localeCompare(b)))
   }
   return out
+}
+
+const DELIVERED = new Set(['Completed', 'Job Complete', 'Verified Complete', 'Post Inspection (Req)', 'Invoiced', 'Paid', 'Closed', 'Done'])
+const IN_PROGRESS = /in progress|post inspection|chillin|on hold|waiting|need to order|pre inspection/i
+
+async function customerNames(r: Rest, co: string, ids: any[]): Promise<Record<number, string>> {
+  const names: Record<number, string> = {}
+  const cids = [...new Set(ids.filter(Boolean))].slice(0, 300)
+  if (cids.length) for (const c of await readAll(r, `customers?${co}&select=id,name,business_name&id=in.(${cids.join(',')})`)) names[c.id] = c.business_name || c.name
+  return names
+}
+
+async function estimates(r: Rest, co: string, input: any) {
+  const p = new URLSearchParams({ select: 'id,quote_id,estimate_name,status,quote_amount,calculated_quote_amount,customer_id,job_id,created_at,approved_date,expiration_date', order: 'created_at.desc' })
+  if (input?.status && input.status !== 'all') p.append('status', `ilike.${clean(input.status)}`)
+  if (input?.start_date) p.append('created_at', `gte.${clean(input.start_date)}`)
+  if (input?.end_date) p.append('created_at', `lte.${clean(input.end_date)}T23:59:59`)
+  if (input?.customer_name) {
+    const cs = await readAll(r, `customers?${co}&select=id&or=(name.ilike.*${clean(input.customer_name)}*,business_name.ilike.*${clean(input.customer_name)}*)`, 200)
+    if (!cs.length) return { count: 0, note: `No customer matching "${input.customer_name}".` }
+    p.append('customer_id', `in.(${cs.map((c: any) => c.id).join(',')})`)
+  }
+  const amt = (q: any) => num(q.quote_amount) || num(q.calculated_quote_amount)
+  let rows = await readAll(r, `quotes?${co}&${p}`)
+  if (input?.min_amount) rows = rows.filter((q: any) => amt(q) >= num(input.min_amount))
+  const names = await customerNames(r, co, rows.map((q: any) => q.customer_id))
+  const byStatus: Record<string, { count: number; total: number }> = {}
+  for (const q of rows) { const k = q.status || 'no status'; byStatus[k] = byStatus[k] || { count: 0, total: 0 }; byStatus[k].count++; byStatus[k].total = money(byStatus[k].total + amt(q)) }
+  const approved = byStatus.Approved?.count || 0, rejected = byStatus.Rejected?.count || 0
+  const limit = clamp(input?.limit, 25, 100)
+  return {
+    count: rows.length, total: money(rows.reduce((s: number, q: any) => s + amt(q), 0)), by_status: byStatus,
+    win_rate_of_decided: approved + rejected ? Math.round(approved / (approved + rejected) * 100) : null,
+    estimates: [...rows].sort((a: any, b: any) => amt(b) - amt(a)).slice(0, limit).map((q: any) => ({ estimate: q.quote_id || q.estimate_name || `#${q.id}`, customer: names[q.customer_id] || null, status: q.status, amount: amt(q), created: String(q.created_at).slice(0, 10), approved: q.approved_date ? String(q.approved_date).slice(0, 10) : null, job_id: q.job_id })),
+    scope: `${rows.length} estimate(s); list is the largest ${Math.min(limit, rows.length)}. Amount = quote_amount, else the calculated amount. An estimate is an offer, not a sale — sold is query_sales.`,
+  }
+}
+
+async function leads(r: Rest, co: string, input: any) {
+  const p = new URLSearchParams({ select: 'id,customer_name,business_name,status,computed_status,lead_source,business_unit,created_at,converted_at', order: 'created_at.desc' })
+  if (input?.status) p.append('status', `ilike.${clean(input.status)}`)
+  if (input?.source) p.append('lead_source', `ilike.*${clean(input.source)}*`)
+  if (input?.start_date) p.append('created_at', `gte.${clean(input.start_date)}`)
+  if (input?.end_date) p.append('created_at', `lte.${clean(input.end_date)}T23:59:59`)
+  const rows = await readAll(r, `leads?${co}&${p}`)
+  const count = (k: string) => { const m: Record<string, number> = {}; for (const l of rows) m[l[k] || 'none'] = (m[l[k] || 'none'] || 0) + 1; return Object.fromEntries(Object.entries(m).sort((a, b) => b[1] - a[1])) }
+  const limit = clamp(input?.limit, 25, 100)
+  return {
+    count: rows.length, by_status: count('status'), by_source: count('lead_source'), converted: rows.filter((l: any) => l.converted_at).length,
+    leads: rows.slice(0, limit).map((l: any) => ({ name: l.business_name || l.customer_name, status: l.status, source: l.lead_source, created: String(l.created_at).slice(0, 10), converted: l.converted_at ? String(l.converted_at).slice(0, 10) : null })),
+    scope: `${rows.length} lead(s); list is the most recent ${Math.min(limit, rows.length)}.`,
+  }
+}
+
+async function utilityIncentives(r: Rest, co: string, input: any) {
+  const p = new URLSearchParams({ select: 'id,utility_invoice_id,utility_name,customer_name,job_id,invoice_id,project_cost,incentive_amount,amount,payment_status,paid_at,created_at', order: 'created_at.desc' })
+  const status = input?.status || 'open'
+  if (status === 'paid') p.append('payment_status', 'eq.Paid')
+  else if (status !== 'all') p.append('payment_status', 'not.in.(Paid,Void)')
+  if (input?.utility) p.append('utility_name', `ilike.*${clean(input.utility)}*`)
+  if (input?.start_date) p.append('created_at', `gte.${clean(input.start_date)}`)
+  if (input?.end_date) p.append('created_at', `lte.${clean(input.end_date)}T23:59:59`)
+  const rows = await readAll(r, `utility_invoices?${co}&${p}`)
+  const inc = (u: any) => num(u.amount) || num(u.incentive_amount)
+  const byUtility: Record<string, number> = {}
+  for (const u of rows) byUtility[u.utility_name || 'unknown'] = money((byUtility[u.utility_name || 'unknown'] || 0) + inc(u))
+  const limit = clamp(input?.limit, 25, 100)
+  return {
+    count: rows.length, total: money(rows.reduce((s: number, u: any) => s + inc(u), 0)), by_utility: byUtility,
+    incentives: rows.slice(0, limit).map((u: any) => ({ id: u.utility_invoice_id || `#${u.id}`, utility: u.utility_name, customer: u.customer_name, job_id: u.job_id, project_cost: num(u.project_cost), incentive: inc(u), status: u.payment_status, paid: u.paid_at ? String(u.paid_at).slice(0, 10) : null, filed: String(u.created_at).slice(0, 10) })),
+    scope: `${rows.length} ${status} utility incentive(s). "open" = filed with the utility and not yet paid; that money is receivable from the utility, not the customer.`,
+  }
+}
+
+async function billsAndPos(r: Rest, co: string, input: any) {
+  const status = input?.status || 'open'
+  const vendors: Record<number, string> = {}
+  for (const v of await readAll(r, `vendors?${co}&select=id,name,business_name`, 2000)) vendors[v.id] = v.business_name || v.name
+  let vids: number[] | null = null
+  if (input?.vendor_name) { const t = clean(input.vendor_name).toLowerCase(); vids = Object.entries(vendors).filter(([, n]) => String(n).toLowerCase().includes(t)).map(([id]) => Number(id)); if (!vids.length) return { note: `No vendor matching "${input.vendor_name}".` } }
+  const bp = new URLSearchParams({ select: 'id,bill_number,amount,balance_due,bill_date,due_date,status,vendor_id', order: 'due_date.asc' })
+  const pp = new URLSearchParams({ select: 'id,po_number,vendor_id,job_id,status,total,expected_delivery_date,created_at', order: 'created_at.desc' })
+  if (status !== 'all') { bp.append('status', 'not.in.(Paid,Void,Cancelled)'); pp.append('status', 'not.in.(Closed,Received,Cancelled,Void)') }
+  if (vids) { bp.append('vendor_id', `in.(${vids.join(',')})`); pp.append('vendor_id', `in.(${vids.join(',')})`) }
+  if (input?.start_date) { bp.append('bill_date', `gte.${clean(input.start_date)}`); pp.append('created_at', `gte.${clean(input.start_date)}`) }
+  if (input?.end_date) { bp.append('bill_date', `lte.${clean(input.end_date)}`); pp.append('created_at', `lte.${clean(input.end_date)}T23:59:59`) }
+  const [bills, pos] = await Promise.all([readAll(r, `bills?${co}&${bp}`), readAll(r, `purchase_orders?${co}&${pp}`)])
+  const today = new Date().toISOString().slice(0, 10)
+  const due = (b: any) => num(b.balance_due ?? b.amount)
+  const limit = clamp(input?.limit, 25, 100)
+  return {
+    bills: { count: bills.length, balance_due: money(bills.reduce((s: number, b: any) => s + due(b), 0)), past_due: money(bills.filter((b: any) => b.due_date && b.due_date < today).reduce((s: number, b: any) => s + due(b), 0)),
+      rows: bills.slice(0, limit).map((b: any) => ({ bill: b.bill_number || `#${b.id}`, vendor: vendors[b.vendor_id] || null, amount: num(b.amount), balance_due: due(b), due: b.due_date, status: b.status })) },
+    purchase_orders: { count: pos.length, total: money(pos.reduce((s: number, x: any) => s + num(x.total), 0)),
+      rows: pos.slice(0, limit).map((x: any) => ({ po: x.po_number || `#${x.id}`, vendor: vendors[x.vendor_id] || null, job_id: x.job_id, total: num(x.total), status: x.status, expected: x.expected_delivery_date, created: String(x.created_at).slice(0, 10) })) },
+    scope: `${status === 'all' ? 'All' : 'Open'} vendor bills and purchase orders. A PO is a commitment, not yet a bill; a bill's balance_due is what is owed now.`,
+  }
+}
+
+async function liabilitiesAndAssets(r: Rest, co: string, input: any) {
+  const [liabs, assets] = await Promise.all([
+    readAll(r, `liabilities?${co}&select=id,name,lender,liability_type,current_balance,monthly_payment,interest_rate,next_payment_due,next_payment_amount,original_principal,origination_date,term_months,status&order=current_balance.desc`, 500),
+    readAll(r, `assets?${co}&select=id,name,asset_type,purchase_price,current_value,purchase_date,in_service_date,useful_life_years,status&order=current_value.desc`, 500),
+  ])
+  const lp = new URLSearchParams({ select: 'id,liability_id,date,amount,principal,interest', order: 'date.desc' })
+  lp.append('date', `gte.${clean(input?.start_date) || new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)}`)
+  if (input?.end_date) lp.append('date', `lte.${clean(input.end_date)}`)
+  const pays = await readAll(r, `loan_payments?${co}&${lp}`)
+  const byLiab: Record<number, { paid: number; principal: number; interest: number; n: number }> = {}
+  for (const x of pays) { const k = x.liability_id; byLiab[k] = byLiab[k] || { paid: 0, principal: 0, interest: 0, n: 0 }; byLiab[k].paid = money(byLiab[k].paid + num(x.amount)); byLiab[k].principal = money(byLiab[k].principal + num(x.principal)); byLiab[k].interest = money(byLiab[k].interest + num(x.interest)); byLiab[k].n++ }
+  const open = liabs.filter((l: any) => l.status !== 'paid_off' && l.status !== 'closed')
+  return {
+    debt_total: money(open.reduce((s: number, l: any) => s + num(l.current_balance), 0)), monthly_debt_service: money(open.reduce((s: number, l: any) => s + num(l.monthly_payment), 0)),
+    liabilities: liabs.map((l: any) => ({ ...l, current_balance: num(l.current_balance), monthly_payment: num(l.monthly_payment), payments_in_range: byLiab[l.id] || null })),
+    loan_payments_in_range: { count: pays.length, total: money(pays.reduce((s: number, x: any) => s + num(x.amount), 0)), interest: money(pays.reduce((s: number, x: any) => s + num(x.interest), 0)) },
+    assets_total_current_value: money(assets.reduce((s: number, a: any) => s + (num(a.current_value) || num(a.purchase_price)), 0)),
+    assets: assets.map((a: any) => ({ ...a, purchase_price: num(a.purchase_price), current_value: num(a.current_value) })),
+    scope: 'Liabilities and assets as recorded in Books. Loan payments default to the last 12 months. Principal is not deductible; interest is.',
+  }
+}
+
+async function fleetTool(r: Rest, co: string, input: any) {
+  const since = clean(input?.start_date) || new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)
+  const mp = new URLSearchParams({ select: 'id,asset_id,type,date,mileage_hours,description,cost', order: 'date.desc' })
+  mp.append('date', `gte.${since}`); if (input?.end_date) mp.append('date', `lte.${clean(input.end_date)}`)
+  const [units, maint, rentals] = await Promise.all([
+    readAll(r, `fleet?${co}&select=id,name,type,make,model,model_year,status,mileage_hours,last_pm_date,next_pm_due,purchase_price,purchase_date,repair_cost,assigned_to,business_unit`, 500),
+    readAll(r, `fleet_maintenance?${co}&${mp}`, 2000),
+    readAll(r, `fleet_rentals?${co}&select=id,asset_id,rental_customer,start_date,end_date,rental_rate,status`, 500),
+  ])
+  const today = new Date().toISOString().slice(0, 10)
+  const byUnit: Record<string, number> = {}
+  for (const m of maint) byUnit[m.asset_id] = money((byUnit[m.asset_id] || 0) + num(m.cost))
+  const limit = clamp(input?.limit, 25, 100)
+  return {
+    units: units.length, overdue_for_service: units.filter((u: any) => u.next_pm_due && u.next_pm_due < today).map((u: any) => u.name),
+    maintenance_cost_in_range: money(maint.reduce((s: number, m: any) => s + num(m.cost), 0)), maintenance_records: maint.length,
+    fleet: units.slice(0, limit).map((u: any) => ({ ...u, purchase_price: num(u.purchase_price), repair_cost: num(u.repair_cost), maintenance_in_range: byUnit[u.id] || 0 })),
+    recent_maintenance: maint.slice(0, limit), rentals,
+    scope: `Fleet units with maintenance since ${since}. Fuel is on the bank feed (query_bank_transactions, tax line Auto expenses), not here.`,
+  }
+}
+
+async function inventoryTool(r: Rest, co: string, input: any) {
+  const p = new URLSearchParams({ select: 'id,name,quantity,min_quantity,available,allocated_qty,location,condition,product_id,inventory_type', order: 'name.asc' })
+  if (input?.search) p.append('name', `ilike.*${clean(input.search)}*`)
+  const rows = await readAll(r, `inventory?${co}&${p}`, 5000)
+  const pids = [...new Set(rows.map((i: any) => i.product_id).filter(Boolean))]
+  const cost: Record<number, number> = {}
+  for (let i = 0; i < pids.length; i += 300) for (const pr of await readAll(r, `products_services?${co}&select=id,cost&id=in.(${pids.slice(i, i + 300).join(',')})`)) cost[pr.id] = num(pr.cost)
+  const low = rows.filter((i: any) => num(i.min_quantity) > 0 && num(i.quantity) < num(i.min_quantity))
+  const list = input?.low_stock_only ? low : rows
+  const limit = clamp(input?.limit, 25, 100)
+  return {
+    items: rows.length, stocked: rows.filter((i: any) => num(i.quantity) > 0).length, low_stock: low.length,
+    value_at_cost: money(rows.reduce((s: number, i: any) => s + num(i.quantity) * (cost[i.product_id] || 0), 0)),
+    inventory: list.slice(0, limit).map((i: any) => ({ name: i.name, quantity: num(i.quantity), min: num(i.min_quantity), location: i.location, value: money(num(i.quantity) * (cost[i.product_id] || 0)) })),
+    scope: `${rows.length} item(s)${input?.low_stock_only ? ', low-stock only' : ''}; value uses the product's cost, $0 when none is on file.`,
+  }
+}
+
+async function timeClock(r: Rest, co: string, input: any) {
+  const p = new URLSearchParams({ select: 'id,employee_id,job_id,clock_in,clock_out,total_hours', order: 'clock_in.desc' })
+  p.append('clock_in', `gte.${clean(input?.start_date) || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)}`)
+  if (input?.end_date) p.append('clock_in', `lte.${clean(input.end_date)}T23:59:59`)
+  const emps = await readAll(r, `employees?${co}&select=id,name,hourly_rate`, 1000)
+  const emp: Record<number, any> = {}; for (const e of emps) emp[e.id] = e
+  if (input?.employee_name) { const t = clean(input.employee_name).toLowerCase(); const ids = emps.filter((e: any) => String(e.name || '').toLowerCase().includes(t)).map((e: any) => e.id); if (!ids.length) return { note: `No employee matching "${input.employee_name}".` }; p.append('employee_id', `in.(${ids.join(',')})`) }
+  if (input?.job) { const t = clean(input.job); const js = await readAll(r, `jobs?${co}&select=id&or=(job_title.ilike.*${t}*,job_id.ilike.*${t}*)`, 200); if (!js.length) return { note: `No job matching "${input.job}".` }; p.append('job_id', `in.(${js.map((j: any) => j.id).join(',')})`) }
+  const rows = await readAll(r, `time_clock?${co}&${p}`)
+  const jids = [...new Set(rows.map((x: any) => x.job_id).filter(Boolean))].slice(0, 300)
+  const jobs: Record<number, string> = {}
+  if (jids.length) for (const j of await readAll(r, `jobs?${co}&select=id,job_id,job_title&id=in.(${jids.join(',')})`)) jobs[j.id] = j.job_title || j.job_id
+  const byEmp: Record<string, { hours: number; cost: number }> = {}, byJob: Record<string, number> = {}
+  let hours = 0, cost = 0
+  for (const x of rows) {
+    const h = num(x.total_hours), rate = num(emp[x.employee_id]?.hourly_rate), c = h * rate
+    hours += h; cost += c
+    const en = emp[x.employee_id]?.name || `#${x.employee_id}`; byEmp[en] = byEmp[en] || { hours: 0, cost: 0 }; byEmp[en].hours = Math.round((byEmp[en].hours + h) * 100) / 100; byEmp[en].cost = money(byEmp[en].cost + c)
+    const jn = x.job_id ? (jobs[x.job_id] || `#${x.job_id}`) : 'no job'; byJob[jn] = Math.round(((byJob[jn] || 0) + h) * 100) / 100
+  }
+  return { punches: rows.length, hours: Math.round(hours * 100) / 100, labor_cost_at_hourly_rates: money(cost), hours_on_a_job: Math.round(rows.filter((x: any) => x.job_id).reduce((s: number, x: any) => s + num(x.total_hours), 0) * 100) / 100, by_employee: byEmp, by_job: byJob, scope: 'Time clock punches in the range (default last 30 days). Labor cost = hours × the employee\'s hourly rate on file; no rate, no cost.' }
+}
+
+async function bonuses(r: Rest, co: string, input: any) {
+  const p = new URLSearchParams({ select: 'id,job_id,employee_id,amount,status,allotted_hours,actual_hours,saved_hours,accrued_at,paid_at', order: 'accrued_at.desc' })
+  if (input?.status && input.status !== 'all') p.append('status', `eq.${clean(input.status)}`)
+  if (input?.start_date) p.append('accrued_at', `gte.${clean(input.start_date)}`)
+  if (input?.end_date) p.append('accrued_at', `lte.${clean(input.end_date)}T23:59:59`)
+  const rows = await readAll(r, `job_bonuses?${co}&${p}`, 5000)
+  const emps: Record<number, string> = {}; for (const e of await readAll(r, `employees?${co}&select=id,name`, 1000)) emps[e.id] = e.name
+  const byStatus: Record<string, number> = {}; for (const b of rows) byStatus[b.status || 'none'] = money((byStatus[b.status || 'none'] || 0) + num(b.amount))
+  const limit = clamp(input?.limit, 25, 100)
+  return { count: rows.length, by_status: byStatus, bonuses: rows.slice(0, limit).map((b: any) => ({ ...b, employee: emps[b.employee_id] || null, amount: num(b.amount) })), scope: 'Crew efficiency bonuses. "accrued" is earned and not yet paid; it is owed.' }
+}
+
+async function backlog(r: Rest, co: string, input: any) {
+  const jp = new URLSearchParams({ select: 'id,job_id,job_title,status,job_total,customer_id,created_at', order: 'created_at.desc' })
+  if (input?.start_date) jp.append('created_at', `gte.${clean(input.start_date)}`)
+  if (input?.end_date) jp.append('created_at', `lte.${clean(input.end_date)}T23:59:59`)
+  const jobs = (await readAll(r, `jobs?${co}&${jp}`)).filter((j: any) => !NOT_SOLD.has(j.status))
+  const ids = jobs.map((j: any) => j.id)
+  const invs: any[] = [], pays: any[] = []
+  for (let i = 0; i < ids.length; i += 300) {
+    const chunk = ids.slice(i, i + 300).join(',')
+    invs.push(...await readAll(r, `invoices?${co}&select=id,job_id,amount,discount_applied,payment_status&job_id=in.(${chunk})&payment_status=not.in.(Void,Cancelled)`))
+    pays.push(...await readAll(r, `payments?${co}&select=id,invoice_id,job_id,amount,status&or=(job_id.in.(${chunk}))`))
+  }
+  const invIds = invs.map((i: any) => i.id)
+  for (let i = 0; i < invIds.length; i += 300) pays.push(...await readAll(r, `payments?${co}&select=id,invoice_id,job_id,amount,status&invoice_id=in.(${invIds.slice(i, i + 300).join(',')})`))
+  const seen = new Set<number>()
+  const paidByInv: Record<number, number> = {}, paidByJob: Record<number, number> = {}
+  for (const pm of pays) {
+    if (seen.has(pm.id) || ['Paid', 'Completed', null, undefined].includes(pm.status) === false) continue
+    seen.add(pm.id)
+    if (pm.invoice_id) paidByInv[pm.invoice_id] = (paidByInv[pm.invoice_id] || 0) + num(pm.amount)
+    else if (pm.job_id) paidByJob[pm.job_id] = (paidByJob[pm.job_id] || 0) + num(pm.amount)
+  }
+  const invByJob: Record<number, any[]> = {}; for (const i of invs) (invByJob[i.job_id] = invByJob[i.job_id] || []).push(i)
+  const total = (i: any) => { const g = num(i.amount), d = num(i.discount_applied); return d > 0 && d > g ? g : Math.max(0, g - d) }
+  const val = (j: any) => { const n = Number(j.job_total); return Number.isFinite(n) && n > 0 ? n : 0 }
+  const stage = (j: any) => DELIVERED.has(j.status) ? 'delivered' : IN_PROGRESS.test(j.status || '') ? 'in_progress' : 'not_started'
+  const rows = jobs.map((j: any) => {
+    const inv = invByJob[j.id] || []
+    const invoiced = money(inv.reduce((s: number, i: any) => s + total(i), 0))
+    const collected = money(inv.reduce((s: number, i: any) => s + (i.payment_status === 'Paid' ? total(i) : Math.min(total(i), paidByInv[i.id] || 0)), 0) + (paidByJob[j.id] || 0))
+    const owed = money(inv.filter((i: any) => i.payment_status !== 'Paid').reduce((s: number, i: any) => s + Math.max(0, total(i) - (paidByInv[i.id] || 0)), 0))
+    return { job: j.job_id || `#${j.id}`, title: j.job_title, customer_id: j.customer_id, status: j.status, stage: stage(j), sold: val(j), invoiced, collected, owed, created: String(j.created_at).slice(0, 10) }
+  })
+  const want = input?.status
+  let list = rows
+  if (want === 'delivered' || want === 'in_progress' || want === 'not_started') list = rows.filter(x => x.stage === want)
+  else if (want === 'delivered_not_invoiced') list = rows.filter(x => x.stage === 'delivered' && x.invoiced === 0 && x.sold > 0)
+  else if (want === 'owed') list = rows.filter(x => x.owed > 0)
+  else if (want && want !== 'all') list = rows.filter(x => String(x.status || '').toLowerCase() === String(want).toLowerCase())
+  const names = await customerNames(r, co, list.map(x => x.customer_id))
+  const sumOf = (k: string, arr = rows) => money(arr.reduce((s: number, x: any) => s + num(x[k]), 0))
+  const limit = clamp(input?.limit, 25, 100)
+  return {
+    jobs: rows.length, sold: sumOf('sold'), delivered: sumOf('sold', rows.filter(x => x.stage === 'delivered')), in_progress: sumOf('sold', rows.filter(x => x.stage === 'in_progress')), not_started: sumOf('sold', rows.filter(x => x.stage === 'not_started')),
+    invoiced: sumOf('invoiced'), collected: sumOf('collected'), owed: sumOf('owed'),
+    delivered_not_invoiced: { jobs: rows.filter(x => x.stage === 'delivered' && x.invoiced === 0 && x.sold > 0).length, sold: sumOf('sold', rows.filter(x => x.stage === 'delivered' && x.invoiced === 0 && x.sold > 0)) },
+    listed: list.length, rows: [...list].sort((a, b) => b.sold - a.sold).slice(0, limit).map(x => ({ ...x, customer: names[x.customer_id] || null, customer_id: undefined })),
+    scope: 'Each job: sold = job_total; invoiced = invoices on the job after discounts; collected = payments on those invoices (a Paid invoice counts in full) plus payments tagged straight to the job; owed = open invoice balances. Cancelled and archived jobs excluded.',
+  }
+}
+
+async function queryTable(r: Rest, co: string, input: any) {
+  const table = String(input?.table || '')
+  const allowed = TABLE_ALLOWLIST[table]
+  if (!allowed) return { error: `Not a readable table: "${table}". Readable: ${Object.keys(TABLE_ALLOWLIST).join(', ')}.` }
+  const cols = (Array.isArray(input?.columns) && input.columns.length ? input.columns.map(String).filter((c: string) => allowed.includes(c)) : allowed)
+  if (!cols.length) return { error: 'None of those columns are readable on that table.', readable_columns: allowed }
+  const p = new URLSearchParams({ select: cols.join(',') })
+  for (const f of Array.isArray(input?.filters) ? input.filters.slice(0, 8) : []) {
+    const c = String(f?.column || ''); if (!allowed.includes(c)) return { error: `Cannot filter on "${c}".`, readable_columns: allowed }
+    const op = String(f?.op || 'eq'); const v = clean(f?.value)
+    if (op === 'in') p.append(c, `in.(${v.split(/\s+/).join(',')})`)
+    else if (op === 'is') p.append(c, `is.${v === 'null' ? 'null' : v === 'true' ? 'true' : 'false'}`)
+    else if (op === 'ilike') p.append(c, `ilike.*${v}*`)
+    else if (['eq', 'neq', 'gt', 'gte', 'lt', 'lte'].includes(op)) p.append(c, `${op}.${v}`)
+  }
+  const ob = String(input?.order_by || ''); if (ob && allowed.includes(ob)) p.set('order', `${ob}.${input?.descending === false ? 'asc' : 'desc'}`)
+  const rows = await readAll(r, `${table}?${co}&${p}`)
+  const sums: Record<string, number> = {}
+  for (const c of Array.isArray(input?.sum) ? input.sum.map(String).filter((c: string) => allowed.includes(c)) : []) sums[c] = money(rows.reduce((s: number, x: any) => s + num(x[c]), 0))
+  const limit = clamp(input?.limit, 25, 200)
+  return { table, count: rows.length, totals: sums, rows: rows.slice(0, limit), scope: `${rows.length} row(s) matched; the list is the first ${Math.min(limit, rows.length)}. Totals cover every matching row.`, ...(rows.length >= READ_CAP ? { WARNING: `Read the first ${READ_CAP} rows only.` } : {}) }
 }
 
 async function payments(r: Rest, co: string, input: any) {

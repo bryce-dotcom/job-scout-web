@@ -42,6 +42,18 @@ const LOOKUP_HINTS = {
   query_job_profitability: 'Costing the jobs…',
   query_payroll_runs: 'Pulling the payroll runs…',
   query_bank_balances: 'Checking the bank balances…',
+  query_sales: 'Adding up what was sold…',
+  query_estimates: 'Pulling the estimates…',
+  query_leads: 'Pulling the leads…',
+  query_utility_incentives: 'Pulling the utility incentives…',
+  query_bills_and_pos: 'Pulling the bills and purchase orders…',
+  query_liabilities: 'Pulling the loans, liabilities and assets…',
+  query_fleet: 'Pulling the fleet…',
+  query_inventory: 'Pulling the inventory…',
+  query_time_clock: 'Pulling the crew hours…',
+  query_bonuses: 'Pulling the crew bonuses…',
+  query_backlog: 'Walking the jobs from sold to collected…',
+  query_table: 'Reading that ledger…',
 }
 
 /**
@@ -143,15 +155,48 @@ async function loadExpenseCategories() {
   }
 }
 
+// The ledgers the store does not carry but the big picture needs: debt,
+// assets, payables, payroll tax owed, crew bonuses, fleet maintenance. Books
+// loads the same tables for its own cards. Each read fails soft to [] so a
+// table a company has never used costs nothing.
+const FULL_ONLY = new Set(['liabilities', 'loan_payments', 'bills', 'payroll_tax_liabilities'])
+async function loadBigPicture(role) {
+  const { companyId } = useStore.getState()
+  if (!companyId) return {}
+  const full = FULL_ACCESS_ROLES.has(String(role || '').toLowerCase())
+  const since = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10)
+  const read = async (table, select, mod) => {
+    if (FULL_ONLY.has(table) && !full) return []
+    try {
+      let q = supabase.from(table).select(select).eq('company_id', companyId)
+      if (mod) q = mod(q)
+      const { data, error } = await q.limit(2000)
+      if (error) throw error
+      return data || []
+    } catch (e) { console.warn('[Frankie Engine] ' + table + ' not available:', e?.message); return [] }
+  }
+  const [liabilities, loanPayments, assets, bills, purchaseOrders, payrollTaxLiabilities, jobBonuses, fleetMaintenance] = await Promise.all([
+    read('liabilities', 'id, name, lender, liability_type, current_balance, monthly_payment, interest_rate, next_payment_due, next_payment_amount, status'),
+    read('loan_payments', 'id, liability_id, date, amount, principal, interest', q => q.gte('date', since)),
+    read('assets', 'id, name, asset_type, purchase_price, current_value, status, purchase_date'),
+    read('bills', 'id, bill_number, amount, balance_due, bill_date, due_date, status, vendor_id'),
+    read('purchase_orders', 'id, po_number, vendor_id, job_id, status, total, expected_delivery_date, created_at'),
+    read('payroll_tax_liabilities', 'id, jurisdiction, agency, kind, amount_total, due_date, paid_at'),
+    read('job_bonuses', 'id, job_id, employee_id, amount, status, accrued_at, paid_at'),
+    read('fleet_maintenance', 'id, asset_id, type, date, cost, description', q => q.gte('date', since)),
+  ])
+  return { liabilities, loanPayments, assets, bills, purchaseOrders, payrollTaxLiabilities, jobBonuses, fleetMaintenance }
+}
+
 export async function sendMessageStream(message, history = [], onChunk, attachments = []) {
   const { role } = getUserRole()
   const state = useStore.getState()
   const { user, company } = state
 
-  const [payrollRuns, expenseCategories] = await Promise.all([loadPayrollRuns(role), loadExpenseCategories()])
+  const [payrollRuns, expenseCategories, bigPicture] = await Promise.all([loadPayrollRuns(role), loadExpenseCategories(), loadBigPicture(role)])
   const systemPrompt = fullSystemPrompt({
     user, company, role,
-    data: { ...state, payrollRuns, expenseCategories },
+    data: { ...state, ...bigPicture, payrollRuns, expenseCategories },
   })
 
   const conversationHistory = withCurrentTurn(history, message, attachments)

@@ -24,7 +24,7 @@
 // field ('open' | 'delivered'). This helper resolves that config at call
 // time so custom pipelines work automatically.
 
-import { soldJobsInRange, soldValue } from './soldTotals'
+import { soldJobsInRange, soldValue } from './soldTotals.js'
 
 // Standard delivered-status names, used as a fallback when a company has
 // never flagged category='delivered' on any of its job statuses. Without
