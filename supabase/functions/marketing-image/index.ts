@@ -25,27 +25,38 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
-const MODEL = 'gemini-2.5-flash-image'
+// gemini-2.5-flash-image retires 2027-03-15; 3.1 is the replacement (about
+// 7 cents a 1K picture instead of 4). If 3.1 is not reachable for this key
+// yet, the old one still paints.
+const MODELS = ['gemini-3.1-flash-image', 'gemini-2.5-flash-image']
+let MODEL = MODELS[0]
 const ASPECT: Record<string, string> = { vertical: '9:16', square: '1:1', landscape: '16:9' }
 
-async function paint(key: string, prompt: string, aspect: string): Promise<{ bytes: Uint8Array; mime: string } | { error: string; status: number }> {
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+async function paint(key: string, prompt: string, aspect: string, model = MODEL): Promise<{ bytes: Uint8Array; mime: string; model: string } | { error: string; status: number }> {
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: ASPECT[aspect] || '9:16' } },
+      generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: ASPECT[aspect] || '9:16', ...(model.startsWith('gemini-3') ? { imageSize: '1K' } : {}) } },
     }),
   })
   const j = await r.json().catch(() => ({}))
-  if (!r.ok) return { error: j?.error?.message || `Gemini ${r.status}`, status: r.status }
+  if (!r.ok) {
+    // The newer model not available to this key (404/400 on the model name): fall back once, and stay there for this instance.
+    if (model === MODELS[0] && MODELS[1] && (r.status === 404 || /not found|not supported|unsupported/i.test(j?.error?.message || ''))) {
+      MODEL = MODELS[1]
+      return paint(key, prompt, aspect, MODELS[1])
+    }
+    return { error: j?.error?.message || `Gemini ${r.status}`, status: r.status }
+  }
   const part = (j.candidates?.[0]?.content?.parts || []).find((p: Record<string, unknown>) => p.inlineData)
   if (!part) return { error: j.candidates?.[0]?.finishReason ? `No picture (${j.candidates[0].finishReason}).` : 'No picture came back.', status: 502 }
   const b64 = part.inlineData.data as string
   const bin = atob(b64)
   const bytes = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  return { bytes, mime: String(part.inlineData.mimeType || 'image/png') }
+  return { bytes, mime: String(part.inlineData.mimeType || 'image/png'), model }
 }
 
 serve(async (req) => {
@@ -110,7 +121,7 @@ serve(async (req) => {
         media_type: 'image', note: `AI picture: ${description.slice(0, 120)}`, status: 'new', source: 'generated', brand: brand || null,
       }).select('*').single()
       if (dbErr) return json({ ok: false, error: dbErr.message }, 500)
-      await recordMediaUsage(meterEnv, { companyId: caller.companyId, kind: 'picture', model: MODEL, units: 1, costUsd: MEDIA_PRICES.picture })
+      await recordMediaUsage(meterEnv, { companyId: caller.companyId, kind: 'picture', model: got.model, units: 1, costUsd: got.model.startsWith('gemini-3') ? MEDIA_PRICES.picture : MEDIA_PRICES.picture_legacy })
       out.push(row)
     }
     return json({ ok: true, captures: out })

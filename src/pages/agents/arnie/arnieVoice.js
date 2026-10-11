@@ -143,10 +143,25 @@ export function isAvailable() { return true }
 
 let edgeFailCount = 0
 
-function edgeTTS(text, msVoice) {
+// Microsoft's read-aloud socket refuses to open without this token since
+// late 2024: sha256 of the Windows-epoch time in 100ns ticks, rounded down to
+// five minutes, followed by the trusted client token; upper-case hex.
+const EDGE_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
+const EDGE_GEC_VERSION = '1-130.0.2849.68'
+async function edgeGecQuery() {
+  let ticks = Math.floor(Date.now() / 1000) + 11644473600
+  ticks -= ticks % 300
+  const text = String(ticks) + '0000000' + EDGE_TOKEN
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  const hex = [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+  return `&Sec-MS-GEC=${hex}&Sec-MS-GEC-Version=${EDGE_GEC_VERSION}`
+}
+
+async function edgeTTS(text, msVoice) {
+  const gec = await edgeGecQuery()
   return new Promise((resolve, reject) => {
     const connId = uuid()
-    const url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&ConnectionId=${connId}`
+    const url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${EDGE_TOKEN}&ConnectionId=${connId}${gec}`
 
     let ws
     try {
@@ -498,7 +513,7 @@ export async function speak(text, voiceId, onStart, onEnd) {
     }
     if (failed) {
       edgeFailCount++
-      if (edgeFailCount >= 3) edgeTTSBroken = true
+      if (edgeFailCount >= 1) edgeTTSBroken = true
       console.warn(`[Arnie Voice] speak #${callId} → Edge TTS failed, using browser`)
     }
   }

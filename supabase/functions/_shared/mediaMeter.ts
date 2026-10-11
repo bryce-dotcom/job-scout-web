@@ -18,7 +18,8 @@
 export type MediaKind = 'picture' | 'track' | 'voice' | 'arnie_voice'
 
 export const MEDIA_PRICES = {
-  picture: 0.04,            // gemini-2.5-flash-image ≈ 1290 output tokens at $30/M
+  picture: 0.07,            // gemini-3.1-flash-image, 1K: ~1120 output tokens at $60/M
+  picture_legacy: 0.04,     // gemini-2.5-flash-image (retires 2027-03-15): 1290 tokens at $30/M
   music_per_second: 0.005,  // ElevenLabs Music on the Creator plan, about $0.30 a minute
   voice_per_char: 0.00018,  // ElevenLabs TTS on Creator: $22 for 121,000 characters
 }

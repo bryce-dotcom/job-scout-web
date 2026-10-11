@@ -473,6 +473,31 @@ serve(async (req) => {
       }).eq('id', postId)
       if (post.capture_ids?.length) {
         await sb.from('marketing_captures').update({ status: 'used', post_id: postId }).eq('company_id', companyId).in('id', sentCaptureIds)
+        // The person who shot it hears that it went out. Techs sent photos
+        // into the inbox and never heard anything back; this is the reply.
+        // One note per person per post, never to the person publishing.
+        if (!scheduled) {
+          try {
+            const { data: shot } = await sb.from('marketing_captures').select('id, employee_id, media_type, created_at').eq('company_id', companyId).in('id', sentCaptureIds)
+            const who = [...new Set((shot || []).map((c: any) => c.employee_id).filter((id: any) => id && id !== caller.employeeId))]
+            if (who.length) {
+              const PLATFORM_LABEL: Record<string, string> = { facebook: 'Facebook', instagram: 'Instagram', linkedin: 'LinkedIn', tiktok: 'TikTok', x: 'X', google_business: 'Google Business', youtube: 'YouTube', threads: 'Threads', pinterest: 'Pinterest', bluesky: 'Bluesky' }
+              const names = (post.platforms || []).map((id: string) => PLATFORM_LABEL[id] || id)
+              const where = names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+              const kinds = new Set((shot || []).map((c: any) => (c.media_type === 'video' ? 'video' : 'photo')))
+              const what = kinds.size > 1 ? 'photos and video' : kinds.has('video') ? 'video' : 'photo'
+              const { data: had } = await sb.from('employee_notifications').select('employee_id').eq('company_id', companyId).eq('dedupe_key', `marketing-posted-${postId}`).in('employee_id', who)
+              const seen = new Set((had || []).map((r: any) => r.employee_id))
+              const rows = who.filter((id) => !seen.has(id)).map((employee_id) => ({
+                company_id: companyId, employee_id, type: 'marketing_posted',
+                title: `Your ${what} just went out`,
+                message: `The ${what} you sent to marketing is live on ${where || 'the company pages'}. Thanks — keep them coming.`,
+                route: '/marketing', metadata: { post_id: postId, platforms: post.platforms || [], capture_ids: sentCaptureIds }, dedupe_key: `marketing-posted-${postId}`,
+              }))
+              if (rows.length) await sb.from('employee_notifications').insert(rows)
+            }
+          } catch (e) { console.warn('[marketing-publish] tech note failed (non-fatal):', (e as Error)?.message) }
+        }
         const leftBehind = post.capture_ids.filter((id: number) => !sentCaptureIds.includes(id))
         if (leftBehind.length) {
           // Back to the inbox: a video the networks would not take with this post.
