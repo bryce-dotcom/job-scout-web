@@ -9,7 +9,7 @@ const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n'
 const m = read('../../supabase/functions/_shared/arniePayment.ts')
 const page = read('../pages/InvoiceDetail.jsx')
 const create = read('../../supabase/functions/_shared/arnieCreate.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 
 const prepare = m.slice(m.indexOf('export async function preparePayment'), m.indexOf('export async function applyPayment'))
 const apply = m.slice(m.indexOf('export async function applyPayment'), m.indexOf('async function sendReceipt'))

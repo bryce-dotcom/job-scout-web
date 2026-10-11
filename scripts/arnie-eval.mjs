@@ -55,20 +55,45 @@ const weekAhead = Array.from({ length: 7 }, (_, i) => { const d = new Date(Date.
 // buildSystemPrompt imports the browser store, so it cannot be called here.
 // The sections that carry the rules are extracted from the file instead, so a
 // prompt edit is what gets exercised, not a stale copy.
-const engineSrc = readFileSync(resolve(root, 'src/pages/agents/arnie/arnieEngine.js'), 'utf8').replace(/\r\n/g, '\n')
+const enginePath = resolve(root, 'src/pages/agents/arnie/arnieEngine.js')
+// The RULES live in _shared/arniePrompt.ts since 2026-10-10 (so a text message
+// and a browser tab build the same prompt); the engine still owns the knowledge
+// catalogue. Read both, because a rule counts wherever it lives.
+const engineOnly = readFileSync(enginePath, 'utf8').replace(/\r\n/g, '\n')
+const promptOnly = readFileSync(resolve(root, 'supabase/functions/_shared/arniePrompt.ts'), 'utf8').replace(/\r\n/g, '\n')
+const engineSrc = engineOnly + '\n' + promptOnly
 // The prompt is a template literal inside a module. This harness reads it as
 // TEXT, so an unescaped backtick that breaks the build reads perfectly well
 // here — which is exactly how a prompt edit once passed 4/4 evals while the
 // app would not compile. Refuse to run against a prompt that does not parse.
 try {
   const { transformSync } = await import('esbuild')
-  transformSync(engineSrc, { loader: 'js', logLevel: 'silent' })
+  // Each with its own loader: the engine is JS, the rules are TypeScript.
+  transformSync(engineOnly, { loader: 'js', logLevel: 'silent' })
+  transformSync(promptOnly, { loader: 'ts', logLevel: 'silent' })
 } catch (e) {
-  console.error('arnie:eval — arnieEngine.js does not parse; the build is broken and these results would be meaningless.\n' + (e.errors?.[0]?.text || e.message))
+  console.error('arnie:eval — the prompt source does not parse; the build is broken and these results would be meaningless.\n' + (e.errors?.[0]?.text || e.message))
   process.exit(2)
 }
-const cut = (from, to) => engineSrc.slice(engineSrc.indexOf(from), engineSrc.indexOf(to)).replace(/\\`/g, '`')
+const cut = (from, to) => {
+  const a = engineSrc.indexOf(from)
+  const b = engineSrc.indexOf(to)
+  // indexOf returns -1 for a marker that has moved, and slice(-1, -1) is '' —
+  // which is how this harness spent a run grading an Arnie with no rules at
+  // all and called three real leaks "failures of the model".
+  if (a < 0 || b < 0 || b <= a) {
+    console.error(`arnie:eval — the prompt section "${from}" is not where this harness looks for it.\nThe rules have moved; these results would be meaningless. Fix the paths in scripts/arnie-eval.mjs.`)
+    process.exit(2)
+  }
+  return engineSrc.slice(a, b).replace(/\\`/g, '`')
+}
 const RULES = cut('## STRICT FORMAT RULES', '## Current User') + cut('## What You Can Do', '## What You Cannot Do')
+// A belt as well as braces: the rules are thousands of characters. Anything
+// much smaller means a marker matched something trivial and the run is a lie.
+if (RULES.length < 4000) {
+  console.error(`arnie:eval — the rules came out ${RULES.length} characters, which cannot be right. Refusing to grade against a prompt this thin.`)
+  process.exit(2)
+}
 const prompt = (roleLabel) =>
   `You are OG Arnie for JobScout.\n\n## Current User\n- Role: ${roleLabel}\n- Company: Summit Field Co\n- Today: ${todayWeekday} ${today} (${DEMO.tz}) — use these, exactly, whenever a tool asks for the date or timezone. The week ahead, so you never count: ${weekAhead}. "Thursday" means the Thursday in that list; "tomorrow" is the first entry.\n\n` +
   RULES + '\n\n## Current Data Context\nNo preloaded data — call a query_* tool to fetch what you need.\n'
@@ -441,7 +466,10 @@ const CASES = [
       const fx = await expenseFixture()
       try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'All our Chevron expenses are filed as Materials — change them all to Fuel.' }]) } finally { await fx.cleanup() }
     },
-    expect: { proposal: 'none', text_match: [/admin/i] } },
+    // What matters is the refusal and that it names the level needed. Arnie
+    // says 'owner-level access' as readily as 'admin', and for the expense book
+    // both are true — do not tighten this back to one word.
+    expect: { proposal: 'none', text_match: [/admin|owner/i] } },
 
   // — one customer, one read: the work for everyone, the money for an admin —
   { id: 'account.owner.history.jobs.balance.last.contact', as: 'owner',
@@ -834,8 +862,11 @@ const CASES = [
   { id: 'eos.owner.scorecard.number.not.invented', as: 'owner',
     turns: ['What was our job revenue on the scorecard last week?'],
     expect: {
-      tools_include: ['query_eos'], proposal: 'none',
-      text_match: [/do(?:n'?t| not) have|not in this read|computed on the EOS page/i, /EOS|Reports/],
+      // No tools_include: answering straight from the rules, without spending a
+      // call to be told the same thing, is a BETTER answer, not a worse one.
+      // The behaviour under test is that he does not produce a figure.
+      proposal: 'none',
+      text_match: [/do(?:n'?t| not) have|cannot pull|can'?t pull|not in this read|computed on the EOS page/i, /EOS|Reports/],
       text_not_match: [/last week (?:we|you)?\s*(?:did|was|came in at|brought in|collected)\s*\$/i, /\$[\d,]+ last week/i],
     } },
   { id: 'eos.tech.refused', as: 'tech',

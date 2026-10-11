@@ -7,7 +7,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n')
 const quote = read('../../supabase/functions/_shared/arnieQuote.ts')
 const create = read('../../supabase/functions/_shared/arnieCreate.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 
 const prepare = quote.slice(quote.indexOf('export async function prepareQuote'), quote.indexOf('export async function applyQuote'))
 const apply = quote.slice(quote.indexOf('export async function applyQuote'), quote.indexOf('export async function rollbackQuote'))

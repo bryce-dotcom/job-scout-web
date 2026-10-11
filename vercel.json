@@ -59,6 +59,10 @@
       "schedule": "5 * * * *"
     },
     {
+      "path": "/api/cron/arnie-routines",
+      "schedule": "20 * * * *"
+    },
+    {
       "path": "/api/cron/arnie-nudge",
       "schedule": "35 * * * *"
     },

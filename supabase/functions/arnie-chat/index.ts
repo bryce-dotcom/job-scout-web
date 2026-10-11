@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { callAnthropic, reportAnthropicFailure, logAnthropicSuccess } from '../_shared/anthropic.ts'
-import { resolveCaller, type Caller } from '../_shared/auth.ts'
+import { internalCaller, resolveCaller, type Caller } from '../_shared/auth.ts'
 import { proposeChange, targetsSentence } from '../_shared/arnieConfig.ts'
 import { recordTargetsSentence } from '../_shared/arnieRecords.ts'
 import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
@@ -10,6 +10,7 @@ import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_share
 import { dailyBrief } from '../_shared/arnieBrief.ts'
 import { accountSummary } from "../_shared/arnieAccount.ts";
 import { eosOverview } from "../_shared/arnieEos.ts";
+import { analyseFixturePhoto, lightingCatalogue } from "../_shared/arnieLighting.ts";
 import { crewDay } from '../_shared/arnieDispatch.ts'
 import { FRANKIE_MODEL, FRANKIE_MAX_TOKENS, frankieToolsFor, execFrankieTool } from '../_shared/frankieTools.ts'
 
@@ -234,6 +235,16 @@ const TOOLS = [
       },
       required: ['customer'],
     },
+  },
+  {
+    name: 'query_lighting_products',
+    description: "What this company sells for lighting — the price-book sections configured for Lenard, and the products on them. Use this for 'what do we put on a 400W wall pack', 'what high bays do we sell', 'what does the cobra head cost'. Products come from the configured section ONLY, never from a name search, because that is the shelf the company has chosen to quote from.",
+    input_schema: { type: 'object', properties: { like: { type: 'string', description: 'Narrow by name if they named a kind of fixture (\"high bay\", \"wall pack\").' } } },
+  },
+  {
+    name: 'analyse_fixture_photo',
+    description: "Hand a photo to LENARD, the lighting specialist, to identify the fixtures in it: what is there, how many, existing wattage and a proposed LED. Use this whenever someone sends a picture of lighting and wants to know what it is or what replaces it. It learns from this company's own past corrections. It identifies; it does not price or quote.",
+    input_schema: { type: 'object', properties: {}, description: 'Takes the photo attached to this conversation; no arguments.' },
   },
   {
     name: 'query_eos',
@@ -478,6 +489,7 @@ const PROPOSE_CREATE_TOOL = {
           'ticket: message (required — what was seen, the exact record ids/numbers involved, what was expected, what you checked), subject, feedback_type (bug|feature|question|feedback). ' +
           'appointment: lead (required — describe it in words, never an id), when (required — YYYY-MM-DD HH:MM in the user\'s zone; work "Tuesday at 2" out from Today in Current User), timezone (from Current User), salesperson (name; omit to use the rep already on the lead), duration_minutes (default 60), location (defaults to the lead\'s address), notes. ' +
           'quote: quote (optional — an existing EMPTY Draft estimate to fill instead of creating one, as the user names it: "#5112", "EST-5112", or its name; when given, lead/customer may be omitted), lead OR customer (one required unless quote is given, in words), lines (required — an ARRAY of { item, quantity, price? }: item is the product as the user said it and the server finds it in the price book; give price ONLY if the user said one, otherwise the book price is used), estimate_name, service_type, salesperson, notes. ' +
+          'routine: prompt (required — what to check, in the words they would use), when (required — the hour as said: "7am", "half six", "noon"), routine_name (a short name for it), how (app|sms|email, default app), every_day ("yes" only if they said every day — weekdays is the default). Standing work that runs as THEM, with their access, so it sees what they see; anything it would change still comes back as a card for them to approve. ' +
           'meeting_agenda: type (l10 | quarterly | annual — l10 is the weekly meeting and the default; a "quarterly", "Q4 meeting" or "planning session" is quarterly; two days at year end is annual), days and ends for a quarterly/annual ("Saturday and Sunday, done by 3 and by noon" → days 2, ends "3pm, noon"), when (only if they named a day — otherwise the team\'s own L10 day is used), to (only if they named people), how (email|app|both, default both), unit (one business unit only). The agenda itself is BUILT from the EOS page — the seven L10 sections, this quarter\'s rocks, the open issues, the outstanding to-dos, the scorecard with a blank per metric. Never compose or pass agenda content. ' +
           'followup: quote (required — the number, the estimate name, or who it is for, in words), message (required — the note AS THE REP WOULD SAY IT, first person, short, one clear ask, mentioning what the estimate is for; never invent a discount, deadline or price), subject (email only), channel (email|sms, default email). The server finds the recipient on the quote, lead or customer; you never supply an address.',
         properties: {
@@ -503,7 +515,7 @@ const PROPOSE_CREATE_TOOL = {
           // was added, and the two contradicted each other.
           when: { type: 'string', description: 'The day, and the time if they gave one. Follow the per-target note above, because the targets differ: appointment wants it resolved to YYYY-MM-DD HH:MM in the user\'s zone, while schedule and meeting_agenda want it EXACTLY as the user said it ("Thursday at 8", "tomorrow 9:30am") and the server resolves the weekday in the company\'s zone.' },
           duration: { type: 'string', description: 'schedule: how long, if said ("4 hours", "all day") — omit otherwise' }, crew: { type: 'string', description: 'schedule: the people as said, comma-separated ("Jordan and Mike Sullivan") — omit if none named' },
-          type: { type: 'string', description: 'meeting_agenda: which EOS meeting — l10 (the weekly, default), quarterly, or annual' }, days: { type: 'string', description: 'meeting_agenda: how many days the quarterly/annual runs, if they said ("two days" = 2)' }, ends: { type: 'string', description: 'meeting_agenda: what time each day finishes, as said, comma separated ("3pm, noon")' }, to: { type: 'string', description: 'meeting_agenda: who it goes to, as said ("Doug and Cole") — omit for the people the agenda itself asks something of, which is the usual case' }, how: { type: 'string', description: 'meeting_agenda: email, app or both — omit for both' }, unit: { type: 'string', description: 'meeting_agenda / query_eos: one business unit only, spelt as the company spells it — omit for all of them' },
+          type: { type: 'string', description: 'meeting_agenda: which EOS meeting — l10 (the weekly, default), quarterly, or annual' }, days: { type: 'string', description: 'meeting_agenda: how many days the quarterly/annual runs, if they said ("two days" = 2)' }, ends: { type: 'string', description: 'meeting_agenda: what time each day finishes, as said, comma separated ("3pm, noon")' }, to: { type: 'string', description: 'meeting_agenda: who it goes to, as said ("Doug and Cole") — omit for the people the agenda itself asks something of, which is the usual case' }, how: { type: 'string', description: 'meeting_agenda: email, app or both (omit for both). routine: app, sms or email (omit for app)' }, prompt: { type: 'string', description: 'routine: what to check, in the words the person would use ("what did the setters book yesterday, and which estimates went out")' }, routine_name: { type: 'string', description: 'routine: a short name for it ("morning setter check")' }, every_day: { type: 'string', description: 'routine: "yes" only if they said every day — weekdays is the default' }, unit: { type: 'string', description: 'meeting_agenda / query_eos: one business unit only, spelt as the company spells it — omit for all of them' },
           deposit_amount: { type: 'string', description: 'won: only if they said a deposit was collected today, the amount' }, deposit_method: { type: 'string', description: 'won: how the deposit was paid, if said (check, cash, card)' },
           items: { type: 'array', description: 'price_book: one row per item read off the attached price list, photo, PDF or sheet — never invented, never rounded. Skip header/total rows.', items: { type: 'object', properties: { name: { type: 'string' }, unit_price: { type: 'number', description: 'the figure in the PRICE / SELL / RATE column ONLY. If that cell is blank for a row, OMIT unit_price for that row (send the name and the cost) — the server will skip it and say why. Never put a COST figure here.' }, cost: { type: 'number', description: 'the figure in the COST / OUR COST / WHOLESALE column, only if the document shows one. Never the price.' }, type: { type: 'string', description: 'Product or Service (labor, hourly, per-visit = Service)' }, description: { type: 'string' }, sku: { type: 'string' }, manufacturer: { type: 'string' }, model_number: { type: 'string' }, category: { type: 'string' } }, required: ['name', 'unit_price'] } }, source: { type: 'string', description: 'price_book: where the list came from, e.g. "Graybar price sheet" or the file name' },
         },
@@ -596,7 +608,28 @@ function cardsFor(body: Record<string, unknown>): string[] {
 // Compare on a squashed form instead: lowercase, letters and digits only.
 const squash = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 
-async function execTool(name: string, input: any, caller: Caller) {
+/**
+ * The most recent image on the conversation, as Lenard wants it.
+ *
+ * Attachments arrive as Anthropic content blocks; the newest one wins, because
+ * "what is this?" means the photo just sent, not one from four turns ago.
+ */
+function lastImageOf(messages: any[] = []): { imageBase64: string; mediaType: string } | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const content = messages[i]?.content
+    if (!Array.isArray(content)) continue
+    for (let j = content.length - 1; j >= 0; j--) {
+      const block = content[j]
+      const src = block?.source
+      if (block?.type === 'image' && src?.type === 'base64' && src?.data) {
+        return { imageBase64: String(src.data), mediaType: String(src.media_type || 'image/jpeg') }
+      }
+    }
+  }
+  return null
+}
+
+async function execTool(name: string, input: any, caller: Caller, messages: any[] = []) {
   const { companyId, role, email, employeeId } = caller
   const sb = (path: string) => `${SUPABASE_URL}/rest/v1/${path}`
   const hdr = { 'apikey': SUPABASE_SERVICE_ROLE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
@@ -853,6 +886,23 @@ async function execTool(name: string, input: any, caller: Caller) {
     if (name === 'query_account') {
       // A tech gets the work; the money needs an admin, the same line every other read draws.
       return await accountSummary({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, input, isAdmin)
+    }
+
+    if (name === 'query_lighting_products') {
+      return await lightingCatalogue({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, input)
+    }
+
+    if (name === 'analyse_fixture_photo') {
+      // The photo rides on the conversation, not in the tool input — the model
+      // cannot pass an image through a tool call, so the turn handler stashes
+      // the most recent one for Lenard to look at.
+      const photo = lastImageOf(messages)
+      if (!photo) return { error: 'There is no photo on this conversation for me to look at. Send the picture and ask again.' }
+      return await analyseFixturePhoto(
+        { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY, internalKey: Deno.env.get('ARNIE_INTERNAL_KEY') || undefined },
+        caller,
+        photo,
+      )
     }
 
     if (name === 'query_eos') {
@@ -1252,7 +1302,23 @@ Deno.serve(async (req) => {
     // service-role queries below, so any signed-in user could retarget them
     // at another tenant by editing two fields in devtools. Whatever the
     // client sends for these is now ignored outright.
-    const caller = await resolveCaller(req, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    let caller = await resolveCaller(req, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+    // The one exception, and it can only ever REDUCE privilege.
+    //
+    // Arnie has to be able to think outside a browser tab — a text message, an
+    // email, a routine on a schedule. Those arrive with no JWT, so the server
+    // says who it is running as. This is safe in the one direction that
+    // matters: the caller must already hold the SERVICE ROLE KEY, which is
+    // total access to every tenant. Naming an employee here takes that
+    // omnipotence and narrows it to one person's company and one person's
+    // level. It cannot grant anything the bare key did not already have.
+    //
+    // resolveCaller deliberately returns null for a service-key bearer, so
+    // this never widens a real user's session — it only fills the gap where
+    // there was no user at all. The employee must still be ACTIVE.
+    if (!caller) caller = await internalCaller(req, body, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
     // No user token at all (anon key, or none) — refuse rather than burn
     // model spend for an unauthenticated caller.
     if (!caller) return jsonError('Sign in to talk to Arnie.', 401)
@@ -1322,7 +1388,7 @@ function jsonError(msg: string, status: number, extra?: Record<string, unknown>)
 
 // Per-agent: which tools are advertised, how a call is executed, which
 // model answers, and which feature the usage is logged under.
-function agentSetup(agent: Agent, caller: Caller, cards: string[]) {
+function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any[] = []) {
   const rest = { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }
   if (agent === 'frankie') {
     return {
@@ -1339,7 +1405,7 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[]) {
     maxTokens: 4096,
     feature: 'arnie-chat',
     tools: toolsFor(caller.role, cards),
-    exec: (name: string, input: any) => execTool(name, input, caller),
+    exec: (name: string, input: any) => execTool(name, input, caller, messages),
     tangled: 'Sorry boss, I got tangled up trying to look that up. Try asking me a different way.',
   }
 }
@@ -1364,7 +1430,7 @@ ${lines.join('\n')}`
 async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie'): Promise<string> {
   const { companyId } = caller
   let convo = [...messages]
-  const setup = agentSetup(agent, caller, cards)
+  const setup = agentSetup(agent, caller, cards, messages)
   // Only advertise tools if we have a companyId to scope queries safely
   const includeTools = !!companyId && setup.tools.length > 0
   for (let i = 0; i < 5; i++) { // up to 5 tool rounds
@@ -1405,7 +1471,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
 async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie') {
   const { companyId } = caller
   const encoder = new TextEncoder()
-  const setup = agentSetup(agent, caller, cards)
+  const setup = agentSetup(agent, caller, cards, messages)
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: any) => {

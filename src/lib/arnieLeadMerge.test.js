@@ -8,7 +8,7 @@ const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n'
 const m = read('../../supabase/functions/_shared/arnieLeadMerge.ts')
 const records = read('../../supabase/functions/_shared/arnieRecords.ts')
 const store = read('./store.js')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 
 const propose = m.slice(m.indexOf('export async function proposeLeadMerge'), m.indexOf('export async function applyLeadMerge'))
 const apply = m.slice(m.indexOf('export async function applyLeadMerge'), m.indexOf('export async function rollbackLeadMerge'))

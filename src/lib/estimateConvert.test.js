@@ -23,7 +23,7 @@ const portalSrc = read('../../supabase/functions/approve-document/index.ts')
 const pageSrc = read('../pages/EstimateDetail.jsx')
 const create = read('../../supabase/functions/_shared/arnieCreate.ts')
 const chat = read('../../supabase/functions/arnie-chat/index.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 
 const load = (src, deps) => { const m = { exports: {} }; new Function('module', 'exports', 'require', transformSync(src, { loader: 'ts', format: 'cjs' }).code)(m, m.exports, (p) => deps[p]); return m.exports }
 const conv = load(convSrc, { './arnieRest.ts': { readRecordList: async () => [] } })

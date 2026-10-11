@@ -6,6 +6,8 @@ import {
 import { parseReplyToken, tokenFromAddresses, parseFeedbackToken, feedbackTokenFromAddresses, parseBidsToken, bidsTokenFromAddresses } from "../_shared/replyToken.ts";
 import { verifySvixSignature, htmlToText, isAutoReply, recipientKind, readEmail } from "../_shared/inboundWebhook.ts";
 import { emailRep, repEmailShell, appLink } from "../_shared/notifyRep.ts";
+import { arnieByEmail } from "../_shared/arnieSms.ts";
+import { employeeByContact } from "../_shared/arnieHeadless.ts";
 
 // Catch customer replies to estimates and put them on the estimate.
 //
@@ -190,6 +192,46 @@ serve(async (req) => {
   // exactly the headers that mark an out-of-office — and every alert would
   // be thrown away as one.
   const kindEarly = recipientKind(mail.to);
+
+  // Writing TO Arnie. A person asking their assistant something, not a
+  // customer replying to a document — so it is answered rather than filed.
+  //
+  // Only an ACTIVE employee gets through: the sender address is the whole
+  // credential here, and a stranger who guesses the address must get nothing.
+  // Anything that moves money is still drafted and held for the app, the same
+  // as over text.
+  if (kindEarly === 'arnie') {
+    const SUPABASE_URL_A = Deno.env.get('SUPABASE_URL')!;
+    const SERVICE_A = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const rest = { url: SUPABASE_URL_A, key: SERVICE_A, internalKey: Deno.env.get('ARNIE_INTERNAL_KEY') || undefined };
+    const sender = String(mail.from || '').match(/<([^>]+)>/)?.[1] || String(mail.from || '');
+    const emp = await employeeByContact(rest, { email: sender });
+    if (!emp) {
+      console.log('[inbound-email] arnie@ from a non-employee, ignored:', sender);
+      return json({ ok: true, matched: false, reason: 'arnie_unknown_sender' });
+    }
+    // Quoted history below a reply is the previous email, not a new question.
+    const asked = String(mail.body || '').split(/\n\s*(?:On .+ wrote:|-{2,} ?Original Message|_{5,}|From: )/)[0].trim();
+    let answer = '';
+    try {
+      answer = await arnieByEmail(rest, emp, asked);
+    } catch (e) {
+      console.error('[inbound-email] arnie failed:', (e as Error)?.message);
+      answer = 'Something went wrong on my end — try me again in a minute.';
+    }
+    if (answer) {
+      await fetch(`${SUPABASE_URL_A}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SERVICE_A, Authorization: `Bearer ${SERVICE_A}` },
+        body: JSON.stringify({
+          to: sender,
+          subject: String(mail.subject || '').toLowerCase().startsWith('re:') ? mail.subject : `Re: ${mail.subject || 'your question'}`,
+          html: `<div style="font:14px/1.6 -apple-system,Segoe UI,Arial,sans-serif;color:#2c3530;max-width:640px"><pre style="white-space:pre-wrap;font:inherit;margin:0">${answer.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre></div>`,
+        }),
+      }).catch(() => {});
+    }
+    return json({ ok: true, matched: true, kind: 'arnie', employee_id: emp.id, replied: !!answer });
+  }
 
   // Out-of-office, bounces, delivery reports: nobody wrote these, and filing
   // one on an estimate would light the pipeline card up as "replied".

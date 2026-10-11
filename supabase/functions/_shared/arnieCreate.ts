@@ -23,6 +23,7 @@ import { applyAppointment, prepareAppointment, rollbackAppointment } from './arn
 import { applyQuote, prepareQuote, rollbackQuote } from './arnieQuote.ts'
 import { applyFollowup, prepareFollowup, rollbackFollowup } from './arnieFollowup.ts'
 import { applyAgenda, prepareAgenda, rollbackAgenda } from './arnieEos.ts'
+import { prepareRoutine, rollbackRoutine } from './arnieRoutineTarget.ts'
 import { applyPayment, preparePayment, rollbackPayment } from './arniePayment.ts'
 import { prepareExpense } from './arnieExpense.ts'
 import { applyCompanySetup, prepareCompanySetup, rollbackCompanySetup } from './companySetup.ts'
@@ -428,6 +429,28 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
   // consent: nothing is remembered until they approve it, and it is theirs
   // to forget from Arnie → Settings. Never a company fact, never another
   // person's — those belong on the record, not in a head.
+  // "Every weekday at seven, text me what the setters booked." Standing work
+  // a person SAYS rather than configures. It runs as them, with their access,
+  // and anything it would change still comes back as a card. See
+  // arnieRoutineTarget.ts.
+  routine: {
+    label: 'routine',
+    table: 'arnie_routines',
+    minLevel: 0,
+    verb: 'Set up',
+    done: 'Set up. It runs at that hour in your zone and you can stop it any time from Arnie.',
+    fields: {
+      routine_name: { column: null, label: 'Name', max: 60 },
+      prompt: { column: null, label: 'Asks',  required: true, max: 600 },
+      when:   { column: null, label: 'When',  required: true, max: 40 },
+      how:    { column: null, label: 'Where', max: 6, oneOf: ['app', 'sms', 'email'] },
+      every_day:    { column: null, label: 'Days', max: 12 },
+    },
+    labelOf: (f) => String(f.routine_name || f.prompt || 'routine').slice(0, 120),
+    prepare: prepareRoutine,
+    rollbackCustom: rollbackRoutine,
+  },
+
   memory: {
     label: 'memory',
     table: 'arnie_memories',

@@ -16,7 +16,7 @@ const empSrc = read('../../supabase/functions/_shared/arnieEmployee.ts')
 const bookSrc = read('../../supabase/functions/_shared/arniePriceBook.ts')
 const create = read('../../supabase/functions/_shared/arnieCreate.ts')
 const chat = read('../../supabase/functions/arnie-chat/index.ts')
-const engine = read('../pages/agents/arnie/arnieEngine.js')
+const engine = read('../pages/agents/arnie/arnieEngine.js') + '\n' + read('../../supabase/functions/_shared/arniePrompt.ts')
 const employeesPage = read('../pages/Employees.jsx')
 const productsPage = read('../pages/ProductsServices.jsx')
 

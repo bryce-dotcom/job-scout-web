@@ -44,7 +44,8 @@ describe('a text Arnie sends is a record', () => {
 describe('every text ends with the way back into the app', () => {
   it('the link is appended once, never twice', () => {
     expect(send).toMatch(/const link = appLink\('\/agents\/arnie'\)/)
-    expect(send).toContain('text.includes(link) ? text : `${text}\\n${link}`')
+    // The reply hint goes on first, then the link — each at most once.
+    expect(send).toContain('withHint.includes(link) ? withHint')
   })
   it('appLink can no longer come back empty — SITE_URL was never set and every button vanished', () => {
     expect(notify).toMatch(/export const APP_URL = 'https:\/\/jobscout\.appsannex\.com'/)
