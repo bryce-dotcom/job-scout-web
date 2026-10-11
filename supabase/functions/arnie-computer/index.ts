@@ -44,6 +44,11 @@ const cors = {
 // "Arnie is not on your computer right now" rather than queueing into a void.
 const STALE_SECONDS = 90
 
+// Ten minutes, the ceiling Grok uses, for the reason their docs give: a
+// demonstration longer than this is two skills that have not been separated
+// yet. It is also how long somebody can forget they left the recorder on.
+const TEACH_MAX_SECONDS = 600
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   const json = (body: Record<string, unknown>, status = 200) =>
@@ -142,7 +147,35 @@ Deno.serve(async (req) => {
       // that would have run the action is alive.
       await expireStale(session.id)
       const queued = await rest(`arnie_computer_actions?select=id,kind,app,host,target&session_id=eq.${session.id}&decision=eq.queued&order=id&limit=1`)
-      return json({ ok: true, action: queued?.[0] || null })
+
+      // Is this person teaching right now? The agent is the only thing that
+      // can watch a screen, so it has to be told — and told to STOP, because
+      // a recording with no ceiling is a recording somebody forgot about.
+      const [rec] = await rest(`arnie_skills?select=id,name,outcome,recording_started_at&employee_id=eq.${me}&status=eq.recording&limit=1`)
+      let recording = null
+      if (rec) {
+        const started = rec.recording_started_at ? new Date(rec.recording_started_at).getTime() : Date.now()
+        const left = Math.round((started + TEACH_MAX_SECONDS * 1000 - Date.now()) / 1000)
+        if (left <= 0) {
+          // Out of time. Move it to a draft so the person still gets whatever
+          // they demonstrated rather than losing it.
+          await rest(`arnie_skills?id=eq.${rec.id}&status=eq.recording`, {
+            method: 'PATCH', body: JSON.stringify({ status: 'draft', updated_at: new Date().toISOString() }),
+          })
+        } else {
+          recording = { skill_id: rec.id, name: rec.name, outcome: rec.outcome, seconds_left: left }
+          if (!rec.recording_started_at) {
+            await rest(`arnie_skills?id=eq.${rec.id}`, { method: 'PATCH', body: JSON.stringify({ recording_started_at: new Date().toISOString() }) })
+          }
+        }
+      }
+
+      // The handoff pauses the recorder: nothing is captured while Arnie is
+      // waiting on somebody to sign in, so a password cannot reach a
+      // screenshot. The agent enforces it; this is the signal.
+      const [handoff] = await rest(`arnie_computer_actions?select=id&session_id=eq.${session.id}&decision=eq.awaiting_human&completed_at=is.null&limit=1`)
+
+      return json({ ok: true, action: queued?.[0] || null, recording, hold_recorder: !!handoff })
     }
 
     // ── the agent says what happened ─────────────────────────────────────
@@ -244,6 +277,57 @@ Deno.serve(async (req) => {
         }).catch(() => { /* nothing to spend */ })
       }
       return json({ ok: true, action_id: made?.[0]?.id, decision: 'queued' })
+    }
+
+    // ── the recorder reports what it saw ────────────────────────────────
+    // One row per observation, never an append to a jsonb column: a ten-minute
+    // demonstration is hundreds of events arriving one at a time from a laptop,
+    // and read-modify-write loses every one that arrives alongside another.
+    if (action === 'observe') {
+      const skillId = Number(body.skill_id)
+      if (!Number.isFinite(skillId)) return json({ error: 'skill_id is required' }, 400)
+      // Only into a recording of your own, and only while it IS recording.
+      const [skill] = await rest(`arnie_skills?select=id,status&id=eq.${skillId}&employee_id=eq.${me}&limit=1`)
+      if (!skill) return json({ error: 'No recording of yours by that id.' }, 404)
+      if (skill.status !== 'recording') return json({ error: 'That recording has stopped.' }, 409)
+
+      const list = Array.isArray(body.observations) ? body.observations : [body]
+      const rows = list.slice(0, 200).map((o: Record<string, unknown>) => ({
+        company_id: company,
+        skill_id: skillId,
+        seq: Number(o.seq) || 0,
+        at: typeof o.at === 'string' ? o.at : new Date().toISOString(),
+        app: o.app ? String(o.app).slice(0, 80) : null,
+        window_title: o.window_title ? String(o.window_title).slice(0, 300) : null,
+        kind: String(o.kind || 'click'),
+        x: Number.isFinite(Number(o.x)) ? Math.round(Number(o.x)) : null,
+        y: Number.isFinite(Number(o.y)) ? Math.round(Number(o.y)) : null,
+        // Length only. What somebody typed during a demonstration is their
+        // own and a customer's, and it has no business in a step list.
+        text_length: Number.isFinite(Number(o.text_length)) ? Number(o.text_length) : null,
+        key_name: o.key_name ? String(o.key_name).slice(0, 24) : null,
+        shot_path: o.shot_path ? String(o.shot_path).slice(0, 300) : null,
+      }))
+      // Duplicates are expected: the agent retries a batch it is not sure
+      // landed. The unique index on (skill_id, seq) makes that harmless.
+      await fetch(`${SUPABASE_URL}/rest/v1/arnie_skill_observations?on_conflict=skill_id,seq`, {
+        method: 'POST',
+        headers: { ...H, Prefer: 'resolution=ignore-duplicates,return=minimal' },
+        body: JSON.stringify(rows),
+      })
+      return json({ ok: true, taken: rows.length })
+    }
+
+    // ── the recording stops ─────────────────────────────────────────────
+    if (action === 'teach_stop') {
+      const skillId = Number(body.skill_id)
+      const [skill] = await rest(`arnie_skills?select=id,status&id=eq.${skillId}&employee_id=eq.${me}&limit=1`)
+      if (!skill) return json({ error: 'No recording of yours by that id.' }, 404)
+      await rest(`arnie_skills?id=eq.${skillId}&status=eq.recording`, {
+        method: 'PATCH', body: JSON.stringify({ status: 'draft', updated_at: new Date().toISOString() }),
+      })
+      const seen = await rest(`arnie_skill_observations?select=id&skill_id=eq.${skillId}`)
+      return json({ ok: true, observations: seen.length })
     }
 
     // ── a person answers an ask-first ───────────────────────────────────

@@ -159,12 +159,69 @@ Left in Phase 0: the "Connect this computer" flow that hands the agent a token
 0 exists to answer is unchanged — does a correct TrakSmart application come out
 the other end?
 
-**Phase 1 — teach mode.** Recording, review-in-English, steps saved, re-teach on
-a miss. This is what turns it from a script into a feature.
+**Phase 1 — teach mode.** *Built 2026-10-11.*
+
+- `supabase/migrations/20261011093000_arnie_teach_observations.sql` — a
+  demonstration is a list of observations, one row each, not a jsonb that
+  read-modify-write would shred.
+- `scripts/agent/recorder.ps1` — a resident PowerShell process streaming NDJSON.
+  Counts characters, never keeps them.
+- `supabase/functions/arnie-teach/` — Arnie reads the screenshots and writes
+  the steps in English, names what one run could not tell him, and saves a
+  **draft**. Never publishes.
+- `src/pages/agents/arnie/ArnieSkills.jsx` — the Taught tab: the uncertainty
+  above the steps, both editable, publish only once saved.
+- `supabase/migrations/20261011101500_arnie_recordings_bucket.sql` — the
+  private bucket's policies, scoped to your own recording by path.
+
+Proved live 17/17 with real screenshots from a real screen. Two things worth
+keeping: the bucket had **no storage policy at all**, so every screenshot was
+silently dropped — found only because Arnie refused to invent steps from three
+coordinates and said the recording was too thin. And identity in those policies
+is the **JWT email**, because this app has no `employees.user_id`; `auth.uid()`
+would have matched nobody and denied everybody.
+
+Still open: re-teaching a single step that has drifted, and recording on macOS
+(see below).
+
+**Phase 1b — macOS.** *Partly built.* The agent now RUNS on macOS — screenshots
+via `screencapture`, pointer and keyboard via System Events, with a readable
+sentence instead of an osascript error number when the grants are missing.
+**Recording is still Windows-only**: a global input hook on macOS wants a signed
+helper with the Accessibility grant, not a shell command. The agent says so at
+startup rather than recording nothing.
 
 **Phase 2 — ship it as a JobScout feature.** Signed and notarised installers,
-auto-update, onboarding, the permission UI as a real surface, tenant-scoped
-step libraries, audit surfaced in the app.
+auto-update, onboarding, tenant-scoped step libraries.
+
+### Signing — what this actually needs, and why it is not built
+
+Everything above runs today from a checkout. Putting it on somebody else's
+machine needs certificates, and a certificate is bought in a company's legal
+name with its legal identity. That is Bryce's to do; it cannot be engineered
+around, and a plan that pretended otherwise would be a plan that stalls at the
+worst moment.
+
+**Windows.** An unsigned binary that synthesises keyboard and mouse input is
+exactly the shape SmartScreen and most antivirus heuristics are built to stop.
+An ordinary code-signing certificate gets the publisher name into the dialog;
+reputation still has to accumulate, so the first installs warn anyway. An EV
+certificate carries reputation immediately and is the usual answer for this
+class of software. Either way it is an annual cost and an identity check, and
+**antivirus false positives are a running tax, not a one-off** — expect to be
+submitting whitelist requests.
+
+**macOS.** An Apple Developer ID certificate, plus notarisation on every build.
+Unnotarised, Gatekeeper refuses it outright on a modern macOS — there is no
+"warn and continue" any more. Separately, Screen Recording and Accessibility
+are **System Settings toggles the person flips by hand**; they cannot be
+scripted, granted by an installer, or pre-approved, and they will be the top
+onboarding drop-off whatever the packaging looks like.
+
+**What to do before paying for anything:** Phase 0 and 1 install unpacked or by
+Chrome/MDM policy on HHH machines, which needs no certificate at all. Prove the
+SRP close-out end to end there first. Signing is worth buying when the answer to
+"does this save Cole an hour a day" is yes, and not before.
 
 ---
 

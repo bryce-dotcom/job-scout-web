@@ -10,6 +10,7 @@ const ARNIE_TABS = [
   { path: '/agents/arnie', label: 'Chat', icon: 'MessageCircle', end: true },
   { path: '/agents/arnie/computer', label: 'Computer', icon: 'Monitor' },
   { path: '/agents/arnie/routines', label: 'Routines', icon: 'Clock' },
+  { path: '/agents/arnie/taught', label: 'Taught', icon: 'GraduationCap' },
   { path: '/agents/arnie/history', label: 'History', icon: 'History' },
   { path: '/agents/arnie/settings', label: 'Settings', icon: 'Wrench' },
 ]
