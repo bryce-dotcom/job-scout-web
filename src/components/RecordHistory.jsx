@@ -109,7 +109,7 @@ function toEvent(tableName, r) {
 const KIND_ICON = { created: Plus, deleted: Trash2, status: RefreshCw, sent: Send, updated: Pencil }
 
 export function RecordHistory({ tableName, recordId, tz = DEFAULT_TZ }) {
-  const theme = useTheme()
+  const { theme } = useTheme()
   const employees = useStore((s) => s.employees) || []
   const [rows, setRows] = useState(null)
 
@@ -187,7 +187,7 @@ export function RecordHistory({ tableName, recordId, tz = DEFAULT_TZ }) {
 
 // Button + modal wrapper — drop-in for any record page. "Viewable upon a click."
 export function RecordHistoryButton({ tableName, recordId, tz = DEFAULT_TZ, label = 'History', style = {} }) {
-  const theme = useTheme()
+  const { theme } = useTheme()
   const [open, setOpen] = useState(false)
   return (
     <>

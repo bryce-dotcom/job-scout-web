@@ -19,7 +19,7 @@
 // pixels come back as pixels and the scale is applied where it is known for
 // certain. An AI guessing at feet is an AI guessing at the price.
 //
-// Input  : { company_id, image_base64, lat, lng, zoom, address?, image_width? }
+// Input  : { company_id, image_base64, lat, lng, zoom, address?, image_width?, feet_per_pixel?, target_x?, target_y? }
 // Output : { runs: [{ face, points: [{x,y}], note }], storeys_guess, notes, confidence }
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -64,7 +64,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { company_id, image_base64, lat, lng, zoom, address, image_width, feet_per_pixel } = await req.json();
+    const { company_id, image_base64, lat, lng, zoom, address, image_width, feet_per_pixel, target_x, target_y } = await req.json();
     const who = await resolveBillableCompany(req, company_id, Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
     if ('error' in who) return json({ error: who.error }, who.status);
     const companyId = who.companyId;
@@ -73,11 +73,21 @@ serve(async (req) => {
     const media = String(image_base64).startsWith('/9j/') ? 'image/jpeg' : 'image/png';
     const clean = String(image_base64).replace(/^data:image\/\w+;base64,/, '');
 
+    const tx = Number(target_x), ty = Number(target_y);
+    const hasTarget = Number.isFinite(tx) && Number.isFinite(ty);
+    const ftpp = Number(feet_per_pixel);
+
     const context = [
       address ? `Address: ${address}` : null,
       Number.isFinite(Number(lat)) ? `Centre: ${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}` : null,
       Number.isFinite(Number(zoom)) ? `Tile zoom: ${zoom}` : null,
       Number.isFinite(Number(image_width)) ? `Image is ${image_width}px wide.` : null,
+      // WHICH house. The picture is a few hundred feet across and holds the
+      // neighbours too; without this the first live run (Highland, 10-11)
+      // traced the street and the gap between two houses.
+      hasTarget
+        ? `THE HOUSE TO TRACE is the one building under pixel (${Math.round(tx)}, ${Math.round(ty)}), marked with a yellow ring. Trace ONLY that building's roof edges. Every other house, the street, kerbs, driveways, fences and yards are not part of the job — no point of any run may sit on them.`
+        : null,
       // The scale is the thing that stops a fence line becoming a roof.
       Number.isFinite(Number(feet_per_pixel))
         ? `SCALE: one pixel is ${Number(feet_per_pixel).toFixed(3)} ft, so the whole image is about ${Math.round(Number(feet_per_pixel) * Number(image_width || 768))} ft across.`
@@ -87,8 +97,11 @@ serve(async (req) => {
     const ai = await callAnthropic(
       { feature: 'chris-roofline', companyId },
       {
-        model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 2000,
+        // Pixel-accurate tracing is the hard part of this job; the older
+        // Sonnet put lines in the road. Adaptive thinking is on by default.
+        model: 'claude-opus-5-5',
+        max_tokens: 16000,
+        output_config: { effort: 'high' },
         messages: [{
           role: 'user',
           content: [
@@ -111,7 +124,8 @@ serve(async (req) => {
       });
     }
 
-    const text = String(ai.data?.content?.[0]?.text || '').trim();
+    // With thinking on, the first block is a thinking block — read the text one.
+    const text = String((ai.data?.content || []).find((b: { type?: string }) => b?.type === 'text')?.text || '').trim();
     let parsed: Record<string, unknown> = {};
     try {
       const m = text.match(/\{[\s\S]*\}/);
@@ -133,7 +147,15 @@ serve(async (req) => {
           .map((p: Record<string, unknown>) => ({ x: Number(p?.x), y: Number(p?.y) }))
           .filter((p: { x: number; y: number }) => Number.isFinite(p.x) && Number.isFinite(p.y)),
       }))
-      .filter((r: { points: unknown[] }) => r.points.length >= 2);
+      .filter((r: { points: unknown[] }) => r.points.length >= 2)
+      // A run that never comes near the marked house is on somebody else's
+      // roof or in the road. 'Near' = some point within ~70 ft of the pin,
+      // which covers the far corner of a large house but not the neighbour.
+      .filter((r: { points: { x: number; y: number }[] }) => {
+        if (!hasTarget || !(ftpp > 0)) return true;
+        const nearest = Math.min(...r.points.map((p) => Math.hypot(p.x - tx, p.y - ty))) * ftpp;
+        return nearest <= 70;
+      });
 
     return json({
       runs,

@@ -48,6 +48,8 @@ export interface AiResult {
 // $ per million tokens — keep in sync with platform.claude.com/docs pricing.
 // (cached 2026-06: Opus 4.x $5/$25, Sonnet 4.x $3/$15, Haiku 4.5 $1/$5)
 const PRICES: Array<{ match: RegExp; inPerM: number; outPerM: number }> = [
+  // Most specific first — Opus 5.5 is cheaper than the Opus line before it.
+  { match: /opus-5-5/i, inPerM: 4, outPerM: 20 },
   { match: /opus/i, inPerM: 5, outPerM: 25 },
   { match: /haiku/i, inPerM: 1, outPerM: 5 },
   { match: /sonnet/i, inPerM: 3, outPerM: 15 },

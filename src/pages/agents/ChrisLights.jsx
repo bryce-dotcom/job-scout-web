@@ -35,7 +35,7 @@ import { STOREYS, liftDecision, accessLines, accessWarning } from '../../lib/chr
 const FACE_COLOR = { front: '#e11d48', side: '#f59e0b', back: '#3b82f6' }
 
 export default function ChrisLights() {
-  const theme = useTheme()
+  const { theme } = useTheme()
   const companyId = useStore((s) => s.companyId)
   const customers = useStore((s) => s.customers)
   const user = useStore((s) => s.user)
@@ -157,16 +157,40 @@ export default function ChrisLights() {
   }
 
   // ── Let Chris propose the runs ──────────────────────────────────────────
+  // A copy of the aerial with a yellow ring on the geocoded house. Only the
+  // AI sees it; the rep's picture stays clean. Same pixel frame, so the runs
+  // it proposes land where they should.
+  const markHouse = (src, at) => new Promise((resolve) => {
+    if (!at) { resolve(src); return }
+    const img = new Image()
+    img.onload = () => {
+      const c = document.createElement('canvas')
+      c.width = img.naturalWidth; c.height = img.naturalHeight
+      const ctx = c.getContext('2d')
+      ctx.drawImage(img, 0, 0)
+      ctx.strokeStyle = '#facc15'; ctx.lineWidth = 3
+      ctx.beginPath(); ctx.arc(at.x, at.y, 14, 0, Math.PI * 2); ctx.stroke()
+      try { resolve(c.toDataURL('image/jpeg', 0.9)) } catch { resolve(src) }
+    }
+    img.onerror = () => resolve(src)
+    img.src = src
+  })
+
   const readRoof = async () => {
     if (!imageUrl || !place) return
     setReading(true)
     try {
+      // The AI gets its own copy with a ring on the house, plus the pin's
+      // pixel, so it traces THIS house — not the street or the neighbour.
+      const target = plan?.center
+      const marked = await markHouse(imageUrl, target)
       const { data, error } = await supabase.functions.invoke('chris-roofline', {
         body: {
           company_id: companyId,
-          image_base64: imageUrl.replace(/^data:image\/\w+;base64,/, ''),
+          image_base64: marked.replace(/^data:image\/\w+;base64,/, ''),
           lat: place.lat, lng: place.lng, zoom,
           address: place.matched, image_width: plan?.size, feet_per_pixel: feetPerPx,
+          target_x: target?.x, target_y: target?.y,
         },
       })
       if (error) throw error
