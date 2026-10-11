@@ -31,6 +31,7 @@ describe('what the dashboard calls sold', () => {
     expect(ctx).toMatch(/Total collected \(all time\): \$1000\.00/)
     expect(ctx).toMatch(/YTD Sales Won \(calendar year\): \$346,054\.00/)
     expect(buildSystemPrompt({}, {}, 'super_admin')).toMatch(/Sold is not collected/)
+    expect(buildSystemPrompt({}, {}, 'super_admin')).toMatch(/"I pulled" means you pulled/)
     expect(salesSection({ jobs: [], now })).toBe('')
   })
 })
