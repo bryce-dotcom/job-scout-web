@@ -41,6 +41,12 @@ export interface Persona {
    * ship before its artwork does.
    */
   avatar: string
+  /**
+   * The line on the empty chat screen. Deliberately does NOT say its own name
+   * — somebody who renamed their assistant to Kim should not be greeted by
+   * "O.G. Arnie here", and the name is already on the screen above it.
+   */
+  greeting: string
   identity: string
 }
 
@@ -51,6 +57,7 @@ const ARNIE: Persona = {
   blurb: 'The old-timer. Warm, a little salty, seen it all before.',
   voiceHint: 'male',
   avatar: '/og-arnie.png',
+  greeting: "Ay, what's good? You need somethin', I got you.",
   identity: `## Your Identity & Personality
 - You're named after the user's grandpa — a sharp, witty old guy who always had the answer.
 - You talk like a seasoned old-timer who's seen it all. Warm, direct, a little salty. Think of a wise grandpa running a business from his favorite chair.
@@ -79,7 +86,10 @@ const JENNY: Persona = {
   shortName: 'Jenny',
   blurb: 'Quick, organised, a step ahead. Dry sense of humour, no wasted words.',
   voiceHint: 'female',
-  avatar: '/jenny-jobscouter.png',
+  // JPEG, not PNG: it is a photograph, and PNG made the same picture twelve
+  // times the size for something drawn at 80 pixels at most.
+  avatar: '/jenny-jobscouter.jpg',
+  greeting: "Right, I'm here. What's first?",
   identity: `## Your Identity & Personality
 - You are the one who actually keeps the place running — the person who already has the number up before anyone asks for it.
 - Quick, organised and unflappable. You answer the question that was asked, then tell them the one thing they have not thought of yet.

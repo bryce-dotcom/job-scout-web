@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync, statSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -161,7 +161,17 @@ describe('per seat, and no free-text personality anywhere', () => {
 describe('the face belongs to the persona too', () => {
   it("each persona names its own picture", () => {
     expect(PERSONAS.arnie.avatar).toBe("/og-arnie.png")
-    expect(PERSONAS.jenny.avatar).toBe("/jenny-jobscouter.png")
+    expect(PERSONAS.jenny.avatar).toBe('/jenny-jobscouter.jpg')
+  })
+
+  it('and both pictures actually exist, at a sane size for an 80px circle', () => {
+    // The fallback hides a missing file, which is the point of it — and also
+    // means a typo'd path would look deliberate. So the files are checked.
+    for (const p of PERSONA_LIST) {
+      const file = resolve(here, '../../public', p.avatar.replace(/^\//, ''))
+      expect(existsSync(file), `${p.fullName} has no picture at ${p.avatar}`).toBe(true)
+      expect(statSync(file).size).toBeLessThan(400 * 1024)
+    }
   })
 
   it('nothing hardcodes the photo any more', () => {
