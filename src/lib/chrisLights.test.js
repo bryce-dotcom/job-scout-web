@@ -214,3 +214,25 @@ describe('lights config', () => {
     expect(lightsConfigProblem({ per_foot_rate: 6.5, install_ft_per_hour: 0 })).toMatch(/speed/)
   })
 })
+
+describe('business unit for a lights estimate', () => {
+  it('reads both stored shapes', async () => {
+    const { businessUnitNames } = await import('./chrisLights')
+    expect(businessUnitNames('["Commercial","Residential"]')).toEqual(['Commercial', 'Residential'])
+    expect(businessUnitNames(JSON.stringify([{ name: 'Residential' }, { name: 'Antonino Lawn Care', logo_url: 'x' }]))).toEqual(['Residential', 'Antonino Lawn Care'])
+    expect(businessUnitNames('nope')).toEqual([])
+    expect(businessUnitNames(null)).toEqual([])
+  })
+  it('prefers the saved default, then a sole unit, else nothing', async () => {
+    const { defaultLightsBusinessUnit } = await import('./chrisLights')
+    const names = ['Residential', 'Antonino Lawn Care']
+    expect(defaultLightsBusinessUnit('{"per_foot_rate":6.5,"business_unit":"Antonino Lawn Care"}', names)).toBe('Antonino Lawn Care')
+    expect(defaultLightsBusinessUnit('{"business_unit":"Renamed Away"}', names)).toBeNull()
+    expect(defaultLightsBusinessUnit({}, ['Only One'])).toBe('Only One')
+    expect(defaultLightsBusinessUnit({}, names)).toBeNull()
+  })
+  it('the numeric reader ignores business_unit', async () => {
+    const { readLightsConfig } = await import('./chrisLights')
+    expect(readLightsConfig('{"per_foot_rate":6.5,"business_unit":"X"}')).toEqual({ per_foot_rate: 6.5 })
+  })
+})

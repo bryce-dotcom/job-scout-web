@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Save } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { toast } from '../../lib/toast'
-import { LIGHTS_CONFIG_KEY, LIGHTS_CONFIG_FIELDS, readLightsConfig, lightsConfigProblem } from '../../lib/chrisLights'
+import { LIGHTS_CONFIG_KEY, LIGHTS_CONFIG_FIELDS, readLightsConfig, lightsConfigProblem, businessUnitNames, defaultLightsBusinessUnit } from '../../lib/chrisLights'
 import { ACCESS_DEFAULTS } from '../../lib/chrisAccess'
 
 export default function ChrisLightsSettings({ theme, companyId, settings, saveSetting }) {
@@ -22,8 +22,14 @@ export default function ChrisLightsSettings({ theme, companyId, settings, saveSe
     () => readLightsConfig(settings?.find((s) => s.key === LIGHTS_CONFIG_KEY)?.value),
     [settings],
   )
+  const rawCfg = settings?.find((s) => s.key === LIGHTS_CONFIG_KEY)?.value
+  const rawUnits = settings?.find((s) => s.key === 'business_units')?.value
+  const unitNames = useMemo(() => businessUnitNames(rawUnits), [rawUnits])
+  const storedUnit = defaultLightsBusinessUnit(rawCfg, unitNames) || ''
   // Only what the user has typed; everything else shows the saved value.
   const [edits, setEdits] = useState({})
+  const [unitEdit, setUnitEdit] = useState(null)
+  const unit = unitEdit ?? storedUnit
   const [saving, setSaving] = useState(false)
   const [laborRate, setLaborRate] = useState(null)
 
@@ -42,14 +48,16 @@ export default function ChrisLightsSettings({ theme, companyId, settings, saveSe
   LIGHTS_CONFIG_FIELDS.forEach((x) => { form[x.key] = edits[x.key] ?? (stored[x.key] != null ? String(stored[x.key]) : '') })
   const next = readLightsConfig(form)
   const problem = lightsConfigProblem(next)
-  const dirty = JSON.stringify(next) !== JSON.stringify(stored)
+  const dirty = JSON.stringify(next) !== JSON.stringify(stored) || unit !== storedUnit
 
   const save = async () => {
     if (problem) { toast.error(problem); return }
     setSaving(true)
-    const ok = await saveSetting(LIGHTS_CONFIG_KEY, next)
+    // The numbers and the business unit live in one row — save both, or a
+    // price change would quietly erase the unit.
+    const ok = await saveSetting(LIGHTS_CONFIG_KEY, unit ? { ...next, business_unit: unit } : next)
     setSaving(false)
-    if (ok) { setEdits({}); toast.success('Christmas lighting prices saved') }
+    if (ok) { setEdits({}); setUnitEdit(null); toast.success('Christmas lighting prices saved') }
   }
 
   const input = {
@@ -84,6 +92,17 @@ export default function ChrisLightsSettings({ theme, companyId, settings, saveSe
           )
         })}
       </div>
+
+      <label style={{ display: 'block', marginTop: 20, maxWidth: 360 }}>
+        <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: theme.text, marginBottom: 4 }}>Business unit</span>
+        <select value={unit} onChange={(e) => setUnitEdit(e.target.value)} style={input}>
+          <option value="">{unitNames.length ? 'Choose on each estimate' : 'No business units set up'}</option>
+          {unitNames.map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <span style={{ display: 'block', fontSize: 11.5, color: theme.textMuted, marginTop: 4 }}>
+          Christmas-lights estimates go out under this one — its logo, address and phone are what the PDF prints. The rep can still change it per estimate.
+        </span>
+      </label>
 
       <div style={{ marginTop: 20, padding: '12px 14px', borderRadius: 8, backgroundColor: theme.bg, fontSize: 13, color: theme.textSecondary }}>
         <strong style={{ color: theme.text }}>Hourly rate for extra time: </strong>

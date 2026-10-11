@@ -29,6 +29,7 @@ import {
 import {
   COVERAGE, FACES, feetPerPixel, runLengthFt, coverageFeet, coverageOptions,
   lightsPrice, quoteProblem, lightsIntakeLines, BULB_COLORS, bulbLabel, readLightsConfig, LIGHTS_CONFIG_KEY,
+  businessUnitNames, defaultLightsBusinessUnit,
 } from '../../lib/chrisLights'
 import { STOREYS, liftDecision, accessLines, accessWarning } from '../../lib/chrisAccess'
 
@@ -91,6 +92,13 @@ export default function ChrisLights() {
   // them once, empty, and told the rep to set a price that was already set.
   const rawLightsCfg = useStore((s) => s.settings?.find((x) => x.key === LIGHTS_CONFIG_KEY)?.value)
   const cfg = useMemo(() => readLightsConfig(rawLightsCfg), [rawLightsCfg])
+
+  // The business unit the estimate goes out under — the PDF and send step
+  // refuse one without it. Preselected from Settings, changeable per estimate.
+  const rawUnits = useStore((s) => s.settings?.find((x) => x.key === 'business_units')?.value)
+  const unitNames = useMemo(() => businessUnitNames(rawUnits), [rawUnits])
+  const [unitEdit, setUnitEdit] = useState(null)
+  const businessUnit = unitEdit ?? (defaultLightsBusinessUnit(rawLightsCfg, unitNames) || '')
   const perFootRate = Number(cfg?.per_foot_rate) || 0
   const minimumCharge = Number(cfg?.minimum_charge) || 0
 
@@ -99,7 +107,9 @@ export default function ChrisLights() {
   const feet = coverageFeet(runs, coverage)
   const priced = lightsPrice({ feet, perFootRate, minimumCharge })
   const problem = quoteProblem({ runs, coverage, perFootRate })
-  const blocker = problem || (!customerId ? 'Choose the customer this estimate is for.' : null)
+  const blocker = problem
+    || (!customerId ? 'Choose the customer this estimate is for.' : null)
+    || (unitNames.length && !businessUnit ? 'Choose the business unit it goes out under.' : null)
 
   // A quote in progress — runs traced, a photo, a paid picture — must not be
   // wiped by the app updating itself while the rep is in the camera app.
@@ -320,6 +330,7 @@ export default function ChrisLights() {
         customer_id: customerId ? parseInt(customerId) : null,
         salesperson_id: user?.id || null,
         service_type: 'Christmas Lighting',
+        business_unit: businessUnit || null,
         estimate_name: `Christmas lights — ${place?.matched || address}`,
         summary: `${feet} ft of roofline · ${COVERAGE[coverage].label} · ${bulbLabel(bulb)}${house?.storeys && house.storeys !== 'unsure' ? ` · ${house.storeys} storey` : ''}${decision?.lift ? ' · lift' : ''}`,
         notes: [
@@ -581,6 +592,16 @@ export default function ChrisLights() {
                 placeholder="Choose the customer"
                 theme={theme}
               />
+              {unitNames.length > 0 && (
+                <>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: theme.text, margin: '14px 0 10px' }}>Business unit <span style={{ color: theme.error }}>*</span></h3>
+                  <select value={businessUnit} onChange={(e) => setUnitEdit(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', minHeight: 44, fontSize: 14, borderRadius: 8, boxSizing: 'border-box', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.text }}>
+                    <option value="">Choose the business unit</option>
+                    {unitNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </>
+              )}
               <button type="button" onClick={createEstimate} disabled={!!blocker || saving}
                 title={blocker || undefined}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', marginTop: 12, padding: '12px 16px', minHeight: 46, backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: (blocker || saving) ? 'not-allowed' : 'pointer', opacity: (blocker || saving) ? 0.5 : 1 }}>

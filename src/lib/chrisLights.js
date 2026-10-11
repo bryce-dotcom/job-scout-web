@@ -244,3 +244,38 @@ export function lightsConfigProblem(cfg = {}) {
   if (cfg.install_ft_per_hour != null && !(Number(cfg.install_ft_per_hour) > 0)) return 'Install speed must be above 0 ft/hr.'
   return null
 }
+
+// ── Which business unit a Christmas-lights estimate goes out under ────────
+//
+// The estimate PDF and the send step refuse an estimate with no business
+// unit, and Chris never set one — every Chris estimate stopped at "Business
+// Unit * — Required for generating PDF and sending" (live test, 10-11). The
+// unit also carries the logo, address and phone the PDF prints, so for
+// Antonino it is "Antonino Lawn Care", not a generic "Residential".
+//
+// business_units is stored two ways across tenants: ["Commercial", …] and
+// [{ name: "Commercial", logo_url, … }, …]. Both read as names here.
+
+/** Names from a stored business_units value (string or parsed); junk → []. */
+export function businessUnitNames(raw) {
+  let v = raw
+  try { if (typeof v === 'string') v = JSON.parse(v) } catch { return [] }
+  if (!Array.isArray(v)) return []
+  const names = v.map((u) => (typeof u === 'string' ? u : u?.name)).filter((n) => typeof n === 'string' && n.trim())
+  return [...new Set(names.map((n) => n.trim()))]
+}
+
+/**
+ * The unit to preselect: the company's Chris default when it still exists,
+ * else the only unit when there is just one, else none (the rep chooses —
+ * guessing between Commercial and Residential is how a PDF gets the wrong
+ * letterhead).
+ */
+export function defaultLightsBusinessUnit(cfgRaw, names = []) {
+  let cfg = cfgRaw
+  try { if (typeof cfg === 'string') cfg = JSON.parse(cfg) } catch { cfg = {} }
+  if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch { cfg = {} } }
+  const chosen = typeof cfg?.business_unit === 'string' ? cfg.business_unit.trim() : ''
+  if (chosen && names.includes(chosen)) return chosen
+  return names.length === 1 ? names[0] : null
+}
