@@ -46,7 +46,7 @@ export const MOBILE_TABBAR_HEIGHT = 64
  * exactly as it always did, so every other agent page is unchanged. See
  * lib/agentStatus.js for why the signal is ambient and only one state is loud.
  */
-export default function AgentHeader({ slug, tabs = [], status = null }) {
+export default function AgentHeader({ slug, tabs = [], status = null, displayName: nameOverride = '' }) {
   const st = agentState(status?.state)
   const hover = status?.detail || st.label
   const { getAgent, getCompanyAgent } = useStore()
@@ -79,7 +79,10 @@ export default function AgentHeader({ slug, tabs = [], status = null }) {
   if (!agent) return null
 
   const AgentIcon = Icons[agent.icon] || Icons.Bot
-  const displayName = companyAgent?.custom_name || agent.full_name
+  // What THIS person chose, then what the company renamed it to, then the
+  // agent's own name. A tenant-wide rename used to be the only option and has
+  // to keep working — it just no longer overrules somebody's own choice.
+  const displayName = nameOverride || companyAgent?.custom_name || agent.full_name
 
   // Tabs may declare themselves primary; otherwise the first few win. Order in
   // the array is the author's priority order either way.
