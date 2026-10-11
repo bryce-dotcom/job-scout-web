@@ -7,10 +7,12 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 //               WebSocket (the browser usually does this itself; this path
 //               is the fallback when the browser cannot open the socket).
 //   eleven:<id> ElevenLabs — Arnie's OWN voice. The account was opened for
-//               Arnie; a voice named "Arnie" in My Voices is him. Credits
-//               cost money, so this engine is allowed only for the platform
-//               company (HHH) or a company whose settings row arnie_voice is
-//               { enabled: true, voice_id? }. Identity comes from the login token.
+//               Arnie; a voice named "Arnie" in My Voices is him. On for every
+//               tenant since 2026-10-11 (Microsoft's free voices died; Bryce:
+//               "turn eleven labs on for everyone"); mediaMeter caps a tenant's
+//               month, the platform company is uncapped, and a tenant can be
+//               switched off with settings arnie_voice = { enabled: false }.
+//               Identity comes from the login token.
 //
 // Both return base64 mp3 in JSON so supabase.functions.invoke is happy.
 // { action: 'voices' } → { available, allowed, voices, arnie } for the picker.
@@ -29,7 +31,7 @@ async function rest<T>(path: string): Promise<T | null> {
   } catch { return null }
 }
 
-// May this company spend ElevenLabs credits on Arnie? Platform company, or opted in.
+// May this company spend ElevenLabs credits on Arnie? Yes unless switched off; the cap is in mediaMeter.
 async function elevenAllowed(companyId: number | null): Promise<{ allowed: boolean; voiceId: string | null }> {
   if (!companyId) return { allowed: false, voiceId: null }
   const [co, st] = await Promise.all([
@@ -40,7 +42,7 @@ async function elevenAllowed(companyId: number | null): Promise<{ allowed: boole
   const raw = st?.[0]?.value
   if (raw && typeof raw === 'object') cfg = raw as Record<string, unknown>
   else if (typeof raw === 'string') { try { cfg = JSON.parse(raw) } catch { cfg = {} } }
-  const allowed = co?.[0]?.is_platform === true || cfg.enabled === true
+  const allowed = co?.[0]?.is_platform === true || cfg.enabled !== false
   const voiceId = typeof cfg.voice_id === 'string' && isVoiceId(cfg.voice_id) ? cfg.voice_id : null
   return { allowed, voiceId }
 }
