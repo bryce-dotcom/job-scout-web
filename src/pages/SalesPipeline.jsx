@@ -18,6 +18,7 @@ import EntityCard, { MALE_NAMES, FEMALE_NAMES } from '../components/EntityCard'
 import UnassignedSalesPanel from '../components/UnassignedSalesPanel'
 import FollowUpStrip from '../components/FollowUpStrip'
 import { buildLeadIndex, primaryOwnerId, leadForJob, isUnattributed, jobOwnedBy } from '../lib/jobOwnership'
+import { deliveryStagesFrom, jobStatusId } from '../lib/pipelineStages'
 import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipelineScroll, takePipelineScroll } from '../lib/pipelinePrefs'
 import { soldTotal, periodBounds } from '../lib/soldTotals'
 import { countDueFromRows, dueKeysFromRows } from '../lib/followUpDue'
@@ -482,14 +483,11 @@ export default function SalesPipeline() {
       const closedStage = prev.find(s => s.isClosed) || { id: 'Closed', name: 'Closed', color: '#6b7280', isClosed: true }
       const lostStage = prev.find(s => s.isLost) || { id: 'Lost', name: 'Lost', color: '#64748b', isLost: true }
 
-      const deliveryStages = storeJobStatuses.map(s => {
-        const name = typeof s === 'string' ? s : s.name
-        const color = typeof s === 'string' ? '#94a3b8' : (s.color || '#94a3b8')
-        return { id: name, name, color, isDelivery: true }
-      })
-
-      // Add Invoiced after job statuses
-      deliveryStages.push({ id: 'Invoiced', name: 'Invoiced', color: '#8b5cf6', isDelivery: true })
+      // Column id = the status ID (what jobs.status and a converted lead's
+      // status hold); the name is only the label. Built from NAME until
+      // 2026-10-11, which stranded every lead at HHH's renamed Paid/Payments
+      // stage and doubled the Invoiced and Closed columns. lib/pipelineStages.
+      const deliveryStages = deliveryStagesFrom(storeJobStatuses, { reserved: [closedStage.id, lostStage.id] })
 
       return [...salesStages, ...deliveryStages, closedStage, lostStage]
     })
@@ -783,7 +781,8 @@ export default function SalesPipeline() {
       // them through the date-filtered query, so the MTD/YTD/90d filter
       // finally applies to them too (Doug #48).
       const terminalStatuses = ['Completed', 'Verified Complete', 'Invoiced', 'Paid', 'Closed']
-      const allJobStatuses = (storeJobStatuses || []).map(s => typeof s === 'string' ? s : s.name)
+      // jobs.status holds the status ID, never the board name.
+      const allJobStatuses = (storeJobStatuses || []).map(jobStatusId).filter(Boolean)
       const activeStatuses = allJobStatuses.filter(s => !terminalStatuses.includes(s))
 
       // Active jobs: always fetch ALL regardless of date range (they're current work)
