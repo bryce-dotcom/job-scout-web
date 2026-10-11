@@ -88,6 +88,13 @@ describe('estimates and closes', () => {
     expect(noah.closedValue).toBe(5400 + 16299.2)
     expect(cole.closedValue).toBe(450)
   })
+  it('open = sent in the window, not closed, not rejected — at the estimate amount', () => {
+    expect(noah.open).toBe(1)             // 101
+    expect(noah.openValue).toBe(800)
+    expect(cole.open).toBe(2)             // 104, 105
+    expect(cole.openValue).toBe(1300)
+    expect(nobody.open).toBe(0)
+  })
   it('close rate = of the estimates sent in the window, the share closed by now', () => {
     expect(noah.sentClosed).toBe(2)   // 100 and 107 of his three sent
     expect(noah.closeRate).toBe(67)
@@ -102,7 +109,7 @@ describe('estimates and closes', () => {
 
 describe('totals', () => {
   it('are the whole company, unattributed included', () => {
-    expect(funnelTotals(rows)).toMatchObject({ meetings: 5, takeoffs: 7, sentClosed: 4, closed: 4, closeRate: 57 })
+    expect(funnelTotals(rows)).toMatchObject({ meetings: 5, takeoffs: 7, sentClosed: 4, open: 3, openValue: 2100, closed: 4, closeRate: 57 })
     expect(funnelTotals(rows).closedValue).toBe(5400 + 16299.2 + 450 + 3000)
   })
 })
@@ -179,6 +186,15 @@ describe('a close counts in the month it closed, and the page can be read agains
     expect(noah.closeRate).toBe(100)
   })
 
+  it('a rejected estimate was sent but is not open', () => {
+    const rows = computeSalesFunnel({ quotes: [...q, { id: 204, salesperson_id: 1, status: 'Rejected', quote_amount: 5000, created_at: '2026-09-06T00:00:00Z' }], jobs: j, employees, leads: [] }, sept)
+    const noah = rows.find((r) => r.repId === '1')
+    expect(noah.takeoffs).toBe(2)          // 202 and the rejected 204
+    expect(noah.open).toBe(1)              // only 202
+    expect(noah.openValue).toBe(700)
+    expect(noah.closeRate).toBe(0)
+  })
+
   it('closeRateOf never exceeds 100 and is 0 with nothing sent', () => {
     expect(closeRateOf({ takeoffs: 0, sentClosed: 0 })).toBe(0)
     expect(closeRateOf({ takeoffs: 4, sentClosed: 1 })).toBe(25)
@@ -208,7 +224,7 @@ describe('junk', () => {
   it('survives empty and missing inputs', () => {
     expect(computeSalesFunnel()).toEqual([])
     expect(computeSalesFunnel({ appointments: [null], quotes: [null], leads: [null], employees: [null], jobs: [null] })).toEqual([])
-    expect(funnelTotals([])).toMatchObject({ meetings: 0, takeoffs: 0, sentClosed: 0, closed: 0, closedValue: 0, closeRate: 0 })
+    expect(funnelTotals([])).toMatchObject({ meetings: 0, takeoffs: 0, sentClosed: 0, open: 0, openValue: 0, closed: 0, closedValue: 0, closeRate: 0 })
   })
   it(`exports the unattributed key (${UNATTRIBUTED})`, () => {
     expect(UNATTRIBUTED).toBe('unattributed')

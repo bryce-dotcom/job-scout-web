@@ -105,7 +105,6 @@ export default function Reports() {
   const inventory = useStore((state) => state.inventory)
   const fleet = useStore((state) => state.fleet)
   const fleetMaintenance = useStore((state) => state.fleetMaintenance)
-  const salesPipeline = useStore((state) => state.salesPipeline)
   const expenses = useStore((state) => state.expenses)
   const leadPayments = useStore((state) => state.leadPayments)
   const products = useStore((state) => state.products)
@@ -501,7 +500,7 @@ export default function Reports() {
   const renderReport = () => {
     switch (reportType) {
       case 'standard': return <ReportsPanel theme={theme} isMobile={isMobile} />
-      case 'sales': return <SalesReport theme={theme} companyId={companyId} leads={leads} jobs={jobs} employees={employees} salesPipeline={salesPipeline} formatCurrency={formatCurrency} inputStyle={inputStyle} pillStyle={pillStyle} exportCSV={exportCSV} />
+      case 'sales': return <SalesReport theme={theme} leads={leads} jobs={jobs} employees={employees} formatCurrency={formatCurrency} inputStyle={inputStyle} pillStyle={pillStyle} exportCSV={exportCSV} />
       case 'jobs': return <JobsReport theme={theme} companyId={companyId} jobs={jobs} employees={employees} formatCurrency={formatCurrency} inputStyle={inputStyle} pillStyle={pillStyle} exportCSV={exportCSV} />
       case 'financial': return renderFinancialReport()
       case 'employee': return renderEmployeeReport()
@@ -726,7 +725,7 @@ const FALLBACK_STATUSES = [
 ]
 
 // ── Sales Report Component ────────────────────────────────────────
-function SalesReport({ theme, companyId, leads, jobs, employees, salesPipeline, formatCurrency, inputStyle, pillStyle, exportCSV }) {
+function SalesReport({ theme, leads, jobs, employees, formatCurrency, inputStyle, pillStyle, exportCSV }) {
   const navigate = useNavigate()
   const quotes = useStore((state) => state.quotes)
   const [statusFilters, setStatusFilters] = useState([])
@@ -846,7 +845,10 @@ function SalesReport({ theme, companyId, leads, jobs, employees, salesPipeline, 
   }, [quotes, leads, employees, jobs, dateStart, dateEnd])
   const closeRate = funnel.closeRate
   const totalQuoteValue = enrichedLeads.reduce((s, l) => s + l.quoteAmount, 0)
-  const pipelineValue = salesPipeline.filter(d => !['Won', 'Lost', 'Completed'].includes(d.stage)).reduce((sum, d) => sum + (parseFloat(d.quote_amount) || 0), 0)
+  // Pipeline = estimates sent in the range that are still open (not closed,
+  // not rejected), at their estimate amount. It used to sum the legacy
+  // sales_pipeline table, which on HHH is eight rows from 2025 worth $812,550.
+  const pipelineValue = funnel.openValue
   // What a close was worth: the jobs behind the estimates that closed in the range.
   const avgDealSize = funnel.closed > 0 ? funnel.closedValue / funnel.closed : 0
 
@@ -967,6 +969,7 @@ function SalesReport({ theme, companyId, leads, jobs, employees, salesPipeline, 
         <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
           <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Pipeline</div>
           <div style={{ fontSize: '22px', fontWeight: '700', color: '#3b82f6' }}>{formatCurrency(pipelineValue)}</div>
+          <div style={{ fontSize: '11px', color: theme.textMuted }}>{funnel.open} open estimate{funnel.open === 1 ? '' : 's'} still out</div>
         </div>
         <div style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '14px 16px' }}>
           <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Avg Deal</div>
