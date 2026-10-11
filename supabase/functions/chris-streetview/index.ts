@@ -24,7 +24,7 @@
 //          or { ok:false, error, needs_key?, no_imagery? }
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { resolveCaller } from '../_shared/auth.ts'
+import { resolveBillableCompany } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -54,20 +54,13 @@ serve(async (req) => {
     const key = Deno.env.get('GOOGLE_MAPS_API_KEY') || Deno.env.get('GOOGLE_PLACES_API_KEY')
     if (!key) return json({ ok: false, needs_key: true, error: 'Street View is not set up yet — add a photo of the front instead.' })
 
-    // Every picture is billed to us, and the anon key is public — so a real
-    // signed-in employee (or our own service key) only.
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-    const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
-    // The gateway (verify_jwt on) has already checked the signature, so the
-    // role claim can be read — a rotated service key still matches by role.
-    let role = ''
-    try { role = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role || '' } catch { /* not a JWT */ }
-    const isService = token === serviceKey || role === 'service_role'
-    const caller = isService ? null : await resolveCaller(req, supabaseUrl, serviceKey).catch(() => null)
-    if (!isService && !caller?.companyId) return json({ ok: false, error: 'Sign in to use Street View.' }, 401)
+    // Every frame is billed to us, and the anon key is public — so a signed-in
+    // employee or our own service key only (resolveBillableCompany).
+    const body = await req.json()
+    const who = await resolveBillableCompany(req, body.company_id ?? 0, Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '')
+    if ('error' in who && who.status !== 400) return json({ ok: false, error: who.error }, who.status)
 
-    const { lat, lng } = await req.json()
+    const { lat, lng } = body
     const la = Number(lat), ln = Number(lng)
     if (!Number.isFinite(la) || !Number.isFinite(ln)) return json({ ok: false, error: 'lat and lng are required' }, 400)
 

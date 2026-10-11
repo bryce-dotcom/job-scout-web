@@ -19,6 +19,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callAnthropic } from "../_shared/anthropic.ts";
+import { resolveBillableCompany } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -51,14 +52,16 @@ serve(async (req) => {
 
   try {
     const { company_id, image_base64, address } = await req.json();
-    if (!company_id) return json({ error: 'company_id is required' }, 400);
+    const who = await resolveBillableCompany(req, company_id, Deno.env.get('SUPABASE_URL') || '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
+    if ('error' in who) return json({ error: who.error }, who.status);
+    const companyId = who.companyId;
     if (!image_base64) return json({ error: 'image_base64 is required' }, 400);
 
     const clean = String(image_base64).replace(/^data:image\/\w+;base64,/, '');
     const media = clean.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
 
     const ai = await callAnthropic(
-      { feature: 'chris-house', companyId: company_id ?? null },
+      { feature: 'chris-house', companyId },
       {
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 700,
