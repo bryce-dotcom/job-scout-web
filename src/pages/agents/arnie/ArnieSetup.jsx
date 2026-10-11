@@ -10,6 +10,7 @@ import { Wrench, Check, X, RotateCcw, Send, Sparkles, ShieldAlert, MessageCircle
 import MorningBriefSettings from './MorningBriefSettings'
 import ArnieMemories from './ArnieMemories'
 import ArnieAtWork from './ArnieAtWork'
+import ArnieRules from './ArnieRules'
 
 const t = {
   bg: '#f7f5ef', card: '#ffffff', card2: '#f0ebdd', ink: '#2c3530', sub: '#4d5a52',
@@ -92,6 +93,7 @@ export default function ArnieSetup() {
       <div style={{ maxWidth: 620, margin: '24px auto', padding: 24, color: t.sub }}>
         {/* Everyone gets the morning brief — the gate below is for the change log. */}
         <MorningBriefSettings />
+        <ArnieRules isAdmin={false} />
         <ArnieMemories />
         <div style={{ textAlign: 'center', marginTop: 24 }}>
         <ShieldAlert size={28} color={t.muted} />
@@ -120,6 +122,7 @@ export default function ArnieSetup() {
 
       {isAdmin && <ArnieAtWork />}
       <MorningBriefSettings />
+      <ArnieRules isAdmin={isAdmin} />
       <ArnieMemories />
 
       {/* Arnie lives in the corner guy — you can also just talk to him there. */}

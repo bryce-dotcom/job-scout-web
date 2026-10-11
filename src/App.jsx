@@ -115,6 +115,8 @@ import VictorWorkspace from './pages/agents/victor/VictorWorkspace'
 import ArnieWorkspace from './pages/agents/arnie/ArnieWorkspace'
 import ArnieChatPage from './pages/agents/arnie/ArnieChatPage'
 import ArnieHistory from './pages/agents/arnie/ArnieHistory'
+import ArnieComputer from './pages/agents/arnie/ArnieComputer'
+import ArnieRoutines from './pages/agents/arnie/ArnieRoutines'
 import ArnieSetup from './pages/agents/arnie/ArnieSetup'
 import VictorDashboard from './pages/agents/victor/VictorDashboard'
 import VictorVerify from './pages/agents/victor/VictorVerify'
@@ -560,6 +562,8 @@ function App() {
           {/* Arnie Workspace (AI Assistant) */}
           <Route path="/agents/arnie" element={<ArnieWorkspace />}>
             <Route index element={<ArnieChatPage />} />
+            <Route path="computer" element={<ArnieComputer />} />
+            <Route path="routines" element={<ArnieRoutines />} />
             <Route path="history" element={<ArnieHistory />} />
             <Route path="settings" element={<ArnieSetup />} />
           </Route>

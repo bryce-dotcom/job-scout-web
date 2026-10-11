@@ -30,7 +30,9 @@
 // locally; this copy is the audit and the second opinion, not the only check.
 
 import { resolveCaller } from '../_shared/auth.ts'
-import { decideAction, type Grant } from '../_shared/computerGrants.ts'
+import {
+  approvalExpiry, decideWithRules, hasExpired, type Grant, type Rule,
+} from '../_shared/computerGrants.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -80,6 +82,12 @@ Deno.serve(async (req) => {
   const myGrants = async (): Promise<Grant[]> =>
     await rest(`arnie_computer_grants?select=app,host,tier,duration,expires_at,revoked_at,consumed_at&employee_id=eq.${me}&revoked_at=is.null`)
 
+  // The company's rules and this person's own, in one list. The decision
+  // module settles conflicts (ask-first wins), so there is nothing to merge
+  // here — and nothing that could accidentally drop a company rule.
+  const myRules = async (): Promise<Rule[]> =>
+    await rest(`arnie_computer_rules?select=kind,employee_id,app,host,action_kind,note&company_id=eq.${company}&or=(employee_id.is.null,employee_id.eq.${me})`)
+
   const mySession = async (id: unknown) => {
     const n = Number(id)
     if (!Number.isFinite(n) || n <= 0) return null
@@ -87,6 +95,18 @@ Deno.serve(async (req) => {
     // person simply does not resolve.
     const rows = await rest(`arnie_computer_sessions?select=id,status,employee_id,company_id&id=eq.${n}&employee_id=eq.${me}&limit=1`)
     return rows?.[0] || null
+  }
+
+  /** Anything that ran out of time stops being answerable. */
+  const expireStale = async (sessionId: number) => {
+    const now = new Date().toISOString()
+    await rest(
+      `arnie_computer_actions?session_id=eq.${sessionId}&decision=eq.needs_approval&expires_at=lt.${now}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ decision: 'expired', completed_at: now, reason: 'Nobody answered in time, so it did not run.' }),
+      },
+    ).catch(() => { /* nothing stale */ })
   }
 
   try {
@@ -116,6 +136,11 @@ Deno.serve(async (req) => {
       await rest(`arnie_computer_sessions?id=eq.${session.id}`, {
         method: 'PATCH', body: JSON.stringify({ last_seen_at: new Date().toISOString() }),
       })
+      // Sweep anything nobody answered in time, before handing out work. The
+      // agent polls every few seconds, so this is the cheapest reliable place
+      // to do it — no cron, and an expiry can never be missed while the agent
+      // that would have run the action is alive.
+      await expireStale(session.id)
       const queued = await rest(`arnie_computer_actions?select=id,kind,app,host,target&session_id=eq.${session.id}&decision=eq.queued&order=id&limit=1`)
       return json({ ok: true, action: queued?.[0] || null })
     }
@@ -164,7 +189,9 @@ Deno.serve(async (req) => {
         host: body.host ? String(body.host) : null,
         target: (body.target ?? null) as Record<string, unknown> | null,
       }
-      const verdict = decideAction(want, await myGrants())
+      const background = Number(body.routine_id) > 0 || body.background === true
+      const [gs, rs] = await Promise.all([myGrants(), myRules()])
+      const verdict = decideWithRules(want, gs, rs)
 
       // Refused and awaiting-human are RECORDED, not dropped. A refusal is a
       // row for the same reason an action is: an admin asking "what has Arnie
@@ -184,9 +211,20 @@ Deno.serve(async (req) => {
         target: want.target
           ? { ...want.target, value: undefined, text_length: typeof body.value === 'string' ? body.value.length : undefined }
           : null,
-        decision: verdict.ok ? 'queued' : ('refuse' in verdict ? 'refused' : 'awaiting_human'),
-        reason: verdict.ok ? null : ('refuse' in verdict ? verdict.refuse : verdict.needsHuman),
-        completed_at: verdict.ok ? null : new Date().toISOString(),
+        decision: verdict.ok ? 'queued'
+          : 'refuse' in verdict ? 'refused'
+          : 'needsHuman' in verdict ? 'awaiting_human'
+          : 'needs_approval',
+        reason: verdict.ok ? null
+          : 'refuse' in verdict ? verdict.refuse
+          : 'needsHuman' in verdict ? verdict.needsHuman
+          : verdict.needsApproval,
+        // A refusal is finished the moment it is written. An approval is not:
+        // it is waiting for a person, and if it came from standing work it
+        // stops being answerable after about ten minutes. needsHuman never
+        // expires because it is not a question — Arnie will never do that one.
+        expires_at: !verdict.ok && 'needsApproval' in verdict ? approvalExpiry({ background }) : null,
+        completed_at: !verdict.ok && 'refuse' in verdict ? new Date().toISOString() : null,
       }
       const made = await rest('arnie_computer_actions', { method: 'POST', body: JSON.stringify(row) })
 
@@ -206,6 +244,38 @@ Deno.serve(async (req) => {
         }).catch(() => { /* nothing to spend */ })
       }
       return json({ ok: true, action_id: made?.[0]?.id, decision: 'queued' })
+    }
+
+    // ── a person answers an ask-first ───────────────────────────────────
+    // Only 'needs_approval' is answerable. An 'awaiting_human' row — a
+    // password box, a Submit button — is NOT a question and this route will
+    // not take it, which is what stops "Approve" ever becoming a button that
+    // types a credential.
+    if (action === 'approve' || action === 'deny') {
+      const id = Number(body.action_id)
+      if (!Number.isFinite(id)) return json({ error: 'action_id is required' }, 400)
+      const rows = await rest(`arnie_computer_actions?select=id,decision,expires_at,employee_id&id=eq.${id}&employee_id=eq.${me}&limit=1`)
+      const row = rows?.[0]
+      if (!row) return json({ error: 'No action of yours by that id.' }, 404)
+      if (row.decision !== 'needs_approval') {
+        return json({ error: row.decision === 'awaiting_human'
+          ? 'That one is yours to do — Arnie will not do it however it is approved.'
+          : `That action is ${row.decision}, not waiting on you.` }, 409)
+      }
+      if (hasExpired(row)) {
+        await expireStale(Number(body.session_id) || 0)
+        return json({ error: 'That one ran out of time. Ask again and it will be re-drafted.' }, 409)
+      }
+      const now = new Date().toISOString()
+      await rest(`arnie_computer_actions?id=eq.${id}&decision=eq.needs_approval`, {
+        method: 'PATCH',
+        body: JSON.stringify(action === 'approve'
+          // Approved goes back in the queue for the agent to pick up, and
+          // stops expiring — a person has now said yes to it.
+          ? { decision: 'queued', expires_at: null, reason: null }
+          : { decision: 'refused', reason: 'You said no to this one.', completed_at: now }),
+      })
+      return json({ ok: true, decision: action === 'approve' ? 'queued' : 'refused' })
     }
 
     // ── the kill switch ─────────────────────────────────────────────────

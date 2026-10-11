@@ -75,16 +75,38 @@ const TOKEN = process.env.JOBSCOUT_AGENT_TOKEN || ''
 
 const die = (m) => { console.error(`\nagent: ${m}\n`); process.exit(1) }
 if (!URL_BASE) die('no JobScout URL — set JOBSCOUT_URL or run from a checkout with .env')
-if (!TOKEN) die('no JOBSCOUT_AGENT_TOKEN — get one from Arnie → Settings → Connect this computer')
+if (!TOKEN) die('no JOBSCOUT_AGENT_TOKEN — get one from Arnie → Computer → Connect this computer')
 if (process.platform !== 'win32') die(`Phase 0 runs on Windows only (this is ${process.platform}).`)
 
 const DEVICE = process.env.JOBSCOUT_DEVICE_LABEL || `${process.env.COMPUTERNAME || 'this computer'}`
 const VERSION = '0.1.0-phase0'
 
+// ── the access token, kept fresh ────────────────────────────────────────
+// JOBSCOUT_AGENT_TOKEN is a REFRESH token, handed over by "Connect this
+// computer". An access token lasts an hour, which would have the agent stop
+// working over lunch, so it is exchanged here and re-exchanged when it ages —
+// exactly what any desktop client does. The refresh token never leaves this
+// process and is never written anywhere.
+let access = ''
+let accessUntil = 0
+const freshAccess = async () => {
+  if (access && Date.now() < accessUntil - 60_000) return access
+  const res = await fetch(`${URL_BASE}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: TOKEN }),
+  })
+  const j = await res.json().catch(() => ({}))
+  if (!j.access_token) die(`that token was refused — get a new one from Arnie → Computer → Connect this computer\n(${j.error_description || j.msg || res.status})`)
+  access = j.access_token
+  accessUntil = Date.now() + (Number(j.expires_in) || 3600) * 1000
+  return access
+}
+
 const call = async (action, body = {}) => {
+  const bearer = await freshAccess()
   const res = await fetch(`${URL_BASE}/functions/v1/arnie-computer`, {
     method: 'POST',
-    headers: { apikey: ANON, Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+    headers: { apikey: ANON, Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...body }),
   })
   const text = await res.text()

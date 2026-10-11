@@ -59,11 +59,13 @@ describe('nothing can drive somebody else’s computer, including us', () => {
 
 describe('the leash is consulted, not re-implemented', () => {
   it('imports the one decision module', () => {
-    expect(rail).toMatch(/import \{ decideAction, type Grant \} from '\.\.\/_shared\/computerGrants\.ts'/)
+    expect(rail).toMatch(/from '\.\.\/_shared\/computerGrants\.ts'/)
+    expect(code).toMatch(/decideWithRules/)
   })
 
   it('every queued action is decided by it', () => {
-    expect(rail).toMatch(/const verdict = decideAction\(want, await myGrants\(\)\)/)
+    // The rules layer sits on top; the leash inside it is still the floor.
+    expect(rail).toMatch(/const verdict = decideWithRules\(want, gs, rs\)/)
   })
 
   it('does not carry its own copy of the rules', () => {
@@ -82,13 +84,17 @@ describe('the leash is consulted, not re-implemented', () => {
 
 describe('a refusal is a record, not a dropped request', () => {
   it('refused and awaiting-human are written to the audit table', () => {
-    expect(rail).toMatch(/decision: verdict\.ok \? 'queued' : \('refuse' in verdict \? 'refused' : 'awaiting_human'\)/)
-    expect(rail).toMatch(/reason: verdict\.ok \? null :/)
+    // Four endings now, not three: refused, never-do-this, an ask, or queued.
+    expect(rail).toMatch(/decision: verdict\.ok \? 'queued'/)
+    expect(rail).toMatch(/'refuse' in verdict \? 'refused'/)
+    expect(rail).toMatch(/'needsHuman' in verdict \? 'awaiting_human'/)
+    expect(rail).toMatch(/: 'needs_approval'/)
+    expect(rail).toMatch(/reason: verdict\.ok \? null/)
   })
 
   it('the row is written before the agent can see it', () => {
     const queue = rail.slice(rail.indexOf("if (action === 'queue')"), rail.indexOf("if (action === 'stop')"))
-    expect(queue.indexOf('decideAction')).toBeLessThan(queue.indexOf("rest('arnie_computer_actions'"))
+    expect(queue.indexOf('decideWithRules')).toBeLessThan(queue.indexOf("rest('arnie_computer_actions'"))
     expect(queue).toMatch(/if \(!verdict\.ok\) \{[\s\S]*?return json\(\{\s*ok: false/)
   })
 

@@ -19,6 +19,19 @@ export type Decision =
   | { ok: true; tier: Tier }
   | { ok: false; refuse: string }
   | { ok: false; needsHuman: string }
+  | { ok: false; needsApproval: string }
+
+export interface Rule {
+  kind: 'ask_first' | 'allow_auto'
+  employee_id?: number | null
+  app?: string | null
+  host?: string | null
+  action_kind?: string | null
+  note?: string | null
+}
+
+/** About ten minutes, matching Grok's background-approval window. */
+export const BACKGROUND_APPROVAL_SECONDS = 600
 
 export interface Grant {
   app: string
@@ -177,4 +190,83 @@ export function decideAction(a: Action, grants: Grant[], now: Date = new Date())
     return { ok: false, needsHuman: 'That one cannot be taken back, so you click it. Everything is filled in and ready for you to read.' }
   }
   return { ok: true, tier: g.tier }
+}
+
+// ── Rules a person writes, on top of the leash ──────────────────────────
+//
+// The leash above is the FLOOR. Nothing here can loosen it: a credential field
+// stays refused, an ungranted app stays refused, a tier still means what it
+// says, and an irreversible control still belongs to a human. Rules only ever
+// add friction, never remove it.
+//
+// Two kinds, both of them Grok's, because the shape is right:
+//
+//   ask_first   always stop and ask, even though the grant allows it
+//   allow_auto  let it through — which is already the default once a grant
+//               exists, so this exists to say "and keep letting it through
+//               even if a broader ask_first is added later"
+//
+// ASK FIRST WINS when both match. And a person's own rules may only make
+// behaviour stricter than the company's: that falls out of ask-first-wins
+// rather than needing its own check, because the only way a personal rule can
+// change a company allow_auto is by adding an ask_first, and the only way it
+// could loosen a company ask_first would be an allow_auto — which loses.
+const ruleMatches = (r: Rule, a: Action): boolean => {
+  const eq = (ruleVal: string | null | undefined, actual: string | null | undefined) =>
+    !ruleVal || String(ruleVal).toLowerCase() === String(actual || '').toLowerCase()
+  return eq(r.app, a.app) && eq(r.host, a.host) && eq(r.action_kind, a.kind)
+}
+
+/**
+ * The whole decision: the leash, then the rules.
+ *
+ * `needsApproval` is distinct from `needsHuman` on purpose. needsHuman means
+ * Arnie must never do this one at all — a password, a Submit button — and no
+ * approval changes that. needsApproval means he may, once a person says yes to
+ * this particular action.
+ */
+export function decideWithRules(
+  a: Action,
+  grants: Grant[],
+  rules: Rule[] = [],
+  now: Date = new Date(),
+): Decision {
+  const floor = decideAction(a, grants, now)
+  if (!floor.ok) return floor
+  const asks = rules.filter((r) => r.kind === 'ask_first' && ruleMatches(r, a))
+  if (asks.length) {
+    const why = asks.find((r) => r.note)?.note
+    return { ok: false, needsApproval: why || 'You asked to be checked with before this one.' }
+  }
+  return floor
+}
+
+/**
+ * When an unanswered approval stops being answerable.
+ *
+ * A person who asked for something in a conversation is sitting there, so it
+ * waits as long as they like. Standing work is different: nobody is watching,
+ * and an action queued by a 7am routine that gets approved at 6pm is not the
+ * thing anybody agreed to.
+ */
+export function approvalExpiry(opts: { background: boolean; now?: Date }): string | null {
+  if (!opts.background) return null
+  const now = opts.now ? opts.now.getTime() : Date.now()
+  return new Date(now + BACKGROUND_APPROVAL_SECONDS * 1000).toISOString()
+}
+
+/**
+ * An approval that ran out of time. Checked on read as well as by the sweep.
+ *
+ * ONLY 'needs_approval' expires, and the distinction is the whole safety
+ * story. 'awaiting_human' — a password box, a Submit button — is not a
+ * question and has no clock: Arnie will never do it, so there is nothing for
+ * time to run out on. 'queued' has already been consented to and is waiting on
+ * the agent, not on a person; expiring it would cancel approved work because
+ * the laptop was asleep.
+ */
+export function hasExpired(row: { decision?: string; expires_at?: string | null }, now: Date = new Date()): boolean {
+  if (row.decision !== 'needs_approval') return false
+  if (!row.expires_at) return false
+  return new Date(row.expires_at) <= now
 }
