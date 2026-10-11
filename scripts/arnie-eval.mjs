@@ -47,6 +47,12 @@ const DEMO = { company: 25, owner: { email: 'demo@jobscout.app', password: 'Demo
 // Everything this run drafts is stamped source='eval' at the end, so the
 // owner's "Arnie at work" screen counts people, not the harness.
 const RUN_STARTED = new Date().toISOString()
+// A business name and a phone this run alone can own, so the duplicate check
+// has nothing of anybody else's to match against.
+const LEAD_TAG = (() => {
+  const n = Date.now().toString().slice(-4)
+  return { business: `Halifax Flooring ${Date.now().toString(36).slice(-4).toUpperCase()}`, phone: `801-555-${n}` }
+})()
 const today = new Date().toLocaleDateString('en-CA', { timeZone: DEMO.tz })
 const todayWeekday = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: DEMO.tz })
 const weekAhead = Array.from({ length: 7 }, (_, i) => { const d = new Date(Date.now() + (i + 1) * 86400000); return `${d.toLocaleDateString('en-US', { weekday: 'short', timeZone: DEMO.tz })} ${d.toLocaleDateString('en-CA', { timeZone: DEMO.tz })}` }).join(', ')
@@ -431,6 +437,15 @@ const CASES = [
     },
     expect: { proposal: 'none', text_match: [/manager|another rep|someone else/i] } },
 
+  // — "closed" is a sale, not a job whose status reads Closed —
+  { id: 'closed.owner.september.is.approved.estimates', as: 'owner',
+    turns: ['What did we close in August?'],
+    expect: { tools_include: ['query_closed'], tools_exclude: ['query_jobs'], proposal: 'none',
+      text_match: [/42,?400/, /3 deals?/i], text_not_match: [/job status|Closed status/i] } },
+  { id: 'closed.tech.refused', as: 'tech',
+    turns: ['What did we close in August?'],
+    expect: { proposal: 'none', no_dollars: true, text_match: [/admin|owner/i] } },
+
   // — re-filing the books: "the Chevron ones" means all three text columns, and the card shows every row —
   { id: 'bulk.owner.refiles.chevron.expenses.then.rollback', as: 'owner',
     run: async (ctx) => {
@@ -697,7 +712,11 @@ const CASES = [
   // — the create rail —
   { id: 'create.lead.duplicate.refused', as: 'owner', turns: ['Add a new lead for Riversde Apartments, contact Jordan Lee.'],
     expect: { tools_include: ['propose_create'], proposal: 'none', text_match: [/Riverside/] } },
-  { id: 'create.lead.then.rollback', as: 'tech', turns: ['New lead: Ben Rowe at Halifax Flooring, phone 801-555-0142, LED retrofit, came from Angi.'],
+  // A contact nobody else can already hold. similar_leads() is doing its job
+  // when it refuses a duplicate, so a fixed phone on a SHARED tenant makes this
+  // case fail for the right reason at the wrong time: on 2026-09-29 a peer's
+  // lead held 801-555-0142 and the draft was correctly refused.
+  { id: 'create.lead.then.rollback', as: 'tech', turns: [`New lead: Ben Rowe at ${LEAD_TAG.business}, phone ${LEAD_TAG.phone}, LED retrofit, came from Angi.`],
     expect: { proposal: 'create', proposal_label: 'lead', text_match: [/draft/i] },
     after: async (r, ctx) => {
       const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
