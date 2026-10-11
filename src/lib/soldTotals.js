@@ -14,7 +14,10 @@
 // Ownership is lib/jobOwnership's 'credit' scope: the job's salesperson, else
 // the lead's. Same rule Payroll pays on, so the two agree.
 
-import { buildLeadIndex, primaryOwnerId } from './jobOwnership'
+// Explicit extension: Frankie's context (frankieContext.js) imports this and
+// is run under plain Node by the eval runner, which does not resolve
+// extensionless specifiers.
+import { buildLeadIndex, primaryOwnerId } from './jobOwnership.js'
 
 /**
  * Cumulative sold in a window.

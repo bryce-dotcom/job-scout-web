@@ -27,7 +27,10 @@ const clean = (s: unknown) => String(s ?? '').replace(/[*,()"\\]/g, '').trim()
 const clamp = (v: unknown, dflt: number, max: number) => Math.min(Math.max(Number(v) || dflt, 1), max)
 
 /** GET every page of a PostgREST path (Supabase caps a request at 1000 rows). */
-async function readAll(r: Rest, path: string, cap = 5000): Promise<any[]> {
+// HHH alone has 6,564 invoices and 6,018 payments; at 5,000 the ledger tools
+// told the owner their totals were "a floor" and argued with his dashboard.
+const READ_CAP = 25000
+async function readAll(r: Rest, path: string, cap = READ_CAP): Promise<any[]> {
   const out: any[] = []
   for (let from = 0; from < cap; from += 1000) {
     const res = await fetch(`${r.url}/rest/v1/${path}`, {
@@ -164,6 +167,20 @@ export const FRANKIE_TOOLS: any[] = [
     description: 'Current balance on every connected bank account and card, as of the last sync. Use when the question is about cash on hand right now.',
     input_schema: { type: 'object', properties: {} },
   },
+  {
+    name: 'query_sales',
+    description:
+      'Sales Won — what the Dashboard tiles and the Sales Performance page show: the contract value of jobs CREATED in a date range, cancelled and archived excluded, unpriced jobs counted at $0. ' +
+      'This is booked work, not cash; use query_payments or query_pnl for cash. Use for "how much have we sold this year", "what did we book in Q2", "the dashboard says $2.2M", sales by month, the biggest jobs sold.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        ...DATE_PROPS,
+        by_month: { type: 'boolean', description: 'Also break the total down by the month the job was created' },
+        limit: { type: 'integer', description: 'Largest jobs to list (default 15, max 100)' },
+      },
+    },
+  },
 ]
 
 export function frankieToolsFor(caller: Caller): any[] {
@@ -188,6 +205,7 @@ export async function execFrankieTool(name: string, input: any, caller: Caller, 
       case 'query_job_profitability': return a.jobs ? await jobProfitability(r, co, input) : RESTRICTED
       case 'query_payroll_runs': return a.full ? await payrollRuns(r, co, input) : RESTRICTED
       case 'query_bank_balances': return a.full ? await bankBalances(r, co) : RESTRICTED
+      case 'query_sales': return a.jobs ? await sales(r, co, input) : RESTRICTED
       default: return { error: `Unknown tool: ${name}` }
     }
   } catch (e: any) {
@@ -238,7 +256,7 @@ async function bankTransactions(r: Rest, co: string, input: any) {
       tax_line: taxLineOf(x), reviewed: !!x.user_tax_category, job_id: x.job_id || x.ai_job_id || null,
     })),
     scope: `${rows.length} bank rows matched${dir === 'out' ? ' (money out)' : dir === 'in' ? ' (money in)' : ''}; the list is the ${Math.min(limit, rows.length)} largest. Positive = paid out, negative = received. "reviewed" false means the tax line is the categoriser's guess.`,
-    ...(rows.length >= 5000 ? { WARNING: 'Read the first 5000 rows only — totals are a floor.' } : {}),
+    ...(rows.length >= READ_CAP ? { WARNING: `Read the first ${READ_CAP} rows only — totals are a floor.` } : {}),
   }
 }
 
@@ -311,7 +329,8 @@ async function invoices(r: Rest, co: string, input: any) {
     // invoices and told the owner $78k was overdue while Invoices showed $90k.
     const gross = num(i.amount), disc = num(i.discount_applied)
     const total = (disc > 0 && disc > gross ? gross : Math.max(0, gross - disc)) + num(i.tax_amount)
-    const balance = Math.max(0, money(total - (paid[i.id] || 0)))
+    const settled = i.payment_status === 'Paid' || i.payment_status === 'Void' || i.payment_status === 'Cancelled'
+    const balance = settled ? 0 : Math.max(0, money(total - (paid[i.id] || 0)))
     const due = i.due_date ? new Date(i.due_date) : new Date(new Date(i.created_at).getTime() + 30 * 86400000)
     const days = Math.max(0, Math.floor((now - due.getTime()) / 86400000))
     return { invoice: i.invoice_id || `#${i.id}`, customer: names[i.customer_id] || null, status: i.payment_status || 'Pending', total: money(total), balance, days_overdue: days, invoice_date: i.invoice_date || String(i.created_at).slice(0, 10), due_date: due.toISOString().slice(0, 10), job_id: i.job_id }
@@ -328,6 +347,37 @@ async function invoices(r: Rest, co: string, input: any) {
     invoices: out.slice(0, limit),
     scope: `${out.length} ${status} invoice(s); list is the largest ${Math.min(limit, out.length)} by balance. Balance = invoice total after discounts minus payments applied; overdue = past due_date (or 30 days from creation when no due date).`,
   }
+}
+
+// Mirrors src/lib/soldTotals.js — the one "sold" rule in the app. Change
+// both or neither.
+const NOT_SOLD = new Set(['Archived', 'Cancelled', 'Canceled', 'Void', 'Voided'])
+async function sales(r: Rest, co: string, input: any) {
+  const p = new URLSearchParams({ select: 'id,job_id,job_title,status,job_total,created_at,customer_id', order: 'created_at.desc' })
+  if (input?.start_date) p.append('created_at', `gte.${clean(input.start_date)}`)
+  if (input?.end_date) p.append('created_at', `lt.${clean(input.end_date)}T23:59:59.999`)
+  const rows = (await readAll(r, `jobs?${co}&${p}`)).filter((j: any) => j.created_at && !NOT_SOLD.has(j.status))
+  const val = (j: any) => { const n = Number(j.job_total); return Number.isFinite(n) && n > 0 ? n : 0 }
+  const total = money(rows.reduce((s: number, j: any) => s + val(j), 0))
+  const unpriced = rows.filter((j: any) => val(j) === 0).length
+  const names: Record<number, string> = {}
+  const cids = [...new Set(rows.map((j: any) => j.customer_id).filter(Boolean))].slice(0, 300)
+  if (cids.length) for (const c of await readAll(r, `customers?${co}&select=id,name,business_name&id=in.(${cids.join(',')})`)) names[c.id] = c.business_name || c.name
+  const byStatus: Record<string, number> = {}
+  for (const j of rows) byStatus[j.status || 'no status'] = money((byStatus[j.status || 'no status'] || 0) + val(j))
+  const out: any = {
+    sold: total, jobs: rows.length, unpriced_jobs: unpriced, by_status: byStatus,
+    largest: [...rows].sort((a: any, b: any) => val(b) - val(a)).slice(0, clamp(input?.limit, 15, 100)).map((j: any) => ({
+      job: j.job_id || `#${j.id}`, title: j.job_title, customer: names[j.customer_id] || null, sold: val(j), created: String(j.created_at).slice(0, 10), status: j.status,
+    })),
+    scope: `Sold = contract value (job_total) of ${rows.length} job(s) created in the range, cancelled/archived excluded, ${unpriced} unpriced counted at $0. Same rule as the Dashboard's Sales Won tiles and the Sales Performance page. This is booked work, not cash collected.`,
+  }
+  if (input?.by_month) {
+    const bm: Record<string, { sold: number; jobs: number }> = {}
+    for (const j of rows) { const k = String(j.created_at).slice(0, 7); bm[k] = bm[k] || { sold: 0, jobs: 0 }; bm[k].sold = money(bm[k].sold + val(j)); bm[k].jobs++ }
+    out.by_month = Object.fromEntries(Object.entries(bm).sort(([a], [b]) => a.localeCompare(b)))
+  }
+  return out
 }
 
 async function payments(r: Rest, co: string, input: any) {
@@ -354,7 +404,7 @@ async function payments(r: Rest, co: string, input: any) {
     count: rows.length, total, refunded, net: money(total - refunded), by_method: byMethod,
     payments: rows.slice(0, limit).map((x: any) => ({ date: x.date, amount: num(x.amount), method: x.method, customer: names[x.customer_id] || null, invoice_id: x.invoice_id, deposit: x.is_deposit === true })),
     scope: `${rows.length} payment(s); the list is the most recent ${Math.min(limit, rows.length)}. Totals cover every matching payment.`,
-    ...(rows.length >= 5000 ? { WARNING: 'Read the first 5000 payments only — totals are a floor.' } : {}),
+    ...(rows.length >= READ_CAP ? { WARNING: `Read the first ${READ_CAP} payments only — totals are a floor.` } : {}),
   }
 }
 

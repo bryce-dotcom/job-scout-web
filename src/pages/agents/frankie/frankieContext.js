@@ -29,6 +29,41 @@ import {
   expenseCategoryName, unifiedExpenses,
 } from './frankieFields.js'
 import { buildForecast } from '../../../lib/cashForecast'
+import { soldJobsInRange, soldValue } from '../../../lib/soldTotals.js'
+
+/**
+ * What the Dashboard and the Sales pages call "Sold": the contract value of
+ * every job created in the window, cancelled and archived work excluded,
+ * unpriced jobs at $0 and counted — lib/soldTotals, the one rule. Frankie
+ * speaks in cash collected; the owner reads the dashboard. On 2026-10-11 he
+ * told Bryce "$2.2M isn't anywhere in what I've been working from" when the
+ * tile was YTD Sales Won, $2.3M of contracts against $606k of cash. Both
+ * numbers now sit in his context with their names.
+ */
+export function salesSection({ jobs = [], now = new Date() } = {}) {
+  if (!jobs.length) return ''
+  const money = (n) => `$${(Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const y0 = new Date(now.getFullYear(), 0, 1)
+  const m0 = new Date(now.getFullYear(), now.getMonth(), 1)
+  const lastM0 = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const d90 = new Date(now.getTime() - 90 * 86400000)
+  const win = (start, end) => {
+    const rows = soldJobsInRange(jobs, { start, end })
+    return { rows, total: rows.reduce((s, j) => s + soldValue(j), 0), unpriced: rows.filter(j => soldValue(j) === 0).length }
+  }
+  const mtd = win(m0, null), last = win(lastM0, m0), ytd = win(y0, null), all = win(null, null), avg90 = win(d90, null)
+  const line = (label, w) => `- ${label}: ${money(w.total)} across ${w.rows.length} job${w.rows.length === 1 ? '' : 's'}${w.unpriced ? ` (${w.unpriced} unpriced, counted at $0)` : ''}\n`
+  let s = `### Sales Won — what the Dashboard tiles and the Sales Performance page show (contract value of jobs created in the window, cancelled and archived excluded; NOT cash)\n`
+  s += line('MTD Sales Won (this month)', mtd)
+  s += line(`Last month`, last)
+  s += `- 90-day average per month: ${money(avg90.total / 3)}\n`
+  s += line('YTD Sales Won (calendar year)', ytd)
+  s += line('All-time sold', all)
+  const top = [...ytd.rows].sort((a, b) => soldValue(b) - soldValue(a)).slice(0, 5)
+  if (top.length) s += `- Largest this year: ${top.map(j => `${j.job_title || j.job_id || '#' + j.id} ${money(soldValue(j))} (${String(j.created_at).slice(0, 10)}, ${j.status || 'no status'})`).join('; ')}\n`
+  s += `- Sold is booked contract value, dated by when the job was created. "Revenue collected" above is cash that arrived. The gap between them is work sold but not yet billed or collected — say so when someone compares the two.\n\n`
+  return s
+}
 
 export function buildSystemPrompt(user, company, role) {
   return `You are Frankie — the sharp, no-nonsense AI CFO for JobScout.
@@ -68,7 +103,7 @@ export function buildSystemPrompt(user, company, role) {
 - You do not have real-time market data
 
 ## Your Tools
-The "Current Data Context" below is a snapshot of totals. You also have lookup tools that read the company's own rows — bank transactions, a P&L for any date range, invoices, payments, job profitability, payroll runs, bank balances. Use them, without asking permission, whenever the question is about:
+The "Current Data Context" below is a snapshot of totals. You also have lookup tools that read the company's own rows — bank transactions, a P&L for any date range, invoices, payments, job profitability, payroll runs, bank balances, and sales won (booked contract value) for any date range. Use them, without asking permission, whenever the question is about:
 - specific rows or names ("show me those checks", "what did we pay Lowe's", "the Mile High Fitness invoice")
 - a period the snapshot does not cover ("Q2", "last year", "May to August", "month by month")
 - one job, crew or customer ("margin on the Anderson job", "how is Derrick's crew doing")
@@ -91,6 +126,7 @@ Numbers from a tool are real data, the same as the snapshot. Say what you looked
 - Use the Company & Tax Profile: the entity type, the fiscal year and the state are in the context. "This year" means the tax year shown there, not the calendar year, unless they say otherwise.
 - Profit for tax is revenue minus DEDUCTIBLE expenses. Owner withdrawals, distributions, credit-card payments, loan principal and transfers are money out, not expenses — the context separates them. Never describe a year as a loss because of cash that went to the owners.
 - The 30/60/90-day cash-flow figures are about liquidity. Do not present them as the tax picture.
+- Sold is not collected. The Dashboard's Sales Won tiles and the Sales Performance page count the contract value of jobs created in the window; "Revenue collected" and the P&L count cash that arrived. Both are in the context under their own names, and query_sales gives sold for any range. When someone quotes a figure from a page, find the line that matches it, say what it measures in one clause, then reconcile it with the other figure. A number on their screen is never "not anywhere" — it is one of these, or you ask which tile.
 - Bookkeeping questions ("what do I categorize this as") get the two things to pick in Books — Expense Category and Tax Category — using the EXACT names from the "Categories in Books" list in the context, in quotes, plus one line on why. Never invent a category name; if nothing fits, say which existing one is closest. A loan repayment to an owner is principal ("Not Deductible") unless part is interest; a reimbursement to an employee is whatever they bought; a transfer to an employee's expense card is a transfer (tick "Transfer between accounts"), and the spend from that card is the expense.
 - "Can I afford X" is answered from the Bank Balances section when it is there: available cash, minus what is due before the next money lands, and the answer is yes or no with the number. When no bank is connected, say so in half a sentence and answer from the last 30 days' cash flow and what is collectible this week — but NEVER compute a "bank balance" from revenue minus expenses and present it as cash on hand.
 - Job margins: when cost data is not captured, rank the jobs by revenue first and say in one line that margin needs job costs — do not open with what you cannot do.
@@ -271,6 +307,8 @@ export function buildFinancialContext(data = {}, now = new Date()) {
   context += `- Last 30 days: $${revenue30d.toFixed(2)}\n`
   context += `- Previous 30 days: $${revenuePrev30d.toFixed(2)}\n`
   context += `- Total collected (all time): $${payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0).toFixed(2)}\n\n`
+
+  context += salesSection({ jobs, now })
 
   // Payment methods breakdown — actual column is `method`, not `payment_method`.
   const methodBreakdown = {}

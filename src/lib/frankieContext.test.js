@@ -1,5 +1,39 @@
 import { describe, it, expect } from 'vitest'
-import { bankBalancesSection, categoriesSection, jobProfitabilitySection, buildFinancialContext, buildSystemPrompt, roleForPrompt } from '../pages/agents/frankie/frankieContext'
+import { bankBalancesSection, categoriesSection, jobProfitabilitySection, salesSection, buildFinancialContext, buildSystemPrompt, roleForPrompt } from '../pages/agents/frankie/frankieContext'
+
+describe('what the dashboard calls sold', () => {
+  // Bryce, 2026-10-11: "look at the dashboard it says we have sold 2.2M" —
+  // Frankie: "$2.2M isn't anywhere in what I've been working from." It was
+  // YTD Sales Won: contract value of jobs created this year. Cash collected
+  // was $606k. He now has both, by name, with the rule that tells them apart.
+  const now = new Date(2026, 9, 11)
+  const jobs = [
+    { id: 1, job_id: 'J-1', job_title: '175 W Warehouse', status: 'Closed', job_total: 217052, created_at: '2026-04-08T10:00:00Z' },
+    { id: 2, job_id: 'J-2', job_title: 'Intercon Final', status: 'Post Inspection (Req)', job_total: 129002, created_at: '2026-10-02T10:00:00Z' },
+    { id: 3, job_id: 'J-3', job_title: 'Walked away', status: 'Cancelled', job_total: 50000, created_at: '2026-10-03T10:00:00Z' },
+    { id: 4, job_id: 'J-4', job_title: 'Not priced yet', status: 'Scheduled', job_total: null, created_at: '2026-10-05T10:00:00Z' },
+    { id: 5, job_id: 'J-5', job_title: 'Last year', status: 'Closed', job_total: 119266, created_at: '2025-03-01T10:00:00Z' },
+  ]
+
+  it('gives the tiles by name, cancelled out, unpriced counted at zero and said', () => {
+    const s = salesSection({ jobs, now })
+    expect(s).toMatch(/### Sales Won — what the Dashboard tiles/)
+    expect(s).toMatch(/MTD Sales Won \(this month\): \$129,002\.00 across 2 jobs \(1 unpriced, counted at \$0\)/)
+    expect(s).toMatch(/YTD Sales Won \(calendar year\): \$346,054\.00 across 3 jobs \(1 unpriced, counted at \$0\)/)
+    expect(s).toMatch(/All-time sold: \$465,320\.00 across 4 jobs/)
+    expect(s).toMatch(/Largest this year: 175 W Warehouse \$217,052\.00 \(2026-04-08, Closed\); Intercon Final/)
+    expect(s).toMatch(/Sold is booked contract value/)
+    expect(s).not.toMatch(/Walked away/)
+  })
+
+  it('is in the full context next to collected cash, with the rule that tells them apart', () => {
+    const ctx = buildFinancialContext({ jobs, payments: [{ amount: 1000, date: '2026-10-01' }] }, now)
+    expect(ctx).toMatch(/Total collected \(all time\): \$1000\.00/)
+    expect(ctx).toMatch(/YTD Sales Won \(calendar year\): \$346,054\.00/)
+    expect(buildSystemPrompt({}, {}, 'super_admin')).toMatch(/Sold is not collected/)
+    expect(salesSection({ jobs: [], now })).toBe('')
+  })
+})
 
 describe('who Frankie thinks he is talking to', () => {
   it('reads the owner as full access, the way the rest of the app does', () => {
