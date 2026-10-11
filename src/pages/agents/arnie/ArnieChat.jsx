@@ -10,6 +10,7 @@ import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileTex
 import { readAttachment, attachmentNote, describeAttachments, ACCEPT_ATTR, MAX_ATTACHMENTS } from '../../../lib/chatAttachments'
 import { DougieButton, composerTone } from '../../../components/ai/AiComposerTools'
 import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, getVoices, loadArnieVoices, rememberVoice, unlockAudio } from './arnieVoice'
+import { arnieTextNumber, ARNIE_EMAIL } from '../../../lib/arnieReach'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { localDateStr } from '../../../lib/localDate'
 
@@ -106,6 +107,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   const { theme } = useTheme()
   const isMobile = useIsMobile()
   const company = useStore(s => s.company)
+  const textNumber = useStore(s => arnieTextNumber(s.settings))
 
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -678,9 +680,15 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
             <p style={{ color: dark.textSecondary, fontSize: 13, margin: '0 0 6px' }}>
               AI Assistant{company?.name ? ` \u2022 ${company.name}` : ''}
             </p>
-            <p style={{ color: dark.orange, fontSize: 14, margin: '12px 0 24px', fontStyle: 'italic' }}>
+            <p style={{ color: dark.orange, fontSize: 14, margin: '12px 0 16px', fontStyle: 'italic' }}>
               "Ay, what's good? O.G. Arnie here. You need somethin', I got you."
             </p>
+            {/* Where else he answers. People never found this on their own. */}
+            <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, margin: '0 0 22px', padding: '10px 14px', borderRadius: 10, border: `1px solid ${dark.borderLight}`, backgroundColor: dark.inputBg, color: dark.textSecondary, fontSize: 12.5, textAlign: 'left' }}>
+              {textNumber && <div><span style={{ color: dark.text, fontWeight: 600 }}>Text him:</span> <a href={`sms:${textNumber.raw}`} style={{ color: dark.orange, textDecoration: 'none' }}>{textNumber.pretty}</a> <span style={{ color: dark.textMuted }}>· he reads the card back, reply YES to approve</span></div>}
+              <div><span style={{ color: dark.text, fontWeight: 600 }}>Email him:</span> <a href={`mailto:${ARNIE_EMAIL}`} style={{ color: dark.orange, textDecoration: 'none' }}>{ARNIE_EMAIL}</a> <span style={{ color: dark.textMuted }}>· from your work address</span></div>
+              <div><span style={{ color: dark.text, fontWeight: 600 }}>Standing work:</span> <span style={{ color: dark.textMuted }}>say "every weekday at 7am, text me which rocks are off track" and he sets up the routine</span></div>
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
               {quickActions.map((action) => (
                 <button

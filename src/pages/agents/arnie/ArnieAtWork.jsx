@@ -5,11 +5,12 @@
 // what the person asked him to do), never the conversation itself.
 // Admin and up; the numbers come from lib/arnieUsage.js.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Activity } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { summarizeArnie } from '../../../lib/arnieUsage'
+import { arnieTextNumber, ARNIE_EMAIL } from '../../../lib/arnieReach'
 
 // PostgREST caps a page at 1000 rows; a busy month of Arnie is more than that.
 async function pageAll(query) {
@@ -40,24 +41,34 @@ export default function ArnieAtWork() {
     let live = true
     ;(async () => {
       const since = new Date(Date.now() - 90 * 86400000).toISOString()
-      const [p, s, u] = await Promise.all([
+      const [p, s, u, mu] = await Promise.all([
         supabase.from('arnie_proposals').select('id,created_by,target,status,created_at,request_text,summary,source').eq('company_id', companyId).gte('created_at', since).is('source', null).order('created_at', { ascending: false }).limit(2000),
         supabase.from('ai_sessions').select('id,session_id,user_email,started').eq('company_id', companyId).eq('current_module', 'arnie').gte('started', since).limit(2000),
         pageAll((from, to) => supabase.from('ai_usage').select('est_cost_usd,success,created_at').eq('company_id', companyId).eq('feature', 'arnie-chat').gte('created_at', since).order('id').range(from, to)),
+        // Media he and the marketer spend: pictures, composed tracks, narration, his own voice (mediaMeter.ts).
+        pageAll((from, to) => supabase.from('ai_usage').select('feature,output_tokens,est_cost_usd,created_at').eq('company_id', companyId).in('feature', ['marketing-picture', 'marketing-music', 'marketing-voice', 'arnie-voice']).gte('created_at', since).order('id').range(from, to)),
       ])
-      const err = p.error || s.error || u.error
+      const err = p.error || s.error || u.error || mu.error
       if (!live) return
       if (err) { setError(err.message); return }
       const ids = (s.data || []).map((x) => x.session_id).filter(Boolean)
       const m = ids.length ? await supabase.from('ai_messages').select('session_id,role').eq('company_id', companyId).in('session_id', ids).limit(20000) : { data: [] }
       if (!live) return
       if (m.error) { setError(m.error.message); return }
-      setRows({ proposals: p.data || [], sessions: s.data || [], messages: m.data || [], usage: u.data || [] })
+      setRows({ proposals: p.data || [], sessions: s.data || [], messages: m.data || [], usage: u.data || [], media: mu.data || [] })
     })()
     return () => { live = false }
   }, [companyId])
 
   const sum = rows ? summarizeArnie({ ...rows, employees }, days) : null
+  const media = useMemo(() => {
+    const since = Date.now() - days * 86400000
+    const rows2 = (rows?.media || []).filter((r) => new Date(r.created_at).getTime() >= since)
+    const n = (f) => rows2.filter((r) => r.feature === f)
+    const units = (f) => n(f).reduce((a, r) => a + (Number(r.output_tokens) || 0), 0)
+    return { cost: rows2.reduce((a, r) => a + (Number(r.est_cost_usd) || 0), 0), pictures: n('marketing-picture').length, tracks: n('marketing-music').length, narrated: units('marketing-voice'), spoken: units('arnie-voice'), any: rows2.length > 0 }
+  }, [rows, days])
+  const textNumber = useStore((s) => arnieTextNumber(s.settings))
 
   return (
     <div style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 18, textAlign: 'left' }}>
@@ -66,6 +77,7 @@ export default function ArnieAtWork() {
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontWeight: 700, color: t.ink }}>Arnie at work</div>
           <div style={{ fontSize: 12.5, color: t.muted }}>What he drafted, who approved it, what it cost. Counts and the audit trail — never the conversations themselves.</div>
+          <div style={{ fontSize: 12.5, color: t.sub, marginTop: 4 }}>Reach him outside the app: {textNumber ? <>text <b>{textNumber.pretty}</b> or </> : null}email <b>{ARNIE_EMAIL}</b> from a work address. Money changes over text are held for approval here.</div>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {WINDOWS.map((d) => (
@@ -84,6 +96,7 @@ export default function ArnieAtWork() {
               ['Drafts', sum.drafted, sum.drafted ? `${sum.approved} approved · ${sum.rejected} rejected · ${sum.rolledBack} rolled back${sum.pending ? ` · ${sum.pending} waiting` : ''}` : 'nothing drafted yet'],
               ['Approved', sum.approvalRate == null ? '—' : sum.approvalRate + '%', 'of what he drafted went through'],
               ['Cost', usd(sum.cost), `${sum.calls} call${sum.calls === 1 ? '' : 's'}${sum.failed ? ` · ${sum.failed} failed` : ''}`],
+              ...(media.any ? [['Media', usd(media.cost), [media.pictures ? `${media.pictures} picture${media.pictures === 1 ? '' : 's'}` : null, media.tracks ? `${media.tracks} track${media.tracks === 1 ? '' : 's'}` : null, media.narrated ? `${media.narrated.toLocaleString()} narrated` : null, media.spoken ? `${media.spoken.toLocaleString()} spoken` : null].filter(Boolean).join(' · ')]] : []),
             ].map(([label, big, small]) => (
               <div key={label} style={{ background: t.bg, border: `1px solid ${t.line}`, borderRadius: 10, padding: '10px 12px', minWidth: 0 }}>
                 <div style={{ fontSize: 11.5, color: t.muted, textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>{label}</div>
