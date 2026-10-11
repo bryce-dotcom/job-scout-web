@@ -11,6 +11,7 @@ import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
 import { computeSalesFunnel, funnelTotals } from '../lib/salesFunnel'
+import { isOpenLead } from '../lib/leadDeliveryStatus'
 import { computeRevenue, computeExpenses, collectedIncentives } from '../lib/revenueBasis'
 import { inLocalRange, localDateStr, calendarDay } from '../lib/localDate'
 import { toast } from '../lib/toast'
@@ -72,7 +73,7 @@ const STAGE_COLORS = { 'New': '#3b82f6', 'Contacted': '#8b5cf6', 'Scheduled': '#
 const METRIC_DEFS = [
   { id: 'mtdSalesWon', label: 'MTD Sales Won', icon: TrendingUp, color: '#16a34a', nav: '/pipeline', hint: 'Total $ value of jobs WON this month — counts every job whose created_at falls in the current month, regardless of current status. "Won" means the deal entered the work queue (estimate approved or job created directly). Pair with MTD Delivered for the delivery side. The 90-Day Avg/mo is everything won in the trailing 90 days divided by three — a monthly run-rate, so it compares directly with the MTD figure above it rather than against a part-finished month.' },
   { id: 'mtdDelivered', label: 'MTD Delivered', icon: Briefcase, color: '#10b981', nav: '/jobs', hint: 'Total $ value of jobs DELIVERED this month — sums job_total for every job whose status moved into a delivered category (Completed, Verified Complete, Invoiced, etc.) this month. A deal can be Won in one month and Delivered in another, so this and MTD Sales Won are intentionally separate. The 90-Day Avg/mo is everything won in the trailing 90 days divided by three — a monthly run-rate, so it compares directly with the MTD figure above it rather than against a part-finished month.' },
-  { id: 'activeLeads', label: 'Active Leads', icon: UserPlus, color: null, nav: '/leads', hint: 'Leads currently in the pipeline (not Won, Lost, or Closed). These are prospects being worked.' },
+  { id: 'activeLeads', label: 'Active Leads', icon: UserPlus, color: null, nav: '/leads', hint: 'Leads still in the sales funnel: not won, lost or closed, and not yet a job. A lead that converted carries one of your job statuses (Scheduled, Completed, Paid…) and is not counted here.' },
   { id: 'openJobs', label: 'Open Jobs', icon: Briefcase, color: null, nav: '/jobs', hint: 'Jobs that are Scheduled, In Progress, or Chillin. Does not include Completed or Archived.' },
   { id: 'pendingInvoices', label: 'Pending Invoices', icon: Receipt, color: null, nav: '/invoices', hint: 'Invoices sent but not yet paid. The dollar amount is what customers owe you (accounts receivable).' },
   { id: 'mtdRevenue', label: 'MTD Revenue', icon: DollarSign, color: '#4a7c59', nav: null, hint: 'Cash collected this month (cash basis): actual payments recorded against invoices + lead/job deposits + collected utility incentives. Counts real money in once — no double-counting of bank deposits, no internal transfers.' },
@@ -361,7 +362,11 @@ export default function Dashboard() {
   const todayStr = localDateStr(today)
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
 
-  const activeLeads = leads.filter(l => !['Won', 'Lost', 'Converted', 'Not Qualified'].includes(l.status)).length
+  // "Active" used to mean any status not literally Won / Lost / Converted /
+  // Not Qualified. A converted lead carries the company's own job status
+  // (Closed, Paid, Invoiced, Scheduled…), so on HHH about 200 finished deals
+  // read as prospects being worked. isOpenLead knows the company's statuses.
+  const activeLeads = leads.filter(l => isOpenLead(l, jobStatuses)).length
   const openJobs = jobs.filter(j => {
     const s = (j.status || '').toLowerCase()
     return ['scheduled', 'in progress', 'needs scheduling', 'chillin', 'waiting product'].includes(s)
@@ -532,7 +537,7 @@ export default function Dashboard() {
   const metricValues = {
     mtdSalesWon: { value: formatCurrency(mtdSalesWon), subtitle: `${mtdWonJobs.length} job${mtdWonJobs.length !== 1 ? 's' : ''} won this month`, ytdValue: formatCurrency(ytdSalesWon), ytdLabel: 'YTD Sales Won', lastValue: formatCurrency(lastMonthSalesWon), lastLabel: lastMonthLabel, avgValue: formatCurrency(avg90SalesWon), avgLabel: '90-Day Avg/mo' },
     mtdDelivered: { value: formatCurrency(mtdDelivered), subtitle: `${mtdDeliveredJobs.length} job${mtdDeliveredJobs.length !== 1 ? 's' : ''} delivered this month`, ytdValue: formatCurrency(ytdDelivered), ytdLabel: 'YTD Delivered', lastValue: formatCurrency(lastMonthDelivered), lastLabel: lastMonthLabel, avgValue: formatCurrency(avg90Delivered), avgLabel: '90-Day Avg/mo' },
-    activeLeads: { value: activeLeads, subtitle: 'Leads in pipeline (not Won/Lost)' },
+    activeLeads: { value: activeLeads, subtitle: 'Still in the sales funnel' },
     openJobs: { value: openJobs, subtitle: 'Scheduled + In Progress + Chillin' },
     pendingInvoices: {
       value: pendingInvoices,

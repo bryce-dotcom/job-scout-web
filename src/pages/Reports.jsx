@@ -758,11 +758,13 @@ function SalesReport({ theme, leads, jobs, employees, formatCurrency, inputStyle
 
   const businessUnits = [...new Set(leads.map(l => l.business_unit).filter(Boolean))]
 
-  // Build quote amount map: leadId -> quote_amount
+  // Estimate value per lead: what was actually sent. Drafts are not
+  // estimates anyone has seen (776 of HHH's 3,255 are drafts) and the funnel
+  // does not count them either, so neither does this column or its total.
   const quoteAmountMap = useMemo(() => {
     const map = {}
     ;(quotes || []).forEach(q => {
-      if (q.lead_id) map[q.lead_id] = (map[q.lead_id] || 0) + (parseFloat(q.quote_amount) || 0)
+      if (q.lead_id && q.status !== 'Draft') map[q.lead_id] = (map[q.lead_id] || 0) + (parseFloat(q.quote_amount) || 0)
     })
     return map
   }, [quotes])

@@ -13,6 +13,25 @@
 
 const DEFAULT_DELIVERY = { 'Chillin': 'Job Scheduled', 'Scheduled': 'Job Scheduled', 'On Hold': 'Job Scheduled', 'In Progress': 'In Progress', 'Completed': 'Job Complete' }
 
+// Lead statuses that mean the deal is decided or has become a job, whatever
+// the company calls its stages: the pipeline's Won / Closed / Lost columns,
+// the legacy literals, the default delivery columns, and every one of the
+// company's own job statuses (id AND name — the board shows the name, the
+// lead carries the id). Everything else is still in the sales funnel.
+const DECIDED = ['Won', 'Lost', 'Closed', 'Converted', 'Not Qualified', 'Invoiced', 'Paid', ...Object.keys(DEFAULT_DELIVERY), ...Object.values(DEFAULT_DELIVERY)]
+
+/** Is this lead still in the sales funnel (not won, lost, closed or turned into a job)? */
+export function isOpenLead(lead, jobStatuses = []) {
+  const status = lead?.status
+  if (status == null || status === '') return true
+  if (DECIDED.includes(status)) return false
+  for (const s of jobStatuses || []) {
+    if (typeof s === 'string') { if (s === status) return false; continue }
+    if (s?.id === status || s?.name === status) return false
+  }
+  return true
+}
+
 export function leadStatusForJob(jobStatus, jobStatuses = []) {
   const js = jobStatus || 'Chillin'
   // `id` FIRST. jobs.status holds the status id; `name` is only the board

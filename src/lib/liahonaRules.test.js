@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { leadStatusForJob } from './leadDeliveryStatus.js'
+import { leadStatusForJob, isOpenLead } from './leadDeliveryStatus.js'
 import { tidyOwner } from './parcels.js'
 import { sourceFor, coverageLabel, PARCEL_SOURCES } from './parcelSources.js'
 import { knockOutcome, isToday, hasCoords, latLngPairs, latLngOf } from '../components/liahona/util.js'
@@ -159,5 +159,29 @@ describe('latLngOf: a geocode hit with no coordinates is not a place', () => {
     expect(latLngOf({ lat: 'nope', lng: 'nope' })).toBe(null)
     expect(latLngOf(null)).toBe(null)
     expect(latLngOf(undefined)).toBe(null)
+  })
+})
+
+
+describe('isOpenLead: still in the sales funnel, in the company\'s own vocabulary', () => {
+  // The dashboard's Active Leads counted every lead not literally Won / Lost /
+  // Converted / Not Qualified, so HHH's converted leads — Closed (105), Paid,
+  // Invoiced, Scheduled, Completed — all read as active (2026-10-10).
+  const hhh = [{ id: 'Chillin', name: 'Chillin' }, { id: 'Scheduled', name: 'Scheduled' }, { id: 'Completed', name: 'Completed' }, { id: 'Paid', name: 'Payments' }]
+  it('sales-funnel statuses are open', () => {
+    for (const s of ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Callback', 'Chillin Hard']) expect(isOpenLead({ status: s }, hhh)).toBe(true)
+    expect(isOpenLead({ status: null }, hhh)).toBe(true)
+    expect(isOpenLead({}, hhh)).toBe(true)
+  })
+  it('won, lost, closed and the legacy literals are not', () => {
+    for (const s of ['Won', 'Lost', 'Closed', 'Converted', 'Not Qualified']) expect(isOpenLead({ status: s }, hhh)).toBe(false)
+  })
+  it("the company's job statuses are not — by id or by board name", () => {
+    for (const s of ['Chillin', 'Scheduled', 'Completed', 'Paid', 'Payments']) expect(isOpenLead({ status: s }, hhh)).toBe(false)
+    expect(isOpenLead({ status: 'Scheduled' }, ['Scheduled'])).toBe(false)
+  })
+  it('the default delivery columns are not, even with no job statuses configured', () => {
+    for (const s of ['Job Scheduled', 'In Progress', 'Job Complete', 'Invoiced', 'Paid']) expect(isOpenLead({ status: s }, [])).toBe(false)
+    expect(isOpenLead({ status: 'Quote Sent' }, [])).toBe(true)
   })
 })
