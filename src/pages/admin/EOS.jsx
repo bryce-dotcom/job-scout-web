@@ -13,6 +13,7 @@ import { mergeJobHourSources } from '../../lib/jobHours'
 import { jobCosting } from '../../lib/reports'
 import { buildJobCostIndex, profitOnJobs } from '../../lib/eosProfit'
 import { DEFAULT_TZ } from '../../lib/dateTz'
+import { countSubmittals } from '../../lib/submittals'
 import {
   inDayWindow, inInstantWindow, hoursInWindow, filterHoursByEntity, filterHoursWithNoUnit, jobWorkersInWindow,
   isSetMeeting, isAttendedMeeting, filterAppointmentsByEntity, filterPaymentsByEntity,
@@ -303,13 +304,25 @@ export const AUTO_SOURCES = {
     label: 'Submittals Sent',
     category: 'Operations',
     format: 'number',
+    // Attached here, PLUS logged as having gone out some other way. Alayda
+    // could not trust this number: a package emailed straight to a GC or put
+    // on their portal never creates an attachment, so the count was quietly
+    // low. lib/submittals folds a logged event into an attachment for the
+    // same job on the same day, so recording one both ways still counts once.
     compute: (d, s, e, sd, ed, ent) => {
       let subs = d.submittals || []
+      let logged = d.loggedSubmittals || []
       if (ent) {
         const jobIds = new Set(filterByEntity(d.jobs, ent).map(j => j.id))
         subs = subs.filter(x => x.job_id && jobIds.has(x.job_id))
+        logged = logged.filter(x => x.job_id && jobIds.has(x.job_id))
       }
-      return subs.filter(x => inInstantWindow(x.created_at, s, e)).length
+      // Each source keeps its own window rule: an attachment carries a real
+      // timestamp, job_submittals.submitted_at is a calendar DAY.
+      return countSubmittals(
+        subs.filter(x => inInstantWindow(x.created_at, s, e)),
+        logged.filter(x => inDayWindow(x.submitted_at, sd, ed, d.tz)),
+      )
     },
   },
 }
@@ -2869,6 +2882,7 @@ export default function EOS() {
 
   // Fetch submittal records for scorecard
   const [submittals, setSubmittals] = useState([])
+  const [loggedSubmittals, setLoggedSubmittals] = useState([])
   useEffect(() => {
     if (!companyId) return
     supabase.from('file_attachments')
@@ -2876,6 +2890,11 @@ export default function EOS() {
       .eq('company_id', companyId)
       .eq('photo_context', 'submittal')
       .then(({ data }) => setSubmittals(data || []))
+    // Submittals that went out some other way — Alayda's button writes these.
+    supabase.from('job_submittals')
+      .select('id, job_id, submitted_at, method')
+      .eq('company_id', companyId)
+      .then(({ data }) => setLoggedSubmittals(data || []))
   }, [companyId])
 
   // Real clock punches for the hours metrics. The store doesn't hold
@@ -2955,8 +2974,8 @@ export default function EOS() {
     timeClock, employees,
   }).rows), [jobs, costing, payments, invoices, plaidTransactions, expenses, timeClock, employees])
   const storeData = useMemo(() => ({
-    jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses, jobCostIndex, tz,
-  }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, jobStatuses, jobCostIndex, tz])
+    jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, loggedSubmittals, jobStatuses, jobCostIndex, tz,
+  }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, loggedSubmittals, jobStatuses, jobCostIndex, tz])
 
   // Build entity list from service types + business units (deduplicated)
   const entities = useMemo(() => {

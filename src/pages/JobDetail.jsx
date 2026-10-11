@@ -45,6 +45,7 @@ import { salespersonOptions, hasHiddenSalespeople } from '../lib/salespeople'
 import useSmartBack from '../lib/useSmartBack'
 import { selectPdfPages, pageIndicesFor, PAGES_FIRST } from '../lib/pdfPages'
 import { localDateStr } from '../lib/localDate'
+import { SUBMITTAL_METHODS, SUBMITTAL_METHOD_KEYS, logProblem, submittalRow } from '../lib/submittals'
 import { toast } from '../lib/toast'
 import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
 import { autoLinkReceipts } from '../lib/expenseMatch'
@@ -352,6 +353,12 @@ function JobDetailInner() {
   const [submittalMessage, setSubmittalMessage] = useState('')
   const [submittalSending, setSubmittalSending] = useState(false)
   const [submittalHistory, setSubmittalHistory] = useState([])
+  // Submittals that went out some other way. Alayda (10/10): "Some submittals
+  // aren't done through the system, I am trying to accuratley track the
+  // numbers" — the Scorecard only ever saw the ones attached here.
+  const [loggedSubmittals, setLoggedSubmittals] = useState([])
+  const [loggingSubmittal, setLoggingSubmittal] = useState(false)
+  const [logForm, setLogForm] = useState({ submitted_at: localDateStr(new Date()), method: 'email', recipient: '' })
 
   // Bonus hours state
   const [bonusConfig, setBonusConfig] = useState(null) // payroll_config from settings
@@ -572,6 +579,13 @@ function JobDetailInner() {
         .eq('photo_context', 'submittal')
         .order('created_at', { ascending: false })
       setSubmittalHistory(submittalData || [])
+
+      const { data: loggedData } = await supabase
+        .from('job_submittals')
+        .select('id, submitted_at, method, recipient, note')
+        .eq('job_id', id)
+        .order('submitted_at', { ascending: false })
+      setLoggedSubmittals(loggedData || [])
 
       // Fetch utility invoices linked to this job
       const { data: utilInvoicesData } = await supabase
@@ -8052,6 +8066,64 @@ function JobDetailInner() {
                   </div>
                 </div>
               )}
+
+              {/* Sent some other way — Alayda's button. The Scorecard counts
+                  these alongside the attachments (lib/submittals). */}
+              <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                  Sent outside Job Scout
+                </div>
+                <p style={{ fontSize: '11.5px', color: theme.textMuted, margin: '0 0 8px' }}>
+                  Emailed, put on their portal or handed over? Log it so the Scorecard counts it.
+                </p>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input type="date" value={logForm.submitted_at}
+                    onChange={e => setLogForm({ ...logForm, submitted_at: e.target.value })}
+                    style={{ padding: '6px 8px', fontSize: '12px', border: `1px solid ${theme.border}`, borderRadius: '6px', backgroundColor: theme.bgCard, color: theme.text }} />
+                  <select value={logForm.method} onChange={e => setLogForm({ ...logForm, method: e.target.value })}
+                    style={{ padding: '6px 8px', fontSize: '12px', border: `1px solid ${theme.border}`, borderRadius: '6px', backgroundColor: theme.bgCard, color: theme.text }}>
+                    {SUBMITTAL_METHOD_KEYS.map(k => <option key={k} value={k}>{SUBMITTAL_METHODS[k]}</option>)}
+                  </select>
+                  <input placeholder="Who to (optional)" value={logForm.recipient}
+                    onChange={e => setLogForm({ ...logForm, recipient: e.target.value })}
+                    style={{ padding: '6px 8px', fontSize: '12px', border: `1px solid ${theme.border}`, borderRadius: '6px', backgroundColor: theme.bgCard, color: theme.text, flex: 1, minWidth: 120 }} />
+                  <button
+                    disabled={loggingSubmittal}
+                    onClick={async () => {
+                      const when = logForm.submitted_at || localDateStr(new Date())
+                      const problem = logProblem({ jobId: parseInt(id), submittedAt: when, method: logForm.method })
+                      if (problem) { toast.error(problem); return }
+                      setLoggingSubmittal(true)
+                      const row = submittalRow({
+                        companyId, jobId: parseInt(id), submittedAt: when,
+                        method: logForm.method, recipient: logForm.recipient,
+                        employeeId: (employees || []).find(e => e.email === user?.email)?.id ?? null,
+                      })
+                      const { data, error } = await supabase.from('job_submittals').insert(row).select().single()
+                      setLoggingSubmittal(false)
+                      // (job_id, submitted_at) is unique — a second tap on the
+                      // same day is the same submittal, not another one.
+                      if (error) {
+                        toast.error(error.code === '23505'
+                          ? 'That day is already logged for this job.'
+                          : 'Could not log it: ' + error.message)
+                        return
+                      }
+                      setLoggedSubmittals(prev => [data, ...prev])
+                      setLogForm({ submitted_at: localDateStr(new Date()), method: 'email', recipient: '' })
+                      toast.success('Logged — the Scorecard counts it now')
+                    }}
+                    style={{ padding: '7px 14px', fontSize: '12px', fontWeight: 600, backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '6px', cursor: loggingSubmittal ? 'not-allowed' : 'pointer', opacity: loggingSubmittal ? 0.6 : 1 }}>
+                    {loggingSubmittal ? 'Logging…' : 'Log submittal'}
+                  </button>
+                </div>
+                {loggedSubmittals.map(l => (
+                  <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 12px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}`, marginTop: '6px', fontSize: '12px' }}>
+                    <span style={{ color: theme.text }}>{SUBMITTAL_METHODS[l.method] || l.method}{l.recipient ? ` — ${l.recipient}` : ''}</span>
+                    <span style={{ color: theme.textMuted }}>{l.submitted_at}</span>
+                  </div>
+                ))}
+              </div>
 
               {/* Submittal History */}
               {submittalHistory.length > 0 && (
