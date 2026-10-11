@@ -10,6 +10,7 @@ import { checkCanClockIn } from '../lib/timeClock'
 import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
+import { computeSalesFunnel, funnelTotals } from '../lib/salesFunnel'
 import { computeRevenue, computeExpenses, collectedIncentives } from '../lib/revenueBasis'
 import { inLocalRange, localDateStr, calendarDay } from '../lib/localDate'
 import { toast } from '../lib/toast'
@@ -81,7 +82,7 @@ const METRIC_DEFS = [
   { id: 'totalLeads', label: 'Total Leads', icon: UserPlus, color: '#8b5cf6', nav: '/leads', hint: 'All leads in the system across all statuses including Closed.' },
   { id: 'netIncome', label: 'MTD Net Income', icon: DollarSign, color: '#16a34a', nav: null, hint: 'Revenue minus expenses this month. Positive = profit, negative = loss. Based on actual cash flow, not estimates.' },
   { id: 'avgJobValue', label: 'Avg Job Value', icon: DollarSign, color: '#3b82f6', nav: null, hint: 'Average dollar amount per completed job across all time. Calculated from job totals.' },
-  { id: 'conversionRate', label: 'Win Rate', icon: TrendingUp, color: '#10b981', nav: '/pipeline', hint: 'Percentage of decided leads (Won + Lost) that were Won. Higher is better.' },
+  { id: 'conversionRate', label: 'Win Rate (YTD)', icon: TrendingUp, color: '#10b981', nav: '/sales-performance', hint: 'Of the estimates sent this year, the share that closed — approved, or turned into a job. Drafts are not counted as sent. Same rule as Sales Performance and the Sales Report; last month is the same rule for estimates sent last month.' },
   // ── PO module tiles (opt-in via preferences) ────────────────────────
   { id: 'needsOrder', label: 'Jobs Needing Parts', icon: Package, color: '#ea580c', nav: '/procurement', hint: 'Jobs with parts_status=needs_order. Batch these into vendor POs on the Procurement Queue page.' },
   { id: 'openPOs', label: 'Open Purchase Orders', icon: FileText, color: '#3b82f6', nav: '/purchase-orders', hint: 'POs in Draft / Sent / Partial-Received status. Total $ on order to vendors.' },
@@ -429,14 +430,20 @@ export default function Dashboard() {
   const allDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, null, null)
   const avgJobValue = allDeliveredJobs.length > 0 ? sumJobTotal(allDeliveredJobs, quoteAmountById) / allDeliveredJobs.length : 0
 
-  // Win rate still measured at the LEAD level — it answers "of the leads
-  // that got a decision, what % were wins?" — which is a sales-funnel
-  // question, not a job-delivery question. Kept separate intentionally.
   const totalLeadsCount = leads.length
   const netIncome = thisMonthRevenue - thisMonthExpenses
-  const wonLeads = leads.filter(l => l.status === 'Won').length
-  const decidedLeads = leads.filter(l => l.status === 'Won' || l.status === 'Lost').length
-  const conversionRate = decidedLeads > 0 ? Math.round((wonLeads / decidedLeads) * 100) : 0
+
+  // Win rate was Won / (Won + Lost) at the LEAD level. A converted lead does
+  // not read "Won" — it carries the company's own job status (Closed,
+  // Scheduled, Invoiced, Paid…), so on HHH that was 5 won / 52 decided = 10%
+  // for a company that won 729 jobs this year. It is now the one close-rate
+  // rule (lib/salesFunnel.closeRateOf, shared with Sales Performance and the
+  // Sales Report): of the estimates SENT in the window, the share that closed.
+  // Year to date is the headline — a month's cohort is mostly still open.
+  const winRateFor = (sinceIso, untilIso) =>
+    funnelTotals(computeSalesFunnel({ quotes, leads, employees, jobs }, { sinceIso, untilIso }))
+  const ytdFunnel = winRateFor(startOfYear().toISOString(), new Date().toISOString())
+  const conversionRate = ytdFunnel.closeRate
 
   // ── Last month ──
   // The month just ended, for comparison against the month in progress. MTD is
@@ -455,6 +462,7 @@ export default function Dashboard() {
   const firstOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
   const isLastMonth = (dateStr) => inLocalRange(dateStr, firstOfLastMonth, firstOfMonth)
   const lastMonthLabel = firstOfLastMonth.toLocaleDateString('en-US', { month: 'short' })
+  const lastMonthFunnel = winRateFor(firstOfLastMonth.toISOString(), firstOfMonth.toISOString())
 
   const lastMonthRevenue = computeRevenue(accountingBasis, { payments, leadPayments, utilityInvoices, invoices }, isLastMonth)
   const lastMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills, payroll: summarizePayroll(payrollData, isLastMonth), loanPayments: payrollData.loanPayments }, isLastMonth)
@@ -539,7 +547,7 @@ export default function Dashboard() {
     totalLeads: { value: totalLeadsCount, subtitle: 'All leads in pipeline' },
     netIncome: { value: formatCurrency(netIncome), subtitle: 'Revenue - Expenses (cash basis)', ytdValue: formatCurrency(ytdNetIncome), ytdLabel: 'YTD Net Income', lastValue: formatCurrency(lastMonthNetIncome), lastLabel: lastMonthLabel },
     avgJobValue: { value: formatCurrency(avgJobValue), subtitle: `Across ${allDeliveredJobs.length} delivered jobs` },
-    conversionRate: { value: `${conversionRate}%`, subtitle: `${wonLeads} won / ${decidedLeads} decided` },
+    conversionRate: { value: ytdFunnel.takeoffs ? `${conversionRate}%` : '—', subtitle: `${ytdFunnel.sentClosed} of ${ytdFunnel.takeoffs} estimates sent this year became jobs`, lastValue: lastMonthFunnel.takeoffs ? `${lastMonthFunnel.closeRate}% (${lastMonthFunnel.sentClosed} of ${lastMonthFunnel.takeoffs})` : '—', lastLabel: lastMonthLabel },
     // ── PO module tiles (numbers from poStats lazy-fetch above) ─────
     needsOrder: { value: poStats.needsOrder, subtitle: poStats.needsOrder > 0 ? 'Click to batch into vendor POs' : 'No jobs waiting on parts' },
     openPOs: { value: poStats.openPOs, subtitle: `${formatCurrency(poStats.openPOTotal)} on order to vendors` },
