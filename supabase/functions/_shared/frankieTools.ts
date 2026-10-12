@@ -222,7 +222,7 @@ export const FRANKIE_TOOLS: any[] = [
   },
   {
     name: 'query_estimates',
-    description: 'Estimates (quotes) with status, amount, customer, dates. Totals by status. Use for "what is out for approval", "estimates older than two weeks", "what did we quote X", win rate for a period.',
+    description: 'Estimates (quotes) with status, amount, customer, dates. Totals by status. Use for "what is out for approval", "estimates older than two weeks", "what did we quote X", close rate (win rate) for a period.',
     input_schema: { type: 'object', properties: { ...DATE_PROPS, status: { type: 'string', description: 'Draft, Sent, Negotiation, Approved, Rejected, or all (default all)' }, customer_name: { type: 'string' }, min_amount: { type: 'number' }, limit: { type: 'integer', description: 'Rows to list (default 25, max 100)' } } },
   },
   {
@@ -524,11 +524,24 @@ async function estimates(r: Rest, co: string, input: any) {
   const names = await customerNames(r, co, rows.map((q: any) => q.customer_id))
   const byStatus: Record<string, { count: number; total: number }> = {}
   for (const q of rows) { const k = q.status || 'no status'; byStatus[k] = byStatus[k] || { count: 0, total: 0 }; byStatus[k].count++; byStatus[k].total = money(byStatus[k].total + amt(q)) }
-  const approved = byStatus.Approved?.count || 0, rejected = byStatus.Rejected?.count || 0
+  // Close rate = of the estimates sent in the range (drafts are not sent),
+  // the share that closed — approved, or became a job. The Sales Performance
+  // page's rule (src/lib/salesFunnel.js closeRateOf). It used to be approved
+  // ÷ (approved + rejected), which read 94% on HHH against the page's 28%,
+  // because almost nobody marks an estimate Rejected — it just goes quiet.
+  const sent = rows.filter((q: any) => q.status !== 'Draft')
+  const unlinked = sent.filter((q: any) => q.status !== 'Approved' && q.job_id == null).map((q: any) => q.id)
+  const became = new Set<string>()
+  for (let i = 0; i < unlinked.length; i += 200) {
+    for (const j of await readAll(r, `jobs?${co}&select=quote_id&quote_id=in.(${unlinked.slice(i, i + 200).join(',')})`)) became.add(String(j.quote_id))
+  }
+  const sentClosed = sent.filter((q: any) => q.status === 'Approved' || q.job_id != null || became.has(String(q.id))).length
+  const closeRate = sent.length ? Math.min(100, Math.round((sentClosed / sent.length) * 100)) : null
   const limit = clamp(input?.limit, 25, 100)
   return {
     count: rows.length, total: money(rows.reduce((s: number, q: any) => s + amt(q), 0)), by_status: byStatus,
-    win_rate_of_decided: approved + rejected ? Math.round(approved / (approved + rejected) * 100) : null,
+    close_rate: closeRate == null ? null : `${closeRate}%`,
+    close_rate_means: sent.length ? `${sentClosed} of ${sent.length} estimates sent in this range closed (approved or became a job) — the Sales Performance page's Close %. Drafts are not sent.` : 'no estimates sent in this range',
     estimates: [...rows].sort((a: any, b: any) => amt(b) - amt(a)).slice(0, limit).map((q: any) => ({ estimate: q.quote_id || q.estimate_name || `#${q.id}`, customer: names[q.customer_id] || null, status: q.status, amount: amt(q), created: String(q.created_at).slice(0, 10), approved: q.approved_date ? String(q.approved_date).slice(0, 10) : null, job_id: q.job_id })),
     scope: `${rows.length} estimate(s); list is the largest ${Math.min(limit, rows.length)}. Amount = quote_amount, else the calculated amount. An estimate is an offer, not a sale — sold is query_sales.`,
   }

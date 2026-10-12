@@ -95,6 +95,47 @@ describe('what closed, and when', () => {
   })
 })
 
+describe('close rate is the cohort: of the estimates SENT in the window, the share that closed', () => {
+  // September 2026 at HHH: Doug Webb closed five August bids against four new
+  // ones and the old "closed ÷ sent" read 125%. The page (salesFunnel
+  // closeRateOf) and Arnie now both answer from the cohort of estimates sent.
+  const SENT = [
+    { id: 4, status: 'Approved', job_id: null, created_at: '2026-09-01T00:00:00Z', salesperson_id: 8 },   // sent Sept, approved
+    { id: 10, status: 'Sent', job_id: 77, created_at: '2026-09-03T00:00:00Z', salesperson_id: 8 },       // sent Sept, became a job (on the quote)
+    { id: 11, status: 'Sent', job_id: null, created_at: '2026-09-05T00:00:00Z', salesperson_id: 7 },     // sent Sept, became a job (on the job only)
+    { id: 12, status: 'Sent', job_id: null, created_at: '2026-09-08T00:00:00Z', salesperson_id: 7 },     // sent Sept, still out
+    { id: 13, status: 'Rejected', job_id: null, created_at: '2026-09-09T00:00:00Z', salesperson_id: 7 }, // sent Sept, lost
+  ]
+  const withSent = {
+    ...answers,
+    'quotes?select=id,status,job_id,created_at,salesperson_id': (path) => path.includes('salesperson_id=eq.7') ? SENT.filter((q) => q.salesperson_id === 7) : SENT,
+    'jobs?select=quote_id': (path) => (path.includes('(11') || path.includes(',11')) ? [{ quote_id: 11 }] : [],
+  }
+  it('3 of 5 = 60%, with the draft never counted and the rejected one counted as sent', async () => {
+    const { closedDeals } = mod(withSent)
+    const sept = await closedDeals({}, 25, { start: '2026-09-01', end: '2026-09-30' })
+    expect(sept).toMatchObject({ sent: 5, sent_that_closed: 3, close_rate: '60%' })
+    expect(sept.close_rate_means).toMatch(/3 of 5 estimates sent/)
+    expect(sept.close_rate_means).toMatch(/Not "closed" ÷ "sent" above/)
+  })
+  it('one rep: their own cohort', async () => {
+    const { closedDeals } = mod(withSent)
+    const mine = await closedDeals({}, 25, { start: '2026-09-01', end: '2026-09-30', salespersonId: 7 })
+    expect(mine).toMatchObject({ sent: 3, sent_that_closed: 1, close_rate: '33%' })
+  })
+  it('no estimates sent means no rate, not 0%', async () => {
+    const { closedDeals } = mod(answers)
+    const out = await closedDeals({}, 25, { start: '2026-09-01', end: '2026-09-30' })
+    expect(out.close_rate).toBeNull()
+    expect(out.close_rate_means).toMatch(/no estimates were sent/)
+  })
+  it('the prompt sends Arnie to close_rate and forbids the three wrong divisions', () => {
+    expect(engine).toMatch(/Close RATE is query_closed's close_rate/)
+    expect(engine).toMatch(/runs past 100%/)
+    expect(engine).toMatch(/approved ÷ rejected/)
+  })
+})
+
 describe('Arnie is told which "closed" is which', () => {
   it('the tool says not to answer it from job status', () => {
     expect(chat).toMatch(/name: 'query_closed'/)

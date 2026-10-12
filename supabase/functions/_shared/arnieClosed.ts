@@ -65,6 +65,25 @@ export async function closedDeals(r: Rest, companyId: number, opts: ClosedOpts =
   }
   const jobFor = new Map(jobs.map((j: any) => [String(j.quote_id), j]))
 
+  // Close RATE is a cohort: of the estimates SENT in the window (not drafts,
+  // by the day they were written), the share that have closed by now —
+  // approved, or became a job. Ported from src/lib/salesFunnel.js
+  // closeRateOf. Never closed-in-window over sent-in-window: those are two
+  // different sets of estimates and the ratio runs past 100% (Doug Webb,
+  // September 2026: 125%).
+  let sentPath = `quotes?select=id,status,job_id,created_at,salesperson_id&company_id=eq.${companyId}&status=neq.Draft&limit=5000`
+  if (start) sentPath += `&created_at=gte.${start}`
+  if (end) sentPath += `&created_at=lte.${end}T23:59:59`
+  if (opts.salespersonId) sentPath += `&salesperson_id=eq.${opts.salespersonId}`
+  const sent = await readRecordList(r, sentPath)
+  const unlinked = sent.filter((q: any) => q.status !== 'Approved' && q.job_id == null).map((q: any) => q.id)
+  const became = new Set<string>()
+  for (let i = 0; i < unlinked.length; i += 200) {
+    for (const j of await readRecordList(r, `jobs?select=quote_id&company_id=eq.${companyId}&quote_id=in.(${unlinked.slice(i, i + 200).join(',')})&limit=5000`)) became.add(String(j.quote_id))
+  }
+  const sentClosed = sent.filter((q: any) => q.status === 'Approved' || q.job_id != null || became.has(String(q.id))).length
+  const closeRate = sent.length ? Math.min(100, Math.round((sentClosed / sent.length) * 100)) : null
+
   const emps = opts.salespersonId ? [] : await readRecordList(r, `employees?select=id,name&company_id=eq.${companyId}&limit=300`)
   const nameOf = (id: unknown) => emps.find((e: any) => String(e.id) === String(id))?.name || null
 
@@ -101,6 +120,12 @@ export async function closedDeals(r: Rest, companyId: number, opts: ClosedOpts =
     window: start || end ? `${start || 'the beginning'} to ${end || 'today'}` : 'all time',
     closed: rows.length,
     value: usd(value),
+    sent: sent.length,
+    sent_that_closed: sentClosed,
+    close_rate: closeRate == null ? null : `${closeRate}%`,
+    close_rate_means: sent.length
+      ? `${sentClosed} of ${sent.length} estimates sent in this window have closed (approved or became a job) — the Sales Performance page's Close %. Not "closed" ÷ "sent" above: those are different estimates.`
+      : 'no estimates were sent in this window, so there is no close rate',
     dated_by: dated,
     deals: rows.slice(0, limit),
     ...(rows.length > limit ? { showing: limit } : {}),

@@ -150,6 +150,7 @@ ${personaBlock(personaKey, displayName)}
 
 ## "Closed" means a sale, not finished work
 - **Closed = an estimate the customer approved.** "What did we close in September", "how much have we closed this month", "what has Noah closed", close rate, won, landed, signed — all the same question, and the answer is query_closed.
+- **Close RATE is query_closed's close_rate**: of the estimates sent in the period, the share that have closed — the Sales Performance page's Close %. Quote close_rate_means with it. Never work a rate out yourself from closed ÷ sent (different estimates — it runs past 100%), from approved ÷ rejected, or from lead statuses.
 - There is also a job status literally called "Closed" and a lead status called "Closed". Those mean the WORK is wrapped, and a job closed this month was very likely sold months ago. Never answer a "what did we close" question from them. If someone clearly means finished work ("how many jobs did we close out"), say which you are giving them.
 - A deal is dated by the job that came from it, else the day it was approved, else the day the estimate was written — the same rule the Sales Performance page uses. If the reply says some were dated by a proxy, pass that on in one line; do not present a proxy figure as exact.
 - Admin and up, like every sales figure.
