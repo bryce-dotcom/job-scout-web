@@ -61,6 +61,7 @@ import { enabledWalletsFrom, walletByMethod, displayHandle, walletGuidance, wall
 import { qrDataUrl } from '../lib/qr'
 import { businessUnitFor, logoUrlFrom, portalUrlFor } from '../lib/invoiceSend'
 import { localDateStr } from '../lib/localDate'
+import { clockInChoice } from '../lib/clockInJob'
 import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
 import { autoLinkReceipts } from '../lib/expenseMatch'
 
@@ -174,6 +175,8 @@ export default function FieldScout() {
   const [weekEntries, setWeekEntries] = useState([])
   const [expandedJob, setExpandedJob] = useState(null)
   const [clockingIn, setClockingIn] = useState(false)
+  // A punch needs a job, or Overhead said out loud — lib/clockInJob.
+  const [clockInOverhead, setClockInOverhead] = useState(false)
   const [clockingOut, setClockingOut] = useState(false)
   const [gpsStatus, setGpsStatus] = useState(null) // null | 'capturing' | 'done' | 'failed'
   const [selectedJobId, setSelectedJobId] = useState('')
@@ -1067,8 +1070,11 @@ export default function FieldScout() {
   }
 
   // Clock in
-  const handleClockIn = async (jobId) => {
+  const handleClockIn = async (jobId, opts = {}) => {
     if (clockingIn) return
+    const choice = clockInChoice({ jobId, overhead: opts.overhead ?? clockInOverhead })
+    if (!choice.ok) { toast.error(choice.reason); return }
+    jobId = choice.job_id
     setClockingIn(true)
     try {
       // One person, one open shift. Without this, closing the app without
@@ -1082,7 +1088,7 @@ export default function FieldScout() {
           // yesterday's shift is not in today's list and the banner said "no
           // action needed": Christopher spent five minutes looking for a
           // button that did not exist (02e30d0c). Ask, close it, clock in.
-          setMissedShift({ entry: gate.openShift, clockIn: true, jobId: jobId || null })
+          setMissedShift({ entry: gate.openShift, clockIn: true, jobId: jobId || null, overhead: opts.overhead ?? clockInOverhead })
         }
         // 'already_open' needs no message: that's a double-tap or a second
         // tab, and the user already appears clocked in.
@@ -1100,6 +1106,7 @@ export default function FieldScout() {
           company_id: companyId,
           employee_id: currentEmployee.id,
           job_id: jobId || null,
+          notes: choice.notes,
           clock_in: new Date().toISOString(),
           clock_in_lat: lat,
           clock_in_lng: lng,
@@ -2305,10 +2312,10 @@ export default function FieldScout() {
           continueLabel={missedShift.clockIn ? 'Close it and clock in' : 'Close that shift'}
           onDismiss={() => setMissedShift(null)}
           onDone={async () => {
-            const { clockIn, jobId } = missedShift
+            const { clockIn, jobId, overhead } = missedShift
             setMissedShift(null)
             await fetchEntries()
-            if (clockIn) handleClockIn(jobId)
+            if (clockIn) handleClockIn(jobId, { overhead })
             else toast.success('Shift closed — payroll will confirm the hours.')
           }}
         />
@@ -4190,13 +4197,31 @@ export default function FieldScout() {
                 )}
             </div>
 
+            {/* No job to pick? Say so. Shop, office and travel time is Overhead,
+                chosen on purpose, so the hours that land on no job are the ones
+                that belong there — not a third of the month (Frankie, Oct 2026). */}
+            {!selectedJobId && (
+              <button
+                type="button"
+                onClick={() => setClockInOverhead(v => !v)}
+                style={{
+                  width: '100%', padding: '12px', marginBottom: '10px', minHeight: '44px',
+                  backgroundColor: clockInOverhead ? theme.accentBg : 'transparent',
+                  border: `1px solid ${clockInOverhead ? theme.accent : theme.border}`, borderRadius: '10px',
+                  color: clockInOverhead ? theme.accent : theme.textSecondary, fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+                }}
+              >
+                {clockInOverhead ? '✓ Overhead — shop, office or travel (no job)' : 'No job today? Clock in as Overhead'}
+              </button>
+            )}
             <button
               onClick={() => handleClockIn(selectedJobId ? parseInt(selectedJobId) : null)}
-              disabled={clockingIn}
+              disabled={clockingIn || (!selectedJobId && !clockInOverhead)}
               style={{
                 width: '100%',
                 padding: '18px',
                 height: '54px',
+                opacity: (!selectedJobId && !clockInOverhead) ? 0.55 : 1,
                 background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
                 border: 'none',
                 borderRadius: '12px',
@@ -4211,7 +4236,7 @@ export default function FieldScout() {
               }}
             >
               <Play size={22} />
-              {clockingIn ? (gpsStatus === 'capturing' ? 'Capturing location...' : 'Starting...') : 'Clock In'}
+              {clockingIn ? (gpsStatus === 'capturing' ? 'Capturing location...' : 'Starting...') : (!selectedJobId && !clockInOverhead) ? 'Pick a job or Overhead to clock in' : clockInOverhead && !selectedJobId ? 'Clock In — Overhead' : 'Clock In'}
             </button>
           </div>
         )

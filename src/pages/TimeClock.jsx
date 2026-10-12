@@ -6,6 +6,7 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { isAdmin as checkAdmin, isTeamLead as checkTeamLead, canViewHR } from '../lib/accessControl'
 import { localDateStr } from '../lib/localDate'
+import { clockInChoice, clockableJobs } from '../lib/clockInJob'
 import {
   Clock, Play, Square, Coffee, MapPin, Calendar, AlertTriangle,
   Plus, X, ChevronRight, DollarSign, TrendingUp, Award
@@ -24,6 +25,7 @@ export default function TimeClock() {
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
+  const storeJobs = useStore((state) => state.jobs)
   const hasHR = canViewHR(user)
 
   // Field roles belong on FieldScout — redirect them there so they see
@@ -50,6 +52,10 @@ export default function TimeClock() {
 
   // Busy guards so repeated taps on Clock In/Out don't fire duplicate DB ops.
   const [busyEmployeeIds, setBusyEmployeeIds] = useState(new Set()) // clock-in busy
+  // What each person is clocking in to: a job id, or 'overhead'. A punch
+  // needs one or the other (lib/clockInJob).
+  const [clockInTarget, setClockInTarget] = useState({})
+  const openJobs = useMemo(() => clockableJobs(storeJobs), [storeJobs])
   const [busyEntryIds, setBusyEntryIds] = useState(new Set())       // clock-out / lunch busy
   const [lookbackDays, setLookbackDays] = useState(14) // default 14 days for time entries
 
@@ -344,6 +350,9 @@ export default function TimeClock() {
 
   const handleClockIn = async (employeeId) => {
     if (busyEmployeeIds.has(employeeId)) return // prevent double-tap
+    const target = clockInTarget[employeeId]
+    const choice = clockInChoice({ jobId: target === 'overhead' ? null : target, overhead: target === 'overhead' })
+    if (!choice.ok) { alert(choice.reason); return }
     setBusyEmployeeIds(prev => new Set(prev).add(employeeId))
     try {
       // Race-safe duplicate guard: re-check the DB for any still-open
@@ -373,6 +382,8 @@ export default function TimeClock() {
         .insert({
           company_id: companyId,
           employee_id: employeeId,
+          job_id: choice.job_id,
+          notes: choice.notes,
           clock_in: new Date().toISOString(),
           clock_in_lat: lat,
           clock_in_lng: lng,
@@ -990,13 +1001,27 @@ export default function TimeClock() {
                 </div>
               ) : (
                 <div>
+                  {/* What are they clocking in to? A job, or Overhead on purpose. */}
+                  <select
+                    value={clockInTarget[employee.id] || ''}
+                    onChange={(e) => setClockInTarget(prev => ({ ...prev, [employee.id]: e.target.value }))}
+                    aria-label="Job to clock in to"
+                    style={{ width: '100%', padding: '12px', marginBottom: '10px', minHeight: '44px', border: `1px solid ${theme.border}`, borderRadius: '10px', backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }}
+                  >
+                    <option value="">Choose a job to clock in to…</option>
+                    <option value="overhead">Overhead — shop, office or travel (no job)</option>
+                    {openJobs.map(j => (
+                      <option key={j.id} value={String(j.id)}>{j.job_title || j.job_id || `Job #${j.id}`}{j.customer?.name ? ` — ${j.customer.name}` : ''} ({j.status})</option>
+                    ))}
+                  </select>
                   {/* Clock In Button */}
                   {(() => {
                     const inBusy = busyEmployeeIds.has(employee.id)
+                    const chosen = !!clockInTarget[employee.id]
                     return (
                       <button
                         onClick={() => handleClockIn(employee.id)}
-                        disabled={inBusy}
+                        disabled={inBusy || !chosen}
                         style={{
                           width: '100%',
                           padding: '20px',
@@ -1009,7 +1034,7 @@ export default function TimeClock() {
                           fontSize: '18px',
                           fontWeight: '700',
                           cursor: inBusy ? 'wait' : 'pointer',
-                          opacity: inBusy ? 0.75 : 1,
+                          opacity: inBusy ? 0.75 : !chosen ? 0.55 : 1,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -1018,7 +1043,7 @@ export default function TimeClock() {
                         }}
                       >
                         <Play size={24} />
-                        {inBusy ? 'Clocking In…' : 'Clock In'}
+                        {inBusy ? 'Clocking In…' : !chosen ? 'Pick a job or Overhead' : clockInTarget[employee.id] === 'overhead' ? 'Clock In — Overhead' : 'Clock In'}
                       </button>
                     )
                   })()}
