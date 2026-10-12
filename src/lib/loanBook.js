@@ -5,8 +5,8 @@
 //   2. the bank row: loan_payment_id, category "Loan Payment", confirmed
 //   3. the loan: balance down by the principal (hand-entered loans only —
 //      a Plaid loan gets its balance from the lender), last/next payment dates
-import { splitPayment } from './loanMatch'
-import { localDateStr } from './localDate'
+import { splitPayment } from './loanMatch.js'
+import { localDateStr } from './localDate.js'
 
 const addMonth = (dayStr) => { const d = new Date(String(dayStr).slice(0, 10) + 'T00:00:00'); return localDateStr(new Date(d.getFullYear(), d.getMonth() + 1, d.getDate())) }
 

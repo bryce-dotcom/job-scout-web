@@ -81,7 +81,7 @@ export default {
     ],
 
     gotchas: [
-      "Frankie also keeps the books (since 2026-10-12): the books-deduce function gives every unconfirmed bank row a verdict with evidence (Books → Money → Frankie's verdicts), review-only until a person accepts it; the nightly cron judges new rows; Close the month on Books → Reports → Year-End is the checklist. Frankie never books a row on its own.",
+      "Frankie wears two hats — CFO (this chat, the daily brief, the forecast) and CPA/bookkeeper (since 2026-10-12): the books-deduce function gives every unconfirmed bank row a verdict with evidence (Books → Money → Frankie's verdicts); a person accepts it, or, with auto-booking on (Settings on that panel: settings.books_autobook — floor 95%, cap $5,000 by default), Frankie books the sure, small rows himself every night through the exact same code the Accept button runs, lists them under 'Recently booked' and every one has an Undo that reverses the payment, claim, loan or category it wrote. Rows above the cap, below the floor, or 'unexplained' always wait for a person. Close the month on Books → Reports → Year-End is the checklist.",
       'Frankie answers from data, not opinions. Ambiguous questions get clarifying questions back.',
       'Auto-collection reminders use your invoice template — make sure the from-email is set up.',
       'Job profitability needs job_costing rollups (materials, labor, expenses) to be allocated. Un-allocated jobs report zero margin.',

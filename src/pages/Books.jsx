@@ -2363,7 +2363,7 @@ export default function Books() {
           </div>
 
           {/* Frankie's verdicts — review queue; nothing books until accepted */}
-          <VerdictsPanel companyId={companyId} theme={theme} formatCurrency={formatCurrency} plaidTransactions={plaidTransactions} expenseCategories={expenseCategories} userEmail={user?.email || null} isMobile={isMobile}
+          <VerdictsPanel companyId={companyId} theme={theme} formatCurrency={formatCurrency} plaidTransactions={plaidTransactions} expenseCategories={expenseCategories} userEmail={user?.email || null} isAdmin={checkAdmin(user)}
             onApplied={() => { fetchPlaidTransactions?.(); fetchPaymentsLifetime?.(); fetchBooksExtra?.() }} />
 
           {/* Upcoming services alert — when service visits (warranty,

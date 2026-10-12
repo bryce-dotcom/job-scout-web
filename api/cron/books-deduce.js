@@ -53,7 +53,15 @@ module.exports = async function handler(req, res) {
           body: JSON.stringify({ action: 'run', company_id: companyId, only_ids: chunk, limit: PER_RUN }),
         })
         const json = await r.json().catch(() => ({}))
-        results.push({ company_id: companyId, waiting: ids.length, judged: json.judged ?? 0, sure: json.summary?.confidence?.sure ?? 0, model: json.model || null, error: json.error || null })
+        // Then Frankie books the sure ones, if the tenant turned that on
+        // (settings.books_autobook). The function enforces the floor and cap.
+        const a = await fetch(`${url}/functions/v1/books-deduce`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, apikey: key },
+          body: JSON.stringify({ action: 'autobook', company_id: companyId }),
+        })
+        const auto = await a.json().catch(() => ({}))
+        results.push({ company_id: companyId, waiting: ids.length, judged: json.judged ?? 0, sure: json.summary?.confidence?.sure ?? 0, model: json.model || null, autobook: { enabled: !!auto.enabled, booked: auto.booked ?? 0, failed: auto.failed ?? 0 }, error: json.error || auto.error || null })
       } catch (err) {
         results.push({ company_id: companyId, error: err.message })
       }

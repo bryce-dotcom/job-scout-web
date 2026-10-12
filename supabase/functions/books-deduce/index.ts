@@ -14,6 +14,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAnthropic } from "../_shared/anthropic.ts";
 import { deduce, buildHistory, summarize, descriptor } from "../_shared/booksDeduce.ts";
 import type { Txn, Context, Verdict } from "../_shared/booksDeduce.ts";
+// The SAME booking code the Books page runs (src/lib/verdictApply.js): one
+// rule for what "accept" writes, whether a person pressed it or Frankie did.
+// Deno follows the relative import; the deploy uploads the src files it needs.
+import { applyVerdict, undoVerdict, parseAutobook } from "../../../src/lib/verdictApply.js";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -76,6 +80,50 @@ serve(async (req) => {
         matched += (r.matches || []).reduce((s: number, m: any) => s + num(m.amount), 0);
       }
       return json({ proposed: rows.length, byKind, confidence: { sure, likely, unsure }, matchedAmount: Math.round(matched * 100) / 100 });
+    }
+
+    // ── Frankie books the sure ones himself ──
+    // settings.books_autobook: { enabled, min_confidence, max_amount }. Only
+    // proposed verdicts at or above the floor and at or under the cap, never
+    // 'unknown', each applied through applyVerdict and stamped status 'auto'
+    // with what it wrote, so every one can be undone from the panel.
+    if (action === 'autobook') {
+      const { data: setting } = await sb.from('settings').select('value').eq('company_id', company_id).eq('key', 'books_autobook').limit(1);
+      const cfg = parseAutobook(setting?.[0]?.value);
+      const force = !!body.force;   // an explicit "book them now" from the panel
+      const dryRun = !!body.dry_run;
+      if (!cfg.enabled && !force) return json({ enabled: false, booked: 0, message: 'Auto-booking is off for this company.' });
+      const minConf = Math.max(0.5, Math.min(0.99, Number(body.min_confidence ?? cfg.min_confidence) || 0.95));
+      const maxAmt = Math.max(0, Number(body.max_amount ?? cfg.max_amount) || 5000);
+      const { data: vs } = await sb.from('books_verdicts').select('*').eq('company_id', company_id).eq('status', 'proposed').gte('confidence', minConf).neq('kind', 'unknown').order('confidence', { ascending: false }).limit(1000);
+      const ids = (vs || []).map((v: any) => v.plaid_transaction_id);
+      const txById = new Map<number, any>();
+      for (let i = 0; i < ids.length; i += 500) {
+        const { data: tx } = await sb.from('plaid_transactions').select('*').in('id', ids.slice(i, i + 500)).eq('company_id', company_id);
+        for (const t of tx || []) txById.set(t.id, t);
+      }
+      const { data: cats } = await sb.from('expense_categories').select('name, type, default_tax_category').or(`company_id.eq.${company_id},company_id.is.null`);
+      const eligible = (vs || []).filter((v: any) => { const t = txById.get(v.plaid_transaction_id); return t && !t.confirmed && !t.pending && Math.abs(Number(t.amount) || 0) <= maxAmt; });
+      if (dryRun) return json({ enabled: cfg.enabled, dry_run: true, eligible: eligible.length, min_confidence: minConf, max_amount: maxAmt, amount: eligible.reduce((s: number, v: any) => s + Math.abs(Number(txById.get(v.plaid_transaction_id)?.amount) || 0), 0) });
+      let booked = 0, failed = 0;
+      const byKind: Record<string, number> = {};
+      const errors: string[] = [];
+      for (const v of eligible) {
+        const t = txById.get(v.plaid_transaction_id);
+        const res = await applyVerdict(sb, { companyId: company_id, verdict: v, txn: t, userEmail: 'frankie', categories: cats || [], decision: 'auto' });
+        if (res?.error) { failed++; if (errors.length < 10) errors.push(`#${t.id}: ${res.error}`); continue; }
+        booked++; byKind[v.kind] = (byKind[v.kind] || 0) + 1;
+      }
+      return json({ enabled: cfg.enabled, booked, failed, byKind, errors, min_confidence: minConf, max_amount: maxAmt, remaining_proposed: (vs || []).length - eligible.length });
+    }
+
+    if (action === 'undo') {
+      const txnId = Number(body.txn_id);
+      if (!txnId) return json({ error: 'txn_id is required' }, 400);
+      const { data: t } = await sb.from('plaid_transactions').select('*').eq('id', txnId).eq('company_id', company_id).maybeSingle();
+      if (!t) return json({ error: 'Bank row not found' }, 404);
+      const res = await undoVerdict(sb, { companyId: company_id, txn: t, userEmail: payload?.email || 'frankie' });
+      return json(res?.error ? { error: res.error, did: res.did } : { ok: true, did: res.did });
     }
 
     if (action !== 'run') return json({ error: `Unknown action: ${action}` }, 400);

@@ -15,9 +15,9 @@
 // and, for an expense category, becomes a category_rule so the next row from
 // that payee never asks again.
 import { transferFields } from '../../supabase/functions/_shared/transferRule.ts'
-import { isLegacyNetShape } from './arHelpers'
-import { recordUtilityPayment } from './utilitySettlement'
-import { bookLoanPayment } from './loanBook'
+import { isLegacyNetShape } from './arHelpers.js'
+import { recordUtilityPayment, buildReopenPatch } from './utilitySettlement.js'
+import { bookLoanPayment } from './loanBook.js'
 import { normalizeDescriptor, descriptor } from '../../supabase/functions/_shared/booksDeduce.ts'
 
 const num = (v) => parseFloat(v) || 0
@@ -41,7 +41,7 @@ export function defaultTaxFor(category, kind, categories = []) {
 
 /**
  * @param {object} sb
- * @param {{ companyId:number, verdict:object, txn:object, userEmail?:string|null, categories?:object[], decision?: 'accepted'|'corrected', correction?: object|null }} input
+ * @param {{ companyId:number, verdict:object, txn:object, userEmail?:string|null, categories?:object[], decision?: 'accepted'|'corrected'|'auto', correction?: object|null }} input
  *   correction: { kind?, category?, tax_category?, match_ids?: number[], is_transfer?: boolean } — overrides the verdict
  * @returns {Promise<{ ok?: true, did: string[], error?: string }>}
  */
@@ -145,11 +145,73 @@ export async function applyVerdict(sb, { companyId, verdict, txn, userEmail = nu
       }
     }
 
-    await sb.from('books_verdicts').update({ status: decision, correction: correction || null, reviewed_by: userEmail || null, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('plaid_transaction_id', txn.id).eq('company_id', companyId)
+    await sb.from('books_verdicts').update({ status: decision, correction: correction || null, reviewed_by: userEmail || null, reviewed_at: new Date().toISOString(), applied: did, applied_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('plaid_transaction_id', txn.id).eq('company_id', companyId)
     return { ok: true, did }
   } catch (e) {
     return { error: e?.message || String(e), did }
   }
+}
+
+/**
+ * Put a booked row back exactly where it was: the payment rows, claim
+ * settlements and loan payments it created are removed, invoice statuses
+ * recomputed, the bank row unconfirmed, and the verdict goes back to
+ * 'proposed'. A rule learned from a correction is kept (it was a decision).
+ */
+export async function undoVerdict(sb, { companyId, txn, userEmail = null }) {
+  const did = []
+  try {
+    // Customer payments this bank row created.
+    const { data: pays } = await sb.from('payments').select('id, invoice_id, amount').eq('company_id', companyId).eq('source_transaction_id', txn.id)
+    const invoiceIds = [...new Set((pays || []).map(p => p.invoice_id).filter(Boolean))]
+    if (pays?.length) {
+      await sb.from('plaid_transactions').update({ matched_payment_id: null }).eq('id', txn.id).eq('company_id', companyId)
+      const { error } = await sb.from('payments').delete().in('id', pays.map(p => p.id))
+      if (error) throw error
+      did.push(`removed ${pays.length} payment row${pays.length === 1 ? '' : 's'}`)
+    }
+    for (const invId of invoiceIds) {
+      const { data: inv } = await sb.from('invoices').select('id, amount, discount_applied, tax_amount').eq('id', invId).maybeSingle()
+      if (!inv) continue
+      const { data: rest } = await sb.from('payments').select('amount, status').eq('invoice_id', invId)
+      const paid = (rest || []).filter(p => !['Refunded', 'Voided'].includes(String(p.status || ''))).reduce((s, p) => s + num(p.amount), 0)
+      const total = customerTotal(inv)
+      await sb.from('invoices').update({ payment_status: paid >= total - 0.01 ? 'Paid' : paid > 0 ? 'Partially Paid' : 'Pending', updated_at: new Date().toISOString() }).eq('id', invId)
+    }
+    // Incentive claims this bank row settled.
+    const { data: claims } = await sb.from('utility_invoices').select('*').eq('company_id', companyId).eq('source_transaction_id', txn.id)
+    for (const row of claims || []) {
+      const { data: inv } = row.invoice_id ? await sb.from('invoices').select('*').eq('id', row.invoice_id).maybeSingle() : { data: null }
+      const patch = buildReopenPatch(row, inv)
+      if (patch.rowPatch) await sb.from('utility_invoices').update({ ...patch.rowPatch, source_transaction_id: null }).eq('id', row.id)
+      if (patch.invoicePatch && inv) await sb.from('invoices').update(patch.invoicePatch).eq('id', inv.id)
+      did.push(`reopened ${row.utility_name || 'utility'} claim #${row.id}`)
+    }
+    // Loan payment this bank row booked.
+    const { data: lps } = await sb.from('loan_payments').select('id, liability_id, principal').eq('company_id', companyId).eq('plaid_transaction_id', txn.id)
+    for (const p of lps || []) {
+      // Read the loan first: schema:check pairs a select with the nearest
+      // from() above it, and an update() in between confuses it.
+      const { data: loan } = await sb.from('liabilities').select('id, source, current_balance').eq('id', p.liability_id).maybeSingle()
+      await sb.from('plaid_transactions').update({ loan_payment_id: null }).eq('id', txn.id).eq('company_id', companyId)
+      await sb.from('loan_payments').delete().eq('id', p.id)
+      if (loan && loan.source !== 'plaid') await sb.from('liabilities').update({ current_balance: num(loan.current_balance) + num(p.principal), updated_at: new Date().toISOString() }).eq('id', loan.id)
+      did.push('removed the loan payment')
+    }
+    // The bank row itself.
+    const { error } = await sb.from('plaid_transactions').update({ confirmed: false, is_transfer: false, user_category: null, user_tax_category: null, matched_invoice_id: null, matched_payment_id: null, matched_utility_invoice_id: null, matched_at: null, loan_payment_id: null }).eq('id', txn.id).eq('company_id', companyId)
+    if (error) throw error
+    did.push('bank row back to unconfirmed')
+    await sb.from('books_verdicts').update({ status: 'proposed', reviewed_by: userEmail || null, reviewed_at: new Date().toISOString(), applied: null, applied_at: null, updated_at: new Date().toISOString() }).eq('plaid_transaction_id', txn.id).eq('company_id', companyId)
+    return { ok: true, did }
+  } catch (e) {
+    return { error: e?.message || String(e), did }
+  }
+}
+
+export const AUTOBOOK_DEFAULTS = { enabled: false, min_confidence: 0.95, max_amount: 5000 }
+export function parseAutobook(value) {
+  try { const v = typeof value === 'string' ? JSON.parse(value) : value; return { ...AUTOBOOK_DEFAULTS, ...(v || {}) } } catch { return { ...AUTOBOOK_DEFAULTS } }
 }
 
 export async function dismissVerdict(sb, { companyId, txnId, userEmail = null }) {
