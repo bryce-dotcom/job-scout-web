@@ -12,6 +12,7 @@ import BottomTabs from './BottomTabs'
 import ArnieOnboardingBanner from './ArnieOnboardingBanner'
 import GlobalSearch from './GlobalSearch'
 import TrialBanner from './TrialBanner'
+import AgentNavIcon from './AgentNavIcon'
 import { useLocationTracking } from '../hooks/useLocationTracking'
 import {
   LayoutDashboard,
@@ -517,7 +518,7 @@ export default function Layout() {
         childAgents.forEach(agent => {
           items.push({
             to: agent.route_path,
-            icon: Bot,
+            icon: (props) => <AgentNavIcon agent={agent} {...props} />,
             label: agent.display_name,
             hint: agent.description,
             isAgent: true,
@@ -531,7 +532,7 @@ export default function Layout() {
       sectionAgents.forEach(agent => {
         items.push({
           to: agent.route_path,
-          icon: Bot,
+          icon: (props) => <AgentNavIcon agent={agent} {...props} />,
           label: agent.display_name,
           hint: agent.description,
           isAgent: true
@@ -1216,7 +1217,7 @@ export default function Layout() {
                               transition: 'all 0.15s ease'
                             })}
                           >
-                            <Bot size={12} style={{ color: '#a855f7' }} />
+                            <AgentNavIcon agent={agent} size={12} />
                             {agent.display_name}
                           </NavLink>
                         ))}
@@ -1308,7 +1309,7 @@ export default function Layout() {
                           minHeight: '36px'
                         })}
                       >
-                        <Bot size={18} style={{ color: '#a855f7' }} />
+                        <AgentNavIcon agent={agent} size={18} />
                         {agent.display_name}
                       </NavLink>
                     ))}
@@ -1827,7 +1828,7 @@ export default function Layout() {
                                   minHeight: '36px'
                                 })}
                               >
-                                <Bot size={14} style={{ color: '#a855f7' }} />
+                                <AgentNavIcon agent={agent} size={14} />
                                 {agent.display_name}
                               </NavLink>
                             ))}
@@ -1918,7 +1919,7 @@ export default function Layout() {
                               minHeight: '44px'
                             })}
                           >
-                            <Bot size={18} style={{ color: '#a855f7' }} />
+                            <AgentNavIcon agent={agent} size={18} />
                             {agent.display_name}
                           </NavLink>
                         ))}
@@ -2168,7 +2169,7 @@ export default function Layout() {
                       marginBottom: isEditing ? '12px' : 0
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <Bot size={18} style={{ color: '#a855f7' }} />
+                        <AgentNavIcon agent={agent} size={18} />
                         <div>
                           <div style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>
                             {agent.display_name}

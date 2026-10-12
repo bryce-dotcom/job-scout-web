@@ -11,7 +11,8 @@
 
 import { createPortal } from 'react-dom'
 import { NavLink } from 'react-router-dom'
-import { Menu, Sparkles } from 'lucide-react'
+import { Menu } from 'lucide-react'
+import AssistantAvatar from './AssistantAvatar'
 import { tabLabel } from '../lib/navTabs'
 
 export default function BottomTabs({ items, onMore, moreActive, theme, onArnie, arnieName = 'Arnie' }) {
@@ -98,7 +99,17 @@ export default function BottomTabs({ items, onMore, moreActive, theme, onArnie, 
           backgroundColor: theme.accentBg,
         }}
       >
-        <Sparkles size={21} />
+        {/* Their assistant's actual face, not a generic sparkle. This is the
+            one tab that is a person rather than a page, and on a phone it is
+            the most-looked-at pixel in the app — Bryce: "the little stars in
+            the menu on the phone instead of Arnie or Jenny's pic looks
+            cheap". A ring in the accent keeps it reading as the special slot
+            it already was. */}
+        <AssistantAvatar
+          size={34}
+          border={`2px solid ${theme.accent}`}
+          style={{ marginBottom: 1 }}
+        />
         <span style={text}>{arnieName}</span>
       </button>
 
