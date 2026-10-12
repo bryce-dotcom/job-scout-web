@@ -10,16 +10,31 @@ import ArnieRoutines from '../pages/agents/arnie/ArnieRoutines'
 import ArniePersona from '../pages/agents/arnie/ArniePersona'
 import { stopSpeaking } from '../pages/agents/arnie/arnieVoice'
 import { loadSessions, getLastSessionId } from '../pages/agents/arnie/arnieEngine'
+import { shouldIntroduce, markIntroDone, INTRO_KICKOFF } from '../lib/arnieIntro'
 
 // Everything Arnie is, in the one place people actually open him. The
 // Clock icon in the header still holds past conversations and his face still
 // opens who-your-assistant-is, so four tabs is all this needs — any more and
 // a 400px drawer starts needing its own navigation.
+// A label has to say what the thing IS to somebody who has never been told.
+// "Computer" meant nothing — it is the tab where you let him work in programs
+// on your own machine, which is not a thing people expect an app to offer, so
+// the name has to carry it. The `hint` is the hover on a desktop and the line
+// under the strip on a phone, where there is no hover at all.
 const TABS = [
-  { key: 'chat', label: 'Chat', icon: MessageCircle },
-  { key: 'computer', label: 'Computer', icon: Monitor },
-  { key: 'taught', label: 'Taught', icon: GraduationCap },
-  { key: 'routines', label: 'Routines', icon: Clock },
+  { key: 'chat', label: 'Chat', icon: MessageCircle, hint: 'Ask him anything about your business.' },
+  {
+    key: 'computer', label: 'My PC', icon: Monitor,
+    hint: 'Let him work in programs on your own computer — a utility portal, a spreadsheet — in the ones you allow, one at a time.',
+  },
+  {
+    key: 'taught', label: 'Taught', icon: GraduationCap,
+    hint: 'Jobs somebody has shown him how to do once, written down in plain English.',
+  },
+  {
+    key: 'routines', label: 'Standing', icon: Clock,
+    hint: 'Work he does on a schedule without being asked — "every weekday at 7am, text me what is off track".',
+  },
 ]
 
 const dark = {
@@ -80,6 +95,35 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
     // a session nothing points at.
     setSessionId(last && sessions.some(s => s.session_id === last) ? last : null)
   }, [])
+
+  // ── he speaks first, once ────────────────────────────────────────────
+  // Everything he can do sat behind four tab labels nobody had been told the
+  // meaning of. A person who has never talked to him gets introduced by him
+  // rather than by a tooltip — and he can look at what is actually missing
+  // and start on it, which no written welcome can.
+  useEffect(() => {
+    if (!user?.id) return
+    let alive = true
+    const t = setTimeout(async () => {
+      let sessions = []
+      try { sessions = await loadSessions() } catch { return /* offline: another day */ }
+      if (!alive) return
+      if (!shouldIntroduce({
+        userId: user.id,
+        sessionCount: sessions.length,
+        path: window.location.pathname,
+        alreadyOpen: open,
+      })) return
+      markIntroDone(user.id)
+      window.dispatchEvent(new CustomEvent('arnie:open', {
+        detail: { kickoff: INTRO_KICKOFF, mic: false },
+      }))
+    }, 2500)   // let the page they asked for finish arriving first
+    return () => { alive = false; clearTimeout(t) }
+    // Deliberately not re-running on `open`: this fires once per person, and
+    // reacting to the panel opening would make it fight the person using it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
 
   // Opening is an action, so the lookup happens here rather than in an effect
   // watching `open` — same result, and it keeps the async work on the event
@@ -388,6 +432,7 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
                   <button
                     key={t.key}
                     onClick={() => setTab(t.key)}
+                    title={t.hint}
                     style={{
                       flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
                       background: 'none', border: 'none', cursor: 'pointer',
@@ -402,6 +447,19 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
                 )
               })}
             </div>
+
+            {/* What this tab IS, for the phone, where there is no hover. One
+                line, under the strip, only on the tabs whose names cannot
+                carry their own meaning. */}
+            {tab !== 'chat' && (
+              <div style={{
+                padding: '9px 14px', fontSize: 11.5, lineHeight: 1.45,
+                color: dark.textMuted, backgroundColor: dark.bgHeader,
+                borderBottom: `1px solid ${dark.border}`, flexShrink: 0,
+              }}>
+                {TABS.find((t) => t.key === tab)?.hint}
+              </div>
+            )}
 
             {/* Chat — held back until we know which conversation to open, so a
                 new one is never created and then discarded. */}
