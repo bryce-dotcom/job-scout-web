@@ -502,8 +502,18 @@ function GetTheAgent() {
         }}>
           <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
           <span>
-            You are on a phone. Arnie works on a computer — open this page on the computer
-            you want him on, and these two steps take about a minute.
+            {/* The old wording here was "Arnie works on a computer", on a
+                phone. Read on a phone that says he does not work on phones —
+                which is the opposite of true, and is exactly how somebody
+                concluded the whole thing was useless. He works fully here.
+                What needs a computer is the small program that gives him
+                HANDS on that computer, and nothing can install that from a
+                phone. Everything after it — allowing him, watching him,
+                stopping him — is done from here. */}
+            Arnie works fully on this phone. The one thing that needs a computer is the
+            small program that lets him work <em>inside</em> the programs on it — that has to be
+            downloaded there. After that you run him from here: you allow things, watch what
+            he does and stop him, all from your phone.
           </span>
         </div>
       )}
