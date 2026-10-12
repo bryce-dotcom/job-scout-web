@@ -2362,6 +2362,10 @@ export default function Books() {
             </div>
           </div>
 
+          {/* Frankie's verdicts — review queue; nothing books until accepted */}
+          <VerdictsPanel companyId={companyId} theme={theme} formatCurrency={formatCurrency} plaidTransactions={plaidTransactions} expenseCategories={expenseCategories} userEmail={user?.email || null} isMobile={isMobile}
+            onApplied={() => { fetchPlaidTransactions?.(); fetchPaymentsLifetime?.(); fetchBooksExtra?.() }} />
+
           {/* Upcoming services alert — when service visits (warranty,
               annual checkup, etc.) are due in the next 30 days, prompt
               the ops user to schedule them. Otherwise these silently slip
@@ -2594,10 +2598,6 @@ export default function Books() {
               )}
             </div>
           )}
-
-          {/* Frankie's verdicts — review queue; nothing books until accepted */}
-          <VerdictsPanel companyId={companyId} theme={theme} formatCurrency={formatCurrency} plaidTransactions={plaidTransactions} expenseCategories={expenseCategories} userEmail={user?.email || null} isMobile={isMobile}
-            onApplied={() => { fetchPlaidTransactions?.(); fetchPaymentsLifetime?.(); fetchBooksExtra?.() }} />
 
           {/* Needs Review Card */}
           {unreviewedCount > 0 && (
