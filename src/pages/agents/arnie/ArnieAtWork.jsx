@@ -76,6 +76,13 @@ export default function ArnieAtWork() {
   // same fix in ArnieChat.
   const settings = useStore((s) => s.settings)
   const textNumber = useMemo(() => arnieTextNumber(settings), [settings])
+  // The one ElevenLabs plan every tenant draws on; only the platform company gets a number back.
+  const [pool, setPool] = useState(null)
+  useEffect(() => {
+    let live = true
+    supabase.functions.invoke('marketing-voice', { body: { action: 'pool' } }).then(({ data }) => { if (live && data?.platform) setPool(data) }).catch(() => {})
+    return () => { live = false }
+  }, [])
 
   return (
     <div style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 18, textAlign: 'left' }}>
@@ -84,6 +91,11 @@ export default function ArnieAtWork() {
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontWeight: 700, color: t.ink }}>Arnie at work</div>
           <div style={{ fontSize: 12.5, color: t.muted }}>What he drafted, who approved it, what it cost. Counts and the audit trail — never the conversations themselves.</div>
+          {pool && (
+            <div style={{ fontSize: 12.5, color: pool.pct >= 80 ? '#b45309' : t.sub, marginTop: 4 }}>
+              ElevenLabs pool, every tenant together this month: <b>{Number(pool.chars).toLocaleString()}</b> of {Number(pool.pool).toLocaleString()} characters ({pool.pct}%){pool.music_seconds ? ', plus ' + Math.round(pool.music_seconds / 60) + ' min of composed music' : ''}, across {pool.tenants} {pool.tenants === 1 ? 'company' : 'companies'}.{pool.pct >= 80 ? ' Near the plan limit: Pro gives five times the pool.' : ''}
+            </div>
+          )}
           <div style={{ fontSize: 12.5, color: t.sub, marginTop: 4 }}>Reach him outside the app: {textNumber ? <>text <b>{textNumber.pretty}</b> or </> : null}email <b>{ARNIE_EMAIL}</b> from a work address. Money changes over text are held for approval here.</div>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>

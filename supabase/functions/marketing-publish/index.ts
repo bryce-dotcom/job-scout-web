@@ -310,6 +310,20 @@ serve(async (req) => {
           clicks: num(p.metrics?.clicks ?? p.metrics?.link_clicks),
         },
       }))
+      // Keep the summed numbers on our posts, so the drafter can learn from what performed.
+      try {
+        const byKey = new Map(metrics.map((m: any) => [`${m.platform}:${m.post_id}`, m.m]))
+        const { data: ours } = await sb.from('marketing_posts').select('id, post_urls').eq('company_id', companyId).eq('status', 'posted').not('ayrshare_id', 'is', null).limit(500)
+        const nowIso = new Date().toISOString()
+        for (const p of ours || []) {
+          const per = (p.post_urls || []).map((u: any) => byKey.get(`${u.platform}:${u.id}`)).filter(Boolean)
+          if (!per.length) continue
+          const sum = (k: string) => per.reduce((n: number, x: any) => n + (Number(x?.[k]) || 0), 0)
+          const m = { views: sum('views'), reach: sum('reach'), likes: sum('likes'), comments: sum('comments'), shares: sum('shares'), saves: sum('saves'), clicks: sum('clicks') }
+          const score = m.likes + m.comments * 2 + m.shares * 3 + m.saves * 2 + Math.round(m.views / 100)
+          await sb.from('marketing_posts').update({ metrics: { ...m, score }, metrics_at: nowIso }).eq('id', p.id)
+        }
+      } catch (e) { console.warn('[marketing-publish] metrics keep failed (non-fatal):', (e as Error)?.message) }
       return json({ ok: true, metrics, raw_count: rows.length })
     }
 

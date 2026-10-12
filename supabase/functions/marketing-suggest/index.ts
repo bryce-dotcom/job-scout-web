@@ -28,6 +28,40 @@ import { resolveCaller } from '../_shared/auth.ts'
 import { draftFromCaptures, notifyManagers, loadBrands, brandForUnit, brandKey } from '../_shared/marketing.ts'
 import { geminiKey, paintPicture, picturePrompt } from '../_shared/gemini.ts'
 import { checkCap, recordMediaUsage, MEDIA_PRICES } from '../_shared/mediaMeter.ts'
+import { repEmailShell, appLink } from '../_shared/notifyRep.ts'
+
+// The in-app note was easy to miss; the marketer opens email first thing.
+// One email per company per night to every manager with an address, unless
+// settings marketing_digest_email is false. Resend, same domain as the rest.
+async function emailDigest(sb: any, companyId: number, made: number, painted: number, titles: string[]) {
+  try {
+    const key = Deno.env.get('RESEND_API_KEY')
+    if (!key) return
+    const { data: pref } = await sb.from('settings').select('value').eq('company_id', companyId).eq('key', 'marketing_digest_email').limit(1)
+    const raw = pref?.[0]?.value
+    const off = raw === false || raw === 'false' || (typeof raw === 'string' && /^"?false"?$/.test(raw))
+    if (off) return
+    const { data: emps } = await sb.from('employees').select('id, email, user_role, role, is_admin').eq('company_id', companyId).eq('active', true)
+    const senior = new Set(['Manager', 'Admin', 'Super Admin', 'Owner', 'Developer'])
+    const to = (emps || []).filter((e: any) => senior.has(e.user_role) || e.is_admin === true || (senior.has(e.role) && e.role !== 'Manager'))
+      .map((e: any) => String(e.email || '').trim()).filter((e: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
+    if (!to.length) return
+    const { data: co } = await sb.from('companies').select('company_name').eq('id', companyId).maybeSingle()
+    const n = made === 1 ? '1 post drafted' : `${made} posts drafted`
+    const sub = painted ? `${n} from yesterday's work, ${painted} with an AI picture` : `${n} from yesterday's work`
+    const list = titles.slice(0, 6).map((t) => `<li style="margin:4px 0">${String(t).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] || c))}…</li>`).join('')
+    const html = repEmailShell(`${made} waiting in Marketing`, `
+      <p style="margin:0 0 10px">Overnight, JobScout drafted <b>${n}</b> from finished jobs and photos the crew sent in${painted ? `, including <b>${painted}</b> with a picture the AI painted because nobody photographed the job (it is labelled; swap a real one in if you have it)` : ''}.</p>
+      <ul style="margin:0 0 6px 18px;padding:0;color:#4d5a52">${list}</ul>
+      <p style="margin:10px 0 0;color:#7d8a7f;font-size:13px">Read, edit and approve in Marketing. Every edit teaches the next draft.</p>`,
+      appLink('/marketing'), 'Open Marketing')
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: 'JobScout Marketing <marketing@appsannex.com>', to, subject: `${co?.company_name ? co.company_name + ': ' : ''}${sub}`, html }),
+    })
+    if (!res.ok) console.warn('[marketing-suggest] digest email failed', companyId, res.status, (await res.text()).slice(0, 120))
+  } catch (e) { console.warn('[marketing-suggest] digest email error', (e as Error)?.message) }
+}
 
 // A finished job nobody photographed still deserves a post: paint what the
 // field would have shot. Two a night per company, inside the monthly cap.
@@ -87,6 +121,7 @@ async function suggestForCompany(sb: any, companyId: number, req: Request) {
   let made = 0
   const titles: string[] = []
   const skipped: string[] = []
+  let painted = 0
 
   const makeDraft = async (opts: { captureIds: number[]; note: string; jobId: number | null; brandId: string; createdBy: number | null }) => {
     const platforms = platformsFor(opts.brandId)
@@ -138,7 +173,6 @@ async function suggestForCompany(sb: any, companyId: number, req: Request) {
     const since = new Date(Date.now() - 26 * 3600e3).toISOString()
     const { data: jobs } = await sb.from('jobs').select('id, job_title, service_type, completed_at, business_unit, job_address')
       .eq('company_id', companyId).gte('completed_at', since).order('completed_at', { ascending: false }).limit(20)
-    let painted = 0
     for (const j of jobs || []) {
       if (made >= MAX_DRAFTS_PER_COMPANY) break
       const brandId = brandForUnit(brands, j.business_unit)
@@ -186,12 +220,13 @@ async function suggestForCompany(sb: any, companyId: number, req: Request) {
     await notifyManagers(sb, companyId, {
       type: 'marketing_drafts_ready',
       title: made === 1 ? '1 post drafted from recent work' : `${made} posts drafted from recent work`,
-      message: 'Open Marketing to read, edit and approve.',
+      message: painted ? `${painted} with an AI picture. Open Marketing to read, edit and approve.` : 'Open Marketing to read, edit and approve.',
       route: '/marketing', dedupe_key: `marketing-drafts-${day}`,
-      metadata: { count: made },
+      metadata: { count: made, painted },
     })
+    await emailDigest(sb, companyId, made, painted, titles)
   }
-  return { made, titles, skipped, stop: false }
+  return { made, titles, skipped, painted, stop: false }
 }
 
 serve(async (req) => {

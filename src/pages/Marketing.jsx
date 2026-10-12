@@ -488,7 +488,14 @@ export default function Marketing() {
       ) : tab === 'calendar' ? (
         <CalendarTab theme={theme} isMobile={isMobile} posts={brandPosts} captureMap={captureMap} kit={brandKit} isManager={isManager}
           onCadence={(n) => saveBrandKit({ cadence_per_week: n })} onOpen={(p) => (['draft', 'approved', 'failed'].includes(p.status) ? setComposer({ post: p, captureIds: p.capture_ids || [] }) : null)}
-          onNewOn={(day) => setComposer({ captureIds: [], scheduledFor: day })} />
+          onNewOn={(day) => setComposer({ captureIds: [], scheduledFor: day })}
+          onScheduleHere={async (p, day) => {
+            // 9:00 that day in the browser's zone; the publisher holds it until then.
+            const when = new Date(day + 'T09:00').toISOString()
+            const { error } = await supabase.from('marketing_posts').update({ scheduled_for: when }).eq('id', p.id).eq('company_id', companyId)
+            if (error) { toast.error(error.message); return }
+            await publishPost({ ...p, scheduled_for: when })
+          }} />
       ) : tab === 'performance' ? (
         <PerformanceTab theme={theme} isMobile={isMobile} posts={brandPosts} captureMap={captureMap} brand={brandId} invoke={invoke} publisher={publisher} />
       ) : tab === 'channels' ? (
@@ -1707,14 +1714,23 @@ function AdsCard({ theme, isMobile, kit, isManager, onSave }) {
 // The month, with every post on the day it went out, is due, or was
 // written. A cadence target per brand (posts a week) makes the gaps
 // obvious; the suggester keeps drafting toward it.
-function CalendarTab({ theme, isMobile, posts, captureMap, kit, isManager, onCadence, onOpen, onNewOn }) {
+function CalendarTab({ theme, isMobile, posts, captureMap, kit, isManager, onCadence, onOpen, onNewOn, onScheduleHere }) {
   const today = new Date()
   const [ym, setYm] = useState({ y: today.getFullYear(), m: today.getMonth() })
+  // Approved and not yet scheduled: what one tap on an empty day can place there.
+  const ready = useMemo(() => posts.filter((p) => p.status === 'approved' && (p.platforms || []).length).sort((a, b) => new Date(a.approved_at || a.created_at) - new Date(b.approved_at || b.created_at)), [posts])
+  const [pick, setPick] = useState(null)   // day key waiting for a choice
   const byDay = useMemo(() => postsByDay(posts), [posts])
   const cells = useMemo(() => monthGrid(ym.y, ym.m), [ym])
   const week = weekProgress(posts, kit?.cadence_per_week || 0, today)
   const todayKey = postDay({ status: 'draft', created_at: today })
   const thisWeek = new Set(weekOf(today))
+  // Days this week that still need a post to hit the target: today or later, empty, weekday first.
+  const openDays = useMemo(() => {
+    if (!week.target || week.met) return new Set()
+    const days = weekOf(today).filter((k) => k >= todayKey && !(byDay[k] || []).length)
+    return new Set(days.slice(0, Math.max(0, week.remaining)))
+  }, [week, byDay, todayKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const label = new Date(ym.y, ym.m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   const move = (d) => setYm(({ y, m }) => { const x = new Date(y, m + d, 1); return { y: x.getFullYear(), m: x.getMonth() } })
   const dot = (p) => (STATUS_STYLE[p.status] || STATUS_STYLE.draft).color
@@ -1745,9 +1761,10 @@ function CalendarTab({ theme, isMobile, posts, captureMap, kit, isManager, onCad
             const list = byDay[c.key] || []
             const isToday = c.key === todayKey
             const inWeek = thisWeek.has(c.key)
+            const open = openDays.has(c.key)
             return (
-              <div key={c.key} onClick={() => (isManager && !list.length ? onNewOn(c.key) : null)} style={{ minHeight: isMobile ? 54 : 84, borderRadius: 8, padding: 4, border: `1px solid ${isToday ? MKT : theme.border}`, background: inWeek ? MKT_BG.replace('0.10', '0.05') : theme.bg, cursor: isManager && !list.length ? 'pointer' : 'default', overflow: 'hidden' }}>
-                <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? MKT : theme.textSecondary }}>{c.day}</div>
+              <div key={c.key} onClick={() => (isManager && !list.length ? (ready.length ? setPick(c.key) : onNewOn(c.key)) : null)} style={{ minHeight: isMobile ? 54 : 84, borderRadius: 8, padding: 4, border: `1px solid ${isToday ? MKT : theme.border}`, background: inWeek ? MKT_BG.replace('0.10', '0.05') : theme.bg, cursor: isManager && !list.length ? 'pointer' : 'default', overflow: 'hidden' }}>
+                <div style={{ fontSize: 11, fontWeight: isToday ? 800 : 600, color: isToday ? MKT : theme.textSecondary, display: 'flex', justifyContent: 'space-between' }}>{c.day}{open && <span title="Needs a post to hit this week's target" style={{ fontSize: 9, fontWeight: 700, color: '#b45309' }}>open</span>}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 2 }}>
                   {list.slice(0, isMobile ? 2 : 3).map((p) => {
                     const cap = (p.capture_ids || []).map((id) => captureMap[id]).find(Boolean)
@@ -1768,9 +1785,25 @@ function CalendarTab({ theme, isMobile, posts, captureMap, kit, isManager, onCad
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8, fontSize: 11, color: theme.textMuted }}>
           {Object.entries(STATUS_STYLE).filter(([k]) => k !== 'archived').map(([k, v]) => <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: v.color }} /> {v.label}</span>)}
-          <span style={{ marginLeft: 'auto' }}>Tap an empty day to schedule a post there.</span>
+          <span style={{ marginLeft: 'auto' }}>{ready.length ? `Tap an empty day to put the next approved post there (${ready.length} ready).` : 'Tap an empty day to schedule a post there.'}</span>
         </div>
       </div>
+      {pick && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPick(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: theme.bgCard, borderRadius: 14, padding: 16, width: 420, maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: theme.text }}>{new Date(pick + 'T09:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+            <div style={{ fontSize: 12, color: theme.textMuted }}>Nothing is scheduled here yet.</div>
+            {ready.slice(0, 3).map((p) => (
+              <button key={p.id} type="button" onClick={() => { setPick(null); onScheduleHere(p, pick) }} style={{ ...primaryBtn(MKT), justifyContent: 'flex-start', textAlign: 'left', whiteSpace: 'normal', lineHeight: 1.3 }}>
+                <CalendarClock size={14} style={{ flexShrink: 0 }} /> Schedule 9:00 — {(p.caption || 'Untitled').slice(0, 70)}{(p.caption || '').length > 70 ? '…' : ''}
+              </button>
+            ))}
+            {ready.length > 3 && <div style={{ fontSize: 11, color: theme.textMuted }}>{ready.length - 3} more approved in the queue.</div>}
+            <button type="button" onClick={() => { setPick(null); onNewOn(pick) }} style={ghostBtn(theme)}><Plus size={14} /> New post for this day</button>
+            <button type="button" onClick={() => setPick(null)} style={{ ...ghostBtn(theme), border: 'none' }}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1779,6 +1812,19 @@ function CalendarTab({ theme, isMobile, posts, captureMap, kit, isManager, onCad
 // What the posts did. Metrics come from the publisher's cached analytics,
 // keyed to our posts by the native post id each network gave back.
 function PerformanceTab({ theme, isMobile, posts, captureMap, brand, invoke, publisher }) {
+  const [spend, setSpend] = useState(null)          // this month's AI pictures / tracks / narration against the caps
+  useEffect(() => {
+    let live = true
+    Promise.all([
+      invoke('marketing-image', { action: 'status' }), invoke('marketing-music', { action: 'status' }), invoke('marketing-voice', { action: 'status' }),
+      supabase.from('ai_usage').select('feature, est_cost_usd').in('feature', ['marketing-picture', 'marketing-music', 'marketing-voice', 'arnie-voice']).gte('created_at', new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString()).limit(5000),
+    ]).then(([pic, mus, voi, usage]) => {
+      if (!live) return
+      const cost = (usage.data || []).reduce((n, r) => n + (Number(r.est_cost_usd) || 0), 0)
+      setSpend({ pictures: pic?.ok ? { used: pic.used, cap: pic.cap } : null, tracks: mus?.ok ? { used: mus.used, cap: mus.cap } : null, chars: voi?.ok ? { used: voi.used_chars, cap: voi.cap_chars } : null, cost })
+    }).catch(() => {})
+    return () => { live = false }
+  }, [invoke])
   const [metrics, setMetrics] = useState(null)      // per-post, from the vendor's snapshot cache (fills in over days)
   const [networks, setNetworks] = useState(null)    // per-network 30-day numbers, live from the networks
   const [err, setErr] = useState(null)
@@ -1823,6 +1869,17 @@ function PerformanceTab({ theme, isMobile, posts, captureMap, brand, invoke, pub
         <Stat label="Views · 30 days" value={sum('views')} />
         <Stat label="Likes · 30 days" value={sum('likes')} />
       </div>
+
+      {/* What the AI spent this month, against the company's caps */}
+      {spend && (
+        <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '10px 14px', display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', fontSize: 12, color: theme.textSecondary }}>
+          <span style={{ fontWeight: 700, color: theme.text }}>AI this month</span>
+          {spend.pictures && <span><Sparkles size={12} style={{ verticalAlign: -2 }} /> {spend.pictures.used}{spend.pictures.cap != null ? ` of ${spend.pictures.cap}` : ''} pictures</span>}
+          {spend.tracks && <span><Music size={12} style={{ verticalAlign: -2 }} /> {spend.tracks.used}{spend.tracks.cap != null ? ` of ${spend.tracks.cap}` : ''} tracks</span>}
+          {spend.chars && <span><Mic size={12} style={{ verticalAlign: -2 }} /> {Number(spend.chars.used || 0).toLocaleString()}{spend.chars.cap != null ? ` of ${Number(spend.chars.cap).toLocaleString()}` : ''} narrated characters</span>}
+          <span style={{ marginLeft: 'auto', color: theme.textMuted }}>about ${spend.cost.toFixed(2)} in AI cost · caps reset on the 1st{spend.pictures?.cap == null ? ' · this company is uncapped' : ''}</span>
+        </div>
+      )}
 
       {/* Each network's own numbers, with the last 30 days of reach as bars */}
       {netList.length > 0 && (

@@ -38,6 +38,22 @@ serve(async (req) => {
     if (!caller?.companyId) return json({ ok: false, error: 'Sign in first.' }, 401)
     const body = await req.json().catch(() => ({}))
 
+    // The whole platform draws on one ElevenLabs plan. The platform company sees
+    // how much of the month's pool every tenant together has used (characters
+    // narrated + spoken by Arnie; composed music listed by the second).
+    if (body.action === 'pool') {
+      const sb0 = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+      const { data: co } = await sb0.from('companies').select('is_platform').eq('id', caller.companyId).maybeSingle()
+      if (co?.is_platform !== true) return json({ ok: true, platform: false })
+      const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString()
+      const { data: rows } = await sb0.from('ai_usage').select('feature, output_tokens, company_id').in('feature', ['marketing-voice', 'arnie-voice', 'marketing-music']).eq('success', true).gte('created_at', monthStart).limit(20000)
+      const chars = (rows || []).filter((r) => r.feature !== 'marketing-music').reduce((n, r) => n + (Number(r.output_tokens) || 0), 0)
+      const musicSeconds = (rows || []).filter((r) => r.feature === 'marketing-music').reduce((n, r) => n + (Number(r.output_tokens) || 0), 0)
+      const tenants = new Set((rows || []).map((r) => r.company_id)).size
+      const pool = Number(Deno.env.get('ELEVENLABS_MONTHLY_CREDITS') || 121000) // Creator plan; Pro = 600000
+      return json({ ok: true, platform: true, chars, music_seconds: musicSeconds, tenants, pool, pct: Math.round((chars / pool) * 100) })
+    }
+
     if (body.action === 'status') {
       const key = elevenKey()
       const account = key ? await listVoices(key) : null

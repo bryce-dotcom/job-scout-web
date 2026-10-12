@@ -130,7 +130,7 @@ export async function draftFromCaptures(input: DraftInput): Promise<DraftResult>
 
   // Style examples are per brand: a cleaning caption is not an example for
   // the lighting voice.
-  let historyQ = sb.from('marketing_posts').select('caption, ai_draft, status, approved_at, created_at')
+  let historyQ = sb.from('marketing_posts').select('caption, ai_draft, status, approved_at, created_at, metrics')
     .eq('company_id', companyId).in('status', ['approved', 'scheduled', 'posted'])
   historyQ = brandId ? historyQ.eq('brand', brandId) : historyQ.is('brand', null)
 
@@ -160,6 +160,11 @@ export async function draftFromCaptures(input: DraftInput): Promise<DraftResult>
   const approved = hist.slice(0, 20).map((p: any) => p.caption.trim())
   const edits = hist.filter((p: any) => (p.ai_draft || '').trim() && p.ai_draft.trim() !== p.caption.trim())
     .slice(0, 10).map((p: any) => ({ before: p.ai_draft.trim(), after: p.caption.trim() }))
+  // The posts the networks liked best (metrics kept by marketing-publish's
+  // analytics action). Real numbers, not only the marketer's edits.
+  const topPosts = hist.filter((p: any) => Number(p.metrics?.score) > 0)
+    .sort((a: any, b: any) => Number(b.metrics.score) - Number(a.metrics.score)).slice(0, 5)
+    .map((p: any) => ({ caption: p.caption.trim(), likes: Number(p.metrics.likes) || 0, comments: Number(p.metrics.comments) || 0, views: Number(p.metrics.views) || 0 }))
 
   const brandLines = [
     `Company: ${kit.company_name || brand?.name || company?.company_name || 'our company'}`,
@@ -200,6 +205,7 @@ ${tone ? `- Tone for this post: ${tone}` : ''}
 
 PLATFORMS
 ${platformText}
+${topPosts.length ? `\nPOSTS THAT PERFORMED BEST (lead with what these do well — the opening line, the length, the kind of detail)\n${topPosts.map((b, i) => `${i + 1}. [${b.likes} likes · ${b.comments} comments${b.views ? ` · ${b.views} views` : ''}] ${b.caption}`).join('\n')}` : ''}
 ${approved.length ? `\nAPPROVED CAPTIONS (this is how they sound; match it)\n${approved.map((c, i) => `${i + 1}. ${c}`).join('\n')}` : ''}
 ${edits.length ? `\nEDITS THEY MADE TO EARLIER DRAFTS (learn from the corrections)\n${edits.map((e) => `- Draft: ${e.before}\n  Changed to: ${e.after}`).join('\n')}` : ''}`
 
