@@ -578,11 +578,13 @@ async function billsAndPos(r: Rest, co: string, input: any) {
   if (input?.vendor_name) { const t = clean(input.vendor_name).toLowerCase(); vids = Object.entries(vendors).filter(([, n]) => String(n).toLowerCase().includes(t)).map(([id]) => Number(id)); if (!vids.length) return { note: `No vendor matching "${input.vendor_name}".` } }
   const bp = new URLSearchParams({ select: 'id,bill_number,amount,balance_due,bill_date,due_date,status,vendor_id', order: 'due_date.asc' })
   const pp = new URLSearchParams({ select: 'id,po_number,vendor_id,job_id,status,total,expected_delivery_date,created_at', order: 'created_at.desc' })
-  if (status !== 'all') { bp.append('status', 'not.in.(Paid,Void,Cancelled)'); pp.append('status', 'not.in.(Closed,Received,Cancelled,Void)') }
+  // Status spelling varies by the page that wrote it ('draft' vs 'Draft'); filter in code, case-insensitively.
   if (vids) { bp.append('vendor_id', `in.(${vids.join(',')})`); pp.append('vendor_id', `in.(${vids.join(',')})`) }
   if (input?.start_date) { bp.append('bill_date', `gte.${clean(input.start_date)}`); pp.append('created_at', `gte.${clean(input.start_date)}`) }
   if (input?.end_date) { bp.append('bill_date', `lte.${clean(input.end_date)}`); pp.append('created_at', `lte.${clean(input.end_date)}T23:59:59`) }
-  const [bills, pos] = await Promise.all([readAll(r, `bills?${co}&${bp}`), readAll(r, `purchase_orders?${co}&${pp}`)])
+  let [bills, pos] = await Promise.all([readAll(r, `bills?${co}&${bp}`), readAll(r, `purchase_orders?${co}&${pp}`)])
+  const lc = (v: unknown) => String(v || '').toLowerCase()
+  if (status !== 'all') { bills = bills.filter((b: any) => !['paid', 'void', 'cancelled', 'canceled'].includes(lc(b.status))); pos = pos.filter((x: any) => !['closed', 'received', 'cancelled', 'canceled', 'void'].includes(lc(x.status))) }
   const today = new Date().toISOString().slice(0, 10)
   const due = (b: any) => num(b.balance_due ?? b.amount)
   const limit = clamp(input?.limit, 25, 100)

@@ -16,7 +16,7 @@ describe('the balance sheet Frankie reads', () => {
       utilityInvoices: [{ id: 1, amount: 9188, payment_status: 'Pending' }, { id: 2, amount: 5000, payment_status: 'Paid' }],
       liabilities: [{ name: 'Truck loan', current_balance: 42000, monthly_payment: 850, interest_rate: 7.9, next_payment_due: '2026-11-01', status: 'active' }, { name: 'Old', current_balance: 1, status: 'paid_off' }],
       bills: [{ id: 1, amount: 4000, balance_due: 3000, due_date: '2026-10-01', status: 'Open' }, { id: 2, amount: 100, balance_due: 0, status: 'Paid' }],
-      purchaseOrders: [{ status: 'Sent', total: 14000 }, { status: 'Closed', total: 9 }],
+      purchaseOrders: [{ status: 'sent', total: 14000 }, { status: 'closed', total: 9 }],
       payrollTaxLiabilities: [{ amount_total: 2200, due_date: '2026-10-15', agency: 'IRS' }, { amount_total: 300, paid_at: '2026-09-01' }],
       jobBonuses: [{ status: 'accrued', amount: 400 }, { status: 'paid', amount: 999 }],
       assets: [{ name: 'Lift', current_value: 12000, status: 'active' }],

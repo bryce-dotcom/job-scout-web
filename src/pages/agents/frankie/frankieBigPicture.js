@@ -20,8 +20,12 @@ const day = (d) => (d ? String(d).slice(0, 10) : '')
 const sum = (rows, f) => (rows || []).reduce((s, r) => s + num(f(r)), 0)
 const daysBetween = (a, b) => Math.floor((a - b) / 86400000)
 
-const OPEN_PO = new Set(['Draft', 'Sent', 'Partial', 'Partially Received', 'Acknowledged', 'Ordered'])
-const OPEN_BILL = (b) => !['Paid', 'Void', 'Cancelled'].includes(b?.status) && num(b?.balance_due ?? b?.amount) > 0
+// Statuses are stored however the page that wrote them spelled them (HHH's
+// POs are lowercase 'draft'/'sent'); compare case-insensitively.
+const lower = (v) => String(v || '').toLowerCase()
+const CLOSED_PO = new Set(['closed', 'received', 'cancelled', 'canceled', 'void'])
+const OPEN_PO_STATUS = (st) => !CLOSED_PO.has(lower(st))
+const OPEN_BILL = (b) => !['paid', 'void', 'cancelled', 'canceled'].includes(lower(b?.status)) && num(b?.balance_due ?? b?.amount) > 0
 
 /**
  * Assets and obligations as of now. Cash and cards from the bank feed, AR
@@ -49,13 +53,13 @@ export function balanceSheetSection({
   const fleetNoAsset = (fleet || []).filter(f => !f.asset_id && f.status !== 'disposed' && f.status !== 'sold')
   const fleetValue = sum(fleetNoAsset, f => f.purchase_price)
 
-  const debts = (liabilities || []).filter(l => l && l.status !== 'paid_off' && l.status !== 'closed')
+  const debts = (liabilities || []).filter(l => l && !['paid_off', 'closed', 'paid off'].includes(lower(l.status)))
   const debt = sum(debts, l => l.current_balance)
   const debtService = sum(debts, l => l.monthly_payment)
   const openBills = (bills || []).filter(OPEN_BILL)
   const ap = sum(openBills, b => b.balance_due ?? b.amount)
   const apOverdue = sum(openBills.filter(b => b.due_date && new Date(b.due_date) < now), b => b.balance_due ?? b.amount)
-  const openPOs = (purchaseOrders || []).filter(p => OPEN_PO.has(p.status))
+  const openPOs = (purchaseOrders || []).filter(p => OPEN_PO_STATUS(p.status))
   const poCommitted = sum(openPOs, p => p.total)
   const taxDue = (payrollTaxLiabilities || []).filter(t => !t.paid_at)
   const taxOwed = sum(taxDue, t => t.amount_total)
