@@ -3,10 +3,24 @@ import AssistantAvatar, { useAssistant } from './AssistantAvatar'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import ArnieChat from '../pages/agents/arnie/ArnieChat'
-import { X, Clock, SquarePen, ChevronRight, ChevronDown, Maximize2 } from 'lucide-react'
+import { X, Clock, SquarePen, ChevronRight, ChevronDown, MessageCircle, Monitor, GraduationCap } from 'lucide-react'
+import ArnieComputer from '../pages/agents/arnie/ArnieComputer'
+import ArnieSkills from '../pages/agents/arnie/ArnieSkills'
+import ArnieRoutines from '../pages/agents/arnie/ArnieRoutines'
 import ArniePersona from '../pages/agents/arnie/ArniePersona'
 import { stopSpeaking } from '../pages/agents/arnie/arnieVoice'
 import { loadSessions, getLastSessionId } from '../pages/agents/arnie/arnieEngine'
+
+// Everything Arnie is, in the one place people actually open him. The
+// Clock icon in the header still holds past conversations and his face still
+// opens who-your-assistant-is, so four tabs is all this needs — any more and
+// a 400px drawer starts needing its own navigation.
+const TABS = [
+  { key: 'chat', label: 'Chat', icon: MessageCircle },
+  { key: 'computer', label: 'Computer', icon: Monitor },
+  { key: 'taught', label: 'Taught', icon: GraduationCap },
+  { key: 'routines', label: 'Routines', icon: Clock },
+]
 
 const dark = {
   bg: '#1a1d21',
@@ -39,6 +53,7 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
   // and then swap it out from under whatever had already been typed.
   const [sessionId, setSessionId] = useState(undefined)
   const [picking, setPicking] = useState(false)
+  const [tab, setTab] = useState('chat')
   const [recent, setRecent] = useState([])
   const [showRecent, setShowRecent] = useState(false)
 
@@ -290,24 +305,9 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
                 >
                   <Clock size={18} color={showRecent ? dark.orange : dark.textMuted} />
                 </button>
-                {/* THE DOOR TO THE REST OF HIM.
-                    Everything built on Arnie's page — the computer he can
-                    work on, who your assistant is, what he has been taught,
-                    standing work — was unreachable: the sidebar has no Arnie
-                    entry, so the only way in was typing the URL. "Nobody in
-                    the company saw an Arnie page." People live in this
-                    drawer, so the way out of it belongs in this drawer. */}
-                <button
-                  onClick={() => { handleClose(); navigate('/agents/arnie') }}
-                  title="Open the full page — computer, taught tasks, routines"
-                  style={{
-                    width: 36, height: 36, borderRadius: 8, border: 'none',
-                    backgroundColor: 'transparent', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <Maximize2 size={17} color={dark.textMuted} />
-                </button>
+                {/* There was an expand-to-the-page button here for about an
+                    hour. It is gone because the thing it expanded to no
+                    longer has anything this does not — which is the point. */}
                 <button
                   onClick={handleClose}
                   title="Close"
@@ -370,14 +370,56 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
               </div>
             )}
 
+            {/* ONE ARNIE.
+                There used to be a drawer and a page, with different things in
+                each — so the computer he can work on, the jobs he had been
+                taught and the standing work all lived somewhere nobody went.
+                "Let's not have a corner panel and a page, that's just a mess."
+                They are the SAME components, rendered in here. Nothing is
+                duplicated, so nothing can drift apart again, and on a phone
+                this drawer is the whole screen anyway. */}
+            <div style={{
+              display: 'flex', borderBottom: `1px solid ${dark.border}`,
+              backgroundColor: dark.bgHeader, flexShrink: 0,
+            }}>
+              {TABS.map((t) => {
+                const on = tab === t.key
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setTab(t.key)}
+                    style={{
+                      flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      padding: '8px 2px 7px', minHeight: 48,
+                      borderBottom: `2px solid ${on ? dark.orange : 'transparent'}`,
+                      color: on ? dark.orange : dark.textMuted,
+                    }}
+                  >
+                    <t.icon size={17} />
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.02em' }}>{t.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+
             {/* Chat — held back until we know which conversation to open, so a
                 new one is never created and then discarded. */}
-            <div style={{ flex: 1, overflow: 'hidden' }}>
-              {sessionId === undefined ? (
+            <div style={{
+              flex: 1,
+              overflow: tab === 'chat' ? 'hidden' : 'auto',
+              // The page's own surfaces are light. Inside a dark drawer that
+              // reads as the page arriving, which is what it is.
+              backgroundColor: tab === 'chat' ? 'transparent' : '#f7f5ef',
+            }}>
+              {tab === 'chat' && (sessionId === undefined ? (
                 <div style={{ padding: 24, color: dark.textMuted, fontSize: 13 }}>Loading…</div>
               ) : (
                 <ArnieChat key={convKey} isPanel onClose={handleClose} sessionId={sessionId} kickoff={kickoff} autoMic={autoMic} onApplied={handleApplied} openIdentity={() => setPicking(true)} />
-              )}
+              ))}
+              {tab === 'computer' && <ArnieComputer />}
+              {tab === 'taught' && <ArnieSkills />}
+              {tab === 'routines' && <ArnieRoutines />}
             </div>
 
             {/* Over the drawer, not a trip to a settings page. Changing who
