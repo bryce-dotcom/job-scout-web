@@ -61,6 +61,26 @@ function daysOverdue(inv, now) {
 // their tests keep reading it from here.
 export { calendarDay }
 
+/**
+ * Is this tagged spend the same parts the job's lines already price?
+ *
+ * Only true parts categories. Consumables, tools, rental, fuel and meals are
+ * extra money the job cost on top of its bill of materials, and they add.
+ * HHH's job-tagged spend reads: Materials (69), Job Materials (5), Small
+ * Tools & Consumables (4), Supplies (5), Equipment Rental (1), Meals (1),
+ * Subscriptions (1).
+ *
+ * Uncategorised spend is NOT treated as parts: calling it parts could cancel
+ * a real catalog cost, and the safe direction here is to add a smaller number
+ * rather than erase a larger one.
+ */
+export function isMaterialSpend(category) {
+  const c = String(category ?? '').trim().toLowerCase()
+  if (!c) return false
+  if (c.includes('consumable') || c.includes('tool')) return false
+  return c.includes('material') || c.includes('part')
+}
+
 function inRange(dateStr, from, to) {
   if (!dateStr) return false
   const day = calendarDay(dateStr)
@@ -453,8 +473,21 @@ export function jobCosting({
   // job page, in Field Scout or on the Expenses page (date). A receipt that
   // has been matched to its bank row is the same money as that row, so when
   // the row already counted toward a job the receipt does not count again.
-  const expensesByJob = new Map()
+  // Tagged spend splits in two, because the two halves answer different
+  // questions about the same job.
+  //
+  // A receipt categorised as materials is THE SAME PARTS the job's lines
+  // already price from the catalog. Adding both counts them twice — on job
+  // 8746 that is $16,257 of catalog parts plus a $434 supplier receipt. A
+  // receipt for fuel, meals, a tool or an equipment rental is extra money the
+  // job really did cost, and always adds.
+  //
+  // Everything else — rental, meals, fuel, subscriptions, consumables — is
+  // additional and adds on top.
+  const expensesByJob = new Map()        // not-parts spend: always added
+  const materialSpendByJob = new Map()   // parts receipts: compared with the catalog
   const countedTxnIds = new Set()
+  const add = (map, jid, amt) => map.set(jid, (map.get(jid) || 0) + amt)
   for (const t of plaidTransactions || []) {
     const amt = Number(t.amount) || 0
     if (amt <= 0) continue
@@ -462,14 +495,14 @@ export function jobCosting({
     const jid = t.job_id || t.ai_job_id
     if (!jid) continue
     if (from && !inRange(t.date, fromD, toD)) continue
-    expensesByJob.set(jid, (expensesByJob.get(jid) || 0) + amt)
+    add(isMaterialSpend(t.category || t.ai_category) ? materialSpendByJob : expensesByJob, jid, amt)
     countedTxnIds.add(t.id)
   }
   for (const e of manualExpenses || []) {
     if (!e.job_id) continue
     if (e.plaid_transaction_id && countedTxnIds.has(e.plaid_transaction_id)) continue
     if (from && !inRange(e.date || e.expense_date, fromD, toD)) continue
-    expensesByJob.set(e.job_id, (expensesByJob.get(e.job_id) || 0) + (Number(e.amount) || 0))
+    add(isMaterialSpend(e.category) ? materialSpendByJob : expensesByJob, e.job_id, Number(e.amount) || 0)
   }
 
   const rows = []
@@ -506,6 +539,21 @@ export function jobCosting({
       laborCost += Number(l.labor_cost) || 0
     }
     const taggedExpense = expensesByJob.get(j.id) || 0
+    // Parts: the catalog says what they should have cost, the receipts say
+    // what we actually paid. Take the LARGER, never the sum.
+    //
+    // Not simply "prefer the receipt": receipts arrive one supplier run at a
+    // time, so a job half-way through its purchasing has receipts far below
+    // its real bill of materials — job 8746 has $434 captured against $16,257
+    // of catalog parts, and believing the receipt would wipe $15,823 of real
+    // cost and invent the profit to match. Once the receipts exceed the
+    // estimate we know the estimate was low and the receipts win.
+    const materialReceipts = materialSpendByJob.get(j.id) || 0
+    const materialEstimate = materialCost
+    materialCost = Math.max(materialEstimate, materialReceipts)
+    const materialSource = materialReceipts > materialEstimate
+      ? 'actual'
+      : (materialEstimate > 0 ? 'estimate' : (materialReceipts > 0 ? 'actual' : null))
     const actualLabor = actualLaborByJob.get(j.id) || 0
     const actualHours = actualHoursByJob.get(j.id) || 0
     const laborSource = actualHours > 0 ? 'actual' : (laborCost > 0 ? 'estimate' : null)
@@ -533,6 +581,12 @@ export function jobCosting({
       _jobDbId: j.id,
       revenue: effectiveRevenue,
       material: hasCostData ? materialCost : null,
+      // Which of the two the parts figure came from, and the other one, so a
+      // reader can see "estimated, and only $434 of receipts are in" rather
+      // than a bare number.
+      material_source: materialSource,
+      material_receipts: hasCostData ? materialReceipts : null,
+      material_estimate: hasCostData ? materialEstimate : null,
       labor: hasCostData ? laborCost : null,
       labor_source: laborSource,
       labor_hours: actualHours > 0 ? actualHours : null,
