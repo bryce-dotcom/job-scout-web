@@ -3,7 +3,8 @@ import AssistantAvatar, { useAssistant } from './AssistantAvatar'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import ArnieChat from '../pages/agents/arnie/ArnieChat'
-import { X, Clock, SquarePen, ChevronRight } from 'lucide-react'
+import { X, Clock, SquarePen, ChevronRight, ChevronDown } from 'lucide-react'
+import ArniePersona from '../pages/agents/arnie/ArniePersona'
 import { stopSpeaking } from '../pages/agents/arnie/arnieVoice'
 import { loadSessions, getLastSessionId } from '../pages/agents/arnie/arnieEngine'
 
@@ -28,7 +29,8 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
   const assistant = useAssistant()
   const hasAgent = useStore(s => s.hasAgent)
   const user = useStore(s => s.user)
-  const company = useStore(s => s.company)
+  // company was only read for the "AI Assistant · Company" subtitle, which
+  // said nothing a person could not already see.
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
 
@@ -36,6 +38,7 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
   // resolves, because rendering with null first would start a new conversation
   // and then swap it out from under whatever had already been typed.
   const [sessionId, setSessionId] = useState(undefined)
+  const [picking, setPicking] = useState(false)
   const [recent, setRecent] = useState([])
   const [showRecent, setShowRecent] = useState(false)
 
@@ -225,25 +228,45 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
               borderBottom: `1px solid ${dark.border}`,
               backgroundColor: dark.bgHeader,
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: '50%',
-                  border: `2.5px solid ${dark.orange}`,
-                  overflow: 'hidden',
-                  boxShadow: `0 0 8px ${dark.orangeGlow}`,
-                  backgroundColor: dark.bg,
+              {/* His face is the switch here too. This drawer is where most
+                  people actually talk to him \u2014 the full page is somewhere you
+                  go on purpose \u2014 so leaving it as a circle with "AI Assistant"
+                  under it meant the identity work was invisible to everyday
+                  use. A badge crop rather than a circle, for the same reason
+                  as the main page: a crew card, not a chat avatar. */}
+              <button
+                onClick={() => setPicking(true)}
+                title="Choose who your assistant is"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, minWidth: 0,
+                  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                  font: 'inherit', textAlign: 'left',
+                }}
+              >
+                <span style={{
+                  width: 40, height: 40, borderRadius: 11, overflow: 'hidden',
+                  boxShadow: `0 0 0 1px ${dark.border}, 0 4px 12px rgba(0,0,0,0.35)`,
+                  backgroundColor: dark.bg, flexShrink: 0, lineHeight: 0,
+                  display: 'inline-flex',
                 }}>
-                  <AssistantAvatar size="100%" style={{ width: '100%', height: '100%' }} />
-                </div>
-                <div>
-                  <div style={{ color: dark.text, fontSize: 15, fontWeight: 600 }}>{assistant.name}</div>
-                  <div style={{ color: dark.textMuted, fontSize: 12 }}>
-                    AI Assistant{company?.name ? ` \u2022 ${company.name}` : ''}
-                  </div>
-                </div>
-              </div>
+                  <AssistantAvatar size={40} style={{ borderRadius: 11 }} />
+                </span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{
+                    display: 'block', color: dark.text, fontSize: 15, fontWeight: 700,
+                    letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>{assistant.name}</span>
+                  {/* "AI Assistant" told nobody anything they could not see. */}
+                  <span style={{
+                    display: 'flex', alignItems: 'center', gap: 3,
+                    color: dark.textMuted, fontSize: 10.5, fontWeight: 700,
+                    letterSpacing: '0.09em', textTransform: 'uppercase',
+                  }}>
+                    Your assistant
+                    <ChevronDown size={11} style={{ marginTop: 1 }} />
+                  </span>
+                </span>
+              </button>
               <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <button
                   onClick={startNew}
@@ -335,9 +358,40 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
               {sessionId === undefined ? (
                 <div style={{ padding: 24, color: dark.textMuted, fontSize: 13 }}>Loading…</div>
               ) : (
-                <ArnieChat key={convKey} isPanel onClose={handleClose} sessionId={sessionId} kickoff={kickoff} autoMic={autoMic} onApplied={handleApplied} />
+                <ArnieChat key={convKey} isPanel onClose={handleClose} sessionId={sessionId} kickoff={kickoff} autoMic={autoMic} onApplied={handleApplied} openIdentity={() => setPicking(true)} />
               )}
             </div>
+
+            {/* Over the drawer, not a trip to a settings page. Changing who
+                you are talking to should not close the conversation you are
+                in the middle of. Same ArniePersona the other two places use. */}
+            {picking && (
+              <div
+                onClick={() => setPicking(false)}
+                style={{
+                  position: 'absolute', inset: 0, zIndex: 5, background: 'rgba(10,12,14,0.6)',
+                  display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+                  padding: '14px 12px', overflowY: 'auto',
+                }}
+              >
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ background: '#f7f5ef', borderRadius: 14, padding: 14, width: '100%' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                    <strong style={{ fontSize: 14.5, color: '#2c3530' }}>Who your assistant is</strong>
+                    <button
+                      onClick={() => setPicking(false)}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer', color: '#4d5a52',
+                        fontSize: 13, fontWeight: 600, padding: '8px 6px', minHeight: 44,
+                      }}
+                    >Done</button>
+                  </div>
+                  <ArniePersona />
+                </div>
+              </div>
+            )}
           </div>
 
           <style>{`
