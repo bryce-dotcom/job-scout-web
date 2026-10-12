@@ -20,8 +20,9 @@ import {
 } from 'lucide-react'
 import { myComputer, myGrants, myOffers, grant as addGrant, revoke as dropGrant, stop as stopSession } from '../../../lib/arnieComputer'
 import ArnieOfferCard from '../../../components/ArnieOfferCard'
+import MachinePanel from './MachinePanel'
 import { whatArnieCanDo, stateLabel, NEVER, READY } from '../../../lib/arnieCanDo'
-import { computerState, agentState, describeAction } from '../../../lib/agentStatus'
+import { computerState, describeAction } from '../../../lib/agentStatus'
 
 const t = {
   bg: '#f7f5ef', card: '#ffffff', card2: '#f0ebdd', ink: '#2c3530', sub: '#4d5a52',
@@ -102,7 +103,6 @@ export default function ArnieComputer() {
   }, [load, data.session?.status])
 
   const status = useMemo(() => computerState({ session: data.session, latest: data.latest, actions: data.actions }), [data])
-  const st = agentState(status.state)
   // 'idle' means both "no computer at all" and "connected, nothing happening",
   // so what is CONNECTED has to be read from the session itself. Stale counts
   // as not connected: a session whose agent stopped checking in cannot do
@@ -153,54 +153,22 @@ export default function ArnieComputer() {
         </div>
       )}
 
-      {/* ── 1. This computer ─────────────────────────────────────────── */}
-      <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 9, height: 9, borderRadius: '50%', background: st.colour, flexShrink: 0 }} />
-              <strong style={{ fontSize: 15, color: t.ink }}>{st.label}</strong>
-              {data.session?.device_label && (
-                <span style={{ fontSize: 13, color: t.muted }}>· {data.session.device_label}</span>
-              )}
-            </div>
-            <div style={{ fontSize: 13, color: t.sub, marginTop: 4 }}>{status.detail}</div>
-            {data.session?.last_seen_at && data.session.status === 'live' && (
-              <div style={{ fontSize: 12, color: t.muted, marginTop: 2 }}>checked in {ago(data.session.last_seen_at)}</div>
-            )}
-            {/* What that machine told us it cannot do. On Windows there is
-                nothing to say; on a Mac this is the difference between
-                teaching working and a recording coming back empty, and it
-                used to be said only in a terminal window at startup. */}
-            {connected && data.session?.capabilities?.record === false && (
-              <div style={{ fontSize: 12, color: t.amber, marginTop: 4 }}>
-                This computer cannot watch the screen yet, so teaching would record nothing.
-              </div>
-            )}
-            {connected && (data.session?.capabilities?.notes || []).map((n) => (
-              <div key={n} style={{ fontSize: 12, color: t.sub, marginTop: 4, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                <AlertTriangle size={13} style={{ color: t.amber, flexShrink: 0, marginTop: 2 }} />
-                <span style={{ lineHeight: 1.45 }}>{n}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={load} disabled={busy} style={btn(t.card2, t.sub)}>
-              <RefreshCw size={14} /> Refresh
-            </button>
-            <button onClick={() => setShowConnect((v) => !v)} style={btn(t.accent, '#fff')}>
-              <Download size={14} /> {data.session ? 'Add a computer' : 'Put Arnie on this computer'}
-            </button>
-            {data.session?.status === 'live' && (
-              <button onClick={doStop} disabled={busy} style={btn(t.rmBg, t.rm, t.rm)}>
-                <Power size={14} /> Stop Arnie here
-              </button>
-            )}
-          </div>
-        </div>
+      {/* ── 1. The machine ───────────────────────────────────────────── */}
+      <MachinePanel
+        session={data.session}
+        status={status}
+        connected={connected}
+        busy={busy}
+        onRefresh={load}
+        onStop={doStop}
+        onGetAgent={() => setShowConnect((v) => !v)}
+      />
 
-        {showConnect && <GetTheAgent />}
-      </section>
+      {(showConnect || !data.session) && (
+        <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: '4px 16px 16px', marginBottom: 14 }}>
+          <GetTheAgent />
+        </section>
+      )}
 
       {/* ── 1b. Waiting on you ───────────────────────────────────────── */}
       {/* Above the permission list on purpose. A question he has actually
@@ -218,6 +186,11 @@ export default function ArnieComputer() {
       )}
 
       {/* ── 2. What he may touch ─────────────────────────────────────── */}
+      {/* An empty permission list and an empty log under an empty machine is
+          three cards saying nothing, on the page somebody lands on before
+          they have anything at all. They appear when there is something to
+          put in them. */}
+      {(connected || grants.length > 0) && (
       <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -301,6 +274,7 @@ export default function ArnieComputer() {
           </div>
         )}
       </section>
+      )}
 
       {/* ── 2b. What he can do, and what is in the way ───────────────── */}
       {/* "How does the user know what he can even do for them?" — nothing on
@@ -316,6 +290,7 @@ export default function ArnieComputer() {
       />
 
       {/* ── 3. Teach him something ───────────────────────────────────── */}
+      {connected && (
       <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
         <h3 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
           <GraduationCap size={17} style={{ color: t.accent }} /> Teach Arnie a task
@@ -326,36 +301,59 @@ export default function ArnieComputer() {
         </p>
         <TeachButton employeeId={employeeId} companyId={companyId} session={data.session} onDone={load} />
       </section>
+      )}
 
       {/* ── 4. What he has done ──────────────────────────────────────── */}
+      {/* The record is the trust surface: an admin asking "what has he been
+          trying to do on Cole's machine" gets a real answer here, refusals
+          included. A ledger with a rail, not a stack of equal rows — the
+          decision is what you scan, so it leads. */}
+      {data.actions.length > 0 && (
       <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16 }}>
         <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: t.ink }}>What Arnie has done</h3>
         <p style={{ margin: '0 0 10px', fontSize: 12.5, color: t.muted }}>
           Refusals are listed too — if he tried something he was not allowed to do, it is here.
         </p>
-        {!data.actions.length && <p style={{ margin: 0, fontSize: 13, color: t.muted }}>Nothing yet.</p>}
-        {data.actions.map((a) => {
-          const d = DECISION[a.decision] || DECISION.failed
-          return (
-            <div key={a.id} style={{ display: 'flex', gap: 10, padding: '9px 0', borderTop: `1px solid ${t.line}55`, alignItems: 'flex-start' }}>
-              <span style={{
-                fontSize: 11, fontWeight: 700, color: d.c, background: d.bg,
-                borderRadius: 11, padding: '2px 8px', flexShrink: 0, whiteSpace: 'nowrap', marginTop: 1,
-              }}>{d.label}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, color: t.ink }}>{describeAction(a)}</div>
-                {a.reason && <div style={{ fontSize: 12.5, color: d.c, marginTop: 2, lineHeight: 1.45 }}>{a.reason}</div>}
+        {/* A rail down the left with a dot per entry in the decision's own
+            colour. Scanning this is how you answer "has he been refused a
+            lot" or "when did he stop" without reading a word. */}
+        <div style={{ position: 'relative', paddingLeft: 18, marginTop: 10 }}>
+          <span style={{
+            position: 'absolute', left: 4, top: 6, bottom: 6, width: 1,
+            background: `linear-gradient(to bottom, ${t.line}, ${t.line}00)`,
+          }} />
+          {data.actions.map((a) => {
+            const d = DECISION[a.decision] || DECISION.failed
+            return (
+              <div key={a.id} style={{ position: 'relative', padding: '8px 0 10px' }}>
+                <span style={{
+                  position: 'absolute', left: -18, top: 13, width: 9, height: 9, borderRadius: '50%',
+                  background: d.c, boxShadow: `0 0 0 3px ${t.card}`,
+                }} />
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13.5, color: t.ink, fontWeight: 600 }}>{describeAction(a)}</span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase',
+                    color: d.c, whiteSpace: 'nowrap',
+                  }}>{d.label}</span>
+                  <span style={{ fontSize: 11.5, color: t.muted, marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                    {ago(a.created_at)}
+                  </span>
+                </div>
+                {a.reason && (
+                  <div style={{ fontSize: 12.5, color: t.sub, marginTop: 3, lineHeight: 1.45 }}>{a.reason}</div>
+                )}
                 {a.target?.text_length !== undefined && (
-                  <div style={{ fontSize: 11.5, color: t.muted, marginTop: 2 }}>
+                  <div style={{ fontSize: 11.5, color: t.muted, marginTop: 3 }}>
                     {a.target.text_length} characters typed — what they were is not recorded
                   </div>
                 )}
               </div>
-              <span style={{ fontSize: 11.5, color: t.muted, flexShrink: 0, marginTop: 2 }}>{ago(a.created_at)}</span>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </section>
+      )}
     </div>
   )
 }

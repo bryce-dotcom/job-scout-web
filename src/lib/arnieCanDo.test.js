@@ -125,6 +125,10 @@ describe('what the machine says beats what the platform suggests', () => {
   it('and the page passes what the agent reported, not the platform', () => {
     const page = read('../pages/agents/arnie/ArnieComputer.jsx')
     expect(page).toMatch(/canRecord=\{data\.session\?\.capabilities \? data\.session\.capabilities\.record : null\}/)
-    expect(page).toMatch(/capabilities\?\.record === false/)
+    // The machine's own words are said on the machine panel, which is where
+    // everything about that computer now lives.
+    const panel = read('../pages/agents/arnie/MachinePanel.jsx')
+    expect(panel).toMatch(/capabilities\?\.record === false/)
+    expect(panel).toMatch(/capabilities\?\.notes \|\| \[\]/)
   })
 })

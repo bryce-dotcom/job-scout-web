@@ -32,6 +32,7 @@
 import { useNavigate } from 'react-router-dom'
 import { Monitor, ChevronRight } from 'lucide-react'
 import AssistantAvatar from '../../../components/AssistantAvatar'
+import Contours from '../../../components/Contours'
 
 // Warm, not the cold blue-grey the panel used to be: the ground is a deep
 // forest ink that belongs with the app's olive, and the highlight is ember
@@ -55,35 +56,6 @@ const STATE = {
   idle: { tint: c.sage, label: 'Ready' },
   stale: { tint: c.amber, label: 'Not answering' },
   blocked: { tint: c.faint, label: 'Stopped' },
-}
-
-/**
- * The contour lines, drawn rather than tiled.
- *
- * Cheap on purpose: six paths, no animation loop, no canvas. It reads as the
- * land the rest of the app is printed on, and it carries the state colour so
- * the panel itself changes mood without anything flashing.
- */
-function Contours({ tint }) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 400 180"
-      preserveAspectRatio="none"
-      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.22 }}
-    >
-      {[0, 1, 2, 3, 4, 5].map((i) => (
-        <path
-          key={i}
-          d={`M-20 ${38 + i * 26} C 70 ${14 + i * 26}, 150 ${62 + i * 26}, 230 ${34 + i * 26} S 360 ${8 + i * 26}, 420 ${44 + i * 26}`}
-          fill="none"
-          stroke={tint}
-          strokeWidth={i % 2 ? 0.7 : 1.1}
-          strokeOpacity={0.5 - i * 0.055}
-        />
-      ))}
-    </svg>
-  )
 }
 
 /**
