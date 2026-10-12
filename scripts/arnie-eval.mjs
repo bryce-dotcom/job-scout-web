@@ -445,6 +445,11 @@ const CASES = [
   { id: 'closed.tech.refused', as: 'tech',
     turns: ['What did we close in August?'],
     expect: { proposal: 'none', no_dollars: true, text_match: [/admin|owner/i] } },
+  // close RATE is the cohort — of the estimates sent, the share that closed — never closed ÷ sent of the same window
+  { id: 'closed.owner.close.rate.is.cohort', as: 'owner',
+    turns: ["What's our close rate this year?"],
+    expect: { tools_include: ['query_closed'], proposal: 'none',
+      text_match: [/50\s?%/, /\b6\b.{0,40}estimates|estimates.{0,40}\b6\b/i], text_not_match: [/rejected/i, /\b(1[0-9]{2}|[2-9][0-9]{2})\s?%/] } },
 
   // — re-filing the books: "the Chevron ones" means all three text columns, and the card shows every row —
   { id: 'bulk.owner.refiles.chevron.expenses.then.rollback', as: 'owner',
