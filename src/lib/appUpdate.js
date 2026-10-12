@@ -51,9 +51,10 @@ export const POLL_MS = 15 * 60 * 1000
  * @param {number} a.hiddenForMs  how long the page was hidden before this check (0 = still visible)
  * @param {string|null} a.reloadedFor  build id this tab already reloaded for
  * @param {boolean} a.held  a page has unsaved work (holdAppUpdate)
+ * @param {boolean} a.firstCheck  the check a few seconds after a cold start
  * @returns {'reload'|'banner'|'none'}
  */
-export function updateDecision({ running, served, hiddenForMs = 0, reloadedFor = null, held = false }) {
+export function updateDecision({ running, served, hiddenForMs = 0, reloadedFor = null, held = false, firstCheck = false }) {
   if (!running || !served || typeof served !== 'string') return 'none'
   if (served === running) return 'none'
   // Reloading once for a build that still reads as different afterwards means
@@ -61,6 +62,19 @@ export function updateDecision({ running, served, hiddenForMs = 0, reloadedFor =
   // loop — show the banner and let the person decide.
   if (reloadedFor === served) return 'banner'
   if (held) return 'banner'
+  // A STALE COLD START FIXES ITSELF.
+  //
+  // The worker only looks for a new sw.js on a page load, and serves its
+  // precached index.html while it does — so the FIRST load after a deploy is
+  // the old app, every time, and the second is the new one. That cost two
+  // people most of a day: the Arnie crash looked unfixed after a deploy that
+  // had fixed it, "hit Refresh" proved nothing, and a good change was
+  // reverted on the strength of it.
+  //
+  // Four seconds after a cold start nobody has half-typed anything, so the
+  // banner is protecting work that does not exist yet. Reload instead. Later
+  // checks, when someone is actually using the app, still ask.
+  if (firstCheck) return 'reload'
   return hiddenForMs >= AWAY_MS ? 'reload' : 'banner'
 }
 
@@ -114,7 +128,7 @@ export function installAppUpdateCheck({ running } = {}) {
   let hiddenAt = 0
   let checking = false
 
-  const check = async (hiddenForMs) => {
+  const check = async (hiddenForMs, firstCheck = false) => {
     if (checking || !navigator.onLine) return
     checking = true
     try {
@@ -126,7 +140,7 @@ export function installAppUpdateCheck({ running } = {}) {
       const served = await servedBuild()
       let reloadedFor = null
       try { reloadedFor = sessionStorage.getItem(RELOADED_KEY) } catch { /* private mode */ }
-      const d = updateDecision({ running, served, hiddenForMs, reloadedFor, held: appUpdateHeld() })
+      const d = updateDecision({ running, served, hiddenForMs, reloadedFor, held: appUpdateHeld(), firstCheck })
       if (d === 'reload') reloadFor(served)
       else if (d === 'banner') showBanner(served)
     } finally {
@@ -146,7 +160,7 @@ export function installAppUpdateCheck({ running } = {}) {
   const timer = setInterval(() => { if (document.visibilityState === 'visible') check(0) }, POLL_MS)
   // First look a moment after startup — a page that loaded from the
   // worker's precache may already be behind the server.
-  const first = setTimeout(() => check(0), 4000)
+  const first = setTimeout(() => check(0, true), 4000)
 
   return () => {
     document.removeEventListener('visibilitychange', onVisibility)

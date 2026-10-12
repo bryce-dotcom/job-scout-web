@@ -455,6 +455,34 @@ await run('eos', async () => {
   return r.length;
 });
 
+// ───────────────── config that CHANGES CODE PATHS, not just content ─────────
+// The demo is what every change gets verified against, so a code path that
+// only runs for a CONFIGURED tenant never gets exercised — and the bug that
+// needs it ships looking perfectly healthy.
+//
+// That is not hypothetical. On 2026-10-11 `useStore(s => arnieTextNumber(
+// s.settings))` returned a fresh object on every call and put React into an
+// infinite render loop. It only fired where a Twilio number is set. HHH has
+// one; the demo did not. So pressing "Ask Arnie" took down every page for the
+// people who use the app, while the demo looked fine on the identical build —
+// and a good change was reverted chasing it.
+//
+// These are deliberately INERT: a from_number with no usable account_sid or
+// auth_token, and enabled:false. Nothing can send. The point is only that the
+// "a number is configured" branch is the one the demo runs.
+await run('path-config', async () => {
+  const rows = {
+    twilio_config: {
+      account_sid: 'ACdemo0000000000000000000000000000',
+      auth_token: '',
+      from_number: '+15555550123',
+      enabled: false,
+    },
+  };
+  const r = await ins('settings', Object.entries(rows).map(([key, value]) => ({ company_id: cid, key, value: JSON.stringify(value) })));
+  return r.length;
+});
+
 console.log('\n════════ DONE ════════');
 console.log(JSON.stringify(report, null, 2));
 console.log(`\nDEMO LOGIN → ${EMAIL} / ${PASSWORD}  (company: ${COMPANY}, id ${cid})`);
