@@ -31,6 +31,9 @@ const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+// Only ever sent as the apikey header when calling our own rail as the
+// person. It is public and identifies the project, not the caller.
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || ''
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -579,19 +582,75 @@ const PROPOSE_BULK_TOOL = {
 // he cannot do it — honest and harmless. This also means server and client
 // halves of a feature can deploy in either order, which is the general fix:
 // nobody has to remember to sequence them.
+// Arnie's hands on the person's OWN computer.
+//
+// Everything behind this tool — the rail, the leash, the agent, the audit —
+// was built, tested and then unreachable, because nothing ever queued an
+// action: Arnie's brain did not know a computer existed. This is the tool that
+// closes that loop, and it is deliberately ONE action at a time. A tool that
+// took a script would be a tool whose refusals arrive in the middle of
+// something half-done; one action, one verdict, is what makes "he stopped at
+// the password box" a sentence a person can act on.
+//
+// He does not need permission to CALL it. He needs permission for what it
+// does, and the leash answers that — which is the point: he asks, the rail
+// says "you have no permission for Chrome", and the person gets one tap
+// instead of a settings form. Offering is how a person finds out he can do
+// this at all.
+const USE_COMPUTER_TOOL = {
+  name: 'use_my_computer',
+  description:
+    'Do ONE thing on this person\'s own computer, through the agent they have running on it. ' +
+    'Use it when they ask you to work in a program on their machine — a utility portal, a spreadsheet, their email — ' +
+    'and when a job needs filing somewhere only their computer can reach. ' +
+    'One action per call: look first (screenshot or read_text) and then act on what is actually there; never guess at a screen you have not seen. ' +
+    'You may be told you have no permission for that program — that is normal and is not an error. Say what you were trying to do and that they can allow it; an offer appears for them to accept. ' +
+    'You will NEVER be allowed to type a password, a card number or a code, and you will never be allowed to click Submit, Send, Pay or Delete: those come back for the person to do themselves. Say so plainly and wait rather than trying another way round. ' +
+    'Nothing here reads anybody else\'s machine: it is this person\'s computer, their login, their session.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      kind: {
+        type: 'string',
+        enum: ['screenshot', 'read_text', 'click', 'double_click', 'right_click', 'type', 'key', 'scroll', 'drag', 'launch'],
+        description: 'What to do. screenshot and read_text are how you look before acting.',
+      },
+      app: { type: 'string', description: 'The program, lowercase and as a person would name it: chrome, excel, outlook.' },
+      host: { type: 'string', description: 'For a browser, the site — e.g. rockymountainpower.net. Permission is per site, so always name it.' },
+      target: {
+        type: 'object',
+        description: 'What on screen: { label } or { text } for something you can see, { x, y } only when you have just looked and know where it is.',
+      },
+      value: { type: 'string', description: 'For kind=type, the text to type. Never a password or a code.' },
+      why: { type: 'string', description: 'One short line, in their words, for the log and for the offer they may see.' },
+    },
+    required: ['kind'],
+  },
+}
+
 const CARD_TOOLS: Record<string, string> = {
   propose_change: 'config',
   propose_record_change: 'record',
   propose_bulk_change: 'bulk',
   propose_create: 'create',
+  // The offer card. Without it a refusal for want of permission is a dead end
+  // in the conversation, which is the whole thing this is fixing.
+  use_my_computer: 'computer',
 }
 
-function toolsFor(role: string, cards: string[]) {
+function toolsFor(role: string, cards: string[], opts: { ownSession?: boolean } = {}) {
   const isAdmin = ['developer', 'super_admin', 'admin'].includes(role)
   // Creating a lead is everyone's job — the setter on the phone most of all.
-  const offered = isAdmin
+  const offered: Record<string, unknown>[] = isAdmin
     ? [...TOOLS, PROPOSE_TOOL, PROPOSE_RECORD_TOOL, PROPOSE_BULK_TOOL, PROPOSE_CREATE_TOOL]
     : [...TOOLS, PROPOSE_RECORD_TOOL, PROPOSE_CREATE_TOOL]
+  // A computer belongs to a person who is sitting at it. Arnie thinking in a
+  // routine, a text message or an email has no session of theirs and must not
+  // be able to reach for a machine: a routine may ask a PERSON for something,
+  // never assume their desk. (The rail refuses it anyway — it accepts no
+  // identity but a real session — so this is the honest tool list, not the
+  // security boundary.)
+  if (opts.ownSession) offered.push(USE_COMPUTER_TOOL)
   return offered.filter((t: any) => {
     const needs = CARD_TOOLS[t.name]
     return !needs || cards.includes(needs)
@@ -643,7 +702,7 @@ function lastImageOf(messages: any[] = []): { imageBase64: string; mediaType: st
   return null
 }
 
-async function execTool(name: string, input: any, caller: Caller, messages: any[] = []) {
+async function execTool(name: string, input: any, caller: Caller, messages: any[] = [], bearer = '') {
   const { companyId, role, email, employeeId } = caller
   const sb = (path: string) => `${SUPABASE_URL}/rest/v1/${path}`
   const hdr = { 'apikey': SUPABASE_SERVICE_ROLE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
@@ -654,6 +713,72 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
   const isManager = isAdmin || role === 'manager'
 
   try {
+    // ── the one tool that reaches outside this building ────────────────
+    if (name === 'use_my_computer') {
+      if (!bearer || !employeeId) {
+        return { refused: 'That needs you here in the app, signed in — I cannot reach a computer from a routine or a text.' }
+      }
+      // Which machine: theirs, the newest, and only if the agent is checking
+      // in. Arnie is never asked to supply a session id — a model holding one
+      // is a model that can mistype one.
+      const sres = await fetch(sb(`arnie_computer_sessions?select=id,device_label,status,last_seen_at&employee_id=eq.${employeeId}&order=id.desc&limit=1`), { headers: hdr })
+      const session = sres.ok ? (await sres.json())?.[0] : null
+      if (!session || session.status !== 'live') {
+        return {
+          no_computer: true,
+          say: 'You have not got the JobScout Agent running on a computer. Arnie → Computer has the one file to download; it takes a minute and then I can work in there with you.',
+        }
+      }
+      if (Date.now() - new Date(session.last_seen_at || 0).getTime() > 90_000) {
+        return {
+          no_computer: true,
+          say: `The agent on ${session.device_label || 'that computer'} has stopped checking in — open it again and I will pick up where we left off.`,
+        }
+      }
+
+      // Through the rail, as the person, because that rail accepts no other
+      // identity and holds the only copy of the decision. Nothing here
+      // re-implements a permission check; it reports what the leash said.
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/arnie-computer`, {
+        method: 'POST',
+        headers: {
+          // The apikey header only has to be a key the gateway knows; the
+          // Authorization bearer is what decides WHO this is, and that is the
+          // person's own token.
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${bearer}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'queue',
+          session_id: session.id,
+          kind: String(input?.kind || ''),
+          app: input?.app ? String(input.app).toLowerCase() : null,
+          host: input?.host ? String(input.host).toLowerCase() : null,
+          target: { ...(input?.target || {}), why: input?.why ? String(input.why).slice(0, 200) : undefined },
+          value: typeof input?.value === 'string' ? input.value : undefined,
+        }),
+      })
+      const out = await res.json().catch(() => ({}))
+      if (out?.decision === 'needs_grant') {
+        return {
+          offered: true,
+          action_id: out.action_id,
+          wants: out.wants,
+          device: session.device_label,
+          say: 'Tell them what you were about to do and that an offer is on screen for them to allow it. Do not ask them to go to a settings page, and do not try another program instead.',
+        }
+      }
+      if (out?.decision === 'awaiting_human') {
+        return { over_to_them: true, action_id: out.action_id, reason: out.reason, say: 'Say it is filled in and ready, and that this one is theirs to click.' }
+      }
+      if (out?.decision === 'refused') {
+        return { refused: out.reason || 'The leash said no.', say: 'Say what was refused and why, in one line. Do not look for a way round it.' }
+      }
+      if (out?.ok) return { queued: true, action_id: out.action_id, device: session.device_label }
+      return { error: out?.error || `the rail answered ${res.status}` }
+    }
+
     if (name === 'query_crew') {
       return await crewDay({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, { date: input?.date, timezone: input?.timezone })
     }
@@ -1356,6 +1481,7 @@ Deno.serve(async (req) => {
     // keeps to the books.
     const systemPromptFinal = agent === 'arnie' && companyId != null && caller.employeeId != null
       ? systemPrompt + await memoriesBlock(companyId, caller.employeeId)
+        + await computerBlock(companyId, caller.employeeId)
       : systemPrompt
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -1380,13 +1506,20 @@ Deno.serve(async (req) => {
     if (cleaned.length > 0 && cleaned[0].role !== 'user') cleaned.shift()
     if (cleaned.length === 0) return jsonError('No valid messages', 400)
 
+    // The caller's own token, for the one tool that needs to act AS them
+    // against our own rails. Empty when there is no real session — a routine
+    // or a text message arriving through internalCaller — and the tool is
+    // withheld in that case rather than falling back to anything.
+    const bearer = (req.headers.get('Authorization') || '').replace(/^Bearers+/i, '').trim()
+    const ownToken = bearer && bearer !== SUPABASE_SERVICE_ROLE_KEY ? bearer : ''
+
     // === STREAMING + TOOL USE LOOP ===
     if (stream) {
-      return streamWithTools(cleaned, systemPromptFinal, caller, cards, agent)
+      return streamWithTools(cleaned, systemPromptFinal, caller, cards, agent, ownToken)
     }
 
     // === NON-STREAMING (with tool support) ===
-    const reply = await callWithTools(cleaned, systemPromptFinal, caller, cards, agent)
+    const reply = await callWithTools(cleaned, systemPromptFinal, caller, cards, agent, ownToken)
     return new Response(JSON.stringify({ reply }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
@@ -1409,7 +1542,13 @@ function jsonError(msg: string, status: number, extra?: Record<string, unknown>)
 
 // Per-agent: which tools are advertised, how a call is executed, which
 // model answers, and which feature the usage is logged under.
-function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any[] = []) {
+// `bearer` is the caller's OWN access token, threaded down from the request
+// rather than taken from the Caller object. It exists for exactly one tool:
+// use_my_computer, which goes through the arnie-computer rail, and that rail
+// accepts no identity but a real session — no service key, no named employee.
+// Passing it explicitly keeps it visible at every hop instead of riding along
+// inside an identity object that gets logged and copied.
+function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any[] = [], bearer = '') {
   const rest = { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }
   if (agent === 'frankie') {
     return {
@@ -1425,8 +1564,8 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any
     model: ARNIE_MODEL,
     maxTokens: 4096,
     feature: 'arnie-chat',
-    tools: toolsFor(caller.role, cards),
-    exec: (name: string, input: any) => execTool(name, input, caller, messages),
+    tools: toolsFor(caller.role, cards, { ownSession: !!bearer }),
+    exec: (name: string, input: any) => execTool(name, input, caller, messages, bearer),
     tangled: 'Sorry boss, I got tangled up trying to look that up. Try asking me a different way.',
   }
 }
@@ -1448,10 +1587,65 @@ ${lines.join('\n')}`
   } catch { return '' }
 }
 
-async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie'): Promise<string> {
+/**
+ * What his hands can reach on this person's computer, right now.
+ *
+ * Without this he does not know a computer exists, which is exactly how a
+ * finished feature stayed unreachable: the rail, the leash, the agent and the
+ * recorder were all built and nothing ever queued an action, because nothing
+ * ever told him he had hands.
+ *
+ * It states only facts — is the agent checking in, what is allowed, what he
+ * has been shown how to do. No encouragement: a prompt that tells him to
+ * offer things produces offers for jobs nobody asked about, and this project
+ * has already shipped one storefront that advertised features nobody had
+ * built.
+ */
+async function computerBlock(companyId: number, employeeId: number): Promise<string> {
+  try {
+    const H = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
+    const get = async (path: string) => {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: H })
+      return r.ok ? await r.json() : []
+    }
+    const [sessions, grants, skills] = await Promise.all([
+      get(`arnie_computer_sessions?select=device_label,platform,status,last_seen_at&employee_id=eq.${employeeId}&order=id.desc&limit=1`),
+      get(`arnie_computer_grants?select=app,host,tier,duration&employee_id=eq.${employeeId}&revoked_at=is.null&order=app`),
+      get(`arnie_skills?select=name,outcome&company_id=eq.${companyId}&status=eq.published&order=name&limit=25`),
+    ])
+    const session = Array.isArray(sessions) ? sessions[0] : null
+    const live = session?.status === 'live' &&
+      Date.now() - new Date(session.last_seen_at || 0).getTime() < 90_000
+
+    const lines: string[] = []
+    if (!live) {
+      lines.push('They have NO computer connected right now, so use_my_computer will come back and tell you so. If they ask you to do something in a program on their machine, say the agent is not running and that Arnie → Computer has the one file to download. Do not pretend to have done it, and do not describe the steps as though you had.')
+    } else {
+      lines.push(`Connected: ${session.device_label || 'their computer'} (${session.platform || 'unknown'}), checking in now.`)
+      if (!Array.isArray(grants) || !grants.length) {
+        lines.push('Nothing is allowed on it yet, so the first thing you try in any program will come back asking for permission. That is the normal way in: ask for what the job needs, and they get one tap to allow it.')
+      } else {
+        lines.push('Allowed already: ' + grants.map((g: any) =>
+          `${g.app}${g.host && g.host !== '*' ? ` on ${g.host}` : ''} (${g.tier}${g.duration === 'once' ? ', once' : ''})`).join('; ') + '.')
+      }
+    }
+    if (Array.isArray(skills) && skills.length) {
+      lines.push('Jobs somebody has shown you how to do, in their words. Follow the steps as written and look at the screen between them rather than working from memory:')
+      for (const k of skills) lines.push(`- ${k.name}${k.outcome && k.outcome !== k.name ? `: ${String(k.outcome).replace(/\s+/g, ' ').trim()}` : ''}`)
+    }
+
+    return `
+
+## Your hands on their computer
+${lines.join('\n')}
+You never type a password, a card number or a one-time code, and you never click Submit, Send, Pay, Delete or anything else that cannot be taken back — those come back for them. This is not a setting that can be changed, so say so plainly and wait instead of looking for another route.`
+  } catch { return '' }
+}
+
+async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie', bearer = ''): Promise<string> {
   const { companyId } = caller
   let convo = [...messages]
-  const setup = agentSetup(agent, caller, cards, messages)
+  const setup = agentSetup(agent, caller, cards, messages, bearer)
   // Only advertise tools if we have a companyId to scope queries safely
   const includeTools = !!companyId && setup.tools.length > 0
   for (let i = 0; i < 5; i++) { // up to 5 tool rounds
@@ -1489,10 +1683,10 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
 }
 
 // Streaming version with tool support — emits SSE
-async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie') {
+async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie', bearer = '') {
   const { companyId } = caller
   const encoder = new TextEncoder()
-  const setup = agentSetup(agent, caller, cards, messages)
+  const setup = agentSetup(agent, caller, cards, messages, bearer)
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: any) => {
@@ -1610,6 +1804,13 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             if (['propose_change', 'propose_record_change', 'propose_bulk_change', 'propose_create'].includes(tu.name)
                 && result?.proposal && result?.preview) {
               send('proposal', { proposal: result.proposal, preview: result.preview })
+            }
+            // Same reasoning for an offer: "he needs permission for Chrome" as
+            // prose is a sentence, and a sentence cannot be accepted. The card
+            // carries the one tap, so the permission and the thing it is for
+            // stay together.
+            if (tu.name === 'use_my_computer' && (result?.offered || result?.over_to_them) && result?.action_id) {
+              send('offer', { action_id: result.action_id })
             }
             toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) })
           }

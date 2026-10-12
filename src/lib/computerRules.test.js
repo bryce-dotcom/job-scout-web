@@ -29,7 +29,10 @@ describe('rules add friction and can never remove it', () => {
   it('an allow_auto cannot conjure a grant that does not exist', () => {
     const d = decideWithRules({ kind: 'click', app: 'excel' }, [], [{ kind: 'allow_auto', app: 'excel' }])
     expect(d.ok).toBe(false)
-    expect(d.refuse).toMatch(/not given me excel/i)
+    // It becomes an offer for a PERSON to accept — never something a rule can
+    // answer on their behalf.
+    expect(d.needsGrant.app).toBe('excel')
+    expect(d.needsGrant.why).toMatch(/I need excel.*have not given me/i)
   })
 
   it('an allow_auto cannot widen a tier', () => {
@@ -129,10 +132,14 @@ describe('“approve” must never become a button that types a password', () =>
     expect(migration).toMatch(/Collapsing the first two into one value/)
   })
 
-  it('only needs_approval is answerable, and the refusal says why', () => {
+  it('approve answers an approval and nothing else, and says why', () => {
     const block = rail.slice(rail.indexOf("action === 'approve'"), rail.indexOf("if (action === 'stop')"))
-    expect(block).toMatch(/if \(row\.decision !== 'needs_approval'\)/)
+    // Approving is only ever about needs_approval. Declining is the same act
+    // whichever kind of question it was, so deny answers an offer too — but
+    // an offer's YES has to WRITE a permission, which is accept_offer's job.
+    expect(block).toMatch(/const answerable = action === 'deny'\s*\n\s*\? \['needs_approval', 'needs_grant'\]\s*\n\s*: \['needs_approval'\]/)
     expect(block).toMatch(/Arnie will not do it however it is approved/)
+    expect(block).toMatch(/waiting on a permission, not an approval/)
   })
 
   it('approving puts it back in the queue and stops the clock', () => {

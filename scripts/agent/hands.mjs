@@ -40,12 +40,37 @@ const osa = (script) => run('osascript', ['-e', script])
 // unable to land in Excel.
 export async function frontmostApp() {
   if (WIN) {
+    // ApplicationFrameHost is not an app. It is the frame Windows draws around
+    // Store apps — Calculator, Settings, Mail, Photos — so asking the
+    // foreground window who owns it names the frame rather than the program.
+    // Every one of those reads as "applicationframehost is in front", which
+    // would make this check both useless and wrong: useless because it never
+    // matches what was asked for, wrong because two different Store apps are
+    // indistinguishable to it. The real program owns the CoreWindow inside the
+    // frame, so when we land on the frame we look one level in.
     const r = await ps(`
-      Add-Type -Namespace W -Name U -MemberDefinition '
-        [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();
-        [DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(System.IntPtr h, out int pid);'
-      $h = [W.U]::GetForegroundWindow(); $procId = 0; [void][W.U]::GetWindowThreadProcessId($h, [ref]$procId)
-      (Get-Process -Id $procId).ProcessName`)
+      Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class JsFront {
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern int GetWindowThreadProcessId(IntPtr h, out int pid);
+  delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc cb, IntPtr l);
+  public static int Pid() {
+    IntPtr h = GetForegroundWindow();
+    int outer; GetWindowThreadProcessId(h, out outer);
+    int inner = 0;
+    EnumChildWindows(h, delegate(IntPtr c, IntPtr l) {
+      int cp; GetWindowThreadProcessId(c, out cp);
+      if (cp != outer) { inner = cp; return false; }
+      return true;
+    }, IntPtr.Zero);
+    return inner != 0 ? inner : outer;
+  }
+}
+"@
+      (Get-Process -Id ([JsFront]::Pid())).ProcessName`)
     return r.ok ? r.out.toLowerCase() : ''
   }
   if (MAC) {
@@ -193,6 +218,66 @@ function macHint(err) {
     return 'macOS has not been told to allow this yet — System Settings → Privacy & Security → Accessibility, and allow the app running this agent.'
   }
   return err || 'that did not work'
+}
+
+/**
+ * Open a program, and wait until it is actually in front.
+ *
+ * Every other hand here refuses to act unless the named program is frontmost.
+ * Launching is the one action that is BY DEFINITION about something that is
+ * not — so without it Arnie could only ever work in what somebody had already
+ * opened for him, which is most of the way back to having no hands.
+ *
+ * NO SHELL, and no path. The name is matched against what is INSTALLED and
+ * the match is what gets started, so "chrome" opens Chrome and a name that is
+ * really a command line opens nothing. The moment Arnie is reading a web page,
+ * the name of a program to open is attacker-influenced text.
+ */
+const LAUNCHABLE = {
+  // name as a person says it → [Windows command, macOS application name]
+  chrome: ['chrome', 'Google Chrome'],
+  edge: ['msedge', 'Microsoft Edge'],
+  firefox: ['firefox', 'Firefox'],
+  safari: [null, 'Safari'],
+  notepad: ['notepad', 'TextEdit'],
+  excel: ['excel', 'Microsoft Excel'],
+  word: ['winword', 'Microsoft Word'],
+  outlook: ['outlook', 'Microsoft Outlook'],
+  explorer: ['explorer', 'Finder'],
+  finder: [null, 'Finder'],
+  calculator: ['calc', 'Calculator'],
+}
+
+export async function launchApp(name) {
+  const key = String(name || '').toLowerCase().trim()
+  const known = LAUNCHABLE[key]
+  if (!known) {
+    return { error: `I do not know how to open "${key}". Open it yourself and I will carry on from there.` }
+  }
+  if (WIN) {
+    if (!known[0]) return { error: `${key} is a Mac program.` }
+    // start through cmd's own builtin, with the name as an ARGUMENT — never
+    // pasted into a command string.
+    const r = await run('cmd.exe', ['/c', 'start', '', known[0]])
+    if (!r.ok) return { error: r.err || `could not open ${key}` }
+  } else if (MAC) {
+    const r = await run('open', ['-a', known[1]])
+    if (!r.ok) return { error: r.err || `could not open ${key}` }
+  } else {
+    return { error: `cannot open programs on ${process.platform}` }
+  }
+  // Opening is not instant, and the next action will be refused unless this
+  // one really did put it in front. Wait for the thing we were asked for.
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 250))
+    const front = await frontmostApp()
+    if (front && (front.includes(key) || key.includes(front)
+      || front.includes(String(known[0] || '').toLowerCase())
+      || String(known[1] || '').toLowerCase().includes(front))) {
+      return { ok: true, result: { opened: key, frontmost: front } }
+    }
+  }
+  return { error: `${key} was asked to open but is still not in front.` }
 }
 
 /**

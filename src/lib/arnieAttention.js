@@ -10,7 +10,8 @@
 //
 //   1. A card he has drafted and cannot apply until somebody approves it.
 //   2. Something on their computer he has stopped at: a sign-in he will not
-//      do, or an action a rule says to check first.
+//      do, an action a rule says to check first, or a program he is asking
+//      permission for.
 //   3. An unread notification he raised — a routine's answer, a nudge.
 //
 // What deliberately does NOT count: anything already decided, anything
@@ -42,7 +43,10 @@ export async function arnieAttention({ employeeId, companyId } = {}) {
     // Stopped on their machine, waiting for them.
     supabase.from('arnie_computer_actions')
       .select('id', { count: 'exact', head: true })
-      .eq('employee_id', employeeId).in('decision', ['awaiting_human', 'needs_approval'])
+      // needs_grant joined these when offering became the way permission is
+      // given: it is the same kind of thing — he is stopped, and only this
+      // person can unstop him.
+      .eq('employee_id', employeeId).in('decision', ['awaiting_human', 'needs_approval', 'needs_grant'])
       .is('completed_at', null)
       .then((r) => r.count || 0, () => 0),
     // Unread, and his.

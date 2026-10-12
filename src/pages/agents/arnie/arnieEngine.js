@@ -19,7 +19,7 @@ import { toApiMessages, withCurrentTurn } from '../../../lib/chatAttachments'
  * Keep this list honest: a card type belongs here in the same commit that
  * teaches ArnieChat to draw it, never earlier.
  */
-export const RENDERABLE_CARDS = ['config', 'record', 'bulk', 'create']
+export const RENDERABLE_CARDS = ['config', 'record', 'bulk', 'create', 'computer']
 
 /**
  * Field or office — the same Arnie, answering very differently.
@@ -250,6 +250,12 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
             // Arnie drafted a config change. Nothing is applied — the caller
             // renders an approve/reject card from this payload.
             onChunk(full, { proposal: payload })
+          } else if (currentEvent === 'offer') {
+            // He asked for something on their own computer and the leash has
+            // stopped him — for want of a permission, or at a control he will
+            // never press. Only the id travels: the card reads the row, so it
+            // cannot show a stale question that was answered somewhere else.
+            onChunk(full, { offerId: payload.action_id })
           } else if (currentEvent === 'error') {
             throw new Error(payload.message || 'stream error')
           }

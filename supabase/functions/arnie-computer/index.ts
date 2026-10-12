@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
   // cached on the session. Revoking has to take effect on the next action, not
   // on the next reconnect — otherwise "I took that back" is a lie.
   const myGrants = async (): Promise<Grant[]> =>
-    await rest(`arnie_computer_grants?select=app,host,tier,duration,expires_at,revoked_at,consumed_at&employee_id=eq.${me}&revoked_at=is.null`)
+    await rest(`arnie_computer_grants?select=app,host,tier,duration,expires_at,revoked_at,consumed_at,consumed_by&employee_id=eq.${me}&revoked_at=is.null`)
 
   // The company's rules and this person's own, in one list. The decision
   // module settles conflicts (ask-first wins), so there is nothing to merge
@@ -205,26 +205,20 @@ Deno.serve(async (req) => {
     }
 
     // ── somebody asks for an action ──────────────────────────────────────
-    if (action === 'queue') {
-      const session = await mySession(body.session_id)
-      if (!session) return json({ error: 'No session of yours by that id.' }, 404)
-      if (session.status !== 'live') return json({ error: 'Arnie is not on that computer right now.' }, 409)
-
-      const fresh = await rest(`arnie_computer_sessions?select=last_seen_at&id=eq.${session.id}&limit=1`)
-      const seen = new Date(fresh?.[0]?.last_seen_at || 0).getTime()
-      if (Date.now() - seen > STALE_SECONDS * 1000) {
-        return json({ error: 'Arnie is not on that computer right now — the agent has not checked in.' }, 409)
-      }
-
-      const want = {
-        kind: String(body.kind || ''),
-        app: body.app ? String(body.app) : null,
-        host: body.host ? String(body.host) : null,
-        target: (body.target ?? null) as Record<string, unknown> | null,
-      }
-      const background = Number(body.routine_id) > 0 || body.background === true
+    //
+    // ONE path, used by 'queue' and by accepting an offer. Accepting used to
+    // be the obvious place to write a second, shorter version of this — and a
+    // second copy of a permission decision is this project's oldest failure
+    // mode, because the two copies disagreeing is indistinguishable from a
+    // bypass. So accepting grants, then comes back through here.
+    const placeAction = async (
+      sessionId: number,
+      want: { kind: string; app: string | null; host: string | null; target: Record<string, unknown> | null },
+      opts: { background: boolean; routineId: number | null; valueLength?: number },
+    ) => {
       const [gs, rs] = await Promise.all([myGrants(), myRules()])
       const verdict = decideWithRules(want, gs, rs)
+      const background = opts.background
 
       // Refused and awaiting-human are RECORDED, not dropped. A refusal is a
       // row for the same reason an action is: an admin asking "what has Arnie
@@ -232,8 +226,8 @@ Deno.serve(async (req) => {
       const row = {
         company_id: company,
         employee_id: me,
-        session_id: session.id,
-        routine_id: Number(body.routine_id) || null,
+        session_id: sessionId,
+        routine_id: opts.routineId,
         kind: want.kind,
         app: want.app,
         host: want.host,
@@ -242,41 +236,157 @@ Deno.serve(async (req) => {
         // plain box is still the person's text and has no business in an audit
         // table — length is all the log needs.
         target: want.target
-          ? { ...want.target, value: undefined, text_length: typeof body.value === 'string' ? body.value.length : undefined }
+          ? { ...want.target, value: undefined, text_length: opts.valueLength }
           : null,
         decision: verdict.ok ? 'queued'
           : 'refuse' in verdict ? 'refused'
           : 'needsHuman' in verdict ? 'awaiting_human'
+          : 'needsGrant' in verdict ? 'needs_grant'
           : 'needs_approval',
         reason: verdict.ok ? null
           : 'refuse' in verdict ? verdict.refuse
           : 'needsHuman' in verdict ? verdict.needsHuman
+          : 'needsGrant' in verdict ? verdict.needsGrant.why
           : verdict.needsApproval,
+        // The tier the offer is asking for — the narrowest that can do this
+        // kind. Stored so that accepting is one tap and cannot widen into
+        // something the action never needed.
+        wants_tier: !verdict.ok && 'needsGrant' in verdict ? verdict.needsGrant.tier : null,
         // A refusal is finished the moment it is written. An approval is not:
         // it is waiting for a person, and if it came from standing work it
         // stops being answerable after about ten minutes. needsHuman never
         // expires because it is not a question — Arnie will never do that one.
-        expires_at: !verdict.ok && 'needsApproval' in verdict ? approvalExpiry({ background }) : null,
+        expires_at: !verdict.ok && ('needsApproval' in verdict || 'needsGrant' in verdict)
+          ? approvalExpiry({ background }) : null,
         completed_at: !verdict.ok && 'refuse' in verdict ? new Date().toISOString() : null,
       }
       const made = await rest('arnie_computer_actions', { method: 'POST', body: JSON.stringify(row) })
 
-      if (!verdict.ok) {
-        return json({
-          ok: false,
-          action_id: made?.[0]?.id,
-          decision: row.decision,
-          reason: row.reason,
-        })
-      }
-
-      // A one-shot grant is spent the moment it is used for real.
-      if (verdict.tier && want.app) {
+      // A one-shot grant is spent the moment it is used for real — and it
+      // records WHICH action spent it. Without that the agent, checking the
+      // leash again a second later on its own machine, saw a consumed grant
+      // and refused the very action it had just been allowed to do.
+      if (verdict.ok && verdict.tier && want.app && made?.[0]?.id) {
         await rest(`arnie_computer_grants?employee_id=eq.${me}&app=eq.${encodeURIComponent(want.app)}&duration=eq.once&consumed_at=is.null&revoked_at=is.null`, {
-          method: 'PATCH', body: JSON.stringify({ consumed_at: new Date().toISOString() }),
+          method: 'PATCH',
+          body: JSON.stringify({ consumed_at: new Date().toISOString(), consumed_by: made[0].id }),
         }).catch(() => { /* nothing to spend */ })
       }
-      return json({ ok: true, action_id: made?.[0]?.id, decision: 'queued' })
+
+      return {
+        ok: verdict.ok,
+        action_id: made?.[0]?.id as number | undefined,
+        decision: row.decision,
+        reason: row.reason,
+        wants: !verdict.ok && 'needsGrant' in verdict ? verdict.needsGrant : null,
+      }
+    }
+
+    /** The session to act on, or a reply explaining why there isn't one. */
+    const liveSession = async (id: unknown) => {
+      const session = await mySession(id)
+      if (!session) return { error: json({ error: 'No session of yours by that id.' }, 404) }
+      if (session.status !== 'live') return { error: json({ error: 'Arnie is not on that computer right now.' }, 409) }
+      const fresh = await rest(`arnie_computer_sessions?select=last_seen_at&id=eq.${session.id}&limit=1`)
+      const seen = new Date(fresh?.[0]?.last_seen_at || 0).getTime()
+      if (Date.now() - seen > STALE_SECONDS * 1000) {
+        return { error: json({ error: 'Arnie is not on that computer right now — the agent has not checked in.' }, 409) }
+      }
+      return { session }
+    }
+
+    if (action === 'queue') {
+      const got = await liveSession(body.session_id)
+      if (got.error) return got.error
+
+      const want = {
+        kind: String(body.kind || ''),
+        app: body.app ? String(body.app) : null,
+        host: body.host ? String(body.host) : null,
+        target: (body.target ?? null) as Record<string, unknown> | null,
+      }
+      const placed = await placeAction(got.session!.id, want, {
+        background: Number(body.routine_id) > 0 || body.background === true,
+        routineId: Number(body.routine_id) || null,
+        valueLength: typeof body.value === 'string' ? body.value.length : undefined,
+      })
+      return json(placed.ok
+        ? { ok: true, action_id: placed.action_id, decision: 'queued' }
+        : { ok: false, action_id: placed.action_id, decision: placed.decision, reason: placed.reason, wants: placed.wants })
+    }
+
+    // ── a person accepts an offer ───────────────────────────────────────
+    //
+    // "Arnie offers, you accept." The permission and the thing it is for
+    // arrive together, which is the only moment either of them means
+    // anything: "allow Chrome on rockymountainpower.net" answered in a
+    // settings form is a question nobody can weigh.
+    //
+    // It writes the grant and then goes back through placeAction, so the leash
+    // decides again with the new grant in hand. Accepting does not mark the
+    // action allowed — it cannot: a tier might still not cover the kind, or a
+    // rule might still say ask first. The offer row is closed and a fresh row
+    // carries the verdict, which keeps the log readable as what happened
+    // rather than what was intended.
+    if (action === 'accept_offer') {
+      const id = Number(body.action_id)
+      if (!Number.isFinite(id)) return json({ error: 'action_id is required' }, 400)
+      const duration = body.duration === 'always' ? 'always' : 'once'
+
+      const [offer] = await rest(
+        `arnie_computer_actions?select=id,session_id,kind,app,host,target,decision,wants_tier,expires_at` +
+        `&id=eq.${id}&employee_id=eq.${me}&limit=1`,
+      )
+      if (!offer) return json({ error: 'No offer of yours by that id.' }, 404)
+      if (offer.decision !== 'needs_grant') return json({ error: 'That one is not waiting on a permission.' }, 409)
+      if (hasExpired(offer)) {
+        await rest(`arnie_computer_actions?id=eq.${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ decision: 'expired', completed_at: new Date().toISOString() }),
+        })
+        return json({ error: 'That offer timed out. Ask him again and he will offer afresh.' }, 410)
+      }
+
+      const got = await liveSession(offer.session_id)
+      if (got.error) return got.error
+
+      const app = String(offer.app || '').toLowerCase()
+      const host = String(offer.host || '*').toLowerCase() || '*'
+      const tier = String(offer.wants_tier || 'watch')
+      if (!app) return json({ error: 'That offer names no program.' }, 409)
+      if (!['watch', 'click', 'full'].includes(tier)) return json({ error: 'That offer asks for an unknown tier.' }, 409)
+
+      await rest('arnie_computer_grants', {
+        method: 'POST',
+        headers: { ...H, Prefer: 'return=representation,resolution=merge-duplicates' },
+        body: JSON.stringify({
+          company_id: company, employee_id: me, app, host, tier, duration,
+          granted_at: new Date().toISOString(), expires_at: null,
+          revoked_at: null, consumed_at: null, updated_at: new Date().toISOString(),
+        }),
+      })
+
+      const placed = await placeAction(got.session!.id, {
+        kind: offer.kind, app: offer.app, host: offer.host, target: offer.target,
+      }, { background: false, routineId: null })
+
+      await rest(`arnie_computer_actions?id=eq.${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          decision: 'allowed',
+          reason: `You allowed ${app}${host && host !== '*' ? ` on ${host}` : ''} — ${tier}${duration === 'once' ? ', once' : ''}.`,
+          result: { accepted_as: placed.action_id, granted: { app, host, tier, duration } },
+          completed_at: new Date().toISOString(),
+        }),
+      })
+
+      return json({
+        ok: placed.ok,
+        granted: { app, host, tier, duration },
+        action_id: placed.action_id,
+        decision: placed.decision,
+        reason: placed.reason,
+      })
     }
 
     // ── the person presses Connect ──────────────────────────────────────
@@ -373,17 +483,25 @@ Deno.serve(async (req) => {
       const rows = await rest(`arnie_computer_actions?select=id,decision,expires_at,employee_id&id=eq.${id}&employee_id=eq.${me}&limit=1`)
       const row = rows?.[0]
       if (!row) return json({ error: 'No action of yours by that id.' }, 404)
-      if (row.decision !== 'needs_approval') {
+      // Saying NO is the same act whether he was asking for an approval or
+      // for a permission, so it is one route. Saying YES is not: an offer
+      // needs a grant written, which is accept_offer's whole job.
+      const answerable = action === 'deny'
+        ? ['needs_approval', 'needs_grant']
+        : ['needs_approval']
+      if (!answerable.includes(row.decision)) {
         return json({ error: row.decision === 'awaiting_human'
           ? 'That one is yours to do — Arnie will not do it however it is approved.'
-          : `That action is ${row.decision}, not waiting on you.` }, 409)
+          : row.decision === 'needs_grant'
+            ? 'That one is waiting on a permission, not an approval — allow the program and it runs.'
+            : `That action is ${row.decision}, not waiting on you.` }, 409)
       }
       if (hasExpired(row)) {
         await expireStale(Number(body.session_id) || 0)
         return json({ error: 'That one ran out of time. Ask again and it will be re-drafted.' }, 409)
       }
       const now = new Date().toISOString()
-      await rest(`arnie_computer_actions?id=eq.${id}&decision=eq.needs_approval`, {
+      await rest(`arnie_computer_actions?id=eq.${id}&decision=eq.${row.decision}`, {
         method: 'PATCH',
         body: JSON.stringify(action === 'approve'
           // Approved goes back in the queue for the agent to pick up, and

@@ -14,6 +14,7 @@ import { arnieTextNumber, ARNIE_EMAIL } from '../../../lib/arnieReach'
 import AssistantAvatar, { useAssistant } from '../../../components/AssistantAvatar'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { localDateStr } from '../../../lib/localDate'
+import ArnieOfferCard from '../../../components/ArnieOfferCard'
 
 // Dark Arnie theme
 const dark = {
@@ -556,7 +557,15 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       const fullResponse = await sendMessageStream(msg, history, (partialText, meta) => {
         setMessages(prev => prev.map(m =>
           m.id === assistantId
-            ? { ...m, content: partialText, ...(meta?.proposal ? { proposal: meta.proposal } : {}) }
+            ? {
+              ...m,
+              content: partialText,
+              ...(meta?.proposal ? { proposal: meta.proposal } : {}),
+              // An offer he made on their own computer. Only the id is kept;
+              // the card reads the row so it can never show a question that
+              // was already answered on the Computer tab.
+              ...(meta?.offerId ? { offerId: meta.offerId } : {}),
+            }
             : m
         ))
       }, files)
@@ -959,6 +968,12 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                   </div>
                 )
               })()}
+              {/* He asked for something on this person's own computer and
+                  was stopped — for want of a permission, or at a control he
+                  will never press himself. The same card the Computer tab
+                  draws, because two of them would be two answers to one
+                  question. */}
+              {msg.offerId && <ArnieOfferCard offerId={msg.offerId} />}
               {/* Matched on what this card IS, not on what it is not. The
                   previous "anything that isn't a record" test meant a preview
                   shape this build had never seen fell in here and crashed on

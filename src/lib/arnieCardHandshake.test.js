@@ -34,6 +34,12 @@ describe('the client declares what it can draw', () => {
       if (kind === 'config') {
         // The settings-list card is the one selected structurally, by shape.
         expect(chatJsx).toMatch(/Array\.isArray\(pv0\(msg\)\.after\)/)
+      } else if (kind === 'computer') {
+        // Not a proposal preview at all: an offer is a row on the computer
+        // rail, so the card is handed its id and reads it. Same invariant —
+        // the client must be able to DRAW it — different shape.
+        expect(chatJsx).toContain('<ArnieOfferCard offerId={msg.offerId} />')
+        expect(chatJsx).toMatch(/import ArnieOfferCard from/)
       } else {
         expect(chatJsx, `no card renders kind '${kind}'`).toContain(`pv0(msg).kind === '${kind}'`)
       }
@@ -74,7 +80,7 @@ describe('the server withholds tools the caller cannot render', () => {
   })
 
   it('filters the offered tools by the declared card set', () => {
-    expect(chatTs).toMatch(/function toolsFor\(role: string, cards: string\[\]\)/)
+    expect(chatTs).toMatch(/function toolsFor\(role: string, cards: string\[\], opts: \{ ownSession\?: boolean \} = \{\}\)/)
     expect(chatTs).toMatch(/return !needs \|\| cards\.includes\(needs\)/)
   })
 

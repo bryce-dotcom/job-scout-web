@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url'
 import { readFile, unlink } from 'node:fs/promises'
 
 import {
-  frontmostApp, screenshot, clickAt, scroll, typeText, pressKey,
+  frontmostApp, screenshot, clickAt, scroll, typeText, pressKey, launchApp,
   capabilities, platformName,
 } from './agent/hands.mjs'
 
@@ -230,7 +230,7 @@ const run = async (a) => {
     case 'scroll': return await scroll(t.direction, t.amount)
     // Deliberately not implemented rather than approximated.
     case 'read_text': return { error: 'this agent cannot read the screen yet' }
-    case 'launch': return { error: 'launching programs is not built yet' }
+    case 'launch': return await launchApp(a.app)
     default: return { error: `unknown action kind: ${a.kind}` }
   }
 }
@@ -460,16 +460,48 @@ while (!stopping) {
   if (!a) { await new Promise((r) => setTimeout(r, POLL_MS)); continue }
 
   // 1. The leash, locally, with the same module the server used.
-  const verdict = decideAction({ kind: a.kind, app: a.app, host: a.host, target: a.target }, grants)
+  let verdict = decideAction({ id: a.id, kind: a.kind, app: a.app, host: a.host, target: a.target }, grants)
+
+  // Grants are cached and re-read every tenth poll, which is fine for noticing
+  // a REVOKE and useless for noticing a grant that was written four seconds
+  // ago. And four seconds ago is exactly when it was written: a person accepts
+  // an offer and the action arrives on the very next poll. Without this the
+  // feature's whole promise — allow it, and it happens — failed on the first
+  // try every time, and said "you have not given me notepad" to somebody who
+  // just had.
+  //
+  // The agent asks the rail ITSELF rather than being handed grants alongside
+  // the action. That difference is the point: an agent that took its
+  // permissions from the same message as its orders would be trusting whoever
+  // sent the orders, and this local check exists precisely so it does not.
+  if (!verdict.ok && verdict.needsGrant) {
+    const fresh = await call('grants').catch(() => null)
+    if (fresh?.ok) {
+      grants = fresh.grants || []
+      sinceGrants = 0
+      verdict = decideAction({ id: a.id, kind: a.kind, app: a.app, host: a.host, target: a.target }, grants)
+    }
+  }
+
   if (!verdict.ok) {
+    // needsGrant is an offer the APP may show a person a button for. Here it
+    // is simply a no: the machine's copy of the leash does not negotiate, and
+    // an action only ever arrives here after a person has already accepted.
     const why = verdict.refuse || verdict.needsHuman || verdict.needsApproval
+      || (verdict.needsGrant && verdict.needsGrant.why)
     show('no', `${describe(a)} — refused here: ${why}`)
     await call('report', { session_id: sessionId, action_id: a.id, ok: false, error: `refused on the machine: ${why}` })
     continue
   }
 
   // 2. What is really in front. The server had to take the action's word.
-  if (a.app) {
+  //
+  // Except for 'launch', which is the one action whose program is BY
+  // DEFINITION not in front — that is what launching is. Checking it here made
+  // opening a program impossible: Arnie could only ever work in something a
+  // person had already opened for him, which is most of the way back to not
+  // having hands at all.
+  if (a.app && a.kind !== 'launch') {
     const front = await frontmostApp()
     if (front && !front.includes(String(a.app).toLowerCase()) && !String(a.app).toLowerCase().includes(front)) {
       const why = `${a.app} is not in front — ${front} is`

@@ -16,9 +16,11 @@ import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import {
   Monitor, ShieldCheck, Ban, Eye, MousePointerClick, Keyboard, Plus, Trash2,
-  AlertTriangle, Power, GraduationCap, RefreshCw, Download,
+  AlertTriangle, Power, GraduationCap, RefreshCw, Download, Sparkles,
 } from 'lucide-react'
-import { myComputer, myGrants, grant as addGrant, revoke as dropGrant, stop as stopSession } from '../../../lib/arnieComputer'
+import { myComputer, myGrants, myOffers, grant as addGrant, revoke as dropGrant, stop as stopSession } from '../../../lib/arnieComputer'
+import ArnieOfferCard from '../../../components/ArnieOfferCard'
+import { whatArnieCanDo, stateLabel, NEVER, READY } from '../../../lib/arnieCanDo'
 import { computerState, agentState, describeAction } from '../../../lib/agentStatus'
 
 const t = {
@@ -65,6 +67,8 @@ export default function ArnieComputer() {
 
   const [data, setData] = useState({ session: null, latest: null, actions: [] })
   const [grants, setGrants] = useState([])
+  const [offers, setOffers] = useState([])
+  const [skills, setSkills] = useState([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [showConnect, setShowConnect] = useState(false)
@@ -74,10 +78,14 @@ export default function ArnieComputer() {
   const load = useCallback(async () => {
     if (!employeeId) return
     try {
-      const [c, g] = await Promise.all([myComputer(employeeId), myGrants(employeeId)])
-      setData(c); setGrants(g); setErr('')
+      const [c, g, o, k] = await Promise.all([
+        myComputer(employeeId), myGrants(employeeId), myOffers(employeeId),
+        supabase.from('arnie_skills').select('name,status,steps').eq('company_id', companyId).eq('status', 'published')
+          .then((r) => r.data || [], () => []),
+      ])
+      setData(c); setGrants(g); setOffers(o); setSkills(k); setErr('')
     } catch (e) { setErr(String(e.message || e)) }
-  }, [employeeId])
+  }, [employeeId, companyId])
 
   useEffect(() => { load() }, [load])
   // While he is working, the log is the only way to follow along, so it has to
@@ -90,6 +98,12 @@ export default function ArnieComputer() {
 
   const status = useMemo(() => computerState({ session: data.session, latest: data.latest, actions: data.actions }), [data])
   const st = agentState(status.state)
+  // 'idle' means both "no computer at all" and "connected, nothing happening",
+  // so what is CONNECTED has to be read from the session itself. Stale counts
+  // as not connected: a session whose agent stopped checking in cannot do
+  // anything, and saying "ready" about it would be a lie.
+  const connected = data.session?.status === 'live' &&
+    Date.now() - new Date(data.session.last_seen_at || 0).getTime() < 90_000
 
 
   const doStop = async () => {
@@ -167,6 +181,21 @@ export default function ArnieComputer() {
 
         {showConnect && <GetTheAgent />}
       </section>
+
+      {/* ── 1b. Waiting on you ───────────────────────────────────────── */}
+      {/* Above the permission list on purpose. A question he has actually
+          asked beats a form for questions he has not: the list below is for
+          taking something back, not for granting things in advance. */}
+      {offers.length > 0 && (
+        <section style={{ marginBottom: 14 }}>
+          <h3 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 700, color: t.ink }}>
+            Waiting on you
+          </h3>
+          {offers.map((o) => (
+            <ArnieOfferCard key={o.id} offer={o} onAnswered={load} />
+          ))}
+        </section>
+      )}
 
       {/* ── 2. What he may touch ─────────────────────────────────────── */}
       <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
@@ -253,6 +282,18 @@ export default function ArnieComputer() {
         )}
       </section>
 
+      {/* ── 2b. What he can do, and what is in the way ───────────────── */}
+      {/* "How does the user know what he can even do for them?" — nothing on
+          this page answered that. A permission list and a log describe a
+          system to somebody who already understands it. */}
+      <WhatHeCanDo
+        connected={connected}
+        platform={data.session?.platform || ''}
+        grants={grants}
+        skills={skills}
+        onConnect={() => setShowConnect(true)}
+      />
+
       {/* ── 3. Teach him something ───────────────────────────────────── */}
       <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
         <h3 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -295,6 +336,75 @@ export default function ArnieComputer() {
         })}
       </section>
     </div>
+  )
+}
+
+/**
+ * "How does the user know what he can even do for them?"
+ *
+ * The answer has to be on the page, not in a help article, and it has to be
+ * honest about what is in the way — a capability list that reads "ready" when
+ * nothing is connected is worse than no list. So each row carries its real
+ * state, and the thing the person has to do about it is the only button.
+ *
+ * What he will never do sits right beside it, because that is the part people
+ * want to know before installing anything.
+ */
+function WhatHeCanDo({ connected, platform, grants, skills, onConnect }) {
+  const rows = whatArnieCanDo({ connected, platform, grants, skills })
+  const blocked = rows.filter((r) => r.state !== READY).length
+
+  return (
+    <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+      <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Sparkles size={17} style={{ color: t.accent }} /> What Arnie can do here
+      </h3>
+      <p style={{ margin: '0 0 12px', fontSize: 12.5, color: t.muted }}>
+        {blocked === 0
+          ? 'All of it, on this computer.'
+          : `${rows.length - blocked} of ${rows.length} ready — the rest need something from you.`}
+      </p>
+
+      {rows.map((r) => {
+        const s = stateLabel(r.state)
+        return (
+          <div key={r.id} style={{ display: 'flex', gap: 10, padding: '10px 0', borderTop: `1px solid ${t.line}55`, alignItems: 'flex-start' }}>
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 6,
+              background: r.state === READY ? t.add : t.amber,
+            }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: t.ink }}>{r.title}</div>
+              <div style={{ fontSize: 12.5, color: t.sub, lineHeight: 1.5, marginTop: 2 }}>{r.blurb}</div>
+            </div>
+            <span style={{
+              fontSize: 11, fontWeight: 700, borderRadius: 11, padding: '2px 8px', marginTop: 2,
+              flexShrink: 0, whiteSpace: 'nowrap',
+              color: r.state === READY ? t.add : t.amber,
+              background: r.state === READY ? t.addBg : t.amberBg,
+            }}>{s.label}</span>
+          </div>
+        )
+      })}
+
+      {!connected && (
+        <button onClick={onConnect} style={{ ...btn(t.accent, '#fff'), marginTop: 12 }}>
+          <Download size={14} /> Put Arnie on this computer
+        </button>
+      )}
+
+      <div style={{ marginTop: 14, borderTop: `1px solid ${t.line}`, paddingTop: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: t.ink, marginBottom: 6 }}>
+          And what he will never do
+        </div>
+        {NEVER.map((line) => (
+          <div key={line} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'flex-start' }}>
+            <Ban size={13} style={{ color: t.muted, flexShrink: 0, marginTop: 3 }} />
+            <span style={{ fontSize: 12.5, color: t.sub, lineHeight: 1.5 }}>{line}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 

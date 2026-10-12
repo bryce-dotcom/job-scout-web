@@ -93,9 +93,15 @@ describe('a refusal is a record, not a dropped request', () => {
   })
 
   it('the row is written before the agent can see it', () => {
-    const queue = rail.slice(rail.indexOf("if (action === 'queue')"), rail.indexOf("if (action === 'stop')"))
-    expect(queue.indexOf('decideWithRules')).toBeLessThan(queue.indexOf("rest('arnie_computer_actions'"))
-    expect(queue).toMatch(/if \(!verdict\.ok\) \{[\s\S]*?return json\(\{\s*ok: false/)
+    // Deciding and recording live in placeAction, which both queueing and
+    // accepting an offer go through — one decision, one copy of it.
+    const place = rail.slice(rail.indexOf('const placeAction = async ('), rail.indexOf("if (action === 'queue')"))
+    expect(place.indexOf('decideWithRules')).toBeLessThan(place.indexOf("rest('arnie_computer_actions'"))
+    expect(place).toMatch(/decision: verdict\.ok \? 'queued'/)
+    // And a verdict of no comes back as no, with the reason, rather than
+    // being dropped on the floor.
+    const queue = rail.slice(rail.indexOf("if (action === 'queue')"), rail.indexOf("action === 'accept_offer'"))
+    expect(queue).toMatch(/ok: false, action_id: placed\.action_id, decision: placed\.decision, reason: placed\.reason/)
   })
 
   it('the agent cannot promote its own action to allowed', () => {
@@ -107,7 +113,11 @@ describe('a refusal is a record, not a dropped request', () => {
 
   it('what was typed is never stored — only how long it was', () => {
     expect(rail).toMatch(/value: undefined/)
-    expect(rail).toMatch(/text_length: typeof body\.value === 'string' \? body\.value\.length : undefined/)
+    expect(rail).toMatch(/text_length: opts\.valueLength/)
+    // The length is measured at the edge, from the request, and the text goes
+    // no further than that one expression.
+    expect(rail).toMatch(/valueLength: typeof body\.value === 'string' \? body\.value\.length : undefined/)
+    expect(rail.match(/body\.value/g)?.length).toBe(2)
   })
 })
 

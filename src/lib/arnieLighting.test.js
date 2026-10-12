@@ -77,13 +77,16 @@ describe('the photo comes off the conversation, not the tool call', () => {
   it('execTool is handed the messages rather than reaching for a global', () => {
     // A request-scoped global in a shared isolate works until two people text
     // at once.
-    expect(chat).toMatch(/async function execTool\(name: string, input: any, caller: Caller, messages: any\[\] = \[\]\)/)
-    expect(chat).toMatch(/exec: \(name: string, input: any\) => execTool\(name, input, caller, messages\)/)
-    expect(chat).toMatch(/function agentSetup\(agent: Agent, caller: Caller, cards: string\[\], messages: any\[\] = \[\]\)/)
+    // `bearer` joined them for the one tool that acts AS the caller against
+    // our own rail. Same reasoning as messages: threaded through the call,
+    // never a request-scoped global in a shared isolate.
+    expect(chat).toMatch(/async function execTool\(name: string, input: any, caller: Caller, messages: any\[\] = \[\], bearer = ''\)/)
+    expect(chat).toMatch(/exec: \(name: string, input: any\) => execTool\(name, input, caller, messages, bearer\)/)
+    expect(chat).toMatch(/function agentSetup\(agent: Agent, caller: Caller, cards: string\[\], messages: any\[\] = \[\], bearer = ''\)/)
   })
 
   it('both turn runners pass their conversation in', () => {
-    expect(chat.split('agentSetup(agent, caller, cards, messages)').length - 1).toBe(2)
+    expect(chat.split('agentSetup(agent, caller, cards, messages, bearer)').length - 1).toBe(2)
   })
 
   it('the newest image wins, because "what is this" means the one just sent', () => {

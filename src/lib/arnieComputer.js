@@ -34,6 +34,46 @@ export const queue = (session_id, action) => call('queue', { session_id, ...acti
 export const stop = (session_id) => call('stop', { session_id })
 
 /**
+ * "Arnie offers, you accept."
+ *
+ * Accepting writes the permission AND re-places the action, in that order, on
+ * the rail — never here. The browser must not be able to decide that something
+ * is allowed; it can only pass on that a person said yes.
+ *
+ * `duration` is 'once' or 'always'. Once is the default everywhere it is
+ * offered: a person saying yes to one job has not said yes to a standing
+ * arrangement, and the second tap tomorrow costs them almost nothing.
+ */
+export const acceptOffer = (action_id, duration = 'once') => call('accept_offer', { action_id, duration })
+
+/** Saying no — the same route as declining an approval, because it is the same act. */
+export const declineOffer = (action_id) => call('deny', { action_id })
+
+/**
+ * Everything of this person's that is waiting on them: a permission he is
+ * asking for, an approval, or something he has stopped at and will not do.
+ *
+ * Read straight from the table — RLS scopes it, and a list is not worth a
+ * function invocation. Ordered oldest first so answering them in order is
+ * answering them in the order they happened.
+ */
+export async function myOffers(employeeId) {
+  if (!employeeId) return []
+  const { data } = await supabase
+    .from('arnie_computer_actions')
+    .select('id,session_id,kind,app,host,target,decision,reason,wants_tier,expires_at,created_at')
+    .eq('employee_id', employeeId)
+    .in('decision', ['needs_grant', 'needs_approval', 'awaiting_human'])
+    .is('completed_at', null)
+    .order('id')
+    .limit(10)
+  // An offer with a deadline that has passed is not answerable; the rail says
+  // so too, but showing a button that cannot work is worse than showing none.
+  const now = Date.now()
+  return (data || []).filter((r) => !r.expires_at || new Date(r.expires_at).getTime() > now)
+}
+
+/**
  * This person's most recent session, and the newest action on it.
  *
  * Read straight from the tables rather than through the function: RLS already

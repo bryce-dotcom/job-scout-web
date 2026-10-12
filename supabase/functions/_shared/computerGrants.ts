@@ -15,11 +15,34 @@
 // the second opinion.
 
 export type Tier = 'watch' | 'click' | 'full'
+
+/**
+ * What Arnie wants permission for, when he has none at all for a program.
+ *
+ * This is the one refusal that is really a QUESTION. "You have not given me
+ * Chrome on rockymountainpower.net" is a dead end if all a person can do with
+ * it is go and find a form, type the program's name, pick a tier and come
+ * back. Carried as an offer instead, it is one tap: the permission and the
+ * thing it is for arrive together, which is the only moment either of them
+ * makes sense.
+ *
+ * It asks for the NARROWEST tier that allows the action, never the tier that
+ * would be convenient later. An offer that quietly asks for more than the job
+ * needs is how "allow" stops meaning anything.
+ */
+export interface GrantWanted {
+  app: string
+  host: string
+  tier: Tier
+  why: string
+}
+
 export type Decision =
   | { ok: true; tier: Tier }
   | { ok: false; refuse: string }
   | { ok: false; needsHuman: string }
   | { ok: false; needsApproval: string }
+  | { ok: false; needsGrant: GrantWanted }
 
 export interface Rule {
   kind: 'ask_first' | 'allow_auto'
@@ -41,9 +64,18 @@ export interface Grant {
   expires_at?: string | null
   revoked_at?: string | null
   consumed_at?: string | null
+  /** The action that spent a one-shot grant. See `live` below. */
+  consumed_by?: number | null
 }
 
 export interface Action {
+  /**
+   * The row id, once there is one. The server decides BEFORE the row exists
+   * and leaves this unset; the agent decides about an action it is holding and
+   * knows it — which is the whole of how a one-shot grant can be spent by the
+   * server and still be honoured by the machine.
+   */
+  id?: number | null
   kind: string
   app?: string | null
   host?: string | null
@@ -129,14 +161,46 @@ export function isIrreversibleTarget(a: Action): boolean {
     (!own && IRREVERSIBLE_HINTS.some((k) => h.includes(k)))
 }
 
-const live = (g: Grant, now: Date): boolean => {
+/**
+ * Is this grant still good — and, for a one-shot grant, good for THIS action?
+ *
+ * The subtle one, and it had the feature broken outright. A 'once' grant is
+ * spent by the server the moment it queues the action it was given for. The
+ * agent then checks the leash again on its own machine, a second later, and
+ * saw a grant already marked consumed — so it refused, every time. "Allow
+ * once" could not run anything at all, and it is the default on every offer.
+ *
+ * Marking WHICH action spent it fixes that without softening anything. The
+ * agent is holding exactly one action and knows its id; a spent grant is live
+ * for that action and for nothing else. A server that tried to reuse the same
+ * permission for a second action would be refused on the machine, which is
+ * precisely what the local check is there to do.
+ */
+const live = (g: Grant, now: Date, forAction?: number | null): boolean => {
   if (g.revoked_at) return false
-  if (g.duration === 'once' && g.consumed_at) return false
+  if (g.duration === 'once' && g.consumed_at) {
+    // Spent. Only the action that spent it may still use it, and only if we
+    // are being asked about an action at all.
+    if (!forAction || g.consumed_by !== forAction) return false
+  }
   if (g.expires_at && new Date(g.expires_at) <= now) return false
   return true
 }
 
 const TIER_RANK: Record<Tier, number> = { watch: 0, click: 1, full: 2 }
+
+/**
+ * The least access that can do this kind of action, or null if no tier can.
+ *
+ * Derived from TIER_ALLOWS rather than listed again, so a new action kind is
+ * answered by the table that already decides what tiers mean. A kind no tier
+ * allows returns null and is refused outright — never offered, because there
+ * is no permission a person could give that would make it run.
+ */
+export function narrowestTierFor(kind: string): Tier | null {
+  const tiers = (Object.keys(TIER_ALLOWS) as Tier[]).sort((a, b) => TIER_RANK[a] - TIER_RANK[b])
+  return tiers.find((t) => TIER_ALLOWS[t].includes(kind)) || null
+}
 
 /**
  * The grant that applies to an action, or null.
@@ -151,7 +215,7 @@ export function grantFor(grants: Grant[], a: Action, now: Date = new Date()): Gr
   const app = String(a.app || '').toLowerCase()
   const host = String(a.host || '').toLowerCase()
   if (!app) return null
-  const mine = grants.filter((g) => live(g, now) && String(g.app).toLowerCase() === app)
+  const mine = grants.filter((g) => live(g, now, a.id) && String(g.app).toLowerCase() === app)
   if (!mine.length) return null
   const exact = mine.filter((g) => String(g.host || '*').toLowerCase() === host && host)
   const wide = mine.filter((g) => String(g.host || '*') === '*')
@@ -166,7 +230,10 @@ export function grantFor(grants: Grant[], a: Action, now: Date = new Date()): Gr
  * Order matters and is the whole design:
  *   1. a credential field is refused outright — before any grant is consulted,
  *      because no tier and no approval makes typing a password acceptable;
- *   2. no grant means refused, never "ask the model to decide";
+ *   2. no grant means it does not run. It is returned as needsGrant — an
+ *      offer a PERSON may accept — and never as "ask the model to decide".
+ *      The agent treats needsGrant exactly as it treats a refusal; the only
+ *      difference is that a human is shown a button instead of a dead end;
  *   3. the tier must allow the kind;
  *   4. an irreversible control is handed to the human even at 'full'.
  *
@@ -181,7 +248,22 @@ export function decideAction(a: Action, grants: Grant[], now: Date = new Date())
   const g = grantFor(grants, a, now)
   if (!g) {
     const where = a.host && a.host !== '*' ? `${a.app} on ${a.host}` : String(a.app || 'that program')
-    return { ok: false, refuse: `You have not given me ${where}. Grant it and I will try again.` }
+    const wantTier = narrowestTierFor(a.kind)
+    // No tier can do this kind at all, so there is nothing to offer: a person
+    // saying yes would change nothing. Refuse, as before.
+    if (!a.app || !wantTier) {
+      return { ok: false, refuse: `You have not given me ${where}. Grant it and I will try again.` }
+    }
+    // Nothing granted for this program — the one refusal that is a question.
+    return {
+      ok: false,
+      needsGrant: {
+        app: String(a.app).toLowerCase(),
+        host: String(a.host || '*').toLowerCase(),
+        tier: wantTier,
+        why: `I need ${where} to do this. You have not given me that yet.`,
+      },
+    }
   }
   if (!TIER_ALLOWS[g.tier].includes(a.kind)) {
     return { ok: false, refuse: `You gave me ${g.tier} access to ${g.app}, which does not include ${a.kind}.` }
@@ -266,7 +348,11 @@ export function approvalExpiry(opts: { background: boolean; now?: Date }): strin
  * the laptop was asleep.
  */
 export function hasExpired(row: { decision?: string; expires_at?: string | null }, now: Date = new Date()): boolean {
-  if (row.decision !== 'needs_approval') return false
+  // 'needs_grant' is on the same footing as an approval: it is a question put
+  // to a person, and a question nobody answered stops being answerable. An
+  // offer made by a 7am routine and accepted at 6pm would grant access to a
+  // program for a job that is long finished.
+  if (row.decision !== 'needs_approval' && row.decision !== 'needs_grant') return false
   if (!row.expires_at) return false
   return new Date(row.expires_at) <= now
 }
