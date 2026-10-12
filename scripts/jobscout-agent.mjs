@@ -28,10 +28,9 @@
 // Ctrl+C is the kill switch: the session is stopped, anything queued is
 // refused, and nothing more runs on it ever.
 
-import { readFileSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, rmSync, mkdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { spawn } from 'node:child_process'
-import { pathToFileURL } from 'node:url'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, unlink } from 'node:fs/promises'
@@ -47,9 +46,13 @@ const ROOT = resolve(HERE, '..')
 // The SAME module the server decides with. Not a port of it — the file
 // itself. If these two ever disagree, the disagreement is indistinguishable
 // from a bypass, so there is only one of them.
-const { decideAction } = await import(
-  pathToFileURL(join(ROOT, 'supabase/functions/_shared/computerGrants.ts')).href
-)
+//
+// Imported statically, not resolved at runtime, for two reasons: the packaged
+// agent a customer downloads is one bundled file with no checkout around it,
+// and a static import is a claim the build can keep — a runtime path can go
+// missing and be papered over with a fallback, which is exactly how a second
+// copy of the rules gets born.
+import { decideAction } from '../supabase/functions/_shared/computerGrants.ts'
 
 // ── where we are pointed ────────────────────────────────────────────────
 const envFile = (() => {
@@ -234,6 +237,9 @@ const run = async (a) => {
 
 let sessionId = null
 let stopping = false
+// Whether we have already replaced a vanished session. Once only — see the
+// 404 branch in the loop.
+let resumed = false
 
 // ── the recorder ────────────────────────────────────────────────────────
 // A resident PowerShell process streaming NDJSON. Spawning a shell per poll
@@ -245,16 +251,27 @@ let recTail = ''
 // Control is a FILE, not stdin. PowerShell block-buffers a redirected stdout
 // and [Console]::In.Peek() blocks on a redirected stdin, so a recorder driven
 // through pipes went deaf the moment it was paused — found by running it.
+// The recorders are spawned, not imported, so they are real files on disk
+// that a bundle cannot swallow. In a checkout they sit in scripts/agent; in
+// the packaged agent a customer downloads they sit beside the agent itself.
+// Resolving both beats making the launcher mirror a repo's folder names.
+const recorderPath = (file) => {
+  for (const p of [join(HERE, file), join(HERE, 'agent', file)]) {
+    try { if (statSync(p).isFile()) return p } catch { /* try the next */ }
+  }
+  return join(HERE, 'agent', file)   // the error names the place it expects
+}
+
 const startRecorder = (skillId, name) => {
   if (rec || !capabilities.record) return
   const ctl = join(tmpdir(), `jobscout-rec-${process.pid}-${skillId}.txt`)
   try { writeFileSync(ctl, '') } catch { show('!!', 'could not open a control file for the recorder'); return }
   // Two recorders, one output format, so nothing below cares which ran.
   const proc = process.platform === 'darwin'
-    ? spawn('osascript', ['-l', 'JavaScript', join(HERE, 'agent', 'recorder.jxa.js'), ctl],
+    ? spawn('osascript', ['-l', 'JavaScript', recorderPath('recorder.jxa.js'), ctl],
       { stdio: ['pipe', 'pipe', 'pipe'] })
     : spawn('powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(HERE, 'agent', 'recorder.ps1'), '-ControlFile', ctl],
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', recorderPath('recorder.ps1'), '-ControlFile', ctl],
       { stdio: ['pipe', 'pipe', 'pipe'] })
   rec = { proc, skillId, held: false, ctl, startedAt: Date.now(), seen: 0, warned: false }
   proc.stdout.on('data', (buf) => {
@@ -348,7 +365,14 @@ const stop = async (why) => {
   stopRecorder()
   if (sessionId) {
     const r = await call('stop', { session_id: sessionId }).catch(() => ({}))
-    console.log(r.ok ? '  session stopped; anything queued was refused' : '  could not reach the server to stop cleanly')
+    // A 404 here is not a failure to reach anything: the session is already
+    // gone, which is often exactly why we are stopping. Saying "could not
+    // reach the server" in that case sends somebody to check their internet.
+    console.log(
+      r.ok ? '  session stopped; anything queued was refused'
+        : r.status === 404 ? '  that session was already closed'
+          : '  could not reach the server to stop cleanly',
+    )
   }
   process.exit(0)
 }
@@ -397,6 +421,30 @@ while (!stopping) {
 
   const got = await call('next', { session_id: sessionId }).catch((e) => ({ error: String(e.message) }))
   if (got.stopped) await stop('the session was stopped')
+
+  // A session that no longer EXISTS is different from one that was stopped,
+  // and the difference matters because only one of them is a person's
+  // decision. Stopping is handled above. This is the other case — the row is
+  // gone — and it used to print the same line every few seconds forever: a
+  // wall of "No session of yours by that id" where the window should have
+  // said what happened. Found by killing a session under a running agent.
+  //
+  // So: start a fresh one, once. That covers the row genuinely vanishing.
+  // If the new session is refused too, something is actually wrong and
+  // saying so and stopping beats scrolling an error until the machine is
+  // rebooted.
+  if (got.status === 404) {
+    if (resumed) await stop('this computer is no longer connected to a session')
+    resumed = true
+    show('..', 'that session is gone — starting a new one')
+    const again = await call('hello', { device_label: DEVICE, platform: process.platform, agent_version: VERSION })
+    if (!again.ok) await stop(`could not start a new session (${again.error || again.status})`)
+    sessionId = again.session_id
+    grants = again.grants || []
+    show('ok', `session ${sessionId}`)
+    continue
+  }
+
   if (got.error) { show('!!', `server: ${got.error}`); await new Promise((r) => setTimeout(r, POLL_MS * 2)); continue }
 
   // Teaching, and the pause that keeps a password out of a screenshot.

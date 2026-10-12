@@ -127,6 +127,49 @@ describe('the gateway settings this depends on are pinned', () => {
   })
 })
 
+describe('what a customer downloads', () => {
+  const cmd = read('../../scripts/agent/launch/jobscout-agent.cmd')
+  const command = read('../../scripts/agent/launch/jobscout-agent.command')
+  const builder = read('../../scripts/build-agent-release.mjs')
+  const bucket = stripProse(read('../../supabase/migrations/20261012061000_agent_releases_bucket.sql'))
+
+  it('both launchers are published with every placeholder filled', () => {
+    // The repo's copies are environment-agnostic on purpose; the build fills
+    // them. A placeholder that reaches a customer is a launcher that tries to
+    // download from the literal string __BASE__.
+    for (const [name, src] of [['cmd', cmd], ['command', command]]) {
+      const holes = [...new Set((src.match(/__[A-Z_]+__/g) || []))]
+      expect(holes.sort(), name).toEqual(['__ANON_KEY__', '__APP__', '__BASE__', '__SUPABASE_URL__'])
+    }
+    expect(builder).toMatch(/replaceAll\('__BASE__'/)
+    expect(builder).toMatch(/if \(left\) die\(/)   // refuses to publish one it missed
+  })
+
+  it('the published agent resolves nothing at runtime', () => {
+    // A downloaded agent has no checkout around it. If the bundle still had a
+    // dynamic import, the leash would be the thing that failed to load.
+    expect(builder).toMatch(/await import\\\(/)   // the guard's own pattern
+    expect(builder).toMatch(/die\('the bundle still resolves something at runtime/)
+    expect(builder).toMatch(/die\('the leash is not in the bundle'\)/)
+    expect(agent).toMatch(/^import \{ decideAction \} from '\.\.\/supabase\/functions\/_shared\/computerGrants\.ts'$/m)
+  })
+
+  it('the release bucket is readable by anyone and writable by nobody', () => {
+    expect(bucket).toMatch(/'agent-releases', 'agent-releases', true/)
+    expect(bucket).toMatch(/for select to anon, authenticated/)
+    // These are programs other people then run. An insert policy here would
+    // let a browser session publish one.
+    expect(bucket).not.toMatch(/for insert/)
+    expect(bucket).not.toMatch(/for update/)
+  })
+
+  it('a half-finished download never replaces a working agent', () => {
+    expect(cmd).toMatch(/agent\.mjs\.new/)
+    expect(cmd).toMatch(/move \/y/)
+    expect(command).toMatch(/mv -f/)
+  })
+})
+
 describe('nobody is asked to copy anything', () => {
   it('the agent connects itself when it has no token', () => {
     expect(agent).toMatch(/if \(!TOKEN\) TOKEN = readSavedToken\(\)/)
@@ -141,5 +184,23 @@ describe('nobody is asked to copy anything', () => {
   it('a refused token reconnects once, instead of sending anyone to a settings page', () => {
     expect(agent).toMatch(/if \(repaired\) die\(/)
     expect(agent).toMatch(/TOKEN = await pair\(\)[\s\S]{0,80}return freshAccess\(\)/)
+  })
+
+  it('and the page no longer hands anybody a token to paste', () => {
+    // The whole reason this feature was unreachable. If a copy button for a
+    // refresh token ever comes back, so does the dead end.
+    const page = stripProse(read('../pages/agents/arnie/ArnieComputer.jsx'))
+    expect(page).not.toMatch(/refresh_token/)
+    expect(page).not.toMatch(/JOBSCOUT_AGENT_TOKEN/)
+    expect(page).not.toMatch(/clipboard/)
+    expect(page).toMatch(/agent-releases/)
+  })
+
+  it('a vanished session is recovered once, not printed forever', () => {
+    // It used to print the raw server error every few seconds until the
+    // window was closed. Found by deleting a session under a running agent.
+    expect(agent).toMatch(/if \(got\.status === 404\)/)
+    expect(agent).toMatch(/if \(resumed\) await stop\(/)
+    expect(agent).toMatch(/resumed = true/)
   })
 })

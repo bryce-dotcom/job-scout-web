@@ -16,7 +16,7 @@ import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import {
   Monitor, ShieldCheck, Ban, Eye, MousePointerClick, Keyboard, Plus, Trash2,
-  AlertTriangle, Power, Copy, Check, GraduationCap, RefreshCw,
+  AlertTriangle, Power, GraduationCap, RefreshCw, Download,
 } from 'lucide-react'
 import { myComputer, myGrants, grant as addGrant, revoke as dropGrant, stop as stopSession } from '../../../lib/arnieComputer'
 import { computerState, agentState, describeAction } from '../../../lib/agentStatus'
@@ -68,9 +68,6 @@ export default function ArnieComputer() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [showConnect, setShowConnect] = useState(false)
-  const [token, setToken] = useState('')
-  const [revealed, setRevealed] = useState(false)
-  const [copied, setCopied] = useState(false)
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState({ app: '', host: '', tier: 'watch' })
 
@@ -94,18 +91,6 @@ export default function ArnieComputer() {
   const status = useMemo(() => computerState({ session: data.session, latest: data.latest, actions: data.actions }), [data])
   const st = agentState(status.state)
 
-  const connect = async () => {
-    setBusy(true); setErr('')
-    try {
-      // The agent gets a REFRESH token and exchanges it for access tokens
-      // itself, exactly as any desktop client would. An access token lasts an
-      // hour, which would make the agent stop working over lunch.
-      const { data: s } = await supabase.auth.getSession()
-      const rt = s?.session?.refresh_token
-      if (!rt) throw new Error('No session to hand over — sign in again.')
-      setToken(rt); setShowConnect(true); setRevealed(false); setCopied(false)
-    } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
-  }
 
   const doStop = async () => {
     if (!data.session) return
@@ -130,8 +115,6 @@ export default function ArnieComputer() {
     try { await dropGrant({ app: g.app, host: g.host }); await load() }
     catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
   }
-
-  const cmd = `JOBSCOUT_AGENT_TOKEN=${revealed ? token : '•'.repeat(28)} node scripts/jobscout-agent.mjs`
 
   return (
     <div style={{ maxWidth: 940, margin: '0 auto', padding: '20px 16px 40px' }}>
@@ -171,8 +154,8 @@ export default function ArnieComputer() {
             <button onClick={load} disabled={busy} style={btn(t.card2, t.sub)}>
               <RefreshCw size={14} /> Refresh
             </button>
-            <button onClick={connect} disabled={busy} style={btn(t.accent, '#fff')}>
-              <Monitor size={14} /> Connect this computer
+            <button onClick={() => setShowConnect((v) => !v)} style={btn(t.accent, '#fff')}>
+              <Download size={14} /> {data.session ? 'Add a computer' : 'Put Arnie on this computer'}
             </button>
             {data.session?.status === 'live' && (
               <button onClick={doStop} disabled={busy} style={btn(t.rmBg, t.rm, t.rm)}>
@@ -182,36 +165,7 @@ export default function ArnieComputer() {
           </div>
         </div>
 
-        {showConnect && (
-          <div style={{ marginTop: 14, borderTop: `1px solid ${t.line}`, paddingTop: 14 }}>
-            <div style={{ fontSize: 13.5, color: t.ink, fontWeight: 600, marginBottom: 6 }}>Run this on the computer you want Arnie to use</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <code style={{
-                flex: 1, minWidth: 260, background: t.card2, border: `1px solid ${t.line}`, borderRadius: 8,
-                padding: '9px 11px', fontSize: 12, color: t.ink, overflowX: 'auto', whiteSpace: 'nowrap',
-              }}>{cmd}</code>
-              <button onClick={() => setRevealed((v) => !v)} style={btn(t.card2, t.sub)}>
-                {revealed ? 'Hide' : 'Reveal'}
-              </button>
-              <button
-                onClick={async () => {
-                  await navigator.clipboard?.writeText(`JOBSCOUT_AGENT_TOKEN=${token} node scripts/jobscout-agent.mjs`)
-                  setCopied(true); setTimeout(() => setCopied(false), 1800)
-                }}
-                style={btn(t.accent, '#fff')}
-              >
-                {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
-            <div style={{ fontSize: 12, color: t.amber, marginTop: 8, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-              <span>
-                This is a key to your own account. It belongs on your computer and nowhere else —
-                do not paste it into a message, a ticket or a shared document.
-              </span>
-            </div>
-          </div>
-        )}
+        {showConnect && <GetTheAgent />}
       </section>
 
       {/* ── 2. What he may touch ─────────────────────────────────────── */}
@@ -340,6 +294,104 @@ export default function ArnieComputer() {
           )
         })}
       </section>
+    </div>
+  )
+}
+
+/**
+ * Putting Arnie on a computer.
+ *
+ * This used to be: reveal a token, copy it, open a terminal, paste it into a
+ * command. That is a thing a developer does. Nobody else was ever going to,
+ * which meant every other feature on this page was unreachable — "it needs to
+ * be easy as hell or people won't use it."
+ *
+ * Now it is two steps, and they really are a sequence, which is why they are
+ * numbered: download one file, open it. The file fetches the agent, the agent
+ * opens the browser, and the person presses Connect on a page they are
+ * already signed in to. Nothing is typed.
+ *
+ * The honesty here is deliberate. A browser WILL warn about a downloaded
+ * launcher, and a person who is not warned about the warning assumes
+ * something is wrong and stops. Saying it first costs a sentence and saves
+ * the install. (A signed installer removes the warning entirely; that is a
+ * certificate purchase, not a code change.)
+ */
+// One numbered step. Defined out here because a component made inside a
+// render is a new component every time, which throws its children away.
+const Step = ({ n, title, children }) => (
+  <div style={{ display: 'flex', gap: 11, marginBottom: 14 }}>
+    <div style={{
+      width: 22, height: 22, borderRadius: '50%', background: t.accentBg, color: t.accent,
+      fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0, marginTop: 1,
+    }}>{n}</div>
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 13.5, fontWeight: 600, color: t.ink, marginBottom: 3 }}>{title}</div>
+      <div style={{ fontSize: 13, color: t.sub, lineHeight: 1.55 }}>{children}</div>
+    </div>
+  </div>
+)
+
+function GetTheAgent() {
+  const base = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/agent-releases`
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  const mac = /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua)
+  const phone = /iPhone|iPad|Android/i.test(ua)
+  const file = mac ? 'JobScout Agent.command' : 'JobScout Agent.cmd'
+  const href = `${base}/${encodeURIComponent(file)}`
+
+  return (
+    <div style={{ marginTop: 14, borderTop: `1px solid ${t.line}`, paddingTop: 14 }}>
+      {phone && (
+        <div style={{
+          background: t.amberBg, color: t.amber, borderRadius: 9, padding: '10px 12px',
+          fontSize: 13, lineHeight: 1.5, marginBottom: 14, display: 'flex', gap: 7, alignItems: 'flex-start',
+        }}>
+          <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            You are on a phone. Arnie works on a computer — open this page on the computer
+            you want him on, and these two steps take about a minute.
+          </span>
+        </div>
+      )}
+
+      <Step n={1} title={`Download it${mac ? '' : ' on that computer'}`}>
+        One small file. It is what starts Arnie and keeps him up to date, so keep it
+        somewhere you can find it again — the desktop is fine.
+        <div style={{ marginTop: 9, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <a href={href} download={file} style={{ ...btn(t.accent, '#fff'), textDecoration: 'none' }}>
+            <Download size={14} /> {mac ? 'Download for Mac' : 'Download for Windows'}
+          </a>
+          <a
+            href={`${base}/${encodeURIComponent(mac ? 'JobScout Agent.cmd' : 'JobScout Agent.command')}`}
+            download
+            style={{ ...btn(t.card2, t.sub), textDecoration: 'none' }}
+          >
+            {mac ? 'Windows version' : 'Mac version'}
+          </a>
+        </div>
+        <div style={{ fontSize: 12, color: t.muted, marginTop: 8, lineHeight: 1.5 }}>
+          Your browser will ask whether to keep it, because it is a program rather than a
+          document. Keep it. {mac
+            ? 'The first time you open it, hold Control and click it, then choose Open — macOS only offers that choice on a first run.'
+            : 'Windows may also show a blue "protected your PC" box — choose More info, then Run anyway.'}
+        </div>
+      </Step>
+
+      <Step n={2} title="Open it">
+        A black window appears and a browser tab opens asking “Connect this computer?”.
+        Press Connect and you are done — nothing to type, nothing to copy. Leave the black
+        window open; closing it is how you stop Arnie on that machine.
+      </Step>
+
+      <div style={{
+        background: t.card2, borderRadius: 9, padding: '10px 12px', fontSize: 12.5,
+        color: t.sub, lineHeight: 1.55,
+      }}>
+        It connects outward only: nothing listens on the computer and no port is opened. The
+        first run installs what it needs, which takes a minute and never happens again.
+      </div>
     </div>
   )
 }
