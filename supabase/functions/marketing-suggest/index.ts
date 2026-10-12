@@ -26,6 +26,40 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/auth.ts'
 import { draftFromCaptures, notifyManagers, loadBrands, brandForUnit, brandKey } from '../_shared/marketing.ts'
+import { geminiKey, paintPicture, picturePrompt } from '../_shared/gemini.ts'
+import { checkCap, recordMediaUsage, MEDIA_PRICES } from '../_shared/mediaMeter.ts'
+
+// A finished job nobody photographed still deserves a post: paint what the
+// field would have shot. Two a night per company, inside the monthly cap.
+const MAX_PAINTED_PER_NIGHT = 2
+async function paintForJob(sb: any, companyId: number, job: any, brandId: string | null): Promise<number | null> {
+  const key = geminiKey()
+  if (!key) return null
+  const cap = await checkCap({ supabaseUrl: Deno.env.get('SUPABASE_URL')!, serviceKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! }, companyId, 'picture', 1)
+  if (!cap.allowed) return null
+  const kitKey = brandId ? `marketing_brand_kit:${brandId}` : 'marketing_brand_kit'
+  const { data: rows } = await sb.from('settings').select('value').eq('company_id', companyId).eq('key', kitKey).limit(1)
+  let kit: Record<string, unknown> = {}
+  const raw = rows?.[0]?.value
+  if (raw && typeof raw === 'object') kit = raw
+  else if (typeof raw === 'string') { try { kit = JSON.parse(raw) } catch { kit = {} } }
+  const city = String(job.job_address || '').split(',').slice(-2, -1)[0]?.trim() || String(kit.service_area || '').split(',')[0] || ''
+  const what = [job.service_type, job.job_title].filter(Boolean).join(' — ') || 'a finished job'
+  const description = `the crew finishing ${what}${city ? ` in ${city}` : ''}, the work just completed and looking its best, afternoon light`
+  const got = await paintPicture(key, picturePrompt(kit, description), 'vertical')
+  if ('error' in got) { console.warn('[marketing-suggest] paint failed', companyId, job.id, got.error); return null }
+  const ext = got.mime.includes('jpeg') ? 'jpg' : 'png'
+  const path = `${companyId}/${new Date().toISOString().slice(0, 7)}/${Date.now()}_ai-picture-job${job.id}.${ext}`
+  const { error: upErr } = await sb.storage.from('marketing-media').upload(path, got.bytes, { contentType: got.mime, upsert: false })
+  if (upErr) return null
+  const { data: pub } = sb.storage.from('marketing-media').getPublicUrl(path)
+  const { data: cap2 } = await sb.from('marketing_captures').insert({
+    company_id: companyId, employee_id: null, job_id: job.id, bucket: 'marketing-media', path, url: pub.publicUrl, media_type: 'image',
+    note: `AI picture: ${description.slice(0, 120)}`, status: 'used', source: 'generated', brand: brandId || null,
+  }).select('id').single()
+  await recordMediaUsage({ supabaseUrl: Deno.env.get('SUPABASE_URL')!, serviceKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! }, { companyId, kind: 'picture', model: got.model, units: 1, costUsd: got.model.startsWith('gemini-3') ? MEDIA_PRICES.picture : MEDIA_PRICES.picture_legacy })
+  return cap2?.id ?? null
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -102,8 +136,9 @@ async function suggestForCompany(sb: any, companyId: number, req: Request) {
   // ── 2. Jobs finished since yesterday morning with photos and no post
   if (made < MAX_DRAFTS_PER_COMPANY) {
     const since = new Date(Date.now() - 26 * 3600e3).toISOString()
-    const { data: jobs } = await sb.from('jobs').select('id, job_title, service_type, completed_at, business_unit')
+    const { data: jobs } = await sb.from('jobs').select('id, job_title, service_type, completed_at, business_unit, job_address')
       .eq('company_id', companyId).gte('completed_at', since).order('completed_at', { ascending: false }).limit(20)
+    let painted = 0
     for (const j of jobs || []) {
       if (made >= MAX_DRAFTS_PER_COMPANY) break
       const brandId = brandForUnit(brands, j.business_unit)
@@ -114,7 +149,19 @@ async function suggestForCompany(sb: any, companyId: number, req: Request) {
         .select('id, file_path, storage_bucket, file_type, photo_context, created_by')
         .eq('company_id', companyId).eq('job_id', j.id).like('file_type', 'image/%')
         .order('created_at', { ascending: false }).limit(12)
-      if (!photos?.length) continue
+      if (!photos?.length) {
+        // Nobody photographed it: paint what they would have shot, and draft from that.
+        if (painted >= MAX_PAINTED_PER_NIGHT) continue
+        const capId = await paintForJob(sb, companyId, j, brandId)
+        if (!capId) continue
+        painted += 1
+        const rp = await makeDraft({ captureIds: [capId], note: `Finished ${[j.service_type, j.job_title].filter(Boolean).join(' — ') || 'a job'}. The picture is AI-made; say so if the brand prefers, or swap in a real one.`, jobId: j.id, brandId, createdBy: null })
+        if (!rp.ok) {
+          console.warn('[marketing-suggest] painted draft failed', companyId, j.id, rp.error)
+          if (rp.unavailable) return { made, titles, skipped, stop: true }
+        }
+        continue
+      }
       // After photos first, then notes, then anything; skip signed docs.
       const rank = (p: any) => (p.photo_context === 'line_after' ? 0 : p.photo_context === 'notes' ? 1 : p.photo_context == null ? 2 : 9)
       const picked = photos.filter((p: any) => rank(p) < 9).sort((a: any, b: any) => rank(a) - rank(b)).slice(0, MAX_PHOTOS_PER_POST)

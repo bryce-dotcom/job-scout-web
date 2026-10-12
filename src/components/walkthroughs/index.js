@@ -46,6 +46,7 @@ import InventoryWalkthrough          from './InventoryWalkthrough'
 import ProductsServicesWalkthrough   from './ProductsServicesWalkthrough'
 import ExpensesWalkthrough           from './ExpensesWalkthrough'
 import ConradWalkthrough             from './ConradWalkthrough'
+import MarketingWalkthrough          from './MarketingWalkthrough'
 import VictorWalkthrough             from './VictorWalkthrough'
 import DougieWalkthrough             from './DougieWalkthrough'
 import MyPayWalkthrough              from './MyPayWalkthrough'
@@ -96,6 +97,7 @@ export const WALKTHROUGHS = {
   'products-services':   ProductsServicesWalkthrough,
   'expenses':            ExpensesWalkthrough,
   'conrad':              ConradWalkthrough,
+  'marketing':           MarketingWalkthrough,
   'victor':              VictorWalkthrough,
   'dougie':              DougieWalkthrough,
   'my-pay':              MyPayWalkthrough,

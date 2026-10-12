@@ -46,6 +46,7 @@ const VOICE_IDS = {
   Domi:       'AZnzlk1XvdvUeBnXmlld',
   Charlie:    'IKne3meq5aSn9XLyUdCD',
   'Jay Wayne':'8Ln42OXYupYsag45MAUy',  // user-added voice
+  Arnie:      'EJy0TYJK5mkEy22WufOP',  // Arnie's own voice (made in ElevenLabs 2026-10-02)
 }
 
 const MODEL = 'eleven_flash_v2_5'   // fast, natural; lower latency than v3

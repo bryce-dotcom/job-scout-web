@@ -512,6 +512,21 @@ export default function Marketing() {
             if (error) { toast.error(error.message); return }
             if (handPost.capture_ids?.length) {
               await supabase.from('marketing_captures').update({ status: 'used', post_id: handPost.id }).eq('company_id', companyId).in('id', handPost.capture_ids)
+              // The tech who shot it hears it went out — same note the publisher sends, written from here because a hand post never touches the server.
+              try {
+                const { data: shot } = await supabase.from('marketing_captures').select('employee_id, media_type').eq('company_id', companyId).in('id', handPost.capture_ids)
+                const who = [...new Set((shot || []).map((c) => c.employee_id).filter((id) => id && id !== currentEmployee?.id))]
+                if (who.length) {
+                  const names = (handPost.platforms || []).map((id) => PLATFORM_BY_ID[id]?.label || id)
+                  const where = names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+                  const what = (shot || []).some((c) => c.media_type === 'video') ? ((shot || []).some((c) => c.media_type !== 'video') ? 'photos and video' : 'video') : 'photo'
+                  await supabase.from('employee_notifications').insert(who.map((employee_id) => ({
+                    company_id: companyId, employee_id, type: 'marketing_posted', title: `Your ${what} just went out`,
+                    message: `The ${what} you sent to marketing is live on ${where || 'the company pages'}. Thanks — keep them coming.`,
+                    route: '/marketing', metadata: { post_id: handPost.id, platforms: handPost.platforms || [], by_hand: true }, dedupe_key: `marketing-posted-${handPost.id}`,
+                  })))
+                }
+              } catch { /* a note is not worth failing the mark */ }
             }
             toast.success('Marked as posted')
             setHandPost(null)

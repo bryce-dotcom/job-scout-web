@@ -53,6 +53,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Hootsuite', 'Buffer', 'a marketing agency retainer', 'the owner posting at 10pm'],
         highlights: ['Field photos become posts', 'Brand kit from EOS', 'One publisher, every network', 'Learns from your edits'],
         route: '/marketing',
+        walkthrough: 'marketing',
         status: 'shipped',
       },
       {

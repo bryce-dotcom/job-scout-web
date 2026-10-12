@@ -23,14 +23,15 @@ export default {
   ],
 
   marketing: {
-    voice: 'Bill',
+    // Arnie narrates this one himself (scripts/generate-walkthrough-audio.cjs maps the name to his voice).
+    voice: 'Arnie',
     scenes: [
-      { id: 'hero',    baseDur: 2800, narration: '' },
-      { id: 'setup',   baseDur: 6000, narration: 'Marketing opens with three steps right on the page. Brand and messaging, connect your social accounts, publish your first post. No hunting through Settings.' },
-      { id: 'brand',   baseDur: 6000, narration: 'Start from EOS. Core values, core focus and marketing strategy become the brand kit. Fix anything that sounds wrong; the AI writes in this voice.' },
-      { id: 'inbox',   baseDur: 6000, narration: 'A tech taps Share to Marketing on a job photo in Field Scout. It lands in the inbox with their note.' },
-      { id: 'draft',   baseDur: 6500, narration: 'Pick the photo, say what happened, Draft with AI. The caption comes back in your voice. Edit it, and the next draft learns from the edit.' },
-      { id: 'publish', baseDur: 5500, narration: 'Approve, then publish now or schedule. the publisher posts it to every connected network at once.' },
+      { id: 'hero',    baseDur: 2800, narration: "Shoot the work. I'll do the rest." },
+      { id: 'capture', baseDur: 7000, narration: 'Open Marketing on your phone and send me what you shot. A photo, a video, or text it to the company number. The scout walks while it sends, and the office has it before the truck leaves.' },
+      { id: 'draft',   baseDur: 7000, narration: 'Pick the photo, tell me what happened, and I draft the post in your brand voice, straight from your EOS. Change a line and the next draft learns it.' },
+      { id: 'video',   baseDur: 8000, narration: "Want a video? I plan it: the before and after, the crew clip, a card with the call. I compose a track to fit, and I read the script myself. No photos yet? I'll paint one." },
+      { id: 'edit',    baseDur: 6500, narration: 'The plan stays with the video. Swap the track, change a line, pick another voice, and make it again. Nothing starts over.' },
+      { id: 'publish', baseDur: 6500, narration: 'Approve once and it goes to every connected network at the same time. And the tech who shot it hears that it went out.' },
     ],
   },
 
@@ -38,7 +39,7 @@ export default {
     overview:
       "The walkthrough is on the Marketing page: fill the brand kit from EOS, tap Connect on each network and sign in, then draft and publish one post. A Manager or above connects accounts and publishes; anyone can share photos and draft.",
     introBaseDur: 1200,
-    introNarration: 'Three steps, all on the page. Brand, channels, first post.',
+    introNarration: 'Three steps, right on the page. Brand, channels, first post.',
     steps: [
       {
         icon: 'Palette',

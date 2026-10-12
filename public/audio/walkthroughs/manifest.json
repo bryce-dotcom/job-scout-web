@@ -1,18 +1,18 @@
 {
-  "lead-setter": {
-    "voice": "Bill",
-    "voiceId": "pqHfZKP75CvOlQylNhV4",
+  "marketing": {
+    "voice": "Arnie",
+    "voiceId": "EJy0TYJK5mkEy22WufOP",
     "lines": [
-      "board",
-      "contact",
-      "callback",
-      "schedule",
-      "commission",
+      "hero",
+      "capture",
+      "draft",
+      "video",
+      "edit",
+      "publish",
       "setup-intro",
       "setup-0",
       "setup-1",
-      "setup-2",
-      "setup-3"
+      "setup-2"
     ]
   }
 }
