@@ -106,6 +106,86 @@ const files = [
 ]
 for (const f of files) writeFileSync(join(OUT, f.key), f.body)
 
+// ── 2b. the single executable, for when there is a certificate ──────────
+//
+// `--exe` compiles the agent into one file that needs no Node installed. It
+// is built with deno rather than Node's own SEA for one reason: SEA on Node
+// 24 is CommonJS-only, and the agent is ESM with top-level await, so SEA
+// would mean restructuring the agent to suit the packager. deno compile takes
+// it as written — and this repo already runs deno on the server side.
+//
+// NOTHING IS PUBLISHED UNSIGNED. An unsigned executable is WORSE than the
+// launcher: Windows shows "Windows protected your PC" with the publisher as
+// unknown, and the people most likely to stop there are the ones we are
+// building this for. The launcher gets a far milder warning and the page
+// warns them about it first. So this builds, checks the signature, and
+// refuses to upload without one.
+const exeWanted = process.argv.includes('--exe')
+if (exeWanted) {
+  const { execFileSync } = await import('node:child_process')
+  const exePath = join(OUT, 'JobScoutAgent.exe')
+  const run = (cmd2, args) => execFileSync(cmd2, args, { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' })
+
+  // `deno` on PATH is a .cmd shim on Windows, and Node will not exec one
+  // without a shell — which is not a door to open for a build step. Find the
+  // real executable instead; on a CI runner it is on PATH as itself.
+  const deno = (() => {
+    if (process.platform !== 'win32') return 'deno'
+    const guesses = [
+      join(process.env.APPDATA || '', 'npm/node_modules/deno/deno.exe'),
+      join(process.env.USERPROFILE || '', '.deno/bin/deno.exe'),
+      'deno.exe',
+    ]
+    for (const g of guesses) {
+      try { readFileSync(g); return g } catch { /* next */ }
+    }
+    return 'deno.exe'
+  })()
+
+  // Signing happens BETWEEN building and publishing, so the publishing run
+  // must not compile a fresh unsigned binary over the signed one. That is the
+  // whole reason this flag exists.
+  const prebuilt = process.argv.includes('--exe-prebuilt')
+
+  try {
+    // --node-modules-dir=none or it embeds the whole of node_modules: 76 MB
+    // becomes 515 MB, which nobody is downloading onto a job site.
+    if (prebuilt) readFileSync(exePath)   // throws if the build step did not run
+    else run(deno, [
+      'compile', '--allow-all', '--node-modules-dir=none',
+      '--include', 'scripts/agent/recorder.ps1',
+      '--include', 'scripts/agent/recorder.jxa.js',
+      '--output', exePath,
+      'scripts/jobscout-agent.mjs',
+    ])
+  } catch (e) {
+    die(prebuilt
+      ? 'no JobScoutAgent.exe in dist-agent — --exe-prebuilt expects the build step to have run'
+      : `deno compile failed: ${String(e.stderr || e.message).slice(0, 400)}`)
+  }
+  const mb = (readFileSync(exePath).length / 1048576).toFixed(0)
+  console.log(`  JobScoutAgent.exe  ${mb} MB`)
+
+  // Is it actually signed? Asked of Windows itself, not inferred from the
+  // fact that a signing step ran without throwing.
+  let signed = null
+  if (process.platform === 'win32') {
+    try {
+      const out = run('powershell.exe', ['-NoProfile', '-Command',
+        `(Get-AuthenticodeSignature -LiteralPath "${exePath}").Status`]).trim()
+      signed = out === 'Valid' ? 'Valid' : out
+    } catch { signed = 'could not be checked' }
+  }
+
+  if (signed === 'Valid') {
+    files.push({ key: 'JobScoutAgent.exe', body: readFileSync(exePath), type: 'application/vnd.microsoft.portable-executable' })
+    console.log('  signature         Valid — it will be published')
+  } else {
+    console.log(`  signature         ${signed || 'not checked on this platform'} — built, NOT published`)
+    console.log('                    (sign it first: .github/workflows/agent-release.yml)')
+  }
+}
+
 // ── 3. publish ──────────────────────────────────────────────────────────
 if (process.argv.includes('--dry-run')) {
   console.log(`\n  dry run — ${files.length} files written to dist-agent, nothing uploaded`)

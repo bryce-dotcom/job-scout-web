@@ -28,7 +28,7 @@
 // Ctrl+C is the kill switch: the session is stopped, anything queued is
 // refused, and nothing more runs on it ever.
 
-import { readFileSync, writeFileSync, rmSync, mkdirSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { resolve, dirname, join } from 'node:path'
@@ -251,15 +251,40 @@ let recTail = ''
 // Control is a FILE, not stdin. PowerShell block-buffers a redirected stdout
 // and [Console]::In.Peek() blocks on a redirected stdin, so a recorder driven
 // through pipes went deaf the moment it was paused — found by running it.
-// The recorders are spawned, not imported, so they are real files on disk
-// that a bundle cannot swallow. In a checkout they sit in scripts/agent; in
-// the packaged agent a customer downloads they sit beside the agent itself.
-// Resolving both beats making the launcher mirror a repo's folder names.
+// The recorders are spawned, not imported, so they must be files that ANOTHER
+// PROCESS can open — and that is a stronger requirement than existing.
+//
+// Inside the compiled single-file agent they do not. The build embeds them,
+// and Deno serves them from a virtual filesystem under a path that looks
+// perfectly real: statSync says yes, readFileSync returns the whole script,
+// and then PowerShell is handed the path and cannot see it at all. Every
+// check we could make from in here passes while the recording quietly never
+// starts — the same shape of silent failure as the storage bucket with no
+// policy, where screenshots vanished and nothing said so.
+//
+// So the bytes are read from wherever they are (a checkout, beside the
+// binary, or the virtual filesystem) and written out ONCE as a real file in
+// this user's own temp directory. The path handed to a shell is then always a
+// path a shell can open.
+const materialised = new Map()
 const recorderPath = (file) => {
-  for (const p of [join(HERE, file), join(HERE, 'agent', file)]) {
-    try { if (statSync(p).isFile()) return p } catch { /* try the next */ }
+  if (materialised.has(file)) return materialised.get(file)
+  const expected = join(HERE, 'agent', file)
+  let body = null
+  for (const p of [join(HERE, file), expected]) {
+    try { body = readFileSync(p); break } catch { /* try the next */ }
   }
-  return join(HERE, 'agent', file)   // the error names the place it expects
+  if (body === null) return expected   // the error then names the place it expects
+  // Per-process, so two agents cannot write each other's script out from
+  // under one another, and so a file left by anything else is replaced.
+  const real = join(tmpdir(), `jobscout-${process.pid}-${file}`)
+  try {
+    writeFileSync(real, body)
+    materialised.set(file, real)
+    return real
+  } catch {
+    return expected
+  }
 }
 
 const startRecorder = (skillId, name) => {

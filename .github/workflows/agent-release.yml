@@ -1,0 +1,102 @@
+# Publish the JobScout Agent — signed.
+#
+# Run by hand (Actions → Agent release → Run workflow). It is not on a
+# schedule and not on push: publishing here replaces the program customers
+# download and run on their own machines, which is not something that should
+# happen because somebody merged a branch.
+#
+# WHY IT LIVES IN CI AT ALL. The signing credentials are an identity that can
+# make Windows trust a program as HHH. They belong in repository secrets with
+# an audit trail, not in a .env on whoever happens to be doing the release.
+#
+# UNTESTED UNTIL A CERTIFICATE EXISTS. Trusted Signing needs an identity
+# validation that takes days, so this file was written against Microsoft's
+# documented inputs and has never run green. Expect to fix something the
+# first time; the build and publish halves are the parts already proven.
+#
+# SECRETS IT NEEDS
+#   AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET
+#       an Entra app registration holding the "Trusted Signing Certificate
+#       Profile Signer" role on the signing account
+#   TRUSTED_SIGNING_ENDPOINT      e.g. https://wus2.codesigning.azure.net
+#   TRUSTED_SIGNING_ACCOUNT       the Trusted Signing account name
+#   TRUSTED_SIGNING_PROFILE       the certificate profile name
+#   VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY
+#       where the release is published; the anon key is baked into the
+#       launchers and is public by design, the service key is not
+
+name: Agent release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to the agent-releases bucket (otherwise build and sign only)'
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    # Windows, because signing and the Authenticode check are Windows tools.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - run: npm ci
+
+      # Build only. The exe is written to dist-agent and nothing is uploaded.
+      - name: Build the agent
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run agent:release -- --exe --dry-run
+
+      - name: Sign it
+        uses: azure/trusted-signing-action@v0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist-agent
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      # Asked of Windows, not inferred from the signing step exiting 0. A
+      # step that "succeeded" and left the file unsigned is exactly the
+      # failure that would otherwise reach customers.
+      - name: Check the signature really took
+        shell: pwsh
+        run: |
+          $sig = Get-AuthenticodeSignature -LiteralPath "dist-agent\JobScoutAgent.exe"
+          "status: $($sig.Status)"
+          "signer: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { throw "not signed: $($sig.Status) $($sig.StatusMessage)" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JobScoutAgent
+          path: dist-agent/JobScoutAgent.exe
+
+      # Only now, and only when asked. The release script re-checks the
+      # signature itself and refuses to upload an unsigned binary, so this
+      # cannot publish one even if the step above is ever removed.
+      - name: Publish
+        if: ${{ inputs.publish }}
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm run agent:release -- --exe --exe-prebuilt

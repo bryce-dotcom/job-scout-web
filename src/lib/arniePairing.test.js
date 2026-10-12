@@ -204,3 +204,59 @@ describe('nobody is asked to copy anything', () => {
     expect(agent).toMatch(/resumed = true/)
   })
 })
+
+describe('the signed executable, when there is a certificate for one', () => {
+  const builder = read('../../scripts/build-agent-release.mjs')
+  const workflow = read('../../.github/workflows/agent-release.yml')
+
+  it('an unsigned executable is never published', () => {
+    // It is WORSE than the launcher: Windows shows "protected your PC" with
+    // the publisher unknown, and the people most likely to stop there are
+    // exactly who this is for.
+    expect(builder).toMatch(/signed === 'Valid'/)
+    expect(builder).toMatch(/built, NOT published/)
+    // The push into the publish list happens only on the Valid branch.
+    const branch = builder.slice(builder.indexOf("if (signed === 'Valid')"), builder.indexOf('} else {', builder.indexOf("if (signed === 'Valid')")))
+    expect(branch).toMatch(/files\.push\(\{ key: 'JobScoutAgent\.exe'/)
+    expect(builder.match(/files\.push\(\{ key: 'JobScoutAgent\.exe'/g)?.length).toBe(1)
+  })
+
+  it('and "is it signed" is asked of Windows, not assumed from an exit code', () => {
+    expect(builder).toMatch(/Get-AuthenticodeSignature/)
+    expect(workflow).toMatch(/Get-AuthenticodeSignature/)
+    expect(workflow).toMatch(/if \(\$sig\.Status -ne 'Valid'\) \{ throw/)
+  })
+
+  it('publishing cannot compile a fresh unsigned binary over the signed one', () => {
+    // Signing happens between building and publishing, so the publish run
+    // uses what is already there.
+    expect(builder).toMatch(/const prebuilt = process\.argv\.includes\('--exe-prebuilt'\)/)
+    expect(builder).toMatch(/if \(prebuilt\) readFileSync\(exePath\)/)
+    expect(workflow).toMatch(/--exe --exe-prebuilt/)
+  })
+
+  it('node_modules stays out of it', () => {
+    // Without this the binary is 515 MB rather than 76 MB — nobody downloads
+    // that onto a job site.
+    expect(builder).toMatch(/'--node-modules-dir=none'/)
+  })
+
+  it('publishing is never automatic', () => {
+    // It replaces the program customers run on their own machines.
+    expect(workflow).toMatch(/on:\n {2}workflow_dispatch:/)
+    expect(workflow).not.toMatch(/on:[\s\S]{0,200}\bpush:/)
+    expect(workflow).toMatch(/if: \$\{\{ inputs\.publish \}\}/)
+  })
+
+  it('the recorder is handed to a shell as a file a shell can open', () => {
+    // Inside the compiled binary the recorders live in deno's virtual
+    // filesystem: statSync says the file is there and readFileSync returns
+    // the whole script, and then PowerShell cannot see it at all. Every check
+    // from inside the agent passes while the recording never starts.
+    expect(agent).toMatch(/const materialised = new Map\(\)/)
+    expect(agent).toMatch(/writeFileSync\(real, body\)/)
+    expect(agent).toMatch(/join\(tmpdir\(\), `jobscout-\$\{process\.pid\}-\$\{file\}`\)/)
+    // The old test — does the path exist — is what made it look fine.
+    expect(agent).not.toMatch(/statSync\(p\)\.isFile\(\)/)
+  })
+})
