@@ -23,6 +23,7 @@ import { ptoDaysInPeriod, ptoPayForPeriod, ptoAccrualPerPeriod, ptoBalanceDays }
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 import { payDateForPeriod } from '../lib/payDate'
 import PlaidLink from '../components/PlaidLink'
+import { benefitDeductionsForPeriod } from '../lib/benefitDeductions'
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const BENEFIT_LABELS = { health: 'Health', dental: 'Dental', vision: 'Vision', life: 'Life', disability: 'Disability', retirement_401k: '401(k)', hsa: 'HSA', fsa: 'FSA', other: 'Other' }
@@ -275,7 +276,7 @@ export default function MyPay() {
           .eq('company_id', companyId).eq('employee_id', effectiveUserId)
           .order('pay_date', { ascending: false }).limit(24),
         supabase.from('employee_benefits')
-          .select('id, benefit_type, plan_name, employee_contribution, employer_contribution, is_pre_tax, frequency, status')
+          .select('id, employee_id, benefit_type, plan_name, employee_contribution, employer_contribution, is_pre_tax, frequency, status')
           .eq('company_id', companyId).eq('employee_id', effectiveUserId).eq('status', 'active')
           .order('benefit_type'),
         fetchRepCommissions(supabase, companyId, effectiveUserId),
@@ -624,6 +625,11 @@ export default function MyPay() {
   }, { gross: 0, net: 0, taxes: 0, checks: stubsThisYear.length })
   const is1099 = me.tax_classification === '1099'
   const w2Count = (useStore.getState().employees || []).filter(e => e.active !== false && e.tax_classification !== '1099').length || null
+  // The same recurring deductions Payroll takes (lib/benefitDeductions), so
+  // the estimate here and the stub agree to the cent.
+  const benefitDed = (!is1099 && grossPay > 0)
+    ? benefitDeductionsForPeriod(benefits, effectiveUserId, normalizePayFrequency(payrollConfig.pay_frequency))
+    : { section125: 0, retirement: 0, postTax: 0, preTaxTotal: 0, lines: [] }
   let takeHomeEst = null
   if (!is1099 && grossPay > 0 && empRow) {
     try {
@@ -633,11 +639,15 @@ export default function MyPay() {
         gross: grossPay,
         ytd: { gross: ytd.gross, ssWages: ytd.gross, medicareWages: ytd.gross },
         payFrequency: normalizePayFrequency(payrollConfig.pay_frequency),
+        preTaxDeductions: Math.min(benefitDed.section125, grossPay),
+        preTaxRetirement: Math.min(benefitDed.retirement, Math.max(0, grossPay - benefitDed.section125)),
+        postTaxDeductions: benefitDed.postTax,
         payDate: payDateForPeriod(periodEnd, payrollConfig) || localDateStr(new Date()),
         employeeCount: w2Count,
       })
     } catch { takeHomeEst = null }
   }
+  const estDeductions = takeHomeEst ? (takeHomeEst.preTaxDeductions || 0) + (takeHomeEst.postTaxDeductions || 0) : 0
   const takeHome = is1099 ? grossPay : (takeHomeEst ? takeHomeEst.netPay : null)
   const ptoBank = ptoBalanceDays(me)
   const ptoAccruing = ptoAccrualPerPeriod(me, payrollConfig.pay_frequency)
@@ -837,7 +847,7 @@ export default function MyPay() {
             <div style={{ fontSize: '22px', fontWeight: '700', color: '#16a34a', marginTop: '2px' }}>{takeHome == null ? '—' : fmt(takeHome)}</div>
             <div style={{ fontSize: '11px', color: theme.textMuted }}>
               {is1099 ? 'no tax withheld, you file your own'
-                : takeHomeEst ? `after ${fmt(takeHomeEst.federalIncomeTax + takeHomeEst.stateIncomeTax + takeHomeEst.socialSecurityEmployee + takeHomeEst.medicareEmployee + takeHomeEst.additionalMedicare + (takeHomeEst.famliEmployee || 0))} in taxes`
+                : takeHomeEst ? `after ${fmt(takeHomeEst.federalIncomeTax + takeHomeEst.stateIncomeTax + takeHomeEst.socialSecurityEmployee + takeHomeEst.medicareEmployee + takeHomeEst.additionalMedicare + (takeHomeEst.famliEmployee || 0))} in taxes${estDeductions > 0 ? ` and ${fmt(estDeductions)} in deductions (${benefitDed.lines.map(l => l.label).join(', ')})` : ''}`
                 : 'estimated when there is pay this period'}
             </div>
           </div>
