@@ -60,8 +60,13 @@ serve(async (req) => {
     }
 
     if (action === 'summary') {
-      const { data } = await sb.from('books_verdicts').select('kind, confidence, status, matches').eq('company_id', company_id).eq('status', 'proposed');
-      const rows = (data || []) as any[];
+      // PostgREST pages at 1,000 rows: walk the pages or the summary lies.
+      const rows: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data } = await sb.from('books_verdicts').select('kind, confidence, status, matches').eq('company_id', company_id).eq('status', 'proposed').order('id').range(from, from + 999);
+        rows.push(...((data || []) as any[]));
+        if (!data || data.length < 1000) break;
+      }
       const byKind: Record<string, number> = {};
       let sure = 0, likely = 0, unsure = 0, matched = 0;
       for (const r of rows) {
