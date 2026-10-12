@@ -26,6 +26,9 @@ import UtilityInvoicedBadge from '../components/UtilityInvoicedBadge'
 import { matchesJobSearch, jobSearchRank } from '../lib/jobSearch'
 import { jobYear, availableJobYears } from '../lib/jobYear'
 import { jobPaymentProgress, paymentsByInvoiceIndex } from '../lib/arHelpers'
+import { priorityBadge, sortByPriority, prioritiesFromSettings } from '../lib/jobPriority'
+import { countsByCustomer, customerIdsOf, batchIds, repeatChip } from '../lib/customerRepeat'
+import { getDeliveredStatusIds } from '../lib/jobMetrics'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
 import { salespersonOptions, hasHiddenSalespeople } from '../lib/salespeople'
@@ -274,6 +277,16 @@ export default function Jobs() {
   const quotes = useStore((state) => state.quotes)
   const businessUnits = useStore((state) => state.businessUnits)
   const storeJobStatuses = useStore((state) => state.jobStatuses)
+  // What this company calls each level. Nothing configured = the defaults,
+  // so the badge works on a tenant that has never opened Settings.
+  const storeSettings = useStore((state) => state.settings)
+  const priorityConfig = prioritiesFromSettings(storeSettings)
+
+  // How many jobs we have finished for each customer. Counted in the DB,
+  // not here: the store deliberately excludes archived jobs and 6,197 of
+  // HHH's 7,171 are archived, so counting what is in memory would tell
+  // almost every repeat customer they were new. lib/customerRepeat says why.
+  const [repeatCounts, setRepeatCounts] = useState({})
   const products = useStore((state) => state.products)
   const fetchJobs = useStore((state) => state.fetchJobs)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
@@ -441,6 +454,35 @@ export default function Jobs() {
     if (fetchProducts) fetchProducts()
     fetchArchivedJobs()
   }, [companyId, navigate, fetchJobs, fetchCustomers, fetchProducts, fetchArchivedJobs])
+
+  // Completed-job counts per customer, from the database.
+  //
+  // Its own effect, like the two below it, so the job list renders whether
+  // or not this lands — a missing count costs a chip, never a row.
+  //
+  // Asked in batches: PostgREST caps ANY response at 1000 rows, RPC included,
+  // and HHH already has 1,076 customers carrying jobs. One call would come
+  // back short with nothing to say so.
+  useEffect(() => {
+    if (!companyId || !jobs.length) return
+    let live = true
+    const ids = customerIdsOf(jobs)
+    if (!ids.length) return
+    const delivered = [...getDeliveredStatusIds(storeJobStatuses)]
+    Promise.all(batchIds(ids).map(batch =>
+      supabase.rpc('customer_completed_job_counts', {
+        p_company_id: companyId,
+        p_customer_ids: batch,
+        p_delivered_statuses: delivered,
+      }).then(({ data, error }) => {
+        if (error) console.warn('[jobs] repeat counts failed:', error.message)
+        return data || []
+      })
+    )).then(pages => {
+      if (live) setRepeatCounts(countsByCustomer(pages.flat()))
+    })
+    return () => { live = false }
+  }, [companyId, jobs, storeJobStatuses])
 
   // Which jobs have a utility rebate invoice out. Its own lookup, and its own
   // effect, so a slow or failed read here can never delay or break the job list.
@@ -649,7 +691,9 @@ export default function Jobs() {
       .map((job, i) => ({ job, i, rank: jobSearchRank(job, searchTerm) }))
       .sort((a, b) => a.rank - b.rank || a.i - b.i)
       .map(x => x.job)
-    : filteredJobs
+    // Urgent first, newest-first preserved inside each level. Only when
+    // nobody is searching — a search result is ordered by what was typed.
+    : sortByPriority(filteredJobs)
 
   // Board view groups — dynamic from boardColumns
   const boardColumnIds = new Set(boardColumns.map(c => c.id))
@@ -1404,6 +1448,28 @@ export default function Jobs() {
                     {/* Main Info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                        {/* Urgency. Absent at normal on purpose — a dot every
+                            job wears is wallpaper nobody reads (lib/jobPriority). */}
+                        {(() => {
+                          const p = priorityBadge(job, priorityConfig)
+                          if (!p) return null
+                          return (
+                            <span
+                              title={p.label}
+                              aria-label={p.label}
+                              style={{
+                                width: '20px', height: '20px', borderRadius: '50%', flexShrink: 0,
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '11px', fontWeight: 700, lineHeight: 1,
+                                backgroundColor: p.urgent ? p.color : 'transparent',
+                                color: p.urgent ? '#fff' : p.color,
+                                border: p.urgent ? 'none' : `1.5px solid ${p.color}`,
+                              }}
+                            >
+                              {p.level}
+                            </span>
+                          )
+                        })()}
                         <span style={{ fontWeight: '600', color: theme.accent, fontSize: '13px' }}>
                           {job.job_id}
                         </span>
@@ -1520,8 +1586,26 @@ export default function Jobs() {
                           </div>
                         )
                       })()}
-                      <p style={{ fontSize: '14px', color: theme.textSecondary }}>
+                      <p style={{ fontSize: '14px', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                         {job.customer?.name || 'No customer'}
+                        {/* A fact about the CUSTOMER, so it sits on their name
+                            rather than repeating itself down every job they own. */}
+                        {(() => {
+                          const chip = repeatChip(repeatCounts[job.customer_id ?? job.customer?.id])
+                          if (!chip) return null
+                          return (
+                            <span
+                              title={chip.label}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                padding: '1px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600,
+                                backgroundColor: theme.accentBg, color: theme.accent,
+                              }}
+                            >
+                              <Repeat size={10} /> {chip.count}
+                            </span>
+                          )
+                        })()}
                       </p>
                       {job.job_address && (
                         <div style={{

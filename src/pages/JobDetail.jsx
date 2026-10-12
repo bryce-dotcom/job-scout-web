@@ -46,6 +46,7 @@ import useSmartBack from '../lib/useSmartBack'
 import { selectPdfPages, pageIndicesFor, PAGES_FIRST } from '../lib/pdfPages'
 import { localDateStr } from '../lib/localDate'
 import { SUBMITTAL_METHODS, SUBMITTAL_METHOD_KEYS, logProblem, submittalRow } from '../lib/submittals'
+import { priorityOf, priorityValue, prioritiesFromSettings, NORMAL_PRIORITY } from '../lib/jobPriority'
 import { toast } from '../lib/toast'
 import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
 import { autoLinkReceipts } from '../lib/expenseMatch'
@@ -187,6 +188,9 @@ function JobDetailInner() {
   const isAdmin = checkAdmin(user)
   const customers = useStore((state) => state.customers)
   const storeJobStatuses = useStore((state) => state.jobStatuses)
+  // What this company calls each urgency level; defaults when unset.
+  const storeSettings = useStore((state) => state.settings)
+  const jobPriorityLevels = prioritiesFromSettings(storeSettings)
   // Needed by the "Who Pays What" AR block + per-invoice balance display
   // (above the invoice list). Without payments in scope, the readers see
   // gross amounts instead of true customer balance.
@@ -1145,6 +1149,22 @@ function JobDetailInner() {
     const patch = adoptLinesTotal(policy.computed)
     setJob(prev => prev ? { ...prev, ...patch } : prev)
     await supabase.from('jobs').update(patch).eq('id', id)
+  }
+
+  // Urgency, set in one click. No edit mode: the whole point is that a job
+  // that just became urgent is marked while the phone is still warm.
+  // Normal is written as NULL — lib/jobPriority#priorityValue is the rule.
+  const setJobPriority = async (level) => {
+    const patch = { priority: priorityValue(level) }
+    setJob(prev => prev ? { ...prev, ...patch } : prev)
+    const { error } = await supabase.from('jobs').update(patch).eq('id', id)
+    if (error) {
+      toast.error('Could not save the priority: ' + error.message)
+      setJob(prev => prev ? { ...prev, priority: job?.priority ?? null } : prev)
+      return
+    }
+    const name = jobPriorityLevels.find(l => l.level === (patch.priority ?? NORMAL_PRIORITY))?.name
+    toast.success(`Priority set to ${name}`)
   }
 
   // "Use the line items total": the person decides the lines own it now.
@@ -4497,6 +4517,40 @@ function JobDetailInner() {
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Business Unit</p>
                   <p style={{ fontSize: '14px', fontWeight: '500', color: theme.text }}>{job.business_unit || '-'}</p>
+                </div>
+                {/* Priority. A control, not a read-out — a job that just became
+                    urgent gets marked while the phone is still warm, and the
+                    job list sorts on it (lib/jobPriority). */}
+                <div>
+                  <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Priority</p>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {jobPriorityLevels.map(lvl => {
+                      const active = priorityOf(job) === lvl.level
+                      const normal = lvl.level === NORMAL_PRIORITY
+                      return (
+                        <button
+                          key={lvl.level}
+                          onClick={() => setJobPriority(lvl.level)}
+                          title={lvl.name}
+                          aria-label={`${lvl.name} priority`}
+                          aria-pressed={active}
+                          style={{
+                            minWidth: '28px', height: '28px', padding: '0 7px',
+                            borderRadius: '8px', cursor: 'pointer',
+                            fontSize: '12px', fontWeight: 700, lineHeight: 1,
+                            backgroundColor: active ? (normal ? theme.bgCardHover : lvl.color) : 'transparent',
+                            color: active ? (normal ? theme.textSecondary : '#fff') : theme.textMuted,
+                            border: `1px solid ${active ? (normal ? theme.border : lvl.color) : theme.border}`,
+                          }}
+                        >
+                          {lvl.level}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                    {jobPriorityLevels.find(l => l.level === priorityOf(job))?.name}
+                  </p>
                 </div>
                 <div>
                   <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '4px' }}>Phone</p>
