@@ -61,7 +61,7 @@ import { enabledWalletsFrom, walletByMethod, displayHandle, walletGuidance, wall
 import { qrDataUrl } from '../lib/qr'
 import { businessUnitFor, logoUrlFrom, portalUrlFor } from '../lib/invoiceSend'
 import { localDateStr } from '../lib/localDate'
-import { clockInChoice } from '../lib/clockInJob'
+import { clockInChoice, mustClockToJob } from '../lib/clockInJob'
 import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
 import { autoLinkReceipts } from '../lib/expenseMatch'
 
@@ -175,8 +175,6 @@ export default function FieldScout() {
   const [weekEntries, setWeekEntries] = useState([])
   const [expandedJob, setExpandedJob] = useState(null)
   const [clockingIn, setClockingIn] = useState(false)
-  // A punch needs a job, or Overhead said out loud — lib/clockInJob.
-  const [clockInOverhead, setClockInOverhead] = useState(false)
   const [clockingOut, setClockingOut] = useState(false)
   const [gpsStatus, setGpsStatus] = useState(null) // null | 'capturing' | 'done' | 'failed'
   const [selectedJobId, setSelectedJobId] = useState('')
@@ -318,6 +316,11 @@ export default function FieldScout() {
   const jobCardRefs = useRef({})
 
   const currentEmployee = employees.find(e => e.email === user?.email)
+  // A field role, or anyone on the bonus, clocks in to a job and nothing
+  // else; an office role's punch is overhead on its own — lib/clockInJob.
+  // The person never chooses, because the bonus pays on hours kept OFF a
+  // job's allotment and an "Overhead" button would be used for exactly that.
+  const needsJob = mustClockToJob(currentEmployee)
 
   // Determine if user is a field role that requires Victor verification before clock-out
   const fieldRoles = ['field tech', 'installer', 'project manager', 'technician', 'foreman', 'crew lead']
@@ -1072,7 +1075,7 @@ export default function FieldScout() {
   // Clock in
   const handleClockIn = async (jobId, opts = {}) => {
     if (clockingIn) return
-    const choice = clockInChoice({ jobId, overhead: opts.overhead ?? clockInOverhead })
+    const choice = clockInChoice({ jobId, employee: currentEmployee })
     if (!choice.ok) { toast.error(choice.reason); return }
     jobId = choice.job_id
     setClockingIn(true)
@@ -1088,7 +1091,7 @@ export default function FieldScout() {
           // yesterday's shift is not in today's list and the banner said "no
           // action needed": Christopher spent five minutes looking for a
           // button that did not exist (02e30d0c). Ask, close it, clock in.
-          setMissedShift({ entry: gate.openShift, clockIn: true, jobId: jobId || null, overhead: opts.overhead ?? clockInOverhead })
+          setMissedShift({ entry: gate.openShift, clockIn: true, jobId: jobId || null })
         }
         // 'already_open' needs no message: that's a double-tap or a second
         // tab, and the user already appears clocked in.
@@ -2312,10 +2315,10 @@ export default function FieldScout() {
           continueLabel={missedShift.clockIn ? 'Close it and clock in' : 'Close that shift'}
           onDismiss={() => setMissedShift(null)}
           onDone={async () => {
-            const { clockIn, jobId, overhead } = missedShift
+            const { clockIn, jobId } = missedShift
             setMissedShift(null)
             await fetchEntries()
-            if (clockIn) handleClockIn(jobId, { overhead })
+            if (clockIn) handleClockIn(jobId)
             else toast.success('Shift closed — payroll will confirm the hours.')
           }}
         />
@@ -4197,31 +4200,23 @@ export default function FieldScout() {
                 )}
             </div>
 
-            {/* No job to pick? Say so. Shop, office and travel time is Overhead,
-                chosen on purpose, so the hours that land on no job are the ones
-                that belong there — not a third of the month (Frankie, Oct 2026). */}
+            {/* A field role has no way to clock in without a job: the bonus pays
+                on hours kept off a job's allotment, so the choice is the role's,
+                not the person's (lib/clockInJob). An office role's punch is
+                overhead on its own. */}
             {!selectedJobId && (
-              <button
-                type="button"
-                onClick={() => setClockInOverhead(v => !v)}
-                style={{
-                  width: '100%', padding: '12px', marginBottom: '10px', minHeight: '44px',
-                  backgroundColor: clockInOverhead ? theme.accentBg : 'transparent',
-                  border: `1px solid ${clockInOverhead ? theme.accent : theme.border}`, borderRadius: '10px',
-                  color: clockInOverhead ? theme.accent : theme.textSecondary, fontSize: '14px', fontWeight: '600', cursor: 'pointer',
-                }}
-              >
-                {clockInOverhead ? '✓ Overhead — shop, office or travel (no job)' : 'No job today? Clock in as Overhead'}
-              </button>
+              <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>
+                {needsJob ? 'Your hours are charged to a job — pick the one you are starting.' : `No job picked: this punch is overhead (${currentEmployee?.role || 'Office'}).`}
+              </div>
             )}
             <button
               onClick={() => handleClockIn(selectedJobId ? parseInt(selectedJobId) : null)}
-              disabled={clockingIn || (!selectedJobId && !clockInOverhead)}
+              disabled={clockingIn || (needsJob && !selectedJobId)}
               style={{
                 width: '100%',
                 padding: '18px',
                 height: '54px',
-                opacity: (!selectedJobId && !clockInOverhead) ? 0.55 : 1,
+                opacity: (needsJob && !selectedJobId) ? 0.55 : 1,
                 background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
                 border: 'none',
                 borderRadius: '12px',
@@ -4236,7 +4231,7 @@ export default function FieldScout() {
               }}
             >
               <Play size={22} />
-              {clockingIn ? (gpsStatus === 'capturing' ? 'Capturing location...' : 'Starting...') : (!selectedJobId && !clockInOverhead) ? 'Pick a job or Overhead to clock in' : clockInOverhead && !selectedJobId ? 'Clock In — Overhead' : 'Clock In'}
+              {clockingIn ? (gpsStatus === 'capturing' ? 'Capturing location...' : 'Starting...') : (needsJob && !selectedJobId) ? 'Pick a job to clock in' : !selectedJobId ? 'Clock In — Overhead' : 'Clock In'}
             </button>
           </div>
         )

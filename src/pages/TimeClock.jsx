@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { isAdmin as checkAdmin, isTeamLead as checkTeamLead, canViewHR } from '../lib/accessControl'
 import { localDateStr } from '../lib/localDate'
-import { clockInChoice, clockableJobs } from '../lib/clockInJob'
+import { clockInChoice, clockableJobs, mustClockToJob } from '../lib/clockInJob'
 import {
   Clock, Play, Square, Coffee, MapPin, Calendar, AlertTriangle,
   Plus, X, ChevronRight, DollarSign, TrendingUp, Award
@@ -52,8 +52,9 @@ export default function TimeClock() {
 
   // Busy guards so repeated taps on Clock In/Out don't fire duplicate DB ops.
   const [busyEmployeeIds, setBusyEmployeeIds] = useState(new Set()) // clock-in busy
-  // What each person is clocking in to: a job id, or 'overhead'. A punch
-  // needs one or the other (lib/clockInJob).
+  // The job each person is clocking in to. A field role (or anyone on the
+  // bonus) must pick one; an office role's punch is overhead on its own —
+  // lib/clockInJob. Nobody gets an "overhead" choice.
   const [clockInTarget, setClockInTarget] = useState({})
   const openJobs = useMemo(() => clockableJobs(storeJobs), [storeJobs])
   const [busyEntryIds, setBusyEntryIds] = useState(new Set())       // clock-out / lunch busy
@@ -350,8 +351,8 @@ export default function TimeClock() {
 
   const handleClockIn = async (employeeId) => {
     if (busyEmployeeIds.has(employeeId)) return // prevent double-tap
-    const target = clockInTarget[employeeId]
-    const choice = clockInChoice({ jobId: target === 'overhead' ? null : target, overhead: target === 'overhead' })
+    const employee = (employees || []).find(e => e.id === employeeId)
+    const choice = clockInChoice({ jobId: clockInTarget[employeeId] || null, employee })
     if (!choice.ok) { alert(choice.reason); return }
     setBusyEmployeeIds(prev => new Set(prev).add(employeeId))
     try {
@@ -1001,23 +1002,31 @@ export default function TimeClock() {
                 </div>
               ) : (
                 <div>
-                  {/* What are they clocking in to? A job, or Overhead on purpose. */}
-                  <select
-                    value={clockInTarget[employee.id] || ''}
-                    onChange={(e) => setClockInTarget(prev => ({ ...prev, [employee.id]: e.target.value }))}
-                    aria-label="Job to clock in to"
-                    style={{ width: '100%', padding: '12px', marginBottom: '10px', minHeight: '44px', border: `1px solid ${theme.border}`, borderRadius: '10px', backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }}
-                  >
-                    <option value="">Choose a job to clock in to…</option>
-                    <option value="overhead">Overhead — shop, office or travel (no job)</option>
-                    {openJobs.map(j => (
-                      <option key={j.id} value={String(j.id)}>{j.job_title || j.job_id || `Job #${j.id}`}{j.customer?.name ? ` — ${j.customer.name}` : ''} ({j.status})</option>
-                    ))}
-                  </select>
+                  {/* Which job? The role decides whether it is required: a field
+                      role or anyone on the bonus must pick one; an office role's
+                      punch is overhead on its own (lib/clockInJob). */}
+                  {(() => { const needsJob = mustClockToJob(employee); return (
+                    <>
+                      <select
+                        value={clockInTarget[employee.id] || ''}
+                        onChange={(e) => setClockInTarget(prev => ({ ...prev, [employee.id]: e.target.value }))}
+                        aria-label="Job to clock in to"
+                        style={{ width: '100%', padding: '12px', marginBottom: '6px', minHeight: '44px', border: `1px solid ${theme.border}`, borderRadius: '10px', backgroundColor: theme.bg, color: theme.text, fontSize: '14px' }}
+                      >
+                        <option value="">{needsJob ? 'Choose the job to clock in to…' : `No job — overhead (${employee.role || 'Office'})`}</option>
+                        {openJobs.map(j => (
+                          <option key={j.id} value={String(j.id)}>{j.job_title || j.job_id || `Job #${j.id}`}{j.customer?.name ? ` — ${j.customer.name}` : ''} ({j.status})</option>
+                        ))}
+                      </select>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '10px' }}>
+                        {needsJob ? 'Hours for this role are charged to a job.' : 'Office role: hours are overhead unless a job is picked.'}
+                      </div>
+                    </>
+                  ) })()}
                   {/* Clock In Button */}
                   {(() => {
                     const inBusy = busyEmployeeIds.has(employee.id)
-                    const chosen = !!clockInTarget[employee.id]
+                    const chosen = !!clockInTarget[employee.id] || !mustClockToJob(employee)
                     return (
                       <button
                         onClick={() => handleClockIn(employee.id)}
@@ -1043,7 +1052,7 @@ export default function TimeClock() {
                         }}
                       >
                         <Play size={24} />
-                        {inBusy ? 'Clocking In…' : !chosen ? 'Pick a job or Overhead' : clockInTarget[employee.id] === 'overhead' ? 'Clock In — Overhead' : 'Clock In'}
+                        {inBusy ? 'Clocking In…' : !chosen ? 'Pick a job to clock in' : (!clockInTarget[employee.id] ? 'Clock In — Overhead' : 'Clock In')}
                       </button>
                     )
                   })()}
