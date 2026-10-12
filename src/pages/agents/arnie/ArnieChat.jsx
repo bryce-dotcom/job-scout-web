@@ -744,13 +744,30 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                 </p>
               </>
             )}
-            {/* Where else he answers. People never found this on their own. */}
-            <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, margin: '0 0 22px', padding: '10px 14px', borderRadius: 10, border: `1px solid ${dark.borderLight}`, backgroundColor: dark.inputBg, color: dark.textSecondary, fontSize: 12.5, textAlign: 'left' }}>
-              {textNumber && <div><span style={{ color: dark.text, fontWeight: 600 }}>Text them:</span> <a href={`sms:${textNumber.raw}`} style={{ color: dark.orange, textDecoration: 'none' }}>{textNumber.pretty}</a> <span style={{ color: dark.textMuted }}>· the card comes back, reply YES to approve</span></div>}
-              <div><span style={{ color: dark.text, fontWeight: 600 }}>Email them:</span> <a href={`mailto:${ARNIE_EMAIL}`} style={{ color: dark.orange, textDecoration: 'none' }}>{ARNIE_EMAIL}</a> <span style={{ color: dark.textMuted }}>· from your work address</span></div>
-              <div><span style={{ color: dark.text, fontWeight: 600 }}>Standing work:</span> <span style={{ color: dark.textMuted }}>say "every weekday at 7am, text me which rocks are off track" and he sets up the routine</span></div>
+            {/* Where else he answers. People never found this on their own,
+                and as a bordered grey box under the presence panel it was a
+                second card competing with the first. It reads as what it is
+                now: a quiet line of ways to reach him, no box at all. */}
+            <div style={{
+              display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'baseline',
+              margin: '0 2px 18px', fontSize: 12, color: dark.textMuted, textAlign: 'left',
+            }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: dark.textMuted }}>
+                Also reach him
+              </span>
+              {textNumber && (
+                <a href={`sms:${textNumber.raw}`} style={{ color: dark.textSecondary, textDecoration: 'none' }}>
+                  {textNumber.pretty}
+                </a>
+              )}
+              <a href={`mailto:${ARNIE_EMAIL}`} style={{ color: dark.textSecondary, textDecoration: 'none' }}>
+                {ARNIE_EMAIL}
+              </a>
+              <span>or say &ldquo;every weekday at 7am, text me which rocks are off track&rdquo; and he sets up the routine</span>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+            {/* Left, with the rest of it. Centred chips under a left-aligned
+                panel was the last thing still floating. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-start' }}>
               {quickActions.map((action) => (
                 <button
                   key={action.label}

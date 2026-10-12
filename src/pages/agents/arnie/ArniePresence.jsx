@@ -104,7 +104,10 @@ export default function ArniePresence({ assistant, personaKey, status, companyNa
       position: 'relative', overflow: 'hidden',
       background: `linear-gradient(160deg, ${c.panel} 0%, ${c.ink} 72%)`,
       border: `1px solid ${c.edge}`, borderRadius: 18,
-      padding: 18, marginBottom: 18,
+      padding: 18, marginBottom: 14,
+      // The welcome state it sits in is centred, which fought the badge and
+      // left the name floating away from the face it belongs to.
+      textAlign: 'left',
     }}>
       <Contours tint={st.tint} />
 
