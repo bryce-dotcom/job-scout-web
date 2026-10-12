@@ -22,13 +22,14 @@ const [jobs, jobLines, products, comps, bonuses, payments, invoices, plaid, expe
   page('products_services', 'id, cost, material_or_labor'),
   sb.from('product_components').select('id, parent_product_id, component_product_id, quantity').then(r => r.data || []),
   page('job_bonuses', 'id, job_id, amount, status'), page('payments'), page('invoices'),
-  page('plaid_transactions'), page('expenses'), page('employees', 'id, name, hourly_rate'),
+  page('plaid_transactions'), page('expenses'), page('employees', 'id, name, hourly_rate, annual_salary, salary, is_salary, pay_type'),
   page('time_clock', 'id, employee_id, job_id, clock_in, clock_out, total_hours'),
   sb.from('settings').select('value').eq('company_id', C).eq('key', 'job_statuses').then(r => r.data),
 ])
 const live = jobs.filter(j => j.status !== 'Archived')
 const jobStatuses = JSON.parse(st?.[0]?.value || '[]')
-const report = jobCosting({ jobs: live, jobLines, products, productComponents: comps, jobBonuses: bonuses, payments, invoices, plaidTransactions: plaid, manualExpenses: expenses, timeClock, employees })
+const { data: companyRow } = await sb.from('companies').select('futa_rate_pct, sui_rate_pct, workers_comp_class_codes').eq('id', C).single()
+const report = jobCosting({ jobs: live, jobLines, products, productComponents: comps, jobBonuses: bonuses, payments, invoices, plaidTransactions: plaid, manualExpenses: expenses, timeClock, employees, company: companyRow })
 const index = buildJobCostIndex(report.rows)
 const money = n => '$' + Math.round(n).toLocaleString()
 const w = getWeekRange(1)

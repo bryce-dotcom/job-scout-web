@@ -7,7 +7,7 @@ import { supabase } from '../../lib/supabase'
 import HelpBadge from '../../components/HelpBadge'
 import { jobCosting } from '../../lib/reports'
 
-export default function JobMarginsCard({ companyId, theme, statCardStyle, formatCurrency, jobs = [], payments = [], invoices = [], manualExpenses = [], plaidTransactions = [], employees = [], onOpenReports }) {
+export default function JobMarginsCard({ companyId, company = null, theme, statCardStyle, formatCurrency, jobs = [], payments = [], invoices = [], manualExpenses = [], plaidTransactions = [], employees = [], onOpenReports }) {
   const [data, setData] = useState(null)
 
   useEffect(() => {
@@ -32,8 +32,10 @@ export default function JobMarginsCard({ companyId, theme, statCardStyle, format
     const now = new Date()
     const from = new Date(now.getFullYear(), now.getMonth(), 1)
     const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
-    return jobCosting({ jobs, payments, invoices, manualExpenses, plaidTransactions, employees, ...data, from, to })
-  }, [data, jobs, payments, invoices, manualExpenses, plaidTransactions, employees])
+    // company carries the employer burden and lets a salary become an hourly
+    // cost — see lib/laborRate.
+    return jobCosting({ jobs, payments, invoices, manualExpenses, plaidTransactions, employees, company, ...data, from, to })
+  }, [data, jobs, payments, invoices, manualExpenses, plaidTransactions, employees, company])
 
   if (!report || report.rows.length === 0) return null
   const costed = report.rows.filter(r => r.total_cost != null && r.revenue > 0)

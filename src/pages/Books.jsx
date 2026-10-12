@@ -299,6 +299,8 @@ export default function Books() {
   const navigate = useNavigate()
   const user = useStore((state) => state.user)
   const companyId = useStore((state) => state.companyId)
+  // Employer burden + salary-derived hourly cost for job margins (lib/laborRate).
+  const company = useStore((state) => state.company)
   const invoices = useStore((state) => state.invoices)
   const utilityInvoices = useStore((state) => state.utilityInvoices)
   const storeExpenses = useStore((state) => state.expenses)
@@ -2630,7 +2632,7 @@ export default function Books() {
 
           <BudgetCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} manualExpenses={expenses} plaidTransactions={plaidTransactions} expenseCategories={expenseCategories} formatCurrency={formatCurrency} />
 
-          <JobMarginsCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency}
+          <JobMarginsCard companyId={companyId} company={company} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency}
             jobs={jobs} payments={payments} invoices={invoices} manualExpenses={[...(expenses || []), ...(storeExpenses || [])]} plaidTransactions={plaidTransactions} employees={employees}
             onOpenReports={() => setActiveTab('tax')} />
 

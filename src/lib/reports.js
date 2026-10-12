@@ -25,6 +25,7 @@ import { calendarDay } from './localDate.js'
 import { invoiceCustomerTotal } from './arHelpers.js'   // explicit extension: plain Node (the Frankie eval runner) needs it
 
 import { timeClockToJobHours } from './bonusCalc'
+import { costRatesByEmployee } from './laborRate.js'   // explicit extension: plain Node runners import this file
 
 function paymentsByInvoiceIndex(payments) {
   const map = new Map()
@@ -365,13 +366,17 @@ export function jobCosting({
   jobs = [], jobLines = [], payments = [], invoices = [],
   products = [], productComponents = [],
   plaidTransactions = [], manualExpenses = [],
-  timeClock = [], employees = [], jobBonuses = [],
+  timeClock = [], employees = [], jobBonuses = [], company = null,
   from, to,
 } = {}) {
   // Actual labor: punched hours × the employee's hourly rate. When a job has
   // punches this replaces the line-derived labor estimate; when it has none
   // the estimate stands (and the row says which it was).
-  const rateByEmployee = new Map((employees || []).map(e => [e.id, Number(e.hourly_rate) || 0]))
+  // What an hour COSTS, not what it pays: a salary spread over a standard
+  // year for people who have no hourly rate, plus the employer's own taxes.
+  // lib/laborRate is the one rule. Pass `company` to include the burden;
+  // without it this is the bare wage, exactly as before.
+  const rateByEmployee = costRatesByEmployee(employees, company)
   const actualLaborByJob = new Map()
   const actualHoursByJob = new Map()
   for (const h of timeClockToJobHours(timeClock || [])) {

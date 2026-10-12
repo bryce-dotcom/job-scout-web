@@ -2972,7 +2972,10 @@ export default function EOS() {
     productComponents: costing.productComponents, jobBonuses: costing.jobBonuses,
     payments, invoices, plaidTransactions, manualExpenses: expenses,
     timeClock, employees,
-  }).rows), [jobs, costing, payments, invoices, plaidTransactions, expenses, timeClock, employees])
+    // Costs an hour at what it costs the company: a salary spread over the
+    // year for people with no hourly rate, plus employer taxes.
+    company,
+  }).rows), [jobs, costing, payments, invoices, plaidTransactions, expenses, timeClock, employees, company])
   const storeData = useMemo(() => ({
     jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, loggedSubmittals, jobStatuses, jobCostIndex, tz,
   }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, loggedSubmittals, jobStatuses, jobCostIndex, tz])
