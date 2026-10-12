@@ -603,7 +603,7 @@ const USE_COMPUTER_TOOL = {
     'Do ONE thing on this person\'s own computer, through the agent they have running on it. ' +
     'Use it when they ask you to work in a program on their machine — a utility portal, a spreadsheet, their email — ' +
     'and when a job needs filing somewhere only their computer can reach. ' +
-    'One action per call: look first (screenshot or read_text) and then act on what is actually there; never guess at a screen you have not seen. ' +
+    'One action per call. LOOK FIRST with kind=screenshot: that one comes straight back to you as a picture of their screen, so you act on what is actually there. Never guess at a screen you have not seen, and look again after anything that would change it. ' +
     'You may be told you have no permission for that program — that is normal and is not an error. Say what you were trying to do and that they can allow it; an offer appears for them to accept. ' +
     'You will NEVER be allowed to type a password, a card number or a code, and you will never be allowed to click Submit, Send, Pay or Delete: those come back for the person to do themselves. Say so plainly and wait rather than trying another way round. ' +
     'Nothing here reads anybody else\'s machine: it is this person\'s computer, their login, their session.',
@@ -612,8 +612,8 @@ const USE_COMPUTER_TOOL = {
     properties: {
       kind: {
         type: 'string',
-        enum: ['screenshot', 'read_text', 'click', 'double_click', 'right_click', 'type', 'key', 'scroll', 'drag', 'launch'],
-        description: 'What to do. screenshot and read_text are how you look before acting.',
+        enum: ['screenshot', 'click', 'double_click', 'right_click', 'type', 'key', 'scroll', 'drag', 'launch'],
+        description: 'What to do. screenshot is how you LOOK — the picture comes straight back to you. (read_text is deliberately not offered: the agent cannot do it, and advertising an action that always fails just burns a turn.)',
       },
       app: { type: 'string', description: 'The program, lowercase and as a person would name it: chrome, excel, outlook.' },
       host: { type: 'string', description: 'For a browser, the site — e.g. rockymountainpower.net. Permission is per site, so always name it.' },
@@ -775,7 +775,37 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       if (out?.decision === 'refused') {
         return { refused: out.reason || 'The leash said no.', say: 'Say what was refused and why, in one line. Do not look for a way round it.' }
       }
-      if (out?.ok) return { queued: true, action_id: out.action_id, device: session.device_label }
+      if (out?.ok) {
+        // A LOOK IS NOT FIRE-AND-FORGET. Every other action can be queued and
+        // reported on later, but the point of a screenshot is the picture,
+        // and a tool that returned "queued" would leave him deciding his next
+        // move blind — which is exactly the state this is fixing. So this one
+        // waits for the agent, then hands the image to the model.
+        if (String(input?.kind || '') === 'screenshot') {
+          const look = await waitForShot(bearer, out.action_id)
+          if (look.url) {
+            const img = await fetch(look.url)
+            const buf = img.ok ? new Uint8Array(await img.arrayBuffer()) : null
+            if (buf && buf.length) {
+              let binary = ''
+              for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i])
+              return {
+                __image: { media_type: 'image/png', data: btoa(binary) },
+                saw: true,
+                device: session.device_label,
+                say: 'Describe only what is actually on this screen. If what you need is not visible, say so and look again rather than assuming.',
+              }
+            }
+          }
+          return {
+            queued: true,
+            action_id: out.action_id,
+            no_picture: look.why,
+            say: 'Say you could not get a look at the screen, and why. Do not describe what you expect to be there.',
+          }
+        }
+        return { queued: true, action_id: out.action_id, device: session.device_label }
+      }
       return { error: out?.error || `the rail answered ${res.status}` }
     }
 
@@ -1660,6 +1690,54 @@ You never type a password, a card number or a one-time code, and you never click
  * Only RECRUITED agents, deliberately: telling somebody to use Lenard when
  * their company has not got him is an advert, not help.
  */
+/**
+ * Wait for the agent to take the picture, then where to find it.
+ *
+ * Bounded on purpose. A laptop that has gone to sleep must not hold a
+ * conversation open: after this he says he could not get a look, which is a
+ * true and useful thing to say, rather than hanging or inventing a screen.
+ */
+/**
+ * What a tool hands back to the model.
+ *
+ * Text, unless the tool returned a picture — a screenshot of somebody's
+ * computer is the one result that cannot be described in JSON without
+ * throwing away the thing that matters. A tool says so by returning
+ * __image, and it arrives as a real image block beside the rest.
+ */
+function toolContent(result: Record<string, unknown>): unknown {
+  const img = (result as { __image?: { media_type: string; data: string } }).__image
+  if (!img?.data) return JSON.stringify(result)
+  const rest = { ...result }
+  delete (rest as Record<string, unknown>).__image
+  return [
+    { type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } },
+    { type: 'text', text: JSON.stringify(rest) },
+  ]
+}
+
+async function waitForShot(bearer: string, actionId: number): Promise<{ url?: string; why?: string }> {
+  const until = Date.now() + 25000
+  let last = 'the agent did not report back in time'
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 1200))
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/arnie-computer`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${bearer}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action: 'shot', action_id: actionId }),
+    })
+    const j = await res.json().catch(() => ({}))
+    if (j?.status === 'ready' && j.url) return { url: j.url }
+    if (j?.status === 'nothing') return { why: j.reason || `the action came back ${j.decision}` }
+    if (j?.error) return { why: j.error }
+  }
+  return { why: last }
+}
+
 async function crewBlock(companyId: number): Promise<string> {
   try {
     // Two plain reads rather than a PostgREST embed. An embed reads as a
@@ -1733,7 +1811,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
     const toolResults = []
     for (const tu of toolUses) {
       const result = await setup.exec(tu.name, tu.input)
-      toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) })
+      toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: toolContent(result) })
     }
     convo.push({ role: 'user', content: toolResults })
   }
@@ -1870,7 +1948,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             if (tu.name === 'use_my_computer' && (result?.offered || result?.over_to_them) && result?.action_id) {
               send('offer', { action_id: result.action_id })
             }
-            toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) })
+            toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: toolContent(result) })
           }
           convo.push({ role: 'user', content: toolResults })
         }

@@ -330,6 +330,40 @@ Deno.serve(async (req) => {
         : { ok: false, action_id: placed.action_id, decision: placed.decision, reason: placed.reason, wants: placed.wants })
     }
 
+    // ── what does it look like? ─────────────────────────────────────────
+    //
+    // The one route that lets Arnie SEE. He queues a screenshot, the agent
+    // takes it and uploads it, and this hands back a short-lived signed URL
+    // for the brain to look at — which is the whole difference between a hand
+    // and a hand with eyes.
+    //
+    // The picture is never public and never guessable: a private bucket, a
+    // URL that dies in two minutes, and only for an action belonging to the
+    // person asking. It is a photograph of somebody's working screen, with
+    // whatever customer happened to be on it.
+    if (action === 'shot') {
+      const id = Number(body.action_id)
+      if (!Number.isFinite(id)) return json({ error: 'action_id is required' }, 400)
+      const [row] = await rest(
+        `arnie_computer_actions?select=id,decision,shot_after,reason,completed_at&id=eq.${id}&employee_id=eq.${me}&limit=1`,
+      )
+      if (!row) return json({ error: 'No action of yours by that id.' }, 404)
+      // Still with the agent: say so rather than returning a blank, so the
+      // caller knows to wait instead of concluding there is nothing to see.
+      if (!row.completed_at) return json({ ok: true, status: 'working' })
+      if (!row.shot_after) {
+        return json({ ok: true, status: 'nothing', decision: row.decision, reason: row.reason })
+      }
+
+      const signed = await fetch(
+        `${SUPABASE_URL}/storage/v1/object/sign/arnie-recordings/${row.shot_after}`,
+        { method: 'POST', headers: H, body: JSON.stringify({ expiresIn: 120 }) },
+      )
+      if (!signed.ok) return json({ error: 'That picture could not be opened.' }, 500)
+      const { signedURL } = await signed.json()
+      return json({ ok: true, status: 'ready', url: `${SUPABASE_URL}/storage/v1${signedURL}`, decision: row.decision })
+    }
+
     // ── a person accepts an offer ───────────────────────────────────────
     //
     // "Arnie offers, you accept." The permission and the thing it is for

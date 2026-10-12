@@ -191,6 +191,36 @@ const call = async (action, body = {}) => {
 }
 
 /** A screenshot into the private recordings bucket. Returns its path. */
+/**
+ * A picture taken for a live action, so he can look at it.
+ *
+ * Until this existed he could act on a computer and not see it: a screenshot
+ * stayed as a temp file on the machine and only its PATH was reported, so
+ * nothing ever reached him. He was a hand with no eyes — able to click in a
+ * program, unable to read what was in front of him, which is the difference
+ * between "allow him Chrome on mail.google.com" being a party trick and being
+ * the product.
+ *
+ * Keyed `a/<action id>.png` because that is what the storage policy checks:
+ * the action has to belong to the person uploading. The local copy is deleted
+ * either way — a photograph of somebody's screen does not linger in temp.
+ */
+const uploadActionShot = async (localPath, actionId) => {
+  const bearer = await freshAccess()
+  const key = `a/${actionId}.png`
+  try {
+    const bytes = await readFile(localPath)
+    const res = await fetch(`${URL_BASE}/storage/v1/object/arnie-recordings/${key}`, {
+      method: 'POST',
+      headers: { apikey: ANON, Authorization: `Bearer ${bearer}`, 'Content-Type': 'image/png', 'x-upsert': 'true' },
+      body: bytes,
+    })
+    return res.ok ? key : null
+  } catch { return null } finally {
+    try { await unlink(localPath) } catch { /* temp */ }
+  }
+}
+
 const uploadShot = async (localPath, skillId, seq) => {
   const bearer = await freshAccess()
   const key = `${skillId}/${String(seq).padStart(5, '0')}.png`
@@ -552,6 +582,15 @@ while (!stopping) {
     await call('report', { session_id: sessionId, action_id: a.id, ok: false, error: out.error })
   } else {
     show('ok', describe(a))
-    await call('report', { session_id: sessionId, action_id: a.id, ok: true, result: out.path ? { shot: out.path } : {} })
+    // A picture goes UP, not just its path. The path was only ever useful on
+    // this machine, which is the one place nobody needed it.
+    const shot = out.path ? await uploadActionShot(out.path, a.id) : null
+    await call('report', {
+      session_id: sessionId,
+      action_id: a.id,
+      ok: true,
+      result: shot ? { shot } : {},
+      shot_after: shot || undefined,
+    })
   }
 }
