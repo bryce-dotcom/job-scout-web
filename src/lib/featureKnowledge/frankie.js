@@ -81,6 +81,7 @@ export default {
     ],
 
     gotchas: [
+      "Frankie also keeps the books (since 2026-10-12): the books-deduce function gives every unconfirmed bank row a verdict with evidence (Books → Money → Frankie's verdicts), review-only until a person accepts it; the nightly cron judges new rows; Close the month on Books → Reports → Year-End is the checklist. Frankie never books a row on its own.",
       'Frankie answers from data, not opinions. Ambiguous questions get clarifying questions back.',
       'Auto-collection reminders use your invoice template — make sure the from-email is set up.',
       'Job profitability needs job_costing rollups (materials, labor, expenses) to be allocated. Un-allocated jobs report zero margin.',
@@ -103,6 +104,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-05-29',
+  lastVerified: '2026-10-12',
   freshUntil: 90,
 }

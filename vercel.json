@@ -77,6 +77,10 @@
     {
       "path": "/api/cron/bid-sam-poll",
       "schedule": "10 6 * * *"
+    },
+    {
+      "path": "/api/cron/books-deduce",
+      "schedule": "5 1,7,13,19 * * *"
     }
   ],
   "functions": {

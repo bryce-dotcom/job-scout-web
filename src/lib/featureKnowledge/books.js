@@ -84,6 +84,7 @@ export default {
     ],
 
     gotchas: [
+      "Frankie's verdicts (Money tab, since 2026-10-12): every unconfirmed bank row gets a verdict from the books-deduce function — what it is, what it matches, how sure, and the evidence — deduced from the ledger first (Stripe payouts, transfer pairs, payroll pay dates, tax liabilities, loan schedules, your category rules, what the payee was confirmed as before, open invoice balances for ONE customer, open incentive claims, invoices marked Paid with no payment row) and from Claude only for rows the rules leave under the bar. Review-only: nothing books until Accept / Book all sure; Correct teaches a category rule. Nightly cron (api/cron/books-deduce) judges new rows. Close the month (Reports → Year-End) is the CPA checklist: unconfirmed rows and untied deposits block; the rest need a look; Mark closed stamps settings.books_closed_through.",
       'Loans (Accounts tab → Loans & lines of credit): a liabilities row, typed in or created from a Plaid loan account (the bank link asks for the Liabilities product; sync_liabilities mirrors the balance and reads rate / next payment nightly). A payment is a loan_payments row; booking a matching bank outflow from the card VERIFIES it, categorises the bank row "Loan Payment", drops the balance by the principal, and Money Out counts only the interest (lib/loanMatch). A connected credit card is NOT a loan — it shows as "owed" under Cash Available.',
       'Venmo / Cash App / Zelle are wallets, not banks: Plaid never sees the wallet. Books tracks the wallet balance as a manual account (Accounts tab, with a running estimate) and reconciles the CASH-OUT when it lands in the real bank — Transactions tab, "Venmo (via bank feed)" filter, or the Match button on an unmatched deposit.',
       'Transactions without categories sit in Uncategorized → ignored by P&L until you tag them. Don\'t leave Uncategorized lingering.',
@@ -121,6 +122,6 @@ export default {
     },
   },
 
-  lastVerified: '2026-09-15',
+  lastVerified: '2026-10-12',
   freshUntil: 90,
 }

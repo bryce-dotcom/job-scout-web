@@ -66,6 +66,7 @@ import { TAX_CATEGORIES, TAX_CATEGORY_OPTIONS } from '../lib/taxCategories'
 import PlaidLink from '../components/PlaidLink'
 import LoansCard from './books/LoansCard'
 import VerdictsPanel from './books/VerdictsPanel'
+import MonthCloseCard from './books/MonthCloseCard'
 import { loanJournalRows } from '../lib/loanMatch'
 export { TAX_CATEGORIES, TAX_CATEGORY_OPTIONS }
 
@@ -3996,6 +3997,7 @@ export default function Books() {
           )}
 
           {reportsSubTab !== 'standard' && (<>
+          <MonthCloseCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency} navigate={navigate} setActiveTab={setActiveTab} userEmail={user?.email || null} />
           <WalletReceiptsCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} from={taxDateFrom} to={taxDateTo} />
           <SalesTaxCard companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency} invoices={invoices} payments={payments} manualExpenses={expenses} from={taxDateFrom} to={taxDateTo} accountingBasis={accountingBasis} />
           <Contractor1099Card companyId={companyId} theme={theme} statCardStyle={statCardStyle} formatCurrency={formatCurrency} year={parseInt(String(taxDateTo).slice(0, 4), 10)} employees={employees} manualExpenses={expenses} bills={accrualBills.bills} billPayments={accrualBills.billPayments} navigate={navigate} />
