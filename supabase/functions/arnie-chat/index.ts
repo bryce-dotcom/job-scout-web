@@ -1482,6 +1482,7 @@ Deno.serve(async (req) => {
     const systemPromptFinal = agent === 'arnie' && companyId != null && caller.employeeId != null
       ? systemPrompt + await memoriesBlock(companyId, caller.employeeId)
         + await computerBlock(companyId, caller.employeeId)
+        + await crewBlock(companyId)
       : systemPrompt
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -1639,6 +1640,63 @@ async function computerBlock(companyId: number, employeeId: number): Promise<str
 ## Your hands on their computer
 ${lines.join('\n')}
 You never type a password, a card number or a one-time code, and you never click Submit, Send, Pay, Delete or anything else that cannot be taken back — those come back for them. This is not a setting that can be changed, so say so plainly and wait instead of looking for another route.`
+  } catch { return '' }
+}
+
+/**
+ * The crew THIS company actually has, and what each one is for.
+ *
+ * The prompt used to carry a hardcoded sentence — "Lenard for lighting,
+ * Freddy for fleet, Conrad for email, Victor for verification" — written when
+ * there were four agents. There are twenty-four in the catalogue now, and no
+ * two companies have the same crew: HHH has nine, a lawn company has Zach, a
+ * bidder has Benny and Sal. A list typed into a prompt is a list that is
+ * wrong for almost everybody and goes stale the day somebody ships an agent.
+ *
+ * So it is read. He learns who he works with the same way he learns anything
+ * else about this company, and an agent recruited this morning is one he
+ * knows about this afternoon with nobody editing a prompt.
+ *
+ * Only RECRUITED agents, deliberately: telling somebody to use Lenard when
+ * their company has not got him is an advert, not help.
+ */
+async function crewBlock(companyId: number): Promise<string> {
+  try {
+    // Two plain reads rather than a PostgREST embed. An embed reads as a
+    // column to schema:check — which is right to be strict about it: this
+    // project has lost whole features to a select that silently returned
+    // nothing, and an embed is exactly the shape that does it quietly.
+    const H = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
+    const mineRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/company_agents?select=agent_id&company_id=eq.${companyId}`, { headers: H },
+    )
+    const mine = mineRes.ok ? await mineRes.json() : []
+    const ids = (Array.isArray(mine) ? mine : []).map((r: any) => Number(r.agent_id)).filter(Boolean)
+    if (!ids.length) return ''
+
+    const agentsRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/agents?select=slug,full_name,tagline,description&id=in.(${ids.join(',')})&order=display_order`,
+      { headers: H },
+    )
+    const rows = agentsRes.ok ? await agentsRes.json() : []
+    const crew = (Array.isArray(rows) ? rows : []).filter((a: any) => a?.slug && a.slug !== 'arnie-og')
+    if (!crew.length) return ''
+
+    const lines = crew.map((a: any) => {
+      const what = String(a.tagline || a.description || '').replace(/\s+/g, ' ').trim().slice(0, 140)
+      return `- **${a.full_name}** — ${what}`
+    })
+
+    return `
+
+## The crew you work with here
+These are the specialists this company has, and the work that belongs to each.
+${lines.join('\n')}
+Hand work over by NAME when it belongs to one of them, and say what they will
+do with it — "that's Lenard's, he'll read the fixture off the photo and price
+the retrofit". Do not do a specialist's job badly yourself, and do not send
+somebody to an agent this company has not got. You stay on the job either way:
+you are the one who knows where everything is.`
   } catch { return '' }
 }
 
