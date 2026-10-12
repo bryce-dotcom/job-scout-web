@@ -25,7 +25,7 @@ export function picturePrompt(kit: Record<string, unknown>, description: string,
     `A photorealistic marketing photograph for ${kit.company_name || 'a field-services company'}${services ? ` (${services})` : ''}${area ? ` in ${area}` : ''}.`,
     `Scene: ${description}.`,
     `Style: ${style || 'natural daylight, documentary, shot on a phone by the crew, true to life'}. Real job site, real materials, believable people seen from behind or at a distance, no faces in close-up.`,
-    'No text, no captions, no logos, no watermarks, no borders. Vertical social-media framing with room for a headline at the top.',
+    'No text, no captions, no logos, no watermarks, no borders. Any signs, shirts, vehicles, windows and labels are blank, with no readable lettering anywhere. Vertical social-media framing with room for a headline at the top.',
   ].join(' ')
 }
 
