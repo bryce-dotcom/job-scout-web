@@ -502,14 +502,20 @@ export function calcPaystubTax(input) {
     gross,
     ytd = { gross: 0, ssWages: 0, medicareWages: 0 },
     payFrequency = company?.pay_frequency || 'bi-weekly',
-    preTaxDeductions = 0,
+    preTaxDeductions = 0,    // Section 125 (health, HSA, FSA…): off the top for income tax AND FICA
+    preTaxRetirement = 0,    // traditional 401k: off the top for income tax only; FICA stays on the full wage
     postTaxDeductions = 0,
     payDate = null,          // YYYY-MM-DD; picks the tax year and the state revision. Today when omitted.
     employeeCount = null,    // W-2 headcount; Colorado's FAMLI employer share is waived at 9 or fewer
   } = input
 
   const grossN = Number(gross) || 0
-  const taxableWages = Math.max(0, grossN - (Number(preTaxDeductions) || 0))
+  const sec125 = Number(preTaxDeductions) || 0
+  const retirement = Number(preTaxRetirement) || 0
+  // What FICA, FUTA and SUI see: gross less Section 125 only.
+  const ficaWages = Math.max(0, grossN - sec125)
+  // What income tax sees: that, less the 401k. This is W-2 box 1.
+  const taxableWages = Math.max(0, ficaWages - retirement)
   const state = String(company?.state_employer_id_state || company?.state || 'UT').toUpperCase()
 
   // Federal income tax (uses W-4)
@@ -525,12 +531,9 @@ export function calcPaystubTax(input) {
     payDate,
   })
 
-  // FICA (taxable wages, not gross — pre-tax 401k DOES reduce SS/Medicare
-  // base for traditional contributions; HSA also pre-FICA. Simplified
-  // here as "preTaxDeductions all reduce FICA base" — refine when we
-  // add deduction kinds.)
+  // FICA on the Section 125-reduced wage; a 401k does not reduce it.
   const fica = calcFICA({
-    gross: taxableWages,
+    gross: ficaWages,
     ytdGrossBeforeThis:    Number(ytd.ssWages)       || 0,
     ytdMedicareBeforeThis: Number(ytd.medicareWages) || 0,
     payDate,
@@ -538,7 +541,7 @@ export function calcPaystubTax(input) {
 
   // FUTA (employer)
   const futa = calcFUTA({
-    gross: taxableWages,
+    gross: ficaWages,
     ytdGrossBeforeThis: Number(ytd.gross) || 0,
     ratePct: Number(company?.futa_rate_pct) || 0,
     payDate,
@@ -559,7 +562,7 @@ export function calcPaystubTax(input) {
   // SUI (employer) — the company's wage base if entered, else the state's
   // published one for the tax year (lib/suiRate).
   const sui = calcSUI({
-    gross: taxableWages,
+    gross: ficaWages,
     ytdGrossBeforeThis: Number(ytd.gross) || 0,
     ratePct: Number(company?.sui_rate_pct) || 0,
     wageBase: Number(company?.sui_wage_base) || suiWageBaseFor(state, taxYearOf(payDate)) || UTAH_SUI_WAGE_BASE_2026,
@@ -567,19 +570,23 @@ export function calcPaystubTax(input) {
 
   // Colorado FAMLI — employee share withheld after tax, employer share a cost.
   const famli = state === 'CO'
-    ? calcColoradoFamli({ gross: taxableWages, ytdGrossBeforeThis: Number(ytd.gross) || 0, employeeCount, payDate })
+    ? calcColoradoFamli({ gross: ficaWages, ytdGrossBeforeThis: Number(ytd.gross) || 0, employeeCount, payDate })
     : { employee: 0, employer: 0 }
 
-  // Net pay
-  const totalEmployeeWithheld = r2(
-    fit + fica.socialSecurityEmployee + fica.medicareEmployee +
-    fica.additionalMedicare + sit + famli.employee + (Number(postTaxDeductions) || 0)
-  )
-  const netPay = r2(grossN - (Number(preTaxDeductions) || 0) - totalEmployeeWithheld)
+  // Net pay. A deduction can take the check to zero, never below it: with
+  // no pay there is nothing to deduct from, and a negative check is not a
+  // thing. The uncollected part is simply not taken this period.
+  const taxesWithheld = r2(fit + fica.socialSecurityEmployee + fica.medicareEmployee + fica.additionalMedicare + sit + famli.employee)
+  const roomForPostTax = Math.max(0, r2(grossN - sec125 - retirement - taxesWithheld))
+  const postTax = Math.min(Number(postTaxDeductions) || 0, roomForPostTax)
+  const totalEmployeeWithheld = r2(taxesWithheld + postTax)
+  const netPay = r2(grossN - sec125 - retirement - totalEmployeeWithheld)
 
   return {
     grossPay:               r2(grossN),
-    preTaxDeductions:       r2(Number(preTaxDeductions) || 0),
+    preTaxDeductions:       r2(sec125 + retirement),   // both kinds; the stub column is one number
+    preTaxRetirement:       r2(retirement),
+    ficaWages:              r2(ficaWages),
     taxableWages:           r2(taxableWages),
 
     // Employee withholdings
@@ -589,7 +596,7 @@ export function calcPaystubTax(input) {
     medicareEmployee:       fica.medicareEmployee,
     additionalMedicare:     fica.additionalMedicare,
     famliEmployee:          famli.employee,     // Colorado only; 0 elsewhere
-    postTaxDeductions:      r2(Number(postTaxDeductions) || 0),
+    postTaxDeductions:      r2(postTax),
 
     // Employer-side (don't reduce net pay; tracked for liability ledger)
     socialSecurityEmployer: fica.socialSecurityEmployer,

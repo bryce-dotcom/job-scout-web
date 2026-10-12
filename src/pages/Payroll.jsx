@@ -31,6 +31,7 @@ import { payrollSetupProblems, setupGateSummary } from '../lib/payrollSetupGate'
 import { payrollRunGuards } from '../lib/payrollRunGuards'
 import { deliverPaystubs, deliverySummary } from '../lib/paystubDelivery'
 import { isUsableOverrideReason, hrRecipients, overrideEmail } from '../lib/bonusOverride'
+import { benefitDeductionsForPeriod } from '../lib/benefitDeductions'
 import PlaidLink from '../components/PlaidLink'
 import { ptoDaysInPeriod, ptoAccrualPerPeriod, ptoPayForPeriod, ptoBankAfterRun } from '../lib/ptoThisPeriod'
 import TypedHoursReview from '../components/TypedHoursReview'
@@ -392,6 +393,17 @@ export default function Payroll() {
   const [locationTrailEntry, setLocationTrailEntry] = useState(null) // entry to show on map
   const [periodOffset, setPeriodOffset] = useState(0) // 0 = current, -1 = previous, etc.
   const [adjustments, setAdjustments] = useState([])
+  // Recurring deductions from the employee card (employee_benefits). Gusto
+  // took these every check; the run here never read them until 2026-10-12.
+  const [benefits, setBenefits] = useState([])
+  useEffect(() => {
+    if (!companyId) { setBenefits([]); return }
+    let cancelled = false
+    supabase.from('employee_benefits').select('id, employee_id, benefit_type, plan_name, employee_contribution, employer_contribution, is_pre_tax, frequency, status')
+      .eq('company_id', companyId).eq('status', 'active')
+      .then(({ data }) => { if (!cancelled) setBenefits(data || []) })
+    return () => { cancelled = true }
+  }, [companyId])
   const [verificationReports, setVerificationReports] = useState([])
   // YTD paystubs (this calendar year) so the tax engine can correctly
   // cap Social Security wage base + trip Additional Medicare. Built once
@@ -1816,10 +1828,20 @@ export default function Payroll() {
     const empAdjustments = adjustments.filter(a => a.employee_id === employee.id && a.category !== 'bonus_override')
     const totalAdditions = empAdjustments.filter(a => a.type === 'addition').reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0)
     const totalDeductions = empAdjustments.filter(a => a.type === 'deduction').reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0)
-
+    // The card's recurring deductions for this paycheck: health off the top
+    // for everything, a 401k off the top for income tax, the rest off the net.
     // Pre-tax: gross + additions (additions are pre-tax for simplicity in v1).
     // Post-tax: deductions come off the net.
     const taxableGross = grossPay + totalAdditions
+    // No pay this period, nothing to deduct from; and a pre-tax deduction
+    // cannot exceed the pay it comes off.
+    const benefitRaw = taxableGross > 0 ? benefitDeductionsForPeriod(benefits, employee.id, normalizePayFrequency(payrollConfig.pay_frequency)) : { section125: 0, retirement: 0, postTax: 0, preTaxTotal: 0, employerCost: 0, lines: [] }
+    const benefitDed = {
+      ...benefitRaw,
+      section125: Math.min(benefitRaw.section125, taxableGross),
+      retirement: Math.min(benefitRaw.retirement, Math.max(0, taxableGross - Math.min(benefitRaw.section125, taxableGross))),
+    }
+    benefitDed.preTaxTotal = Math.round((benefitDed.section125 + benefitDed.retirement) * 100) / 100
 
     // ── TAX ENGINE ──
     // 1099 contractors: NO tax withheld — they pay self-employment tax
@@ -1842,8 +1864,9 @@ export default function Payroll() {
         gross: taxableGross,
         ytd: ytdForEmp,
         payFrequency: normalizePayFrequency(payrollConfig.pay_frequency),
-        preTaxDeductions: 0,
-        postTaxDeductions: totalDeductions,
+        preTaxDeductions: benefitDed.section125,
+        preTaxRetirement: benefitDed.retirement,
+        postTaxDeductions: totalDeductions + benefitDed.postTax,
         // The payday this period is paid on decides which Utah Pub 14
         // revision applies (4.5% before 1 June 2026, 4.45% after).
         payDate: payDateForPeriod(cfpEnd, payrollConfig) || localDateStr(new Date()),
@@ -1876,10 +1899,12 @@ export default function Payroll() {
       grossPay: Math.round(grossPay * 100) / 100,
       totalAdditions: Math.round(totalAdditions * 100) / 100,
       totalDeductions: Math.round(totalDeductions * 100) / 100,
+      benefitLines: benefitDed.lines,
+      benefitEmployerCost: benefitDed.employerCost,
       // netPay below is the OLD pre-tax net (gross + additions - deductions).
       // Kept under the same key so any place that reads it doesn't break.
       // The new tax-aware net is exposed under `tax.netPay`.
-      netPay: Math.round((grossPay + totalAdditions - totalDeductions) * 100) / 100,
+      netPay: Math.round((grossPay + totalAdditions - totalDeductions - (is1099 ? 0 : benefitDed.postTax + benefitDed.preTaxTotal)) * 100) / 100,
       adjustments: empAdjustments,
       // Tax breakdown — drives the per-employee paystub display + writes
       // payroll_tax_liabilities rows on payroll save. Null for 1099s.
@@ -1935,7 +1960,7 @@ export default function Payroll() {
     // "temperamental" commission column was this race. bonusesByEmployee and
     // periodOffset are read in here too and belong on the list for the same
     // reason, even though other deps happened to cover them.
-  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, repCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, verificationReports, utilityInvoicesState, bonusOverrides, accruedByEmployee, bonusesByEmployee, company, suiRateHistory, periodTimeOff, periodOffset])
+  }, [activeEmployees, timeEntries, timeLogEntries, payments, invoices, jobs, leads, leadCommissions, repCommissions, allPaymentsByInvoiceId, payrollConfig, skillLevelSettings, adjustments, benefits, verificationReports, utilityInvoicesState, bonusOverrides, accruedByEmployee, bonusesByEmployee, company, suiRateHistory, periodTimeOff, periodOffset])
 
   const totalPayroll = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.grossPay, 0),
@@ -6263,6 +6288,9 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
               {data.tax && data.hasW4 && (
                 <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: 2 }}>
                   After all taxes + deductions
+                  {data.benefitLines?.length > 0 && (
+                    <span> · {data.benefitLines.map(l => `${l.label} ${fmt(l.amount)} (${l.treatment})`).join(', ')}</span>
+                  )}
                 </div>
               )}
               {data.is1099 && (
