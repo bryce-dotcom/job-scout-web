@@ -3,7 +3,7 @@ import AssistantAvatar, { useAssistant } from './AssistantAvatar'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import ArnieChat from '../pages/agents/arnie/ArnieChat'
-import { X, Clock, SquarePen, ChevronRight, ChevronDown } from 'lucide-react'
+import { X, Clock, SquarePen, ChevronRight, ChevronDown, Maximize2 } from 'lucide-react'
 import ArniePersona from '../pages/agents/arnie/ArniePersona'
 import { stopSpeaking } from '../pages/agents/arnie/arnieVoice'
 import { loadSessions, getLastSessionId } from '../pages/agents/arnie/arnieEngine'
@@ -289,6 +289,24 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
                   }}
                 >
                   <Clock size={18} color={showRecent ? dark.orange : dark.textMuted} />
+                </button>
+                {/* THE DOOR TO THE REST OF HIM.
+                    Everything built on Arnie's page — the computer he can
+                    work on, who your assistant is, what he has been taught,
+                    standing work — was unreachable: the sidebar has no Arnie
+                    entry, so the only way in was typing the URL. "Nobody in
+                    the company saw an Arnie page." People live in this
+                    drawer, so the way out of it belongs in this drawer. */}
+                <button
+                  onClick={() => { handleClose(); navigate('/agents/arnie') }}
+                  title="Open the full page — computer, taught tasks, routines"
+                  style={{
+                    width: 36, height: 36, borderRadius: 8, border: 'none',
+                    backgroundColor: 'transparent', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Maximize2 size={17} color={dark.textMuted} />
                 </button>
                 <button
                   onClick={handleClose}
