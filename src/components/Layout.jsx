@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext, useMemo } from 'react'
 import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useStore } from '../lib/store'
+import BuildTag from './BuildTag'
 import { configFromSettings, navLabel } from '../lib/documentVocabulary'
 import { fetchDueFollowUpCount } from '../lib/followUpDue'
 import FeedbackButton from './FeedbackButton'
@@ -1473,6 +1474,8 @@ export default function Layout() {
                 <LogOut size={18} />
                 Sign Out
               </button>
+              {/* Which build this is, and the way out of a stale one. */}
+              <BuildTag theme={theme} />
             </div>
           </div>
         </aside>
@@ -2045,6 +2048,7 @@ export default function Layout() {
                     <LogOut size={18} />
                     Sign Out
                   </button>
+                  <BuildTag theme={theme} />
                 </div>
               </div>
             </aside>
