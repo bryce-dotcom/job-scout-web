@@ -7,6 +7,7 @@ import { utilityFormsForJob } from '../lib/jobUtility'
 import { findMatchingCustomer, contactGapPatch } from '../lib/customerMatch'
 import { useStore } from '../lib/store'
 import { leadStatusForJob } from '../lib/leadDeliveryStatus'
+import { linkLeadEstimateToJob } from '../lib/leadEstimateLink'
 import { RecordHistoryButton } from '../components/RecordHistory'
 import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
@@ -839,6 +840,12 @@ export default function LeadDetail() {
         .single()
 
       if (jobError) throw jobError
+
+      // The lead's estimate becomes this job: link both ways, or the estimate
+      // reads as still open in the funnel and the close never counts
+      // (lib/leadEstimateLink — only an unambiguous, recent, staged estimate).
+      const linkedEstimate = await linkLeadEstimateToJob(supabase, { quotes, job: newJob })
+      if (linkedEstimate) toast.info(`Linked estimate ${linkedEstimate.estimate_name || linkedEstimate.quote_id || '#' + linkedEstimate.id} to the job`)
 
       // Advance the lead into the delivery pipeline at the new job's status
       await updateLead(lead.id, { status: leadStatusForJob('Scheduled', storeJobStatuses), updated_at: new Date().toISOString() })
