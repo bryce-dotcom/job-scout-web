@@ -61,7 +61,7 @@ import { enabledWalletsFrom, walletByMethod, displayHandle, walletGuidance, wall
 import { qrDataUrl } from '../lib/qr'
 import { businessUnitFor, logoUrlFrom, portalUrlFor } from '../lib/invoiceSend'
 import { localDateStr } from '../lib/localDate'
-import { clockInChoice, mustClockToJob } from '../lib/clockInJob'
+import { clockInChoice, mustClockToJob, clockInSettings } from '../lib/clockInJob'
 import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
 import { autoLinkReceipts } from '../lib/expenseMatch'
 
@@ -320,7 +320,8 @@ export default function FieldScout() {
   // else; an office role's punch is overhead on its own — lib/clockInJob.
   // The person never chooses, because the bonus pays on hours kept OFF a
   // job's allotment and an "Overhead" button would be used for exactly that.
-  const needsJob = mustClockToJob(currentEmployee)
+  const clockRule = clockInSettings(useStore.getState())
+  const needsJob = mustClockToJob(currentEmployee, clockRule)
 
   // Determine if user is a field role that requires Victor verification before clock-out
   const fieldRoles = ['field tech', 'installer', 'project manager', 'technician', 'foreman', 'crew lead']
@@ -1075,7 +1076,7 @@ export default function FieldScout() {
   // Clock in
   const handleClockIn = async (jobId, opts = {}) => {
     if (clockingIn) return
-    const choice = clockInChoice({ jobId, employee: currentEmployee })
+    const choice = clockInChoice({ jobId, employee: currentEmployee, settings: clockInSettings(useStore.getState()) })
     if (!choice.ok) { toast.error(choice.reason); return }
     jobId = choice.job_id
     setClockingIn(true)

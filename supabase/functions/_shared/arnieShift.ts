@@ -15,6 +15,7 @@
 // Who: your OWN open shift, anyone. Someone else's, admin — the Payroll
 // page's rule.
 
+import { clockInChoice, loadClockInSettings } from './clockInRule.ts'
 import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
 import { readRecordList, patchRow } from './arnieRest.ts'
@@ -216,7 +217,7 @@ export async function proposeShiftOpen(
   if (v && v !== 'now') return { error: 'I clock you in at the moment you approve the card. A punch at an earlier time is an adjustment — that is fixed on the Payroll page, not here.' }
 
   // Only yourself. The clock-in button has no "for someone else" either.
-  const emps = await readRecordList(r, `employees?select=id,name&company_id=eq.${companyId}&active=eq.true`)
+  const emps = await readRecordList(r, `employees?select=id,name,role,skill_level&company_id=eq.${companyId}&active=eq.true`)
   const me = emps.find((e: any) => String(e.id) === String(caller.employeeId))
   if (!me) return { error: 'This login has no active employee record, so there is no one to clock in.' }
   const other = emps.find((e: any) => String(e.id) !== String(me.id) && nameHits(e.name, q))
@@ -251,7 +252,11 @@ export async function proposeShiftOpen(
   }
   const [from] = cur?.job_id ? await readRecordList(r, `jobs?select=${JOB_SEL}&company_id=eq.${companyId}&id=eq.${cur.job_id}&limit=1`) : [null]
 
-  const target = job ? jobLine(job) : 'general (no job)'
+  // The same rule as the Field Scout button (_shared/clockInRule.ts): a field
+  // role, or anyone on the bonus, gets no general punch from the chat either.
+  const choice = clockInChoice({ jobId: job?.id ?? null, employee: me, settings: await loadClockInSettings(r, companyId) })
+  if (!choice.ok) return { error: choice.reason + ' Tell me the job and I will clock you in on it.' }
+  const target = job ? jobLine(job) : `overhead (${me.role || 'Office'}, no job)`
   const entity = `${me.name} — ${target}`
   const before = cur ? `on ${from ? jobLine(from) : 'general'} since ${fmt(cur.clock_in, tz)}` : '(not clocked in)'
   const bump = job && ['Chillin', 'Scheduled'].includes(job.status) ? '; the job goes to In Progress' : ''
@@ -269,7 +274,7 @@ export async function proposeShiftOpen(
       target: 'shift_open', action: 'set',
       payload: {
         entity_table: 'employees', entity_id: me.id, entity_label: entity, field: 'clock_in', value: 'now',
-        employee_id: me.id, job_id: job?.id ?? null, job_status_before: job?.status ?? null,
+        employee_id: me.id, job_id: job?.id ?? null, job_status_before: job?.status ?? null, overhead_notes: choice.notes,
         switch_from: cur ? { id: cur.id, job_id: cur.job_id, notes: cur.notes ?? null } : null, tz,
       },
       summary, before_value: null, after_value: 'now', status: 'pending',
@@ -305,7 +310,7 @@ export async function applyShiftOpen(r: Rest, companyId: number, prop: any): Pro
     body: JSON.stringify({
       company_id: companyId, employee_id: p.employee_id, job_id: p.job_id ?? null,
       clock_in: new Date(now.getTime() + (cur ? 1000 : 0)).toISOString(),
-      ...(cur ? { notes: `[Switched from job ${cur.job_id || 'General'}]` } : {}),
+      ...(cur ? { notes: `[Switched from job ${cur.job_id || 'General'}]${p.overhead_notes ? '\n' + p.overhead_notes : ''}` } : p.overhead_notes ? { notes: p.overhead_notes } : {}),
     }),
   })
   if (!ins.ok) {

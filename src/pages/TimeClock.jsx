@@ -6,7 +6,7 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { isAdmin as checkAdmin, isTeamLead as checkTeamLead, canViewHR } from '../lib/accessControl'
 import { localDateStr } from '../lib/localDate'
-import { clockInChoice, clockableJobs, mustClockToJob } from '../lib/clockInJob'
+import { clockInChoice, clockableJobs, mustClockToJob, clockInSettings } from '../lib/clockInJob'
 import {
   Clock, Play, Square, Coffee, MapPin, Calendar, AlertTriangle,
   Plus, X, ChevronRight, DollarSign, TrendingUp, Award
@@ -352,7 +352,7 @@ export default function TimeClock() {
   const handleClockIn = async (employeeId) => {
     if (busyEmployeeIds.has(employeeId)) return // prevent double-tap
     const employee = (employees || []).find(e => e.id === employeeId)
-    const choice = clockInChoice({ jobId: clockInTarget[employeeId] || null, employee })
+    const choice = clockInChoice({ jobId: clockInTarget[employeeId] || null, employee, settings: clockInSettings(useStore.getState()) })
     if (!choice.ok) { alert(choice.reason); return }
     setBusyEmployeeIds(prev => new Set(prev).add(employeeId))
     try {
@@ -1005,7 +1005,7 @@ export default function TimeClock() {
                   {/* Which job? The role decides whether it is required: a field
                       role or anyone on the bonus must pick one; an office role's
                       punch is overhead on its own (lib/clockInJob). */}
-                  {(() => { const needsJob = mustClockToJob(employee); return (
+                  {(() => { const needsJob = mustClockToJob(employee, clockInSettings(useStore.getState())); return (
                     <>
                       <select
                         value={clockInTarget[employee.id] || ''}
@@ -1026,7 +1026,7 @@ export default function TimeClock() {
                   {/* Clock In Button */}
                   {(() => {
                     const inBusy = busyEmployeeIds.has(employee.id)
-                    const chosen = !!clockInTarget[employee.id] || !mustClockToJob(employee)
+                    const chosen = !!clockInTarget[employee.id] || !mustClockToJob(employee, clockInSettings(useStore.getState()))
                     return (
                       <button
                         onClick={() => handleClockIn(employee.id)}

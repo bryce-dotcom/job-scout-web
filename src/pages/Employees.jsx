@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { isOfficeRole } from '../lib/clockInJob'
 import { credentialStatus, OPERATOR_ROLES, LICENSE_CLASSES } from '../lib/driverCredentials'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -278,6 +279,26 @@ export default function Employees() {
         setSkillLevels([])
       }
     }
+  }
+
+  // Which titles' hours are overhead (no job needed at clock-in). The rule in
+  // lib/clockInJob knows the usual office titles; this is the company's say
+  // for a title it does not — "Shop Hand" — or one it should NOT treat as
+  // office. Stored as settings time_clock_overhead_roles / time_clock_job_roles.
+  const overheadRoles = useStore((state) => state.timeClockOverheadRoles) || []
+  const jobRoles = useStore((state) => state.timeClockJobRoles) || []
+  const fetchSettingsStore = useStore((state) => state.fetchSettings)
+  const setTitleOverhead = async (title, overhead) => {
+    setSavingSettings(true)
+    const nextOverhead = overhead ? [...new Set([...overheadRoles, title])] : overheadRoles.filter(t => t !== title)
+    const nextJob = overhead ? jobRoles.filter(t => t !== title) : [...new Set([...jobRoles, title])]
+    const stamp = new Date().toISOString()
+    await supabase.from('settings').upsert([
+      { company_id: companyId, key: 'time_clock_overhead_roles', value: JSON.stringify(nextOverhead), updated_at: stamp },
+      { company_id: companyId, key: 'time_clock_job_roles', value: JSON.stringify(nextJob), updated_at: stamp },
+    ], { onConflict: 'company_id,key' })
+    await fetchSettingsStore?.()
+    setSavingSettings(false)
   }
 
   const saveJobTitles = async (titles) => {
@@ -3358,6 +3379,23 @@ export default function Employees() {
                             backgroundColor: getRoleColor(title)
                           }} />
                           <span style={{ fontSize: '14px', color: theme.text }}>{title}</span>
+                          {/* Clock-in: whose hours are overhead. A field title must clock in to a job;
+                              an office title's punch is overhead on its own. Unknown titles default to
+                              the job — the safe side for the bonus. */}
+                          {(() => {
+                            const overhead = isOfficeRole(title, { overheadRoles, jobRoles })
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setTitleOverhead(title, !overhead)}
+                                disabled={savingSettings}
+                                title={overhead ? 'Hours for this title are overhead — no job needed at clock-in. Click to require a job.' : 'This title must clock in to a job. Click to make its hours overhead.'}
+                                style={{ padding: '3px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: '600', cursor: 'pointer', border: `1px solid ${overhead ? theme.border : theme.accent}`, backgroundColor: overhead ? theme.bg : theme.accentBg, color: overhead ? theme.textMuted : theme.accent }}
+                              >
+                                {overhead ? 'Overhead hours' : 'Clocks in to a job'}
+                              </button>
+                            )
+                          })()}
                         </div>
                         <button
                           onClick={() => removeJobTitle(title)}

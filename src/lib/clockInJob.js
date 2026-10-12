@@ -6,45 +6,72 @@
 // read high. The first fix let the person pick "Overhead" at clock-in.
 // Bryce, 2026-10-12: "the first thing field guys will do is use that so they
 // don't charge the job and they can get more bonus... the system should be
-// using the job description to know whose work is overhead or not."
+// using the job description to know whose work is overhead or not." And
+// then: "this has to work for all users not just HHH."
 //
-// So: a field role, or anyone on the efficiency bonus, must clock in to a
-// job — there is no other button. An office role clocks in and the punch is
-// overhead on its own, labelled with the role. Both clock-in pages go
-// through this one rule.
+// So, for every tenant:
+//   - A job title is OVERHEAD only when it is plainly an office title
+//     (Office, Admin, Owner, Sales, Setter, Manager, Project Manager,
+//     Estimator, Dispatcher, Accounting, Marketing, HR…) or the company
+//     listed it under Settings → Employees → Job titles → "hours are
+//     overhead". Any other title — Field Tech, Installer, Labor, Cleaner,
+//     Driver, Painter, a title we have never seen — must clock in to a job.
+//     Unknown defaults to the safe side: the job.
+//   - Anyone on the efficiency bonus must clock in to a job whatever their
+//     title: the bonus pays on hours kept off a job's allotment. On the bonus
+//     = a skill level with a weight above zero in the company's skill_levels
+//     setting; with no setting, any skill level not named "Not on bonus".
+//   - The company can also force a title onto jobs ("time_clock_job_roles").
+//
+// supabase/functions/_shared/clockInRule.ts mirrors this for Arnie's
+// clock-in card. Change both or neither.
 
-/** Roles whose hours belong on a job. Matched on the role name the company
- *  gave the person (Field Tech, Installer, Labor, Lead Tech, Crew Lead…). */
-const FIELD_ROLE = /tech|install|labor|labour|crew|foreman|apprentice|helper|operator|journeyman|electrician|plumber|hvac|landscap|mow/i
+const norm = (s) => String(s || '').trim().toLowerCase()
 
-/** On the crew efficiency bonus: a skill level is set and it is not the
- *  "Not on bonus" level. Bonus is paid on hours SAVED against a job's
- *  allotment, which is exactly why a bonus-eligible person may not park
- *  hours off the job. */
-export function onBonus(employee) {
-  const lvl = String(employee?.skill_level || '').trim()
-  return !!lvl && !/not on bonus|no bonus/i.test(lvl)
+/** Titles whose hours are overhead unless the company says otherwise. */
+const OFFICE_EXACT = new Set([
+  'office', 'admin', 'administrator', 'administration', 'owner', 'ceo', 'cfo', 'coo', 'president', 'vice president', 'vp',
+  'manager', 'general manager', 'office manager', 'operations manager', 'project manager', 'pm', 'account manager',
+  'sales', 'sales rep', 'salesperson', 'sales manager', 'setter', 'appointment setter', 'lead setter', 'estimator',
+  'dispatcher', 'dispatch', 'scheduler', 'accounting', 'accountant', 'bookkeeper', 'controller', 'finance',
+  'marketing', 'hr', 'human resources', 'receptionist', 'customer service', 'support', 'it', 'developer',
+])
+const OFFICE_WORD = /\b(office|admin|owner|sales|setter|manager|estimator|dispatch|accounting|bookkeep|marketing|receptionist|executive|director)\b/i
+
+export function isOfficeRole(role, { overheadRoles = [], jobRoles = [] } = {}) {
+  const r = norm(role)
+  if (!r) return false
+  if (jobRoles.some(x => norm(x) === r)) return false
+  if (overheadRoles.some(x => norm(x) === r)) return true
+  return OFFICE_EXACT.has(r) || OFFICE_WORD.test(r)
 }
 
-export function isFieldRole(role) {
-  return FIELD_ROLE.test(String(role || ''))
+/** On the crew efficiency bonus. */
+export function onBonus(employee, { skillLevels = [] } = {}) {
+  const lvl = String(employee?.skill_level || '').trim()
+  if (!lvl) return false
+  const defined = (skillLevels || []).find(s => norm(s?.name) === norm(lvl))
+  if (defined) return Number(defined.weight) > 0
+  return !/not on bonus|no bonus|off bonus/i.test(lvl)
 }
 
 /** Must this person's punch carry a job? */
-export function mustClockToJob(employee) {
-  return isFieldRole(employee?.role) || onBonus(employee)
+export function mustClockToJob(employee, settings = {}) {
+  if (onBonus(employee, settings)) return true
+  return !isOfficeRole(employee?.role, settings)
 }
 
 export const OVERHEAD_PREFIX = 'Overhead — '
 
 /**
  * What to write on the time_clock row, or why it cannot be written.
- * `jobId` may be a number, a numeric string, or empty.
+ * `jobId` may be a number, a numeric string, or empty. `settings` is
+ * { overheadRoles, jobRoles, skillLevels } from the company's settings.
  */
-export function clockInChoice({ jobId = null, employee = null } = {}) {
+export function clockInChoice({ jobId = null, employee = null, settings = {} } = {}) {
   const id = jobId === '' || jobId == null ? null : Number(jobId)
   if (id != null && Number.isFinite(id) && id > 0) return { ok: true, job_id: id, notes: null, overhead: false }
-  if (mustClockToJob(employee)) {
+  if (mustClockToJob(employee, settings)) {
     return { ok: false, reason: 'Pick the job you are clocking in to. Your hours are charged to jobs; there is no overhead clock-in for your role.' }
   }
   const role = String(employee?.role || 'Office').trim() || 'Office'
@@ -54,6 +81,15 @@ export function clockInChoice({ jobId = null, employee = null } = {}) {
 /** Is this punch's "no job" the deliberate kind (an office role's hours)? */
 export function isOverheadPunch(entry) {
   return !entry?.job_id && String(entry?.notes || '').startsWith(OVERHEAD_PREFIX)
+}
+
+/** The three settings the rule reads, from a store-shaped object. */
+export function clockInSettings(store = {}) {
+  return {
+    overheadRoles: store.timeClockOverheadRoles || [],
+    jobRoles: store.timeClockJobRoles || [],
+    skillLevels: store.skillLevels || [],
+  }
 }
 
 /** Jobs a person can clock in to: not delivered, not cancelled, newest first. */
