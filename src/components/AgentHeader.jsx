@@ -75,7 +75,16 @@ export default function AgentHeader({ slug, tabs = [], status = null, displayNam
     // Room for THIS bar; the global bar's own clearance is already on
     // <main> as --jobscout-tabbar-space, and the two stack.
     document.body.style.paddingBottom = `calc(${MOBILE_TABBAR_HEIGHT + 12}px + env(safe-area-inset-bottom, 0px))`
-    return () => { document.body.style.paddingBottom = prev }
+    // Publish this bar's height the same way Layout publishes the global
+    // bar's, so anything else pinned to the bottom of a phone — the menu
+    // drawer's Refresh and Sign Out, above all — can clear BOTH of us.
+    // Only agent pages mount this, so off an agent page the variable is
+    // absent and every consumer falls back to 0.
+    document.documentElement.style.setProperty('--jobscout-agentbar-space', `${MOBILE_TABBAR_HEIGHT}px`)
+    return () => {
+      document.body.style.paddingBottom = prev
+      document.documentElement.style.removeProperty('--jobscout-agentbar-space')
+    }
   }, [isMobile])
 
   if (!agent) return null

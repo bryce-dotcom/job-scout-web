@@ -1597,7 +1597,7 @@ export default function Layout() {
                 // card, with Refresh and Sign Out — sits under the bar.
                 // Tapping Refresh on a phone opened Arnie instead, which is
                 // how a crew ends up unable to update their app.
-                paddingBottom: 'var(--jobscout-tabbar-space, 0px)',
+                paddingBottom: 'calc(var(--jobscout-tabbar-space, 0px) + var(--jobscout-agentbar-space, 0px))',
                 boxShadow: theme.shadowLg
               }}
               className="md:hidden"
