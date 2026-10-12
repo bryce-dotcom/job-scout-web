@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   hourlyCostRate, baseHourlyRate, burdenPct, workersCompPct, isSalaried,
-  costRatesByEmployee, FICA_EMPLOYER_PCT, FULL_TIME_HOURS_PER_YEAR,
+  costRatesByEmployee, FICA_EMPLOYER_PCT, FULL_TIME_HOURS_PER_YEAR, effectiveBurdenPct, annualWageOf,
 } from './laborRate'
 
 // HHH's own payroll setup.
@@ -63,9 +63,34 @@ describe('an employee costs more than their wage', () => {
     expect(burdenPct(HHH)).toBeCloseTo(8.45, 6)
   })
 
-  it('applies it to the hour', () => {
+  it('applies it to the hour, with FUTA and SUI capped at their wage bases', () => {
+    // $100/hr is $208,000 a year. Social Security stops at $184,500, FUTA at
+    // $7,000 and Utah SUI at $50,700, so the burden is 7.02%, not a flat
+    // 8.45% — the flat figure would overcharge this hour by $1.43.
     const r = hourlyCostRate({ hourly_rate: 100, is_hourly: true }, HHH)
-    expect(r).toBeCloseTo(108.45, 6)
+    expect(r).toBeCloseTo(107.018461, 4)
+    expect(r).toBeLessThan(100 * (1 + burdenPct(HHH) / 100))
+  })
+
+  it('charges the flat rate to a low earner, where no cap is reached', () => {
+    // $7,000 a year is under every base, so every dollar carries the lot.
+    expect(effectiveBurdenPct(7000, HHH)).toBeCloseTo(burdenPct(HHH), 6)
+  })
+
+  it('a salaried person gets the capped rate too', () => {
+    // Christopher: $84,000 — SS and Medicare on all of it, $42 of FUTA and
+    // $101.40 of SUI, which is 7.82% rather than 8.45%.
+    expect(effectiveBurdenPct(84000, HHH)).toBeCloseTo(7.8207, 3)
+  })
+
+  it('falls back to the flat rate when there is no wage to cap against', () => {
+    expect(effectiveBurdenPct(0, HHH)).toBe(burdenPct(HHH))
+  })
+
+  it('annualWageOf reads a salary, or a full-time year of an hourly rate', () => {
+    expect(annualWageOf({ is_salary: true, annual_salary: 84000 })).toBe(84000)
+    expect(annualWageOf({ is_hourly: true, hourly_rate: 31 })).toBe(31 * 2080)
+    expect(annualWageOf({})).toBe(0)
   })
 
   it('takes the highest workers comp class rate, so a crew is not costed at the office rate', () => {
@@ -91,8 +116,8 @@ describe('costRatesByEmployee', () => {
       { id: 14, is_salary: true, annual_salary: 84000 },
       { id: 19, is_hourly: true, hourly_rate: 31 },
     ], HHH)
-    expect(m.get(19)).toBeCloseTo(31 * 1.0845, 6)
-    expect(m.get(14)).toBeCloseTo((84000 / 2080) * 1.0845, 6)
+    expect(m.get(19)).toBeCloseTo(31 * (1 + effectiveBurdenPct(31 * 2080, HHH) / 100), 6)
+    expect(m.get(14)).toBeCloseTo((84000 / 2080) * (1 + effectiveBurdenPct(84000, HHH) / 100), 6)
   })
 
   it('skips junk rather than throwing', () => {

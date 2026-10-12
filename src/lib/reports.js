@@ -366,7 +366,7 @@ export function jobCosting({
   jobs = [], jobLines = [], payments = [], invoices = [],
   products = [], productComponents = [],
   plaidTransactions = [], manualExpenses = [],
-  timeClock = [], employees = [], jobBonuses = [], company = null,
+  timeClock = [], employees = [], jobBonuses = [], company = null, overheadPerHour = 0,
   from, to,
 } = {}) {
   // Actual labor: punched hours × the employee's hourly rate. When a job has
@@ -564,8 +564,13 @@ export function jobCosting({
     const laborSource = actualHours > 0 ? 'actual' : (laborCost > 0 ? 'estimate' : null)
     if (actualHours > 0) laborCost = actualLabor
     const bonusCost = bonusByJob.get(j.id) || 0
-    const hasCostData = materialCost > 0 || laborCost > 0 || taggedExpense > 0 || bonusCost > 0
-    const totalCost = materialCost + laborCost + taggedExpense + bonusCost
+    // Rent, insurance, fuel, vehicles, software — the money no job is tagged
+    // with and every job depends on, carried per person-hour worked. Zero
+    // unless the caller supplies a rate, so nothing changes for a caller that
+    // does not. See lib/overhead for what is in the pool and what is not.
+    const overheadCost = (Number(overheadPerHour) || 0) * actualHours
+    const hasCostData = materialCost > 0 || laborCost > 0 || taggedExpense > 0 || bonusCost > 0 || overheadCost > 0
+    const totalCost = materialCost + laborCost + taggedExpense + bonusCost + overheadCost
     const profit = revenue - totalCost
     const margin = revenue > 0 ? profit / revenue : 0
     // Skip jobs with no revenue AND no cost — uninteresting empty rows.
@@ -596,6 +601,7 @@ export function jobCosting({
       labor_source: laborSource,
       labor_hours: actualHours > 0 ? actualHours : null,
       bonuses: hasCostData ? bonusCost : null,
+      overhead: hasCostData ? overheadCost : null,
       tagged_expense: hasCostData ? taggedExpense : null,
       total_cost: hasCostData ? totalCost : null,
       profit: hasCostData ? effectiveRevenue - totalCost : null,

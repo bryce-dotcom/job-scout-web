@@ -145,3 +145,37 @@ describe('isMaterialSpend', () => {
     }
   })
 })
+
+describe('overhead rides on the hours, per person on the job', () => {
+  const jobs = [{ id: 30, job_id: 'J-30', status: 'Completed' }]
+  const timeClock = [
+    { employee_id: 1, job_id: 30, clock_in: '2026-10-06T13:00:00Z', total_hours: 8 },
+    { employee_id: 2, job_id: 30, clock_in: '2026-10-06T13:00:00Z', total_hours: 8 },
+  ]
+  const employees = [{ id: 1, hourly_rate: 20, is_hourly: true }, { id: 2, hourly_rate: 20, is_hourly: true }]
+
+  it('charges every person-hour, so a two-man day carries twice a one-man day', () => {
+    const r = jobCosting({ jobs, timeClock, employees, overheadPerHour: 23, payments: [], invoices: [] })
+      .rows.find(x => x.job === 'J-30')
+    expect(r.labor_hours).toBe(16)
+    expect(r.overhead).toBe(16 * 23)
+  })
+
+  it('adds nothing when the caller supplies no rate', () => {
+    const r = jobCosting({ jobs, timeClock, employees, payments: [], invoices: [] }).rows.find(x => x.job === 'J-30')
+    expect(r.overhead).toBe(0)
+    expect(r.total_cost).toBe(16 * 20)
+  })
+
+  it('charges no overhead to a job nobody clocked into', () => {
+    // No hours, no overhead — we have no basis to spread it on.
+    const r = jobCosting({
+      jobs: [{ id: 31, job_id: 'J-31', status: 'Completed' }],
+      jobLines: [{ job_id: 31, item_id: 900, quantity: 1 }],
+      products: [{ id: 900, cost: 500, material_or_labor: 'material' }],
+      productComponents: [], overheadPerHour: 23, payments: [], invoices: [],
+    }).rows.find(x => x.job === 'J-31')
+    expect(r.overhead).toBe(0)
+    expect(r.total_cost).toBe(500)
+  })
+})

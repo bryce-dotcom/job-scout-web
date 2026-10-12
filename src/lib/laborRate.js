@@ -22,6 +22,8 @@
 
 /** Employer's half of FICA: 6.2% Social Security + 1.45% Medicare. Federal,
  *  not a company setting, and it is the biggest piece of the burden. */
+import { calcFICA, calcFUTA, calcSUI } from './payrollTax.js'   // explicit extension: plain Node runners reach this through reports.js
+
 export const FICA_EMPLOYER_PCT = 7.65
 
 /** Hours in a standard working year — the divisor for a salary. 40 x 52. */
@@ -40,9 +42,12 @@ export function workersCompPct(company) {
 }
 
 /**
- * Everything the employer pays on top of a wage, as a percentage.
- * Reads the company's own FUTA and SUI rates; HHH runs 0.6 and 0.2, so the
- * burden is 8.45% before workers comp.
+ * Everything the employer pays on top of a wage, as a flat percentage.
+ *
+ * The simple version, kept for callers with no wage to go on: it charges FUTA
+ * and SUI on every dollar, which is only true until those taxes hit their
+ * wage bases. Prefer effectiveBurdenPct when the person's annual wage is
+ * known — it is the same arithmetic with the caps applied.
  */
 export function burdenPct(company) {
   if (!company) return 0
@@ -50,6 +55,50 @@ export function burdenPct(company) {
     + (Number(company.futa_rate_pct) || 0)
     + (Number(company.sui_rate_pct) || 0)
     + workersCompPct(company)
+}
+
+/**
+ * The burden this person actually costs, as a percentage of their wage.
+ *
+ * FUTA stops at $7,000 of wages and SUI at the state's base ($50,700 in Utah
+ * for 2026), so a flat 8.45% overcharges anyone earning more than that. On
+ * Christopher's $84,000 the true figure is 7.82%: Social Security and
+ * Medicare on all of it, but $42 of FUTA and $101 of SUI, not 0.8% of the lot.
+ *
+ * The caps are not restated here — calcFICA, calcFUTA and calcSUI are the
+ * payroll module's own, the ones a real cheque is run with, so this cannot
+ * drift from payroll when a year or a wage base changes.
+ *
+ * It is a whole-year rate, flat across the year rather than front-loaded the
+ * way the taxes really fall. Charging a job in March more than one in
+ * November for the same hour would make two identical jobs look different,
+ * which is worse for the question job costing is asked.
+ */
+export function effectiveBurdenPct(annualWage, company, payDate = null) {
+  const wage = Number(annualWage) || 0
+  if (!(wage > 0)) return burdenPct(company)
+  if (!company) return 0
+  const fica = calcFICA({ gross: wage, ytdGrossBeforeThis: 0, ytdMedicareBeforeThis: 0, payDate })
+  const futa = calcFUTA({ gross: wage, ytdGrossBeforeThis: 0, ratePct: company.futa_rate_pct, payDate })
+  const sui = calcSUI({
+    gross: wage, ytdGrossBeforeThis: 0,
+    ratePct: company.sui_rate_pct, wageBase: company.sui_wage_base,
+  })
+  const employer = (fica.socialSecurityEmployer || 0) + (fica.medicareEmployer || 0) + futa + sui
+  const comp = wage * (workersCompPct(company) / 100)
+  return ((employer + comp) / wage) * 100
+}
+
+/** What this person is paid in a year, as best the card says. An hourly
+ *  person is assumed full time, which is the only basis available; a
+ *  part-timer's real wages are lower, so their FUTA and SUI are a larger
+ *  share and this understates them slightly. */
+export function annualWageOf(employee) {
+  const annual = Number(employee?.annual_salary) || Number(employee?.salary) || 0
+  if (isSalaried(employee) && annual > 0) return annual
+  const hourly = Number(employee?.hourly_rate) || 0
+  if (hourly > 0) return hourly * FULL_TIME_HOURS_PER_YEAR
+  return annual
 }
 
 /** Is this person paid a salary rather than by the hour? */
@@ -78,18 +127,19 @@ export function baseHourlyRate(employee) {
  * Pass the company to include employer burden; without it you get the bare
  * wage, which is what every caller got before this existed.
  */
-export function hourlyCostRate(employee, company = null) {
+export function hourlyCostRate(employee, company = null, payDate = null) {
   const base = baseHourlyRate(employee)
   if (!(base > 0)) return 0
-  return base * (1 + burdenPct(company) / 100)
+  if (!company) return base
+  return base * (1 + effectiveBurdenPct(annualWageOf(employee), company, payDate) / 100)
 }
 
 /** Per-employee cost rates, ready for job costing. */
-export function costRatesByEmployee(employees = [], company = null) {
+export function costRatesByEmployee(employees = [], company = null, payDate = null) {
   const map = new Map()
   for (const e of employees || []) {
     if (!e || e.id == null) continue
-    map.set(e.id, hourlyCostRate(e, company))
+    map.set(e.id, hourlyCostRate(e, company, payDate))
   }
   return map
 }

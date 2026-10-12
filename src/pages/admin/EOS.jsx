@@ -12,6 +12,7 @@ import { getWeekRange } from '../../lib/eosWeek'
 import { mergeJobHourSources } from '../../lib/jobHours'
 import { jobCosting } from '../../lib/reports'
 import { buildJobCostIndex, profitOnJobs } from '../../lib/eosProfit'
+import { overheadRatePerHour } from '../../lib/overhead'
 import { DEFAULT_TZ } from '../../lib/dateTz'
 import { countSubmittals } from '../../lib/submittals'
 import {
@@ -2964,6 +2965,12 @@ export default function EOS() {
   // Punches plus legacy typed rows, each hour counted once (see jobHours.js).
   const hourEntries = useMemo(() => mergeJobHourSources({ timeClock, timeLog: timeLogs }), [timeClock, timeLogs])
 
+  // Rent, insurance, fuel, vehicles — spread over the hours worked on jobs.
+  // lib/overhead decides what is in the pool; it is deliberately an allow-list.
+  const overheadRate = useMemo(
+    () => overheadRatePerHour({ expenses, plaidTransactions, timeClock }),
+    [expenses, plaidTransactions, timeClock])
+
   // Cost per job, computed ONCE from lib/reports.jobCosting — the one cost
   // rule in the app. No date window: a job finished this week was worked in
   // earlier ones, and every hour and receipt on it is a cost of it.
@@ -2975,7 +2982,9 @@ export default function EOS() {
     // Costs an hour at what it costs the company: a salary spread over the
     // year for people with no hourly rate, plus employer taxes.
     company,
-  }).rows), [jobs, costing, payments, invoices, plaidTransactions, expenses, timeClock, employees, company])
+    // And the company's own running costs, per person-hour.
+    overheadPerHour: overheadRate.perHour,
+  }).rows), [jobs, costing, payments, invoices, plaidTransactions, expenses, timeClock, employees, company, overheadRate])
   const storeData = useMemo(() => ({
     jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, loggedSubmittals, jobStatuses, jobCostIndex, tz,
   }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, loggedSubmittals, jobStatuses, jobCostIndex, tz])
