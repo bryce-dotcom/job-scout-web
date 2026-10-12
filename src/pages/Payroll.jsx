@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -393,6 +393,9 @@ export default function Payroll() {
   const [locationTrailEntry, setLocationTrailEntry] = useState(null) // entry to show on map
   const [periodOffset, setPeriodOffset] = useState(0) // 0 = current, -1 = previous, etc.
   const [adjustments, setAdjustments] = useState([])
+  // Set when settings.payroll_config carried a pay schedule; the companies
+  // row then stays a fallback (see the effect below the config loader).
+  const scheduleFromSettings = useRef(false)
   // Recurring deductions from the employee card (employee_benefits). Gusto
   // took these every check; the run here never read them until 2026-10-12.
   const [benefits, setBenefits] = useState([])
@@ -592,8 +595,13 @@ export default function Payroll() {
   }, [companyId, periodOffset])
 
   // Sync company pay settings into local config
+  // The pay schedule in settings.payroll_config is the one payroll runs on;
+  // the companies row is a fallback for a tenant that has not saved one.
+  // Whichever loads second must not overwrite: HHH's row said bi-weekly
+  // while its settings said semi-monthly, and if the row had landed last the
+  // period would have been 14 days and Utah withheld on the wrong table.
   useEffect(() => {
-    if (company) {
+    if (company && !scheduleFromSettings.current) {
       setPayrollConfig(prev => ({
         ...prev,
         pay_frequency: company.pay_frequency || prev.pay_frequency,
@@ -612,6 +620,7 @@ export default function Payroll() {
     if (configRes.data?.value) {
       try {
         const parsed = JSON.parse(configRes.data.value)
+        if (parsed.pay_frequency) scheduleFromSettings.current = true
         setPayrollConfig(prev => ({ ...prev, ...parsed }))
       } catch {}
     }
