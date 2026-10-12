@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../../../lib/store'
 import { UserRound, Check, Volume2, Loader2 } from 'lucide-react'
 import { loadPersona, savePersona, PERSONA_LIST, personaFor } from '../../../lib/arniePersonaClient'
+import AssistantAvatar from '../../../components/AssistantAvatar'
 import { getVoices, savedVoiceId, rememberVoice, speak, unlockAudio } from './arnieVoice'
 
 // Switching persona without having chosen a voice should sound right straight
@@ -122,12 +123,22 @@ export default function ArniePersona({ onChanged }) {
                 borderRadius: 10, padding: '11px 13px', width: '100%',
               }}
             >
-              <span style={{
-                width: 20, height: 20, borderRadius: '50%', flexShrink: 0, marginTop: 1,
-                border: `2px solid ${on ? t.accent : t.line}`, background: on ? t.accent : 'transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              }}>{on && <Check size={12} color="#fff" />}</span>
-              <span style={{ flex: 1, minWidth: 0 }}>
+              {/* Their face, because that is what is being chosen. A pair of
+                  radio buttons asks you to pick a label; this asks you to
+                  pick a person, which is the actual question — and it is the
+                  only place you can see Jenny before deciding. */}
+              <span style={{ position: 'relative', flexShrink: 0, display: 'inline-flex' }}>
+                <AssistantAvatar size={44} persona={p.key} border={`2px solid ${on ? t.accent : t.line}`} />
+                {on && (
+                  <span style={{
+                    position: 'absolute', right: -3, bottom: -3,
+                    width: 18, height: 18, borderRadius: '50%', background: t.accent,
+                    border: '2px solid #fff',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  }}><Check size={10} color="#fff" strokeWidth={3} /></span>
+                )}
+              </span>
+              <span style={{ flex: 1, minWidth: 0, marginTop: 2 }}>
                 <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: t.ink }}>{p.fullName}</span>
                 <span style={{ display: 'block', fontSize: 12.5, color: t.sub, lineHeight: 1.5, marginTop: 2 }}>{p.blurb}</span>
               </span>
