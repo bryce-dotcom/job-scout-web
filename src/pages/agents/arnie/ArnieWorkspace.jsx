@@ -85,7 +85,10 @@ export default function ArnieWorkspace() {
           onIdentityClick={() => setPicking(true)}
         />
         <div style={{ flex: 1, overflow: 'auto' }}>
-          <Outlet context={{ personaRow, refreshPersona }} />
+          {/* status so the chat can say where he is without polling a
+              second time; openIdentity so his face is the switch wherever it
+              appears, not only in the header. */}
+          <Outlet context={{ personaRow, refreshPersona, status, openIdentity: () => setPicking(true) }} />
         </div>
         {picking && (
           <WhoIsYourAssistant

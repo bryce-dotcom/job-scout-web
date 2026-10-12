@@ -15,6 +15,7 @@ import AssistantAvatar, { useAssistant } from '../../../components/AssistantAvat
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { localDateStr } from '../../../lib/localDate'
 import ArnieOfferCard from '../../../components/ArnieOfferCard'
+import ArniePresence from './ArniePresence'
 
 // Dark Arnie theme
 const dark = {
@@ -118,7 +119,7 @@ function ArnieAvatar({ size = 36, persona }) {
 // kickoff: a first message sent on the person's behalf when the chat mounts
 // — the Onboarding page uses it to start "set up my company" without the
 // new owner having to know what to type. Sent once, never again on re-render.
-export default function ArnieChat({ isPanel = false, onClose, sessionId: externalSessionId, kickoff = null, onApplied = null, autoMic = false }) {
+export default function ArnieChat({ isPanel = false, onClose, sessionId: externalSessionId, kickoff = null, onApplied = null, autoMic = false, status = null, openIdentity = null }) {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
   const company = useStore(s => s.company)
@@ -718,16 +719,31 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       }}>
         {/* Welcome state */}
         {messages.length === 0 && !loading && (
-          <div style={{ textAlign: 'center', padding: '32px 12px' }}>
-            <ArnieAvatar size={80} persona={personaRow?.persona} />
-            <div style={{ marginTop: 16 }} />
-            <h2 style={{ color: dark.text, fontSize: 20, fontWeight: 600, margin: '0 0 4px' }}>{assistant.name}</h2>
-            <p style={{ color: dark.textSecondary, fontSize: 13, margin: '0 0 6px' }}>
-              AI Assistant{company?.name ? ` \u2022 ${company.name}` : ''}
-            </p>
-            <p style={{ color: dark.orange, fontSize: 14, margin: '12px 0 16px', fontStyle: 'italic' }}>
-              &ldquo;{assistant.persona.greeting}&rdquo;
-            </p>
+          <div style={{ textAlign: 'center', padding: isPanel ? '28px 12px' : '6px 2px 0' }}>
+            {/* A crew badge, not a chatbot welcome. A centred avatar, a name,
+                an italic greeting in quotes and a row of pill chips is the
+                template every assistant ships with; this is a person already
+                at work, and where he is working is the first thing it says.
+                The corner panel keeps the small version \u2014 there is no room
+                for a presence panel in a 380px drawer. */}
+            {!isPanel && (
+              <ArniePresence
+                assistant={assistant}
+                personaKey={personaRow?.persona}
+                status={status}
+                companyName={company?.name}
+                onIdentity={openIdentity}
+              />
+            )}
+            {isPanel && (
+              <>
+                <ArnieAvatar size={64} persona={personaRow?.persona} />
+                <h2 style={{ color: dark.text, fontSize: 18, fontWeight: 700, margin: '12px 0 2px' }}>{assistant.name}</h2>
+                <p style={{ color: dark.orange, fontSize: 13.5, margin: '0 0 14px' }}>
+                  &ldquo;{assistant.persona.greeting}&rdquo;
+                </p>
+              </>
+            )}
             {/* Where else he answers. People never found this on their own. */}
             <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, margin: '0 0 22px', padding: '10px 14px', borderRadius: 10, border: `1px solid ${dark.borderLight}`, backgroundColor: dark.inputBg, color: dark.textSecondary, fontSize: 12.5, textAlign: 'left' }}>
               {textNumber && <div><span style={{ color: dark.text, fontWeight: 600 }}>Text them:</span> <a href={`sms:${textNumber.raw}`} style={{ color: dark.orange, textDecoration: 'none' }}>{textNumber.pretty}</a> <span style={{ color: dark.textMuted }}>· the card comes back, reply YES to approve</span></div>}

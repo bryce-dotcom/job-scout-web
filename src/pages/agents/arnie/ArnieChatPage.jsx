@@ -1,10 +1,13 @@
-import { useLocation } from 'react-router-dom'
+import { useLocation, useOutletContext } from 'react-router-dom'
 import ArnieChat from './ArnieChat'
 import ArnieComputerStrip from './ArnieComputerStrip'
 
 export default function ArnieChatPage() {
   const location = useLocation()
   const sessionId = location.state?.sessionId || null
+  // Props, not context, because ArnieChat is also the corner panel, which
+  // renders outside any Outlet and would have nothing to read.
+  const { status, openIdentity } = useOutletContext() || {}
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -16,7 +19,7 @@ export default function ArnieChatPage() {
         <ArnieComputerStrip />
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
-        <ArnieChat sessionId={sessionId} />
+        <ArnieChat sessionId={sessionId} status={status} openIdentity={openIdentity} />
       </div>
     </div>
   )

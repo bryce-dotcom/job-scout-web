@@ -225,7 +225,11 @@ describe('the same assistant everywhere', () => {
     expect(setup).toMatch(/useOutletContext/)
     expect(setup).toMatch(/<ArniePersona onChanged=\{refreshPersona\} \/>/)
     expect(workspace).toMatch(/refreshPersona/)
-    expect(workspace).toMatch(/<Outlet context=\{\{ personaRow, refreshPersona \}\} \/>/)
+    // Both still travel down the Outlet. Pinned by name rather than by the
+    // exact literal, because the context has since gained the computer status
+    // and the identity opener, and this test is about the persona reaching
+    // the header — not about nothing else ever being shared.
+    expect(workspace).toMatch(/<Outlet context=\{\{[^}]*personaRow[^}]*refreshPersona[^}]*\}\} \/>/)
   })
 
   it('the header prefers the person’s name over the company’s', () => {
