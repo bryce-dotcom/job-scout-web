@@ -168,6 +168,21 @@ export default function ArnieComputer() {
             {data.session?.last_seen_at && data.session.status === 'live' && (
               <div style={{ fontSize: 12, color: t.muted, marginTop: 2 }}>checked in {ago(data.session.last_seen_at)}</div>
             )}
+            {/* What that machine told us it cannot do. On Windows there is
+                nothing to say; on a Mac this is the difference between
+                teaching working and a recording coming back empty, and it
+                used to be said only in a terminal window at startup. */}
+            {connected && data.session?.capabilities?.record === false && (
+              <div style={{ fontSize: 12, color: t.amber, marginTop: 4 }}>
+                This computer cannot watch the screen yet, so teaching would record nothing.
+              </div>
+            )}
+            {connected && (data.session?.capabilities?.notes || []).map((n) => (
+              <div key={n} style={{ fontSize: 12, color: t.sub, marginTop: 4, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                <AlertTriangle size={13} style={{ color: t.amber, flexShrink: 0, marginTop: 2 }} />
+                <span style={{ lineHeight: 1.45 }}>{n}</span>
+              </div>
+            ))}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button onClick={load} disabled={busy} style={btn(t.card2, t.sub)}>
@@ -296,6 +311,7 @@ export default function ArnieComputer() {
         platform={data.session?.platform || ''}
         grants={grants}
         skills={skills}
+        canRecord={data.session?.capabilities ? data.session.capabilities.record : null}
         onConnect={() => setShowConnect(true)}
       />
 
@@ -355,8 +371,8 @@ export default function ArnieComputer() {
  * What he will never do sits right beside it, because that is the part people
  * want to know before installing anything.
  */
-function WhatHeCanDo({ connected, platform, grants, skills, onConnect }) {
-  const rows = whatArnieCanDo({ connected, platform, grants, skills })
+function WhatHeCanDo({ connected, platform, grants, skills, canRecord, onConnect }) {
+  const rows = whatArnieCanDo({ connected, platform, grants, skills, canRecord })
   const blocked = rows.filter((r) => r.state !== READY).length
 
   return (

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { whatArnieCanDo, stateLabel, NEVER, READY, NEEDS_AGENT, NEEDS_TEACHING } from './arnieCanDo'
+import { whatArnieCanDo, stateLabel, NEVER, READY, NEEDS_AGENT, NEEDS_TEACHING, BLOCKED } from './arnieCanDo'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n')
@@ -40,8 +40,10 @@ describe('nothing reads ready when it is not', () => {
     expect(repeat.blurb).toMatch(/File an SRP rebate/)
   })
 
-  it('a Mac is told the truth about recording', () => {
-    const rows = whatArnieCanDo({ connected: true, platform: 'darwin' })
+  it('a Mac is told the truth about recording — when the Mac says so', () => {
+    // It used to be assumed from the platform. A Mac with the switches ON got
+    // the warning anyway, and one with them off got told it was Ready.
+    const rows = whatArnieCanDo({ connected: true, platform: 'darwin', canRecord: false })
     expect(rows.find((r) => r.id === 'teach').blurb).toMatch(/System Settings/)
   })
 
@@ -90,5 +92,39 @@ describe('the list is a list of things that work', () => {
     const look = whatArnieCanDo({ connected: true }).find((r) => r.id === 'look')
     expect(look.blurb).toMatch(/picture/)
     expect(look.blurb).not.toMatch(/reads? (the )?(text|screen)/i)
+  })
+})
+
+describe('what the machine says beats what the platform suggests', () => {
+  it('a Mac that cannot watch the screen is not told teaching is Ready', () => {
+    // The wrong answer that costs somebody ten minutes of demonstrating to an
+    // empty recording. Guessing from the platform used to produce it.
+    const rows = whatArnieCanDo({ connected: true, platform: 'darwin', canRecord: false })
+    const teach = rows.find((r) => r.id === 'teach')
+    expect(teach.state).toBe(BLOCKED)
+    expect(teach.blurb).toMatch(/would record nothing/)
+    expect(teach.blurb).toMatch(/System Settings/)
+    // And a job you have not been able to show him is not merely untaught.
+    expect(rows.find((r) => r.id === 'repeat').state).toBe(BLOCKED)
+  })
+
+  it('a Mac that CAN watch the screen is treated like any other computer', () => {
+    const teach = whatArnieCanDo({ connected: true, platform: 'darwin', canRecord: true })
+      .find((r) => r.id === 'teach')
+    expect(teach.state).toBe(READY)
+    expect(teach.blurb).toMatch(/Do the job once/)
+  })
+
+  it('an agent too old to say is given the benefit of the doubt, not a false alarm', () => {
+    // null means "it did not tell us", which is not the same as "it cannot".
+    const teach = whatArnieCanDo({ connected: true, platform: 'darwin', canRecord: null })
+      .find((r) => r.id === 'teach')
+    expect(teach.state).toBe(READY)
+  })
+
+  it('and the page passes what the agent reported, not the platform', () => {
+    const page = read('../pages/agents/arnie/ArnieComputer.jsx')
+    expect(page).toMatch(/canRecord=\{data\.session\?\.capabilities \? data\.session\.capabilities\.record : null\}/)
+    expect(page).toMatch(/capabilities\?\.record === false/)
   })
 })

@@ -125,6 +125,21 @@ Deno.serve(async (req) => {
           device_label: String(body.device_label || '').slice(0, 120) || null,
           platform: String(body.platform || '').slice(0, 60) || null,
           agent_version: String(body.agent_version || '').slice(0, 40) || null,
+          // What this machine can actually do, in its own words. Without it a
+          // Mac that cannot watch a screen looks identical to one that can,
+          // and the only place the difference was ever stated was a terminal
+          // window the person closed. Shape-checked rather than trusted: it
+          // arrives from a program running on somebody's computer.
+          capabilities: body.capabilities && typeof body.capabilities === 'object'
+            ? {
+              perform: (body.capabilities as Record<string, unknown>).perform === true,
+              record: (body.capabilities as Record<string, unknown>).record === true,
+              notes: Array.isArray((body.capabilities as Record<string, unknown>).notes)
+                ? ((body.capabilities as Record<string, unknown>).notes as unknown[])
+                  .filter((n) => typeof n === 'string').slice(0, 6).map((n) => String(n).slice(0, 300))
+                : [],
+            }
+            : null,
         }),
       })
       return json({ ok: true, session_id: rows?.[0]?.id, grants: await myGrants(), poll_seconds: 3 })

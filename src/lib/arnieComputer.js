@@ -84,7 +84,7 @@ export async function myComputer(employeeId) {
   if (!employeeId) return { session: null, latest: null, actions: [] }
   const { data: sessions } = await supabase
     .from('arnie_computer_sessions')
-    .select('id,device_label,platform,agent_version,status,last_seen_at,started_at,ended_at')
+    .select('id,device_label,platform,agent_version,status,last_seen_at,started_at,ended_at,capabilities')
     .eq('employee_id', employeeId)
     .order('id', { ascending: false })
     .limit(1)

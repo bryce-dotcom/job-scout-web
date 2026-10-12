@@ -143,7 +143,7 @@ const pair = async () => {
 
 const APP_URL = process.env.JOBSCOUT_APP_URL || 'https://jobscout.appsannex.com'
 const DEVICE = process.env.JOBSCOUT_DEVICE_LABEL || process.env.COMPUTERNAME || process.env.HOSTNAME || 'this computer'
-const VERSION = '0.3.0'
+const VERSION = '0.4.0'
 
 // ── the access token, kept fresh ────────────────────────────────────────
 // JOBSCOUT_AGENT_TOKEN is a REFRESH token. An access token lasts an hour,
@@ -409,7 +409,16 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stop('you press
 if (!TOKEN) TOKEN = readSavedToken()
 if (!TOKEN) TOKEN = await pair()
 
-const hello = await call('hello', { device_label: DEVICE, platform: process.platform, agent_version: VERSION })
+// What this machine can do travels with the handshake. It used to be said
+// only here, in this window, once — which is the one place nobody is looking
+// when they later wonder why teaching came back empty.
+const handshake = {
+  device_label: DEVICE,
+  platform: process.platform,
+  agent_version: VERSION,
+  capabilities: { perform: capabilities.perform, record: capabilities.record, notes: capabilities.notes },
+}
+const hello = await call('hello', handshake)
 if (!hello.ok) die(`could not connect: ${hello.error || hello.status}`)
 sessionId = hello.session_id
 
@@ -462,7 +471,7 @@ while (!stopping) {
     if (resumed) await stop('this computer is no longer connected to a session')
     resumed = true
     show('..', 'that session is gone — starting a new one')
-    const again = await call('hello', { device_label: DEVICE, platform: process.platform, agent_version: VERSION })
+    const again = await call('hello', handshake)
     if (!again.ok) await stop(`could not start a new session (${again.error || again.status})`)
     sessionId = again.session_id
     grants = again.grants || []

@@ -29,8 +29,12 @@ export const READY = 'ready'
  * @param {string}  ctx.platform    'win32' | 'darwin' | ''
  * @param {Array}   ctx.grants      live grants for this person
  * @param {Array}   ctx.skills      published skills for this company
+ * @param {boolean|null} ctx.canRecord  what the AGENT said about this machine,
+ *   null from an agent too old to say. Guessing from the platform was wrong
+ *   in the direction that matters: it called teaching Ready on a Mac whose
+ *   Screen Recording switch is off, where a demonstration records nothing.
  */
-export function whatArnieCanDo({ connected = false, platform = '', grants = [], skills = [] } = {}) {
+export function whatArnieCanDo({ connected = false, platform = '', grants = [], skills = [], canRecord = null } = {}) {
   const mac = platform === 'darwin'
   const taught = skills.filter((s) => s.steps?.written || s.status === 'published')
   const allowed = (app) => grants.some((g) => String(g.app || '').toLowerCase() === app)
@@ -61,10 +65,15 @@ export function whatArnieCanDo({ connected = false, platform = '', grants = [], 
     {
       id: 'teach',
       title: 'Be shown a job once, and write down the steps',
-      blurb: mac
-        ? 'Recording needs Screen Recording and Input Monitoring switched on in System Settings — switches only you can flip.'
+      blurb: canRecord === false
+        ? 'This computer cannot watch the screen yet, so a demonstration would record nothing. '
+          + (mac ? 'macOS needs Screen Recording and Input Monitoring switched on in System Settings — switches only you can flip.' : '')
         : 'Do the job once with the recorder on. He writes the steps in plain English and you correct what he misunderstood before it is ever used on a real customer.',
-      state: !connected ? NEEDS_AGENT : READY,
+      // Not READY when the machine has said it cannot watch a screen. The old
+      // version guessed from the platform and called this Ready on a Mac with
+      // the switches off, which is the one wrong answer that costs somebody
+      // ten minutes of demonstrating to an empty recording.
+      state: !connected ? NEEDS_AGENT : canRecord === false ? BLOCKED : READY,
     },
     {
       id: 'repeat',
@@ -74,7 +83,12 @@ export function whatArnieCanDo({ connected = false, platform = '', grants = [], 
       blurb: taught.length
         ? `He follows the steps as written and looks at the screen between them: ${taught.slice(0, 3).map((s) => s.name).join(', ')}${taught.length > 3 ? '…' : ''}.`
         : 'Nothing yet. Show him one job — filing a finished rebate is the usual first one — and it becomes something he can do.',
-      state: !connected ? NEEDS_AGENT : taught.length ? READY : NEEDS_TEACHING,
+      // Shown-him-a-job depends on having been able to record one, so a
+      // machine that cannot watch a screen cannot get here either.
+      state: !connected ? NEEDS_AGENT
+        : taught.length ? READY
+          : canRecord === false ? BLOCKED
+            : NEEDS_TEACHING,
     },
   ]
 }
