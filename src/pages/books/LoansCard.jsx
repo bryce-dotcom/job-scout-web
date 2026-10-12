@@ -13,12 +13,12 @@ import { Landmark, Plus, Check, Pencil, RefreshCw, Undo2, AlertTriangle } from '
 import { supabase } from '../../lib/supabase'
 import HelpBadge from '../../components/HelpBadge'
 import { toast } from '../../lib/toast'
-import { LOAN_TYPES, isActiveLoan, matchLoanPayments, splitPayment, loanSummary, scheduledPayment } from '../../lib/loanMatch'
+import { LOAN_TYPES, isActiveLoan, matchLoanPayments, loanSummary, scheduledPayment } from '../../lib/loanMatch'
+import { bookLoanPayment } from '../../lib/loanBook'
 import { localDateStr } from '../../lib/localDate'
 
 const EMPTY = { name: '', lender: '', liability_type: 'vehicle', current_balance: '', monthly_payment: '', payment_day: '', interest_rate: '', match_payee: '', next_payment_due: '', original_principal: '', term_months: '' }
 const fmtDay = (d) => d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''
-const addMonth = (dayStr) => { const d = new Date(String(dayStr).slice(0, 10) + 'T00:00:00'); return localDateStr(new Date(d.getFullYear(), d.getMonth() + 1, d.getDate())) }
 const numOrNull = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null }
 
 export default function LoansCard({ companyId, theme, statCardStyle, formatCurrency, plaidTransactions = [], connectedAccounts = [], userEmail = null, onChanged }) {
@@ -73,29 +73,10 @@ export default function LoansCard({ companyId, theme, statCardStyle, formatCurre
   const book = async (loan, txn, { date, amount } = {}) => {
     setBusy(`book-${txn ? txn.id : loan.id}`)
     try {
+      // lib/loanBook is the one writer (Frankie's accepted verdicts use it too).
+      const res = await bookLoanPayment(supabase, { companyId, loan, txn, amount, date, userEmail })
+      if (res.error) throw new Error(res.error)
       const amt = txn ? Math.abs(parseFloat(txn.amount) || 0) : parseFloat(amount) || 0
-      if (!(amt > 0)) throw new Error('Amount must be more than zero')
-      const when = txn ? String(txn.date).slice(0, 10) : date
-      const split = splitPayment(loan, amt)
-      const { data: row, error } = await supabase.from('loan_payments').insert([{
-        company_id: companyId, liability_id: loan.id, date: when, amount: amt, principal: split.principal, interest: split.interest,
-        plaid_transaction_id: txn ? txn.id : null, source: txn ? 'bank_match' : 'manual',
-        verified_at: txn ? new Date().toISOString() : null, verified_by: txn ? (userEmail || null) : null,
-      }]).select().single()
-      if (error) throw error
-      if (txn) {
-        const { error: e2 } = await supabase.from('plaid_transactions').update({ loan_payment_id: row.id, user_category: 'Loan Payment', confirmed: true }).eq('id', txn.id).eq('company_id', companyId)
-        if (e2) throw e2
-      }
-      // A hand-entered loan keeps its own balance; a Plaid loan gets its
-      // balance from the lender on the next sync, so only the dates move.
-      const patch = { last_payment_date: when, last_payment_amount: amt, updated_at: new Date().toISOString() }
-      if (loan.source !== 'plaid') {
-        patch.current_balance = Math.max(0, (parseFloat(loan.current_balance) || 0) - split.principal)
-        if (loan.next_payment_due && loan.next_payment_due <= when) patch.next_payment_due = addMonth(loan.next_payment_due)
-      }
-      const { error: e3 } = await supabase.from('liabilities').update(patch).eq('id', loan.id).eq('company_id', companyId)
-      if (e3) throw e3
       toast.success(`${formatCurrency(amt)} booked on ${loan.name}${txn ? ' — verified against the bank' : ''}`)
       setManualFor(null); setManual({ date: localDateStr(new Date()), amount: '' })
       await changed()

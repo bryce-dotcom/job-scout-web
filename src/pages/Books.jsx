@@ -65,6 +65,7 @@ import {
 import { TAX_CATEGORIES, TAX_CATEGORY_OPTIONS } from '../lib/taxCategories'
 import PlaidLink from '../components/PlaidLink'
 import LoansCard from './books/LoansCard'
+import VerdictsPanel from './books/VerdictsPanel'
 import { loanJournalRows } from '../lib/loanMatch'
 export { TAX_CATEGORIES, TAX_CATEGORY_OPTIONS }
 
@@ -2592,6 +2593,10 @@ export default function Books() {
               )}
             </div>
           )}
+
+          {/* Frankie's verdicts — review queue; nothing books until accepted */}
+          <VerdictsPanel companyId={companyId} theme={theme} formatCurrency={formatCurrency} plaidTransactions={plaidTransactions} expenseCategories={expenseCategories} userEmail={user?.email || null} isMobile={isMobile}
+            onApplied={() => { fetchPlaidTransactions?.(); fetchPaymentsLifetime?.(); fetchBooksExtra?.() }} />
 
           {/* Needs Review Card */}
           {unreviewedCount > 0 && (
