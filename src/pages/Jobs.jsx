@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
@@ -463,12 +463,21 @@ export default function Jobs() {
   // Asked in batches: PostgREST caps ANY response at 1000 rows, RPC included,
   // and HHH already has 1,076 customers carrying jobs. One call would come
   // back short with nothing to say so.
+  //
+  // Keyed on the ids themselves, not on `jobs`. The store hands back a new
+  // array on every refresh, so depending on it fired this five times per
+  // visit — five round trips for an answer that had not changed.
+  const repeatCustomerIds = useMemo(() => customerIdsOf(jobs), [jobs])
+  const repeatCustomerKey = repeatCustomerIds.join(',')
+  const deliveredStatusKey = useMemo(
+    () => [...getDeliveredStatusIds(storeJobStatuses)].join(','),
+    [storeJobStatuses],
+  )
   useEffect(() => {
-    if (!companyId || !jobs.length) return
+    const ids = repeatCustomerKey ? repeatCustomerKey.split(',').map(Number) : []
+    if (!companyId || !ids.length) return
     let live = true
-    const ids = customerIdsOf(jobs)
-    if (!ids.length) return
-    const delivered = [...getDeliveredStatusIds(storeJobStatuses)]
+    const delivered = deliveredStatusKey ? deliveredStatusKey.split(',') : []
     Promise.all(batchIds(ids).map(batch =>
       supabase.rpc('customer_completed_job_counts', {
         p_company_id: companyId,
@@ -482,7 +491,7 @@ export default function Jobs() {
       if (live) setRepeatCounts(countsByCustomer(pages.flat()))
     })
     return () => { live = false }
-  }, [companyId, jobs, storeJobStatuses])
+  }, [companyId, repeatCustomerKey, deliveredStatusKey])
 
   // Which jobs have a utility rebate invoice out. Its own lookup, and its own
   // effect, so a slow or failed read here can never delay or break the job list.
