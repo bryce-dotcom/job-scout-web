@@ -1,4 +1,5 @@
 import { hourlyCostRate, isSalaried, annualWageOf, effectiveBurdenPct } from './laborRate.js'
+import { deliveredJobsInRange } from './jobMetrics.js'
 
 // Overhead, spread over the hours people actually worked.
 //
@@ -156,7 +157,7 @@ export function offJobLabourCost({ employees = [], timeClock = [], company = nul
  */
 export function overheadRatePerHour({
   expenses = [], plaidTransactions = [], timeClock = [],
-  employees = [], company = null,
+  employees = [], company = null, jobs = [], jobStatuses = [],
   now = new Date(), days = 90,
 } = {}) {
   const to = dayOf(new Date(now).toISOString())
@@ -211,9 +212,33 @@ export function overheadRatePerHour({
     : { total: 0, perEmployee: [] }
   pool += labour.total
 
+  // The other basis: what the work was worth, rather than how long it took.
+  //
+  // Hours and revenue answer different questions and they disagree sharply
+  // here. HHH burns 34% of the job hours to earn 17% of the money, so by the
+  // hour it carries twice the overhead that its revenue would give it — which
+  // is what took its week to break even. Neither is "correct": an hour of
+  // insurance and fuel really is an hour, and a $68,000 lighting job really
+  // does lean on the office more than a $600 window clean. Revenue is the
+  // usual choice where one line is materials-heavy and the other is labour,
+  // because it stops the labour line carrying the whole company.
+  //
+  // The denominator is what jobs delivered in the window were WORTH, the same
+  // figure the profit metric subtracts cost from — so a job's share of
+  // overhead is its share of the revenue, and the shares add to the pool.
+  const delivered = jobs.length
+    ? deliveredJobsInRange(jobs, jobStatuses, new Date(from + 'T00:00:00'), new Date(to + 'T23:59:59.999'))
+    : []
+  const revenue = delivered.reduce((s, j) => s + (Number(j?.job_total) || 0), 0)
+
   const perHour = pool > 0 && hours > 0 ? pool / hours : 0
+  const pctOfRevenue = pool > 0 && revenue > 0 ? (pool / revenue) * 100 : 0
   return {
-    perHour, pool: Math.round(pool * 100) / 100, hours: Math.round(hours * 10) / 10,
+    perHour, pctOfRevenue,
+    pool: Math.round(pool * 100) / 100,
+    hours: Math.round(hours * 10) / 10,
+    revenue: Math.round(revenue * 100) / 100,
+    deliveredJobs: delivered.length,
     from, to,
     spend: Math.round((pool - labour.total) * 100) / 100,
     offJobLabour: labour.total,

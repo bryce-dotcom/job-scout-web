@@ -182,3 +182,41 @@ describe('time nobody billed for', () => {
     expect(withOffJob.spend).toBe(1000)
   })
 })
+
+describe('the revenue basis', () => {
+  const now = new Date('2026-10-12T12:00:00Z')
+  const jobStatuses = [{ id: 'Completed', category: 'delivered' }]
+  const common = {
+    plaidTransactions: [{ id: 1, amount: 6000, category: 'Rent', date: '2026-10-01' }],
+    timeClock: [{ employee_id: 1, job_id: 7, clock_in: '2026-10-02T13:00:00Z', total_hours: 100 }],
+    now,
+  }
+  const jobs = [
+    { id: 7, status: 'Completed', job_total: 40000, completed_at: '2026-10-02T18:00:00Z' },
+    { id: 8, status: 'Completed', job_total: 60000, completed_at: '2026-10-03T18:00:00Z' },
+  ]
+
+  it('is the pool as a percentage of what the delivered work was worth', () => {
+    const r = overheadRatePerHour({ ...common, jobs, jobStatuses })
+    expect(r.revenue).toBe(100000)
+    expect(r.deliveredJobs).toBe(2)
+    expect(r.pctOfRevenue).toBe(6)
+  })
+
+  it('still reports the hourly rate beside it, so the two can be compared', () => {
+    const r = overheadRatePerHour({ ...common, jobs, jobStatuses })
+    expect(r.perHour).toBe(60)      // 6000 over 100 job hours
+    expect(r.pctOfRevenue).toBe(6)
+  })
+
+  it('is zero when nothing was delivered, rather than dividing by nothing', () => {
+    const r = overheadRatePerHour({ ...common, jobs: [], jobStatuses })
+    expect(r.pctOfRevenue).toBe(0)
+    expect(r.revenue).toBe(0)
+  })
+
+  it('ignores work delivered outside the window', () => {
+    const old = [{ id: 9, status: 'Completed', job_total: 999999, completed_at: '2024-01-01T18:00:00Z' }]
+    expect(overheadRatePerHour({ ...common, jobs: old, jobStatuses }).revenue).toBe(0)
+  })
+})

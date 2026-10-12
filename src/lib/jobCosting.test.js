@@ -179,3 +179,63 @@ describe('overhead rides on the hours, per person on the job', () => {
     expect(r.total_cost).toBe(500)
   })
 })
+
+describe('overhead by revenue instead of hours', () => {
+  const jobs = [{ id: 40, job_id: 'J-40', status: 'Completed', job_total: 10000 }]
+  const timeClock = [{ employee_id: 1, job_id: 40, clock_in: '2026-10-06T13:00:00Z', total_hours: 10 }]
+  const employees = [{ id: 1, hourly_rate: 20, is_hourly: true }]
+  const run = (opts) => jobCosting({ jobs, timeClock, employees, payments: [], invoices: [], ...opts })
+    .rows.find(r => r.job === 'J-40')
+
+  it('carries a share of the pool proportional to what the job was worth', () => {
+    expect(run({ overheadPctOfRevenue: 6 }).overhead).toBe(600)
+  })
+
+  it('uses the job total, not the cash collected — a job invoiced next week still carries its share', () => {
+    const r = jobCosting({
+      jobs, timeClock, employees, invoices: [], payments: [], overheadPctOfRevenue: 6,
+    }).rows.find(x => x.job === 'J-40')
+    expect(r.revenue).toBe(0)        // nothing paid yet
+    expect(r.overhead).toBe(600)     // still carries its overhead
+  })
+
+  it('a percentage wins over an hourly rate when both are passed', () => {
+    const r = run({ overheadPctOfRevenue: 6, overheadPerHour: 68 })
+    expect(r.overhead).toBe(600)     // not 10 x 68
+  })
+
+  it('falls back to the hourly rate when no percentage is given', () => {
+    expect(run({ overheadPerHour: 68 }).overhead).toBe(680)
+  })
+
+  it('charges an unpriced job nothing by revenue, where by the hour it paid', () => {
+    const free = [{ id: 41, job_id: 'J-41', status: 'Completed', job_total: 0 }]
+    const punch = [{ employee_id: 1, job_id: 41, clock_in: '2026-10-06T13:00:00Z', total_hours: 10 }]
+    const byRev = jobCosting({ jobs: free, timeClock: punch, employees, payments: [], invoices: [], overheadPctOfRevenue: 6 })
+      .rows.find(r => r.job === 'J-41')
+    expect(byRev.overhead).toBe(0)
+  })
+})
+
+describe('overhead never stands in for a cost nobody recorded', () => {
+  it('a job with no parts, hours or receipts stays uncosted even with overhead on', () => {
+    const r = jobCosting({
+      jobs: [{ id: 50, job_id: 'J-50', status: 'Completed', job_total: 9000 }],
+      payments: [], invoices: [], overheadPctOfRevenue: 15,
+    }).rows.find(x => x.job === 'J-50')
+    // Nothing is known about this job's cost; a slice of rent does not change
+    // that, and it must not read as a 85%-margin job.
+    expect(r).toBeUndefined()
+  })
+
+  it('a job that IS costed carries its overhead share', () => {
+    const r = jobCosting({
+      jobs: [{ id: 51, job_id: 'J-51', status: 'Completed', job_total: 9000 }],
+      jobLines: [{ job_id: 51, item_id: 1, quantity: 1 }],
+      products: [{ id: 1, cost: 100, material_or_labor: 'material' }],
+      productComponents: [], payments: [], invoices: [], overheadPctOfRevenue: 15,
+    }).rows.find(x => x.job === 'J-51')
+    expect(r.overhead).toBe(1350)
+    expect(r.total_cost).toBe(1450)
+  })
+})

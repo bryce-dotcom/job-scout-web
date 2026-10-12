@@ -2968,8 +2968,8 @@ export default function EOS() {
   // Rent, insurance, fuel, vehicles — spread over the hours worked on jobs.
   // lib/overhead decides what is in the pool; it is deliberately an allow-list.
   const overheadRate = useMemo(
-    () => overheadRatePerHour({ expenses, plaidTransactions, timeClock, employees, company }),
-    [expenses, plaidTransactions, timeClock, employees, company])
+    () => overheadRatePerHour({ expenses, plaidTransactions, timeClock, employees, company, jobs, jobStatuses }),
+    [expenses, plaidTransactions, timeClock, employees, company, jobs, jobStatuses])
 
   // Cost per job, computed ONCE from lib/reports.jobCosting — the one cost
   // rule in the app. No date window: a job finished this week was worked in
@@ -2982,8 +2982,9 @@ export default function EOS() {
     // Costs an hour at what it costs the company: a salary spread over the
     // year for people with no hourly rate, plus employer taxes.
     company,
-    // And the company's own running costs, per person-hour.
-    overheadPerHour: overheadRate.perHour,
+    // And the company's own running costs, carried in proportion to what
+    // each job was worth rather than how long it took.
+    overheadPctOfRevenue: overheadRate.pctOfRevenue,
   }).rows), [jobs, costing, payments, invoices, plaidTransactions, expenses, timeClock, employees, company, overheadRate])
   const storeData = useMemo(() => ({
     jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, loggedSubmittals, jobStatuses, jobCostIndex, tz,

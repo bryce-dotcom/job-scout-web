@@ -366,7 +366,7 @@ export function jobCosting({
   jobs = [], jobLines = [], payments = [], invoices = [],
   products = [], productComponents = [],
   plaidTransactions = [], manualExpenses = [],
-  timeClock = [], employees = [], jobBonuses = [], company = null, overheadPerHour = 0,
+  timeClock = [], employees = [], jobBonuses = [], company = null, overheadPerHour = 0, overheadPctOfRevenue = 0,
   from, to,
 } = {}) {
   // Actual labor: punched hours × the employee's hourly rate. When a job has
@@ -564,13 +564,26 @@ export function jobCosting({
     const laborSource = actualHours > 0 ? 'actual' : (laborCost > 0 ? 'estimate' : null)
     if (actualHours > 0) laborCost = actualLabor
     const bonusCost = bonusByJob.get(j.id) || 0
-    // Rent, insurance, fuel, vehicles, software — the money no job is tagged
-    // with and every job depends on, carried per person-hour worked. Zero
-    // unless the caller supplies a rate, so nothing changes for a caller that
-    // does not. See lib/overhead for what is in the pool and what is not.
-    const overheadCost = (Number(overheadPerHour) || 0) * actualHours
-    const hasCostData = materialCost > 0 || laborCost > 0 || taggedExpense > 0 || bonusCost > 0 || overheadCost > 0
-    const totalCost = materialCost + laborCost + taggedExpense + bonusCost + overheadCost
+    // Rent, insurance, fuel, vehicles, the office — money no job is tagged
+    // with and every job depends on. Zero unless the caller supplies a rate,
+    // so nothing changes for a caller that does not. See lib/overhead for
+    // what is in the pool and what is deliberately not.
+    //
+    // Two bases, and a caller picks one. By REVENUE a job carries overhead in
+    // proportion to what it was worth, which keeps a labour-heavy line from
+    // carrying the whole company; by HOUR it carries it in proportion to the
+    // time it took. Allocating on the job's own value, not on payments
+    // received, so it matches the figure the profit metric subtracts from.
+    const overheadCost = (Number(overheadPctOfRevenue) || 0) > 0
+      ? ((Number(overheadPctOfRevenue) || 0) / 100) * (Number(j.job_total) || 0)
+      : (Number(overheadPerHour) || 0) * actualHours
+    // Overhead deliberately does NOT make a job "costed". It is allocated,
+    // not recorded: a job with no parts, no hours and no receipts still knows
+    // nothing about what it cost, and letting a share of rent stand in for
+    // that would quietly refill the "Completed Jobs With No Cost" row with
+    // jobs whose profit is their whole price less a slice of the office.
+    const hasCostData = materialCost > 0 || laborCost > 0 || taggedExpense > 0 || bonusCost > 0
+    const totalCost = materialCost + laborCost + taggedExpense + bonusCost + (hasCostData ? overheadCost : 0)
     const profit = revenue - totalCost
     const margin = revenue > 0 ? profit / revenue : 0
     // Skip jobs with no revenue AND no cost — uninteresting empty rows.
