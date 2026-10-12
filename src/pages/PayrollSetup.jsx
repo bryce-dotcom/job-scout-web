@@ -17,6 +17,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { payrollSetupProblems } from '../lib/payrollSetupGate'
 import { SUI_SOURCES, SUI_STATES, validateSuiRate, suiStateFor } from '../lib/suiRate'
 import { pickAchAccount, achSettingsFromPlaidAccount, describeAchAccount } from '../lib/achFromPlaid'
+import { parseLocalDate } from '../lib/localDate'
 import PlaidLink from '../components/PlaidLink'
 import { CheckCircle2, Circle, AlertTriangle, Send, Upload, Landmark, Users, Building2, Play, ChevronRight } from 'lucide-react'
 
@@ -80,6 +81,10 @@ export default function PayrollSetup() {
   const [sending, setSending] = useState(null)
   const [bank, setBank] = useState({ loading: false, error: null })
   const [imp, setImp] = useState({ stage: 'idle', provider: 'Gusto', headers: [], rows: [], mapping: {}, preview: null, busy: false, error: null, createMissing: true, taxesRemitted: true, result: null })
+  // The last check the old provider paid, and its quarter: that is the
+  // quarter the provider still files, and the one after is JobScout's.
+  const [lastImported, setLastImported] = useState(null)
+  const [guideOpen, setGuideOpen] = useState(false)
 
   const load = async () => {
     if (!companyId) return
@@ -91,6 +96,8 @@ export default function PayrollSetup() {
       supabase.from('payroll_runs').select('id, pay_date, period_start, period_end, employee_count, total_gross').eq('company_id', companyId).order('pay_date'),
       supabase.from('paystubs').select('id', { count: 'exact', head: true }).eq('company_id', companyId).gte('pay_date', `${new Date().getFullYear()}-01-01`),
     ])
+    const { data: lastImp } = await supabase.from('paystubs').select('pay_date, amendment_reason').eq('company_id', companyId).ilike('amendment_reason', 'Imported from %').order('pay_date', { ascending: false }).limit(1)
+    setLastImported(lastImp?.[0] || null)
     let parsed = {}
     try { parsed = cfg.data?.value ? JSON.parse(cfg.data.value) : {} } catch { parsed = {} }
     const c = co.data || {}
@@ -395,9 +402,50 @@ export default function PayrollSetup() {
           <button onClick={() => navigate('/payroll/inbox')} style={btn(false)}>Payroll Inbox</button>
           {!allDone && <span style={{ fontSize: 12, color: '#a16207', display: 'flex', alignItems: 'center', gap: 4 }}><AlertTriangle size={14} /> {problems.length} item{problems.length === 1 ? '' : 's'} left above</span>}
         </div>
-        <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 10 }}>
-          Leaving Gusto or another provider: keep it through the quarter it last filed, so it files that quarter's returns, and tell it not to file W-2s for this year. JobScout files the full year.
-        </div>
+        {(() => {
+          // Which quarter the old provider still owns. A check's quarter is
+          // its pay date, not its period: Gusto's Sep 16–30 payroll paid on
+          // Oct 5 is a fourth-quarter check.
+          const d = lastImported?.pay_date ? parseLocalDate(lastImported.pay_date) : null
+          const q = d ? Math.floor(d.getMonth() / 3) + 1 : null
+          const provider = (lastImported?.amendment_reason || '').match(/^Imported from (.+?) \d{4}-/)?.[1] || imp.provider
+          // Returns are due the last day of the month after the quarter ends.
+          const returnsDue = q ? new Date(d.getFullYear(), q * 3 + 1, 0) : null
+          const fmt = (x) => x ? x.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''
+          const isGusto = /gusto/i.test(provider), isQB = /quickbooks|intuit/i.test(provider)
+          return (
+            <div style={{ marginTop: 14, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
+              <button onClick={() => setGuideOpen(o => !o)} style={{ background: 'none', border: 'none', padding: 0, color: theme.accent, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                {guideOpen ? '▾' : '▸'} Leaving {provider}: the order that does not double-file
+              </button>
+              {d && (
+                <div style={{ fontSize: 13, color: theme.text, marginTop: 6 }}>
+                  Your last {provider} check was paid <b>{fmt(d)}</b>, a <b>Q{q} {d.getFullYear()}</b> pay date. Cancel before Q{q} ends and choose to handle your own filings: {provider} files nothing for Q{q}, JobScout files Q{q} (due {fmt(returnsDue)}) with that check already in it, and the full-year W-2s and 1099s in January. {provider} still files every quarter that ended before you cancelled{q > 1 ? ` (Q${q - 1}, due ${fmt(new Date(d.getFullYear(), (q - 1) * 3 + 1, 0))})` : ''}.
+                </div>
+              )}
+              {guideOpen && (
+                <ol style={{ fontSize: 13, color: theme.text, lineHeight: 1.5, paddingLeft: 20, margin: '10px 0 0' }}>
+                  <li><b>Run the last payroll there and the first one here with no overlap.</b> A pay date belongs to one system. Everything {provider} paid this year is already in JobScout through step 4; do not also run those periods here.</li>
+                  <li><b>Let {provider} file the quarter it last paid.</b> Returns are due the last day of the month after the quarter. Do not cancel before they are filed.</li>
+                  {isGusto && (<>
+                    <li><b>Cancel from Settings → Plan &amp; billing → Cancel account.</b> Gusto asks whether to keep filing for you. Choose <b>"I'll handle my own filings"</b>. The choice covers everything: "continue filing" would make Gusto file the next quarter <i>and</i> this year's W-2s and 1099s, on top of JobScout's, and bill $100 per federal and state form plus $5 per W-2.</li>
+                    <li><b>Gusto refunds any tax it is still holding</b> when you say you are moving to another provider. It does not close your state tax accounts; leave them open, JobScout deposits to them.</li>
+                    <li><b>Before access ends, save from Reports:</b> the payroll journal for the whole year, the agency payments report, and every employee's W-4 and address from People. You have them already if step 4 is green.</li>
+                  </>)}
+                  {isQB && (<>
+                    <li><b>Cancel from Settings → Subscriptions and billing.</b> The cancellation form asks whether Intuit should file your year-end forms and W-2s. Say <b>no</b>: JobScout files the full year, and Intuit charges $150 to do it. The form cannot be changed once submitted.</li>
+                    <li><b>If Intuit paid your taxes,</b> leave the bank account open until the last liabilities are debited. Access turns read-only afterwards, so export the payroll details report and employee W-4s first.</li>
+                  </>)}
+                  {!isGusto && !isQB && (<>
+                    <li><b>When you cancel, tell {provider} you will handle your own filings from the next quarter on</b>, and that it must not file this year's W-2s or 1099s. Most providers ask; if yours does not, write to support and keep the reply.</li>
+                    <li><b>Export the year's payroll register, tax payments and employee W-4s</b> before access ends.</li>
+                  </>)}
+                  <li><b>Keep every federal and state account open.</b> Cancelling a provider never closes them. JobScout's Payroll Inbox tells you what to deposit and file from here, with due dates, and reminds you by email.</li>
+                </ol>
+              )}
+            </div>
+          )
+        })()}
       </Step>
     </div>
   )
