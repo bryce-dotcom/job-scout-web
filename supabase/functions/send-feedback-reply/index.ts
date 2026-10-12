@@ -46,30 +46,38 @@ serve(async (req) => {
       ? 'Reply to this email and your answer goes straight onto your ticket.'
       : 'Thank you for helping us improve JobScout.';
 
-    const html = `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-        <div style="background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%); border-radius: 12px; padding: 32px; color: #ffffff;">
-          <div style="text-align: center; margin-bottom: 24px;">
-            <h1 style="font-size: 22px; font-weight: 700; margin: 0 0 4px;">JobScout</h1>
-            <p style="font-size: 13px; color: #888; margin: 0;">Response to your ${typeLabel}</p>
-          </div>
-
-          <div style="background: rgba(249,115,22,0.1); border: 1px solid rgba(249,115,22,0.25); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-            <div style="font-size: 11px; text-transform: uppercase; color: #f97316; font-weight: 600; margin-bottom: 8px;">Your ${typeLabel}${subject ? `: ${subject}` : ''}</div>
-            <div style="font-size: 14px; color: #ccc; line-height: 1.5; white-space: pre-wrap;">${(original_message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
-          </div>
-
-          <div style="background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-            <div style="font-size: 11px; text-transform: uppercase; color: #22c55e; font-weight: 600; margin-bottom: 8px;">Developer Response</div>
-            <div style="font-size: 14px; color: #fff; line-height: 1.6; white-space: pre-wrap;">${reply_message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
-          </div>
-
-          <div style="text-align: center; padding-top: 16px; border-top: 1px solid #333;">
-            <p style="font-size: 12px; color: #666; margin: 0;">${replyNote}</p>
-          </div>
-        </div>
-      </div>
-    `;
+    // Solid colours, dark text on a light card. The old template's dark card
+    // was a CSS gradient with no solid fallback: Gmail drops gradients, so the
+    // card went white under white text, and phone dark mode then flipped that
+    // text dark — Antonino (2026-10-12) saw dark green on dark green and was
+    // copying replies into Messages to read them. A light design with solid
+    // hex colours is what dark-mode clients recolour legibly.
+    const esc = (x: unknown) => String(x ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html = `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark"></head>
+<body style="margin:0;padding:0;background-color:#f7f5ef;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f7f5ef;">
+    <tr><td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#ffffff;border:1px solid #d6cdb8;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+        <tr><td style="padding:28px 28px 8px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#2c3530;">JobScout</div>
+          <div style="font-size:13px;color:#4d5a52;margin-top:4px;">Response to your ${typeLabel}</div>
+        </td></tr>
+        <tr><td style="padding:16px 28px 0;">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#4d5a52;margin-bottom:6px;">Your ${typeLabel}${subject ? `: ${esc(subject)}` : ''}</div>
+          <div style="background-color:#f3f0e8;border-left:4px solid #b8ad94;border-radius:6px;padding:14px 16px;font-size:14px;line-height:1.55;color:#4d5a52;white-space:pre-wrap;">${esc(original_message)}</div>
+        </td></tr>
+        <tr><td style="padding:20px 28px 0;">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#3f6b3a;margin-bottom:6px;">Our reply</div>
+          <div style="background-color:#eef5ec;border-left:4px solid #3f6b3a;border-radius:6px;padding:16px;font-size:15px;line-height:1.6;color:#1f2a22;white-space:pre-wrap;">${esc(reply_message)}</div>
+        </td></tr>
+        <tr><td style="padding:22px 28px 26px;text-align:center;">
+          <div style="font-size:13px;color:#4d5a52;border-top:1px solid #e5dfd0;padding-top:16px;">${replyNote}</div>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
 
     // Where a reply to this email goes. With the ticket id, it goes to a
     // signed address the inbound router resolves back to the ticket, so the
