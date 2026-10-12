@@ -45,6 +45,11 @@ const DECISION = {
   refused: { c: t.rm, bg: t.rmBg, label: 'Refused' },
   awaiting_human: { c: t.amber, bg: t.amberBg, label: 'Needs you' },
   needs_approval: { c: t.amber, bg: t.amberBg, label: 'Asking you' },
+  // Same trap as above, caught the same way — by reading the rendered page.
+  // An offer nobody has answered yet was listed as "Failed", which is both
+  // wrong and discouraging: the one thing a person must not believe about an
+  // offer is that it already went badly.
+  needs_grant: { c: t.amber, bg: t.amberBg, label: 'Asking to use a program' },
   expired: { c: t.muted, bg: 'rgba(125,138,127,0.10)', label: 'Lapsed' },
   failed: { c: t.muted, bg: 'rgba(125,138,127,0.10)', label: 'Failed' },
 }

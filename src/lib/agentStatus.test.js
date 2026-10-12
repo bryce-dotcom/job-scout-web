@@ -75,9 +75,22 @@ describe('“Stopped” means a person stopped it, and nothing else', () => {
 describe('every decision the database can hold has a label', () => {
   // A missing key fell through to 'failed', so an action merely WAITING on
   // somebody read "Failed" in the log. Caught by reading the rendered page.
-  it('the log can name all seven', () => {
-    for (const d of ['queued', 'allowed', 'refused', 'awaiting_human', 'needs_approval', 'failed', 'expired']) {
-      expect(tab).toMatch(new RegExp(`\\b${d}:\\s*\\{`))
+  it('the log can name every decision the database can hold', () => {
+    // Read from the SCHEMA, not from a list typed here. A missing key falls
+    // through to 'failed', so the map going stale does not break anything
+    // visibly — it just quietly calls something a failure. That has now
+    // happened twice, once for needs_approval and once for needs_grant, both
+    // found by looking at the rendered page rather than by any test. This one
+    // cannot go stale: adding a decision to the database fails it.
+    const sql = [
+      read('../../supabase/migrations/20261010205500_arnie_computer.sql'),
+      read('../../supabase/migrations/20261012071000_computer_offers.sql'),
+    ].join('\n')
+    const blocks = [...sql.matchAll(/decision (?:text not null default 'queued' )?(?:in|check \(decision in) \(([^)]+)\)/g)]
+    const known = new Set(blocks.flatMap((m) => [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1])))
+    expect(known.size).toBeGreaterThanOrEqual(7)
+    for (const d of known) {
+      expect(tab, `the log has no label for '${d}'`).toMatch(new RegExp(`\\b${d}:\\s*\\{`))
     }
   })
 
@@ -85,6 +98,13 @@ describe('every decision the database can hold has a label', () => {
     const map = tab.slice(tab.indexOf('const DECISION = {'), tab.indexOf('const ago ='))
     expect(map).toMatch(/needs_approval: \{[^}]*label: 'Asking you'/)
     expect(map).toMatch(/awaiting_human: \{[^}]*label: 'Needs you'/)
+    expect(map).toMatch(/needs_grant: \{[^}]*label: 'Asking to use a program'/)
+    // Nothing a person still has to answer may wear the failure colour.
+    for (const d of ['needs_approval', 'awaiting_human', 'needs_grant']) {
+      const row = map.match(new RegExp(`${d}: \\{[^}]*\\}`))[0]
+      expect(row).not.toMatch(/label: 'Failed'/)
+      expect(row).toMatch(/t\.amber/)
+    }
   })
 })
 
