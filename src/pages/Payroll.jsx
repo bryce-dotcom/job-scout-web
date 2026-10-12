@@ -67,6 +67,9 @@ function aggregateTaxLiabilities({ companyId, payrollRunId, periodStart, periodE
   const AGENCIES = {
     UT: { withholding: 'Utah State Tax Commission', ui: 'Utah DWS' },
     CO: { withholding: 'Colorado Department of Revenue', ui: 'Colorado CDLE', famli: 'Colorado FAMLI Division' },
+    ID: { withholding: 'Idaho State Tax Commission', ui: 'Idaho Department of Labor' },
+    AZ: { withholding: 'Arizona Department of Revenue', ui: 'Arizona DES' },
+    NV: { withholding: 'None — Nevada has no income tax', ui: 'Nevada DETR' },
   }
   const agency = AGENCIES[stateCode] || { withholding: 'State', ui: 'State Unemployment' }
 

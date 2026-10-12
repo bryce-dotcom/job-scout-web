@@ -69,6 +69,59 @@ export const SUI_STATES = {
     facts: 'The taxable wage base rose from $23,800 in 2025 to $30,600 in 2026 and is now indexed every year.',
     dueDates: 'Quarterly, with the wage report: April 30, July 31, October 31 and January 31.',
   },
+  // Nevada, Idaho, Arizona — added 2026-10-12 so a tenant arriving from one
+  // of them is not told "tables not loaded yet". Wage bases and new-employer
+  // rates verified that day against DETR (Nevada), Idaho Department of Labor
+  // Administrative Order 682, and the Arizona DES chart as reported by
+  // Bloomberg Tax. Nevada has no wage withholding at all.
+  NV: {
+    code: 'NV',
+    name: 'Nevada',
+    agency: 'Nevada Department of Employment, Training and Rehabilitation (DETR)',
+    agencyShort: 'Nevada DETR',
+    wageBase: { 2025: 41800, 2026: 43700, 2027: 45400 },
+    newEmployerRatePct: 2.95,
+    rateRange: [0.25, 5.4],
+    effectiveDay: 'January 1',
+    notice: { name: 'Notice of Employer\'s Contribution Rates', field: 'the UI contribution rate as printed (the Career Enhancement Program 0.05% is separate)', when: 'each December through Employer Self Service' },
+    portal: { label: 'DETR Employer Self Service', url: 'https://ui.nv.gov/ESS.html' },
+    accountFormat: 'a 10-digit employer account number',
+    cautions: ['Nevada adds a 0.05% Career Enhancement Program assessment on the same taxable wages; it is paid with the UI report but is not part of the UI rate.'],
+    facts: 'Nevada has no state income tax, so there is no withholding account; unemployment is the only state payroll tax.',
+    dueDates: 'Quarterly, with the wage report: April 30, July 31, October 31 and January 31.',
+  },
+  ID: {
+    code: 'ID',
+    name: 'Idaho',
+    agency: 'Idaho Department of Labor',
+    agencyShort: 'Idaho DOL',
+    wageBase: { 2025: 55300, 2026: 58300 },
+    newEmployerRatePct: 1.0,
+    rateRange: null,
+    effectiveDay: 'January 1',
+    notice: { name: 'Notice of Taxable Wage Rate', field: 'the total rate as printed', when: 'mailed each December for the coming year' },
+    portal: { label: 'Idaho Department of Labor employer portal', url: 'https://www.labor.idaho.gov/businesses/' },
+    accountFormat: 'a 10-digit employer account number',
+    cautions: [],
+    facts: 'Idaho\'s taxable wage base rose from $55,300 in 2025 to $58,300 in 2026; positive-rated employers pay between 0.208% and 0.694%.',
+    dueDates: 'Quarterly, with the wage report: April 30, July 31, October 31 and January 31.',
+  },
+  AZ: {
+    code: 'AZ',
+    name: 'Arizona',
+    agency: 'Arizona Department of Economic Security (DES), Unemployment Insurance Tax',
+    agencyShort: 'Arizona DES',
+    wageBase: { 2025: 8000, 2026: 8000 },
+    newEmployerRatePct: 2.0,
+    rateRange: [0.03, 8.36],
+    effectiveDay: 'January 1',
+    notice: { name: 'Determination of Unemployment Tax Rate', field: 'the rate as printed', when: 'mailed each December for the coming year' },
+    portal: { label: 'AZ Tax and Wage System (AZTaxes.gov for withholding; DES TWS for UI)', url: 'https://www.azdes.gov/tws' },
+    accountFormat: 'the DES employer account number from the rate notice',
+    cautions: ['The $8,000 wage base is among the lowest in the country, so most of the year\'s tax is owed in the first quarter.'],
+    facts: 'New employers pay 2.0% for at least two calendar years; the wage base is $8,000.',
+    dueDates: 'Quarterly, with the wage report: April 30, July 31, October 31 and January 31.',
+  },
 }
 
 // Where a company that is switching providers will find the same number.

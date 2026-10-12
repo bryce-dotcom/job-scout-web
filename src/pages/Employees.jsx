@@ -120,6 +120,7 @@ const emptyEmployee = {
   w4_other_income: 0,
   w4_deductions: 0,
   w4_extra_withholding: 0,
+  state_withholding_rate_pct: '',   // Arizona A-4 elected rate; blank = none on file
   w4_signed_at: '',
   // W-9 (1099 contractors) — separate set; only used when tax_classification = '1099'.
   w9_legal_name: '',
@@ -465,6 +466,7 @@ export default function Employees() {
       w4_other_income: employee.w4_other_income || 0,
       w4_deductions: employee.w4_deductions || 0,
       w4_extra_withholding: employee.w4_extra_withholding || 0,
+      state_withholding_rate_pct: employee.state_withholding_rate_pct ?? '',
       w4_signed_at: employee.w4_signed_at || '',
       // W-9 fields
       w9_legal_name: employee.w9_legal_name || '',
@@ -618,6 +620,7 @@ export default function Employees() {
       w4_other_income: parseFloat(formData.w4_other_income) || 0,
       w4_deductions: parseFloat(formData.w4_deductions) || 0,
       w4_extra_withholding: parseFloat(formData.w4_extra_withholding) || 0,
+      state_withholding_rate_pct: formData.state_withholding_rate_pct === '' || formData.state_withholding_rate_pct == null ? null : (parseFloat(formData.state_withholding_rate_pct) || 0),
       w4_signed_at: formData.w4_signed_at || null,
       // W-9 fields (only meaningful when tax_classification = '1099';
       // we still write them so a W-2 → 1099 reclassification preserves data)
@@ -903,6 +906,7 @@ export default function Employees() {
       w4_other_income: parseFloat(formData.w4_other_income) || 0,
       w4_deductions: parseFloat(formData.w4_deductions) || 0,
       w4_extra_withholding: parseFloat(formData.w4_extra_withholding) || 0,
+      state_withholding_rate_pct: formData.state_withholding_rate_pct === '' || formData.state_withholding_rate_pct == null ? null : (parseFloat(formData.state_withholding_rate_pct) || 0),
       w4_signed_at: formData.w4_signed_at || null,
       // W-9 fields (only meaningful when tax_classification = '1099';
       // we still write them so a W-2 → 1099 reclassification preserves data)
@@ -2807,6 +2811,13 @@ export default function Employees() {
                         <input type="number" step="1" name="w4_extra_withholding" value={formData.w4_extra_withholding} onChange={handleChange} disabled={!isEditing} placeholder="0" style={isEditing ? inputStyle : inputStyleDisabled} />
                         <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
                           Extra federal tax to take out of every paycheck.
+                        </div>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>State withholding rate % (Arizona Form A-4)</label>
+                        <input type="number" step="0.5" min="0" max="3.5" name="state_withholding_rate_pct" value={formData.state_withholding_rate_pct} onChange={handleChange} disabled={!isEditing} placeholder="2.0 if no A-4" style={isEditing ? inputStyle : inputStyleDisabled} />
+                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                          Arizona only. The flat rate the employee checked on Form A-4 (0.5% to 3.5%, or 0 for an exemption). Blank withholds the state default, 2.0%. Other states ignore this.
                         </div>
                       </div>
                     </div>

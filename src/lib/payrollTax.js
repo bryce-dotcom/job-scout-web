@@ -404,6 +404,26 @@ export function calcFUTA({ gross, ytdGrossBeforeThis, ratePct, payDate = null })
 const COLORADO_SCHEDULES = [
   { effective: '2026-01-01', rate: 0.044, allowance: { married_jointly: 11000, other: 5500 } },
 ]
+// Idaho — Table for Percentage Computation Method of Withholding (EPB00744).
+// One rate, 5.3%, on annual wages over a threshold by filing status; the
+// per-child allowance ended with the Idaho Child Tax Credit (Idaho Code
+// 63-3029L). The Tax Commission revised the thresholds on 23 July 2026 for
+// immediate use ($15,000 / $30,000 before; $16,100 / $32,200 after), with no
+// catch-up on earlier checks. Verified 2026-10-12 against tax.idaho.gov's
+// press release and EY Tax News 2026-1829.
+const IDAHO_SCHEDULES = [
+  { effective: '2026-07-23', rate: 0.053, threshold: { married_jointly: 32200, other: 16100 } },
+  { effective: '2026-01-01', rate: 0.053, threshold: { married_jointly: 30000, other: 15000 } },
+]
+// Arizona — Form A-4. No table: the employee elects a flat rate of Arizona
+// gross taxable wages (0.5% to 3.5% in half-point steps, or 0% with a claim
+// of exemption) and may add a flat dollar amount; with no A-4 on file the
+// employer withholds 2.0%. The 2026 form keeps the same options (Bloomberg
+// Tax, 2026). The election lives on employees.state_withholding_rate_pct.
+const ARIZONA_DEFAULT_RATE_PCT = 2.0
+// States with no wage withholding at all: the engine returns 0 for them,
+// and the setup gate does not ask for a withholding account.
+export const NO_WITHHOLDING_STATES = ['AK', 'FL', 'NV', 'NH', 'SD', 'TN', 'TX', 'WA', 'WY']
 // FAMLI — Colorado's paid family and medical leave premium, famli.colorado.gov
 // (2026-10-05): "The 2026 premium rate is set at 0.88% of employees' wages,
 // 0.44% paid by the employer and 0.44% paid by the employee"; "premiums are
@@ -435,16 +455,28 @@ export function calcColoradoFamli({ gross, ytdGrossBeforeThis = 0, employeeCount
 
 // Which states this engine withholds for. Anything else needs ratePct from
 // the caller or returns 0 — and the setup gate / run guards should say so.
-export const WITHHOLDING_STATES = ['UT', 'CO']
+export const WITHHOLDING_STATES = ['UT', 'CO', 'ID', 'AZ']
 
 /**
  * Utah state income tax — 4.5% flat (2025–2026, per the Tax Commission).
  * Other states: route through this function with their own ratePct.
  */
-export function calcStateIncomeTax({ gross, state = 'UT', ratePct, filingStatus = 'single', payFrequency = 'bi-weekly', payDate = null, stateAllowance = null, stateExtraPerPeriod = 0 }) {
+export function calcStateIncomeTax({ gross, state = 'UT', ratePct, filingStatus = 'single', payFrequency = 'bi-weekly', payDate = null, stateAllowance = null, stateExtraPerPeriod = 0, stateRatePct = null }) {
   const grossN = Number(gross) || 0
   if (ratePct != null) return r2(grossN * (ratePct / 100))   // another state's flat rate, caller-supplied
   const st = String(state || '').toUpperCase()
+  if (st === 'ID') {
+    const s = scheduleFor(IDAHO_SCHEDULES, payDate)
+    const periods = PAY_FREQUENCY_PERIODS[payFrequency] || PAY_FREQUENCY_PERIODS['bi-weekly']
+    const annual = grossN * periods
+    const threshold = /married_jointly|qualifying/i.test(String(filingStatus || '')) ? s.threshold.married_jointly : s.threshold.other
+    const taxable = Math.max(0, annual - threshold)
+    return r2(Math.max(0, (taxable * s.rate) / periods + (Number(stateExtraPerPeriod) || 0)))
+  }
+  if (st === 'AZ') {
+    const pct = stateRatePct == null || stateRatePct === '' ? ARIZONA_DEFAULT_RATE_PCT : Math.max(0, Number(stateRatePct) || 0)
+    return r2(Math.max(0, grossN * (pct / 100) + (Number(stateExtraPerPeriod) || 0)))
+  }
   if (st === 'CO') {
     // DR 1098, steps 1c → 2f.
     const s = scheduleFor(COLORADO_SCHEDULES, payDate)
@@ -557,6 +589,7 @@ export function calcPaystubTax(input) {
     payDate,
     stateAllowance: employee?.state_withholding_allowance ?? null,
     stateExtraPerPeriod: Number(employee?.state_extra_withholding) || 0,
+    stateRatePct: employee?.state_withholding_rate_pct ?? null,   // Arizona A-4 election
   })
 
   // SUI (employer) — the company's wage base if entered, else the state's

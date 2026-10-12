@@ -293,8 +293,42 @@ describe('Colorado withholding — DR 1098 (rev. 10/21/25)', () => {
     expect(co(200, 'single')).toBe(0)
   })
   it('the engine names the states it withholds for', () => {
-    expect(WITHHOLDING_STATES).toEqual(['UT', 'CO'])
+    expect(WITHHOLDING_STATES).toEqual(['UT', 'CO', 'ID', 'AZ'])
     expect(calcStateIncomeTax({ gross: 1000, state: 'TX' })).toBe(0)
+    expect(calcStateIncomeTax({ gross: 1000, state: 'NV' })).toBe(0)
+  })
+})
+
+// Idaho, EPB00744 as revised 23 July 2026: 5.3% of annual wages over
+// $16,100 single / $32,200 married, spread over the pay periods.
+describe('Idaho withholding', () => {
+  const id = (gross, status, freq = 'semimonthly', payDate = '2026-10-20') => calcStateIncomeTax({ gross, state: 'ID', filingStatus: status, payFrequency: freq, payDate })
+  it('single, $2,000 semimonthly: (48,000 − 16,100) × 5.3% ÷ 24', () => {
+    expect(id(2000, 'single')).toBeCloseTo(70.45, 2)
+  })
+  it('married uses the higher threshold', () => {
+    expect(id(2000, 'married_jointly')).toBeCloseTo((48000 - 32200) * 0.053 / 24, 2)
+  })
+  it('under the threshold owes nothing', () => {
+    expect(id(600, 'single')).toBe(0)
+  })
+  it('a check before the July revision uses the old threshold', () => {
+    expect(id(2000, 'single', 'semimonthly', '2026-03-05')).toBeCloseTo((48000 - 15000) * 0.053 / 24, 2)
+  })
+})
+
+// Arizona, Form A-4: the employee's elected flat rate, 2.0% with no A-4.
+describe('Arizona withholding', () => {
+  it('no A-4 on file withholds 2.0%', () => {
+    expect(calcStateIncomeTax({ gross: 2000, state: 'AZ' })).toBe(40)
+  })
+  it('an elected rate and an extra amount are honored', () => {
+    expect(calcStateIncomeTax({ gross: 2000, state: 'AZ', stateRatePct: 3.5, stateExtraPerPeriod: 10 })).toBe(80)
+    expect(calcStateIncomeTax({ gross: 2000, state: 'AZ', stateRatePct: 0 })).toBe(0)
+  })
+  it('reaches the engine through the employee row', () => {
+    const t = calcPaystubTax({ employee: { w4_filing_status: 'single', state_withholding_rate_pct: 1.5 }, company: { state_employer_id_state: 'AZ', sui_rate_pct: 2.0 }, gross: 1000, payFrequency: 'bi-weekly', payDate: '2026-10-20' })
+    expect(t.stateIncomeTax).toBe(15)
   })
 })
 
