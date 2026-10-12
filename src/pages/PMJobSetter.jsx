@@ -12,7 +12,8 @@ import {
   RefreshCw, Filter, Search, Settings, Plus, Briefcase, CheckCircle2,
   AlertCircle, PauseCircle, PlayCircle, ClipboardList, CalendarPlus, Trash2,
   LayoutGrid, GanttChart, Download, ZoomIn, ZoomOut, Users, Building2,
-  Palette, Edit2, Layers, ChevronUp, MessageSquare, Mail, Phone, ExternalLink
+  Palette, Edit2, Layers, ChevronUp, MessageSquare, Mail, Phone, ExternalLink,
+  Flag, Repeat
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import RecurrencePicker from '../components/RecurrencePicker'
@@ -22,7 +23,11 @@ import { matchAllTokens, buildBlob } from '../lib/searchUtils'
 import { resolveJobStatuses, normalizeStatuses, statusCategory, statusesToSave } from '../lib/jobStatusVocabulary'
 import { fetchUtilityInvoicedJobIds, isUtilityInvoiced } from '../lib/utilityInvoiced'
 import UtilityInvoicedBadge from '../components/UtilityInvoicedBadge'
+import { toast } from '../lib/toast'
 import { localDateStr } from '../lib/localDate'
+import { priorityBadge, sortByPriority, prioritiesFromSettings, priorityOf, priorityValue, NORMAL_PRIORITY } from '../lib/jobPriority'
+import { countsByCustomer, customerIdsOf, batchIds, repeatChip } from '../lib/customerRepeat'
+import { getDeliveredStatusIds } from '../lib/jobMetrics'
 import { zonedHour, zonedDayKey, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
 
 // Default calendar colors for visual distinction
@@ -194,6 +199,14 @@ function jobCellLabel(job) {
 export default function PMJobSetter() {
   const navigate = useNavigate()
   const companyId = useStore((state) => state.companyId)
+  // What this company calls each urgency level; defaults when unset.
+  const storeSettings = useStore((state) => state.settings)
+  const priorityConfig = prioritiesFromSettings(storeSettings)
+  // Which card's priority picker is open, by job id.
+  const [priorityMenuJob, setPriorityMenuJob] = useState(null)
+  // Completed jobs per customer, counted in the DB — the store excludes
+  // archived jobs and most of HHH's history is archived (lib/customerRepeat).
+  const [repeatCounts, setRepeatCounts] = useState({})
   const company = useStore((state) => state.company)
   const user = useStore((state) => state.user)
   const employees = useStore((state) => state.employees)
@@ -397,6 +410,44 @@ export default function PMJobSetter() {
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
+
+  // Completed-job counts per customer, from the database. Its own effect so
+  // a slow read costs a chip, never a card. Batched because PostgREST caps
+  // ANY response at 1000 rows and HHH has 1,076 customers carrying jobs.
+  const repeatCustomerKey = useMemo(() => customerIdsOf(jobs).join(','), [jobs])
+  const deliveredStatusKey = useMemo(
+    () => [...getDeliveredStatusIds(jobStatuses)].join(','),
+    [jobStatuses],
+  )
+  useEffect(() => {
+    const ids = repeatCustomerKey ? repeatCustomerKey.split(',').map(Number) : []
+    if (!companyId || !ids.length) return
+    let live = true
+    const delivered = deliveredStatusKey ? deliveredStatusKey.split(',') : []
+    Promise.all(batchIds(ids).map(batch =>
+      supabase.rpc('customer_completed_job_counts', {
+        p_company_id: companyId,
+        p_customer_ids: batch,
+        p_delivered_statuses: delivered,
+      }).then(({ data, error }) => {
+        if (error) console.warn('[job-board] repeat counts failed:', error.message)
+        return data || []
+      })
+    )).then(pages => { if (live) setRepeatCounts(countsByCustomer(pages.flat())) })
+    return () => { live = false }
+  }, [companyId, repeatCustomerKey, deliveredStatusKey])
+
+  // Set urgency without leaving the board.
+  const setJobPriority = async (job, level) => {
+    setPriorityMenuJob(null)
+    const value = priorityValue(level)
+    if (value === (job.priority ?? null)) return
+    const { error } = await supabase.from('jobs').update({ priority: value }).eq('id', job.id)
+    if (error) { toast.error('Could not save the priority: ' + error.message); return }
+    setJobs(prev => prev.map(j => (j.id === job.id ? { ...j, priority: value } : j)))
+    const name = priorityConfig.find(l => l.level === (value ?? NORMAL_PRIORITY))?.name
+    toast.success(`${job.job_title || job.customer?.name || 'Job'} — ${name}`)
+  }
 
   // Which jobs have a utility rebate invoice out. Its own effect so a slow or
   // failed read here can never delay or break the board.
@@ -953,7 +1004,7 @@ export default function PMJobSetter() {
     const scheduledStatus = jobStatuses.find(s => s.name.toLowerCase() === 'scheduled')
     const scheduledStatusId = scheduledStatus?.id
 
-    return getFilteredJobs()
+    const rows = getFilteredJobs()
       .filter(j => {
         // Only reroute jobs if we have a Scheduled column configured
         if (!scheduledStatusId) return j.status === statusId
@@ -1007,6 +1058,14 @@ export default function PMJobSetter() {
         if (!b.start_date) return -1
         return new Date(a.start_date) - new Date(b.start_date)
       })
+
+    // Urgent to the top of the column. sortByPriority is stable, so the
+    // ordering above survives untouched inside each level. Deliberately NOT
+    // applied to a closed column: there, 'most recently closed first' is the
+    // thing reps read, and an old urgent job jumping the newest win would be
+    // a regression dressed as a feature.
+    const closedCol = ['Complete', 'Completed', 'Verified', 'Verified Complete', 'Cancelled'].includes(statusId)
+    return closedCol ? rows : sortByPriority(rows)
   }
 
   // Get sections for a job
@@ -2996,6 +3055,106 @@ export default function PMJobSetter() {
                                       : <ChevronRight size={16} style={{ color: theme.textMuted }} />}
                                   </span>
                                   <div style={{ flex: 1, minWidth: 0 }}>
+                                    {/* Urgency, and where it is set. The badge is absent
+                                        at normal (lib/jobPriority) so a column of ordinary
+                                        work stays readable; the flag is a control, so it
+                                        is always offered. */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                      {(() => {
+                                        const pb = priorityBadge(job, priorityConfig)
+                                        if (!pb) return null
+                                        return (
+                                          <span
+                                            title={pb.label}
+                                            aria-label={pb.label}
+                                            style={{
+                                              width: '18px', height: '18px', borderRadius: '50%', flexShrink: 0,
+                                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                              fontSize: '10px', fontWeight: 700, lineHeight: 1,
+                                              backgroundColor: pb.urgent ? pb.color : 'transparent',
+                                              color: pb.urgent ? '#fff' : pb.color,
+                                              border: pb.urgent ? 'none' : `1.5px solid ${pb.color}`,
+                                            }}
+                                          >{pb.level}</span>
+                                        )
+                                      })()}
+                                      {(() => {
+                                        const chip = repeatChip(repeatCounts[job.customer_id ?? job.customer?.id])
+                                        if (!chip) return null
+                                        return (
+                                          <span title={chip.label} style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                            padding: '1px 7px', borderRadius: '9px', fontSize: '10px', fontWeight: 700,
+                                            backgroundColor: theme.accentBg, color: theme.accent, flexShrink: 0,
+                                          }}>
+                                            <Repeat size={9} /> {chip.count}
+                                          </span>
+                                        )
+                                      })()}
+                                      <span style={{ flex: 1 }} />
+                                      <span style={{ position: 'relative', flexShrink: 0 }}>
+                                        <span
+                                          role="button"
+                                          aria-label="Set priority"
+                                          title={`Priority: ${priorityConfig.find(l => l.level === priorityOf(job))?.name}`}
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            setPriorityMenuJob(priorityMenuJob === job.id ? null : job.id)
+                                          }}
+                                          style={{
+                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                            width: '22px', height: '22px', borderRadius: '6px', cursor: 'pointer',
+                                            color: priorityBadge(job, priorityConfig)?.color || theme.textMuted,
+                                            backgroundColor: theme.bg,
+                                          }}
+                                        >
+                                          <Flag size={12} />
+                                        </span>
+                                        {priorityMenuJob === job.id && (
+                                          <>
+                                            <span
+                                              onClick={(e) => { e.stopPropagation(); setPriorityMenuJob(null) }}
+                                              style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                                            />
+                                            <span
+                                              onClick={(e) => e.stopPropagation()}
+                                              style={{
+                                                position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 41,
+                                                display: 'block', minWidth: '146px', padding: '4px',
+                                                backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                                                borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
+                                              }}
+                                            >
+                                              {priorityConfig.map(lvl => {
+                                                const active = priorityOf(job) === lvl.level
+                                                return (
+                                                  <span
+                                                    key={lvl.level}
+                                                    role="button"
+                                                    onClick={(e) => { e.stopPropagation(); setJobPriority(job, lvl.level) }}
+                                                    style={{
+                                                      display: 'flex', alignItems: 'center', gap: '8px',
+                                                      padding: '7px 9px', borderRadius: '7px', cursor: 'pointer',
+                                                      fontSize: '13px', fontWeight: active ? 700 : 400,
+                                                      backgroundColor: active ? theme.accentBg : 'transparent',
+                                                      color: active ? theme.accent : theme.text,
+                                                    }}
+                                                  >
+                                                    <span style={{
+                                                      width: '17px', height: '17px', borderRadius: '50%', flexShrink: 0,
+                                                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                      fontSize: '10px', fontWeight: 700, color: '#fff',
+                                                      backgroundColor: lvl.level === NORMAL_PRIORITY ? theme.textMuted : lvl.color,
+                                                    }}>{lvl.level}</span>
+                                                    {lvl.name}
+                                                  </span>
+                                                )
+                                              })}
+                                            </span>
+                                          </>
+                                        )}
+                                      </span>
+                                    </div>
                                     {/* Service visits lead with the SERVICE name (that's the
                                         operative info for dispatch) + a kind chip and a pointer
                                         to the PARENT JOB they belong to — not the contact name
