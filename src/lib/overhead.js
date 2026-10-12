@@ -1,3 +1,5 @@
+import { hourlyCostRate, isSalaried, annualWageOf, effectiveBurdenPct } from './laborRate.js'
+
 // Overhead, spread over the hours people actually worked.
 //
 // Job costing charges a job what went INTO it: its parts, its crew's hours,
@@ -61,6 +63,87 @@ export function isOverheadSpend(category) {
 const dayOf = (v) => String(v ?? '').slice(0, 10)
 
 /**
+ * The wage cost of time that is not on a job — the office, and the parts of
+ * everyone's week that no job is paying for.
+ *
+ * The bank's Payroll line is deliberately excluded from the spend pool
+ * because it is one lump covering the crew, whose wages job costing already
+ * charges to their jobs by the hour. This is the other half of that lump,
+ * computed rather than guessed.
+ *
+ * Two shapes, so nobody is counted twice:
+ *
+ *   SALARIED — their whole salary for the window is a company cost whether
+ *     they clock or not. Bryce earns $96,000 and clocks nothing; his pay
+ *     reached no job and no overhead at all before this. So: the window's
+ *     share of salary, LESS whatever already landed on jobs through their
+ *     clocked job hours. A salaried PM who spends the week on site moves his
+ *     own cost onto those jobs and leaves nothing here.
+ *
+ *   HOURLY — paid for the hours they clock, so only the off-job ones are
+ *     overhead. Their job hours are already on the jobs.
+ *
+ * Someone who left part-way through the window still costs what they were
+ * paid; we have no leaving date granularity finer than the day, so an
+ * inactive employee with no clocked time simply contributes nothing.
+ */
+export function offJobLabourCost({ employees = [], timeClock = [], company = null, from, to } = {}) {
+  const inWindow = (d) => { const k = dayOf(d); return !!k && k >= from && k <= to }
+  const days = Math.max(1, Math.round((new Date(to) - new Date(from)) / 86400000) + 1)
+
+  const jobHours = new Map()
+  const offHours = new Map()
+  for (const p of timeClock || []) {
+    if (p?.employee_id == null) continue
+    if (!inWindow(p.clock_in || p.date)) continue
+    let h = Number(p.total_hours)
+    if (!(Number.isFinite(h) && h > 0)) {
+      h = p.clock_in && p.clock_out ? (new Date(p.clock_out) - new Date(p.clock_in)) / 36e5 : 0
+    }
+    if (!(h > 0)) continue
+    const key = String(p.employee_id)
+    const map = p.job_id ? jobHours : offHours
+    map.set(key, (map.get(key) || 0) + h)
+  }
+
+  let total = 0
+  const perEmployee = []
+  for (const e of employees || []) {
+    if (!e || e.id == null) continue
+    const key = String(e.id)
+    const onJobs = jobHours.get(key) || 0
+    const off = offHours.get(key) || 0
+    // Someone long gone who clocked nothing in the window costs nothing.
+    if (e.active === false && onJobs === 0 && off === 0) continue
+    const rate = hourlyCostRate(e, company)
+    let cost = 0
+    let basis = null
+    if (isSalaried(e)) {
+      const annual = annualWageOf(e)
+      if (annual > 0) {
+        const windowPay = (annual * (days / 365)) * (1 + effectiveBurdenPct(annual, company) / 100)
+        const alreadyOnJobs = onJobs * rate
+        cost = Math.max(0, windowPay - alreadyOnJobs)
+        basis = 'salary less what reached jobs'
+      }
+    } else if (off > 0 && rate > 0) {
+      cost = off * rate
+      basis = 'hours clocked off a job'
+    }
+    if (!(cost > 0)) continue
+    total += cost
+    perEmployee.push({
+      id: e.id, name: e.name || String(e.id), basis,
+      cost: Math.round(cost * 100) / 100,
+      jobHours: Math.round(onJobs * 10) / 10,
+      offJobHours: Math.round(off * 10) / 10,
+    })
+  }
+  perEmployee.sort((a, b) => b.cost - a.cost)
+  return { total: Math.round(total * 100) / 100, perEmployee, days }
+}
+
+/**
  * What one person-hour of work costs the company in overhead.
  *
  * Measured over a trailing window so it is a rate the business is running at
@@ -73,6 +156,7 @@ const dayOf = (v) => String(v ?? '').slice(0, 10)
  */
 export function overheadRatePerHour({
   expenses = [], plaidTransactions = [], timeClock = [],
+  employees = [], company = null,
   now = new Date(), days = 90,
 } = {}) {
   const to = dayOf(new Date(now).toISOString())
@@ -86,7 +170,9 @@ export function overheadRatePerHour({
     const amt = Number(t?.amount) || 0
     if (amt <= 0 || t.is_transfer) continue
     if (t.job_id || t.ai_job_id) continue           // the job pays for it
-    const cat = t.category || t.ai_category
+    // The category a PERSON set beats the AI's guess — lib/reports and
+    // journalExport read them in that order and so must this.
+    const cat = t.user_category || t.ai_category || t.category
     if (!isOverheadSpend(cat)) continue
     if (!inWindow(t.date)) continue
     pool += amt
@@ -118,10 +204,20 @@ export function overheadRatePerHour({
     }
   }
 
+  // The office, and everyone's off-job time. Only when the caller supplies
+  // employees, so an existing caller's number does not move under it.
+  const labour = employees.length
+    ? offJobLabourCost({ employees, timeClock, company, from, to })
+    : { total: 0, perEmployee: [] }
+  pool += labour.total
+
   const perHour = pool > 0 && hours > 0 ? pool / hours : 0
   return {
     perHour, pool: Math.round(pool * 100) / 100, hours: Math.round(hours * 10) / 10,
     from, to,
+    spend: Math.round((pool - labour.total) * 100) / 100,
+    offJobLabour: labour.total,
+    offJobLabourBy: labour.perEmployee,
     included: [...included.entries()].sort((a, b) => b[1] - a[1]).map(([category, amount]) => ({ category, amount })),
   }
 }

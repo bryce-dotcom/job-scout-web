@@ -2968,8 +2968,8 @@ export default function EOS() {
   // Rent, insurance, fuel, vehicles — spread over the hours worked on jobs.
   // lib/overhead decides what is in the pool; it is deliberately an allow-list.
   const overheadRate = useMemo(
-    () => overheadRatePerHour({ expenses, plaidTransactions, timeClock }),
-    [expenses, plaidTransactions, timeClock])
+    () => overheadRatePerHour({ expenses, plaidTransactions, timeClock, employees, company }),
+    [expenses, plaidTransactions, timeClock, employees, company])
 
   // Cost per job, computed ONCE from lib/reports.jobCosting — the one cost
   // rule in the app. No date window: a job finished this week was worked in

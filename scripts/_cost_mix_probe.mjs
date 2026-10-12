@@ -43,7 +43,7 @@ const [jobs, jobLines, products, comps, bonuses, payments, invoices, plaid, expe
 const live = jobs.filter(j => j.status !== 'Archived')
 const jobStatuses = JSON.parse(st?.[0]?.value || '[]')
 
-const oh = overheadRatePerHour({ expenses, plaidTransactions: plaid, timeClock })
+const oh = overheadRatePerHour({ expenses, plaidTransactions: plaid, timeClock, employees, company: companyRow })
 console.log('OVERHEAD POOL ' + money(oh.pool) + ' over ' + oh.hours + ' job hours (' + oh.from + '..' + oh.to + ') = ' + money(oh.perHour) + '/hour')
 console.log('  ' + oh.included.map(x => x.category + ' ' + money(x.amount)).join(', ') + '\n')
 
