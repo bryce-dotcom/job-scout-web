@@ -5525,7 +5525,10 @@ export default function Payroll() {
                   to fix it. Bryce: "get payroll right for everyone." */}
               {setupProblems.length > 0 && (
                 <div style={{ padding: '14px 16px', borderRadius: '10px', border: '1px solid rgba(239,68,68,0.5)', backgroundColor: 'rgba(239,68,68,0.08)', marginBottom: '16px' }}>
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#b91c1c', marginBottom: '8px' }}>{setupGateSummary(setupProblems)}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: '8px', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#b91c1c' }}>{setupGateSummary(setupProblems)}</div>
+                    <button type="button" onClick={() => { setShowRunPayrollModal(false); navigate('/payroll/setup') }} style={{ padding: '6px 12px', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', minHeight: 32 }}>Open Payroll setup — all of it on one page</button>
+                  </div>
                   {setupProblems.map(p => (
                     <div key={p.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', padding: '6px 0', borderTop: `1px solid ${theme.border}`, fontSize: '13px' }}>
                       <div style={{ minWidth: 0 }}>

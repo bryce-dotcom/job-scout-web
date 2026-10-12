@@ -69,6 +69,7 @@ import TimeClock from './pages/TimeClock'
 import FieldScout from './pages/FieldScout'
 import Payroll from './pages/Payroll'
 import PayrollInbox from './pages/PayrollInbox'
+import PayrollSetup from './pages/PayrollSetup'
 import OnboardingPortal from './pages/OnboardingPortal'
 import MyPay from './pages/MyPay'
 import Books from './pages/Books'
@@ -472,6 +473,7 @@ function App() {
           <Route path="/field-scout" element={<FieldScout />} />
           <Route path="/payroll" element={<Payroll />} />
           <Route path="/payroll/inbox" element={<PayrollInbox />} />
+          <Route path="/payroll/setup" element={<PayrollSetup />} />
           <Route path="/my-pay" element={<MyPay />} />
           <Route path="/books" element={<Books />} />
 

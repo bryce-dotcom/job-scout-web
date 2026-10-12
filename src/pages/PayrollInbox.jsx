@@ -401,6 +401,8 @@ export default function PayrollInbox() {
       {/* Setup gaps */}
       {setupGaps.length > 0 && (
         <Section title="Set this up so payroll math is correct" theme={theme}>
+          <Row tone={TONE.yellow} theme={theme} icon={SettingsIcon} title="Payroll setup, all on one page" subtitle="Tax accounts, people, bank, and the checks your old provider paid this year"
+            right={<button onClick={() => navigate('/payroll/setup')} style={btn(theme)}>Open<ChevronRight size={14} /></button>} />
           {setupGaps.map(g => (
             <Row
               key={g.key}

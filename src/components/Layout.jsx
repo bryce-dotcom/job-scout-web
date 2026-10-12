@@ -443,7 +443,8 @@ export default function Layout() {
         { to: '/time-clock', icon: Clock, label: 'Time Clock', hint: 'Clock in and out track hours worked' },
         { to: '/my-pay', icon: DollarSign, label: 'My Pay', hint: 'Your commissions, pending payouts, and hours' },
         { to: '/payroll', icon: DollarSign, label: 'Payroll', hint: 'Commissions, hours, bonuses, and pay runs' },
-        { to: '/payroll/inbox', icon: Inbox, label: 'Payroll Inbox', hint: 'Tax deposits, new-hire reports, and filings — what to do today' }
+        { to: '/payroll/inbox', icon: Inbox, label: 'Payroll Inbox', hint: 'Tax deposits, new-hire reports, and filings — what to do today' },
+        { to: '/payroll/setup', icon: SettingsIcon, label: 'Payroll setup', hint: 'Tax accounts, people, bank, and the checks your old provider paid — the walk off Gusto' }
       ]
     }
   ]
