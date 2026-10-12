@@ -120,27 +120,34 @@ for (const f of files) writeFileSync(join(OUT, f.key), f.body)
 // building this for. The launcher gets a far milder warning and the page
 // warns them about it first. So this builds, checks the signature, and
 // refuses to upload without one.
+// The agent names its own version; the Mac bundle has to carry the same one
+// or a person comparing "agent 0.3.0" on the Connect page with what is
+// installed gets two different answers.
+const AGENT_VERSION = (() => {
+  const m = readFileSync(join(ROOT, 'scripts/jobscout-agent.mjs'), 'utf8').match(/const VERSION = '([^']+)'/)
+  if (!m) die('cannot read the agent version')
+  return m[1]
+})()
+
+// `deno` on PATH is a .cmd shim on Windows, and Node will not exec one
+// without a shell — which is not a door to open for a build step. Find the
+// real executable instead; on a CI runner it is on PATH as itself.
+const deno = (() => {
+  if (process.platform !== 'win32') return 'deno'
+  for (const g of [
+    join(process.env.APPDATA || '', 'npm/node_modules/deno/deno.exe'),
+    join(process.env.USERPROFILE || '', '.deno/bin/deno.exe'),
+  ]) {
+    try { readFileSync(g); return g } catch { /* next */ }
+  }
+  return 'deno.exe'
+})()
+
 const exeWanted = process.argv.includes('--exe')
 if (exeWanted) {
   const { execFileSync } = await import('node:child_process')
   const exePath = join(OUT, 'JobScoutAgent.exe')
   const run = (cmd2, args) => execFileSync(cmd2, args, { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' })
-
-  // `deno` on PATH is a .cmd shim on Windows, and Node will not exec one
-  // without a shell — which is not a door to open for a build step. Find the
-  // real executable instead; on a CI runner it is on PATH as itself.
-  const deno = (() => {
-    if (process.platform !== 'win32') return 'deno'
-    const guesses = [
-      join(process.env.APPDATA || '', 'npm/node_modules/deno/deno.exe'),
-      join(process.env.USERPROFILE || '', '.deno/bin/deno.exe'),
-      'deno.exe',
-    ]
-    for (const g of guesses) {
-      try { readFileSync(g); return g } catch { /* next */ }
-    }
-    return 'deno.exe'
-  })()
 
   // Signing happens BETWEEN building and publishing, so the publishing run
   // must not compile a fresh unsigned binary over the signed one. That is the
@@ -185,6 +192,128 @@ if (exeWanted) {
     console.log('                    (sign it first: .github/workflows/agent-release.yml)')
   }
 }
+
+// ── 2c. the Mac app ─────────────────────────────────────────────────────
+//
+// `--mac` builds JobScout Agent.app. Both architectures, because an Intel Mac
+// cannot run an arm64 binary at all — there is no Rosetta in that direction —
+// and a download that simply fails on somebody's older MacBook is worse than
+// one that is bigger.
+//
+// Deno cross-compiles the binaries from any platform, so the two halves of
+// this split cleanly: the BUILD runs anywhere, and only lipo, codesign and
+// notarytool need a real Mac. That is why the workflow has a separate macOS
+// job rather than doing everything there.
+//
+// SAME RULE AS WINDOWS: unsigned is not published. On macOS unsigned is worse
+// still — Gatekeeper refuses outright with "cannot be opened because the
+// developer cannot be verified", and the right-click-Open workaround is folk
+// knowledge most people do not have.
+const macWanted = process.argv.includes('--mac')
+if (macWanted) {
+  const { execFileSync } = await import('node:child_process')
+  const { mkdirSync: mkdir, cpSync, rmSync } = await import('node:fs')
+  const run = (c, a) => execFileSync(c, a, { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' })
+  const prebuilt = process.argv.includes('--mac-prebuilt')
+
+  const APP = join(OUT, 'JobScout Agent.app')
+  const MACOS = join(APP, 'Contents/MacOS')
+  const ARCHES = [
+    { target: 'aarch64-apple-darwin', out: join(OUT, 'jobscout-agent-arm64') },
+    { target: 'x86_64-apple-darwin', out: join(OUT, 'jobscout-agent-x64') },
+  ]
+
+  if (!prebuilt) {
+    for (const a of ARCHES) {
+      try {
+        run(deno, [
+          'compile', '--allow-all', '--node-modules-dir=none', '--target', a.target,
+          '--include', 'scripts/agent/recorder.ps1',
+          '--include', 'scripts/agent/recorder.jxa.js',
+          '--output', a.out, 'scripts/jobscout-agent.mjs',
+        ])
+      } catch (e) {
+        die(`deno compile for ${a.target} failed: ${String(e.stderr || e.message).slice(0, 300)}`)
+      }
+      console.log(`  ${a.target.padEnd(22)} ${(readFileSync(a.out).length / 1048576).toFixed(0)} MB`)
+    }
+
+    // One binary for both machines. lipo is a Mac tool; off a Mac the bundle
+    // is assembled with the arm64 slice so the layout can still be checked,
+    // and the workflow's macOS job is what produces the real universal one.
+    rmSync(APP, { recursive: true, force: true })
+    mkdir(MACOS, { recursive: true })
+    mkdir(join(APP, 'Contents/Resources'), { recursive: true })
+    const exeOut = join(MACOS, 'jobscout-agent')
+    let universal = false
+    if (process.platform === 'darwin') {
+      run('lipo', ['-create', '-output', exeOut, ARCHES[0].out, ARCHES[1].out])
+      run('chmod', ['+x', exeOut])
+      universal = true
+    } else {
+      cpSync(ARCHES[0].out, exeOut)
+    }
+    writeFileSync(
+      join(APP, 'Contents/Info.plist'),
+      readFileSync(join(HERE, 'agent/mac/Info.plist'), 'utf8').replaceAll('__VERSION__', AGENT_VERSION),
+    )
+    console.log(`  JobScout Agent.app ${universal ? 'universal' : 'arm64 only — lipo needs a Mac'}`)
+  }
+
+  // Is it signed AND notarized? `spctl --assess` is the question Gatekeeper
+  // itself will ask when somebody double-clicks it, which is the only answer
+  // worth having. codesign --verify alone would pass on a self-signed build
+  // that macOS still refuses to open.
+  let verdict = null
+  if (process.platform === 'darwin') {
+    try {
+      run('codesign', ['--verify', '--deep', '--strict', APP])
+      const assess = run('spctl', ['--assess', '--type', 'execute', '--verbose=2', APP])
+      verdict = /accepted/i.test(assess) ? 'accepted' : assess.trim().slice(0, 120)
+    } catch (e) {
+      verdict = String(e.stderr || e.message).trim().split('\n')[0].slice(0, 120)
+    }
+  }
+
+  if (verdict === 'accepted') {
+    // Zipped with ditto, which is how Apple says to archive a bundle: a plain
+    // zip loses the symlinks and extended attributes a signature is made of,
+    // and the thing that arrives is no longer signed.
+    const zip = join(OUT, 'JobScoutAgent-mac.zip')
+    run('ditto', ['-c', '-k', '--keepParent', APP, zip])
+    files.push({ key: 'JobScoutAgent-mac.zip', body: readFileSync(zip), type: 'application/zip' })
+    console.log('  gatekeeper        accepted — it will be published')
+  } else {
+    console.log(`  gatekeeper        ${verdict || 'not checked off a Mac'} — built, NOT published`)
+  }
+}
+
+// ── 2d. what a person should actually be offered ────────────────────────
+//
+// The download page reads this rather than guessing. Which means the day a
+// signed installer is published, the button changes by itself — no deploy,
+// nobody to remember. And until then it cannot offer a link to a file that
+// is not there, which is worse than offering the launcher.
+//
+// Built from `files`, so it can only ever name something that is really
+// being uploaded. An installer that failed its signature check is not in
+// that list, so it cannot be advertised here either.
+const has = (key) => files.some((f) => f.key === key)
+const manifest = {
+  version: AGENT_VERSION,
+  published_at: new Date().toISOString(),
+  windows: {
+    // The one to offer, best first.
+    installer: has('JobScoutAgent.exe') ? 'JobScoutAgent.exe' : null,
+    launcher: 'JobScout Agent.cmd',
+  },
+  mac: {
+    installer: has('JobScoutAgent-mac.zip') ? 'JobScoutAgent-mac.zip' : null,
+    launcher: 'JobScout Agent.command',
+  },
+}
+files.push({ key: 'release.json', body: JSON.stringify(manifest, null, 2), type: 'application/json' })
+writeFileSync(join(OUT, 'release.json'), JSON.stringify(manifest, null, 2))
 
 // ── 3. publish ──────────────────────────────────────────────────────────
 if (process.argv.includes('--dry-run')) {

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The .app wrapper for the Mac agent. __VERSION__ is filled in at build time.
+
+  WHY A BUNDLE AND NOT A BARE BINARY, which is what the agent actually is:
+
+  1. A bare command-line binary cannot be STAPLED. The notarization ticket
+     then has to be fetched online every launch, so the first run on a job
+     site with no signal shows a scary dialog instead of starting.
+  2. Screen Recording, Accessibility and Input Monitoring are granted per
+     APPLICATION. A loose binary run from Terminal is attributed to Terminal,
+     so the person ends up granting Terminal the right to watch their screen —
+     a broader and more alarming thing than granting it to us, and it silently
+     stops working the day they run it from somewhere else.
+  3. Double-clicking it works.
+
+  NO TERMINAL WINDOW ON MACOS, and that is a real difference from Windows.
+  There, the agent's console IS part of the design: every action prints in it
+  and closing it stops Arnie. An .app opened from Finder has no console, and
+  the ways to give it one — re-launching itself inside Terminal, shipping a
+  wrapper script — are clever in the way that breaks on somebody else's
+  machine. So on a Mac the log and the kill switch are the ones already built
+  and tested in the app: Arnie → Computer lists every action with its verdict
+  and has Stop Arnie here. The .command launcher stays published for anyone
+  who would rather watch a window.
+
+  It keeps a Dock icon on purpose (no LSUIElement): a thing with hands on your
+  computer should be visible while it runs, and quittable from the Dock.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>JobScout Agent</string>
+  <key>CFBundleDisplayName</key>
+  <string>JobScout Agent</string>
+  <key>CFBundleIdentifier</key>
+  <string>services.hhh.jobscout.agent</string>
+  <key>CFBundleExecutable</key>
+  <string>jobscout-agent</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>__VERSION__</string>
+  <key>CFBundleVersion</key>
+  <string>__VERSION__</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHumanReadableCopyright</key>
+  <string>Hollow Hills Holdings</string>
+</dict>
+</plist>

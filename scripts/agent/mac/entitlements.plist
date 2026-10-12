@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What the signed agent is allowed to do, under the hardened runtime.
+
+  DELIBERATELY ONE ENTITLEMENT. Every key here trades away a protection, and
+  the usual advice — paste in allow-jit, allow-unsigned-executable-memory and
+  disable-library-validation together — gives away two of them to fix a
+  problem you may not have. Start with the one that is structurally required
+  and add others only when a real failure names them.
+
+  allow-jit is structurally required: the agent is a compiled JavaScript
+  runtime, V8 allocates executable memory at startup with mmap(MAP_JIT), and
+  the hardened runtime denies that without this. The binary then dies on
+  launch with an out-of-executable-memory error — AFTER notarizing cleanly,
+  because notarization checks the signature and never runs the program.
+
+  Not here, and worth knowing why:
+
+  com.apple.security.automation.apple-events — would be needed if the agent
+  itself drove other apps through AppleEvents. It does not: it spawns
+  osascript, which is its own process and prompts under its own identity.
+  Adding it here would ask the person for a permission nothing uses.
+
+  Screen Recording, Accessibility and Input Monitoring are NOT entitlements.
+  They are TCC grants a person flips in System Settings, per application, and
+  no signature can grant them. The recorder already checks for them and says
+  so rather than recording nothing.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+</dict>
+</plist>

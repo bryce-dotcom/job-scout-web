@@ -260,3 +260,94 @@ describe('the signed executable, when there is a certificate for one', () => {
     expect(agent).not.toMatch(/statSync\(p\)\.isFile\(\)/)
   })
 })
+
+describe('the Mac half', () => {
+  const builder = read('../../scripts/build-agent-release.mjs')
+  const workflow = read('../../.github/workflows/agent-release.yml')
+  const plist = read('../../scripts/agent/mac/Info.plist')
+  // The KEYS, with the prose taken out. That file explains at length why
+  // disable-library-validation and allow-unsigned-executable-memory are not
+  // in it, so an assertion that reads the comments fails on the very
+  // documentation that makes the point. Fourth time this trap has been hit.
+  const ents = read('../../scripts/agent/mac/entitlements.plist').replace(/<!--[\s\S]*?-->/g, '')
+
+  it('both architectures, because an Intel Mac cannot run an arm64 binary', () => {
+    expect(builder).toMatch(/aarch64-apple-darwin/)
+    expect(builder).toMatch(/x86_64-apple-darwin/)
+    expect(workflow).toMatch(/runs-on: macos-latest/)
+  })
+
+  it('it is an .app, not a loose binary', () => {
+    // A bare binary cannot be stapled, and Screen Recording / Accessibility
+    // are granted per APPLICATION — run loose from Terminal, the person ends
+    // up granting Terminal the right to watch their screen.
+    expect(builder).toMatch(/Contents\/MacOS/)
+    expect(plist).toMatch(/<key>CFBundleExecutable<\/key>\s*\n\s*<string>jobscout-agent<\/string>/)
+    expect(plist).toMatch(/services\.hhh\.jobscout\.agent/)
+  })
+
+  it('the one entitlement a JavaScript runtime structurally needs, and no more', () => {
+    // allow-jit or V8 cannot allocate executable memory under the hardened
+    // runtime and the binary dies on launch — AFTER notarizing cleanly,
+    // because notarization never runs the program.
+    expect(ents).toMatch(/com\.apple\.security\.cs\.allow-jit/)
+    expect(ents).not.toMatch(/disable-library-validation/)
+    expect(ents).not.toMatch(/allow-unsigned-executable-memory/)
+  })
+
+  it('signed with the hardened runtime, innermost code first', () => {
+    const sign = workflow.slice(workflow.indexOf('name: Sign'), workflow.indexOf('name: Notarize'))
+    expect(sign).toMatch(/--options runtime/)
+    expect(sign).toMatch(/--entitlements scripts\/agent\/mac\/entitlements\.plist/)
+    expect(sign.indexOf('Contents/MacOS/jobscout-agent')).toBeLessThan(sign.lastIndexOf('--sign "$IDENTITY" "$APP"'))
+  })
+
+  it('archived with ditto, which keeps a signature intact', () => {
+    // A plain zip drops the symlinks and xattrs a signature is made of, and
+    // what arrives at Apple is no longer signed.
+    expect(workflow).toMatch(/ditto -c -k --keepParent/)
+    expect(builder).toMatch(/run\('ditto', \['-c', '-k', '--keepParent'/)
+    expect(workflow).toMatch(/xcrun stapler staple/)
+  })
+
+  it('and Gatekeeper is asked, not codesign', () => {
+    // codesign --verify passes on builds macOS still refuses to open.
+    expect(workflow).toMatch(/spctl --assess --type execute/)
+    expect(builder).toMatch(/run\('spctl', \['--assess'/)
+    expect(builder).toMatch(/built, NOT published/)
+  })
+
+  it('the certificate never lands in the runner’s login keychain', () => {
+    expect(workflow).toMatch(/security create-keychain/)
+    expect(workflow).toMatch(/\$RUNNER_TEMP\/signing\.keychain-db/)
+    expect(workflow).toMatch(/rm -f "\$RUNNER_TEMP\/cert\.p12"/)
+    expect(workflow).toMatch(/rm -f "\$RUNNER_TEMP\/AuthKey\.p8"/)
+  })
+})
+
+describe('the page offers what is really published', () => {
+  const builder = read('../../scripts/build-agent-release.mjs')
+  const page = read('../pages/agents/arnie/ArnieComputer.jsx')
+
+  it('the manifest can only name a file that is actually being uploaded', () => {
+    expect(builder).toMatch(/const has = \(key\) => files\.some\(\(f\) => f\.key === key\)/)
+    expect(builder).toMatch(/installer: has\('JobScoutAgent\.exe'\) \? 'JobScoutAgent\.exe' : null/)
+    expect(builder).toMatch(/installer: has\('JobScoutAgent-mac\.zip'\) \? 'JobScoutAgent-mac\.zip' : null/)
+  })
+
+  it('and the page reads it, so signing needs no deploy', () => {
+    expect(page).toMatch(/fetch\(`\$\{base\}\/release\.json`/)
+    expect(page).toMatch(/r\?\.installer \|\| r\?\.launcher \|\| fallback/)
+  })
+
+  it('a missing manifest still gets somebody the launcher', () => {
+    expect(page).toMatch(/const fallback = which === 'mac' \? 'JobScout Agent\.command' : 'JobScout Agent\.cmd'/)
+  })
+
+  it('and a signed build is not warned about', () => {
+    // Warning people about a box that will not appear teaches them to expect
+    // trouble.
+    expect(page).toMatch(/mine\.signed/)
+    expect(page).toMatch(/It is signed by Hollow Hills Holdings, so it opens normally\./)
+  })
+})

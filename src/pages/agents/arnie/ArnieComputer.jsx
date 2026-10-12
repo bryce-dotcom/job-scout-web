@@ -453,7 +453,30 @@ function GetTheAgent() {
   const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
   const mac = /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua)
   const phone = /iPhone|iPad|Android/i.test(ua)
-  const file = mac ? 'JobScout Agent.command' : 'JobScout Agent.cmd'
+
+  // What is actually published, rather than what we hope is. The release
+  // writes release.json naming the best download it really uploaded, so the
+  // day a signed installer exists this offers it with no deploy and nobody to
+  // remember — and until then it cannot link to a file that is not there.
+  const [release, setRelease] = useState(null)
+  useEffect(() => {
+    let alive = true
+    fetch(`${base}/release.json`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (alive) setRelease(j) }, () => {})
+    return () => { alive = false }
+  }, [base])
+
+  // The launcher is the floor: it is what shipped before any of this and it
+  // works, so a missing or unreadable manifest costs nobody their download.
+  const pick = (which) => {
+    const r = release?.[which]
+    const fallback = which === 'mac' ? 'JobScout Agent.command' : 'JobScout Agent.cmd'
+    return { name: r?.installer || r?.launcher || fallback, signed: !!r?.installer }
+  }
+  const mine = pick(mac ? 'mac' : 'windows')
+  const other = pick(mac ? 'windows' : 'mac')
+  const file = mine.name
   const href = `${base}/${encodeURIComponent(file)}`
 
   return (
@@ -479,7 +502,7 @@ function GetTheAgent() {
             <Download size={14} /> {mac ? 'Download for Mac' : 'Download for Windows'}
           </a>
           <a
-            href={`${base}/${encodeURIComponent(mac ? 'JobScout Agent.cmd' : 'JobScout Agent.command')}`}
+            href={`${base}/${encodeURIComponent(other.name)}`}
             download
             style={{ ...btn(t.card2, t.sub), textDecoration: 'none' }}
           >
@@ -487,10 +510,17 @@ function GetTheAgent() {
           </a>
         </div>
         <div style={{ fontSize: 12, color: t.muted, marginTop: 8, lineHeight: 1.5 }}>
-          Your browser will ask whether to keep it, because it is a program rather than a
-          document. Keep it. {mac
-            ? 'The first time you open it, hold Control and click it, then choose Open — macOS only offers that choice on a first run.'
-            : 'Windows may also show a blue "protected your PC" box — choose More info, then Run anyway.'}
+          {mine.signed
+            // A signed build is the whole point of signing: nothing to warn
+            // about, so nothing is said. Warning people about a box that will
+            // not appear teaches them to expect trouble.
+            ? 'It is signed by Hollow Hills Holdings, so it opens normally.'
+            : <>
+              Your browser will ask whether to keep it, because it is a program rather than a
+              document. Keep it. {mac
+                ? 'The first time you open it, hold Control and click it, then choose Open — macOS only offers that choice on a first run.'
+                : 'Windows may also show a blue "protected your PC" box — choose More info, then Run anyway.'}
+            </>}
         </div>
       </Step>
 
