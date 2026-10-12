@@ -279,6 +279,38 @@ Deno.serve(async (req) => {
       return json({ ok: true, action_id: made?.[0]?.id, decision: 'queued' })
     }
 
+    // ── the person presses Connect ──────────────────────────────────────
+    // The act of consent that pairs a computer. It lives HERE, on the
+    // authenticated rail, rather than on the public pairing function: that
+    // one is reachable without a session, and resolveCaller only decodes a
+    // JWT rather than verifying it, so a claim route out there would take a
+    // forged token naming anybody.
+    if (action === 'pair_claim') {
+      const code = String(body.code || '')
+      const refresh = String(body.refresh_token || '')
+      if (!code || !refresh) return json({ error: 'code and refresh_token are required' }, 400)
+
+      const rows = await rest(`arnie_pairings?select=code,expires_at,claimed_at&code=eq.${encodeURIComponent(code)}&limit=1`)
+      const row = rows?.[0]
+      if (!row) return json({ error: 'Nothing is waiting on that code — start the agent again.' }, 404)
+      if (new Date(row.expires_at) <= new Date()) return json({ error: 'That request timed out. Start the agent again.' }, 410)
+      if (row.claimed_at) return json({ error: 'That computer is already connected.' }, 409)
+
+      // claimed_at in the filter as well as the check: two taps on a slow
+      // phone must not both attach a token.
+      const done = await rest(`arnie_pairings?code=eq.${encodeURIComponent(code)}&claimed_at=is.null`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          refresh_token: refresh,
+          company_id: company,
+          employee_id: me,
+          claimed_at: new Date().toISOString(),
+        }),
+      })
+      if (!done?.length) return json({ error: 'That computer is already connected.' }, 409)
+      return json({ ok: true })
+    }
+
     // ── the recorder reports what it saw ────────────────────────────────
     // One row per observation, never an append to a jsonb column: a ten-minute
     // demonstration is hundreds of events arriving one at a time from a laptop,

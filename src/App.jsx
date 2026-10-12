@@ -119,6 +119,7 @@ import ArnieHistory from './pages/agents/arnie/ArnieHistory'
 import ArnieComputer from './pages/agents/arnie/ArnieComputer'
 import ArnieRoutines from './pages/agents/arnie/ArnieRoutines'
 import ArnieSkills from './pages/agents/arnie/ArnieSkills'
+import ConnectComputer from './pages/ConnectComputer'
 import ArnieSetup from './pages/agents/arnie/ArnieSetup'
 import VictorDashboard from './pages/agents/victor/VictorDashboard'
 import VictorVerify from './pages/agents/victor/VictorVerify'
@@ -401,6 +402,15 @@ function App() {
         {import.meta.env.DEV && (
           <Route path="/dev-preview/:id" element={<DevWalkthroughPreview />} />
         )}
+
+        {/* Connecting a computer: protected and full-screen, no sidebar.
+            The agent opens this itself. It must be PROTECTED — the whole
+            point is that the signed-in session is what authorises the
+            pairing, so a signed-out visitor gets the login page and lands
+            back here afterwards. */}
+        <Route path="/connect" element={
+          <ProtectedRoute><ConnectComputer /></ProtectedRoute>
+        } />
 
         {/* Onboarding (protected, full-screen, no layout) */}
         <Route path="/onboarding" element={

@@ -497,3 +497,13 @@ verify_jwt = false
 # auth token before it writes anything. Deploy with --no-verify-jwt.
 [functions.inbound-sms]
 verify_jwt = false
+
+# The agent has no account yet and cannot sign in to ask for a pairing code,
+# so start/poll/describe have to be reachable without a session. None of them
+# need to know who you are: start creates an empty expiring row, poll answers
+# only the process holding the second secret, describe returns a device name.
+# CLAIMING is NOT here — it is an action on arnie-computer, which is
+# authenticated, because resolveCaller decodes a JWT without verifying it and
+# a claim route out here would accept a forged one.
+[functions.arnie-pair]
+verify_jwt = false

@@ -28,7 +28,7 @@
 // Ctrl+C is the kill switch: the session is stopped, anything queued is
 // refused, and nothing more runs on it ever.
 
-import { readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
@@ -61,15 +61,86 @@ const fromEnvFile = (k) => {
 }
 const URL_BASE = process.env.JOBSCOUT_URL || fromEnvFile('VITE_SUPABASE_URL')
 const ANON = process.env.JOBSCOUT_ANON_KEY || fromEnvFile('VITE_SUPABASE_ANON_KEY')
-const TOKEN = process.env.JOBSCOUT_AGENT_TOKEN || ''
+let TOKEN = process.env.JOBSCOUT_AGENT_TOKEN || ''
 
 const die = (m) => { console.error(`\nagent: ${m}\n`); process.exit(1) }
 if (!URL_BASE) die('no JobScout URL — set JOBSCOUT_URL or run from a checkout with .env')
-if (!TOKEN) die('no JOBSCOUT_AGENT_TOKEN — get one from Arnie → Computer → Connect this computer')
 if (!capabilities.perform) die(`this agent does not run on ${process.platform} yet.`)
 
+// ── connecting, the first time ──────────────────────────────────────────
+// There used to be a step here where a person opened Settings, revealed a
+// token, copied it, opened a terminal and pasted it into a command. Nobody
+// outside the room that built this would ever do that, and it made every
+// other thing in the Computer tab unreachable.
+//
+// Now the agent asks for a code, opens the browser itself, and waits. The
+// person presses Connect on a page they are ALREADY signed in to — which is
+// what authorises it. Nothing is typed and nothing is copied.
+//
+// The token that comes back is written to a file only readable by this user,
+// so the next run is silent.
+const TOKEN_FILE = join(
+  process.env.APPDATA || process.env.HOME || tmpdir(),
+  process.platform === 'win32' ? 'JobScout' : '.jobscout',
+  'agent-token',
+)
+
+const readSavedToken = () => {
+  try { return readFileSync(TOKEN_FILE, 'utf8').trim() || '' } catch { return '' }
+}
+
+const saveToken = (t) => {
+  try {
+    mkdirSync(dirname(TOKEN_FILE), { recursive: true })
+    // 0600: this is a key to the person's account, not a config value.
+    writeFileSync(TOKEN_FILE, t, { mode: 0o600 })
+  } catch { /* it still works this run; they just connect again next time */ }
+}
+
+const openBrowser = (url) => {
+  const cmd = process.platform === 'win32' ? 'cmd' : 'open'
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url]
+  try { spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref() } catch { /* printed below anyway */ }
+}
+
+const pair = async () => {
+  const res = await fetch(`${URL_BASE}/functions/v1/arnie-pair`, {
+    method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'start', device_label: DEVICE, platform: process.platform, agent_version: VERSION }),
+  }).catch(() => null)
+  const started = res?.ok ? await res.json().catch(() => null) : null
+  if (!started?.code) die('could not reach JobScout to connect. Check the internet connection and try again.')
+
+  const url = `${APP_URL}/connect?code=${started.code}`
+  console.log(`
+  Connecting this computer to JobScout.
+
+  A browser should have opened. If it did not, go to:
+  ${url}
+
+  Waiting for you to press Connect…`)
+  openBrowser(url)
+
+  const until = Date.now() + 120_000
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 2000))
+    const p = await fetch(`${URL_BASE}/functions/v1/arnie-pair`, {
+      method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'poll', code: started.code, poll_secret: started.poll_secret }),
+    }).then((r) => r.json()).catch(() => null)
+    if (p?.status === 'connected' && p.refresh_token) {
+      saveToken(p.refresh_token)
+      console.log('  Connected.\n')
+      return p.refresh_token
+    }
+    if (p?.status === 'expired') break
+  }
+  die('nobody pressed Connect, so this computer is not paired. Run it again when you are ready.')
+}
+
+const APP_URL = process.env.JOBSCOUT_APP_URL || 'https://jobscout.appsannex.com'
 const DEVICE = process.env.JOBSCOUT_DEVICE_LABEL || process.env.COMPUTERNAME || process.env.HOSTNAME || 'this computer'
-const VERSION = '0.2.0'
+const VERSION = '0.3.0'
 
 // ── the access token, kept fresh ────────────────────────────────────────
 // JOBSCOUT_AGENT_TOKEN is a REFRESH token. An access token lasts an hour,
@@ -77,6 +148,7 @@ const VERSION = '0.2.0'
 // and re-exchanged when it ages. The refresh token never leaves this process.
 let access = ''
 let accessUntil = 0
+let repaired = false
 const freshAccess = async () => {
   if (access && Date.now() < accessUntil - 60_000) return access
   const res = await fetch(`${URL_BASE}/auth/v1/token?grant_type=refresh_token`, {
@@ -84,7 +156,19 @@ const freshAccess = async () => {
     body: JSON.stringify({ refresh_token: TOKEN }),
   })
   const j = await res.json().catch(() => ({}))
-  if (!j.access_token) die(`that token was refused — get a new one from Arnie → Computer → Connect this computer\n(${j.error_description || j.msg || res.status})`)
+  if (!j.access_token) {
+    // A saved token does not last forever — it gets rotated, revoked, or the
+    // person signs out everywhere. Sending them back to a settings page to
+    // copy a new one would reintroduce exactly the step this flow exists to
+    // delete, so reconnect instead. Once: if the second attempt is also
+    // refused, something is actually wrong and saying so beats looping.
+    if (repaired) die(`could not sign in even after reconnecting (${j.error_description || j.msg || res.status})`)
+    repaired = true
+    console.log('\n  This computer needs connecting again.')
+    try { rmSync(TOKEN_FILE, { force: true }) } catch { /* nothing saved */ }
+    TOKEN = await pair()
+    return freshAccess()
+  }
   access = j.access_token
   accessUntil = Date.now() + (Number(j.expires_in) || 3600) * 1000
   return access
@@ -269,6 +353,12 @@ const stop = async (why) => {
   process.exit(0)
 }
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stop('you pressed Ctrl+C').catch(() => process.exit(0)) })
+
+// A token from the environment wins (that is how a test or a managed install
+// supplies one), then one saved from a previous connect, and only if there is
+// neither does anybody get asked anything.
+if (!TOKEN) TOKEN = readSavedToken()
+if (!TOKEN) TOKEN = await pair()
 
 const hello = await call('hello', { device_label: DEVICE, platform: process.platform, agent_version: VERSION })
 if (!hello.ok) die(`could not connect: ${hello.error || hello.status}`)
