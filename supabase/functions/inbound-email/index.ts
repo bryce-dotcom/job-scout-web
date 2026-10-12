@@ -391,6 +391,23 @@ serve(async (req) => {
     kind = 'other';
   }
 
+  // Who should hear about mail from someone no estimate was ever sent to?
+  // Their employer if they are staff, the company they filed feedback with,
+  // else the platform company. Before 2026-10-12 this was a console.warn
+  // nobody reads: Bryce's reply to a no-reply test email vanished that way,
+  // and so does any customer's reply to an email that predates threading.
+  const fallbackCompanyFor = async (from: string): Promise<number | null> => {
+    const addr = String(from || '').trim();
+    if (addr) {
+      const { data: emp } = await supabase.from('employees').select('company_id').ilike('email', addr).eq('active', true).limit(1);
+      if (emp?.[0]?.company_id != null) return emp[0].company_id as number;
+      const { data: fb } = await supabase.from('feedback').select('company_id').ilike('user_email', addr).order('created_at', { ascending: false }).limit(1);
+      if (fb?.[0]?.company_id != null) return fb[0].company_id as number;
+    }
+    const { data: plat } = await supabase.from('companies').select('id').eq('is_platform', true).limit(1);
+    return (plat?.[0]?.id as number) ?? null;
+  };
+
   let quote: QuoteCandidate | null = null;
   let reason = 'none';
 
@@ -432,7 +449,7 @@ serve(async (req) => {
     // know. It gets in front of a person; it does not get a home on an estimate
     // it was never about.
     const body = stripQuotedReply(mail.body);
-    const companyId = (quotes || [])[0]?.company_id ?? null;
+    const companyId = (quotes || [])[0]?.company_id ?? await fallbackCompanyFor(mail.from);
     if (companyId == null) {
       console.warn(`[inbound-email] mail to ${mail.to} from ${mail.from} (no tenant has mailed this address) — "${mail.subject}" ${body.slice(0, 200)}`);
       return json({ ok: true, matched: false, from: mail.from, reason: 'no_tenant' });
@@ -455,7 +472,7 @@ serve(async (req) => {
     // guessing which job it belongs to would put a stranger's words on somebody
     // else's estimate. A person decides instead.
     const body = stripQuotedReply(mail.body);
-    const companyId = (quotes || [])[0]?.company_id ?? null;
+    const companyId = (quotes || [])[0]?.company_id ?? await fallbackCompanyFor(mail.from);
     if (companyId == null) {
       // No tenant ever mailed this address, so there is no one to raise it
       // to — company_notifications.company_id is NOT NULL and the insert
