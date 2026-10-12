@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTheme } from '../../../components/Layout'
 import { useStore } from '../../../lib/store'
 import { supabase } from '../../../lib/supabase'
@@ -107,7 +107,21 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   const { theme } = useTheme()
   const isMobile = useIsMobile()
   const company = useStore(s => s.company)
-  const textNumber = useStore(s => arnieTextNumber(s.settings))
+  // Select the SETTINGS, derive the number here.
+  //
+  // This was `useStore(s => arnieTextNumber(s.settings))`, and
+  // arnieTextNumber builds a fresh { raw, pretty } on every call. Zustand
+  // compares a selector's result with Object.is, so a new object every time
+  // means the component looked changed on every store notification — render,
+  // re-select, render — until React gave up with "maximum update depth
+  // exceeded" and the whole page died.
+  //
+  // It only bit where a Twilio number is configured: with none the selector
+  // returns a stable null, which is why HHH crashed on every page that can
+  // open Arnie while the demo company never did, and why this survived
+  // review and a day of use.
+  const settings = useStore(s => s.settings)
+  const textNumber = useMemo(() => arnieTextNumber(settings), [settings])
 
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')

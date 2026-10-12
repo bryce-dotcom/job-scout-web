@@ -68,7 +68,14 @@ export default function ArnieAtWork() {
     const units = (f) => n(f).reduce((a, r) => a + (Number(r.output_tokens) || 0), 0)
     return { cost: rows2.reduce((a, r) => a + (Number(r.est_cost_usd) || 0), 0), pictures: n('marketing-picture').length, tracks: n('marketing-music').length, narrated: units('marketing-voice'), spoken: units('arnie-voice'), any: rows2.length > 0 }
   }, [rows, days])
-  const textNumber = useStore((s) => arnieTextNumber(s.settings))
+  // Settings in, number derived here — NOT `useStore(s => arnieTextNumber(
+  // s.settings))`. That selector returns a fresh object every call, zustand
+  // compares with Object.is, and the component re-renders on every store
+  // notification until React stops it with "maximum update depth exceeded".
+  // It took a page down for every tenant that has a Twilio number; see the
+  // same fix in ArnieChat.
+  const settings = useStore((s) => s.settings)
+  const textNumber = useMemo(() => arnieTextNumber(settings), [settings])
 
   return (
     <div style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 18, textAlign: 'left' }}>
