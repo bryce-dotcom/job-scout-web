@@ -14,9 +14,10 @@
 // than a broken image, so a persona can ship before its picture does.
 
 import { useEffect, useState } from 'react'
-import { Bot } from 'lucide-react'
+import { Bot, Sparkles } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { loadPersona, personaFor, assistantName } from '../lib/arniePersonaClient'
+import { badgeText } from '../lib/arnieAttention'
 
 /**
  * `persona` may be passed in by a caller that already has the row (saves a
@@ -46,7 +47,14 @@ export function useAssistant() {
   }
 }
 
-export default function AssistantAvatar({ size = 36, persona: personaKey, border, glow, background, style }) {
+/**
+ * @param {boolean} ai       show the sparkle that marks this as an assistant
+ * @param {number}  attention how many things are waiting on this person
+ */
+export default function AssistantAvatar({
+  size = 36, persona: personaKey, border, glow, background, style,
+  ai = false, attention = 0,
+}) {
   const loaded = useAssistant()
   // A caller that already knows the persona wins; otherwise use the loaded one.
   const p = personaKey ? personaFor(personaKey) : loaded.persona
@@ -55,14 +63,14 @@ export default function AssistantAvatar({ size = 36, persona: personaKey, border
   // A different persona deserves a fresh attempt at its own picture.
   useEffect(() => { setBroken(false) }, [p.key])
 
-  return (
+  const face = (
     <div style={{
       width: size, height: size, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       ...(border ? { border } : null),
       ...(glow ? { boxShadow: glow } : null),
       ...(background ? { backgroundColor: background } : null),
-      ...style,
+      ...(ai || attention ? null : style),
     }}>
       {broken ? (
         <Bot size={Math.round(size * 0.58)} style={{ color: '#f97316' }} />
@@ -75,5 +83,54 @@ export default function AssistantAvatar({ size = 36, persona: personaKey, border
         />
       )}
     </div>
+  )
+
+  // No badges, no wrapper — keeps the common case a single element.
+  if (!ai && !attention) return face
+
+  // The two badges say different things and must not be confused for each
+  // other, so they sit on opposite corners and never move:
+  //
+  //   bottom-right, always there when asked for — WHAT this is. A face in a
+  //   menu among human faces should not be able to pass for a colleague.
+  //   bottom is the quieter corner, because identity is not news.
+  //
+  //   top-right, only when something is waiting — a count, like an unread
+  //   message, which is exactly the thing Bryce asked it to feel like.
+  const dot = Math.max(14, Math.round(size * 0.46))
+  const spark = Math.max(12, Math.round(size * 0.40))
+
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0, ...style }}>
+      {face}
+      {ai && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute', right: -1, bottom: -1,
+            width: spark, height: spark, borderRadius: '50%',
+            background: '#5a6349', color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: '1.5px solid #fff', boxSizing: 'border-box',
+          }}
+        >
+          <Sparkles size={Math.max(7, Math.round(spark * 0.62))} strokeWidth={2.6} />
+        </span>
+      )}
+      {attention > 0 && (
+        <span
+          style={{
+            position: 'absolute', right: -3, top: -3, minWidth: dot, height: dot,
+            padding: '0 3px', borderRadius: dot, boxSizing: 'border-box',
+            background: '#ef4444', color: '#fff',
+            font: `700 ${Math.max(9, Math.round(dot * 0.62))}px/1 system-ui, sans-serif`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: '1.5px solid #fff',
+          }}
+        >
+          {badgeText(attention)}
+        </span>
+      )}
+    </span>
   )
 }

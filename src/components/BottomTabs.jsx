@@ -12,10 +12,15 @@
 import { createPortal } from 'react-dom'
 import { NavLink } from 'react-router-dom'
 import { Menu } from 'lucide-react'
-import AssistantAvatar from './AssistantAvatar'
+import AssistantAvatar, { useAssistant } from './AssistantAvatar'
+import { useArnieAttention, attentionLabel } from '../lib/arnieAttention'
 import { tabLabel } from '../lib/navTabs'
 
 export default function BottomTabs({ items, onMore, moreActive, theme, onArnie, arnieName = 'Arnie' }) {
+  // The assistant tab knows who it is and whether anything is waiting, so
+  // Layout does not have to thread either through.
+  const assistant = useAssistant()
+  const attention = useArnieAttention()
   if (!items?.length) return null
 
   const cell = (active) => ({
@@ -87,7 +92,7 @@ export default function BottomTabs({ items, onMore, moreActive, theme, onArnie, 
       <button
         type="button"
         onClick={onArnie}
-        aria-label={`Ask ${arnieName}`}
+        aria-label={attentionLabel(attention, assistant.name || arnieName)}
         // Our green, and visibly so: the accent on its own is close enough to
         // the muted grey of the other tabs that it did not read as green at a
         // glance. The tinted pill makes it the one slot that stands out, which
@@ -109,8 +114,16 @@ export default function BottomTabs({ items, onMore, moreActive, theme, onArnie, 
           size={34}
           border={`2px solid ${theme.accent}`}
           style={{ marginBottom: 1 }}
+          ai
+          attention={attention.total}
         />
-        <span style={text}>{arnieName}</span>
+        {/* The SHORT name here. A tab is about 70px wide and the full name
+            truncated to "Jenny JobSc…", which reads worse than the generic
+            label it replaced. Whatever they renamed it to wins, since that is
+            already short by the rules that accept it. */}
+        <span style={text}>
+          {assistant.personaRow?.display_name || assistant.persona?.shortName || arnieName}
+        </span>
       </button>
 
       {items.slice(Math.ceil(items.length / 2)).map((item) => {
