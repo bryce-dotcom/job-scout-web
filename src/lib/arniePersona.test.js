@@ -232,3 +232,38 @@ describe('the same assistant everywhere', () => {
     expect(header).toMatch(/nameOverride \|\| companyAgent\?\.custom_name \|\| agent\.full_name/)
   })
 })
+
+describe('you can find Jenny', () => {
+  const read2 = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n')
+  const workspace = read2('../pages/agents/arnie/ArnieWorkspace.jsx')
+  const header = read2('../components/AgentHeader.jsx')
+
+  it('the picker is on the Arnie page, not only in a settings page', () => {
+    // It lived inside Arnie → Settings, a page headed "System settings with
+    // Arnie" that is otherwise an admin change log. Nobody was going to find
+    // that: "where do i choose Jenny from... it should be on the arnie page".
+    expect(workspace).toMatch(/import ArniePersona from '\.\/ArniePersona'/)
+    expect(workspace).toMatch(/onIdentityClick=\{\(\) => setPicking\(true\)\}/)
+    expect(workspace).toMatch(/<ArniePersona onChanged=\{onChanged\} \/>/)
+  })
+
+  it('and it is the SAME picker the settings page uses', () => {
+    // Two pickers would be two answers to "who did I choose".
+    const setup = read2('../pages/agents/arnie/ArnieSetup.jsx')
+    expect(setup).toMatch(/import ArniePersona from '\.\/ArniePersona'/)
+    expect(workspace).not.toMatch(/PERSONA_LIST/)
+    expect(workspace).not.toMatch(/savePersona/)
+  })
+
+  it('the header shows his actual face, not a generic icon', () => {
+    expect(workspace).toMatch(/avatar=\{<AssistantAvatar size=\{36\} persona=\{personaRow\?\.persona\} \/>\}/)
+    expect(header).toMatch(/avatar = null, onIdentityClick = null/)
+  })
+
+  it('and an agent that passes neither is untouched', () => {
+    // Every other agent renders exactly as before — no button, no chevron.
+    const identity = header.slice(header.indexOf('function Identity('))
+    expect(identity).toMatch(/if \(!onClick\) \{/)
+    expect(identity).toMatch(/\{avatar \|\| fallback\}/)
+  })
+})

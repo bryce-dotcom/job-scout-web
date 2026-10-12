@@ -2,6 +2,8 @@ import { Outlet } from 'react-router-dom'
 import { useEffect, useState, useCallback } from 'react'
 import AgentRequired from '../../../components/AgentRequired'
 import AgentHeader from '../../../components/AgentHeader'
+import AssistantAvatar from '../../../components/AssistantAvatar'
+import ArniePersona from './ArniePersona'
 import { useStore } from '../../../lib/store'
 import { myComputer } from '../../../lib/arnieComputer'
 import { computerState } from '../../../lib/agentStatus'
@@ -23,6 +25,7 @@ export default function ArnieWorkspace() {
   const getCompanyAgent = useStore((s) => s.getCompanyAgent)
   const [status, setStatus] = useState(null)
   const [personaRow, setPersonaRow] = useState(null)
+  const [picking, setPicking] = useState(false)
 
   // Who this person's assistant is. Loaded once here and handed to the engine,
   // so the name on the header and the name in the prompt are the same one.
@@ -70,11 +73,70 @@ export default function ArnieWorkspace() {
   return (
     <AgentRequired slug="arnie-og">
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <AgentHeader slug="arnie-og" tabs={ARNIE_TABS} status={status} displayName={name} />
+        <AgentHeader
+          slug="arnie-og"
+          tabs={ARNIE_TABS}
+          status={status}
+          displayName={name}
+          // His actual face, and the way to change whose it is. Both were
+          // missing: the header drew a generic icon, and choosing Jenny lived
+          // in a settings page about system changes.
+          avatar={<AssistantAvatar size={36} persona={personaRow?.persona} />}
+          onIdentityClick={() => setPicking(true)}
+        />
         <div style={{ flex: 1, overflow: 'auto' }}>
           <Outlet context={{ personaRow, refreshPersona }} />
         </div>
+        {picking && (
+          <WhoIsYourAssistant
+            onClose={() => setPicking(false)}
+            onChanged={refreshPersona}
+          />
+        )}
       </div>
     </AgentRequired>
+  )
+}
+
+/**
+ * The picker, over the page you were already on.
+ *
+ * Deliberately not a route: changing who your assistant is should not take
+ * you somewhere else and make you find your way back. It is the same
+ * ArniePersona the settings page uses — one picker, so the two cannot drift
+ * into disagreeing about what you chose.
+ */
+function WhoIsYourAssistant({ onClose, onChanged }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(44,53,48,0.45)',
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        padding: '6vh 16px 16px', overflowY: 'auto',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: '#f7f5ef', borderRadius: 16, padding: 16,
+          width: '100%', maxWidth: 560, boxShadow: '0 18px 50px rgba(0,0,0,0.25)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <strong style={{ fontSize: 15, color: '#2c3530' }}>Who your assistant is</strong>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', color: '#4d5a52',
+              fontSize: 13, fontWeight: 600, padding: '8px 10px', minHeight: 44,
+            }}
+          >
+            Done
+          </button>
+        </div>
+        <ArniePersona onChanged={onChanged} />
+      </div>
+    </div>
   )
 }

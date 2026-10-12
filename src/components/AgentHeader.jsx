@@ -46,7 +46,16 @@ export const MOBILE_TABBAR_HEIGHT = 64
  * exactly as it always did, so every other agent page is unchanged. See
  * lib/agentStatus.js for why the signal is ambient and only one state is loud.
  */
-export default function AgentHeader({ slug, tabs = [], status = null, displayName: nameOverride = '' }) {
+// `avatar` and `onIdentityClick` are how an agent that HAS a face and an
+// identity you can change says so. Arnie passes both: the header showed a
+// generic icon even for a persona with a photograph, and the only place to
+// switch to Jenny was buried in a settings page about system changes and
+// approval logs. "Where do I choose Jenny from... it should be on the arnie
+// page." Every other agent passes neither and is unaffected.
+export default function AgentHeader({
+  slug, tabs = [], status = null, displayName: nameOverride = '',
+  avatar = null, onIdentityClick = null,
+}) {
   const st = agentState(status?.state)
   const hover = status?.detail || st.label
   const { getAgent, getCompanyAgent } = useStore()
@@ -116,15 +125,17 @@ export default function AgentHeader({ slug, tabs = [], status = null, displayNam
           background: theme.bgCard, borderBottom: `1px solid ${theme.border}`,
           position: 'sticky', top: 0, zIndex: 20,
         }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: 8, background: theme.accentBg,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
-            <AgentIcon size={17} style={{ color: theme.accent }} />
-          </div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: theme.text, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {displayName}
-          </div>
+<Identity
+            avatar={avatar}
+            onClick={onIdentityClick}
+            theme={theme}
+            fallback={<AgentIcon size={17} style={{ color: theme.accent }} />}
+            box={30}
+          >
+            <span style={{ fontSize: 15, fontWeight: 700, color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {displayName}
+            </span>
+          </Identity>
           {/* A dot, not a badge — until something needs the person, which is
               the one state worth spending a word on at this width. */}
           {st.loud ? (
@@ -246,16 +257,18 @@ export default function AgentHeader({ slug, tabs = [], status = null, displayNam
   return (
     <div style={{ background: theme.bgCard, borderBottom: `1px solid ${theme.border}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 24px' }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 10, background: theme.accentBg,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        }}>
-          <AgentIcon size={23} style={{ color: theme.accent }} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: theme.text }}>{displayName}</h1>
-          <p style={{ margin: '2px 0 0', fontSize: 13, color: theme.textMuted }}>{agent.tagline}</p>
-        </div>
+<Identity
+          avatar={avatar}
+          onClick={onIdentityClick}
+          theme={theme}
+          fallback={<AgentIcon size={23} style={{ color: theme.accent }} />}
+          box={44}
+        >
+          <span style={{ minWidth: 0 }}>
+            <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: theme.text }}>{displayName}</h1>
+            <p style={{ margin: '2px 0 0', fontSize: 13, color: theme.textMuted }}>{agent.tagline}</p>
+          </span>
+        </Identity>
         <span title={hover} style={{
           padding: '3px 9px', borderRadius: 12, fontSize: 11, fontWeight: st.loud ? 700 : 600,
           background: st.tint, color: st.ink,
@@ -295,5 +308,59 @@ export default function AgentHeader({ slug, tabs = [], status = null, displayNam
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * The agent's face and name, and — when the agent has an identity a person
+ * can change — the way to change it.
+ *
+ * Arnie's header showed a generic icon even though he has had a photograph
+ * since August, and the only way to switch to Jenny was inside Arnie →
+ * Settings, a page headed "System settings with Arnie" that is otherwise an
+ * admin change log. Nobody was going to find that. Who your assistant is
+ * belongs on your assistant's page, behind their face, which is where
+ * everyone reaches for it.
+ *
+ * Without onClick it is plain, unclickable markup — every other agent passes
+ * nothing and looks exactly as it did.
+ */
+function Identity({ avatar, onClick, theme, fallback, box, children }) {
+  const face = (
+    <span style={{
+      width: box, height: box, borderRadius: box > 36 ? 10 : 8, background: avatar ? 'transparent' : theme.accentBg,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    }}>
+      {avatar || fallback}
+    </span>
+  )
+
+  if (!onClick) {
+    return (
+      <>
+        {face}
+        <span style={{ flex: 1, minWidth: 0 }}>{children}</span>
+      </>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Choose who your assistant is"
+      style={{
+        display: 'flex', alignItems: 'center', gap: box > 36 ? 14 : 10,
+        background: 'none', border: 'none', padding: 0, margin: 0,
+        flex: 1, minWidth: 0, cursor: 'pointer', textAlign: 'left',
+        font: 'inherit', color: 'inherit',
+      }}
+    >
+      {face}
+      <span style={{ flex: 1, minWidth: 0 }}>{children}</span>
+      {/* Small on purpose: it has to say "this can change" without turning
+          the header into a control panel. */}
+      <Icons.ChevronDown size={15} style={{ color: theme.textMuted, flexShrink: 0 }} />
+    </button>
   )
 }
