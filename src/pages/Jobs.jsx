@@ -12,7 +12,7 @@ import {
   Plus, Search, Briefcase, X, Calendar, Clock, MapPin,
   Play, CheckCircle, FileText, ChevronRight, User, Users, Upload, Download,
   Trophy, DollarSign, List, ChevronLeft, Pause, ArrowRight, Coffee, ChevronDown, ChevronUp, ExternalLink,
-  Archive, RotateCcw, Repeat
+  Archive, RotateCcw, Repeat, Flag
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import RecurrencePicker from '../components/RecurrencePicker'
@@ -26,7 +26,7 @@ import UtilityInvoicedBadge from '../components/UtilityInvoicedBadge'
 import { matchesJobSearch, jobSearchRank } from '../lib/jobSearch'
 import { jobYear, availableJobYears } from '../lib/jobYear'
 import { jobPaymentProgress, paymentsByInvoiceIndex } from '../lib/arHelpers'
-import { priorityBadge, sortByPriority, prioritiesFromSettings } from '../lib/jobPriority'
+import { priorityBadge, sortByPriority, prioritiesFromSettings, priorityOf, priorityValue, NORMAL_PRIORITY } from '../lib/jobPriority'
 import { countsByCustomer, customerIdsOf, batchIds, repeatChip } from '../lib/customerRepeat'
 import { getDeliveredStatusIds } from '../lib/jobMetrics'
 import PageHeader from '../components/PageHeader'
@@ -287,6 +287,8 @@ export default function Jobs() {
   // HHH's 7,171 are archived, so counting what is in memory would tell
   // almost every repeat customer they were new. lib/customerRepeat says why.
   const [repeatCounts, setRepeatCounts] = useState({})
+  // The row whose priority picker is open, by job id. One at a time.
+  const [priorityMenuJob, setPriorityMenuJob] = useState(null)
   const products = useStore((state) => state.products)
   const fetchJobs = useStore((state) => state.fetchJobs)
   const fetchCustomers = useStore((state) => state.fetchCustomers)
@@ -1021,6 +1023,19 @@ export default function Jobs() {
     await fetchJobs()
   }
 
+  // Set urgency without leaving the board. The office triages here; making
+  // them open each job to mark it is how a priority field ends up empty.
+  const setJobPriority = async (job, level) => {
+    setPriorityMenuJob(null)
+    const value = priorityValue(level)
+    if (value === (job.priority ?? null)) return
+    const { error } = await supabase.from('jobs').update({ priority: value }).eq('id', job.id)
+    if (error) { toast.error('Could not save the priority: ' + error.message); return }
+    await fetchJobs()
+    const name = priorityConfig.find(l => l.level === (value ?? NORMAL_PRIORITY))?.name
+    toast.success(`${job.job_title || 'Job'} — ${name}`)
+  }
+
   const startJob = async (job) => {
     await supabase
       .from('jobs')
@@ -1656,6 +1671,73 @@ export default function Jobs() {
 
                     {/* Quick Actions */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {/* Set urgency here, where the triage happens. This is a
+                          BUTTON in the actions cluster, not a second badge —
+                          the signal on the left is still absent at normal. */}
+                      <div style={{ position: 'relative' }}>
+                        <button
+                          aria-label="Set priority"
+                          aria-expanded={priorityMenuJob === job.id}
+                          title={`Priority: ${priorityConfig.find(l => l.level === priorityOf(job))?.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setPriorityMenuJob(priorityMenuJob === job.id ? null : job.id)
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', padding: '6px',
+                            backgroundColor: theme.accentBg, border: 'none', borderRadius: '6px',
+                            cursor: 'pointer',
+                            color: priorityBadge(job, priorityConfig)?.color || theme.accent,
+                          }}
+                        >
+                          <Flag size={16} />
+                        </button>
+                        {priorityMenuJob === job.id && (
+                          <>
+                            {/* Tap anywhere else to dismiss, including on a phone
+                                where there is no blur to listen for. */}
+                            <div
+                              onClick={(e) => { e.stopPropagation(); setPriorityMenuJob(null) }}
+                              style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                            />
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 41,
+                                backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                                borderRadius: '10px', padding: '4px', minWidth: '150px',
+                                boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                              }}
+                            >
+                              {priorityConfig.map(lvl => {
+                                const active = priorityOf(job) === lvl.level
+                                return (
+                                  <button
+                                    key={lvl.level}
+                                    onClick={(e) => { e.stopPropagation(); setJobPriority(job, lvl.level) }}
+                                    style={{
+                                      display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                                      padding: '7px 9px', borderRadius: '7px', cursor: 'pointer',
+                                      border: 'none', textAlign: 'left', fontSize: '13px',
+                                      backgroundColor: active ? theme.accentBg : 'transparent',
+                                      color: active ? theme.accent : theme.text,
+                                      fontWeight: active ? 600 : 400,
+                                    }}
+                                  >
+                                    <span style={{
+                                      width: '18px', height: '18px', borderRadius: '50%', flexShrink: 0,
+                                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                      fontSize: '10px', fontWeight: 700, color: '#fff',
+                                      backgroundColor: lvl.level === NORMAL_PRIORITY ? theme.textMuted : lvl.color,
+                                    }}>{lvl.level}</span>
+                                    {lvl.name}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
                       {job.status === 'Chillin' && (
                         <button
                           onClick={(e) => { e.stopPropagation(); scheduleJob(job); }}
