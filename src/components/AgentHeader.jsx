@@ -72,6 +72,8 @@ export default function AgentHeader({ slug, tabs = [], status = null, displayNam
   useEffect(() => {
     if (!isMobile) return
     const prev = document.body.style.paddingBottom
+    // Room for THIS bar; the global bar's own clearance is already on
+    // <main> as --jobscout-tabbar-space, and the two stack.
     document.body.style.paddingBottom = `calc(${MOBILE_TABBAR_HEIGHT + 12}px + env(safe-area-inset-bottom, 0px))`
     return () => { document.body.style.paddingBottom = prev }
   }, [isMobile])
@@ -134,7 +136,8 @@ export default function AgentHeader({ slug, tabs = [], status = null, displayNam
             />
             <div style={{
               position: 'fixed', left: 0, right: 0,
-              bottom: `calc(${MOBILE_TABBAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
+              // Clears this bar AND the global one underneath it.
+              bottom: `calc(${MOBILE_TABBAR_HEIGHT}px + var(--jobscout-tabbar-space, 0px))`,
               background: theme.bgCard, borderTop: `1px solid ${theme.border}`,
               borderRadius: '16px 16px 0 0', zIndex: 61, padding: '8px 8px 12px',
               boxShadow: '0 -8px 24px rgba(0,0,0,0.12)',
@@ -164,8 +167,16 @@ export default function AgentHeader({ slug, tabs = [], status = null, displayNam
           </>
         )}
 
+        {/* Sits ABOVE the app's global bottom bar, not on top of it.
+            Both are fixed to bottom: 0, and this one is z-62, so on every
+            agent page it covered the global bar completely — Cole reported
+            it as controls hidden, and the real cost was losing Home,
+            Pipeline and Invoices the moment you opened Arnie on a phone.
+            --jobscout-tabbar-space is the global bar's height, and it is
+            0 above md, so this is a no-op on a laptop. */}
         <nav data-mobile-tabbar style={{
-          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 62,
+          position: 'fixed', left: 0, right: 0, zIndex: 62,
+          bottom: 'var(--jobscout-tabbar-space, 0px)',
           height: `calc(${MOBILE_TABBAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           background: theme.bgCard, borderTop: `1px solid ${theme.border}`,

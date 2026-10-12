@@ -1588,7 +1588,9 @@ export default function Layout() {
                 zIndex: 46,
                 display: 'flex',
                 flexDirection: 'column',
-                overflowY: 'auto',
+                // The DRAWER does not scroll — its nav does (below), or the user
+                // card lands 3,000px down the list and Refresh is unreachable.
+                overflow: 'hidden',
                 // Room for the bottom tab bar, the same way <main> leaves it.
                 // The drawer runs to bottom: 0 and the bar is fixed on top of
                 // it at z-index 48, so without this its last 64px — the user
@@ -1618,7 +1620,10 @@ export default function Layout() {
                 <GlobalSearch mobile onNavigate={() => setMobileMenuOpen(false)} theme={theme} />
               </div>
 
-              <nav style={{ flex: 1, padding: '8px 8px' }}>
+              {/* minHeight 0 matters: a flex child defaults to min-height:auto
+                  and will not shrink below its content, so without it the nav
+                  pushes the user card off the bottom again. */}
+              <nav style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 8px' }}>
                 {/* Dashboard Link - Mobile */}
                 <div style={{ marginBottom: '8px' }}>
                   <NavLink
