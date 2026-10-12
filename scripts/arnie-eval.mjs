@@ -831,13 +831,18 @@ const CASES = [
   // and the time goes on at the tenant's own labour rate.
   { id: 'create.quote.unknown.product.benny.sources.it.with.labour', as: 'tech',
     run: async (ctx) => {
-      // The demo tenant has no labour rate of its own, and a peer session may
-      // add or remove one at any moment — so this case brings its own.
-      const [rate] = await rest('labor_rates', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, name: 'Eval Sparky', rate_per_hour: 88, active: true, is_default: true }) })
+      // The demo seed has carried its own labour rates since 2026-09-30
+      // (Standard Rate $95 default, Electrical, After Hours). This case used to
+      // insert an "Eval Sparky" rate and expect the labour priced at it, but
+      // the server rightly takes the tenant's DEFAULT, so the case failed every
+      // night from then on. What matters is that the labour is priced by one
+      // of the tenant's own rates and named for it — never by the model.
+      const rates = (await rest(`labor_rates?select=id,name,rate_per_hour&company_id=eq.${DEMO.company}&active=eq.true`)).filter((x) => Number(x.rate_per_hour) > 0)
+      if (!rates.length) throw new Error('the demo tenant has no active labour rate — re-run scripts/seed-demo.mjs')
       const [lead] = await rest('leads', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, customer_name: 'Sourcing Eval', business_name: 'Sourcing Eval Co', status: 'New Lead', salesperson_id: DEMO.tech.employeeId }) })
       const cleanup = async () => {
         for (const q of await rest(`quotes?select=id&lead_id=eq.${lead.id}`)) { await rest(`quote_lines?quote_id=eq.${q.id}`, { method: 'DELETE' }); await rest(`quotes?id=eq.${q.id}`, { method: 'DELETE' }) }
-        await rest(`leads?id=eq.${lead.id}`, { method: 'DELETE' }); await rest(`labor_rates?id=eq.${rate.id}`, { method: 'DELETE' })
+        await rest(`leads?id=eq.${lead.id}`, { method: 'DELETE' })
       }
       try {
         const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Quote the Sourcing Eval Co lead for 8 Leviton 5-15R tamper-resistant duplex receptacles.' }])
@@ -854,10 +859,11 @@ const CASES = [
           if (mat.price_verified_at) throw new Error('a machine must not mark its own price verified')
           if (mat.match_kind !== 'must_source') throw new Error('sourced line not flagged must_source: ' + mat.match_kind)
           if (!(Number(mat.price) > 0)) throw new Error('sourced line has no price: ' + mat.price)
-          // The labour: priced by the rate this case put in, never by the model.
-          const lab = lines.find((l) => Number(l.price) === 88)
-          if (!lab) throw new Error('no labour line at the tenant rate: ' + JSON.stringify(lines))
-          if (!/Eval Sparky/.test(lab.item_name || '')) throw new Error('labour line not named for the rate: ' + lab.item_name)
+          // The labour: priced by one of the tenant's own rates and named for it, never by the model.
+          const lab = lines.find((l) => l.price_source !== 'ai_sourced' && rates.some((x) => Number(x.rate_per_hour) === Number(l.price)))
+          if (!lab) throw new Error(`no labour line at a tenant rate (${rates.map((x) => `${x.name} ${x.rate_per_hour}`).join(', ')}): ` + JSON.stringify(lines))
+          const named = rates.find((x) => Number(x.rate_per_hour) === Number(lab.price))
+          if (!(lab.item_name || '').includes(named.name)) throw new Error(`labour line not named for the rate ${named.name}: ` + lab.item_name)
           if (!(Number(lab.quantity) > 0)) throw new Error('labour line has no hours: ' + lab.quantity)
           const rb = await decide(ctx.token, 'rollback', r.proposal.proposal.id); if (!rb.body.ok) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
           if ((await rest(`quotes?select=id&id=eq.${ap.body.created_id}`)).length) throw new Error('quote left behind')
