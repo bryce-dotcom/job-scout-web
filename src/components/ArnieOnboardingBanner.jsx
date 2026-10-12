@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import AssistantAvatar from './AssistantAvatar'
 import { useStore } from '../lib/store'
 import { Sparkles, ArrowRight, X } from 'lucide-react'
 
@@ -88,7 +89,7 @@ export default function ArnieOnboardingBanner() {
         boxShadow: '0 0 10px rgba(201,129,47,0.25)',
         background: C.orangeSoft,
       }}>
-        <img src="/og-arnie.png" alt="Arnie" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <AssistantAvatar size="100%" style={{ width: '100%', height: '100%' }} />
       </div>
 
       {/* Copy */}

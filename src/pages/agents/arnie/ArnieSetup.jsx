@@ -4,6 +4,7 @@
 // audited + rollbackable. Arnie never touches config until you approve.
 
 import { useState, useEffect, useCallback } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { Wrench, Check, X, RotateCcw, Send, Sparkles, ShieldAlert, MessageCircle } from 'lucide-react'
@@ -11,6 +12,7 @@ import MorningBriefSettings from './MorningBriefSettings'
 import ArnieMemories from './ArnieMemories'
 import ArnieAtWork from './ArnieAtWork'
 import ArnieRules from './ArnieRules'
+import ArniePersona from './ArniePersona'
 
 const t = {
   bg: '#f7f5ef', card: '#ffffff', card2: '#f0ebdd', ink: '#2c3530', sub: '#4d5a52',
@@ -32,6 +34,10 @@ const STATUS = {
 }
 
 export default function ArnieSetup() {
+  // The workspace owns the persona (the header renders it); this tells it
+  // to re-read when somebody changes it here, or the name only updates on the
+  // next page load.
+  const { refreshPersona } = useOutletContext() || {}
   const user = useStore((s) => s.user)
   const level = (() => {
     if (!user) return 0
@@ -92,6 +98,7 @@ export default function ArnieSetup() {
     return (
       <div style={{ maxWidth: 620, margin: '24px auto', padding: 24, color: t.sub }}>
         {/* Everyone gets the morning brief — the gate below is for the change log. */}
+        <ArniePersona onChanged={refreshPersona} />
         <MorningBriefSettings />
         <ArnieRules isAdmin={false} />
         <ArnieMemories />
@@ -121,6 +128,7 @@ export default function ArnieSetup() {
       </p>
 
       {isAdmin && <ArnieAtWork />}
+      <ArniePersona onChanged={refreshPersona} />
       <MorningBriefSettings />
       <ArnieRules isAdmin={isAdmin} />
       <ArnieMemories />
