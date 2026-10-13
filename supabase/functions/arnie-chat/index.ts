@@ -1518,6 +1518,7 @@ Deno.serve(async (req) => {
       ? systemPrompt + await memoriesBlock(companyId, caller.employeeId)
         + await computerBlock(companyId, caller.employeeId)
         + await crewBlock(companyId)
+        + await houseLightingBlock(companyId)
       : systemPrompt
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -1741,6 +1742,49 @@ async function waitForShot(bearer: string, actionId: number): Promise<{ url?: st
     if (j?.error) return { why: j.error }
   }
   return { why: last }
+}
+
+/**
+ * The company's own lighting swaps, when it has written any.
+ *
+ * "People are simple and they will just ask Arnie to do all their work."
+ * Correct, and that is the right front door — but it is also how the SAME
+ * rule ends up answered two different ways. Lenard knows a 400W metal halide
+ * becomes 60W here because somebody wrote it down for him; Arnie, asked the
+ * same question in a chat, would answer from general knowledge and say 150W.
+ * Two answers to one question is the oldest failure in this codebase.
+ *
+ * So he reads the SAME rows Lenard reads. Not a copy, not a summary — the
+ * settings the company edits. A photo still goes to Lenard through
+ * analyse_fixture_photo, because identifying a fixture from an image is his
+ * job and doing it badly here would be worse than not doing it. This is only
+ * so that when somebody asks in words, the answer is the house answer.
+ *
+ * Nothing at all for a company that has written no rules — better silence
+ * than somebody else's practice.
+ */
+async function houseLightingBlock(companyId: number): Promise<string> {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/settings?select=key,value&company_id=eq.${companyId}&key=like.lenard_rules_*`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } },
+    )
+    const rows = res.ok ? await res.json() : []
+    const blocks = (Array.isArray(rows) ? rows : [])
+      .map((r: { value: string }) => String(r.value || '').trim())
+      .filter(Boolean)
+    if (!blocks.length) return ''
+
+    return `
+
+## This company's own lighting rules
+What they actually sell, written by the people who sell it. When a lighting
+question has an answer here, this is the answer — not what you would say in
+general, and not a number you worked out yourself. If somebody sends a PHOTO,
+still use analyse_fixture_photo: identifying a fixture from an image is
+Lenard's job and these rules are what he applies to it.
+${blocks.join('\n\n')}`
+  } catch { return '' }
 }
 
 async function crewBlock(companyId: number): Promise<string> {

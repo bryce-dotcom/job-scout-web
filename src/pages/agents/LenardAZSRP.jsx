@@ -3,6 +3,7 @@ import { useStore } from '../../lib/store'
 import { computeLightingSavings } from '../../lib/lightingSavings'
 import { jsPDF } from "jspdf";
 import SignaturePad from 'signature_pad';
+import LenardClosingChecklist from '../../components/LenardClosingChecklist';
 import { supabase } from '../../lib/supabase';
 import { orderQty, productPricedPerLamp } from '../../lib/lampQuantity';
 import { getMatchedProducts, findBestProduct, groupNameMap } from '../../lib/lenardProductMatch';
@@ -376,6 +377,10 @@ export default function LenardAZSRP() {
 
   // Signature capture
   const [signatureData, setSignatureData] = useState(null);
+  // Cole's pre-approval checklist, as data so it can be edited without a
+  // deploy. Null until it loads, and absent for a company that has not set
+  // one — in which case nothing is shown rather than somebody else's list.
+  const [closingChecklist, setClosingChecklist] = useState(null);
   const [contractAccepted, setContractAccepted] = useState(false);
   const sigCanvasRef = useRef(null);
   const sigPadRef = useRef(null);
@@ -475,6 +480,22 @@ export default function LenardAZSRP() {
           .eq('active', true)
           .order('name');
         if (!cancelled) setAddOnServices(addons || []);
+
+        // Cole's pre-approval checklist. Same trip, because it is the same
+        // company and the same moment — and a second round trip for eight
+        // lines of text would be silly.
+        const { data: cl } = await supabase
+          .from('settings')
+          .select('value')
+          .eq('company_id', cid)
+          .eq('key', 'lenard_checklist_az')
+          .maybeSingle();
+        if (!cancelled && cl?.value) {
+          try {
+            const parsed = JSON.parse(cl.value);
+            if (Array.isArray(parsed)) setClosingChecklist(parsed);
+          } catch { /* a malformed list shows nothing rather than half a list */ }
+        }
       } catch (_) { /* non-critical */ }
     })();
     return () => { cancelled = true; };
@@ -2701,6 +2722,24 @@ export default function LenardAZSRP() {
           <div style={{ padding: '24px', overflowY: 'auto', flex: 1, minHeight: 0 }}>
           <div style={{ fontSize: '16px', fontWeight: '700', marginBottom: '4px' }}>{'\uD83D\uDCBE'} Save Project</div>
           <div style={{ fontSize: '12px', color: T.textMuted, marginBottom: '16px' }}>Creates a customer, lead + lighting audit in Job Scout</div>
+
+          {/* What gets checked before this is approved. Only the items this
+              screen can actually SEE are ticked — the rest are reminders, not
+              failures, because a tick on something nobody looked at is how a
+              checklist starts lying. */}
+          <LenardClosingChecklist
+            items={closingChecklist}
+            theme={T}
+            verified={{
+              customer: !!(contactName?.trim() || projectName?.trim()) && !!savePhone?.trim() && !!saveEmail?.trim() && !!saveAddress?.trim(),
+              project: !!projectName?.trim(),
+              lineNotes: lines.length > 0 && lines.every((r) => String(r.overrideNotes || '').trim()),
+              terms: !!signatureData,
+              // Business Unit, spec sheets, annual savings and the owner's
+              // go-ahead are not on this screen. Deliberately left undefined
+              // so they render as "check this yourself" rather than a tick.
+            }}
+          />
           {leadOwnerName && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: T.accentDim, border: `1px solid ${T.accent}`, borderRadius: '8px', marginBottom: '12px' }}>
               <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '700', color: '#fff' }}>
