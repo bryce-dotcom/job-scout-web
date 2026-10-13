@@ -35,6 +35,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/auth.ts'
+import { isServiceRole } from '../_shared/arnieSend.ts'
 import { brandKey, brandProfileUsername, loadBrands } from '../_shared/marketing.ts'
 
 const corsHeaders = {
@@ -123,7 +124,14 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
     const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY)
+    // Platform maintenance: a call made with the service role key (never a browser)
+    // may name the company it is asking about, e.g. to see which pages the
+    // publisher offers a profile when a marketer cannot find hers (2026-10-13).
+    const maintenance = isServiceRole(req)
+    const bodyPeek = maintenance ? await req.clone().json().catch(() => ({})) : {}
+    const caller = maintenance && bodyPeek?.company_id
+      ? { companyId: Number(bodyPeek.company_id), employeeId: null, level: 5, email: 'service', role: 'developer' as const }
+      : await resolveCaller(req, SUPABASE_URL, SERVICE_KEY)
     if (!caller?.companyId) return json({ ok: false, error: 'Sign in first.' }, 401)
     const companyId = caller.companyId
     const isManager = caller.level >= 2
