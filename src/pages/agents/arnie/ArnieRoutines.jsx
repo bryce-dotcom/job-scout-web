@@ -34,15 +34,19 @@ const CHANNEL = {
   sms: { icon: Smartphone, label: 'by text' },
 }
 
-const hour12 = (h) => {
+// On the hour it stays "8am" rather than "8:00am" — the minutes are only
+// worth the space when there are some. The twin of timeLabel() in
+// _shared/arnieRoutineTarget.ts, which writes the same time on the card.
+const hour12 = (h, min = 0) => {
   const n = Number(h) || 0
+  const m = Number(min) || 0
   const ampm = n < 12 ? 'am' : 'pm'
   const twelve = n % 12 === 0 ? 12 : n % 12
-  return `${twelve}${ampm}`
+  return m ? `${twelve}:${String(m).padStart(2, '0')}${ampm}` : `${twelve}${ampm}`
 }
 
 const when = (r) =>
-  `${r.weekdays_only ? 'Weekdays' : 'Every day'} at ${hour12(r.hour_local)} ${r.timezone?.split('/')?.[1]?.replace('_', ' ') || r.timezone || ''}`.trim()
+  `${r.weekdays_only ? 'Weekdays' : 'Every day'} at ${hour12(r.hour_local, r.minute_local)} ${r.timezone?.split('/')?.[1]?.replace('_', ' ') || r.timezone || ''}`.trim()
 
 export default function ArnieRoutines() {
   const user = useStore((s) => s.user)
@@ -57,8 +61,8 @@ export default function ArnieRoutines() {
     if (!companyId || !user?.id) return
     const [{ data: r, error: e1 }, { data: s }] = await Promise.all([
       supabase.from('arnie_routines')
-        .select('id,name,prompt,enabled,channel,hour_local,timezone,weekdays_only,shared,skill_id,last_run_on,last_result,last_error,created_at')
-        .eq('company_id', companyId).eq('employee_id', user.id).order('hour_local'),
+        .select('id,name,prompt,enabled,channel,hour_local,minute_local,timezone,weekdays_only,shared,skill_id,last_run_on,last_result,last_error,created_at')
+        .eq('company_id', companyId).eq('employee_id', user.id).order('hour_local').order('minute_local'),
       supabase.from('arnie_skills')
         .select('id,name,status').eq('company_id', companyId).eq('status', 'published'),
     ])

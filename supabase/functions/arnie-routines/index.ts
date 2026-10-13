@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
     }
 
     if (dryRun) {
-      return json({ ok: true, dry_run: true, due: due.map((d) => ({ id: d.id, name: d.name, employee_id: d.employee_id, hour_local: d.hour_local, timezone: d.timezone })) })
+      return json({ ok: true, dry_run: true, due: due.map((d) => ({ id: d.id, name: d.name, employee_id: d.employee_id, hour_local: d.hour_local, minute_local: d.minute_local, timezone: d.timezone })) })
     }
 
     const results: Record<string, unknown>[] = []

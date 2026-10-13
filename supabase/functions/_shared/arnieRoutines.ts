@@ -28,18 +28,30 @@ export interface RoutineRest { url: string; key: string; internalKey?: string }
 const H = (r: RoutineRest) => ({ apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json' })
 const FH = (r: RoutineRest) => ({ ...H(r), ...(r.internalKey ? { 'x-arnie-internal': r.internalKey } : {}) })
 
-/** The local hour and calendar day for a zone, from one instant. */
-export function localNow(tz: string, now = new Date()): { hour: number; day: string; weekday: number } {
+/** The local time of day and calendar day for a zone, from one instant. */
+export function localNow(tz: string, now = new Date()): { hour: number; minute: number; day: string; weekday: number } {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz || 'UTC', hour12: false,
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', weekday: 'short',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short',
   }).formatToParts(now)
   const get = (t: string) => parts.find((p) => p.type === t)?.value || ''
   const WD: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
   // 24 is midnight in some locales' hourCycle; fold it back to 0.
   const hour = Number(get('hour')) % 24
-  return { hour, day: `${get('year')}-${get('month')}-${get('day')}`, weekday: WD[get('weekday')] ?? 0 }
+  return { hour, minute: Number(get('minute')) || 0, day: `${get('year')}-${get('month')}-${get('day')}`, weekday: WD[get('weekday')] ?? 0 }
 }
+
+/**
+ * How late a routine may still run after its time.
+ *
+ * The cron fires every five minutes, so this is four missed ticks of
+ * tolerance — enough to ride out a deploy or a brief outage, and short enough
+ * that a routine never arrives at a time that feels random. Before the minute
+ * column existed the check was an exact hour match against an hourly cron,
+ * which meant one chance a day: if that single invocation failed, the routine
+ * simply did not happen and nothing said so.
+ */
+export const CATCH_UP_MINUTES = 20
 
 /**
  * Is this routine due right now?
@@ -53,8 +65,20 @@ export function isDue(routine: Any, now = new Date()): { due: boolean; why: stri
   if (!routine?.enabled) return { due: false, why: 'disabled' }
   const tz = str(routine.timezone)
   if (!tz) return { due: false, why: 'no timezone' }
-  const { hour, day, weekday } = localNow(tz, now)
-  if (hour !== Number(routine.hour_local)) return { due: false, why: `local hour ${hour}, wants ${routine.hour_local}` }
+  const { hour, minute, day, weekday } = localNow(tz, now)
+
+  // At the minute, or just after it — never before. A routine that goes off
+  // early is worse than one that goes off late: "every weekday at 8:45" that
+  // arrives at 8:40 is a thing people stop trusting.
+  const nowMins = hour * 60 + minute
+  const wantMins = Number(routine.hour_local) * 60 + (Number(routine.minute_local) || 0)
+  const late = nowMins - wantMins
+  // Note what this does NOT do: it never reaches back across midnight. A
+  // routine that was missed all day does not fire at 00:05 the next morning
+  // under yesterday's name; it waits for its own time again.
+  if (late < 0 || late > CATCH_UP_MINUTES) {
+    return { due: false, why: `local ${hour}:${String(minute).padStart(2, '0')}, wants ${routine.hour_local}:${String(Number(routine.minute_local) || 0).padStart(2, '0')}` }
+  }
   if (routine.weekdays_only && (weekday === 0 || weekday === 6)) return { due: false, why: 'weekend' }
   if (str(routine.last_run_on) === day) return { due: false, why: 'already ran today' }
   return { due: true, why: day }
