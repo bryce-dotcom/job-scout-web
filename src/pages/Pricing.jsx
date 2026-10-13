@@ -232,6 +232,26 @@ const CSS = `
   .pr .trust{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:20px;font-size:13.5px;color:#bcc0ad}
   .pr .trust span{display:inline-flex;align-items:center;gap:6px}
   .pr .trust .ic{font-size:14px;color:#8fbf6a}
+  .pr .hearbar{position:relative;overflow:hidden;display:flex;width:fit-content;align-items:center;gap:12px;margin-top:22px;padding:9px 18px 9px 9px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.17);border-radius:999px;cursor:pointer;color:#f4efe3;font-family:inherit;text-align:left;transition:background .2s,border-color .2s;max-width:100%}
+  .pr .hearbar:hover{background:rgba(201,154,46,.15);border-color:rgba(201,154,46,.55)}
+  .pr .hearbar:focus-visible{outline:2px solid var(--viz);outline-offset:2px}
+  .pr .hearbar-ic{width:44px;height:44px;flex:none;border-radius:50%;background:var(--viz);display:grid;place-items:center}
+  .pr .hearbar-ic svg{width:19px;height:19px;fill:#201700;stroke:none;margin-left:2px}
+  .pr .hearbar.on .hearbar-ic svg{margin-left:0}
+  .pr .hearbar-txt{display:flex;flex-direction:column;min-width:0;gap:1px}
+  .pr .hearbar-txt b{font-size:15px;font-weight:750;color:#fff;white-space:nowrap}
+  .pr .hearbar-txt span{font-size:12.5px;color:#cfcbba;white-space:nowrap}
+  .pr .hearbar-eq{display:flex;align-items:center;gap:3px;height:22px;padding:0 6px 0 2px;flex:none}
+  .pr .hearbar-eq i{width:3px;height:5px;background:var(--viz);border-radius:2px;opacity:.6}
+  .pr .hearbar.on .hearbar-eq i{animation:eqbar .9s ease-in-out infinite;opacity:1}
+  .pr .hearbar.on .hearbar-eq i:nth-child(2){animation-delay:.18s}
+  .pr .hearbar.on .hearbar-eq i:nth-child(3){animation-delay:.36s}
+  .pr .hearbar.on .hearbar-eq i:nth-child(4){animation-delay:.54s}
+  .pr .hearbar.on .hearbar-eq i:nth-child(5){animation-delay:.72s}
+  @keyframes eqbar{0%,100%{height:5px}50%{height:19px}}
+  .pr .hearbar-prog{position:absolute;left:0;bottom:0;height:3px;background:var(--viz);border-radius:0 2px 2px 0;transition:width .15s linear}
+  @media(prefers-reduced-motion:reduce){ .pr .hearbar.on .hearbar-eq i{animation:none;height:13px} }
+  @media(max-width:560px){ .pr .hearbar-eq{display:none} }
   .pr .crewstrip{display:flex;align-items:center;gap:8px;margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,.12);flex-wrap:wrap}
   .pr .crewstrip .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#9aa08c}
   .pr .chip{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:13px;background:var(--nightGrn);border:1px solid rgba(255,255,255,.14);color:#e9e5d6;opacity:0;transform:translateY(8px);animation:prpop .5s forwards}
@@ -571,6 +591,7 @@ export default function Pricing() {
   const company = useStore((s) => s.company)
   const rootRef = useRef(null)
   const heroRef = useRef(null)
+  const audioRef = useRef(null)
   const [per, setPer] = useState('mo')
   const [lit, setLit] = useState(false)
   const [showSticky, setShowSticky] = useState(false)
@@ -579,6 +600,8 @@ export default function Pricing() {
   const [agLock, setAgLock] = useState(false)
   const [shared, setShared] = useState(false)
   const [iq, setIq] = useState(0)
+  const [hearing, setHearing] = useState(false)
+  const [hprog, setHprog] = useState(0)
 
   const goSignup = (planId) => navigate(`/login?signup=1&plan=${planId}`)
   const toPlans = () => document.getElementById('pr-plans')?.scrollIntoView({ behavior: 'smooth' })
@@ -588,6 +611,12 @@ export default function Pricing() {
       if (typeof navigator !== 'undefined' && navigator.share) { await navigator.share({ title: 'JobScout — the business operating system', text: 'One system for the whole operation, running on AI. Take a look:', url }); return }
     } catch { /* user cancelled the share sheet — fall through to copy */ }
     try { await navigator.clipboard.writeText(url); setShared(true); setTimeout(() => setShared(false), 2000) } catch { /* clipboard blocked */ }
+  }
+  // Tap to hear Arnie introduce the team — never autoplays; loads only on first tap.
+  const toggleHear = () => {
+    const a = audioRef.current
+    if (!a) return
+    if (a.paused) a.play().catch(() => {}); else a.pause()
   }
 
   // Reveal-on-scroll + hero underline draw + mobile sticky CTA.
@@ -687,6 +716,28 @@ export default function Pricing() {
                   <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
                   <button className="btn btn-ghost on-dark" onClick={() => navigate('/login?demo=1')}>Try the live demo <Icon id="i-arrow" /></button>
                 </div>
+                <button type="button" className={`hearbar${hearing ? ' on' : ''}`} onClick={toggleHear} aria-label={hearing ? 'Pause Arnie' : 'Hear from Arnie'} aria-pressed={hearing}>
+                  <span className="hearbar-ic" aria-hidden="true">
+                    {hearing
+                      ? <svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z" /></svg>
+                      : <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>}
+                  </span>
+                  <span className="hearbar-txt">
+                    <b>{hearing ? 'Arnie’s talking…' : 'Hear from Arnie'}</b>
+                    <span>He introduces your whole team · 45 sec</span>
+                  </span>
+                  <span className="hearbar-eq" aria-hidden="true"><i /><i /><i /><i /><i /></span>
+                  <span className="hearbar-prog" style={{ width: `${Math.round(hprog * 100)}%` }} aria-hidden="true" />
+                </button>
+                <audio
+                  ref={audioRef}
+                  src="/arnie-intro.mp3"
+                  preload="none"
+                  onPlay={() => setHearing(true)}
+                  onPause={() => setHearing(false)}
+                  onEnded={() => { setHearing(false); setHprog(0) }}
+                  onTimeUpdate={(e) => { const a = e.currentTarget; if (a.duration) setHprog(a.currentTime / a.duration) }}
+                />
                 <a href="#pr-compare" style={{ display: 'inline-block', marginTop: 14, fontSize: 14, color: '#bcc0ad', textDecoration: 'underline', textUnderlineOffset: 3 }}>or see how it compares →</a>
                 <div className="trust">
                   <span><Icon id="i-check" /> Live in an afternoon</span>
